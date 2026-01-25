@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { Calendar, Download, Check, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { DiscountCodeInput } from './DiscountCodeInput';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
+import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 
 interface OneTimeSummaryProps {
   servicePrices: ServicePrices;
@@ -28,6 +31,19 @@ export function OneTimeSummary({
   onDownloadPDF,
   onGetStarted 
 }: OneTimeSummaryProps) {
+  const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
+  
+  // Calculate discounted total
+  const subtotal = servicePrices.grandTotal;
+  let discountAmount = 0;
+  if (appliedDiscount) {
+    if (appliedDiscount.type === 'percentage') {
+      discountAmount = subtotal * (appliedDiscount.value / 100);
+    } else {
+      discountAmount = Math.min(appliedDiscount.value, subtotal);
+    }
+  }
+  const finalTotal = subtotal - discountAmount;
   const hasServices = servicePrices.grandTotal > 0;
   
   return (
@@ -55,10 +71,30 @@ export function OneTimeSummary({
             <span className="text-sm font-medium text-accent">Single Appointment</span>
           </div>
           <div className="text-3xl price-display text-foreground">
-            {formatPrice(servicePrices.grandTotal)}
+            {appliedDiscount ? (
+              <>
+                <span className="line-through text-muted-foreground text-xl mr-2">
+                  {formatPrice(subtotal)}
+                </span>
+                {formatPrice(finalTotal)}
+              </>
+            ) : (
+              formatPrice(subtotal)
+            )}
             <span className="text-base font-normal text-muted-foreground"> total</span>
           </div>
+          {appliedDiscount && (
+            <p className="text-sm text-green-600 mt-1">
+              You save {formatPrice(discountAmount)}!
+            </p>
+          )}
         </div>
+        
+        {/* Discount Code */}
+        <DiscountCodeInput 
+          onApply={setAppliedDiscount}
+          appliedDiscount={appliedDiscount}
+        />
         
         {/* Service Breakdown */}
         <div className="space-y-3">
@@ -162,10 +198,22 @@ export function OneTimeSummary({
         
         {/* Summary */}
         <div className="space-y-3">
+          {appliedDiscount && (
+            <>
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Subtotal</span>
+                <span>{formatPrice(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-green-600">
+                <span>Discount ({appliedDiscount.code})</span>
+                <span>-{formatPrice(discountAmount)}</span>
+              </div>
+            </>
+          )}
           <div className="flex justify-between text-lg font-semibold">
             <span>Total Due</span>
             <span className="price-display text-accent">
-              {formatPrice(servicePrices.grandTotal)}
+              {formatPrice(finalTotal)}
             </span>
           </div>
           
