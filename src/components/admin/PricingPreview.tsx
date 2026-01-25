@@ -6,10 +6,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Calculator, Home, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Calculator, Home, TrendingUp, TrendingDown, Minus, Save, FolderOpen, Trash2, ChevronDown } from 'lucide-react';
 import type { HomeDetails, AdditionalServices } from '@/types/homeowner';
 import { DEFAULT_HOME_DETAILS, DEFAULT_ADDITIONAL_SERVICES } from '@/types/homeowner';
 import { usePricingConfig, type PricingData } from '@/hooks/usePricingConfig';
+import { useSavedScenarios, useCreateScenario, useDeleteScenario, type SavedScenario } from '@/hooks/useSavedScenarios';
 
 // Pricing calculation function (mirrors useServicePricing logic)
 function calculatePrices(
@@ -157,6 +161,9 @@ const SAMPLE_SCENARIOS = [
 
 export function PricingPreview() {
   const { data: pricing, isLoading } = usePricingConfig();
+  const { data: savedScenarios = [], isLoading: scenariosLoading } = useSavedScenarios();
+  const createScenario = useCreateScenario();
+  const deleteScenario = useDeleteScenario();
   
   // In the admin preview we want a blank sqft field (no preset), so admins can type an exact number easily.
   const [homeDetails, setHomeDetails] = useState<HomeDetails>({
@@ -169,6 +176,11 @@ export function PricingPreview() {
     houseWash: true,
     roofCleaning: true,
   });
+  
+  // Save scenario dialog state
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [scenarioName, setScenarioName] = useState('');
+  const [scenarioDescription, setScenarioDescription] = useState('');
   
   const prices = useMemo(() => {
     if (!pricing) return null;
@@ -183,6 +195,35 @@ export function PricingPreview() {
       prices: calculatePrices(scenario.homeDetails, scenario.services, pricing),
     }));
   }, [pricing]);
+  
+  const handleSaveScenario = () => {
+    if (!scenarioName.trim()) return;
+    
+    createScenario.mutate({
+      name: scenarioName.trim(),
+      description: scenarioDescription.trim() || undefined,
+      homeDetails,
+      additionalServices,
+    }, {
+      onSuccess: () => {
+        setSaveDialogOpen(false);
+        setScenarioName('');
+        setScenarioDescription('');
+      }
+    });
+  };
+  
+  const handleLoadScenario = (scenario: SavedScenario) => {
+    setHomeDetails(scenario.home_details);
+    setAdditionalServices(scenario.additional_services);
+  };
+  
+  const handleDeleteScenario = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Delete this scenario?')) {
+      deleteScenario.mutate(id);
+    }
+  };
   
   if (isLoading || !pricing) {
     return (
@@ -264,13 +305,132 @@ export function PricingPreview() {
       {/* Custom Quote Builder */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Home className="w-5 h-5" />
-            Custom Quote Calculator
-          </CardTitle>
-          <CardDescription>
-            Adjust home details to see exactly how pricing is calculated
-          </CardDescription>
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Home className="w-5 h-5" />
+                Custom Quote Calculator
+              </CardTitle>
+              <CardDescription>
+                Adjust home details to see exactly how pricing is calculated
+              </CardDescription>
+            </div>
+            
+            {/* Scenario Actions */}
+            <div className="flex gap-2">
+              {/* Load Scenario Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={scenariosLoading || savedScenarios.length === 0}>
+                    <FolderOpen className="w-4 h-4 mr-2" />
+                    Load
+                    <ChevronDown className="w-4 h-4 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 bg-background">
+                  {savedScenarios.length === 0 ? (
+                    <DropdownMenuItem disabled>No saved scenarios</DropdownMenuItem>
+                  ) : (
+                    savedScenarios.map((scenario) => (
+                      <DropdownMenuItem
+                        key={scenario.id}
+                        onClick={() => handleLoadScenario(scenario)}
+                        className="flex items-center justify-between"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate">{scenario.name}</div>
+                          {scenario.description && (
+                            <div className="text-xs text-muted-foreground truncate">
+                              {scenario.description}
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 ml-2 text-destructive hover:text-destructive"
+                          onClick={(e) => handleDeleteScenario(scenario.id, e)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                  {savedScenarios.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                        {savedScenarios.length} saved scenario{savedScenarios.length !== 1 ? 's' : ''}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              
+              {/* Save Scenario Dialog */}
+              <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Save className="w-4 h-4 mr-2" />
+                    Save
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Save Scenario</DialogTitle>
+                    <DialogDescription>
+                      Save the current home details and service selections for quick access later.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="scenario-name">Scenario Name</Label>
+                      <Input
+                        id="scenario-name"
+                        placeholder="e.g. Typical 2-Story Home"
+                        value={scenarioName}
+                        onChange={(e) => setScenarioName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="scenario-desc">Description (optional)</Label>
+                      <Input
+                        id="scenario-desc"
+                        placeholder="e.g. 3,000 sqft with all services"
+                        value={scenarioDescription}
+                        onChange={(e) => setScenarioDescription(e.target.value)}
+                      />
+                    </div>
+                    <div className="text-sm text-muted-foreground bg-muted p-3 rounded-md">
+                      <strong>Current config:</strong>
+                      <ul className="mt-1 space-y-1">
+                        <li>• {homeDetails.squareFootage.toLocaleString()} sqft, {homeDetails.stories} story</li>
+                        <li>• Window cleaning: {homeDetails.windowCleaningType === 'both' ? 'Interior + Exterior' : 'Exterior only'}</li>
+                        <li>• Services: {[
+                          additionalServices.houseWash && 'House Wash',
+                          additionalServices.gutterCleaning && 'Gutters',
+                          additionalServices.roofCleaning && 'Roof',
+                          additionalServices.pressureWashing.enabled && 'Pressure Washing'
+                        ].filter(Boolean).join(', ') || 'None'}
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleSaveScenario} 
+                      disabled={!scenarioName.trim() || createScenario.isPending}
+                    >
+                      {createScenario.isPending ? 'Saving...' : 'Save Scenario'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid md:grid-cols-2 gap-8">
