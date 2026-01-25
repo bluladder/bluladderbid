@@ -40,12 +40,13 @@ export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps)
             <Input
               id="sqft"
               type="number"
-              min={500}
-              max={15000}
-              value={homeDetails.squareFootage}
-              onChange={(e) => onChange({ squareFootage: Math.max(500, parseInt(e.target.value) || 0) })}
+              value={homeDetails.squareFootage === 0 ? '' : homeDetails.squareFootage}
+              onChange={(e) => {
+                const value = e.target.value;
+                onChange({ squareFootage: value === '' ? 0 : parseInt(value, 10) });
+              }}
               className="input-field"
-              placeholder="e.g. 2,500"
+              placeholder="e.g. 3200 (typical: 2,000-5,000 sqft)"
             />
           </div>
           
