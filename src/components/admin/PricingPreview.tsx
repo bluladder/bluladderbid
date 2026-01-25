@@ -158,7 +158,11 @@ const SAMPLE_SCENARIOS = [
 export function PricingPreview() {
   const { data: pricing, isLoading } = usePricingConfig();
   
-  const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
+  // In the admin preview we want a blank sqft field (no preset), so admins can type an exact number easily.
+  const [homeDetails, setHomeDetails] = useState<HomeDetails>({
+    ...DEFAULT_HOME_DETAILS,
+    squareFootage: 0,
+  });
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>({
     ...DEFAULT_ADDITIONAL_SERVICES,
     gutterCleaning: true,
@@ -288,12 +292,8 @@ export function PricingPreview() {
                           squareFootage: value === '' ? 0 : parseInt(value, 10)
                         }));
                       }}
-                      onBlur={(e) => {
-                        if (e.target.value === '' || homeDetails.squareFootage < 500) {
-                          setHomeDetails(prev => ({ ...prev, squareFootage: 500 }));
-                        }
-                      }}
-                      min={500}
+                      placeholder="e.g. 3200"
+                      step={1}
                     />
                   </div>
                   
