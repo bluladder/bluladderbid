@@ -280,11 +280,20 @@ export function PricingPreview() {
                     <Label>Square Footage</Label>
                     <Input
                       type="number"
-                      value={homeDetails.squareFootage}
-                      onChange={(e) => setHomeDetails(prev => ({ 
-                        ...prev, 
-                        squareFootage: parseInt(e.target.value) || 0 
-                      }))}
+                      value={homeDetails.squareFootage === 0 ? '' : homeDetails.squareFootage}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setHomeDetails(prev => ({ 
+                          ...prev, 
+                          squareFootage: value === '' ? 0 : parseInt(value, 10)
+                        }));
+                      }}
+                      onBlur={(e) => {
+                        if (e.target.value === '' || homeDetails.squareFootage < 500) {
+                          setHomeDetails(prev => ({ ...prev, squareFootage: 500 }));
+                        }
+                      }}
+                      min={500}
                     />
                   </div>
                   
