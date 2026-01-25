@@ -41,6 +41,39 @@ export type Database = {
         }
         Relationships: []
       }
+      saved_scenarios: {
+        Row: {
+          additional_services: Json
+          created_at: string
+          created_by: string
+          description: string | null
+          home_details: Json
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          additional_services: Json
+          created_at?: string
+          created_by: string
+          description?: string | null
+          home_details: Json
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          additional_services?: Json
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          home_details?: Json
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
