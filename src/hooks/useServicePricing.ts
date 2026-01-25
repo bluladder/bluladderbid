@@ -1,144 +1,47 @@
 import { useMemo } from 'react';
 import type { HomeDetails, AdditionalServices, ServicePrices, BundleTier } from '@/types/homeowner';
-
-// Pricing constants - easily adjustable
-const PRICING = {
-  // Base window cleaning per sq ft
-  exteriorPerSqFt: 0.045,
-  interiorPerSqFt: 0.035,
-  
-  // Story multipliers
-  storyMultiplier: {
-    1: 1,
-    2: 1.25,
-    3: 1.5,
-  },
-  
-  // Condition multipliers
-  conditionMultiplier: {
-    maintenance: 1,
-    heavy: 1.4,
-  },
-  
-  // Window modifiers (% of base price)
-  hardWaterMultiplier: 0.25,
-  frenchPanesMultiplier: 0.30,
-  solarScreensMultiplier: 0.20,
-  
-  // Ladder work flat fees
-  ladderWork: {
-    '1-3': 45,
-    '4-8': 85,
-    '9+': 135,
-  },
-  
-  // Sunroom flat fees
-  sunroom: {
-    none: 0,
-    small: 75,
-    medium: 125,
-    large: 200,
-  },
-  
-  // Pressure washing driveway pricing
-  driveway: {
-    small: 150,
-    medium: 225,
-    large: 350,
-  },
-  
-  // Surface type multipliers
-  surfaceMultiplier: {
-    concrete: 1,
-    stamped: 1.15,
-    pavers: 1.25,
-    brick: 1.20,
-    stone: 1.30,
-    tile: 1.35,
-  },
-  
-  // Pressure washing add-ons
-  pressureWashingAddons: {
-    frontPorch: 75,
-    backPatio: 95,
-    poolDeck: 125,
-    sidewalks: 65,
-  },
-  
-  // Gutter cleaning base + per story
-  gutterBase: 125,
-  gutterPerStory: 50,
-  gutterPerSqFt: 0.025,
-  
-  // House wash
-  houseWashPerSqFt: 0.12,
-  houseWashStoryMultiplier: {
-    1: 1,
-    2: 1.3,
-    3: 1.6,
-  },
-  
-  // Roof cleaning
-  roofBase: {
-    asphalt: 300,
-    tile: 400,
-    metal: 275,
-    flat: 250,
-  },
-  roofSeverityMultiplier: {
-    light: 1,
-    moderate: 1.25,
-    heavy: 1.5,
-  },
-  roofPerSqFt: 0.08,
-};
-
-// Bundle tier configurations
-const BUNDLE_CONFIG = {
-  good: {
-    name: 'Good' as const,
-    label: 'Essential Care',
-    description: 'Keep your home looking great with regular exterior cleaning',
-    windowFrequency: 2, // 2x per year
-    additionalServicesFrequency: 1,
-    discount: 0,
-  },
-  better: {
-    name: 'Better' as const,
-    label: 'Complete Care',
-    description: 'More frequent cleaning for a consistently sparkling home',
-    windowFrequency: 3, // 3x per year
-    additionalServicesFrequency: 1,
-    discount: 0.05,
-  },
-  best: {
-    name: 'Best' as const,
-    label: 'Premium Care',
-    description: 'The ultimate in home maintenance with maximum coverage',
-    windowFrequency: 4, // 4x per year
-    additionalServicesFrequency: 2, // gutters 2x
-    discount: 0.10,
-  },
-};
+import { usePricingConfig, type PricingData } from './usePricingConfig';
 
 export function useServicePricing(
   homeDetails: HomeDetails,
   additionalServices: AdditionalServices
-): { servicePrices: ServicePrices; bundles: BundleTier[] } {
+): { servicePrices: ServicePrices; bundles: BundleTier[]; isLoading: boolean } {
+  
+  const { data: PRICING, isLoading } = usePricingConfig();
   
   const servicePrices = useMemo<ServicePrices>(() => {
+    if (!PRICING) {
+      return {
+        exteriorWindows: 0,
+        interiorWindows: 0,
+        hardWaterAddon: 0,
+        frenchPanesAddon: 0,
+        solarScreensAddon: 0,
+        ladderWorkAddon: 0,
+        sunroomAddon: 0,
+        windowCleaningTotal: 0,
+        pressureWashing: 0,
+        pressureWashingAddons: 0,
+        gutterCleaning: 0,
+        houseWash: 0,
+        roofCleaning: 0,
+        additionalServicesTotal: 0,
+        grandTotal: 0,
+      };
+    }
+    
     const { squareFootage, stories, windowCleaningType, condition } = homeDetails;
     
     // Calculate base window price
-    const storyMult = PRICING.storyMultiplier[stories];
-    const conditionMult = PRICING.conditionMultiplier[condition];
+    const storyMult = PRICING.story_multipliers[stories.toString()] ?? 1;
+    const conditionMult = PRICING.condition_multipliers[condition] ?? 1;
     
     const baseExterior = Math.round(
-      squareFootage * PRICING.exteriorPerSqFt * storyMult * conditionMult
+      squareFootage * PRICING.window_base_rates.exteriorPerSqFt * storyMult * conditionMult
     );
     
     const baseInterior = windowCleaningType === 'both' 
-      ? Math.round(squareFootage * PRICING.interiorPerSqFt * conditionMult)
+      ? Math.round(squareFootage * PRICING.window_base_rates.interiorPerSqFt * conditionMult)
       : 0;
     
     const baseWindowPrice = baseExterior + baseInterior;
@@ -153,27 +56,27 @@ export function useServicePricing(
     if (homeDetails.showAdvanced) {
       if (homeDetails.hardWaterStains) {
         hardWaterAddon = Math.round(
-          baseWindowPrice * PRICING.hardWaterMultiplier * (homeDetails.hardWaterPercent / 100)
+          baseWindowPrice * PRICING.window_modifiers.hardWaterMultiplier * (homeDetails.hardWaterPercent / 100)
         );
       }
       
       if (homeDetails.frenchPanes) {
         frenchPanesAddon = Math.round(
-          baseWindowPrice * PRICING.frenchPanesMultiplier * (homeDetails.frenchPanesPercent / 100)
+          baseWindowPrice * PRICING.window_modifiers.frenchPanesMultiplier * (homeDetails.frenchPanesPercent / 100)
         );
       }
       
       if (homeDetails.solarScreens) {
         solarScreensAddon = Math.round(
-          baseWindowPrice * PRICING.solarScreensMultiplier * (homeDetails.solarScreensPercent / 100)
+          baseWindowPrice * PRICING.window_modifiers.solarScreensMultiplier * (homeDetails.solarScreensPercent / 100)
         );
       }
       
       if (homeDetails.ladderWork) {
-        ladderWorkAddon = PRICING.ladderWork[homeDetails.ladderWorkCount];
+        ladderWorkAddon = PRICING.ladder_work[homeDetails.ladderWorkCount] ?? 0;
       }
       
-      sunroomAddon = PRICING.sunroom[homeDetails.sunroom];
+      sunroomAddon = PRICING.sunroom[homeDetails.sunroom] ?? 0;
     }
     
     const windowCleaningTotal = baseExterior + baseInterior + hardWaterAddon + 
@@ -185,21 +88,21 @@ export function useServicePricing(
     
     if (additionalServices.pressureWashing.enabled) {
       const { drivewaySize, surfaceType } = additionalServices.pressureWashing;
-      pressureWashing = Math.round(
-        PRICING.driveway[drivewaySize] * PRICING.surfaceMultiplier[surfaceType]
-      );
+      const drivewayBase = PRICING.driveway[drivewaySize] ?? 0;
+      const surfaceMult = PRICING.surface_multipliers[surfaceType] ?? 1;
+      pressureWashing = Math.round(drivewayBase * surfaceMult);
       
       if (additionalServices.pressureWashing.frontPorch) {
-        pressureWashingAddons += PRICING.pressureWashingAddons.frontPorch;
+        pressureWashingAddons += PRICING.pressure_washing_addons.frontPorch ?? 0;
       }
       if (additionalServices.pressureWashing.backPatio) {
-        pressureWashingAddons += PRICING.pressureWashingAddons.backPatio;
+        pressureWashingAddons += PRICING.pressure_washing_addons.backPatio ?? 0;
       }
       if (additionalServices.pressureWashing.poolDeck) {
-        pressureWashingAddons += PRICING.pressureWashingAddons.poolDeck;
+        pressureWashingAddons += PRICING.pressure_washing_addons.poolDeck ?? 0;
       }
       if (additionalServices.pressureWashing.sidewalks) {
-        pressureWashingAddons += PRICING.pressureWashingAddons.sidewalks;
+        pressureWashingAddons += PRICING.pressure_washing_addons.sidewalks ?? 0;
       }
     }
     
@@ -207,28 +110,28 @@ export function useServicePricing(
     let gutterCleaning = 0;
     if (additionalServices.gutterCleaning) {
       gutterCleaning = Math.round(
-        PRICING.gutterBase + 
-        (PRICING.gutterPerStory * stories) + 
-        (squareFootage * PRICING.gutterPerSqFt)
+        PRICING.gutter_cleaning.base + 
+        (PRICING.gutter_cleaning.perStory * stories) + 
+        (squareFootage * PRICING.gutter_cleaning.perSqFt)
       );
     }
     
     // Calculate house wash
     let houseWash = 0;
     if (additionalServices.houseWash) {
+      const houseWashStoryMult = PRICING.house_wash.storyMultiplier[stories.toString()] ?? 1;
       houseWash = Math.round(
-        squareFootage * PRICING.houseWashPerSqFt * 
-        PRICING.houseWashStoryMultiplier[stories]
+        squareFootage * PRICING.house_wash.perSqFt * houseWashStoryMult
       );
     }
     
     // Calculate roof cleaning
     let roofCleaning = 0;
     if (additionalServices.roofCleaning) {
+      const roofBase = PRICING.roof_cleaning.base[additionalServices.roofType] ?? 0;
+      const severityMult = PRICING.roof_cleaning.severityMultiplier[additionalServices.roofSeverity] ?? 1;
       roofCleaning = Math.round(
-        (PRICING.roofBase[additionalServices.roofType] + 
-        (squareFootage * PRICING.roofPerSqFt)) * 
-        PRICING.roofSeverityMultiplier[additionalServices.roofSeverity]
+        (roofBase + (squareFootage * PRICING.roof_cleaning.perSqFt)) * severityMult
       );
     }
     
@@ -252,16 +155,40 @@ export function useServicePricing(
       additionalServicesTotal,
       grandTotal: windowCleaningTotal + additionalServicesTotal,
     };
-  }, [homeDetails, additionalServices]);
+  }, [homeDetails, additionalServices, PRICING]);
   
   const bundles = useMemo<BundleTier[]>(() => {
+    if (!PRICING) return [];
+    
     const { windowCleaningTotal, gutterCleaning, houseWash, roofCleaning, pressureWashing, pressureWashingAddons } = servicePrices;
     
-    // Calculate one-time service price (for comparison)
-    const singleServiceTotal = servicePrices.grandTotal;
+    const BUNDLE_CONFIG = PRICING.bundle_config;
     
     return (['good', 'better', 'best'] as const).map((tier) => {
       const config = BUNDLE_CONFIG[tier];
+      if (!config) {
+        return {
+          name: 'Good' as const,
+          tier,
+          label: tier,
+          description: '',
+          features: [],
+          windowFrequency: 1,
+          additionalServicesIncluded: [],
+          annualTotal: 0,
+          monthlyPayment: 0,
+          savings: 0,
+          savingsPercent: 0,
+          isPopular: false,
+        };
+      }
+      
+      // Map tier to proper name type
+      const tierNameMap: Record<string, 'Good' | 'Better' | 'Best'> = {
+        good: 'Good',
+        better: 'Better',
+        best: 'Best',
+      };
       
       // Window cleaning annual cost
       const windowAnnual = windowCleaningTotal * config.windowFrequency;
@@ -336,7 +263,7 @@ export function useServicePricing(
       }
       
       return {
-        name: config.name,
+        name: tierNameMap[tier],
         tier,
         label: config.label,
         description: config.description,
@@ -350,7 +277,7 @@ export function useServicePricing(
         isPopular: tier === 'better',
       };
     });
-  }, [servicePrices, additionalServices]);
+  }, [servicePrices, additionalServices, PRICING]);
   
-  return { servicePrices, bundles };
+  return { servicePrices, bundles, isLoading };
 }
