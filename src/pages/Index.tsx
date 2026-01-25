@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { AdditionalServicesForm } from '@/components/homeowner/AdditionalServicesForm';
 import { WindowPricingDisplay } from '@/components/homeowner/WindowPricingDisplay';
-import { BundleBuilder } from '@/components/homeowner/BundleBuilder';
+import { BundleBuilder, type SelectionType } from '@/components/homeowner/BundleBuilder';
 import { PricingSummary } from '@/components/homeowner/PricingSummary';
+import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
 import { useServicePricing } from '@/hooks/useServicePricing';
 import { 
   HomeDetails, 
@@ -16,7 +17,7 @@ import { toast } from 'sonner';
 const Index = () => {
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(DEFAULT_ADDITIONAL_SERVICES);
-  const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>(null);
+  const [selectedOption, setSelectedOption] = useState<SelectionType>(null);
 
   const { servicePrices, bundles } = useServicePricing(homeDetails, additionalServices);
 
@@ -28,7 +29,10 @@ const Index = () => {
     setAdditionalServices(prev => ({ ...prev, ...updates }));
   };
 
-  const selectedBundle = bundles.find(b => b.tier === selectedTier) || null;
+  const isOneTime = selectedOption === 'one-time';
+  const selectedBundle = !isOneTime && selectedOption 
+    ? bundles.find(b => b.tier === selectedOption) || null 
+    : null;
 
   const handleDownloadPDF = () => {
     // TODO: Implement PDF generation
@@ -97,17 +101,27 @@ const Index = () => {
                 onChange={handleAdditionalServicesChange}
               />
               
-              {/* Step 3: Bundle Selection */}
+              {/* Step 3: Service Selection */}
               <BundleBuilder
                 bundles={bundles}
-                selectedTier={selectedTier}
-                onSelectTier={setSelectedTier}
+                servicePrices={servicePrices}
+                additionalServices={additionalServices}
+                selectedOption={selectedOption}
+                onSelectOption={setSelectedOption}
               />
             </div>
             
             {/* Right Column - Summary (sticky on desktop) */}
             <div className="lg:sticky lg:top-24 lg:self-start">
-              {selectedBundle ? (
+              {isOneTime ? (
+                <OneTimeSummary
+                  servicePrices={servicePrices}
+                  additionalServices={additionalServices}
+                  homeDetails={homeDetails}
+                  onDownloadPDF={handleDownloadPDF}
+                  onGetStarted={handleGetStarted}
+                />
+              ) : selectedBundle ? (
                 <PricingSummary
                   servicePrices={servicePrices}
                   selectedBundle={selectedBundle}
@@ -124,7 +138,7 @@ const Index = () => {
                     Your Quote Summary
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    Select a service package below to see your complete pricing and download your proposal.
+                    Select a service option below to see your complete pricing and download your proposal.
                   </p>
                 </div>
               )}
