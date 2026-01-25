@@ -1,12 +1,17 @@
 import { Sparkles, Check, Star } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import type { BundleTier } from '@/types/homeowner';
+import { OneTimeQuote } from './OneTimeQuote';
+import type { BundleTier, ServicePrices, AdditionalServices } from '@/types/homeowner';
+
+export type SelectionType = 'one-time' | 'good' | 'better' | 'best' | null;
 
 interface BundleBuilderProps {
   bundles: BundleTier[];
-  selectedTier: 'good' | 'better' | 'best' | null;
-  onSelectTier: (tier: 'good' | 'better' | 'best') => void;
+  servicePrices: ServicePrices;
+  additionalServices: AdditionalServices;
+  selectedOption: SelectionType;
+  onSelectOption: (option: SelectionType) => void;
 }
 
 function formatPrice(price: number) {
@@ -18,21 +23,37 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
-export function BundleBuilder({ bundles, selectedTier, onSelectTier }: BundleBuilderProps) {
+export function BundleBuilder({ 
+  bundles, 
+  servicePrices,
+  additionalServices,
+  selectedOption, 
+  onSelectOption 
+}: BundleBuilderProps) {
   return (
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-display font-bold text-foreground">
-          Build Your Service Package
+          Choose Your Service Option
         </h2>
         <p className="text-muted-foreground mt-2">
-          Choose the care level that's right for your home
+          Book a one-time service or save with a recurring package
         </p>
       </div>
       
-      <div className="grid gap-6 lg:grid-cols-3">
+      {/* One-Time Option + Package Options Grid */}
+      <div className="grid gap-6 lg:grid-cols-4">
+        {/* One-Time Service Card */}
+        <OneTimeQuote
+          servicePrices={servicePrices}
+          additionalServices={additionalServices}
+          isSelected={selectedOption === 'one-time'}
+          onSelect={() => onSelectOption('one-time')}
+        />
+        
+        {/* Package Tiers */}
         {bundles.map((bundle) => {
-          const isSelected = selectedTier === bundle.tier;
+          const isSelected = selectedOption === bundle.tier;
           const isPopular = bundle.isPopular;
           
           return (
@@ -43,7 +64,7 @@ export function BundleBuilder({ bundles, selectedTier, onSelectTier }: BundleBui
                   ? 'ring-2 ring-primary shadow-lg scale-[1.02]'
                   : 'hover:shadow-md hover:scale-[1.01]'
               } ${isPopular ? 'lg:-mt-4 lg:mb-4' : ''}`}
-              onClick={() => onSelectTier(bundle.tier)}
+              onClick={() => onSelectOption(bundle.tier)}
             >
               {isPopular && (
                 <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-primary to-accent py-1.5 text-center">
