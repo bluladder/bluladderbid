@@ -2,6 +2,17 @@ import { useMemo } from 'react';
 import type { HomeDetails, AdditionalServices, ServicePrices, BundleTier } from '@/types/homeowner';
 import { usePricingConfig, type PricingData } from './usePricingConfig';
 
+/**
+ * Helper to apply percentage-based modifiers to a base price
+ * @param basePrice - The starting price
+ * @param modifierPercents - Array of percentage increases (e.g., 25 means +25%)
+ * @returns The price after all modifiers are applied
+ */
+function applyModifiers(basePrice: number, modifierPercents: number[]): number {
+  const totalPercent = modifierPercents.reduce((sum, pct) => sum + pct, 0);
+  return Math.round(basePrice * (1 + totalPercent / 100));
+}
+
 export function useServicePricing(
   homeDetails: HomeDetails,
   additionalServices: AdditionalServices
@@ -32,21 +43,34 @@ export function useServicePricing(
     
     const { squareFootage, stories, windowCleaningType, condition } = homeDetails;
     
-    // Calculate base window price
-    const storyMult = PRICING.story_multipliers[stories.toString()] ?? 1;
-    const conditionMult = PRICING.condition_multipliers[condition] ?? 1;
+    // ==========================================
+    // WINDOW CLEANING (sq ft based + modifiers)
+    // ==========================================
+    const windowConfig = PRICING.window_cleaning;
+    const windowModifiers = windowConfig.modifiers;
     
-    const baseExterior = Math.round(
-      squareFootage * PRICING.window_base_rates.exteriorPerSqFt * storyMult * conditionMult
-    );
-    
+    // Base price from square footage
+    const baseExterior = squareFootage * windowConfig.exteriorPerSqFt;
     const baseInterior = windowCleaningType === 'both' 
-      ? Math.round(squareFootage * PRICING.window_base_rates.interiorPerSqFt * conditionMult)
+      ? squareFootage * windowConfig.interiorPerSqFt
       : 0;
-    
     const baseWindowPrice = baseExterior + baseInterior;
     
-    // Calculate modifiers (only if advanced is shown)
+    // Collect all applicable modifiers
+    const windowModifierPercents: number[] = [];
+    
+    // Story modifier
+    const storyMod = windowModifiers.stories[stories.toString()] ?? 0;
+    windowModifierPercents.push(storyMod);
+    
+    // Condition modifier
+    const conditionMod = windowModifiers.condition?.[condition] ?? 0;
+    windowModifierPercents.push(conditionMod);
+    
+    // Apply modifiers to get adjusted base
+    const adjustedWindowBase = applyModifiers(baseWindowPrice, windowModifierPercents);
+    
+    // Calculate optional modifiers (only if advanced is shown)
     let hardWaterAddon = 0;
     let frenchPanesAddon = 0;
     let solarScreensAddon = 0;
@@ -54,93 +78,127 @@ export function useServicePricing(
     let sunroomAddon = 0;
     
     if (homeDetails.showAdvanced) {
-      if (homeDetails.hardWaterStains) {
-        hardWaterAddon = Math.round(
-          baseWindowPrice * PRICING.window_modifiers.hardWaterMultiplier * (homeDetails.hardWaterPercent / 100)
-        );
+      // Hard water stains - percentage of affected windows
+      if (homeDetails.hardWaterStains && windowModifiers.hardWater) {
+        const hardWaterPercent = windowModifiers.hardWater;
+        const affectedPercent = homeDetails.hardWaterPercent / 100;
+        hardWaterAddon = Math.round(adjustedWindowBase * (hardWaterPercent / 100) * affectedPercent);
       }
       
-      if (homeDetails.frenchPanes) {
-        frenchPanesAddon = Math.round(
-          baseWindowPrice * PRICING.window_modifiers.frenchPanesMultiplier * (homeDetails.frenchPanesPercent / 100)
-        );
+      // French panes - percentage of affected windows
+      if (homeDetails.frenchPanes && windowModifiers.frenchPanes) {
+        const frenchPercent = windowModifiers.frenchPanes;
+        const affectedPercent = homeDetails.frenchPanesPercent / 100;
+        frenchPanesAddon = Math.round(adjustedWindowBase * (frenchPercent / 100) * affectedPercent);
       }
       
-      if (homeDetails.solarScreens) {
-        solarScreensAddon = Math.round(
-          baseWindowPrice * PRICING.window_modifiers.solarScreensMultiplier * (homeDetails.solarScreensPercent / 100)
-        );
+      // Solar screens - percentage of affected windows
+      if (homeDetails.solarScreens && windowModifiers.solarScreens) {
+        const solarPercent = windowModifiers.solarScreens;
+        const affectedPercent = homeDetails.solarScreensPercent / 100;
+        solarScreensAddon = Math.round(adjustedWindowBase * (solarPercent / 100) * affectedPercent);
       }
       
+      // Flat fee add-ons
       if (homeDetails.ladderWork) {
-        ladderWorkAddon = PRICING.ladder_work[homeDetails.ladderWorkCount] ?? 0;
+        ladderWorkAddon = PRICING.window_addons.ladderWork[homeDetails.ladderWorkCount] ?? 0;
       }
       
-      sunroomAddon = PRICING.sunroom[homeDetails.sunroom] ?? 0;
+      sunroomAddon = PRICING.window_addons.sunroom[homeDetails.sunroom] ?? 0;
     }
     
-    const windowCleaningTotal = baseExterior + baseInterior + hardWaterAddon + 
+    const windowCleaningTotal = adjustedWindowBase + hardWaterAddon + 
       frenchPanesAddon + solarScreensAddon + ladderWorkAddon + sunroomAddon;
     
-    // Calculate pressure washing
+    // ==========================================
+    // HOUSE WASH (sq ft based + modifiers)
+    // ==========================================
+    let houseWash = 0;
+    if (additionalServices.houseWash) {
+      const houseConfig = PRICING.house_wash;
+      const baseHouseWash = squareFootage * houseConfig.perSqFt;
+      
+      const houseModifiers: number[] = [];
+      const houseStoryMod = houseConfig.modifiers.stories[stories.toString()] ?? 0;
+      houseModifiers.push(houseStoryMod);
+      
+      houseWash = applyModifiers(baseHouseWash, houseModifiers);
+    }
+    
+    // ==========================================
+    // GUTTER CLEANING (sq ft based + modifiers)
+    // ==========================================
+    let gutterCleaning = 0;
+    if (additionalServices.gutterCleaning) {
+      const gutterConfig = PRICING.gutter_cleaning;
+      const baseGutter = squareFootage * gutterConfig.perSqFt;
+      
+      const gutterModifiers: number[] = [];
+      const gutterStoryMod = gutterConfig.modifiers.stories[stories.toString()] ?? 0;
+      gutterModifiers.push(gutterStoryMod);
+      
+      gutterCleaning = applyModifiers(baseGutter, gutterModifiers);
+    }
+    
+    // ==========================================
+    // ROOF CLEANING (sq ft based + modifiers)
+    // ==========================================
+    let roofCleaning = 0;
+    if (additionalServices.roofCleaning) {
+      const roofConfig = PRICING.roof_cleaning;
+      const baseRoof = squareFootage * roofConfig.perSqFt;
+      
+      const roofModifiers: number[] = [];
+      
+      // Story modifier
+      const roofStoryMod = roofConfig.modifiers.stories[stories.toString()] ?? 0;
+      roofModifiers.push(roofStoryMod);
+      
+      // Roof type modifier
+      const roofTypeMod = roofConfig.modifiers.roofType?.[additionalServices.roofType] ?? 0;
+      roofModifiers.push(roofTypeMod);
+      
+      // Severity modifier
+      const severityMod = roofConfig.modifiers.severity?.[additionalServices.roofSeverity] ?? 0;
+      roofModifiers.push(severityMod);
+      
+      roofCleaning = applyModifiers(baseRoof, roofModifiers);
+    }
+    
+    // ==========================================
+    // PRESSURE WASHING (driveway-based pricing)
+    // ==========================================
     let pressureWashing = 0;
     let pressureWashingAddons = 0;
     
     if (additionalServices.pressureWashing.enabled) {
+      const pwConfig = PRICING.pressure_washing;
       const { drivewaySize, surfaceType } = additionalServices.pressureWashing;
-      const drivewayBase = PRICING.driveway[drivewaySize] ?? 0;
-      const surfaceMult = PRICING.surface_multipliers[surfaceType] ?? 1;
+      
+      const drivewayBase = pwConfig.driveway[drivewaySize] ?? 0;
+      const surfaceMult = pwConfig.surfaceMultipliers[surfaceType] ?? 1;
       pressureWashing = Math.round(drivewayBase * surfaceMult);
       
       if (additionalServices.pressureWashing.frontPorch) {
-        pressureWashingAddons += PRICING.pressure_washing_addons.frontPorch ?? 0;
+        pressureWashingAddons += pwConfig.addons.frontPorch ?? 0;
       }
       if (additionalServices.pressureWashing.backPatio) {
-        pressureWashingAddons += PRICING.pressure_washing_addons.backPatio ?? 0;
+        pressureWashingAddons += pwConfig.addons.backPatio ?? 0;
       }
       if (additionalServices.pressureWashing.poolDeck) {
-        pressureWashingAddons += PRICING.pressure_washing_addons.poolDeck ?? 0;
+        pressureWashingAddons += pwConfig.addons.poolDeck ?? 0;
       }
       if (additionalServices.pressureWashing.sidewalks) {
-        pressureWashingAddons += PRICING.pressure_washing_addons.sidewalks ?? 0;
+        pressureWashingAddons += pwConfig.addons.sidewalks ?? 0;
       }
-    }
-    
-    // Calculate gutter cleaning
-    let gutterCleaning = 0;
-    if (additionalServices.gutterCleaning) {
-      gutterCleaning = Math.round(
-        PRICING.gutter_cleaning.base + 
-        (PRICING.gutter_cleaning.perStory * stories) + 
-        (squareFootage * PRICING.gutter_cleaning.perSqFt)
-      );
-    }
-    
-    // Calculate house wash
-    let houseWash = 0;
-    if (additionalServices.houseWash) {
-      const houseWashStoryMult = PRICING.house_wash.storyMultiplier[stories.toString()] ?? 1;
-      houseWash = Math.round(
-        squareFootage * PRICING.house_wash.perSqFt * houseWashStoryMult
-      );
-    }
-    
-    // Calculate roof cleaning
-    let roofCleaning = 0;
-    if (additionalServices.roofCleaning) {
-      const roofBase = PRICING.roof_cleaning.base[additionalServices.roofType] ?? 0;
-      const severityMult = PRICING.roof_cleaning.severityMultiplier[additionalServices.roofSeverity] ?? 1;
-      roofCleaning = Math.round(
-        (roofBase + (squareFootage * PRICING.roof_cleaning.perSqFt)) * severityMult
-      );
     }
     
     const additionalServicesTotal = pressureWashing + pressureWashingAddons + 
       gutterCleaning + houseWash + roofCleaning;
     
     return {
-      exteriorWindows: baseExterior,
-      interiorWindows: baseInterior,
+      exteriorWindows: Math.round(baseExterior * (1 + storyMod / 100 + conditionMod / 100)),
+      interiorWindows: Math.round(baseInterior * (1 + conditionMod / 100)),
       hardWaterAddon,
       frenchPanesAddon,
       solarScreensAddon,

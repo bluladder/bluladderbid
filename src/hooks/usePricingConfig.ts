@@ -12,37 +12,53 @@ export interface PricingConfigRow {
   updated_at: string;
 }
 
+// All modifiers are expressed as percentage increases (0-100)
+// Example: 25 means +25% increase to base price
+export interface ServiceModifiers {
+  stories: Record<string, number>;      // e.g., "1": 0, "2": 20, "3": 40
+  condition?: Record<string, number>;   // e.g., maintenance: 0, heavy: 40
+  hardWater?: number;                   // percentage increase when present
+  frenchPanes?: number;                 // percentage increase when present
+  solarScreens?: number;                // percentage increase when present
+}
+
 export interface PricingData {
-  window_base_rates: {
+  // All 4 main services use sq ft base rate + modifiers
+  window_cleaning: {
     exteriorPerSqFt: number;
     interiorPerSqFt: number;
-  };
-  story_multipliers: Record<string, number>;
-  condition_multipliers: Record<string, number>;
-  window_modifiers: {
-    hardWaterMultiplier: number;
-    frenchPanesMultiplier: number;
-    solarScreensMultiplier: number;
-  };
-  ladder_work: Record<string, number>;
-  sunroom: Record<string, number>;
-  driveway: Record<string, number>;
-  surface_multipliers: Record<string, number>;
-  pressure_washing_addons: Record<string, number>;
-  gutter_cleaning: {
-    base: number;
-    perStory: number;
-    perSqFt: number;
+    modifiers: ServiceModifiers;
   };
   house_wash: {
     perSqFt: number;
-    storyMultiplier: Record<string, number>;
+    modifiers: ServiceModifiers;
+  };
+  gutter_cleaning: {
+    perSqFt: number;
+    modifiers: ServiceModifiers;
   };
   roof_cleaning: {
-    base: Record<string, number>;
-    severityMultiplier: Record<string, number>;
     perSqFt: number;
+    modifiers: ServiceModifiers & {
+      roofType: Record<string, number>;   // asphalt: 0, tile: 20, etc.
+      severity: Record<string, number>;   // light: 0, moderate: 25, heavy: 50
+    };
   };
+  
+  // Window-specific add-ons (flat fees)
+  window_addons: {
+    ladderWork: Record<string, number>;
+    sunroom: Record<string, number>;
+  };
+  
+  // Pressure washing (separate pricing model)
+  pressure_washing: {
+    driveway: Record<string, number>;
+    surfaceMultipliers: Record<string, number>;
+    addons: Record<string, number>;
+  };
+  
+  // Bundle configuration
   bundle_config: Record<string, {
     name: string;
     label: string;
@@ -55,43 +71,57 @@ export interface PricingData {
 
 // Default pricing for fallback
 export const DEFAULT_PRICING: PricingData = {
-  window_base_rates: {
+  window_cleaning: {
     exteriorPerSqFt: 0.045,
     interiorPerSqFt: 0.035,
+    modifiers: {
+      stories: { "1": 0, "2": 25, "3": 50 },
+      condition: { maintenance: 0, heavy: 40 },
+      hardWater: 25,      // +25% when hard water stains present
+      frenchPanes: 30,    // +30% when french panes present
+      solarScreens: 20,   // +20% when solar screens present
+    },
   },
-  story_multipliers: { "1": 1, "2": 1.25, "3": 1.5 },
-  condition_multipliers: { maintenance: 1, heavy: 1.4 },
-  window_modifiers: {
-    hardWaterMultiplier: 0.25,
-    frenchPanesMultiplier: 0.30,
-    solarScreensMultiplier: 0.20,
-  },
-  ladder_work: { "1-3": 45, "4-8": 85, "9+": 135 },
-  sunroom: { none: 0, small: 75, medium: 125, large: 200 },
-  driveway: { small: 150, medium: 225, large: 350 },
-  surface_multipliers: {
-    concrete: 1,
-    stamped: 1.15,
-    pavers: 1.25,
-    brick: 1.20,
-    stone: 1.30,
-    tile: 1.35,
-  },
-  pressure_washing_addons: {
-    frontPorch: 75,
-    backPatio: 95,
-    poolDeck: 125,
-    sidewalks: 65,
-  },
-  gutter_cleaning: { base: 125, perStory: 50, perSqFt: 0.025 },
   house_wash: {
     perSqFt: 0.12,
-    storyMultiplier: { "1": 1, "2": 1.3, "3": 1.6 },
+    modifiers: {
+      stories: { "1": 0, "2": 30, "3": 60 },
+    },
+  },
+  gutter_cleaning: {
+    perSqFt: 0.06,
+    modifiers: {
+      stories: { "1": 0, "2": 25, "3": 50 },
+    },
   },
   roof_cleaning: {
-    base: { asphalt: 300, tile: 400, metal: 275, flat: 250 },
-    severityMultiplier: { light: 1, moderate: 1.25, heavy: 1.5 },
-    perSqFt: 0.08,
+    perSqFt: 0.10,
+    modifiers: {
+      stories: { "1": 0, "2": 20, "3": 40 },
+      roofType: { asphalt: 0, tile: 25, metal: -10, flat: -15 },
+      severity: { light: 0, moderate: 25, heavy: 50 },
+    },
+  },
+  window_addons: {
+    ladderWork: { "1-3": 45, "4-8": 85, "9+": 135 },
+    sunroom: { none: 0, small: 75, medium: 125, large: 200 },
+  },
+  pressure_washing: {
+    driveway: { small: 150, medium: 225, large: 350 },
+    surfaceMultipliers: {
+      concrete: 1,
+      stamped: 1.15,
+      pavers: 1.25,
+      brick: 1.20,
+      stone: 1.30,
+      tile: 1.35,
+    },
+    addons: {
+      frontPorch: 75,
+      backPatio: 95,
+      poolDeck: 125,
+      sidewalks: 65,
+    },
   },
   bundle_config: {
     good: {
