@@ -1,14 +1,18 @@
+import { useState } from 'react';
 import { useIsAdmin, useAuth } from '@/hooks/useAuth';
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { PricingEditor } from '@/components/admin/PricingEditor';
+import { PricingPreview } from '@/components/admin/PricingPreview';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LogOut, Home, ShieldX } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LogOut, Home, ShieldX, Settings, Calculator } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Admin() {
   const { isAdmin, loading, user } = useIsAdmin();
   const { signOut } = useAuth();
+  const [activeTab, setActiveTab] = useState('preview');
 
   // Show login if not authenticated
   if (!user && !loading) {
@@ -91,8 +95,27 @@ export default function Admin() {
       </header>
 
       <main className="container py-8">
-        <div className="max-w-4xl mx-auto">
-          <PricingEditor />
+        <div className="max-w-5xl mx-auto">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="preview" className="flex items-center gap-2">
+                <Calculator className="w-4 h-4" />
+                Quote Preview
+              </TabsTrigger>
+              <TabsTrigger value="config" className="flex items-center gap-2">
+                <Settings className="w-4 h-4" />
+                Pricing Config
+              </TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="preview">
+              <PricingPreview />
+            </TabsContent>
+            
+            <TabsContent value="config">
+              <PricingEditor />
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
     </div>
