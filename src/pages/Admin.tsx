@@ -3,10 +3,11 @@ import { useIsAdmin, useAuth } from '@/hooks/useAuth';
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { PricingEditor } from '@/components/admin/PricingEditor';
 import { PricingPreview } from '@/components/admin/PricingPreview';
+import { ScenarioCompare } from '@/components/admin/ScenarioCompare';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, Settings, Calculator } from 'lucide-react';
+import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Admin() {
@@ -97,10 +98,14 @@ export default function Admin() {
       <main className="container py-8">
         <div className="max-w-5xl mx-auto">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsList className="grid w-full grid-cols-3 mb-6">
               <TabsTrigger value="preview" className="flex items-center gap-2">
                 <Calculator className="w-4 h-4" />
                 Quote Preview
+              </TabsTrigger>
+              <TabsTrigger value="compare" className="flex items-center gap-2">
+                <GitCompare className="w-4 h-4" />
+                Compare
               </TabsTrigger>
               <TabsTrigger value="config" className="flex items-center gap-2">
                 <Settings className="w-4 h-4" />
@@ -110,6 +115,10 @@ export default function Admin() {
             
             <TabsContent value="preview">
               <PricingPreview />
+            </TabsContent>
+            
+            <TabsContent value="compare">
+              <ScenarioCompare />
             </TabsContent>
             
             <TabsContent value="config">
