@@ -6,6 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface UtmParams {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+  preset?: string;
+}
+
 interface BookingRequest {
   customer: {
     email: string;
@@ -29,6 +38,7 @@ interface BookingRequest {
   total: number;
   discountCode?: string;
   notes?: string;
+  utmParams?: UtmParams;
 }
 
 // Simple address parser - extracts components from a single-line address
@@ -568,6 +578,7 @@ Deno.serve(async (req) => {
         total: booking.total,
         discount_code: booking.discountCode,
         notes: booking.notes,
+        utm_params_json: booking.utmParams && Object.keys(booking.utmParams).length > 0 ? booking.utmParams : null,
       })
       .select()
       .single();
