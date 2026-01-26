@@ -515,16 +515,28 @@ Deno.serve(async (req) => {
       }
     `;
 
+    // Parse the scheduled times into LocalDateTimeAttributes format
+    // Jobber requires: { date: "YYYY-MM-DD", time: "HH:MM", timezone: "America/Chicago" }
+    const parseToLocalDateTime = (isoString: string) => {
+      const date = new Date(isoString);
+      return {
+        date: date.toISOString().split('T')[0], // "YYYY-MM-DD"
+        time: date.toISOString().split('T')[1].substring(0, 5), // "HH:MM"
+        timezone: "America/Chicago" // Default timezone for business
+      };
+    };
+
     // VisitCreateInput.visits is an array of VisitCreateAttributes
-    // VisitCreateAttributes has 'schedule' (ScheduledItemAttributes) and 'assignedUserIds'
+    // VisitCreateAttributes has 'schedule' (ScheduledItemAttributes)
+    // ScheduledItemAttributes has startAt/endAt as LocalDateTimeAttributes and teamMemberIdsToAssign
     const visitInput = {
       visits: [
         {
           schedule: {
-            startAt: booking.scheduledStart,
-            endAt: booking.scheduledEnd,
+            startAt: parseToLocalDateTime(booking.scheduledStart),
+            endAt: parseToLocalDateTime(booking.scheduledEnd),
+            teamMemberIdsToAssign: [technician.jobber_user_id],
           },
-          assignedUserIds: [technician.jobber_user_id],
         }
       ]
     };
