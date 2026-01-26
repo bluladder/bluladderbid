@@ -226,13 +226,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get or create property for the client
-    console.log("Getting property for client:", jobberClientId);
+    // Get property for the client - use clientProperties (a connection type)
+    console.log("Getting client properties:", jobberClientId);
     const getClientPropertyQuery = `
       query GetClientProperty($clientId: EncodedId!) {
         client(id: $clientId) {
           id
-          properties(first: 1) {
+          clientProperties(first: 1) {
             nodes {
               id
             }
@@ -244,19 +244,17 @@ Deno.serve(async (req) => {
     const propertyResult = await jobberGraphQL<{
       client: {
         id: string;
-        properties: {
-          nodes: Array<{ id: string }>;
-        };
+        clientProperties: { nodes: Array<{ id: string }> };
       };
     }>(getClientPropertyQuery, { clientId: jobberClientId });
 
     console.log("Client properties result:", JSON.stringify(propertyResult));
 
-    let propertyId = propertyResult.data?.client?.properties?.nodes?.[0]?.id;
+    let propertyId = propertyResult.data?.client?.clientProperties?.nodes?.[0]?.id;
 
     if (!propertyId) {
-      // Create a property for the client
-      console.log("Creating property for client");
+      // Property creation requires an input argument with at least an empty object
+      console.log("No property found, creating one for client");
       const createPropertyMutation = `
         mutation CreateProperty($clientId: EncodedId!, $input: PropertyCreateInput!) {
           propertyCreate(clientId: $clientId, input: $input) {
@@ -271,31 +269,49 @@ Deno.serve(async (req) => {
         }
       `;
 
-      const propertyInput = {
-        address: {
-          street: booking.customer.address || "Address TBD",
-          city: "",
-          province: "",
-          postalCode: "",
-          country: "US",
-        },
-      };
-
+      // PropertyCreateInput can be empty - it will create a default property
       const createPropertyResult = await jobberGraphQL<{
         propertyCreate: {
-          property: { id: string } | null;
+          properties: Array<{ id: string }>;
           userErrors: Array<{ message: string; path?: string[] }>;
         };
-      }>(createPropertyMutation, { clientId: jobberClientId, input: propertyInput });
+      }>(createPropertyMutation, { clientId: jobberClientId, input: {} });
 
       console.log("Property creation result:", JSON.stringify(createPropertyResult));
 
-      propertyId = createPropertyResult.data?.propertyCreate?.property?.id;
+      // Check userErrors for hints about what went wrong
+      if (createPropertyResult.data?.propertyCreate?.userErrors?.length) {
+        console.error("Property creation user errors:", createPropertyResult.data.propertyCreate.userErrors);
+      }
+
+      propertyId = createPropertyResult.data?.propertyCreate?.properties?.[0]?.id;
+
+      // If property creation failed and no property exists, try re-querying client
+      // Sometimes property might have been created asynchronously
+      if (!propertyId) {
+        console.log("Property creation returned empty, re-querying client");
+        const retryResult = await jobberGraphQL<{
+          client: {
+            id: string;
+            properties: { id: string } | null;
+          };
+        }>(getClientPropertyQuery, { clientId: jobberClientId });
+        
+        console.log("Retry property query result:", JSON.stringify(retryResult));
+        const retryProps = retryResult.data?.client?.properties;
+        if (retryProps) {
+          if (Array.isArray(retryProps)) {
+            propertyId = (retryProps as Array<{ id: string }>)[0]?.id;
+          } else {
+            propertyId = retryProps.id;
+          }
+        }
+      }
 
       if (!propertyId) {
-        console.error("Failed to create property:", createPropertyResult);
+        console.error("Failed to get or create property");
         return new Response(
-          JSON.stringify({ error: "Failed to create property in Jobber" }),
+          JSON.stringify({ error: "Failed to get or create property in Jobber" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
         );
       }

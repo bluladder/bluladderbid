@@ -11,12 +11,42 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Query for jobCreate mutation input type
-    const introspectionQuery = `
-      query IntrospectJobCreate {
+    // Get PropertyCreateInput type details
+    const propertyInputQuery = `
+      query GetPropertyInput {
+        __type(name: "PropertyCreateInput") {
+          name
+          kind
+          inputFields {
+            name
+            type {
+              name
+              kind
+              ofType {
+                name
+                kind
+                inputFields {
+                  name
+                  type {
+                    name
+                    kind
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    
+    const propertyInputResult = await jobberGraphQL<unknown>(propertyInputQuery, {});
+    
+    // Get the propertyCreate mutation signature
+    const mutationQuery = `
+      query GetPropertyCreateMutation {
         __schema {
           mutationType {
-            fields {
+            fields(includeDeprecated: true) {
               name
               args {
                 name
@@ -34,41 +64,20 @@ Deno.serve(async (req) => {
         }
       }
     `;
-
-    const result = await jobberGraphQL<unknown>(introspectionQuery, {});
     
-    // Also try to get input types
-    const inputTypesQuery = `
-      query GetInputTypes {
-        __schema {
-          types {
-            name
-            kind
-            inputFields {
-              name
-              type {
-                name
-                kind
-              }
-            }
-          }
-        }
-      }
-    `;
+    const mutationResult = await jobberGraphQL<unknown>(mutationQuery, {});
     
-    const inputTypesResult = await jobberGraphQL<unknown>(inputTypesQuery, {});
-    
-    // Filter for Job-related types
-    const allTypes = (inputTypesResult.data as any)?.__schema?.types || [];
-    const jobTypes = allTypes.filter((t: any) => 
-      t.name?.toLowerCase().includes('job') && t.kind === 'INPUT_OBJECT'
+    // Filter for propertyCreate
+    const allMutations = (mutationResult.data as any)?.__schema?.mutationType?.fields || [];
+    const propertyMutations = allMutations.filter((f: any) => 
+      f.name?.toLowerCase().includes('property')
     );
 
     return new Response(
       JSON.stringify({ 
-        mutations: result.data,
-        jobInputTypes: jobTypes,
-        errors: result.errors 
+        propertyCreateInput: propertyInputResult.data,
+        propertyMutations,
+        errors: propertyInputResult.errors 
       }, null, 2),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
