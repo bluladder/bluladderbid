@@ -7,6 +7,17 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { 
   Calendar, 
@@ -21,7 +32,8 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
-  CalendarIcon
+  CalendarIcon,
+  Trash2
 } from 'lucide-react';
 import { format, parseISO, subDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
@@ -136,7 +148,18 @@ function UtmAttribution({ utm }: { utm: UtmParams | null }) {
   );
 }
 
-function BookingCard({ booking, expanded, onToggle }: { booking: Booking; expanded: boolean; onToggle: () => void }) {
+function BookingCard({ 
+  booking, 
+  expanded, 
+  onToggle, 
+  onDelete 
+}: { 
+  booking: Booking; 
+  expanded: boolean; 
+  onToggle: () => void;
+  onDelete: (id: string) => void;
+}) {
+  const [isDeleting, setIsDeleting] = useState(false);
   const customerName = [booking.customer?.first_name, booking.customer?.last_name]
     .filter(Boolean).join(' ') || 'Unknown';
 
@@ -249,6 +272,41 @@ function BookingCard({ booking, expanded, onToggle }: { booking: Booking; expand
               </div>
             </>
           )}
+
+          {/* Delete Action */}
+          <Separator />
+          <div className="flex justify-end">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Booking
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Booking?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete booking <strong>{booking.reference_number}</strong> for {customerName}.
+                    This action cannot be undone and will affect your analytics data.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => onDelete(booking.id)}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
       )}
     </Card>
@@ -295,6 +353,25 @@ export function BookingsManager() {
       toast.error('Failed to load bookings');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteBooking = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      // Remove from local state
+      setBookings(prev => prev.filter(b => b.id !== id));
+      setExpandedId(null);
+      toast.success('Booking deleted successfully');
+    } catch (err) {
+      console.error('Failed to delete booking:', err);
+      toast.error('Failed to delete booking');
     }
   };
 
@@ -520,6 +597,7 @@ export function BookingsManager() {
                     booking={booking}
                     expanded={expandedId === booking.id}
                     onToggle={() => setExpandedId(expandedId === booking.id ? null : booking.id)}
+                    onDelete={deleteBooking}
                   />
                 ))}
               </div>
