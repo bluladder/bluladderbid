@@ -499,11 +499,12 @@ Deno.serve(async (req) => {
     console.log("Created job:", jobberJobId, "Job number:", jobNumber);
 
     // Schedule a visit for the job using VisitCreateInput
+    // VisitCreateInput requires a 'visits' array, and response has 'createdVisits'
     console.log("Creating visit for job");
     const scheduleVisitMutation = `
       mutation ScheduleVisit($jobId: EncodedId!, $input: VisitCreateInput!) {
         visitCreate(jobId: $jobId, input: $input) {
-          visits {
+          createdVisits {
             id
           }
           userErrors {
@@ -514,24 +515,32 @@ Deno.serve(async (req) => {
       }
     `;
 
+    // VisitCreateInput.visits is an array of VisitCreateAttributes
+    // VisitCreateAttributes has 'schedule' (ScheduledItemAttributes) and 'assignedUserIds'
     const visitInput = {
-      startAt: booking.scheduledStart,
-      endAt: booking.scheduledEnd,
-      assignedUserIds: [technician.jobber_user_id],
+      visits: [
+        {
+          schedule: {
+            startAt: booking.scheduledStart,
+            endAt: booking.scheduledEnd,
+          },
+          assignedUserIds: [technician.jobber_user_id],
+        }
+      ]
     };
     
     console.log("Visit creation input:", JSON.stringify({ jobId: jobberJobId, ...visitInput }));
 
     const visitResult = await jobberGraphQL<{
       visitCreate: {
-        visits: Array<{ id: string }> | null;
+        createdVisits: Array<{ id: string }> | null;
         userErrors: Array<{ message: string; path?: string[] }>;
       };
     }>(scheduleVisitMutation, { jobId: jobberJobId, input: visitInput });
 
     console.log("Visit creation result:", JSON.stringify(visitResult));
 
-    const jobberVisitId = visitResult.data?.visitCreate?.visits?.[0]?.id;
+    const jobberVisitId = visitResult.data?.visitCreate?.createdVisits?.[0]?.id;
 
     if (visitResult.data?.visitCreate?.userErrors?.length) {
       console.error("Jobber visit creation errors:", visitResult.data.visitCreate.userErrors);
