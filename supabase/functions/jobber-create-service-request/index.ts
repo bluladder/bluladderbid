@@ -339,10 +339,60 @@ Deno.serve(async (req) => {
       payload.notes ? `\nCustomer Notes: ${payload.notes}` : null,
     ].filter(Boolean).join("\n");
 
+    // Ensure we have a property ID (required for quote creation)
+    if (!propertyId) {
+      console.log("No property ID - creating default property for client");
+      const createDefaultPropertyMutation = `
+        mutation CreateProperty($clientId: EncodedId!, $input: PropertyCreateInput!) {
+          propertyCreate(clientId: $clientId, input: $input) {
+            properties {
+              id
+            }
+            userErrors {
+              message
+              path
+            }
+          }
+        }
+      `;
+
+      const defaultPropertyInput = {
+        properties: [
+          {
+            address: {
+              street1: payload.customer.address || "Service Address",
+              city: "Austin",
+              province: "TX",
+              postalCode: "78701",
+              country: "US"
+            }
+          }
+        ]
+      };
+      
+      const defaultPropertyResult = await jobberGraphQL<{
+        propertyCreate: {
+          properties: Array<{ id: string }>;
+          userErrors: Array<{ message: string; path?: string[] }>;
+        };
+      }>(createDefaultPropertyMutation, { clientId: jobberClientId, input: defaultPropertyInput });
+      
+      propertyId = defaultPropertyResult.data?.propertyCreate?.properties?.[0]?.id || null;
+      console.log("Default property created:", propertyId);
+      
+      if (!propertyId) {
+        console.error("Failed to create property:", JSON.stringify(defaultPropertyResult));
+        return new Response(
+          JSON.stringify({ error: "Failed to create property in Jobber" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+        );
+      }
+    }
+
     // Create quote in Jobber using correct API structure
     console.log("Creating quote in Jobber");
     const createQuoteMutation = `
-      mutation CreateQuote($attributes: QuoteAttributes!) {
+      mutation CreateQuote($attributes: QuoteCreateAttributes!) {
         quoteCreate(attributes: $attributes) {
           quote {
             id
@@ -367,10 +417,10 @@ Deno.serve(async (req) => {
 
     const quoteAttributes = {
       clientId: jobberClientId,
+      propertyId: propertyId,
       title: `${payload.selectedPlan.name} - Annual Service Plan`,
       message: quoteMessage,
       lineItems: jobberLineItems,
-      ...(propertyId && { propertyId }),
     };
 
     console.log("Quote creation attributes:", JSON.stringify(quoteAttributes));
