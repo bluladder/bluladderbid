@@ -2,8 +2,8 @@ import { Sparkles, Check, Star, ArrowLeft, Percent, Calendar, Settings2 } from '
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { PlanCustomizeDrawer } from './PlanCustomizeDrawer';
-import type { BundleTier, WindowFrequencyConfig } from '@/types/homeowner';
+import { PlanCustomizeDrawer, type PlanCustomization } from './PlanCustomizeDrawer';
+import type { BundleTier } from '@/types/homeowner';
 
 interface ServicePlanSelectorProps {
   bundles: BundleTier[];
@@ -12,7 +12,12 @@ interface ServicePlanSelectorProps {
   onBack: () => void;
   baseExteriorPrice: number;
   baseInteriorPrice: number;
-  onCustomizePlan?: (tier: 'good' | 'better' | 'best', config: WindowFrequencyConfig) => void;
+  servicePrices: {
+    gutterCleaning: number;
+    houseWash: number;
+    roofCleaning: number;
+  };
+  onCustomizePlan?: (tier: 'good' | 'better' | 'best', customization: PlanCustomization) => void;
 }
 
 function formatPrice(price: number) {
@@ -31,6 +36,7 @@ export function ServicePlanSelector({
   onBack,
   baseExteriorPrice,
   baseInteriorPrice,
+  servicePrices,
   onCustomizePlan,
 }: ServicePlanSelectorProps) {
   return (
@@ -132,7 +138,8 @@ export function ServicePlanSelector({
                     bundle={bundle}
                     baseExteriorPrice={baseExteriorPrice}
                     baseInteriorPrice={baseInteriorPrice}
-                    onCustomize={(config) => onCustomizePlan(bundle.tier, config)}
+                    servicePrices={servicePrices}
+                    onCustomize={(customization) => onCustomizePlan(bundle.tier, customization)}
                   >
                     <Button
                       variant="ghost"
@@ -141,7 +148,7 @@ export function ServicePlanSelector({
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Settings2 className="w-3.5 h-3.5" />
-                      Customize Frequency
+                      Customize Plan
                     </Button>
                   </PlanCustomizeDrawer>
                 )}
