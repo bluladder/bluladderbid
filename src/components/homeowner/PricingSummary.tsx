@@ -87,6 +87,25 @@ export function PricingSummary({
             {formatPrice(selectedBundle.monthlyPayment)}
             <span className="text-base font-normal text-muted-foreground">/month</span>
           </div>
+          
+          {/* Window Frequency Details */}
+          <div className="mt-3 pt-3 border-t border-primary/10 text-sm">
+            <div className="flex justify-between text-muted-foreground">
+              <span>Window Schedule:</span>
+              <span>
+                {selectedBundle.windowFrequencyConfig.interiorFrequency > 0 
+                  ? `Ext ${selectedBundle.windowFrequencyConfig.exteriorFrequency}x + Int ${selectedBundle.windowFrequencyConfig.interiorFrequency}x/yr`
+                  : `Exterior ${selectedBundle.windowFrequencyConfig.exteriorFrequency}x/year`
+                }
+              </span>
+            </div>
+            {selectedBundle.addonDiscountPercent > 0 && (
+              <div className="flex justify-between text-green-600 mt-1">
+                <span>Add-on Discount:</span>
+                <span>{selectedBundle.addonDiscountPercent}% off</span>
+              </div>
+            )}
+          </div>
         </div>
         
         {/* Service Breakdown */}

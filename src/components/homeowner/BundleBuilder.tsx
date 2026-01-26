@@ -1,6 +1,7 @@
-import { Sparkles, Check, Star } from 'lucide-react';
+import { Sparkles, Check, Star, Percent, Calendar } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { OneTimeQuote } from './OneTimeQuote';
 import type { BundleTier, ServicePrices, AdditionalServices } from '@/types/homeowner';
 
@@ -76,9 +77,9 @@ export function BundleBuilder({
                 </div>
               )}
               
-              <CardContent className={`p-6 ${isPopular ? 'pt-10' : ''}`}>
-                <div className="text-center mb-6">
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide mb-3 ${
+              <CardContent className={`p-5 ${isPopular ? 'pt-10' : ''}`}>
+                <div className="text-center mb-4">
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide mb-2 ${
                     bundle.tier === 'good' 
                       ? 'tier-badge-good' 
                       : bundle.tier === 'better' 
@@ -88,35 +89,57 @@ export function BundleBuilder({
                     {bundle.name}
                   </span>
                   <h3 className="text-lg font-semibold text-foreground">{bundle.label}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{bundle.description}</p>
                 </div>
                 
-                <div className="text-center mb-6">
-                  <div className="price-display text-4xl text-foreground">
+                <div className="text-center mb-4">
+                  <div className="price-display text-3xl text-foreground">
                     {formatPrice(bundle.monthlyPayment)}
-                    <span className="text-base font-normal text-muted-foreground">/mo</span>
+                    <span className="text-sm font-normal text-muted-foreground">/mo</span>
                   </div>
-                  <div className="text-sm text-muted-foreground mt-1">
+                  <div className="text-xs text-muted-foreground mt-1">
                     {formatPrice(bundle.annualTotal)} per year
                   </div>
                   {bundle.savings > 0 && (
-                    <div className="savings-badge mt-2">
-                      Save {formatPrice(bundle.savings)} ({bundle.savingsPercent}%)
+                    <div className="savings-badge mt-2 text-xs">
+                      Save {formatPrice(bundle.savings)}
                     </div>
                   )}
                 </div>
                 
-                <div className="space-y-3 mb-6">
-                  {bundle.features.map((feature, idx) => (
+                {/* Window Frequency Summary */}
+                <div className="p-2 rounded-md bg-muted/50 mb-3 text-xs">
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-primary" />
+                    <span className="font-medium">Windows</span>
+                  </div>
+                  <div className="text-muted-foreground mt-0.5">
+                    {bundle.windowFrequencyConfig.interiorFrequency > 0 ? (
+                      `Ext ${bundle.windowFrequencyConfig.exteriorFrequency}x + Int ${bundle.windowFrequencyConfig.interiorFrequency}x/yr`
+                    ) : (
+                      `Exterior ${bundle.windowFrequencyConfig.exteriorFrequency}x/year`
+                    )}
+                  </div>
+                </div>
+                
+                {/* Addon Discount */}
+                {bundle.addonDiscountPercent > 0 && (
+                  <Badge variant="outline" className="w-full justify-center mb-3 text-xs py-1">
+                    <Percent className="w-3 h-3 mr-1" />
+                    {bundle.addonDiscountPercent}% off add-ons
+                  </Badge>
+                )}
+                
+                <div className="space-y-2 mb-4">
+                  {bundle.features.slice(0, 3).map((feature, idx) => (
                     <div key={idx} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
-                      <span className="text-sm">{feature}</span>
+                      <Check className="w-3 h-3 text-success mt-0.5 flex-shrink-0" />
+                      <span className="text-xs">{feature}</span>
                     </div>
                   ))}
-                  {bundle.additionalServicesIncluded.map((service, idx) => (
+                  {bundle.additionalServicesIncluded.slice(0, 2).map((service, idx) => (
                     <div key={`add-${idx}`} className="flex items-start gap-2">
-                      <Sparkles className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                      <span className="text-sm">{service}</span>
+                      <Sparkles className="w-3 h-3 text-primary mt-0.5 flex-shrink-0" />
+                      <span className="text-xs">{service}</span>
                     </div>
                   ))}
                 </div>
@@ -124,6 +147,7 @@ export function BundleBuilder({
                 <Button
                   className={`w-full ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
                   variant={isSelected ? 'default' : 'outline'}
+                  size="sm"
                 >
                   {isSelected ? 'Selected' : 'Select Plan'}
                 </Button>

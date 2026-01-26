@@ -407,7 +407,7 @@ function ServicePricingSection({
         {Object.entries(values).map(([tier, config]) => {
           const tierConfig = config as Record<string, unknown>;
           return (
-            <div key={tier} className="space-y-3 p-4 rounded-lg border bg-card">
+            <div key={tier} className="space-y-4 p-4 rounded-lg border bg-card">
               <h4 className="text-sm font-semibold capitalize flex items-center gap-2">
                 <Badge variant={tier === 'best' ? 'default' : tier === 'better' ? 'secondary' : 'outline'}>
                   {tier}
@@ -417,7 +417,7 @@ function ServicePricingSection({
               
               <div className="grid gap-3">
                 <div className="flex items-center gap-2">
-                  <Label className="min-w-[140px] text-sm text-muted-foreground">Label</Label>
+                  <Label className="min-w-[160px] text-sm text-muted-foreground">Label</Label>
                   <Input
                     value={tierConfig.label as string}
                     onChange={(e) => handleValueChange([tier, 'label'], e.target.value)}
@@ -425,25 +425,47 @@ function ServicePricingSection({
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <Label className="min-w-[140px] text-sm text-muted-foreground">Description</Label>
+                  <Label className="min-w-[160px] text-sm text-muted-foreground">Description</Label>
                   <Input
                     value={tierConfig.description as string}
                     onChange={(e) => handleValueChange([tier, 'description'], e.target.value)}
                     className="flex-1"
                   />
                 </div>
+                
+                <Separator className="my-2" />
+                <h5 className="text-xs font-semibold uppercase text-muted-foreground">Window Cleaning Frequency</h5>
+                
                 <div className="flex items-center gap-2">
-                  <Label className="min-w-[140px] text-sm text-muted-foreground">Window Frequency</Label>
+                  <Label className="min-w-[160px] text-sm text-muted-foreground">Exterior Windows</Label>
                   <Input
                     type="number"
-                    value={tierConfig.windowFrequency as number}
-                    onChange={(e) => handleValueChange([tier, 'windowFrequency'], parseInt(e.target.value) || 1)}
+                    min={1}
+                    max={4}
+                    value={(tierConfig.exteriorWindowFrequency as number) ?? (tierConfig.windowFrequency as number) ?? 2}
+                    onChange={(e) => handleValueChange([tier, 'exteriorWindowFrequency'], parseInt(e.target.value) || 1)}
                     className="w-20"
                   />
                   <span className="text-xs text-muted-foreground">times/year</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Label className="min-w-[140px] text-sm text-muted-foreground">Other Services Freq</Label>
+                  <Label className="min-w-[160px] text-sm text-muted-foreground">Interior Windows</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={4}
+                    value={(tierConfig.interiorWindowFrequency as number) ?? 0}
+                    onChange={(e) => handleValueChange([tier, 'interiorWindowFrequency'], parseInt(e.target.value) || 0)}
+                    className="w-20"
+                  />
+                  <span className="text-xs text-muted-foreground">times/year (0 = not included)</span>
+                </div>
+                
+                <Separator className="my-2" />
+                <h5 className="text-xs font-semibold uppercase text-muted-foreground">Other Services</h5>
+                
+                <div className="flex items-center gap-2">
+                  <Label className="min-w-[160px] text-sm text-muted-foreground">Service Frequency</Label>
                   <Input
                     type="number"
                     value={tierConfig.additionalServicesFrequency as number}
@@ -452,16 +474,35 @@ function ServicePricingSection({
                   />
                   <span className="text-xs text-muted-foreground">times/year</span>
                 </div>
+                
+                <Separator className="my-2" />
+                <h5 className="text-xs font-semibold uppercase text-muted-foreground">Discounts</h5>
+                
                 <div className="flex items-center gap-2">
-                  <Label className="min-w-[140px] text-sm text-muted-foreground">Bundle Discount</Label>
+                  <Label className="min-w-[160px] text-sm text-muted-foreground">Bundle Discount</Label>
                   <Input
                     type="number"
-                    step="0.01"
-                    value={(tierConfig.discount as number) * 100}
-                    onChange={(e) => handleValueChange([tier, 'discount'], (parseFloat(e.target.value) || 0) / 100)}
+                    step="1"
+                    value={Math.round(((tierConfig.bundleDiscount as number) ?? (tierConfig.discount as number) ?? 0) * 100)}
+                    onChange={(e) => handleValueChange([tier, 'bundleDiscount'], (parseFloat(e.target.value) || 0) / 100)}
                     className="w-20"
                   />
                   <Percent className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">overall discount</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="min-w-[160px] text-sm text-muted-foreground">Add-on Discount</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={Math.round(((tierConfig.addonDiscount as number) ?? 0) * 100)}
+                    onChange={(e) => handleValueChange([tier, 'addonDiscount'], (parseFloat(e.target.value) || 0) / 100)}
+                    className="w-20"
+                  />
+                  <Percent className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">
+                    {tier === 'good' ? '(5% recommended)' : tier === 'better' ? '(10% recommended)' : '(15% recommended)'}
+                  </span>
                 </div>
               </div>
             </div>
