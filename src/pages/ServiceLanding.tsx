@@ -80,51 +80,57 @@ const ServiceLanding = () => {
   const config = SERVICE_CONFIG[service as ServiceSlug];
   const isEmbedMode = searchParams.get('embed') === 'true';
   
-  const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
-  const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(() => {
-    // Pre-select the featured service on its dedicated landing page
-    // Window Cleaning is ONLY pre-selected on /window-cleaning, not on other pages
-    if (config?.preSelectService) {
-      const updated = { ...DEFAULT_ADDITIONAL_SERVICES };
-      if (config.preSelectService === 'gutterCleaning') {
-        updated.gutterCleaning = true;
-      } else if (config.preSelectService === 'houseWash') {
-        updated.houseWash = true;
-      } else if (config.preSelectService === 'roofCleaning') {
-        updated.roofCleaning = true;
-      } else if (config.preSelectService === 'drivewayCleaning') {
-        updated.drivewayCleaning = { ...updated.drivewayCleaning, enabled: true };
-      } else if (config.preSelectService === 'pressureWashing') {
-        updated.pressureWashing = { ...updated.pressureWashing, enabled: true };
-      } else if (config.preSelectService === 'windowCleaning') {
-        updated.windowCleaning = true;
-      }
-      return updated;
-    }
-    return DEFAULT_ADDITIONAL_SERVICES;
-  });
+  const getLandingDefaultAdditionalServices = (
+    preSelectService?: (typeof SERVICE_CONFIG)[ServiceSlug]['preSelectService']
+  ): AdditionalServices => {
+    // Deep-ish clone so we never mutate the exported defaults (nested objects exist)
+    const base: AdditionalServices = {
+      ...DEFAULT_ADDITIONAL_SERVICES,
+      drivewayCleaning: { ...DEFAULT_ADDITIONAL_SERVICES.drivewayCleaning },
+      pressureWashing: {
+        ...DEFAULT_ADDITIONAL_SERVICES.pressureWashing,
+        frontPorch: { ...DEFAULT_ADDITIONAL_SERVICES.pressureWashing.frontPorch },
+        backPatio: { ...DEFAULT_ADDITIONAL_SERVICES.pressureWashing.backPatio },
+        poolDeck: { ...DEFAULT_ADDITIONAL_SERVICES.pressureWashing.poolDeck },
+        walkways: { ...DEFAULT_ADDITIONAL_SERVICES.pressureWashing.walkways },
+      },
+    };
 
-  // Re-apply featured service pre-selection if URL changes
-  useEffect(() => {
-    if (config?.preSelectService) {
-      setAdditionalServices(prev => {
-        const updated = { ...prev };
-        if (config.preSelectService === 'gutterCleaning') {
-          updated.gutterCleaning = true;
-        } else if (config.preSelectService === 'houseWash') {
-          updated.houseWash = true;
-        } else if (config.preSelectService === 'roofCleaning') {
-          updated.roofCleaning = true;
-        } else if (config.preSelectService === 'drivewayCleaning') {
-          updated.drivewayCleaning = { ...updated.drivewayCleaning, enabled: true };
-        } else if (config.preSelectService === 'pressureWashing') {
-          updated.pressureWashing = { ...updated.pressureWashing, enabled: true };
-        } else if (config.preSelectService === 'windowCleaning') {
-          updated.windowCleaning = true;
-        }
-        return updated;
-      });
+    switch (preSelectService) {
+      case 'windowCleaning':
+        base.windowCleaning = true;
+        break;
+      case 'gutterCleaning':
+        base.gutterCleaning = true;
+        break;
+      case 'houseWash':
+        base.houseWash = true;
+        break;
+      case 'roofCleaning':
+        base.roofCleaning = true;
+        break;
+      case 'drivewayCleaning':
+        base.drivewayCleaning = { ...base.drivewayCleaning, enabled: true };
+        break;
+      case 'pressureWashing':
+        base.pressureWashing = { ...base.pressureWashing, enabled: true };
+        break;
+      default:
+        break;
     }
+
+    return base;
+  };
+  
+  const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
+  const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(() =>
+    getLandingDefaultAdditionalServices(config?.preSelectService)
+  );
+
+  // When navigating between service landing routes, reset to that page's defaults.
+  // This prevents Window Cleaning (or any other selection) from "carrying over".
+  useEffect(() => {
+    setAdditionalServices(getLandingDefaultAdditionalServices(config?.preSelectService));
   }, [config?.preSelectService]);
   
   type FlowState = 'selecting' | 'one-time-booking' | 'plan-selected' | 'plan-expanded';
