@@ -8,8 +8,10 @@ import { DiscountCodesManager } from '@/components/admin/DiscountCodesManager';
 import { JobberIntegration } from '@/components/admin/JobberIntegration';
 import { TechnicianManager } from '@/components/admin/TechnicianManager';
 import { BusinessHoursSettings } from '@/components/admin/BusinessHoursSettings';
+import { DriveTimeSettings } from '@/components/admin/DriveTimeSettings';
 import { BookingsManager } from '@/components/admin/BookingsManager';
 import { MarketingAnalytics } from '@/components/admin/MarketingAnalytics';
+import { AdminAvailabilityViewer } from '@/components/admin/AdminAvailabilityViewer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -157,6 +159,12 @@ export default function Admin() {
             
             <TabsContent value="booking" className="space-y-6">
               <BusinessHoursSettings />
+              <DriveTimeSettings />
+              <AdminAvailabilityViewer 
+                services={[
+                  { service: 'windows_exterior', price: 200 },
+                ]}
+              />
               <JobberIntegration />
               <TechnicianManager />
             </TabsContent>

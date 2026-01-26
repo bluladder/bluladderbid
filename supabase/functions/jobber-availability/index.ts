@@ -16,6 +16,32 @@ interface AvailabilityRequest {
   startDate?: string;
   daysToCheck?: number;
   timezone?: string;
+  customerAddress?: string;
+  includeExcluded?: boolean; // Admin mode to see hidden slots
+}
+
+interface BufferTier {
+  min_drive: number;
+  max_drive: number;
+  buffer: number;
+}
+
+interface DriveTimeConfig {
+  base_buffer_minutes: number;
+  buffer_tiers: BufferTier[];
+  max_drive_time_minutes: number;
+  allow_long_first_drive: boolean;
+  earliest_start_hour: number;
+  latest_start_hour: number;
+  last_job_buffer_minutes: number;
+  no_long_last_drive: boolean;
+  office_address: string | null;
+}
+
+interface ExclusionReason {
+  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB';
+  message: string;
+  details?: string;
 }
 
 interface TimeSlot {
@@ -25,14 +51,36 @@ interface TimeSlot {
   endTime: string;
   durationMinutes: number;
   isRecommended?: boolean;
+  estimatedDriveMinutes?: number;
+  isFirstJob?: boolean;
+  isLongFirstDrive?: boolean;
+  // For admin visibility
+  excluded?: boolean;
+  exclusionReason?: ExclusionReason;
 }
 
 // Default business hours (used if not configured in database)
 const DEFAULT_BUSINESS_HOURS = {
-  startHour: 9, // 9 AM local time
-  endHour: 17, // 5 PM local time
-  workDays: [1, 2, 3, 4, 5, 6], // Monday through Saturday (0 = Sunday)
-  timezone: "America/Chicago", // Default timezone (CST/CDT)
+  startHour: 9,
+  endHour: 17,
+  workDays: [1, 2, 3, 4, 5, 6],
+  timezone: "America/Chicago",
+};
+
+const DEFAULT_DRIVE_TIME_CONFIG: DriveTimeConfig = {
+  base_buffer_minutes: 10,
+  buffer_tiers: [
+    { min_drive: 0, max_drive: 10, buffer: 10 },
+    { min_drive: 10, max_drive: 25, buffer: 20 },
+    { min_drive: 25, max_drive: 45, buffer: 30 },
+  ],
+  max_drive_time_minutes: 45,
+  allow_long_first_drive: true,
+  earliest_start_hour: 9,
+  latest_start_hour: 16,
+  last_job_buffer_minutes: 0,
+  no_long_last_drive: true,
+  office_address: null,
 };
 
 interface BusinessHoursConfig {
@@ -44,17 +92,14 @@ interface BusinessHoursConfig {
 
 // Helper to create a date in a specific timezone
 function createDateInTimezone(date: Date, hour: number, minute: number, timezone: string): Date {
-  // Format the date components
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   const hourStr = String(hour).padStart(2, '0');
   const minStr = String(minute).padStart(2, '0');
   
-  // Create ISO string for the local time
   const localDateStr = `${year}-${month}-${day}T${hourStr}:${minStr}:00`;
   
-  // Get the offset for this timezone at this time
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
@@ -66,8 +111,6 @@ function createDateInTimezone(date: Date, hour: number, minute: number, timezone
     hour12: false,
   });
   
-  // Parse by creating dates and finding the UTC equivalent
-  // We'll iterate to find the correct UTC time that corresponds to the local time
   let testDate = new Date(`${localDateStr}Z`);
   
   for (let i = 0; i < 2; i++) {
@@ -75,7 +118,6 @@ function createDateInTimezone(date: Date, hour: number, minute: number, timezone
     const localHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
     const localDay = parseInt(parts.find(p => p.type === 'day')?.value || '0');
     
-    // Adjust based on difference
     const hourDiff = hour - localHour;
     const dayDiff = parseInt(day) - localDay;
     
@@ -85,30 +127,42 @@ function createDateInTimezone(date: Date, hour: number, minute: number, timezone
   return testDate;
 }
 
-// Get current time in timezone
-function getNowInTimezone(timezone: string): { date: Date; hour: number; minute: number; dayOfWeek: number } {
-  const now = new Date();
+// Get hour in timezone
+function getHourInTimezone(date: Date, timezone: string): number {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit',
     hour12: false,
-    weekday: 'short',
   });
-  
-  const parts = formatter.formatToParts(now);
-  const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
-  const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
-  const weekdayStr = parts.find(p => p.type === 'weekday')?.value || 'Mon';
-  
-  const weekdayMap: Record<string, number> = {
-    'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
-  };
-  
-  return { date: now, hour, minute, dayOfWeek: weekdayMap[weekdayStr] || 1 };
+  const parts = formatter.formatToParts(date);
+  return parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+}
+
+// Estimate drive time between two addresses (simplified - returns random 5-40 min)
+// In production, you'd integrate with Google Maps Distance Matrix API
+function estimateDriveTime(fromAddress: string | null, toAddress: string | null): number {
+  if (!fromAddress || !toAddress) {
+    return 15; // Default estimate when addresses unknown
+  }
+  // Simplified estimation - in production use actual routing API
+  // For now, return a pseudo-random but consistent value based on address hash
+  const hash = (fromAddress + toAddress).split('').reduce((a, b) => {
+    a = ((a << 5) - a) + b.charCodeAt(0);
+    return a & a;
+  }, 0);
+  return 10 + Math.abs(hash % 35); // 10-45 minutes
+}
+
+// Get buffer for drive time based on tiers
+function getBufferForDriveTime(driveMinutes: number, config: DriveTimeConfig): number {
+  for (const tier of config.buffer_tiers) {
+    if (driveMinutes >= tier.min_drive && driveMinutes < tier.max_drive) {
+      return tier.buffer;
+    }
+  }
+  // If beyond all tiers, use the last tier's buffer
+  const lastTier = config.buffer_tiers[config.buffer_tiers.length - 1];
+  return lastTier?.buffer || config.base_buffer_minutes;
 }
 
 Deno.serve(async (req) => {
@@ -117,7 +171,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { services, startDate, daysToCheck = 14, timezone: clientTimezone }: AvailabilityRequest = await req.json();
+    const { 
+      services, 
+      startDate, 
+      daysToCheck = 14, 
+      customerAddress,
+      includeExcluded = false 
+    }: AvailabilityRequest = await req.json();
 
     if (!services || services.length === 0) {
       return new Response(
@@ -130,16 +190,14 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch business hours from config
+    // Fetch business hours
     let BUSINESS_HOURS: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS;
     
-    const { data: configData, error: configError } = await supabase
+    const { data: configData } = await supabase
       .from("pricing_config")
       .select("config_value")
       .eq("config_key", "business_hours")
       .maybeSingle();
-
-    console.log("Business hours config query result:", { configData, configError });
 
     if (configData?.config_value) {
       const cfg = configData.config_value as Record<string, unknown>;
@@ -149,13 +207,34 @@ Deno.serve(async (req) => {
         workDays: (cfg.workDays as number[]) ?? DEFAULT_BUSINESS_HOURS.workDays,
         timezone: (cfg.timezone as string) ?? DEFAULT_BUSINESS_HOURS.timezone,
       };
-      console.log("Using configured business hours:", BUSINESS_HOURS);
-    } else {
-      console.log("Using default business hours (no config found):", BUSINESS_HOURS);
+    }
+
+    // Fetch drive time config
+    let DRIVE_TIME_CONFIG: DriveTimeConfig = DEFAULT_DRIVE_TIME_CONFIG;
+    
+    const { data: driveConfigData } = await supabase
+      .from("drive_time_config")
+      .select("*")
+      .limit(1)
+      .maybeSingle();
+
+    if (driveConfigData) {
+      DRIVE_TIME_CONFIG = {
+        base_buffer_minutes: driveConfigData.base_buffer_minutes,
+        buffer_tiers: driveConfigData.buffer_tiers as BufferTier[],
+        max_drive_time_minutes: driveConfigData.max_drive_time_minutes,
+        allow_long_first_drive: driveConfigData.allow_long_first_drive,
+        earliest_start_hour: driveConfigData.earliest_start_hour,
+        latest_start_hour: driveConfigData.latest_start_hour,
+        last_job_buffer_minutes: driveConfigData.last_job_buffer_minutes,
+        no_long_last_drive: driveConfigData.no_long_last_drive,
+        office_address: driveConfigData.office_address,
+      };
     }
 
     const businessTimezone = BUSINESS_HOURS.timezone || DEFAULT_BUSINESS_HOURS.timezone;
     console.log("Using timezone:", businessTimezone);
+    console.log("Drive time config:", DRIVE_TIME_CONFIG);
 
     // Map service names to service_type enum
     const serviceTypeMap: Record<string, string> = {
@@ -172,13 +251,15 @@ Deno.serve(async (req) => {
       "pressureWashing": "driveway",
     };
 
-    // Get all active technicians with their rates
+    // Get all active technicians with their rates and locations
     const { data: technicians, error: techError } = await supabase
       .from("technicians")
       .select(`
         id,
         jobber_user_id,
         name,
+        starting_address,
+        location_type,
         technician_service_rates (
           service_type,
           dollars_per_hour,
@@ -196,7 +277,6 @@ Deno.serve(async (req) => {
     }
 
     console.log("Found technicians:", technicians.length);
-    console.log("Services requested:", services);
 
     // Calculate duration for each technician
     const eligibleTechs: Array<{
@@ -204,6 +284,8 @@ Deno.serve(async (req) => {
       jobberUserId: string;
       name: string;
       durationMinutes: number;
+      startingAddress: string | null;
+      locationType: string;
     }> = [];
 
     for (const tech of technicians) {
@@ -216,26 +298,28 @@ Deno.serve(async (req) => {
           (r: { service_type: string }) => r.service_type === serviceType
         );
 
-        console.log(`Tech ${tech.name}: service ${svc.service} -> ${serviceType}, rate:`, rate);
-
         if (!rate || rate.dollars_per_hour <= 0) {
           canPerformAll = false;
-          console.log(`Tech ${tech.name} disqualified: no rate for ${serviceType}`);
           break;
         }
 
-        // Duration calculation: ceil((price / dollars_per_hour) * 60) + buffer
         const minutes = Math.ceil((svc.price / rate.dollars_per_hour) * 60) + rate.buffer_minutes;
         totalDuration += minutes;
       }
 
       if (canPerformAll && totalDuration > 0) {
-        console.log(`Tech ${tech.name} eligible with duration ${totalDuration} minutes`);
+        // Determine starting address
+        const startingAddress = tech.location_type === 'home' 
+          ? tech.starting_address 
+          : DRIVE_TIME_CONFIG.office_address;
+          
         eligibleTechs.push({
           id: tech.id,
           jobberUserId: tech.jobber_user_id,
           name: tech.name,
           durationMinutes: totalDuration,
+          startingAddress,
+          locationType: tech.location_type,
         });
       }
     }
@@ -247,15 +331,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log("Eligible technicians:", eligibleTechs);
-
-    // Calculate date range - using local timezone
+    // Calculate date range
     const now = new Date();
     const fromDate = startDate ? new Date(startDate) : now;
-    
     const toDate = new Date(fromDate.getTime() + daysToCheck * 24 * 60 * 60 * 1000);
 
-    // Query Jobber for scheduled visits in the date range
+    // Query Jobber for scheduled visits with property addresses
     const scheduledItemsQuery = `
       query GetScheduledItems {
         visits(first: 200) {
@@ -266,6 +347,16 @@ Deno.serve(async (req) => {
             assignedUsers {
               nodes {
                 id
+              }
+            }
+            job {
+              property {
+                address {
+                  street
+                  city
+                  province
+                  postalCode
+                }
               }
             }
           }
@@ -282,26 +373,40 @@ Deno.serve(async (req) => {
           assignedUsers: {
             nodes: Array<{ id: string }>;
           };
+          job?: {
+            property?: {
+              address?: {
+                street?: string;
+                city?: string;
+                province?: string;
+                postalCode?: string;
+              };
+            };
+          };
         }>;
       };
     }>(scheduledItemsQuery, {});
 
-    // Build a map of busy times per technician
-    const busyTimesByTech: Record<string, Array<{ start: Date; end: Date }>> = {};
+    // Build a map of busy times per technician with addresses
+    const busyTimesByTech: Record<string, Array<{ 
+      start: Date; 
+      end: Date;
+      address: string | null;
+    }>> = {};
 
     if (jobberResult.data?.visits?.nodes) {
-      console.log("Found visits from Jobber:", jobberResult.data.visits.nodes.length);
-      
-      // Filter visits to only those in our date range
       const relevantVisits = jobberResult.data.visits.nodes.filter(visit => {
         const visitStart = new Date(visit.startAt);
         return visitStart >= fromDate && visitStart < toDate;
       });
       
-      console.log("Relevant visits in date range:", relevantVisits.length);
-      
       for (const visit of relevantVisits) {
         const users = visit.assignedUsers?.nodes || [];
+        const addr = visit.job?.property?.address;
+        const address = addr 
+          ? `${addr.street || ''}, ${addr.city || ''}, ${addr.province || ''} ${addr.postalCode || ''}`.trim()
+          : null;
+          
         for (const user of users) {
           if (!busyTimesByTech[user.id]) {
             busyTimesByTech[user.id] = [];
@@ -309,23 +414,20 @@ Deno.serve(async (req) => {
           busyTimesByTech[user.id].push({
             start: new Date(visit.startAt),
             end: new Date(visit.endAt),
+            address,
           });
         }
       }
-    } else {
-      console.log("No visits found or query failed:", jobberResult.errors);
     }
 
     // Generate available slots for each eligible technician
-    const slots: TimeSlot[] = [];
+    const allSlots: TimeSlot[] = [];
+    const excludedSlots: TimeSlot[] = [];
 
     for (const tech of eligibleTechs) {
       const techBusyTimes = busyTimesByTech[tech.jobberUserId] || [];
-      
-      // Sort busy times by start
       techBusyTimes.sort((a, b) => a.start.getTime() - b.start.getTime());
 
-      // Generate slots for each business day
       let dayOffset = 0;
       
       while (dayOffset < daysToCheck) {
@@ -342,28 +444,21 @@ Deno.serve(async (req) => {
         };
         const dayOfWeek = weekdayMap[weekdayStr] ?? 1;
         
-        // Skip non-work days
         if (!BUSINESS_HOURS.workDays.includes(dayOfWeek)) {
           dayOffset++;
           continue;
         }
 
-        // Create business hours for this day in the correct timezone
         const dayStart = createDateInTimezone(currentDay, BUSINESS_HOURS.startHour, 0, businessTimezone);
         const dayEnd = createDateInTimezone(currentDay, BUSINESS_HOURS.endHour, 0, businessTimezone);
 
-        console.log(`Day ${dayOffset}: ${currentDay.toDateString()} -> Start: ${dayStart.toISOString()}, End: ${dayEnd.toISOString()}`);
-
-        // Skip if day is completely in the past
         if (dayEnd <= now) {
           dayOffset++;
           continue;
         }
 
-        // Adjust start time if it's today and past business start
         let effectiveStart = new Date(dayStart);
         if (now > dayStart && now < dayEnd) {
-          // Round up to next 30-minute slot
           effectiveStart = new Date(now);
           const currentMinutes = effectiveStart.getMinutes();
           const roundedMinutes = Math.ceil(currentMinutes / 30) * 30;
@@ -379,25 +474,118 @@ Deno.serve(async (req) => {
           bt => bt.start >= dayStart && bt.start < dayEnd
         );
 
-        // Generate available slots avoiding busy times
+        // Check if this is the first job of the day
+        const hasEarlierJobToday = todayBusyTimes.some(bt => bt.start < effectiveStart);
+
+        // Generate slots
         let slotStart = new Date(effectiveStart);
         
         while (slotStart.getTime() + tech.durationMinutes * 60 * 1000 <= dayEnd.getTime()) {
           const slotEnd = new Date(slotStart.getTime() + tech.durationMinutes * 60 * 1000);
+          const slotHour = getHourInTimezone(slotStart, businessTimezone);
           
-          // Check if this slot conflicts with any busy time
+          // Check for overlap
           const hasConflict = todayBusyTimes.some(bt => 
             (slotStart < bt.end && slotEnd > bt.start)
           );
 
-          if (!hasConflict) {
-            slots.push({
-              technicianId: tech.id,
-              technicianName: tech.name,
-              startTime: slotStart.toISOString(),
-              endTime: slotEnd.toISOString(),
-              durationMinutes: tech.durationMinutes,
-            });
+          // Determine if this is first job
+          const isFirstJob = !hasEarlierJobToday && 
+            !todayBusyTimes.some(bt => bt.end <= slotStart);
+
+          // Get previous appointment (for drive time calculation)
+          const previousAppointment = todayBusyTimes
+            .filter(bt => bt.end <= slotStart)
+            .sort((a, b) => b.end.getTime() - a.end.getTime())[0];
+
+          // Calculate drive time
+          const fromAddress = isFirstJob 
+            ? tech.startingAddress 
+            : previousAppointment?.address;
+          const driveMinutes = estimateDriveTime(fromAddress || null, customerAddress || null);
+          
+          // Get buffer based on drive time
+          const driveBuffer = getBufferForDriveTime(driveMinutes, DRIVE_TIME_CONFIG);
+          
+          // Build slot object
+          const slot: TimeSlot = {
+            technicianId: tech.id,
+            technicianName: tech.name,
+            startTime: slotStart.toISOString(),
+            endTime: slotEnd.toISOString(),
+            durationMinutes: tech.durationMinutes,
+            estimatedDriveMinutes: driveMinutes,
+            isFirstJob,
+          };
+
+          // Check exclusion reasons
+          let exclusionReason: ExclusionReason | null = null;
+
+          if (hasConflict) {
+            exclusionReason = {
+              code: 'OVERLAP',
+              message: 'Overlaps existing appointment',
+            };
+          } else if (slotHour < DRIVE_TIME_CONFIG.earliest_start_hour) {
+            exclusionReason = {
+              code: 'BOUNDARY',
+              message: 'Before earliest start time',
+              details: `Slot starts at ${slotHour}:00, earliest allowed is ${DRIVE_TIME_CONFIG.earliest_start_hour}:00`,
+            };
+          } else if (slotHour >= DRIVE_TIME_CONFIG.latest_start_hour) {
+            exclusionReason = {
+              code: 'BOUNDARY',
+              message: 'After latest start time',
+              details: `Slot starts at ${slotHour}:00, latest allowed is ${DRIVE_TIME_CONFIG.latest_start_hour}:00`,
+            };
+          } else if (driveMinutes > DRIVE_TIME_CONFIG.max_drive_time_minutes) {
+            // Check if first job exception applies
+            if (isFirstJob && DRIVE_TIME_CONFIG.allow_long_first_drive) {
+              slot.isLongFirstDrive = true;
+              // Allow it, but mark it
+            } else {
+              exclusionReason = {
+                code: 'DRIVE_TIME',
+                message: 'Exceeds drive time limit',
+                details: `${driveMinutes} min drive exceeds ${DRIVE_TIME_CONFIG.max_drive_time_minutes} min max`,
+              };
+            }
+          }
+
+          // Check last job rules
+          const isLikelyLastJob = !todayBusyTimes.some(bt => bt.start > slotEnd);
+          if (isLikelyLastJob && !exclusionReason) {
+            // Check if long drive as last job
+            if (DRIVE_TIME_CONFIG.no_long_last_drive && 
+                driveMinutes > DRIVE_TIME_CONFIG.max_drive_time_minutes) {
+              exclusionReason = {
+                code: 'LAST_JOB',
+                message: 'Long drive not allowed for last job',
+                details: `${driveMinutes} min drive too long for last job of day`,
+              };
+            }
+          }
+
+          // Check buffer timing
+          if (!exclusionReason && previousAppointment) {
+            const gapMinutes = (slotStart.getTime() - previousAppointment.end.getTime()) / (60 * 1000);
+            const requiredBuffer = driveBuffer + DRIVE_TIME_CONFIG.base_buffer_minutes;
+            
+            if (gapMinutes < requiredBuffer) {
+              exclusionReason = {
+                code: 'BUFFER',
+                message: 'Insufficient buffer time',
+                details: `${gapMinutes.toFixed(0)} min gap, need ${requiredBuffer} min (${driveMinutes} min drive + buffer)`,
+              };
+            }
+          }
+
+          if (exclusionReason) {
+            slot.excluded = true;
+            slot.exclusionReason = exclusionReason;
+            excludedSlots.push(slot);
+          } else {
+            allSlots.push(slot);
           }
 
           // Move to next 30-minute interval
@@ -409,31 +597,53 @@ Deno.serve(async (req) => {
     }
 
     // Sort slots by start time
-    slots.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    allSlots.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    excludedSlots.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
     // Mark the first slot as recommended
-    if (slots.length > 0) {
-      slots[0].isRecommended = true;
+    if (allSlots.length > 0) {
+      allSlots[0].isRecommended = true;
     }
 
-    // Limit to first 50 slots
-    const limitedSlots = slots.slice(0, 50);
+    // Limit results
+    const limitedSlots = allSlots.slice(0, 50);
 
-    console.log(`Generated ${slots.length} total slots, returning ${limitedSlots.length}`);
+    console.log(`Generated ${allSlots.length} available slots, ${excludedSlots.length} excluded`);
+
+    const response: {
+      slots: TimeSlot[];
+      totalAvailable: number;
+      eligibleTechnicians: Array<{ id: string; name: string; durationMinutes: number }>;
+      excludedSlots?: TimeSlot[];
+      totalExcluded?: number;
+    } = {
+      slots: limitedSlots,
+      totalAvailable: allSlots.length,
+      eligibleTechnicians: eligibleTechs.map(t => ({ 
+        id: t.id, 
+        name: t.name, 
+        durationMinutes: t.durationMinutes 
+      })),
+    };
+
+    // Include excluded slots if admin mode
+    if (includeExcluded) {
+      response.excludedSlots = excludedSlots.slice(0, 50);
+      response.totalExcluded = excludedSlots.length;
+    }
 
     return new Response(
-      JSON.stringify({
-        slots: limitedSlots,
-        totalAvailable: slots.length,
-        eligibleTechnicians: eligibleTechs.map(t => ({ id: t.id, name: t.name, durationMinutes: t.durationMinutes })),
-      }),
+      JSON.stringify(response),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
     console.error("Availability error:", error);
     return new Response(
-      JSON.stringify({ error: "Failed to check availability", details: error instanceof Error ? error.message : String(error) }),
+      JSON.stringify({ 
+        error: "Failed to check availability", 
+        details: error instanceof Error ? error.message : String(error) 
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
     );
   }
