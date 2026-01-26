@@ -151,20 +151,18 @@ Deno.serve(async (req) => {
     const toDate = new Date(fromDate.getTime() + daysToCheck * 24 * 60 * 60 * 1000);
 
     // Query Jobber for scheduled visits in the date range
+    // Note: Jobber's visit filter uses 'after' and 'before' for date ranges
     const scheduledItemsQuery = `
-      query GetScheduledItems($startDate: ISO8601DateTime!, $endDate: ISO8601DateTime!) {
-        visits(
-          filter: {
-            startAt: { gte: $startDate, lt: $endDate }
-          }
-          first: 200
-        ) {
+      query GetScheduledItems {
+        visits(first: 200) {
           nodes {
             id
             startAt
             endAt
             assignedUsers {
-              id
+              nodes {
+                id
+              }
             }
           }
         }
@@ -177,21 +175,30 @@ Deno.serve(async (req) => {
           id: string;
           startAt: string;
           endAt: string;
-          assignedUsers: Array<{ id: string }>;
+          assignedUsers: {
+            nodes: Array<{ id: string }>;
+          };
         }>;
       };
-    }>(scheduledItemsQuery, {
-      startDate: fromDate.toISOString(),
-      endDate: toDate.toISOString(),
-    });
+    }>(scheduledItemsQuery, {});
 
     // Build a map of busy times per technician
     const busyTimesByTech: Record<string, Array<{ start: Date; end: Date }>> = {};
 
     if (jobberResult.data?.visits?.nodes) {
       console.log("Found visits from Jobber:", jobberResult.data.visits.nodes.length);
-      for (const visit of jobberResult.data.visits.nodes) {
-        for (const user of visit.assignedUsers || []) {
+      
+      // Filter visits to only those in our date range (since we can't filter in the query)
+      const relevantVisits = jobberResult.data.visits.nodes.filter(visit => {
+        const visitStart = new Date(visit.startAt);
+        return visitStart >= fromDate && visitStart < toDate;
+      });
+      
+      console.log("Relevant visits in date range:", relevantVisits.length);
+      
+      for (const visit of relevantVisits) {
+        const users = visit.assignedUsers?.nodes || [];
+        for (const user of users) {
           if (!busyTimesByTech[user.id]) {
             busyTimesByTech[user.id] = [];
           }
