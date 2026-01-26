@@ -57,7 +57,14 @@ export function JobberIntegration() {
         throw new Error('No authorization URL returned');
       }
       
-      window.location.href = data.authUrl;
+      // Open in new window to avoid iframe restrictions
+      const popup = window.open(data.authUrl, '_blank', 'width=600,height=700');
+      if (!popup) {
+        // Fallback: try opening without popup features
+        window.open(data.authUrl, '_blank');
+      }
+      toast.info('Complete the authorization in the popup window, then refresh this page.');
+      setIsLoading(false);
     } catch (error) {
       console.error('Failed to initiate Jobber connection:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to connect to Jobber');
