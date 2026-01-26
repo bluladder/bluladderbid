@@ -378,26 +378,9 @@ Deno.serve(async (req) => {
     console.log("Using property ID:", propertyId);
 
     // Build notes for the job
-    const notesLines = [
-      "--- BluLadder Online Booking ---",
-      "",
-      "Home Details:",
-      JSON.stringify(booking.homeDetails, null, 2),
-      "",
-      "Services:",
-      ...booking.services.map(s => `- ${s.name}: $${s.price.toFixed(2)}`),
-      "",
-      `Subtotal: $${booking.subtotal.toFixed(2)}`,
-    ];
-
-    if (booking.discountCode && booking.discountAmount) {
-      notesLines.push(`Discount (${booking.discountCode}): -$${booking.discountAmount.toFixed(2)}`);
-    }
-    notesLines.push(`Total: $${booking.total.toFixed(2)}`);
-
-    if (booking.notes) {
-      notesLines.push("", "Customer Notes:", booking.notes);
-    }
+    // Only include customer's special instructions in Jobber job notes
+    // The detailed home info, services, and pricing are tracked in our local booking record
+    const jobInstructions = booking.notes?.trim() || "";
 
     // Create job in Jobber using JobCreateAttributes
     console.log("Creating job in Jobber");
@@ -440,7 +423,7 @@ Deno.serve(async (req) => {
     const jobInput = {
       propertyId: propertyId,
       title: `BluLadder Services - ${booking.customer.firstName} ${booking.customer.lastName}`,
-      instructions: notesLines.join("\n"),
+      instructions: jobInstructions,
       lineItems,
       invoicing: {
         invoicingType: "VISIT_BASED",
