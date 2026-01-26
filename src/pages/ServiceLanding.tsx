@@ -82,23 +82,10 @@ const ServiceLanding = () => {
   
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(() => {
-    // Pre-select the focused service
-    if (config?.preSelectService) {
-      const updated = { ...DEFAULT_ADDITIONAL_SERVICES };
-      if (config.preSelectService === 'windowCleaning') {
-        updated.windowCleaning = true;
-      } else if (config.preSelectService === 'gutterCleaning') {
-        updated.gutterCleaning = true;
-      } else if (config.preSelectService === 'houseWash') {
-        updated.houseWash = true;
-      } else if (config.preSelectService === 'roofCleaning') {
-        updated.roofCleaning = true;
-      } else if (config.preSelectService === 'drivewayCleaning') {
-        updated.drivewayCleaning = { ...updated.drivewayCleaning, enabled: true };
-      } else if (config.preSelectService === 'pressureWashing') {
-        updated.pressureWashing = { ...updated.pressureWashing, enabled: true };
-      }
-      return updated;
+    // Only pre-select window cleaning on the /window-cleaning page
+    // Other service pages show all services unselected for user choice
+    if (config?.preSelectService === 'windowCleaning') {
+      return { ...DEFAULT_ADDITIONAL_SERVICES, windowCleaning: true };
     }
     return DEFAULT_ADDITIONAL_SERVICES;
   });
@@ -110,26 +97,10 @@ const ServiceLanding = () => {
   const { servicePrices, bundles } = useServicePricing(homeDetails, additionalServices);
   const { customizations, setTierCustomization } = usePlanCustomizations();
 
-  // Re-apply service pre-selection if URL changes
+  // Re-apply window cleaning pre-selection if URL changes to /window-cleaning
   useEffect(() => {
-    if (config?.preSelectService) {
-      setAdditionalServices(prev => {
-        const updated = { ...prev };
-        if (config.preSelectService === 'windowCleaning') {
-          updated.windowCleaning = true;
-        } else if (config.preSelectService === 'gutterCleaning') {
-          updated.gutterCleaning = true;
-        } else if (config.preSelectService === 'houseWash') {
-          updated.houseWash = true;
-        } else if (config.preSelectService === 'roofCleaning') {
-          updated.roofCleaning = true;
-        } else if (config.preSelectService === 'drivewayCleaning') {
-          updated.drivewayCleaning = { ...updated.drivewayCleaning, enabled: true };
-        } else if (config.preSelectService === 'pressureWashing') {
-          updated.pressureWashing = { ...updated.pressureWashing, enabled: true };
-        }
-        return updated;
-      });
+    if (config?.preSelectService === 'windowCleaning') {
+      setAdditionalServices(prev => ({ ...prev, windowCleaning: true }));
     }
   }, [config?.preSelectService]);
 
