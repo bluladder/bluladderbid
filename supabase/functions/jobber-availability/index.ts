@@ -6,6 +6,50 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// ---------------- Jobber throttling + cache (fail-closed, but avoid hard downtime) ----------------
+// If Jobber rate-limits us, we:
+// 1) enter a short cooldown to avoid repeatedly triggering throttling
+// 2) if we have a recent cached visits payload that covers the requested range, we use it
+let lastJobberThrottleAtMs: number | null = null;
+const JOBBER_THROTTLE_COOLDOWN_MS = 60_000; // 60s
+const JOBBER_VISITS_CACHE_TTL_MS = 2 * 60_000; // 2 minutes
+
+let lastJobberAuthErrorAtMs: number | null = null;
+const JOBBER_AUTH_COOLDOWN_MS = 5 * 60_000; // 5 minutes
+
+type JobberVisitResult = {
+  visits: {
+    nodes: Array<{
+      id: string;
+      startAt: string;
+      endAt: string;
+      assignedUsers: {
+        nodes: Array<{ id: string }>;
+      };
+      job?: {
+        property?: {
+          address?: {
+            street?: string;
+            city?: string;
+            province?: string;
+            postalCode?: string;
+          };
+        };
+      };
+    }>;
+  };
+};
+
+type JobberGraphQLError = { message: string; extensions?: { code?: string } };
+type JobberGraphQLResult<T> = { data?: T; errors?: JobberGraphQLError[] };
+
+let jobberVisitsCache: {
+  fromISO: string;
+  toISO: string;
+  fetchedAtMs: number;
+  data: JobberVisitResult;
+} | null = null;
+
 interface ServicePrice {
   service: string;
   price: number;
@@ -522,94 +566,139 @@ Deno.serve(async (req) => {
       }
     `;
 
-    // Retry logic for Jobber API with exponential backoff
-    type JobberVisitResult = {
-      visits: {
-        nodes: Array<{
-          id: string;
-          startAt: string;
-          endAt: string;
-          assignedUsers: {
-            nodes: Array<{ id: string }>;
-          };
-          job?: {
-            property?: {
-              address?: {
-                street?: string;
-                city?: string;
-                province?: string;
-                postalCode?: string;
-              };
-            };
-          };
-        }>;
-      };
-    };
+    // Fetch visits from Jobber with:
+    // - cooldown when throttled (reduces repeated throttle hits)
+    // - short-lived in-memory cache fallback (keeps availability working without showing "all slots")
+    const nowMs = Date.now();
+    const cacheFresh = !!jobberVisitsCache && (nowMs - jobberVisitsCache.fetchedAtMs) < JOBBER_VISITS_CACHE_TTL_MS;
+    const cacheCoversRange =
+      cacheFresh &&
+      !!jobberVisitsCache &&
+      jobberVisitsCache.fromISO <= fromDateISO &&
+      jobberVisitsCache.toISO >= toDateISO;
 
-    let jobberResult: { data?: JobberVisitResult; errors?: Array<{ message: string; extensions?: { code?: string } }> } | null = null;
-    let lastError: string | null = null;
-    const maxRetries = 3;
-    const baseDelayMs = 2000; // 2 seconds
+    const inCooldown =
+      lastJobberThrottleAtMs !== null &&
+      (nowMs - lastJobberThrottleAtMs) < JOBBER_THROTTLE_COOLDOWN_MS;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      console.log(`Jobber API attempt ${attempt}/${maxRetries}`);
-      
-      jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, { 
+    const retryAfterSec = inCooldown && lastJobberThrottleAtMs !== null
+      ? Math.max(1, Math.ceil((JOBBER_THROTTLE_COOLDOWN_MS - (nowMs - lastJobberThrottleAtMs)) / 1000))
+      : 30;
+
+    const inAuthCooldown =
+      lastJobberAuthErrorAtMs !== null &&
+      (nowMs - lastJobberAuthErrorAtMs) < JOBBER_AUTH_COOLDOWN_MS;
+
+    let jobberResult: JobberGraphQLResult<JobberVisitResult> | null = null;
+
+    if (inCooldown) {
+      if (cacheCoversRange) {
+        console.log(
+          `Jobber throttling cooldown active; using cached visits (${Math.round((nowMs - jobberVisitsCache!.fetchedAtMs) / 1000)}s old)`
+        );
+        jobberResult = { data: jobberVisitsCache!.data };
+      } else {
+        console.error("Jobber throttling cooldown active and no usable cache - returning 503");
+        return new Response(
+          JSON.stringify({
+            error: "Scheduling system is temporarily busy. Please try again in a few moments.",
+            retryAfter: retryAfterSec,
+            slots: [],
+            recommendedDays: [],
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+        );
+      }
+    } else {
+      if (inAuthCooldown) {
+        return new Response(
+          JSON.stringify({
+            error: "Scheduling connection needs admin re-authentication. Please reconnect in Admin → Jobber Integration.",
+            code: "JOBBER_AUTH",
+            retryAfter: Math.max(60, Math.ceil((JOBBER_AUTH_COOLDOWN_MS - (nowMs - lastJobberAuthErrorAtMs!)) / 1000)),
+            requiresAdminAction: true,
+            slots: [],
+            recommendedDays: [],
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+        );
+      }
+
+      console.log("Jobber API attempt 1/1");
+      jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, {
         startDateAfter: fromDateISO,
         startDateBefore: toDateISO,
       });
 
-      // Check if throttled
-      const isThrottled = jobberResult.errors?.some(e => 
-        e.extensions?.code === 'THROTTLED' || e.message?.includes('Throttled')
+      const isThrottled = jobberResult.errors?.some((e) =>
+        e.extensions?.code === "THROTTLED" || e.message?.includes("Throttled")
       );
 
-      if (isThrottled && attempt < maxRetries) {
-        const delayMs = baseDelayMs * Math.pow(2, attempt - 1); // Exponential backoff: 2s, 4s, 8s
-        console.log(`Jobber API throttled, waiting ${delayMs}ms before retry...`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        continue;
+      if (isThrottled) {
+        lastJobberThrottleAtMs = nowMs;
+        if (cacheCoversRange) {
+          console.log("Jobber throttled; falling back to cached visits");
+          jobberResult = { data: jobberVisitsCache!.data };
+        } else {
+          console.error("Jobber API throttled and no usable cache - returning 503 to prevent conflicts");
+          return new Response(
+            JSON.stringify({
+              error: "Scheduling system is temporarily busy. Please try again in a few moments.",
+              retryAfter: Math.max(30, retryAfterSec),
+              slots: [],
+              recommendedDays: [],
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+          );
+        }
+      } else {
+        // If we have any non-throttle errors, fail closed (do not show availability that could conflict)
+        if (jobberResult.errors && jobberResult.errors.length > 0) {
+          const isAuthError = jobberResult.errors.some((e) =>
+            (e.message || "").toLowerCase().includes("no valid jobber access token") ||
+            (e.message || "").toLowerCase().includes("unauthorized") ||
+            (e.message || "").toLowerCase().includes("invalid")
+          );
+
+          if (isAuthError) {
+            lastJobberAuthErrorAtMs = nowMs;
+            console.error("Jobber auth error - admin re-authentication required:", jobberResult.errors);
+            return new Response(
+              JSON.stringify({
+                error: "Scheduling connection needs admin re-authentication. Please reconnect in Admin → Jobber Integration.",
+                code: "JOBBER_AUTH",
+                retryAfter: 300,
+                requiresAdminAction: true,
+                slots: [],
+                recommendedDays: [],
+              }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+            );
+          }
+
+          console.error("Jobber API error (non-throttle) - failing closed:", jobberResult.errors);
+          return new Response(
+            JSON.stringify({
+              error: "Scheduling system is temporarily unavailable. Please try again shortly.",
+              code: "JOBBER_ERROR",
+              retryAfter: 60,
+              slots: [],
+              recommendedDays: [],
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+          );
+        }
+
+        // On success, update cache (even if it is an empty array of visits)
+        if (jobberResult.data?.visits?.nodes) {
+          jobberVisitsCache = {
+            fromISO: fromDateISO,
+            toISO: toDateISO,
+            fetchedAtMs: nowMs,
+            data: jobberResult.data,
+          };
+        }
       }
-
-      // Check if we got data successfully
-      if (jobberResult.data?.visits?.nodes) {
-        console.log(`Successfully fetched ${jobberResult.data.visits.nodes.length} visits from Jobber`);
-        break;
-      }
-
-      // If there's an error other than throttling, log it
-      if (jobberResult.errors && !isThrottled) {
-        lastError = jobberResult.errors.map(e => e.message).join(', ');
-        console.error("Jobber API error:", lastError);
-        break;
-      }
-
-      // No data and no errors - empty result (which is valid)
-      if (!jobberResult.errors) {
-        console.log("Jobber returned empty visits array (no appointments in range)");
-        break;
-      }
-
-      lastError = jobberResult.errors?.map(e => e.message).join(', ') || 'Unknown error';
-    }
-
-    // CRITICAL: If we still have throttling errors after all retries, return error
-    // This prevents showing potentially conflicting slots
-    const stillThrottled = jobberResult?.errors?.some(e => 
-      e.extensions?.code === 'THROTTLED' || e.message?.includes('Throttled')
-    );
-
-    if (stillThrottled) {
-      console.error("Jobber API still throttled after all retries - returning error to prevent conflicts");
-      return new Response(
-        JSON.stringify({ 
-          error: "Scheduling system is temporarily busy. Please try again in a few moments.",
-          retryAfter: 30, // Suggest retry in 30 seconds
-          slots: [],
-          recommendedDays: [],
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-      );
     }
 
     // Build a map of busy times per technician with addresses
