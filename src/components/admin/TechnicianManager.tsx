@@ -8,7 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 
 interface Technician {
@@ -17,6 +18,8 @@ interface Technician {
   name: string;
   email: string | null;
   is_active: boolean;
+  starting_address: string | null;
+  location_type: 'office' | 'home';
 }
 
 const SERVICE_TYPES = [
@@ -50,6 +53,8 @@ export function TechnicianManager() {
     jobber_user_id: '',
     email: '',
     is_active: true,
+    starting_address: '',
+    location_type: 'office' as 'office' | 'home',
   });
 
   const fetchTechnicians = async () => {
@@ -61,7 +66,10 @@ export function TechnicianManager() {
         .order('name');
 
       if (error) throw error;
-      setTechnicians(data || []);
+      setTechnicians((data || []).map(t => ({
+        ...t,
+        location_type: t.location_type as 'office' | 'home',
+      })));
     } catch (error) {
       console.error('Failed to fetch technicians:', error);
       toast.error('Failed to load technicians');
@@ -118,6 +126,8 @@ export function TechnicianManager() {
             jobber_user_id: formData.jobber_user_id,
             email: formData.email || null,
             is_active: formData.is_active,
+            starting_address: formData.starting_address || null,
+            location_type: formData.location_type,
           })
           .eq('id', editingTech.id);
 
@@ -131,6 +141,8 @@ export function TechnicianManager() {
             jobber_user_id: formData.jobber_user_id,
             email: formData.email || null,
             is_active: formData.is_active,
+            starting_address: formData.starting_address || null,
+            location_type: formData.location_type,
           });
 
         if (error) throw error;
@@ -253,6 +265,8 @@ export function TechnicianManager() {
       jobber_user_id: '',
       email: '',
       is_active: true,
+      starting_address: '',
+      location_type: 'office',
     });
     setEditingTech(null);
   };
@@ -264,6 +278,8 @@ export function TechnicianManager() {
       jobber_user_id: tech.jobber_user_id,
       email: tech.email || '',
       is_active: tech.is_active,
+      starting_address: tech.starting_address || '',
+      location_type: tech.location_type,
     });
     setIsDialogOpen(true);
   };
@@ -335,6 +351,35 @@ export function TechnicianManager() {
                     placeholder="john@example.com"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="location_type">Starting Location</Label>
+                  <Select
+                    value={formData.location_type}
+                    onValueChange={(v) => setFormData({ ...formData, location_type: v as 'office' | 'home' })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="office">Starts from Office</SelectItem>
+                      <SelectItem value="home">Starts from Home</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {formData.location_type === 'home' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="starting_address" className="flex items-center gap-1">
+                      <MapPin className="h-3 w-3" />
+                      Home Address
+                    </Label>
+                    <Input
+                      id="starting_address"
+                      value={formData.starting_address}
+                      onChange={(e) => setFormData({ ...formData, starting_address: e.target.value })}
+                      placeholder="123 Main St, City, State ZIP"
+                    />
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <Switch
                     id="is_active"

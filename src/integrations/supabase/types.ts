@@ -185,6 +185,51 @@ export type Database = {
         }
         Relationships: []
       }
+      drive_time_config: {
+        Row: {
+          allow_long_first_drive: boolean
+          base_buffer_minutes: number
+          buffer_tiers: Json
+          created_at: string
+          earliest_start_hour: number
+          id: string
+          last_job_buffer_minutes: number
+          latest_start_hour: number
+          max_drive_time_minutes: number
+          no_long_last_drive: boolean
+          office_address: string | null
+          updated_at: string
+        }
+        Insert: {
+          allow_long_first_drive?: boolean
+          base_buffer_minutes?: number
+          buffer_tiers?: Json
+          created_at?: string
+          earliest_start_hour?: number
+          id?: string
+          last_job_buffer_minutes?: number
+          latest_start_hour?: number
+          max_drive_time_minutes?: number
+          no_long_last_drive?: boolean
+          office_address?: string | null
+          updated_at?: string
+        }
+        Update: {
+          allow_long_first_drive?: boolean
+          base_buffer_minutes?: number
+          buffer_tiers?: Json
+          created_at?: string
+          earliest_start_hour?: number
+          id?: string
+          last_job_buffer_minutes?: number
+          latest_start_hour?: number
+          max_drive_time_minutes?: number
+          no_long_last_drive?: boolean
+          office_address?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       jobber_oauth_tokens: {
         Row: {
           access_token: string
@@ -404,7 +449,9 @@ export type Database = {
           id: string
           is_active: boolean
           jobber_user_id: string
+          location_type: string
           name: string
+          starting_address: string | null
           updated_at: string
         }
         Insert: {
@@ -413,7 +460,9 @@ export type Database = {
           id?: string
           is_active?: boolean
           jobber_user_id: string
+          location_type?: string
           name: string
+          starting_address?: string | null
           updated_at?: string
         }
         Update: {
@@ -422,7 +471,9 @@ export type Database = {
           id?: string
           is_active?: boolean
           jobber_user_id?: string
+          location_type?: string
           name?: string
+          starting_address?: string | null
           updated_at?: string
         }
         Relationships: []
