@@ -35,7 +35,8 @@ function calculatePrices(
   windowModifierPercents.push(windowModifiers.stories[stories.toString()] ?? 0);
   windowModifierPercents.push(windowModifiers.condition?.[condition] ?? 0);
   
-  const windowCleaning = applyModifiers(baseWindowPrice, windowModifierPercents);
+  const windowCalculated = applyModifiers(baseWindowPrice, windowModifierPercents);
+  const windowCleaning = Math.max(windowCalculated, windowConfig.minimumPrice ?? 0);
   
   // House Wash
   let houseWash = 0;
@@ -43,7 +44,8 @@ function calculatePrices(
     const houseConfig = pricing.house_wash;
     const baseHouseWash = squareFootage * houseConfig.perSqFt;
     const houseStoryMod = houseConfig.modifiers.stories[stories.toString()] ?? 0;
-    houseWash = applyModifiers(baseHouseWash, [houseStoryMod]);
+    const houseCalculated = applyModifiers(baseHouseWash, [houseStoryMod]);
+    houseWash = Math.max(houseCalculated, houseConfig.minimumPrice ?? 0);
   }
   
   // Gutter Cleaning
@@ -52,7 +54,8 @@ function calculatePrices(
     const gutterConfig = pricing.gutter_cleaning;
     const baseGutter = squareFootage * gutterConfig.perSqFt;
     const gutterStoryMod = gutterConfig.modifiers.stories[stories.toString()] ?? 0;
-    gutterCleaning = applyModifiers(baseGutter, [gutterStoryMod]);
+    const gutterCalculated = applyModifiers(baseGutter, [gutterStoryMod]);
+    gutterCleaning = Math.max(gutterCalculated, gutterConfig.minimumPrice ?? 0);
   }
   
   // Roof Cleaning
@@ -64,7 +67,8 @@ function calculatePrices(
     roofModifiers.push(roofConfig.modifiers.stories[stories.toString()] ?? 0);
     roofModifiers.push(roofConfig.modifiers.roofType?.[additionalServices.roofType] ?? 0);
     roofModifiers.push(roofConfig.modifiers.severity?.[additionalServices.roofSeverity] ?? 0);
-    roofCleaning = applyModifiers(baseRoof, roofModifiers);
+    const roofCalculated = applyModifiers(baseRoof, roofModifiers);
+    roofCleaning = Math.max(roofCalculated, roofConfig.minimumPrice ?? 0);
   }
   
   // Pressure Washing

@@ -29,15 +29,19 @@ const FIELD_CONFIGS: Record<string, Record<string, FieldConfig>> = {
   window_cleaning: {
     exteriorPerSqFt: { label: 'Exterior Rate', type: 'rate', description: 'Per sq ft for exterior windows' },
     interiorPerSqFt: { label: 'Interior Rate', type: 'rate', description: 'Per sq ft for interior windows' },
+    minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge regardless of house size' },
   },
   house_wash: {
     perSqFt: { label: 'Rate per Sq Ft', type: 'rate', description: 'Base rate per square foot' },
+    minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge regardless of house size' },
   },
   gutter_cleaning: {
     perSqFt: { label: 'Rate per Sq Ft', type: 'rate', description: 'Base rate per square foot' },
+    minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge regardless of house size' },
   },
   roof_cleaning: {
     perSqFt: { label: 'Rate per Sq Ft', type: 'rate', description: 'Base rate per square foot' },
+    minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge regardless of house size' },
   },
 };
 
@@ -257,6 +261,45 @@ function ServicePricingSection({
     );
   };
 
+  // Render minimum price input
+  const renderMinimumPrice = () => {
+    const minPrice = values.minimumPrice as number | undefined;
+    if (minPrice === undefined && !['window_cleaning', 'house_wash', 'gutter_cleaning', 'roof_cleaning'].includes(row.config_key)) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-3">
+        <h4 className="text-sm font-semibold flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-amber-600" />
+          Minimum Price
+          <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">Floor Price</Badge>
+        </h4>
+        <div className="grid gap-3 pl-4 border-l-2 border-amber-600/20">
+          <div className="flex items-center gap-2">
+            <Label className="min-w-[120px] text-sm text-muted-foreground">
+              Minimum Charge
+            </Label>
+            <div className="relative">
+              <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="number"
+                step="1"
+                value={(values.minimumPrice as number) ?? 0}
+                onChange={(e) => handleValueChange(['minimumPrice'], parseFloat(e.target.value) || 0)}
+                className="w-28 pl-7"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">regardless of size</span>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground pl-4">
+          If the calculated price is below this amount, the minimum will be charged instead.
+        </p>
+      </div>
+    );
+  };
+
   // Render modifiers section
   const renderModifiers = () => {
     const modifiers = values.modifiers as Record<string, number | Record<string, number>> | undefined;
@@ -461,6 +504,8 @@ function ServicePricingSection({
           {isServiceWithModifiers && (
             <>
               {renderRates()}
+              <Separator />
+              {renderMinimumPrice()}
               <Separator />
               {renderModifiers()}
             </>
