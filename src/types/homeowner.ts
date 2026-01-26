@@ -30,6 +30,7 @@ export interface PressureWashingOptions {
 }
 
 export interface AdditionalServices {
+  windowCleaning: boolean;
   pressureWashing: PressureWashingOptions;
   gutterCleaning: boolean;
   houseWash: boolean;
@@ -96,6 +97,7 @@ export const DEFAULT_HOME_DETAILS: HomeDetails = {
 };
 
 export const DEFAULT_ADDITIONAL_SERVICES: AdditionalServices = {
+  windowCleaning: true,
   pressureWashing: {
     enabled: false,
     drivewaySize: 'medium',

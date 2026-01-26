@@ -132,32 +132,18 @@ export function IntentFirstServiceSelector({
       </CardHeader>
       
       <CardContent className="space-y-3">
-        {/* Window Cleaning - Always shown as primary with expandable options */}
-        <div className="relative p-4 rounded-xl border-2 border-primary bg-primary/5 shadow-md">
-          <div className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-sm">
-            <Check className="w-3.5 h-3.5" />
-          </div>
-          
-          <div className="flex items-start gap-3 pr-8">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary text-primary-foreground shadow-md">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="font-semibold text-foreground">Window Cleaning</h3>
-                <span className="text-primary font-bold price-display">
-                  {formatPrice(servicePrices.windowCleaningTotal)}
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Crystal clear windows, inside or out
-              </p>
-            </div>
-          </div>
-          
-          {/* Window Options - Always visible */}
-          <div className="mt-4 pt-4 border-t border-border space-y-4">
+        {/* Window Cleaning - Toggleable like other services */}
+        <ServiceCard
+          id="window-cleaning"
+          icon={Sparkles}
+          title="Window Cleaning"
+          description="Crystal clear windows, inside or out"
+          price={servicePrices.windowCleaningTotal}
+          isEnabled={services.windowCleaning}
+          onToggle={() => onChange({ windowCleaning: !services.windowCleaning })}
+        >
+          {/* Window Options - shown when enabled */}
+          <div className="space-y-4">
             {/* Window Cleaning Type */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">Service Type</Label>
@@ -409,7 +395,7 @@ export function IntentFirstServiceSelector({
               </CollapsibleContent>
             </Collapsible>
           </div>
-        </div>
+        </ServiceCard>
         
         {/* Pressure Washing */}
         <ServiceCard
