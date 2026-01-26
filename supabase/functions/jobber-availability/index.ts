@@ -61,11 +61,13 @@ Deno.serve(async (req) => {
     // Fetch business hours from config
     let BUSINESS_HOURS: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS;
     
-    const { data: configData } = await supabase
+    const { data: configData, error: configError } = await supabase
       .from("pricing_config")
       .select("config_value")
       .eq("config_key", "business_hours")
       .maybeSingle();
+
+    console.log("Business hours config query result:", { configData, configError });
 
     if (configData?.config_value) {
       const cfg = configData.config_value as Record<string, unknown>;
@@ -76,7 +78,7 @@ Deno.serve(async (req) => {
       };
       console.log("Using configured business hours:", BUSINESS_HOURS);
     } else {
-      console.log("Using default business hours:", BUSINESS_HOURS);
+      console.log("Using default business hours (no config found):", BUSINESS_HOURS);
     }
 
     // Map service names to service_type enum
