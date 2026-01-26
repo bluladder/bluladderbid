@@ -11,7 +11,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Get ScheduledItemAttributes for visit scheduling
+    // Check if a custom query was provided
+    const body = await req.json().catch(() => ({}));
+    
+    if (body.query) {
+      // Execute custom GraphQL query
+      const result = await jobberGraphQL<unknown>(body.query, body.variables || {});
+      return new Response(
+        JSON.stringify(result, null, 2),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Default: Get ScheduledItemAttributes for visit scheduling
     const propertyInputQuery = `
       query GetVisitTypes {
         scheduledItemAttributes: __type(name: "ScheduledItemAttributes") {
