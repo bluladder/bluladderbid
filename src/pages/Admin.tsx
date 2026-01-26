@@ -14,10 +14,11 @@ import { BookingsManager } from '@/components/admin/BookingsManager';
 import { MarketingAnalytics } from '@/components/admin/MarketingAnalytics';
 import { AdminAvailabilityViewer } from '@/components/admin/AdminAvailabilityViewer';
 import { CrewUtilizationAnalytics } from '@/components/admin/CrewUtilizationAnalytics';
+import { EmbedCodeManager } from '@/components/admin/EmbedCodeManager';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3, Users } from 'lucide-react';
+import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3, Users, Code } from 'lucide-react';
 import { Link } from 'react-router-dom';
 export default function Admin() {
   const { isAdmin, loading, user } = useIsAdmin();
@@ -107,7 +108,7 @@ export default function Admin() {
       <main className="container py-8">
         <div className="max-w-5xl mx-auto">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-8 mb-6">
+            <TabsList className="grid w-full grid-cols-9 mb-6">
               <TabsTrigger value="bookings" className="flex items-center gap-2">
                 <ClipboardList className="w-4 h-4" />
                 <span className="hidden sm:inline">Bookings</span>
@@ -119,6 +120,10 @@ export default function Admin() {
               <TabsTrigger value="analytics" className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4" />
                 <span className="hidden sm:inline">Analytics</span>
+              </TabsTrigger>
+              <TabsTrigger value="embed" className="flex items-center gap-2">
+                <Code className="w-4 h-4" />
+                <span className="hidden sm:inline">Embed</span>
               </TabsTrigger>
               <TabsTrigger value="preview" className="flex items-center gap-2">
                 <Calculator className="w-4 h-4" />
@@ -152,6 +157,10 @@ export default function Admin() {
             
             <TabsContent value="analytics">
               <MarketingAnalytics />
+            </TabsContent>
+            
+            <TabsContent value="embed">
+              <EmbedCodeManager />
             </TabsContent>
             
             <TabsContent value="preview">
