@@ -283,7 +283,9 @@ const Index = () => {
                     <IntentFirstServiceSelector
                       services={additionalServices}
                       servicePrices={servicePrices}
+                      homeDetails={homeDetails}
                       onChange={handleAdditionalServicesChange}
+                      onHomeDetailsChange={handleHomeDetailsChange}
                     />
                   )}
                   
