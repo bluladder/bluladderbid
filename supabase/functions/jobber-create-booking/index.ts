@@ -252,7 +252,7 @@ Deno.serve(async (req) => {
     // Create job in Jobber
     console.log("Creating job in Jobber");
     const createJobMutation = `
-      mutation CreateJob($input: JobCreateInput!) {
+      mutation CreateJob($input: JobInput!) {
         jobCreate(input: $input) {
           job {
             id
@@ -284,14 +284,14 @@ Deno.serve(async (req) => {
     }
 
     const jobInput = {
-      clientId: jobberClientId,
+      client: jobberClientId,
       title: `BluLadder Services - ${booking.customer.firstName} ${booking.customer.lastName}`,
       instructions: notesLines.join("\n"),
       lineItems,
     };
     
     console.log("Job creation input:", JSON.stringify({ 
-      clientId: jobberClientId, 
+      client: jobberClientId, 
       title: jobInput.title,
       lineItemsCount: lineItems.length 
     }));
