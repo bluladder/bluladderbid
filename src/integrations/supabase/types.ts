@@ -47,6 +47,39 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_step_events: {
+        Row: {
+          created_at: string
+          id: string
+          selected_slot_json: Json | null
+          services_json: Json | null
+          session_id: string
+          step: string
+          used_recommended_slot: boolean | null
+          used_suggested_day: boolean | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          selected_slot_json?: Json | null
+          services_json?: Json | null
+          session_id: string
+          step: string
+          used_recommended_slot?: boolean | null
+          used_suggested_day?: boolean | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          selected_slot_json?: Json | null
+          services_json?: Json | null
+          session_id?: string
+          step?: string
+          used_recommended_slot?: boolean | null
+          used_suggested_day?: boolean | null
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           created_at: string

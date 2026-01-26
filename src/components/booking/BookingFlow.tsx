@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
 import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
+import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 
@@ -56,6 +57,16 @@ export function BookingFlow({
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(prefillCustomerInfo || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
+  const [usedSuggestedDay, setUsedSuggestedDay] = useState(false);
+  const [usedRecommendedSlot, setUsedRecommendedSlot] = useState(false);
+
+  const { trackCalendarView, trackTimeSelection, trackInfoStep, trackConfirmation } = useBookingStepTracking();
+
+  // Track calendar view on mount
+  useEffect(() => {
+    const servicesForTracking = buildServicesArray().map(s => ({ service: s.service, price: s.price }));
+    trackCalendarView(servicesForTracking);
+  }, []);
 
   // Build services array for availability check and booking
   const buildServicesArray = () => {
@@ -191,8 +202,10 @@ export function BookingFlow({
   const subtotal = servicePrices.grandTotal;
   const finalTotal = subtotal - discountAmount;
 
-  const handleSelectSlot = (slot: TimeSlot) => {
+  const handleSelectSlot = (slot: TimeSlot, fromSuggestedDay?: boolean) => {
     setSelectedSlot(slot);
+    if (fromSuggestedDay) setUsedSuggestedDay(true);
+    if (slot.isRecommended) setUsedRecommendedSlot(true);
   };
 
   const handleCustomerSubmit = async (info: CustomerInfo) => {
@@ -247,6 +260,9 @@ export function BookingFlow({
         technicianName: data.technicianName,
       });
       
+      // Track confirmation
+      trackConfirmation();
+      
       setStep('confirmation');
       toast.success('Booking confirmed!');
     } catch (err) {
@@ -255,6 +271,24 @@ export function BookingFlow({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleGoToInfo = () => {
+    if (selectedSlot) {
+      // Track time selection with suggested day / recommended slot flags
+      trackTimeSelection(
+        {
+          startTime: selectedSlot.startTime,
+          endTime: selectedSlot.endTime,
+          technicianId: selectedSlot.technicianId,
+          isRecommended: selectedSlot.isRecommended,
+        },
+        usedSuggestedDay,
+        usedRecommendedSlot
+      );
+      trackInfoStep();
+    }
+    setStep('info');
   };
 
   const handleGoHome = () => {
@@ -353,7 +387,7 @@ export function BookingFlow({
               Back to Quote
             </Button>
             <Button 
-              onClick={() => setStep('info')} 
+              onClick={handleGoToInfo} 
               disabled={!selectedSlot}
               className="flex-1"
             >
