@@ -23,22 +23,26 @@ export interface ServiceModifiers {
 }
 
 export interface PricingData {
-  // All 4 main services use sq ft base rate + modifiers
+  // All 4 main services use sq ft base rate + modifiers + minimum price
   window_cleaning: {
     exteriorPerSqFt: number;
     interiorPerSqFt: number;
+    minimumPrice: number;
     modifiers: ServiceModifiers;
   };
   house_wash: {
     perSqFt: number;
+    minimumPrice: number;
     modifiers: ServiceModifiers;
   };
   gutter_cleaning: {
     perSqFt: number;
+    minimumPrice: number;
     modifiers: ServiceModifiers;
   };
   roof_cleaning: {
     perSqFt: number;
+    minimumPrice: number;
     modifiers: ServiceModifiers & {
       roofType: Record<string, number>;   // asphalt: 0, tile: 20, etc.
       severity: Record<string, number>;   // light: 0, moderate: 25, heavy: 50
@@ -74,6 +78,7 @@ export const DEFAULT_PRICING: PricingData = {
   window_cleaning: {
     exteriorPerSqFt: 0.045,
     interiorPerSqFt: 0.035,
+    minimumPrice: 150,
     modifiers: {
       stories: { "1": 0, "2": 25, "3": 50 },
       condition: { maintenance: 0, heavy: 40 },
@@ -84,18 +89,21 @@ export const DEFAULT_PRICING: PricingData = {
   },
   house_wash: {
     perSqFt: 0.12,
+    minimumPrice: 200,
     modifiers: {
       stories: { "1": 0, "2": 30, "3": 60 },
     },
   },
   gutter_cleaning: {
     perSqFt: 0.06,
+    minimumPrice: 100,
     modifiers: {
       stories: { "1": 0, "2": 25, "3": 50 },
     },
   },
   roof_cleaning: {
     perSqFt: 0.10,
+    minimumPrice: 250,
     modifiers: {
       stories: { "1": 0, "2": 20, "3": 40 },
       roofType: { asphalt: 0, tile: 25, metal: -10, flat: -15 },

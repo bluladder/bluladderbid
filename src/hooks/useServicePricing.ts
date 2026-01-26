@@ -107,8 +107,12 @@ export function useServicePricing(
       sunroomAddon = PRICING.window_addons.sunroom[homeDetails.sunroom] ?? 0;
     }
     
-    const windowCleaningTotal = adjustedWindowBase + hardWaterAddon + 
+    const windowCleaningCalculated = adjustedWindowBase + hardWaterAddon + 
       frenchPanesAddon + solarScreensAddon + ladderWorkAddon + sunroomAddon;
+    
+    // Apply minimum price for window cleaning
+    const windowMinimum = windowConfig.minimumPrice ?? 0;
+    const windowCleaningTotal = Math.max(windowCleaningCalculated, windowMinimum);
     
     // ==========================================
     // HOUSE WASH (sq ft based + modifiers)
@@ -122,7 +126,9 @@ export function useServicePricing(
       const houseStoryMod = houseConfig.modifiers.stories[stories.toString()] ?? 0;
       houseModifiers.push(houseStoryMod);
       
-      houseWash = applyModifiers(baseHouseWash, houseModifiers);
+      const houseWashCalculated = applyModifiers(baseHouseWash, houseModifiers);
+      const houseMinimum = houseConfig.minimumPrice ?? 0;
+      houseWash = Math.max(houseWashCalculated, houseMinimum);
     }
     
     // ==========================================
@@ -137,7 +143,9 @@ export function useServicePricing(
       const gutterStoryMod = gutterConfig.modifiers.stories[stories.toString()] ?? 0;
       gutterModifiers.push(gutterStoryMod);
       
-      gutterCleaning = applyModifiers(baseGutter, gutterModifiers);
+      const gutterCalculated = applyModifiers(baseGutter, gutterModifiers);
+      const gutterMinimum = gutterConfig.minimumPrice ?? 0;
+      gutterCleaning = Math.max(gutterCalculated, gutterMinimum);
     }
     
     // ==========================================
@@ -162,7 +170,9 @@ export function useServicePricing(
       const severityMod = roofConfig.modifiers.severity?.[additionalServices.roofSeverity] ?? 0;
       roofModifiers.push(severityMod);
       
-      roofCleaning = applyModifiers(baseRoof, roofModifiers);
+      const roofCalculated = applyModifiers(baseRoof, roofModifiers);
+      const roofMinimum = roofConfig.minimumPrice ?? 0;
+      roofCleaning = Math.max(roofCalculated, roofMinimum);
     }
     
     // ==========================================
