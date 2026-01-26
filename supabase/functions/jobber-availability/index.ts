@@ -354,10 +354,18 @@ Deno.serve(async (req) => {
     const fromDate = startDate ? new Date(startDate) : now;
     const toDate = new Date(fromDate.getTime() + daysToCheck * 24 * 60 * 60 * 1000);
 
+    // Format dates for Jobber query (ISO8601DateTime)
+    const fromDateISO = fromDate.toISOString();
+    const toDateISO = toDate.toISOString();
+    
+    console.log(`Querying Jobber visits from ${fromDateISO} to ${toDateISO}`);
+
     // Query Jobber for scheduled visits with property addresses
+    // Filter by date range to only get relevant future visits
+    // Jobber uses 'after' and 'before' for datetime range filters
     const scheduledItemsQuery = `
-      query GetScheduledItems {
-        visits(first: 200) {
+      query GetScheduledItems($startDateAfter: ISO8601DateTime!, $startDateBefore: ISO8601DateTime!) {
+        visits(first: 200, filter: { startAt: { after: $startDateAfter, before: $startDateBefore } }) {
           nodes {
             id
             startAt
@@ -403,7 +411,10 @@ Deno.serve(async (req) => {
           };
         }>;
       };
-    }>(scheduledItemsQuery, {});
+    }>(scheduledItemsQuery, { 
+      startDateAfter: fromDateISO,
+      startDateBefore: toDateISO,
+    });
 
     // Build a map of busy times per technician with addresses
     const busyTimesByTech: Record<string, Array<{ 
@@ -412,20 +423,34 @@ Deno.serve(async (req) => {
       address: string | null;
     }>> = {};
 
+    // Debug: Log all technician Jobber IDs we're looking for
+    const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
+    console.log("Looking for Jobber User IDs:", techJobberIds);
+
     if (jobberResult.data?.visits?.nodes) {
-      const relevantVisits = jobberResult.data.visits.nodes.filter(visit => {
-        const visitStart = new Date(visit.startAt);
-        return visitStart >= fromDate && visitStart < toDate;
-      });
+      const visits = jobberResult.data.visits.nodes;
+      console.log(`Jobber returned ${visits.length} visits in date range`);
       
-      for (const visit of relevantVisits) {
+      // Log details of each relevant visit
+      for (const visit of visits) {
         const users = visit.assignedUsers?.nodes || [];
+        const userIds = users.map(u => u.id);
+        console.log(`Visit ${visit.id}: ${visit.startAt} - ${visit.endAt}, assigned to users: ${JSON.stringify(userIds)}`);
+        
         const addr = visit.job?.property?.address;
         const address = addr 
           ? `${addr.street || ''}, ${addr.city || ''}, ${addr.province || ''} ${addr.postalCode || ''}`.trim()
           : null;
           
         for (const user of users) {
+          // Check if this user ID matches any of our technicians
+          const matchesTech = techJobberIds.includes(user.id);
+          if (matchesTech) {
+            console.log(`  -> User ${user.id} MATCHES one of our technicians`);
+          } else {
+            console.log(`  -> User ${user.id} does NOT match our technicians`);
+          }
+          
           if (!busyTimesByTech[user.id]) {
             busyTimesByTech[user.id] = [];
           }
@@ -435,6 +460,17 @@ Deno.serve(async (req) => {
             address,
           });
         }
+      }
+      
+      // Debug: Show busy times map
+      console.log("Busy times by tech ID:", Object.keys(busyTimesByTech).map(id => ({
+        jobberUserId: id,
+        busyCount: busyTimesByTech[id].length
+      })));
+    } else {
+      console.log("No visits returned from Jobber or empty result");
+      if (jobberResult.errors) {
+        console.error("Jobber errors:", jobberResult.errors);
       }
     }
 
