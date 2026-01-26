@@ -444,37 +444,52 @@ export type Database = {
       }
       technicians: {
         Row: {
+          buffer_minutes: number | null
           created_at: string
           email: string | null
           id: string
           is_active: boolean
           jobber_user_id: string
           location_type: string
+          max_drive_time_minutes: number | null
           name: string
+          schedule_end_hour: number | null
+          schedule_start_hour: number | null
           starting_address: string | null
           updated_at: string
+          work_days: Json | null
         }
         Insert: {
+          buffer_minutes?: number | null
           created_at?: string
           email?: string | null
           id?: string
           is_active?: boolean
           jobber_user_id: string
           location_type?: string
+          max_drive_time_minutes?: number | null
           name: string
+          schedule_end_hour?: number | null
+          schedule_start_hour?: number | null
           starting_address?: string | null
           updated_at?: string
+          work_days?: Json | null
         }
         Update: {
+          buffer_minutes?: number | null
           created_at?: string
           email?: string | null
           id?: string
           is_active?: boolean
           jobber_user_id?: string
           location_type?: string
+          max_drive_time_minutes?: number | null
           name?: string
+          schedule_end_hour?: number | null
+          schedule_start_hour?: number | null
           starting_address?: string | null
           updated_at?: string
+          work_days?: Json | null
         }
         Relationships: []
       }

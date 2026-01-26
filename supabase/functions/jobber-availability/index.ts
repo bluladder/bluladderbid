@@ -260,6 +260,11 @@ Deno.serve(async (req) => {
         name,
         starting_address,
         location_type,
+        schedule_start_hour,
+        schedule_end_hour,
+        work_days,
+        buffer_minutes,
+        max_drive_time_minutes,
         technician_service_rates (
           service_type,
           dollars_per_hour,
@@ -286,6 +291,11 @@ Deno.serve(async (req) => {
       durationMinutes: number;
       startingAddress: string | null;
       locationType: string;
+      scheduleStartHour: number;
+      scheduleEndHour: number;
+      workDays: number[];
+      bufferMinutes: number | null;
+      maxDriveTimeMinutes: number | null;
     }> = [];
 
     for (const tech of technicians) {
@@ -312,6 +322,9 @@ Deno.serve(async (req) => {
         const startingAddress = tech.location_type === 'home' 
           ? tech.starting_address 
           : DRIVE_TIME_CONFIG.office_address;
+        
+        // Get per-technician work days
+        const workDays = (tech.work_days as number[]) || BUSINESS_HOURS.workDays;
           
         eligibleTechs.push({
           id: tech.id,
@@ -320,6 +333,11 @@ Deno.serve(async (req) => {
           durationMinutes: totalDuration,
           startingAddress,
           locationType: tech.location_type,
+          scheduleStartHour: tech.schedule_start_hour ?? BUSINESS_HOURS.startHour,
+          scheduleEndHour: tech.schedule_end_hour ?? BUSINESS_HOURS.endHour,
+          workDays,
+          bufferMinutes: tech.buffer_minutes,
+          maxDriveTimeMinutes: tech.max_drive_time_minutes,
         });
       }
     }
@@ -444,13 +462,15 @@ Deno.serve(async (req) => {
         };
         const dayOfWeek = weekdayMap[weekdayStr] ?? 1;
         
-        if (!BUSINESS_HOURS.workDays.includes(dayOfWeek)) {
+        // Use per-technician work days
+        if (!tech.workDays.includes(dayOfWeek)) {
           dayOffset++;
           continue;
         }
 
-        const dayStart = createDateInTimezone(currentDay, BUSINESS_HOURS.startHour, 0, businessTimezone);
-        const dayEnd = createDateInTimezone(currentDay, BUSINESS_HOURS.endHour, 0, businessTimezone);
+        // Use per-technician schedule hours
+        const dayStart = createDateInTimezone(currentDay, tech.scheduleStartHour, 0, businessTimezone);
+        const dayEnd = createDateInTimezone(currentDay, tech.scheduleEndHour, 0, businessTimezone);
 
         if (dayEnd <= now) {
           dayOffset++;
@@ -526,38 +546,45 @@ Deno.serve(async (req) => {
               code: 'OVERLAP',
               message: 'Overlaps existing appointment',
             };
-          } else if (slotHour < DRIVE_TIME_CONFIG.earliest_start_hour) {
+          } else if (slotHour < tech.scheduleStartHour) {
             exclusionReason = {
               code: 'BOUNDARY',
               message: 'Before earliest start time',
-              details: `Slot starts at ${slotHour}:00, earliest allowed is ${DRIVE_TIME_CONFIG.earliest_start_hour}:00`,
+              details: `Slot starts at ${slotHour}:00, earliest allowed is ${tech.scheduleStartHour}:00`,
             };
-          } else if (slotHour >= DRIVE_TIME_CONFIG.latest_start_hour) {
+          } else if (slotHour >= tech.scheduleEndHour - 1) {
             exclusionReason = {
               code: 'BOUNDARY',
               message: 'After latest start time',
-              details: `Slot starts at ${slotHour}:00, latest allowed is ${DRIVE_TIME_CONFIG.latest_start_hour}:00`,
+              details: `Slot starts at ${slotHour}:00, latest allowed is ${tech.scheduleEndHour - 1}:00`,
             };
-          } else if (driveMinutes > DRIVE_TIME_CONFIG.max_drive_time_minutes) {
-            // Check if first job exception applies
-            if (isFirstJob && DRIVE_TIME_CONFIG.allow_long_first_drive) {
-              slot.isLongFirstDrive = true;
-              // Allow it, but mark it
-            } else {
-              exclusionReason = {
-                code: 'DRIVE_TIME',
-                message: 'Exceeds drive time limit',
-                details: `${driveMinutes} min drive exceeds ${DRIVE_TIME_CONFIG.max_drive_time_minutes} min max`,
-              };
+          } else {
+            // Use per-technician max drive time or fall back to global
+            const maxDriveTime = tech.maxDriveTimeMinutes ?? DRIVE_TIME_CONFIG.max_drive_time_minutes;
+            
+            if (driveMinutes > maxDriveTime) {
+              // Check if first job exception applies
+              if (isFirstJob && DRIVE_TIME_CONFIG.allow_long_first_drive) {
+                slot.isLongFirstDrive = true;
+                // Allow it, but mark it
+              } else {
+                exclusionReason = {
+                  code: 'DRIVE_TIME',
+                  message: 'Exceeds drive time limit',
+                  details: `${driveMinutes} min drive exceeds ${maxDriveTime} min max`,
+                };
+              }
             }
           }
 
           // Check last job rules
           const isLikelyLastJob = !todayBusyTimes.some(bt => bt.start > slotEnd);
           if (isLikelyLastJob && !exclusionReason) {
+            // Use per-technician max drive time or fall back to global
+            const maxDriveTime = tech.maxDriveTimeMinutes ?? DRIVE_TIME_CONFIG.max_drive_time_minutes;
+            
             // Check if long drive as last job
-            if (DRIVE_TIME_CONFIG.no_long_last_drive && 
-                driveMinutes > DRIVE_TIME_CONFIG.max_drive_time_minutes) {
+            if (DRIVE_TIME_CONFIG.no_long_last_drive && driveMinutes > maxDriveTime) {
               exclusionReason = {
                 code: 'LAST_JOB',
                 message: 'Long drive not allowed for last job',
@@ -569,7 +596,9 @@ Deno.serve(async (req) => {
           // Check buffer timing
           if (!exclusionReason && previousAppointment) {
             const gapMinutes = (slotStart.getTime() - previousAppointment.end.getTime()) / (60 * 1000);
-            const requiredBuffer = driveBuffer + DRIVE_TIME_CONFIG.base_buffer_minutes;
+            // Use per-technician buffer or fall back to global
+            const baseBuffer = tech.bufferMinutes ?? DRIVE_TIME_CONFIG.base_buffer_minutes;
+            const requiredBuffer = driveBuffer + baseBuffer;
             
             if (gapMinutes < requiredBuffer) {
               exclusionReason = {

@@ -8,7 +8,9 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin, Clock, Calendar } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 
@@ -20,7 +22,22 @@ interface Technician {
   is_active: boolean;
   starting_address: string | null;
   location_type: 'office' | 'home';
+  schedule_start_hour: number;
+  schedule_end_hour: number;
+  work_days: number[];
+  buffer_minutes: number | null;
+  max_drive_time_minutes: number | null;
 }
+
+const DAYS_OF_WEEK = [
+  { value: 0, label: 'Sun' },
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+];
 
 const SERVICE_TYPES = [
   { value: 'windows_exterior', label: 'Windows (Exterior)' },
@@ -55,6 +72,11 @@ export function TechnicianManager() {
     is_active: true,
     starting_address: '',
     location_type: 'office' as 'office' | 'home',
+    schedule_start_hour: 9,
+    schedule_end_hour: 17,
+    work_days: [1, 2, 3, 4, 5] as number[],
+    buffer_minutes: null as number | null,
+    max_drive_time_minutes: null as number | null,
   });
 
   const fetchTechnicians = async () => {
@@ -69,6 +91,7 @@ export function TechnicianManager() {
       setTechnicians((data || []).map(t => ({
         ...t,
         location_type: t.location_type as 'office' | 'home',
+        work_days: (t.work_days as number[]) || [1, 2, 3, 4, 5],
       })));
     } catch (error) {
       console.error('Failed to fetch technicians:', error);
@@ -128,6 +151,11 @@ export function TechnicianManager() {
             is_active: formData.is_active,
             starting_address: formData.starting_address || null,
             location_type: formData.location_type,
+            schedule_start_hour: formData.schedule_start_hour,
+            schedule_end_hour: formData.schedule_end_hour,
+            work_days: formData.work_days,
+            buffer_minutes: formData.buffer_minutes,
+            max_drive_time_minutes: formData.max_drive_time_minutes,
           })
           .eq('id', editingTech.id);
 
@@ -143,6 +171,11 @@ export function TechnicianManager() {
             is_active: formData.is_active,
             starting_address: formData.starting_address || null,
             location_type: formData.location_type,
+            schedule_start_hour: formData.schedule_start_hour,
+            schedule_end_hour: formData.schedule_end_hour,
+            work_days: formData.work_days,
+            buffer_minutes: formData.buffer_minutes,
+            max_drive_time_minutes: formData.max_drive_time_minutes,
           });
 
         if (error) throw error;
@@ -267,6 +300,11 @@ export function TechnicianManager() {
       is_active: true,
       starting_address: '',
       location_type: 'office',
+      schedule_start_hour: 9,
+      schedule_end_hour: 17,
+      work_days: [1, 2, 3, 4, 5],
+      buffer_minutes: null,
+      max_drive_time_minutes: null,
     });
     setEditingTech(null);
   };
@@ -280,8 +318,25 @@ export function TechnicianManager() {
       is_active: tech.is_active,
       starting_address: tech.starting_address || '',
       location_type: tech.location_type,
+      schedule_start_hour: tech.schedule_start_hour ?? 9,
+      schedule_end_hour: tech.schedule_end_hour ?? 17,
+      work_days: tech.work_days ?? [1, 2, 3, 4, 5],
+      buffer_minutes: tech.buffer_minutes,
+      max_drive_time_minutes: tech.max_drive_time_minutes,
     });
     setIsDialogOpen(true);
+  };
+
+  const toggleWorkDay = (day: number) => {
+    const currentDays = [...formData.work_days];
+    const index = currentDays.indexOf(day);
+    if (index > -1) {
+      currentDays.splice(index, 1);
+    } else {
+      currentDays.push(day);
+      currentDays.sort((a, b) => a - b);
+    }
+    setFormData({ ...formData, work_days: currentDays });
   };
 
   return (
@@ -388,6 +443,112 @@ export function TechnicianManager() {
                   />
                   <Label htmlFor="is_active">Active</Label>
                 </div>
+
+                <Separator className="my-4" />
+                
+                <div className="space-y-4">
+                  <h4 className="font-medium flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Schedule Settings
+                  </h4>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="schedule_start_hour">Start Hour</Label>
+                      <Select
+                        value={String(formData.schedule_start_hour)}
+                        onValueChange={(v) => setFormData({ ...formData, schedule_start_hour: parseInt(v) })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 14 }, (_, i) => i + 5).map(hour => (
+                            <SelectItem key={hour} value={String(hour)}>
+                              {hour > 12 ? `${hour - 12}:00 PM` : hour === 12 ? '12:00 PM' : `${hour}:00 AM`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="schedule_end_hour">End Hour</Label>
+                      <Select
+                        value={String(formData.schedule_end_hour)}
+                        onValueChange={(v) => setFormData({ ...formData, schedule_end_hour: parseInt(v) })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 14 }, (_, i) => i + 10).map(hour => (
+                            <SelectItem key={hour} value={String(hour)}>
+                              {hour > 12 ? `${hour - 12}:00 PM` : hour === 12 ? '12:00 PM' : `${hour}:00 AM`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      Work Days
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS_OF_WEEK.map((day) => (
+                        <div
+                          key={day.value}
+                          className={`flex items-center justify-center w-10 h-10 rounded-full border cursor-pointer transition-colors ${
+                            formData.work_days.includes(day.value)
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-muted hover:bg-muted/80 border-border'
+                          }`}
+                          onClick={() => toggleWorkDay(day.value)}
+                        >
+                          <span className="text-xs font-medium">{day.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Separator className="my-2" />
+                  
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">
+                      Override Global Drive Settings (optional)
+                    </Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="buffer_minutes">Buffer (min)</Label>
+                        <Input
+                          id="buffer_minutes"
+                          type="number"
+                          placeholder="Use global"
+                          value={formData.buffer_minutes ?? ''}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            buffer_minutes: e.target.value ? parseInt(e.target.value) : null 
+                          })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="max_drive_time">Max Drive (min)</Label>
+                        <Input
+                          id="max_drive_time"
+                          type="number"
+                          placeholder="Use global"
+                          value={formData.max_drive_time_minutes ?? ''}
+                          onChange={(e) => setFormData({ 
+                            ...formData, 
+                            max_drive_time_minutes: e.target.value ? parseInt(e.target.value) : null 
+                          })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -419,16 +580,44 @@ export function TechnicianManager() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Schedule</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {technicians.map((tech) => (
+              {technicians.map((tech) => {
+                const formatHour = (h: number) => h > 12 ? `${h - 12}pm` : h === 12 ? '12pm' : `${h}am`;
+                const workDaysStr = (tech.work_days || [1,2,3,4,5])
+                  .map(d => DAYS_OF_WEEK.find(day => day.value === d)?.label || '')
+                  .join(', ');
+                return (
                 <TableRow key={tech.id}>
-                  <TableCell className="font-medium">{tech.name}</TableCell>
-                  <TableCell>{tech.email || '-'}</TableCell>
+                  <TableCell className="font-medium">
+                    <div>
+                      {tech.name}
+                      {tech.email && <p className="text-xs text-muted-foreground">{tech.email}</p>}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1 text-sm">
+                      <MapPin className="h-3 w-3 text-muted-foreground" />
+                      {tech.location_type === 'home' ? (
+                        <span className="truncate max-w-[120px]" title={tech.starting_address || 'Home'}>
+                          {tech.starting_address?.split(',')[0] || 'Home'}
+                        </span>
+                      ) : (
+                        'Office'
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-sm">
+                      <span>{formatHour(tech.schedule_start_hour ?? 9)} - {formatHour(tech.schedule_end_hour ?? 17)}</span>
+                      <p className="text-xs text-muted-foreground">{workDaysStr}</p>
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={tech.is_active ? 'default' : 'secondary'}>
                       {tech.is_active ? 'Active' : 'Inactive'}
@@ -460,7 +649,8 @@ export function TechnicianManager() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}
