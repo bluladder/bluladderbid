@@ -9,16 +9,25 @@ const corsHeaders = {
 const JOBBER_MAX_ATTEMPTS = 3;
 const JOBBER_BACKOFF_MS = [500, 1500, 3000];
 
-// ---------------- Jobber throttling + cache (fail-closed, but avoid hard downtime) ----------------
+// ---------------- Jobber throttling + DB-backed cache (fail-closed, but avoid hard downtime) ----------------
 // If Jobber rate-limits us, we:
 // 1) enter a short cooldown to avoid repeatedly triggering throttling
-// 2) if we have a recent cached visits payload that covers the requested range, we use it
+// 2) check DB-backed cache for recent visits data that covers the requested range
 let lastJobberThrottleAtMs: number | null = null;
 const JOBBER_THROTTLE_COOLDOWN_MS = 60_000; // 60s
-const JOBBER_VISITS_CACHE_TTL_MS = 2 * 60_000; // 2 minutes
+const DB_CACHE_TTL_MINUTES = 10; // DB cache lasts longer than in-memory
 
 let lastJobberAuthErrorAtMs: number | null = null;
 const JOBBER_AUTH_COOLDOWN_MS = 5 * 60_000; // 5 minutes
+
+// In-memory fallback (for same-instance reuse)
+let inMemoryVisitsCache: {
+  fromISO: string;
+  toISO: string;
+  fetchedAtMs: number;
+  data: JobberVisitResult;
+} | null = null;
+const IN_MEMORY_CACHE_TTL_MS = 2 * 60_000; // 2 minutes
 
 type JobberVisitResult = {
   visits: {
@@ -46,12 +55,83 @@ type JobberVisitResult = {
 type JobberGraphQLError = { message: string; extensions?: { code?: string } };
 type JobberGraphQLResult<T> = { data?: T; errors?: JobberGraphQLError[] };
 
-let jobberVisitsCache: {
-  fromISO: string;
-  toISO: string;
-  fetchedAtMs: number;
-  data: JobberVisitResult;
-} | null = null;
+// Helper: Read from DB cache (uses any to bypass type generation lag)
+async function getDbCache(
+  supabase: any,
+  fromDate: string,
+  toDate: string
+): Promise<JobberVisitResult | null> {
+  const cacheKey = `visits:${fromDate}:${toDate}`;
+  
+  const { data, error } = await (supabase as any)
+    .from("availability_cache")
+    .select("visits_json, cached_at")
+    .eq("cache_key", cacheKey)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+
+  if (error || !data) {
+    // Also try to find a cache that covers this range (superset)
+    const { data: coveringCache } = await (supabase as any)
+      .from("availability_cache")
+      .select("visits_json, cached_at, from_date, to_date")
+      .lte("from_date", fromDate)
+      .gte("to_date", toDate)
+      .gt("expires_at", new Date().toISOString())
+      .order("cached_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (coveringCache?.visits_json) {
+      console.log(`DB cache hit (covering range ${coveringCache.from_date} to ${coveringCache.to_date})`);
+      return { visits: { nodes: coveringCache.visits_json as JobberVisitResult["visits"]["nodes"] } };
+    }
+    return null;
+  }
+
+  console.log(`DB cache hit for ${cacheKey}`);
+  return { visits: { nodes: data.visits_json as JobberVisitResult["visits"]["nodes"] } };
+}
+
+// Helper: Write to DB cache
+async function setDbCache(
+  supabase: any,
+  fromDate: string,
+  toDate: string,
+  visits: JobberVisitResult["visits"]["nodes"]
+): Promise<void> {
+  const cacheKey = `visits:${fromDate}:${toDate}`;
+  const expiresAt = new Date(Date.now() + DB_CACHE_TTL_MINUTES * 60 * 1000).toISOString();
+
+  try {
+    await (supabase as any)
+      .from("availability_cache")
+      .upsert({
+        cache_key: cacheKey,
+        from_date: fromDate,
+        to_date: toDate,
+        visits_json: visits,
+        cached_at: new Date().toISOString(),
+        expires_at: expiresAt,
+      }, { onConflict: "cache_key" });
+    
+    console.log(`DB cache updated for ${cacheKey}, expires ${expiresAt}`);
+  } catch (err) {
+    console.error("Failed to update DB cache:", err);
+  }
+}
+
+// Helper: Clean up expired cache entries (fire-and-forget)
+async function cleanupExpiredCache(supabase: any): Promise<void> {
+  try {
+    await (supabase as any)
+      .from("availability_cache")
+      .delete()
+      .lt("expires_at", new Date().toISOString());
+  } catch {
+    // Ignore cleanup errors
+  }
+}
 
 interface ServicePrice {
   service: string;
@@ -571,14 +651,17 @@ Deno.serve(async (req) => {
 
     // Fetch visits from Jobber with:
     // - cooldown when throttled (reduces repeated throttle hits)
-    // - short-lived in-memory cache fallback (keeps availability working without showing "all slots")
+    // - DB-backed cache fallback (persists across function instances)
+    // - in-memory cache for same-instance reuse
     const nowMs = Date.now();
-    const cacheFresh = !!jobberVisitsCache && (nowMs - jobberVisitsCache.fetchedAtMs) < JOBBER_VISITS_CACHE_TTL_MS;
-    const cacheCoversRange =
-      cacheFresh &&
-      !!jobberVisitsCache &&
-      jobberVisitsCache.fromISO <= fromDateISO &&
-      jobberVisitsCache.toISO >= toDateISO;
+    
+    // Check in-memory cache first (fastest)
+    const inMemoryCacheFresh = !!inMemoryVisitsCache && (nowMs - inMemoryVisitsCache.fetchedAtMs) < IN_MEMORY_CACHE_TTL_MS;
+    const inMemoryCacheCoversRange =
+      inMemoryCacheFresh &&
+      !!inMemoryVisitsCache &&
+      inMemoryVisitsCache.fromISO <= fromDateISO &&
+      inMemoryVisitsCache.toISO >= toDateISO;
 
     const inCooldown =
       lastJobberThrottleAtMs !== null &&
@@ -594,23 +677,35 @@ Deno.serve(async (req) => {
 
     let jobberResult: JobberGraphQLResult<JobberVisitResult> | null = null;
 
+    // Convert ISO to date strings for DB cache lookup
+    const fromDateStr = fromDateISO.split('T')[0];
+    const toDateStr = toDateISO.split('T')[0];
+
     if (inCooldown) {
-      if (cacheCoversRange) {
+      // Try in-memory cache first
+      if (inMemoryCacheCoversRange) {
         console.log(
-          `Jobber throttling cooldown active; using cached visits (${Math.round((nowMs - jobberVisitsCache!.fetchedAtMs) / 1000)}s old)`
+          `Jobber throttling cooldown active; using in-memory cache (${Math.round((nowMs - inMemoryVisitsCache!.fetchedAtMs) / 1000)}s old)`
         );
-        jobberResult = { data: jobberVisitsCache!.data };
+        jobberResult = { data: inMemoryVisitsCache!.data };
       } else {
-        console.error("Jobber throttling cooldown active and no usable cache - returning 503");
-        return new Response(
-          JSON.stringify({
-            error: "Scheduling system is temporarily busy. Please try again in a few moments.",
-            retryAfter: retryAfterSec,
-            slots: [],
-            recommendedDays: [],
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-        );
+        // Fall back to DB cache
+        const dbCachedData = await getDbCache(supabase, fromDateStr, toDateStr);
+        if (dbCachedData) {
+          console.log("Jobber throttling cooldown active; using DB cache");
+          jobberResult = { data: dbCachedData };
+        } else {
+          console.error("Jobber throttling cooldown active and no usable cache - returning 503");
+          return new Response(
+            JSON.stringify({
+              error: "Scheduling system is temporarily busy. Please try again in a few moments.",
+              retryAfter: retryAfterSec,
+              slots: [],
+              recommendedDays: [],
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+          );
+        }
       }
     } else {
       if (inAuthCooldown) {
@@ -669,20 +764,29 @@ Deno.serve(async (req) => {
 
       if (isThrottled) {
         lastJobberThrottleAtMs = nowMs;
-        if (cacheCoversRange) {
-          console.log("Jobber throttled; falling back to cached visits");
-          jobberResult = { data: jobberVisitsCache!.data };
+        
+        // Try in-memory cache first
+        if (inMemoryCacheCoversRange) {
+          console.log("Jobber throttled; falling back to in-memory cache");
+          jobberResult = { data: inMemoryVisitsCache!.data };
         } else {
-          console.error("Jobber API throttled and no usable cache - returning 503 to prevent conflicts");
-          return new Response(
-            JSON.stringify({
-              error: "Scheduling system is temporarily busy. Please try again in a few moments.",
-              retryAfter: Math.max(30, retryAfterSec),
-              slots: [],
-              recommendedDays: [],
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-          );
+          // Fall back to DB cache
+          const dbCachedData = await getDbCache(supabase, fromDateStr, toDateStr);
+          if (dbCachedData) {
+            console.log("Jobber throttled; falling back to DB cache");
+            jobberResult = { data: dbCachedData };
+          } else {
+            console.error("Jobber API throttled and no usable cache - returning 503 to prevent conflicts");
+            return new Response(
+              JSON.stringify({
+                error: "Scheduling system is temporarily busy. Please try again in a few moments.",
+                retryAfter: Math.max(30, retryAfterSec),
+                slots: [],
+                recommendedDays: [],
+              }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+            );
+          }
         }
       } else {
         // If we have any non-throttle errors, fail closed (do not show availability that could conflict)
@@ -722,14 +826,23 @@ Deno.serve(async (req) => {
           );
         }
 
-        // On success, update cache (even if it is an empty array of visits)
+        // On success, update both in-memory and DB cache
         if (jobberResult.data?.visits?.nodes) {
-          jobberVisitsCache = {
+          // Update in-memory cache
+          inMemoryVisitsCache = {
             fromISO: fromDateISO,
             toISO: toDateISO,
             fetchedAtMs: nowMs,
             data: jobberResult.data,
           };
+          
+          // Update DB cache (fire-and-forget for performance)
+          setDbCache(supabase, fromDateStr, toDateStr, jobberResult.data.visits.nodes);
+          
+          // Occasionally clean up expired cache entries
+          if (Math.random() < 0.1) {
+            cleanupExpiredCache(supabase);
+          }
         }
       }
     }

@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      availability_cache: {
+        Row: {
+          cache_key: string
+          cached_at: string
+          created_at: string
+          expires_at: string
+          from_date: string
+          id: string
+          to_date: string
+          visits_json: Json
+        }
+        Insert: {
+          cache_key: string
+          cached_at?: string
+          created_at?: string
+          expires_at?: string
+          from_date: string
+          id?: string
+          to_date: string
+          visits_json?: Json
+        }
+        Update: {
+          cache_key?: string
+          cached_at?: string
+          created_at?: string
+          expires_at?: string
+          from_date?: string
+          id?: string
+          to_date?: string
+          visits_json?: Json
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           created_at: string
