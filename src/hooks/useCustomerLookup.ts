@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { HomeDetails, AdditionalServices } from '@/types/homeowner';
+import { DEFAULT_ADDITIONAL_SERVICES, FLATWORK_DEFAULT_SQFT } from '@/types/homeowner';
 
 export interface PastBooking {
   id: string;
@@ -126,14 +127,18 @@ function extractAdditionalServices(services: Array<{ name: string; price: number
   
   return {
     windowCleaning: serviceNames.some(n => n.includes('window')),
-    pressureWashing: {
-      enabled: serviceNames.some(n => n.includes('pressure')),
-      drivewaySize: 'medium',
+    drivewayCleaning: {
+      enabled: serviceNames.some(n => n.includes('driveway')),
+      sqft: FLATWORK_DEFAULT_SQFT.driveway,
       surfaceType: 'concrete',
-      frontPorch: false,
-      backPatio: false,
-      poolDeck: false,
-      sidewalks: false,
+    },
+    pressureWashing: {
+      enabled: serviceNames.some(n => n.includes('pressure') && !n.includes('driveway')),
+      surfaceType: 'concrete',
+      frontPorch: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.frontPorch },
+      backPatio: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.backPatio },
+      poolDeck: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.poolDeck },
+      walkways: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.walkways },
     },
     gutterCleaning: serviceNames.some(n => n.includes('gutter')),
     houseWash: serviceNames.some(n => n.includes('house wash')),

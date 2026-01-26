@@ -55,11 +55,18 @@ export interface PricingData {
     sunroom: Record<string, number>;
   };
   
-  // Pressure washing (separate pricing model)
-  pressure_washing: {
-    driveway: Record<string, number>;
+  // Driveway cleaning (sqft-based, separate service)
+  driveway_cleaning: {
+    perSqFt: number;
+    minimumPrice: number;
     surfaceMultipliers: Record<string, number>;
-    addons: Record<string, number>;
+  };
+  
+  // Pressure washing for flatwork (sqft-based)
+  pressure_washing: {
+    perSqFt: number;
+    minimumPrice: number;
+    surfaceMultipliers: Record<string, number>;
   };
   
   // Bundle configuration
@@ -114,8 +121,9 @@ export const DEFAULT_PRICING: PricingData = {
     ladderWork: { "1-3": 45, "4-8": 85, "9+": 135 },
     sunroom: { none: 0, small: 75, medium: 125, large: 200 },
   },
-  pressure_washing: {
-    driveway: { small: 150, medium: 225, large: 350 },
+  driveway_cleaning: {
+    perSqFt: 0.50,      // $0.50 per sqft for driveways
+    minimumPrice: 150,
     surfaceMultipliers: {
       concrete: 1,
       stamped: 1.15,
@@ -124,11 +132,17 @@ export const DEFAULT_PRICING: PricingData = {
       stone: 1.30,
       tile: 1.35,
     },
-    addons: {
-      frontPorch: 75,
-      backPatio: 95,
-      poolDeck: 125,
-      sidewalks: 65,
+  },
+  pressure_washing: {
+    perSqFt: 0.40,      // $0.40 per sqft for flatwork
+    minimumPrice: 75,
+    surfaceMultipliers: {
+      concrete: 1,
+      stamped: 1.15,
+      pavers: 1.25,
+      brick: 1.20,
+      stone: 1.30,
+      tile: 1.35,
     },
   },
   bundle_config: {

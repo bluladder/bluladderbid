@@ -19,18 +19,41 @@ export interface HomeDetails {
   sunroom: 'none' | 'small' | 'medium' | 'large';
 }
 
+// Driveway Cleaning - separate service with sqft-based pricing
+export interface DrivewayCleaningOptions {
+  enabled: boolean;
+  sqft: number;
+  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
+}
+
+// Flatwork area with sqft input
+export interface FlatworkArea {
+  enabled: boolean;
+  sqft: number;
+}
+
+// Pressure Washing - for additional flatwork areas
 export interface PressureWashingOptions {
   enabled: boolean;
-  drivewaySize: 'small' | 'medium' | 'large';
   surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
-  frontPorch: boolean;
-  backPatio: boolean;
-  poolDeck: boolean;
-  sidewalks: boolean;
+  frontPorch: FlatworkArea;
+  backPatio: FlatworkArea;
+  poolDeck: FlatworkArea;
+  walkways: FlatworkArea;
 }
+
+// Default sqft estimates for each area type
+export const FLATWORK_DEFAULT_SQFT = {
+  driveway: 400,      // Average 2-car driveway
+  frontPorch: 80,     // Average front porch
+  backPatio: 200,     // Average back patio
+  poolDeck: 300,      // Average pool deck
+  walkways: 100,      // Average total walkway area
+} as const;
 
 export interface AdditionalServices {
   windowCleaning: boolean;
+  drivewayCleaning: DrivewayCleaningOptions;
   pressureWashing: PressureWashingOptions;
   gutterCleaning: boolean;
   houseWash: boolean;
@@ -51,9 +74,19 @@ export interface ServicePrices {
   sunroomAddon: number;
   windowCleaningTotal: number;
   
-  // Additional services
+  // Driveway cleaning (separate service)
+  drivewayCleaning: number;
+  
+  // Pressure washing (flatwork)
   pressureWashing: number;
-  pressureWashingAddons: number;
+  pressureWashingBreakdown: {
+    frontPorch: number;
+    backPatio: number;
+    poolDeck: number;
+    walkways: number;
+  };
+  
+  // Other services
   gutterCleaning: number;
   houseWash: number;
   roofCleaning: number;
@@ -98,14 +131,18 @@ export const DEFAULT_HOME_DETAILS: HomeDetails = {
 
 export const DEFAULT_ADDITIONAL_SERVICES: AdditionalServices = {
   windowCleaning: true,
+  drivewayCleaning: {
+    enabled: false,
+    sqft: FLATWORK_DEFAULT_SQFT.driveway,
+    surfaceType: 'concrete',
+  },
   pressureWashing: {
     enabled: false,
-    drivewaySize: 'medium',
     surfaceType: 'concrete',
-    frontPorch: false,
-    backPatio: false,
-    poolDeck: false,
-    sidewalks: false,
+    frontPorch: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.frontPorch },
+    backPatio: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.backPatio },
+    poolDeck: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.poolDeck },
+    walkways: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.walkways },
   },
   gutterCleaning: false,
   houseWash: false,
@@ -123,8 +160,14 @@ export const DEFAULT_SERVICE_PRICES: ServicePrices = {
   ladderWorkAddon: 0,
   sunroomAddon: 0,
   windowCleaningTotal: 0,
+  drivewayCleaning: 0,
   pressureWashing: 0,
-  pressureWashingAddons: 0,
+  pressureWashingBreakdown: {
+    frontPorch: 0,
+    backPatio: 0,
+    poolDeck: 0,
+    walkways: 0,
+  },
   gutterCleaning: 0,
   houseWash: 0,
   roofCleaning: 0,

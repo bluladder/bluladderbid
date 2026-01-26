@@ -137,8 +137,14 @@ export function OneTimeQuote({
             />
             
             <ServiceLine 
+              label="Driveway Cleaning" 
+              price={servicePrices.drivewayCleaning} 
+              enabled={additionalServices.drivewayCleaning.enabled} 
+            />
+            
+            <ServiceLine 
               label="Pressure Washing" 
-              price={servicePrices.pressureWashing + servicePrices.pressureWashingAddons} 
+              price={servicePrices.pressureWashing} 
               enabled={additionalServices.pressureWashing.enabled} 
             />
           </div>

@@ -159,24 +159,28 @@ export function BookingFlow({
       });
     }
     
-    if (additionalServices.pressureWashing.enabled) {
-      const pwTotal = servicePrices.pressureWashing + servicePrices.pressureWashingAddons;
-      if (pwTotal > 0) {
-        const pw = additionalServices.pressureWashing;
-        const areas: string[] = [];
-        areas.push(`${pw.drivewaySize} driveway (${pw.surfaceType})`);
-        if (pw.frontPorch) areas.push('front porch');
-        if (pw.backPatio) areas.push('back patio');
-        if (pw.poolDeck) areas.push('pool deck');
-        if (pw.sidewalks) areas.push('sidewalks');
-        
-        services.push({ 
-          service: 'driveway', 
-          name: 'Pressure Washing', 
-          price: pwTotal,
-          description: areas.join(', '),
-        });
-      }
+    if (additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0) {
+      services.push({ 
+        service: 'driveway', 
+        name: 'Driveway Cleaning', 
+        price: servicePrices.drivewayCleaning,
+        description: `${additionalServices.drivewayCleaning.sqft} sq ft (${additionalServices.drivewayCleaning.surfaceType})`,
+      });
+    }
+    
+    if (additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0) {
+      const areas: string[] = [];
+      if (additionalServices.pressureWashing.frontPorch.enabled) areas.push('front porch');
+      if (additionalServices.pressureWashing.backPatio.enabled) areas.push('back patio');
+      if (additionalServices.pressureWashing.poolDeck.enabled) areas.push('pool deck');
+      if (additionalServices.pressureWashing.walkways.enabled) areas.push('walkways');
+      
+      services.push({ 
+        service: 'pressure_wash_addon', 
+        name: 'Pressure Washing', 
+        price: servicePrices.pressureWashing,
+        description: areas.join(', '),
+      });
     }
     
     return services;
