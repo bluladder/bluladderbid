@@ -12,6 +12,7 @@ import { PastBookings } from '@/components/booking/PastBookings';
 import { ProgressStepper, type FlowStep } from '@/components/homeowner/ProgressStepper';
 import { useServicePricing } from '@/hooks/useServicePricing';
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
+import { useUtmTracking } from '@/hooks/useUtmTracking';
 import { 
   HomeDetails, 
   AdditionalServices, 
@@ -25,6 +26,9 @@ import { toast } from 'sonner';
 const Index = () => {
   const [searchParams] = useSearchParams();
   const isEmbedMode = searchParams.get('embed') === 'true';
+  
+  // Capture UTM tracking parameters for marketing attribution
+  const { getStoredUtmParams } = useUtmTracking();
   
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(DEFAULT_ADDITIONAL_SERVICES);
