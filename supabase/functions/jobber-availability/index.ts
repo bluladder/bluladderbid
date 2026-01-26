@@ -28,8 +28,8 @@ interface TimeSlot {
 
 // Business hours configuration
 const BUSINESS_HOURS = {
-  startHour: 8, // 8 AM
-  endHour: 18, // 6 PM
+  startHour: 9, // 9 AM
+  endHour: 17, // 5 PM
   workDays: [1, 2, 3, 4, 5, 6], // Monday through Saturday (0 = Sunday)
 };
 
