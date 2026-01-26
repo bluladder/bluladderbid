@@ -83,11 +83,10 @@ const ServiceLanding = () => {
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(() => {
     // Pre-select the featured service on its dedicated landing page
+    // Window Cleaning is ONLY pre-selected on /window-cleaning, not on other pages
     if (config?.preSelectService) {
       const updated = { ...DEFAULT_ADDITIONAL_SERVICES };
-      if (config.preSelectService === 'windowCleaning') {
-        updated.windowCleaning = true;
-      } else if (config.preSelectService === 'gutterCleaning') {
+      if (config.preSelectService === 'gutterCleaning') {
         updated.gutterCleaning = true;
       } else if (config.preSelectService === 'houseWash') {
         updated.houseWash = true;
@@ -97,27 +96,20 @@ const ServiceLanding = () => {
         updated.drivewayCleaning = { ...updated.drivewayCleaning, enabled: true };
       } else if (config.preSelectService === 'pressureWashing') {
         updated.pressureWashing = { ...updated.pressureWashing, enabled: true };
+      } else if (config.preSelectService === 'windowCleaning') {
+        updated.windowCleaning = true;
       }
       return updated;
     }
     return DEFAULT_ADDITIONAL_SERVICES;
   });
-  
-  type FlowState = 'selecting' | 'one-time-booking' | 'plan-selected' | 'plan-expanded';
-  const [flowState, setFlowState] = useState<FlowState>('selecting');
-  const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>('better');
-
-  const { servicePrices, bundles } = useServicePricing(homeDetails, additionalServices);
-  const { customizations, setTierCustomization } = usePlanCustomizations();
 
   // Re-apply featured service pre-selection if URL changes
   useEffect(() => {
     if (config?.preSelectService) {
       setAdditionalServices(prev => {
         const updated = { ...prev };
-        if (config.preSelectService === 'windowCleaning') {
-          updated.windowCleaning = true;
-        } else if (config.preSelectService === 'gutterCleaning') {
+        if (config.preSelectService === 'gutterCleaning') {
           updated.gutterCleaning = true;
         } else if (config.preSelectService === 'houseWash') {
           updated.houseWash = true;
@@ -127,11 +119,20 @@ const ServiceLanding = () => {
           updated.drivewayCleaning = { ...updated.drivewayCleaning, enabled: true };
         } else if (config.preSelectService === 'pressureWashing') {
           updated.pressureWashing = { ...updated.pressureWashing, enabled: true };
+        } else if (config.preSelectService === 'windowCleaning') {
+          updated.windowCleaning = true;
         }
         return updated;
       });
     }
   }, [config?.preSelectService]);
+  
+  type FlowState = 'selecting' | 'one-time-booking' | 'plan-selected' | 'plan-expanded';
+  const [flowState, setFlowState] = useState<FlowState>('selecting');
+  const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>('better');
+
+  const { servicePrices, bundles } = useServicePricing(homeDetails, additionalServices);
+  const { customizations, setTierCustomization } = usePlanCustomizations();
 
   // If invalid service slug, show 404-like message
   if (!config) {
