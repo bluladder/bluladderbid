@@ -29,9 +29,10 @@ interface CustomerInfoFormProps {
   onSubmit: (info: CustomerInfo) => void;
   initialData?: Partial<CustomerInfo>;
   isSubmitting?: boolean;
+  submitButtonText?: string;
 }
 
-export function CustomerInfoForm({ onSubmit, initialData, isSubmitting }: CustomerInfoFormProps) {
+export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitButtonText = 'Confirm Booking' }: CustomerInfoFormProps) {
   const [formData, setFormData] = useState<CustomerInfo>({
     firstName: initialData?.firstName || '',
     lastName: initialData?.lastName || '',
@@ -191,10 +192,10 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting }: Custom
             {isSubmitting ? (
               <>
                 <span className="animate-spin mr-2">⏳</span>
-                Booking...
+                Submitting...
               </>
             ) : (
-              'Confirm Booking'
+              submitButtonText
             )}
           </Button>
         </form>

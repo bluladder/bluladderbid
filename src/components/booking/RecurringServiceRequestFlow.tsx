@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import type { ServicePrices, AdditionalServices, HomeDetails, BundleTier } from '@/types/homeowner';
 
-type RequestStep = 'info' | 'confirmation';
+type RequestStep = 'info';
 
 interface RecurringServiceRequestFlowProps {
   servicePrices: ServicePrices;
@@ -91,13 +91,14 @@ export function RecurringServiceRequestFlow({
     return services;
   };
 
-  const handleCustomerInfoSubmit = (info: CustomerInfo) => {
+  const handleCustomerInfoSubmit = async (info: CustomerInfo) => {
     setCustomerInfo(info);
-    setStep('confirmation');
+    // Auto-submit the request immediately
+    await handleSubmitRequest(info);
   };
 
-  const handleSubmitRequest = async () => {
-    if (!customerInfo) {
+  const handleSubmitRequest = async (info: CustomerInfo) => {
+    if (!info) {
       toast.error('Please provide your contact information');
       return;
     }
@@ -110,11 +111,11 @@ export function RecurringServiceRequestFlow({
       const response = await supabase.functions.invoke('jobber-create-service-request', {
         body: {
           customer: {
-            email: customerInfo.email,
-            firstName: customerInfo.firstName,
-            lastName: customerInfo.lastName,
-            phone: customerInfo.phone,
-            address: customerInfo.address,
+            email: info.email,
+            firstName: info.firstName,
+            lastName: info.lastName,
+            phone: info.phone,
+            address: info.address,
           },
           selectedPlan: {
             tier: selectedBundle.tier,
@@ -125,7 +126,7 @@ export function RecurringServiceRequestFlow({
           },
           services,
           homeDetails,
-          notes: customerInfo.notes,
+          notes: info.notes,
         },
       });
 
@@ -143,7 +144,7 @@ export function RecurringServiceRequestFlow({
     }
   };
 
-  const progress = step === 'info' ? 50 : 100;
+  const progress = 100;
 
   // Success state
   if (isSuccess) {
@@ -213,13 +214,8 @@ export function RecurringServiceRequestFlow({
         
         <Progress value={progress} className="mt-4" />
         
-        <div className="flex justify-between text-xs text-muted-foreground mt-2">
-          <span className={step === 'info' ? 'text-primary font-medium' : ''}>
-            Your Information
-          </span>
-          <span className={step === 'confirmation' ? 'text-primary font-medium' : ''}>
-            Confirm Request
-          </span>
+        <div className="text-center text-xs text-muted-foreground mt-2">
+          Enter Your Information to Submit Request
         </div>
       </CardHeader>
 
@@ -250,121 +246,24 @@ export function RecurringServiceRequestFlow({
 
         <Separator />
 
-        {step === 'info' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <User className="w-4 h-4" />
-              <span>We'll use this information to contact you</span>
-            </div>
-            
-            <CustomerInfoForm
-              onSubmit={handleCustomerInfoSubmit}
-              initialData={customerInfo ?? undefined}
-            />
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <User className="w-4 h-4" />
+            <span>We'll use this information to contact you</span>
           </div>
-        )}
-
-        {step === 'confirmation' && customerInfo && (
-          <div className="space-y-6">
-            {/* Customer Info Summary */}
-            <div className="space-y-3">
-              <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                Your Information
-              </h4>
-              <div className="p-4 rounded-lg bg-muted/50 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Name</span>
-                  <span className="font-medium">{customerInfo.firstName} {customerInfo.lastName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Email</span>
-                  <span className="font-medium">{customerInfo.email}</span>
-                </div>
-                {customerInfo.phone && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Phone</span>
-                    <span className="font-medium">{customerInfo.phone}</span>
-                  </div>
-                )}
-                {customerInfo.address && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Address</span>
-                    <span className="font-medium text-right max-w-[200px]">{customerInfo.address}</span>
-                  </div>
-                )}
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setStep('info')}
-                className="text-primary"
-              >
-                Edit Information
-              </Button>
-            </div>
-
-            <Separator />
-
-            {/* What to Expect */}
-            <div className="space-y-3">
-              <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                What Happens Next
-              </h4>
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-xs font-bold text-primary">1</span>
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">We'll review your request</p>
-                    <p className="text-xs text-muted-foreground">Our team will review your home details and selected plan</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-xs font-bold text-primary">2</span>
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">We'll contact you</p>
-                    <p className="text-xs text-muted-foreground">Within 1 business day to discuss scheduling</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-xs font-bold text-primary">3</span>
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">Schedule your first service</p>
-                    <p className="text-xs text-muted-foreground">We'll set up your recurring plan at a time that works for you</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Submit Button */}
-            <div className="pt-4 space-y-3">
-              <Button
-                onClick={handleSubmitRequest}
-                disabled={isSubmitting}
-                className="w-full btn-primary h-12"
-              >
-                {isSubmitting ? (
-                  'Submitting...'
-                ) : (
-                  <>
-                    <Check className="w-5 h-5 mr-2" />
-                    Submit Request
-                  </>
-                )}
-              </Button>
-              
-              <p className="text-xs text-center text-muted-foreground">
-                By submitting, you're requesting information about our {selectedBundle.name} plan. 
-                No payment is required at this time.
-              </p>
-            </div>
-          </div>
-        )}
+          
+          <CustomerInfoForm
+            onSubmit={handleCustomerInfoSubmit}
+            initialData={customerInfo ?? undefined}
+            isSubmitting={isSubmitting}
+            submitButtonText="Submit Request"
+          />
+          
+          <p className="text-xs text-center text-muted-foreground">
+            By submitting, you're requesting information about our {selectedBundle.name} plan. 
+            No payment is required at this time.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
