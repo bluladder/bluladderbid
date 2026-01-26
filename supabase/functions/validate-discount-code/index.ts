@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { rateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,6 +9,22 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limit: 10 requests per minute per IP
+  const rateLimitResult = rateLimit(req, { limit: 10, windowMs: 60000 });
+  
+  if (!rateLimitResult.allowed) {
+    return new Response(
+      JSON.stringify({ 
+        valid: false, 
+        error: "Too many requests. Please try again later." 
+      }),
+      { 
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, 
+        status: 429 
+      }
+    );
   }
 
   try {
@@ -20,6 +37,15 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Validate code format (alphanumeric, 3-20 chars) to prevent injection
+    const sanitizedCode = code.toUpperCase().trim();
+    if (!/^[A-Z0-9]{3,20}$/.test(sanitizedCode)) {
+      return new Response(
+        JSON.stringify({ valid: false, error: "Invalid code format" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -27,7 +53,7 @@ Deno.serve(async (req) => {
     const { data: discountCode, error } = await supabase
       .from("discount_codes")
       .select("id, code, discount_type, discount_value, is_active, expires_at, usage_count, max_uses")
-      .eq("code", code.toUpperCase().trim())
+      .eq("code", sanitizedCode)
       .maybeSingle();
 
     if (error) {
