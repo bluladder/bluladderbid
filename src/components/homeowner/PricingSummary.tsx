@@ -150,12 +150,17 @@ export function PricingSummary({
               </div>
             )}
             
+            {servicePrices.drivewayCleaning > 0 && (
+              <div className="flex justify-between">
+                <span>Driveway Cleaning</span>
+                <span className="font-medium">{formatPrice(servicePrices.drivewayCleaning)}</span>
+              </div>
+            )}
+            
             {servicePrices.pressureWashing > 0 && (
               <div className="flex justify-between">
                 <span>Pressure Washing</span>
-                <span className="font-medium">
-                  {formatPrice(servicePrices.pressureWashing + servicePrices.pressureWashingAddons)}
-                </span>
+                <span className="font-medium">{formatPrice(servicePrices.pressureWashing)}</span>
               </div>
             )}
             

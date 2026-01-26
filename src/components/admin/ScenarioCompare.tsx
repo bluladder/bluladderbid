@@ -71,28 +71,41 @@ function calculatePrices(
     roofCleaning = Math.max(roofCalculated, roofConfig.minimumPrice ?? 0);
   }
   
-  // Pressure Washing
-  let pressureWashing = 0;
-  if (additionalServices.pressureWashing.enabled) {
-    const pwConfig = pricing.pressure_washing;
-    const { drivewaySize, surfaceType } = additionalServices.pressureWashing;
-    const drivewayBase = pwConfig.driveway[drivewaySize] ?? 0;
-    const surfaceMult = pwConfig.surfaceMultipliers[surfaceType] ?? 1;
-    pressureWashing = Math.round(drivewayBase * surfaceMult);
-    
-    if (additionalServices.pressureWashing.frontPorch) pressureWashing += pwConfig.addons.frontPorch ?? 0;
-    if (additionalServices.pressureWashing.backPatio) pressureWashing += pwConfig.addons.backPatio ?? 0;
-    if (additionalServices.pressureWashing.poolDeck) pressureWashing += pwConfig.addons.poolDeck ?? 0;
-    if (additionalServices.pressureWashing.sidewalks) pressureWashing += pwConfig.addons.sidewalks ?? 0;
+  // Driveway Cleaning
+  let drivewayCleaning = 0;
+  if (additionalServices.drivewayCleaning?.enabled) {
+    const dwConfig = pricing.driveway_cleaning;
+    const { sqft, surfaceType } = additionalServices.drivewayCleaning;
+    const baseDriveway = sqft * dwConfig.perSqFt;
+    const surfaceMult = dwConfig.surfaceMultipliers[surfaceType] ?? 1;
+    drivewayCleaning = Math.max(Math.round(baseDriveway * surfaceMult), dwConfig.minimumPrice ?? 0);
   }
   
-  const total = windowCleaning + houseWash + gutterCleaning + roofCleaning + pressureWashing;
+  // Pressure Washing
+  let pressureWashing = 0;
+  if (additionalServices.pressureWashing?.enabled) {
+    const pwConfig = pricing.pressure_washing;
+    const surfaceMult = pwConfig.surfaceMultipliers[additionalServices.pressureWashing.surfaceType] ?? 1;
+    const areas = ['frontPorch', 'backPatio', 'poolDeck', 'walkways'] as const;
+    for (const area of areas) {
+      const areaData = additionalServices.pressureWashing[area];
+      if (areaData?.enabled) {
+        pressureWashing += Math.round(areaData.sqft * pwConfig.perSqFt * surfaceMult);
+      }
+    }
+    if (pressureWashing > 0) {
+      pressureWashing = Math.max(pressureWashing, pwConfig.minimumPrice ?? 0);
+    }
+  }
+  
+  const total = windowCleaning + houseWash + gutterCleaning + roofCleaning + drivewayCleaning + pressureWashing;
   
   return {
     windowCleaning,
     houseWash,
     gutterCleaning,
     roofCleaning,
+    drivewayCleaning,
     pressureWashing,
     total,
   };

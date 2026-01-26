@@ -80,10 +80,17 @@ export function RecurringServiceRequestFlow({
         frequency: '1x per year',
       });
     }
-    if ((servicePrices.pressureWashing + servicePrices.pressureWashingAddons) > 0) {
+    if (servicePrices.drivewayCleaning > 0) {
+      services.push({ 
+        name: 'Driveway Cleaning', 
+        price: servicePrices.drivewayCleaning,
+        frequency: '1x per year',
+      });
+    }
+    if (servicePrices.pressureWashing > 0) {
       services.push({ 
         name: 'Pressure Washing', 
-        price: servicePrices.pressureWashing + servicePrices.pressureWashingAddons,
+        price: servicePrices.pressureWashing,
         frequency: '1x per year',
       });
     }

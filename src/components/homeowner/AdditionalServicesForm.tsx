@@ -1,10 +1,12 @@
-import { Droplets, Home, Cloud, Warehouse, Plus, Check } from 'lucide-react';
+import { Droplets, Home, Cloud, Warehouse, Plus, Check, Car } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { AdditionalServices, ServicePrices } from '@/types/homeowner';
+import type { AdditionalServices, ServicePrices, FlatworkArea } from '@/types/homeowner';
+import { FLATWORK_DEFAULT_SQFT } from '@/types/homeowner';
 
 interface AdditionalServicesFormProps {
   services: AdditionalServices;
@@ -19,6 +21,47 @@ function formatPrice(price: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(price);
+}
+
+// Component for flatwork area selection with sqft input
+interface FlatworkAreaInputProps {
+  label: string;
+  area: FlatworkArea;
+  price: number;
+  defaultSqft: number;
+  onChange: (area: FlatworkArea) => void;
+}
+
+function FlatworkAreaInput({ label, area, price, defaultSqft, onChange }: FlatworkAreaInputProps) {
+  return (
+    <label className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${
+      area.enabled ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+    }`}>
+      <Checkbox
+        checked={area.enabled}
+        onCheckedChange={(checked) => onChange({ ...area, enabled: !!checked })}
+      />
+      <div className="flex-1">
+        <div className="text-sm font-medium">{label}</div>
+        {area.enabled ? (
+          <div className="flex items-center gap-1 mt-1">
+            <Input
+              type="number"
+              value={area.sqft || ''}
+              onChange={(e) => onChange({ ...area, sqft: parseInt(e.target.value) || defaultSqft })}
+              placeholder={`~${defaultSqft}`}
+              className="w-20 h-6 text-xs"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <span className="text-xs text-muted-foreground">sqft</span>
+            {price > 0 && <span className="text-xs text-primary ml-auto">{formatPrice(price)}</span>}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">~{defaultSqft} sqft avg</div>
+        )}
+      </div>
+    </label>
+  );
 }
 
 export function AdditionalServicesForm({ services, servicePrices, onChange }: AdditionalServicesFormProps) {
@@ -38,68 +81,68 @@ export function AdditionalServicesForm({ services, servicePrices, onChange }: Ad
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Pressure Washing */}
+        {/* Driveway Cleaning */}
         <div className={`p-4 rounded-lg border-2 transition-all ${
-          services.pressureWashing.enabled 
+          services.drivewayCleaning.enabled 
             ? 'border-primary bg-primary/5' 
             : 'border-border hover:border-primary/30'
         }`}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
-              <Droplets className="w-5 h-5 text-primary" />
+              <Car className="w-5 h-5 text-primary" />
               <div>
-                <Label className="font-semibold text-base cursor-pointer">Pressure Washing</Label>
-                <p className="text-sm text-muted-foreground">Driveway, patio, and more</p>
+                <Label className="font-semibold text-base cursor-pointer">Driveway Cleaning</Label>
+                <p className="text-sm text-muted-foreground">Power wash your driveway</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
-              {services.pressureWashing.enabled && servicePrices.pressureWashing > 0 && (
+              {services.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0 && (
                 <span className="price-display text-lg text-primary">
-                  {formatPrice(servicePrices.pressureWashing + servicePrices.pressureWashingAddons)}
+                  {formatPrice(servicePrices.drivewayCleaning)}
                 </span>
               )}
               <Switch
-                checked={services.pressureWashing.enabled}
+                checked={services.drivewayCleaning.enabled}
                 onCheckedChange={(checked) => 
                   onChange({ 
-                    pressureWashing: { ...services.pressureWashing, enabled: checked } 
+                    drivewayCleaning: { ...services.drivewayCleaning, enabled: checked } 
                   })
                 }
               />
             </div>
           </div>
           
-          {services.pressureWashing.enabled && (
+          {services.drivewayCleaning.enabled && (
             <div className="space-y-4 pt-3 border-t border-border mt-3">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label className="text-sm">Driveway Size</Label>
-                  <Select
-                    value={services.pressureWashing.drivewaySize}
-                    onValueChange={(v) => 
-                      onChange({ 
-                        pressureWashing: { ...services.pressureWashing, drivewaySize: v as 'small' | 'medium' | 'large' } 
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="small">Small (1-car)</SelectItem>
-                      <SelectItem value="medium">Medium (2-car)</SelectItem>
-                      <SelectItem value="large">Large (3+ car)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-sm">Driveway Area</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={services.drivewayCleaning.sqft || ''}
+                      onChange={(e) => 
+                        onChange({ 
+                          drivewayCleaning: { 
+                            ...services.drivewayCleaning, 
+                            sqft: parseInt(e.target.value) || FLATWORK_DEFAULT_SQFT.driveway 
+                          } 
+                        })
+                      }
+                      placeholder={`~${FLATWORK_DEFAULT_SQFT.driveway}`}
+                      className="w-28"
+                    />
+                    <span className="text-sm text-muted-foreground">sq ft</span>
+                  </div>
                 </div>
                 
                 <div className="space-y-2">
                   <Label className="text-sm">Surface Type</Label>
                   <Select
-                    value={services.pressureWashing.surfaceType}
+                    value={services.drivewayCleaning.surfaceType}
                     onValueChange={(v) => 
                       onChange({ 
-                        pressureWashing: { ...services.pressureWashing, surfaceType: v as any } 
+                        drivewayCleaning: { ...services.drivewayCleaning, surfaceType: v as any } 
                       })
                     }
                   >
@@ -117,38 +160,106 @@ export function AdditionalServicesForm({ services, servicePrices, onChange }: Ad
                   </Select>
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Pressure Washing */}
+        <div className={`p-4 rounded-lg border-2 transition-all ${
+          services.pressureWashing.enabled 
+            ? 'border-primary bg-primary/5' 
+            : 'border-border hover:border-primary/30'
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <Droplets className="w-5 h-5 text-primary" />
+              <div>
+                <Label className="font-semibold text-base cursor-pointer">Pressure Washing</Label>
+                <p className="text-sm text-muted-foreground">Porches, patios, pool decks, walkways</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              {services.pressureWashing.enabled && servicePrices.pressureWashing > 0 && (
+                <span className="price-display text-lg text-primary">
+                  {formatPrice(servicePrices.pressureWashing)}
+                </span>
+              )}
+              <Switch
+                checked={services.pressureWashing.enabled}
+                onCheckedChange={(checked) => 
+                  onChange({ 
+                    pressureWashing: { ...services.pressureWashing, enabled: checked } 
+                  })
+                }
+              />
+            </div>
+          </div>
+          
+          {services.pressureWashing.enabled && (
+            <div className="space-y-4 pt-3 border-t border-border mt-3">
+              <div className="space-y-2">
+                <Label className="text-sm">Surface Type</Label>
+                <Select
+                  value={services.pressureWashing.surfaceType}
+                  onValueChange={(v) => 
+                    onChange({ 
+                      pressureWashing: { ...services.pressureWashing, surfaceType: v as any } 
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="concrete">Concrete</SelectItem>
+                    <SelectItem value="stamped">Stamped Concrete</SelectItem>
+                    <SelectItem value="pavers">Pavers</SelectItem>
+                    <SelectItem value="brick">Brick</SelectItem>
+                    <SelectItem value="stone">Stone</SelectItem>
+                    <SelectItem value="tile">Tile</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               
               <div className="space-y-2">
-                <Label className="text-sm">Add-On Areas</Label>
+                <Label className="text-sm">Select Areas</Label>
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { key: 'frontPorch', label: 'Front Porch', price: 75 },
-                    { key: 'backPatio', label: 'Back Patio', price: 95 },
-                    { key: 'poolDeck', label: 'Pool Deck', price: 125 },
-                    { key: 'sidewalks', label: 'Sidewalks', price: 65 },
-                  ].map(({ key, label, price }) => (
-                    <label
-                      key={key}
-                      className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${
-                        services.pressureWashing[key as keyof typeof services.pressureWashing]
-                          ? 'border-primary bg-primary/5'
-                          : 'border-border hover:border-primary/50'
-                      }`}
-                    >
-                      <Checkbox
-                        checked={services.pressureWashing[key as keyof typeof services.pressureWashing] as boolean}
-                        onCheckedChange={(checked) =>
-                          onChange({
-                            pressureWashing: { ...services.pressureWashing, [key]: checked }
-                          })
-                        }
-                      />
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">{label}</div>
-                        <div className="text-xs text-muted-foreground">+{formatPrice(price)}</div>
-                      </div>
-                    </label>
-                  ))}
+                  <FlatworkAreaInput
+                    label="Front Porch"
+                    area={services.pressureWashing.frontPorch}
+                    price={servicePrices.pressureWashingBreakdown.frontPorch}
+                    defaultSqft={FLATWORK_DEFAULT_SQFT.frontPorch}
+                    onChange={(area) => onChange({
+                      pressureWashing: { ...services.pressureWashing, frontPorch: area }
+                    })}
+                  />
+                  <FlatworkAreaInput
+                    label="Back Patio"
+                    area={services.pressureWashing.backPatio}
+                    price={servicePrices.pressureWashingBreakdown.backPatio}
+                    defaultSqft={FLATWORK_DEFAULT_SQFT.backPatio}
+                    onChange={(area) => onChange({
+                      pressureWashing: { ...services.pressureWashing, backPatio: area }
+                    })}
+                  />
+                  <FlatworkAreaInput
+                    label="Pool Deck"
+                    area={services.pressureWashing.poolDeck}
+                    price={servicePrices.pressureWashingBreakdown.poolDeck}
+                    defaultSqft={FLATWORK_DEFAULT_SQFT.poolDeck}
+                    onChange={(area) => onChange({
+                      pressureWashing: { ...services.pressureWashing, poolDeck: area }
+                    })}
+                  />
+                  <FlatworkAreaInput
+                    label="Walkways"
+                    area={services.pressureWashing.walkways}
+                    price={servicePrices.pressureWashingBreakdown.walkways}
+                    defaultSqft={FLATWORK_DEFAULT_SQFT.walkways}
+                    onChange={(area) => onChange({
+                      pressureWashing: { ...services.pressureWashing, walkways: area }
+                    })}
+                  />
                 </div>
               </div>
             </div>

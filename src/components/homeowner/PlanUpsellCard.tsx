@@ -135,14 +135,23 @@ export function PlanUpsellCard({
                 <span className="font-medium">{formatPrice(servicePrices.roofCleaning)}</span>
               </div>
             )}
-            {additionalServices.pressureWashing.enabled && (servicePrices.pressureWashing + servicePrices.pressureWashingAddons) > 0 && (
+            {additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0 && (
+              <div className="flex justify-between">
+                <span className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-success" />
+                  Driveway Cleaning
+                </span>
+                <span className="font-medium">{formatPrice(servicePrices.drivewayCleaning)}</span>
+              </div>
+            )}
+            {additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0 && (
               <div className="flex justify-between">
                 <span className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-success" />
                   Pressure Washing
                 </span>
                 <span className="font-medium">
-                  {formatPrice(servicePrices.pressureWashing + servicePrices.pressureWashingAddons)}
+                  {formatPrice(servicePrices.pressureWashing)}
                 </span>
               </div>
             )}

@@ -31,8 +31,14 @@ export function useServicePricing(
         ladderWorkAddon: 0,
         sunroomAddon: 0,
         windowCleaningTotal: 0,
+        drivewayCleaning: 0,
         pressureWashing: 0,
-        pressureWashingAddons: 0,
+        pressureWashingBreakdown: {
+          frontPorch: 0,
+          backPatio: 0,
+          poolDeck: 0,
+          walkways: 0,
+        },
         gutterCleaning: 0,
         houseWash: 0,
         roofCleaning: 0,
@@ -176,34 +182,66 @@ export function useServicePricing(
     }
     
     // ==========================================
-    // PRESSURE WASHING (driveway-based pricing)
+    // DRIVEWAY CLEANING (sqft-based pricing)
+    // ==========================================
+    let drivewayCleaning = 0;
+    if (additionalServices.drivewayCleaning.enabled) {
+      const dwConfig = PRICING.driveway_cleaning;
+      const { sqft, surfaceType } = additionalServices.drivewayCleaning;
+      const baseDriveway = sqft * dwConfig.perSqFt;
+      const surfaceMult = dwConfig.surfaceMultipliers[surfaceType] ?? 1;
+      const drivewayCalculated = Math.round(baseDriveway * surfaceMult);
+      drivewayCleaning = Math.max(drivewayCalculated, dwConfig.minimumPrice ?? 0);
+    }
+    
+    // ==========================================
+    // PRESSURE WASHING (flatwork areas - sqft-based)
     // ==========================================
     let pressureWashing = 0;
-    let pressureWashingAddons = 0;
+    const pressureWashingBreakdown = {
+      frontPorch: 0,
+      backPatio: 0,
+      poolDeck: 0,
+      walkways: 0,
+    };
     
     if (additionalServices.pressureWashing.enabled) {
       const pwConfig = PRICING.pressure_washing;
-      const { drivewaySize, surfaceType } = additionalServices.pressureWashing;
-      
-      const drivewayBase = pwConfig.driveway[drivewaySize] ?? 0;
+      const { surfaceType, frontPorch, backPatio, poolDeck, walkways } = additionalServices.pressureWashing;
       const surfaceMult = pwConfig.surfaceMultipliers[surfaceType] ?? 1;
-      pressureWashing = Math.round(drivewayBase * surfaceMult);
       
-      if (additionalServices.pressureWashing.frontPorch) {
-        pressureWashingAddons += pwConfig.addons.frontPorch ?? 0;
+      if (frontPorch.enabled) {
+        const basePrice = frontPorch.sqft * pwConfig.perSqFt;
+        pressureWashingBreakdown.frontPorch = Math.round(basePrice * surfaceMult);
       }
-      if (additionalServices.pressureWashing.backPatio) {
-        pressureWashingAddons += pwConfig.addons.backPatio ?? 0;
+      
+      if (backPatio.enabled) {
+        const basePrice = backPatio.sqft * pwConfig.perSqFt;
+        pressureWashingBreakdown.backPatio = Math.round(basePrice * surfaceMult);
       }
-      if (additionalServices.pressureWashing.poolDeck) {
-        pressureWashingAddons += pwConfig.addons.poolDeck ?? 0;
+      
+      if (poolDeck.enabled) {
+        const basePrice = poolDeck.sqft * pwConfig.perSqFt;
+        pressureWashingBreakdown.poolDeck = Math.round(basePrice * surfaceMult);
       }
-      if (additionalServices.pressureWashing.sidewalks) {
-        pressureWashingAddons += pwConfig.addons.sidewalks ?? 0;
+      
+      if (walkways.enabled) {
+        const basePrice = walkways.sqft * pwConfig.perSqFt;
+        pressureWashingBreakdown.walkways = Math.round(basePrice * surfaceMult);
+      }
+      
+      pressureWashing = pressureWashingBreakdown.frontPorch + 
+        pressureWashingBreakdown.backPatio + 
+        pressureWashingBreakdown.poolDeck + 
+        pressureWashingBreakdown.walkways;
+      
+      // Apply minimum if any area is enabled
+      if (pressureWashing > 0) {
+        pressureWashing = Math.max(pressureWashing, pwConfig.minimumPrice ?? 0);
       }
     }
     
-    const additionalServicesTotal = pressureWashing + pressureWashingAddons + 
+    const additionalServicesTotal = drivewayCleaning + pressureWashing + 
       gutterCleaning + houseWash + roofCleaning;
     
     return {
@@ -215,8 +253,9 @@ export function useServicePricing(
       ladderWorkAddon,
       sunroomAddon,
       windowCleaningTotal,
+      drivewayCleaning,
       pressureWashing,
-      pressureWashingAddons,
+      pressureWashingBreakdown,
       gutterCleaning,
       houseWash,
       roofCleaning,
@@ -228,7 +267,7 @@ export function useServicePricing(
   const bundles = useMemo<BundleTier[]>(() => {
     if (!PRICING) return [];
     
-    const { windowCleaningTotal, gutterCleaning, houseWash, roofCleaning, pressureWashing, pressureWashingAddons } = servicePrices;
+    const { windowCleaningTotal, gutterCleaning, houseWash, roofCleaning, drivewayCleaning, pressureWashing } = servicePrices;
     
     const BUNDLE_CONFIG = PRICING.bundle_config;
     
@@ -265,9 +304,15 @@ export function useServicePricing(
       let additionalAnnual = 0;
       const includedServices: string[] = [];
       
+      // Driveway cleaning (annual for all tiers if enabled)
+      if (additionalServices.drivewayCleaning.enabled) {
+        additionalAnnual += drivewayCleaning;
+        includedServices.push('Driveway Cleaning');
+      }
+      
       // Pressure washing (annual for all tiers if enabled)
       if (additionalServices.pressureWashing.enabled) {
-        additionalAnnual += (pressureWashing + pressureWashingAddons);
+        additionalAnnual += pressureWashing;
         includedServices.push('Pressure Washing');
       }
       
@@ -296,8 +341,11 @@ export function useServicePricing(
       
       // Calculate savings vs buying services individually
       let individualTotal = windowCleaningTotal * config.windowFrequency;
+      if (additionalServices.drivewayCleaning.enabled) {
+        individualTotal += drivewayCleaning;
+      }
       if (additionalServices.pressureWashing.enabled) {
-        individualTotal += pressureWashing + pressureWashingAddons;
+        individualTotal += pressureWashing;
       }
       if (additionalServices.gutterCleaning) {
         individualTotal += gutterCleaning * config.additionalServicesFrequency;
