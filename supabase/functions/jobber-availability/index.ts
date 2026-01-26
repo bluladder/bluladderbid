@@ -26,12 +26,18 @@ interface TimeSlot {
   isRecommended?: boolean;
 }
 
-// Business hours configuration
-const BUSINESS_HOURS = {
+// Default business hours (used if not configured in database)
+const DEFAULT_BUSINESS_HOURS = {
   startHour: 9, // 9 AM
   endHour: 17, // 5 PM
   workDays: [1, 2, 3, 4, 5, 6], // Monday through Saturday (0 = Sunday)
 };
+
+interface BusinessHoursConfig {
+  startHour: number;
+  endHour: number;
+  workDays: number[];
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -51,6 +57,27 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Fetch business hours from config
+    let BUSINESS_HOURS: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS;
+    
+    const { data: configData } = await supabase
+      .from("pricing_config")
+      .select("config_value")
+      .eq("config_key", "business_hours")
+      .maybeSingle();
+
+    if (configData?.config_value) {
+      const cfg = configData.config_value as Record<string, unknown>;
+      BUSINESS_HOURS = {
+        startHour: (cfg.startHour as number) ?? DEFAULT_BUSINESS_HOURS.startHour,
+        endHour: (cfg.endHour as number) ?? DEFAULT_BUSINESS_HOURS.endHour,
+        workDays: (cfg.workDays as number[]) ?? DEFAULT_BUSINESS_HOURS.workDays,
+      };
+      console.log("Using configured business hours:", BUSINESS_HOURS);
+    } else {
+      console.log("Using default business hours:", BUSINESS_HOURS);
+    }
 
     // Map service names to service_type enum
     const serviceTypeMap: Record<string, string> = {
