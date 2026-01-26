@@ -60,9 +60,11 @@ Deno.serve(async (req) => {
     }
 
     const tokenData = await tokenResponse.json();
+    console.log("Token response keys:", Object.keys(tokenData));
     
-    // Calculate expiration time
-    const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
+    // Calculate expiration time - default to 1 hour if not provided
+    const expiresInSeconds = tokenData.expires_in || tokenData.expiresIn || 3600;
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
 
     // Store tokens in Supabase
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
