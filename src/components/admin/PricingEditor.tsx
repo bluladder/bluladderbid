@@ -43,6 +43,14 @@ const FIELD_CONFIGS: Record<string, Record<string, FieldConfig>> = {
     perSqFt: { label: 'Rate per Sq Ft', type: 'rate', description: 'Base rate per square foot' },
     minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge regardless of house size' },
   },
+  driveway_cleaning: {
+    perSqFt: { label: 'Rate per Sq Ft', type: 'rate', description: 'Base rate per square foot' },
+    minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge regardless of area size' },
+  },
+  pressure_washing: {
+    perSqFt: { label: 'Rate per Sq Ft', type: 'rate', description: 'Base rate per square foot for flatwork' },
+    minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge per area' },
+  },
 };
 
 // Section descriptions for the new structure
@@ -72,10 +80,15 @@ const SECTION_INFO: Record<string, { title: string; description: string; icon: R
     description: 'Flat fee add-ons for ladder work and sunrooms',
     icon: <DollarSign className="w-5 h-5" />,
   },
-  pressure_washing: {
-    title: 'Pressure Washing',
-    description: 'Driveway-based pricing with surface multipliers and add-ons',
+  driveway_cleaning: {
+    title: 'Driveway Cleaning',
+    description: 'Per sq ft pricing for driveways with surface type multipliers',
     icon: <Wind className="w-5 h-5" />,
+  },
+  pressure_washing: {
+    title: 'Pressure Washing (Flatwork)',
+    description: 'Per sq ft pricing for porches, patios, pool decks, and walkways',
+    icon: <Droplets className="w-5 h-5" />,
   },
   bundle_config: {
     title: 'Bundle Configuration',
@@ -221,6 +234,7 @@ function ServicePricingSection({
 
   const info = SECTION_INFO[row.config_key];
   const isServiceWithModifiers = ['window_cleaning', 'house_wash', 'gutter_cleaning', 'roof_cleaning'].includes(row.config_key);
+  const isSqftBasedService = ['driveway_cleaning', 'pressure_washing'].includes(row.config_key);
 
   // Render rate inputs (perSqFt fields)
   const renderRates = () => {
@@ -264,7 +278,7 @@ function ServicePricingSection({
   // Render minimum price input
   const renderMinimumPrice = () => {
     const minPrice = values.minimumPrice as number | undefined;
-    if (minPrice === undefined && !['window_cleaning', 'house_wash', 'gutter_cleaning', 'roof_cleaning'].includes(row.config_key)) {
+    if (minPrice === undefined && !['window_cleaning', 'house_wash', 'gutter_cleaning', 'roof_cleaning', 'driveway_cleaning', 'pressure_washing'].includes(row.config_key)) {
       return null;
     }
 
@@ -315,7 +329,7 @@ function ServicePricingSection({
     );
   };
 
-  // Render flat fee add-ons (window_addons, pressure_washing)
+  // Render flat fee add-ons (window_addons)
   const renderFlatFees = () => {
     if (row.config_key === 'window_addons') {
       return (
@@ -342,65 +356,46 @@ function ServicePricingSection({
       );
     }
 
-    if (row.config_key === 'pressure_washing') {
-      return (
-        <div className="space-y-4">
-          {/* Driveway prices */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">Driveway Base Prices</h4>
-            <div className="grid gap-2 pl-4 border-l-2 border-muted">
-              {Object.entries((values.driveway || {}) as Record<string, number>).map(([key, value]) => (
-                <ModifierInput
-                  key={key}
-                  label={key}
-                  value={value}
-                  onChange={(val) => handleValueChange(['driveway', key], val)}
-                  isCurrency={true}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Surface multipliers */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">Surface Type Multipliers</h4>
-            <div className="grid gap-2 pl-4 border-l-2 border-muted">
-              {Object.entries((values.surfaceMultipliers || {}) as Record<string, number>).map(([key, value]) => (
-                <div key={key} className="flex items-center gap-2">
-                  <Label className="min-w-[100px] text-sm text-muted-foreground capitalize">{key}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={value}
-                    onChange={(e) => handleValueChange(['surfaceMultipliers', key], parseFloat(e.target.value) || 1)}
-                    className="w-24"
-                  />
-                  <span className="text-xs text-muted-foreground">× base price</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Add-ons */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">Add-on Prices</h4>
-            <div className="grid gap-2 pl-4 border-l-2 border-muted">
-              {Object.entries((values.addons || {}) as Record<string, number>).map(([key, value]) => (
-                <ModifierInput
-                  key={key}
-                  label={key}
-                  value={value}
-                  onChange={(val) => handleValueChange(['addons', key], val)}
-                  isCurrency={true}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return null;
+  };
+
+  // Render surface multipliers for sqft-based services
+  const renderSurfaceMultipliers = () => {
+    const multipliers = values.surfaceMultipliers as Record<string, number> | undefined;
+    if (!multipliers) return null;
+
+    return (
+      <div className="space-y-3">
+        <h4 className="text-sm font-semibold flex items-center gap-2">
+          <Percent className="w-4 h-4 text-blue-600" />
+          Surface Type Multipliers
+          <Badge variant="outline" className="text-xs">Adjusts base rate</Badge>
+        </h4>
+        <div className="grid gap-2 pl-4 border-l-2 border-blue-600/20">
+          {Object.entries(multipliers).map(([key, value]) => (
+            <div key={key} className="flex items-center gap-2">
+              <Label className="min-w-[100px] text-sm text-muted-foreground capitalize">{key}</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={value}
+                onChange={(e) => handleValueChange(['surfaceMultipliers', key], parseFloat(e.target.value) || 1)}
+                className="w-24"
+              />
+              <span className="text-xs text-muted-foreground">× base rate</span>
+              {value !== 1 && (
+                <Badge variant={value > 1 ? "default" : "secondary"} className="text-xs">
+                  {value > 1 ? `+${((value - 1) * 100).toFixed(0)}%` : `${((value - 1) * 100).toFixed(0)}%`}
+                </Badge>
+              )}
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground pl-4">
+          1.0 = standard rate, 1.25 = 25% higher, etc.
+        </p>
+      </div>
+    );
   };
 
   // Render bundle config
@@ -508,6 +503,16 @@ function ServicePricingSection({
               {renderMinimumPrice()}
               <Separator />
               {renderModifiers()}
+            </>
+          )}
+          
+          {isSqftBasedService && (
+            <>
+              {renderRates()}
+              <Separator />
+              {renderMinimumPrice()}
+              <Separator />
+              {renderSurfaceMultipliers()}
             </>
           )}
           
