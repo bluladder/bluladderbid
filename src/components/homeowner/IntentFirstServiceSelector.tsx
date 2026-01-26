@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { AdditionalServices, ServicePrices, HomeDetails, FlatworkArea } from '@/types/homeowner';
 import { FLATWORK_DEFAULT_SQFT } from '@/types/homeowner';
-
+import { SqftCalculator } from './SqftCalculator';
 interface IntentFirstServiceSelectorProps {
   services: AdditionalServices;
   servicePrices: ServicePrices;
@@ -113,10 +113,11 @@ interface FlatworkAreaInputProps {
   area: FlatworkArea;
   price: number;
   defaultSqft: number;
+  calculatorType: 'porch' | 'patio' | 'poolDeck' | 'walkways';
   onChange: (area: FlatworkArea) => void;
 }
 
-function FlatworkAreaInput({ label, area, price, defaultSqft, onChange }: FlatworkAreaInputProps) {
+function FlatworkAreaInput({ label, area, price, defaultSqft, calculatorType, onChange }: FlatworkAreaInputProps) {
   return (
     <div className={`p-3 rounded-lg border transition-all ${
       area.enabled ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
@@ -134,7 +135,7 @@ function FlatworkAreaInput({ label, area, price, defaultSqft, onChange }: Flatwo
         )}
       </div>
       {area.enabled && (
-        <div className="flex items-center gap-2 pl-6">
+        <div className="flex items-center gap-1 pl-6">
           <Input
             type="number"
             value={area.sqft || ''}
@@ -143,6 +144,11 @@ function FlatworkAreaInput({ label, area, price, defaultSqft, onChange }: Flatwo
             className="w-24 h-8 text-sm"
           />
           <span className="text-xs text-muted-foreground">sq ft</span>
+          <SqftCalculator
+            type={calculatorType}
+            currentValue={area.sqft}
+            onApply={(sqft) => onChange({ ...area, sqft })}
+          />
         </div>
       )}
     </div>
@@ -456,7 +462,7 @@ export function IntentFirstServiceSelector({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label className="text-sm">Driveway Area</Label>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <Input
                     type="number"
                     value={services.drivewayCleaning.sqft || ''}
@@ -472,10 +478,14 @@ export function IntentFirstServiceSelector({
                     className="w-28"
                   />
                   <span className="text-sm text-muted-foreground">sq ft</span>
+                  <SqftCalculator
+                    type="driveway"
+                    currentValue={services.drivewayCleaning.sqft}
+                    onApply={(sqft) => onChange({ 
+                      drivewayCleaning: { ...services.drivewayCleaning, sqft } 
+                    })}
+                  />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Avg: 1-car ~250 sqft, 2-car ~400 sqft, 3-car ~600 sqft
-                </p>
               </div>
               
               <div className="space-y-2">
@@ -552,6 +562,7 @@ export function IntentFirstServiceSelector({
                   area={services.pressureWashing.frontPorch}
                   price={servicePrices.pressureWashingBreakdown.frontPorch}
                   defaultSqft={FLATWORK_DEFAULT_SQFT.frontPorch}
+                  calculatorType="porch"
                   onChange={(area) => onChange({
                     pressureWashing: { ...services.pressureWashing, frontPorch: area }
                   })}
@@ -562,6 +573,7 @@ export function IntentFirstServiceSelector({
                   area={services.pressureWashing.backPatio}
                   price={servicePrices.pressureWashingBreakdown.backPatio}
                   defaultSqft={FLATWORK_DEFAULT_SQFT.backPatio}
+                  calculatorType="patio"
                   onChange={(area) => onChange({
                     pressureWashing: { ...services.pressureWashing, backPatio: area }
                   })}
@@ -572,6 +584,7 @@ export function IntentFirstServiceSelector({
                   area={services.pressureWashing.poolDeck}
                   price={servicePrices.pressureWashingBreakdown.poolDeck}
                   defaultSqft={FLATWORK_DEFAULT_SQFT.poolDeck}
+                  calculatorType="poolDeck"
                   onChange={(area) => onChange({
                     pressureWashing: { ...services.pressureWashing, poolDeck: area }
                   })}
@@ -582,6 +595,7 @@ export function IntentFirstServiceSelector({
                   area={services.pressureWashing.walkways}
                   price={servicePrices.pressureWashingBreakdown.walkways}
                   defaultSqft={FLATWORK_DEFAULT_SQFT.walkways}
+                  calculatorType="walkways"
                   onChange={(area) => onChange({
                     pressureWashing: { ...services.pressureWashing, walkways: area }
                   })}
