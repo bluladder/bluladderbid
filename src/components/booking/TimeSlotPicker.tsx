@@ -70,7 +70,31 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
         },
       });
 
-      if (fnError) throw fnError;
+      // Supabase returns non-2xx edge responses as fnError (data may be null).
+      // We parse the JSON payload embedded in the error message so we can show the real
+      // "busy / retryAfter" message instead of a generic one.
+      if (fnError) {
+        const msg = (fnError as unknown as { message?: string })?.message ?? String(fnError);
+        const jsonMatch = msg.match(/(\{[\s\S]*\})\s*$/);
+        if (jsonMatch) {
+          try {
+            const payload = JSON.parse(jsonMatch[1]) as { error?: string; retryAfter?: number };
+            if (payload?.error) {
+              setError(payload.error);
+              if (payload.retryAfter) {
+                setIsThrottled(true);
+                setRetryCountdown(payload.retryAfter);
+              }
+              setSlots([]);
+              setRecommendedDays([]);
+              return;
+            }
+          } catch {
+            // fall through
+          }
+        }
+        throw fnError;
+      }
 
       if (data.error) {
         // Check if it's a throttle/busy error
@@ -125,18 +149,15 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
     }
   };
 
-  // Auto-retry countdown for throttled state
+  // Countdown only (no auto-retry) to avoid repeatedly hitting rate limits.
   useEffect(() => {
     if (retryCountdown > 0) {
       const timer = setTimeout(() => {
         setRetryCountdown(prev => prev - 1);
       }, 1000);
       return () => clearTimeout(timer);
-    } else if (isThrottled && retryCountdown === 0) {
-      // Auto-retry when countdown reaches 0
-      fetchAvailability(true);
     }
-  }, [retryCountdown, isThrottled]);
+  }, [retryCountdown]);
 
   useEffect(() => {
     if (services.length > 0) {
