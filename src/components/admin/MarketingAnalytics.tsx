@@ -22,7 +22,7 @@ import {
   Funnel,
   LabelList,
 } from 'recharts';
-import { RefreshCw, TrendingUp, Users, DollarSign, Megaphone, Filter } from 'lucide-react';
+import { RefreshCw, TrendingUp, Users, DollarSign, Megaphone, Filter, FileText, ArrowRightLeft } from 'lucide-react';
 import { format, parseISO, subDays, startOfDay, endOfDay } from 'date-fns';
 import { toast } from 'sonner';
 
@@ -41,6 +41,15 @@ interface Booking {
   utm_params_json: UtmParams | null;
   created_at: string;
   status: string;
+}
+
+interface Quote {
+  id: string;
+  total: number;
+  utm_params_json: UtmParams | null;
+  created_at: string;
+  status: string;
+  converted_booking_id: string | null;
 }
 
 const COLORS = [
@@ -71,28 +80,37 @@ interface ChartData {
 
 export function MarketingAnalytics() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
 
-  const fetchBookings = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      let query = supabase
-        .from('bookings')
-        .select('id, total, utm_params_json, created_at, status')
-        .order('created_at', { ascending: true });
+      const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : dateRange === '90d' ? 90 : null;
+      const startDate = days ? startOfDay(subDays(new Date(), days)).toISOString() : null;
 
-      if (dateRange !== 'all') {
-        const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
-        const startDate = startOfDay(subDays(new Date(), days)).toISOString();
-        query = query.gte('created_at', startDate);
-      }
+      // Fetch bookings and quotes in parallel
+      const [bookingsRes, quotesRes] = await Promise.all([
+        supabase
+          .from('bookings')
+          .select('id, total, utm_params_json, created_at, status')
+          .order('created_at', { ascending: true })
+          .gte('created_at', startDate || '1970-01-01'),
+        supabase
+          .from('quotes')
+          .select('id, total, utm_params_json, created_at, status, converted_booking_id')
+          .order('created_at', { ascending: true })
+          .gte('created_at', startDate || '1970-01-01'),
+      ]);
 
-      const { data, error } = await query;
-      if (error) throw error;
-      setBookings((data as Booking[]) || []);
+      if (bookingsRes.error) throw bookingsRes.error;
+      if (quotesRes.error) throw quotesRes.error;
+      
+      setBookings((bookingsRes.data as Booking[]) || []);
+      setQuotes((quotesRes.data as Quote[]) || []);
     } catch (err) {
-      console.error('Failed to fetch bookings:', err);
+      console.error('Failed to fetch analytics data:', err);
       toast.error('Failed to load analytics data');
     } finally {
       setLoading(false);
@@ -100,7 +118,7 @@ export function MarketingAnalytics() {
   };
 
   useEffect(() => {
-    fetchBookings();
+    fetchData();
   }, [dateRange]);
 
   // Aggregate data by source
@@ -263,29 +281,36 @@ export function MarketingAnalytics() {
     };
   }, [bookings]);
 
-  // Conversion funnel data by source
+  // Conversion funnel data by source (using quotes)
   const funnelDataBySource = useMemo(() => {
     const sources: Record<string, { 
-      total: number; 
-      confirmed: number; 
+      quotes: number; 
+      converted: number; 
       completed: number;
       revenue: number;
     }> = {};
     
+    // Count quotes by source
+    quotes.forEach(q => {
+      const source = q.utm_params_json?.utm_source || 'Direct';
+      if (!sources[source]) {
+        sources[source] = { quotes: 0, converted: 0, completed: 0, revenue: 0 };
+      }
+      sources[source].quotes++;
+      
+      // Count converted quotes
+      if (q.status === 'converted' || q.converted_booking_id) {
+        sources[source].converted++;
+        sources[source].revenue += q.total;
+      }
+    });
+    
+    // Count completed bookings by source
     bookings.forEach(b => {
       const source = b.utm_params_json?.utm_source || 'Direct';
       if (!sources[source]) {
-        sources[source] = { total: 0, confirmed: 0, completed: 0, revenue: 0 };
+        sources[source] = { quotes: 0, converted: 0, completed: 0, revenue: 0 };
       }
-      sources[source].total++;
-      sources[source].revenue += b.total;
-      
-      // Count progressed bookings (not pending or cancelled)
-      if (['confirmed', 'scheduled', 'in_progress', 'completed'].includes(b.status)) {
-        sources[source].confirmed++;
-      }
-      
-      // Count completed bookings
       if (b.status === 'completed') {
         sources[source].completed++;
       }
@@ -295,34 +320,36 @@ export function MarketingAnalytics() {
       .map(([name, data]) => ({
         name,
         ...data,
-        confirmRate: data.total > 0 ? (data.confirmed / data.total) * 100 : 0,
-        completeRate: data.total > 0 ? (data.completed / data.total) * 100 : 0,
-        avgValue: data.total > 0 ? data.revenue / data.total : 0,
+        conversionRate: data.quotes > 0 ? (data.converted / data.quotes) * 100 : 0,
+        completionRate: data.converted > 0 ? (data.completed / data.converted) * 100 : 0,
+        avgValue: data.converted > 0 ? data.revenue / data.converted : 0,
       }))
-      .sort((a, b) => b.total - a.total)
+      .filter(s => s.quotes > 0)
+      .sort((a, b) => b.quotes - a.quotes)
       .slice(0, 8);
-  }, [bookings]);
+  }, [quotes, bookings]);
 
-  // Overall funnel data
+  // Overall funnel data (Quote → Booking → Completed)
   const overallFunnelData = useMemo(() => {
-    const total = bookings.length;
-    const confirmed = bookings.filter(b => 
-      ['confirmed', 'scheduled', 'in_progress', 'completed'].includes(b.status)
-    ).length;
-    const completed = bookings.filter(b => b.status === 'completed').length;
+    const totalQuotes = quotes.length;
+    const convertedQuotes = quotes.filter(q => q.status === 'converted' || q.converted_booking_id).length;
+    const completedBookings = bookings.filter(b => b.status === 'completed').length;
     
     return [
-      { name: 'All Bookings', value: total, fill: 'hsl(var(--primary))' },
-      { name: 'Confirmed', value: confirmed, fill: 'hsl(var(--chart-2))' },
-      { name: 'Completed', value: completed, fill: 'hsl(var(--chart-3))' },
+      { name: 'Quotes Created', value: totalQuotes, fill: 'hsl(var(--primary))' },
+      { name: 'Converted to Booking', value: convertedQuotes, fill: 'hsl(var(--chart-2))' },
+      { name: 'Completed', value: completedBookings, fill: 'hsl(var(--chart-3))' },
     ];
-  }, [bookings]);
+  }, [quotes, bookings]);
 
   // Summary stats
+  const totalQuotes = quotes.length;
+  const convertedQuotes = quotes.filter(q => q.status === 'converted' || q.converted_booking_id).length;
   const totalBookings = bookings.length;
   const totalRevenue = bookings.reduce((sum, b) => sum + b.total, 0);
-  const attributedBookings = bookings.filter(b => b.utm_params_json?.utm_source).length;
-  const attributionRate = totalBookings > 0 ? (attributedBookings / totalBookings) * 100 : 0;
+  const attributedQuotes = quotes.filter(q => q.utm_params_json?.utm_source).length;
+  const attributionRate = totalQuotes > 0 ? (attributedQuotes / totalQuotes) * 100 : 0;
+  const quoteConversionRate = totalQuotes > 0 ? (convertedQuotes / totalQuotes) * 100 : 0;
   const avgOrderValue = totalBookings > 0 ? totalRevenue / totalBookings : 0;
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -363,19 +390,29 @@ export function MarketingAnalytics() {
               </Button>
             ))}
           </div>
-          <Button variant="outline" size="sm" onClick={fetchBookings} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Quotes</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{totalQuotes}</p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Total Bookings</span>
+              <span className="text-sm text-muted-foreground">Bookings</span>
             </div>
             <p className="text-2xl font-bold mt-1">{totalBookings}</p>
           </CardContent>
@@ -384,8 +421,18 @@ export function MarketingAnalytics() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
+              <ArrowRightLeft className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Conversion</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{quoteConversionRate.toFixed(1)}%</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Total Revenue</span>
+              <span className="text-sm text-muted-foreground">Revenue</span>
             </div>
             <p className="text-2xl font-bold mt-1">{formatPrice(totalRevenue)}</p>
           </CardContent>
@@ -395,7 +442,7 @@ export function MarketingAnalytics() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
               <Megaphone className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Attribution Rate</span>
+              <span className="text-sm text-muted-foreground">Attributed</span>
             </div>
             <p className="text-2xl font-bold mt-1">{attributionRate.toFixed(1)}%</p>
           </CardContent>
@@ -405,7 +452,7 @@ export function MarketingAnalytics() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Avg Order Value</span>
+              <span className="text-sm text-muted-foreground">Avg Value</span>
             </div>
             <p className="text-2xl font-bold mt-1">{formatPrice(avgOrderValue)}</p>
           </CardContent>
@@ -512,7 +559,7 @@ export function MarketingAnalytics() {
                 <div className="mt-4 grid grid-cols-3 gap-4 text-center">
                   <div>
                     <p className="text-2xl font-bold">{overallFunnelData[0]?.value || 0}</p>
-                    <p className="text-xs text-muted-foreground">Total Bookings</p>
+                    <p className="text-xs text-muted-foreground">Quotes Created</p>
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
@@ -520,12 +567,12 @@ export function MarketingAnalytics() {
                         ? Math.round((overallFunnelData[1]?.value / overallFunnelData[0]?.value) * 100)
                         : 0}%
                     </p>
-                    <p className="text-xs text-muted-foreground">Confirmation Rate</p>
+                    <p className="text-xs text-muted-foreground">Conversion Rate</p>
                   </div>
                   <div>
                     <p className="text-2xl font-bold">
-                      {overallFunnelData[0]?.value > 0 
-                        ? Math.round((overallFunnelData[2]?.value / overallFunnelData[0]?.value) * 100)
+                      {overallFunnelData[1]?.value > 0 
+                        ? Math.round((overallFunnelData[2]?.value / overallFunnelData[1]?.value) * 100)
                         : 0}%
                     </p>
                     <p className="text-xs text-muted-foreground">Completion Rate</p>
@@ -538,7 +585,7 @@ export function MarketingAnalytics() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-medium">Conversion Rates by Source</CardTitle>
-                <CardDescription>How different sources progress through the funnel</CardDescription>
+                <CardDescription>Quote to booking conversion by traffic source</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[300px]">
@@ -556,8 +603,8 @@ export function MarketingAnalytics() {
                         }}
                       />
                       <Legend />
-                      <Bar dataKey="confirmRate" name="Confirmed %" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
-                      <Bar dataKey="completeRate" name="Completed %" fill="hsl(var(--chart-3))" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="conversionRate" name="Quote→Booking %" fill="hsl(var(--chart-2))" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="completionRate" name="Booking→Complete %" fill="hsl(var(--chart-3))" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -569,7 +616,7 @@ export function MarketingAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium">Source Performance Breakdown</CardTitle>
-              <CardDescription>Detailed conversion metrics by traffic source</CardDescription>
+              <CardDescription>Quote to booking conversion metrics by traffic source</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -577,10 +624,10 @@ export function MarketingAnalytics() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-3 px-2 font-medium">Source</th>
-                      <th className="text-right py-3 px-2 font-medium">Bookings</th>
-                      <th className="text-right py-3 px-2 font-medium">Confirmed</th>
+                      <th className="text-right py-3 px-2 font-medium">Quotes</th>
+                      <th className="text-right py-3 px-2 font-medium">Converted</th>
                       <th className="text-right py-3 px-2 font-medium">Completed</th>
-                      <th className="text-right py-3 px-2 font-medium">Confirm %</th>
+                      <th className="text-right py-3 px-2 font-medium">Conv %</th>
                       <th className="text-right py-3 px-2 font-medium">Complete %</th>
                       <th className="text-right py-3 px-2 font-medium">Revenue</th>
                       <th className="text-right py-3 px-2 font-medium">Avg Value</th>
@@ -598,17 +645,17 @@ export function MarketingAnalytics() {
                             <span className="font-medium">{source.name}</span>
                           </div>
                         </td>
-                        <td className="text-right py-3 px-2">{source.total}</td>
-                        <td className="text-right py-3 px-2">{source.confirmed}</td>
+                        <td className="text-right py-3 px-2">{source.quotes}</td>
+                        <td className="text-right py-3 px-2">{source.converted}</td>
                         <td className="text-right py-3 px-2">{source.completed}</td>
                         <td className="text-right py-3 px-2">
-                          <Badge variant={source.confirmRate >= 80 ? 'default' : source.confirmRate >= 50 ? 'secondary' : 'outline'}>
-                            {source.confirmRate.toFixed(1)}%
+                          <Badge variant={source.conversionRate >= 50 ? 'default' : source.conversionRate >= 25 ? 'secondary' : 'outline'}>
+                            {source.conversionRate.toFixed(1)}%
                           </Badge>
                         </td>
                         <td className="text-right py-3 px-2">
-                          <Badge variant={source.completeRate >= 50 ? 'default' : source.completeRate >= 25 ? 'secondary' : 'outline'}>
-                            {source.completeRate.toFixed(1)}%
+                          <Badge variant={source.completionRate >= 50 ? 'default' : source.completionRate >= 25 ? 'secondary' : 'outline'}>
+                            {source.completionRate.toFixed(1)}%
                           </Badge>
                         </td>
                         <td className="text-right py-3 px-2 font-medium">{formatPrice(source.revenue)}</td>

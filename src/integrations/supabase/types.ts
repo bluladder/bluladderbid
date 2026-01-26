@@ -242,6 +242,90 @@ export type Database = {
         }
         Relationships: []
       }
+      quotes: {
+        Row: {
+          converted_at: string | null
+          converted_booking_id: string | null
+          created_at: string
+          customer_email: string | null
+          customer_id: string | null
+          customer_name: string | null
+          customer_phone: string | null
+          discount_amount: number | null
+          discount_code: string | null
+          expires_at: string | null
+          home_details_json: Json
+          id: string
+          services_json: Json
+          session_id: string | null
+          status: Database["public"]["Enums"]["quote_status"]
+          subtotal: number
+          total: number
+          updated_at: string
+          utm_params_json: Json | null
+          viewed_at: string | null
+        }
+        Insert: {
+          converted_at?: string | null
+          converted_booking_id?: string | null
+          created_at?: string
+          customer_email?: string | null
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          discount_amount?: number | null
+          discount_code?: string | null
+          expires_at?: string | null
+          home_details_json: Json
+          id?: string
+          services_json: Json
+          session_id?: string | null
+          status?: Database["public"]["Enums"]["quote_status"]
+          subtotal: number
+          total: number
+          updated_at?: string
+          utm_params_json?: Json | null
+          viewed_at?: string | null
+        }
+        Update: {
+          converted_at?: string | null
+          converted_booking_id?: string | null
+          created_at?: string
+          customer_email?: string | null
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          discount_amount?: number | null
+          discount_code?: string | null
+          expires_at?: string | null
+          home_details_json?: Json
+          id?: string
+          services_json?: Json
+          session_id?: string | null
+          status?: Database["public"]["Enums"]["quote_status"]
+          subtotal?: number
+          total?: number
+          updated_at?: string
+          utm_params_json?: Json | null
+          viewed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quotes_converted_booking_id_fkey"
+            columns: ["converted_booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotes_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       saved_scenarios: {
         Row: {
           additional_services: Json
@@ -388,6 +472,7 @@ export type Database = {
         | "in_progress"
         | "completed"
         | "cancelled"
+      quote_status: "pending" | "viewed" | "converted" | "expired" | "declined"
       service_type:
         | "windows_exterior"
         | "windows_interior"
@@ -532,6 +617,7 @@ export const Constants = {
         "completed",
         "cancelled",
       ],
+      quote_status: ["pending", "viewed", "converted", "expired", "declined"],
       service_type: [
         "windows_exterior",
         "windows_interior",
