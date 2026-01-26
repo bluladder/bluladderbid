@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
-import { AdditionalServicesForm } from '@/components/homeowner/AdditionalServicesForm';
+import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
+import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
 import { WindowPricingDisplay } from '@/components/homeowner/WindowPricingDisplay';
-import { ServiceModeSelector, type ServiceMode } from '@/components/homeowner/ServiceModeSelector';
 import { ServicePlanSelector } from '@/components/homeowner/ServicePlanSelector';
-import { SingleVisitServices } from '@/components/homeowner/SingleVisitServices';
 import { PricingSummary } from '@/components/homeowner/PricingSummary';
 import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
 import { CustomerLookup } from '@/components/booking/CustomerLookup';
@@ -24,10 +23,14 @@ const Index = () => {
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(DEFAULT_ADDITIONAL_SERVICES);
   
-  // New simplified flow state
-  const [serviceMode, setServiceMode] = useState<ServiceMode>(null);
-  const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>(null);
-  const [showBookingFlow, setShowBookingFlow] = useState(false);
+  // Intent-first flow state: 
+  // - 'selecting': User is selecting services (default)
+  // - 'one-time-booking': User chose one-time, proceed to booking
+  // - 'plan-selected': User chose a plan, show confirmation
+  // - 'plan-expanded': User wants to see all plan options
+  type FlowState = 'selecting' | 'one-time-booking' | 'plan-selected' | 'plan-expanded';
+  const [flowState, setFlowState] = useState<FlowState>('selecting');
+  const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>('better');
   
   // Customer lookup state
   const [showCustomerLookup, setShowCustomerLookup] = useState(true);
@@ -93,8 +96,7 @@ const Index = () => {
     // Load the home details from the past booking
     setHomeDetails(booking.homeDetails);
     setAdditionalServices(booking.additionalServices);
-    setServiceMode('one-time');
-    setShowBookingFlow(true);
+    setFlowState('one-time-booking');
     
     toast.success('Configuration loaded!', {
       description: 'Your previous service settings have been applied.',
@@ -106,25 +108,37 @@ const Index = () => {
     // Keep customer info but let them build fresh
     setHomeDetails(DEFAULT_HOME_DETAILS);
     setAdditionalServices(DEFAULT_ADDITIONAL_SERVICES);
-    setServiceMode(null);
-    setSelectedTier(null);
-    setShowBookingFlow(false);
+    setFlowState('selecting');
+    setSelectedTier('better');
   };
 
-  // Reset service mode selection
-  const handleBackToModeSelection = () => {
-    setServiceMode(null);
-    setSelectedTier(null);
-    setShowBookingFlow(false);
+  // Handle book one-time
+  const handleBookOneTime = () => {
+    setFlowState('one-time-booking');
+  };
+
+  // Handle upgrade to plan
+  const handleUpgradeAndBook = () => {
+    setFlowState('plan-selected');
+  };
+
+  // Handle tier selection from expanded view
+  const handleTierSelect = (tier: 'good' | 'better' | 'best') => {
+    setSelectedTier(tier);
+  };
+
+  // Reset to service selection
+  const handleBackToSelection = () => {
+    setFlowState('selecting');
   };
 
   // Show past bookings view for returning customers with booking history
-  const showPastBookingsView = returningCustomer && pastBookings.length > 0 && !serviceMode;
+  const showPastBookingsView = returningCustomer && pastBookings.length > 0 && flowState === 'selecting';
 
   // Determine what to show in the right column
   const renderRightColumn = () => {
-    // One-time flow with booking
-    if (serviceMode === 'one-time' && showBookingFlow) {
+    // One-time booking flow
+    if (flowState === 'one-time-booking') {
       return (
         <OneTimeSummary
           servicePrices={servicePrices}
@@ -137,20 +151,8 @@ const Index = () => {
       );
     }
     
-    // One-time flow - show simplified services summary
-    if (serviceMode === 'one-time') {
-      return (
-        <SingleVisitServices
-          servicePrices={servicePrices}
-          additionalServices={additionalServices}
-          onBack={handleBackToModeSelection}
-          onContinue={() => setShowBookingFlow(true)}
-        />
-      );
-    }
-    
-    // Recurring flow with selected tier
-    if (serviceMode === 'recurring' && selectedBundle) {
+    // Plan selected - show pricing summary
+    if (flowState === 'plan-selected' && selectedBundle) {
       return (
         <PricingSummary
           servicePrices={servicePrices}
@@ -164,48 +166,19 @@ const Index = () => {
       );
     }
     
-    // Default empty state
+    // Default: show intent-first upsell card
     return (
-      <div className="card-gradient p-6 text-center">
-        <div className="w-12 h-12 rounded-full bg-muted mx-auto mb-4 flex items-center justify-center">
-          <span className="text-2xl">📋</span>
-        </div>
-        <h3 className="font-semibold text-foreground mb-2">
-          Your Quote Summary
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Select a service option to see your complete pricing.
-        </p>
-      </div>
+      <PlanUpsellCard
+        oneTimeTotal={servicePrices.grandTotal}
+        servicePrices={servicePrices}
+        additionalServices={additionalServices}
+        bundles={bundles}
+        selectedTier={selectedTier}
+        onSelectTier={handleTierSelect}
+        onBookOneTime={handleBookOneTime}
+        onUpgradeAndBook={handleUpgradeAndBook}
+      />
     );
-  };
-
-  // Render the service selection area based on mode
-  const renderServiceSelection = () => {
-    // No mode selected - show mode selector
-    if (!serviceMode) {
-      return (
-        <ServiceModeSelector
-          selectedMode={serviceMode}
-          onSelectMode={setServiceMode}
-        />
-      );
-    }
-    
-    // Recurring mode - show plan selector
-    if (serviceMode === 'recurring') {
-      return (
-        <ServicePlanSelector
-          bundles={bundles}
-          selectedTier={selectedTier}
-          onSelectTier={setSelectedTier}
-          onBack={handleBackToModeSelection}
-        />
-      );
-    }
-    
-    // One-time mode - just show the forms (handled in left column)
-    return null;
   };
 
   return (
@@ -275,45 +248,49 @@ const Index = () => {
               {/* Window Pricing Display */}
               <WindowPricingDisplay servicePrices={servicePrices} />
 
-              {/* Service Mode Selection or Plan Details */}
-              {!serviceMode && (
-                <ServiceModeSelector
-                  selectedMode={serviceMode}
-                  onSelectMode={setServiceMode}
-                />
-              )}
-
-              {/* Progressive disclosure based on mode */}
-              {serviceMode && (
-                <div className="grid gap-8 lg:grid-cols-3">
-                  {/* Left Column - Mode-specific content */}
-                  <div className="lg:col-span-2 space-y-6">
-                    {/* Additional Services - visible for one-time */}
-                    {serviceMode === 'one-time' && (
-                      <AdditionalServicesForm
-                        services={additionalServices}
-                        servicePrices={servicePrices}
-                        onChange={handleAdditionalServicesChange}
-                      />
-                    )}
-                    
-                    {/* Plan Selector - visible for recurring */}
-                    {serviceMode === 'recurring' && (
-                      <ServicePlanSelector
-                        bundles={bundles}
-                        selectedTier={selectedTier}
-                        onSelectTier={setSelectedTier}
-                        onBack={handleBackToModeSelection}
-                      />
-                    )}
-                  </div>
+              {/* Intent-First Flow: Services + Upsell */}
+              <div className="grid gap-8 lg:grid-cols-3">
+                {/* Left Column - Service Selection */}
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Back button when in booking/plan flows */}
+                  {flowState !== 'selecting' && (
+                    <button
+                      onClick={handleBackToSelection}
+                      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <span>←</span>
+                      <span>Back to services</span>
+                    </button>
+                  )}
                   
-                  {/* Right Column - Summary (sticky on desktop) */}
-                  <div className="lg:sticky lg:top-24 lg:self-start">
-                    {renderRightColumn()}
-                  </div>
+                  {/* Service Selector - always visible in selecting state */}
+                  {flowState === 'selecting' && (
+                    <IntentFirstServiceSelector
+                      services={additionalServices}
+                      servicePrices={servicePrices}
+                      onChange={handleAdditionalServicesChange}
+                    />
+                  )}
+                  
+                  {/* Plan Selector - shown when user wants to see all plans */}
+                  {flowState === 'plan-expanded' && (
+                    <ServicePlanSelector
+                      bundles={bundles}
+                      selectedTier={selectedTier}
+                      onSelectTier={(tier) => {
+                        setSelectedTier(tier);
+                        setFlowState('plan-selected');
+                      }}
+                      onBack={handleBackToSelection}
+                    />
+                  )}
                 </div>
-              )}
+                
+                {/* Right Column - Summary (sticky on desktop) */}
+                <div className="lg:sticky lg:top-24 lg:self-start">
+                  {renderRightColumn()}
+                </div>
+              </div>
             </>
           )}
         </div>
