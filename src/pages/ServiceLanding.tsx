@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
 import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
@@ -75,8 +75,10 @@ type ServiceSlug = keyof typeof SERVICE_CONFIG;
 const ServiceLanding = () => {
   // Get service from URL path (e.g., /window-cleaning -> window-cleaning)
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const service = location.pathname.substring(1); // Remove leading slash
   const config = SERVICE_CONFIG[service as ServiceSlug];
+  const isEmbedMode = searchParams.get('embed') === 'true';
   
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(() => {
@@ -283,26 +285,28 @@ const ServiceLanding = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card sticky top-0 z-50">
-        <div className="container py-4">
-          <div className="flex items-center justify-between">
-            <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <h1 className="text-xl font-display font-bold text-primary">
-                BluLadder
-              </h1>
-              <span className="text-xs text-muted-foreground">Next Level Clean</span>
-            </Link>
-            <Link 
-              to="/" 
-              className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              All Services
-            </Link>
+      {/* Header - hidden in embed mode */}
+      {!isEmbedMode && (
+        <header className="border-b border-border bg-card sticky top-0 z-50">
+          <div className="container py-4">
+            <div className="flex items-center justify-between">
+              <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                <h1 className="text-xl font-display font-bold text-primary">
+                  BluLadder
+                </h1>
+                <span className="text-xs text-muted-foreground">Next Level Clean</span>
+              </Link>
+              <Link 
+                to="/" 
+                className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                All Services
+              </Link>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Service-Specific Hero */}
       <div className={`bg-gradient-to-r ${config.heroColor} text-white py-12`}>
@@ -389,12 +393,14 @@ const ServiceLanding = () => {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border mt-16">
-        <div className="container py-6 text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()} BluLadder • Next Level Clean
-        </div>
-      </footer>
+      {/* Footer - hidden in embed mode */}
+      {!isEmbedMode && (
+        <footer className="border-t border-border mt-16">
+          <div className="container py-6 text-center text-sm text-muted-foreground">
+            © {new Date().getFullYear()} BluLadder • Next Level Clean
+          </div>
+        </footer>
+      )}
     </div>
   );
 };
