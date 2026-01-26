@@ -411,8 +411,9 @@ Deno.serve(async (req) => {
     const jobberLineItems = lineItems.map(item => ({
       name: item.name,
       description: item.description,
-      qty: item.quantity,
+      quantity: item.quantity,
       unitPrice: item.unitPrice,
+      saveToProductsAndServices: false,
     }));
 
     const quoteAttributes = {
