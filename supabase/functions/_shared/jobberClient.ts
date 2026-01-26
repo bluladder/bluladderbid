@@ -98,7 +98,7 @@ export async function jobberGraphQL<T>(
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${accessToken}`,
-      "X-JOBBER-GRAPHQL-VERSION": "2023-11-15",
+      "X-JOBBER-GRAPHQL-VERSION": "2025-04-16",
     },
     body: JSON.stringify({ query, variables }),
   });
