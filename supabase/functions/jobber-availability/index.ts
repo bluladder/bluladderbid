@@ -15,6 +15,7 @@ interface AvailabilityRequest {
   services: ServicePrice[];
   startDate?: string;
   daysToCheck?: number;
+  timezone?: string;
 }
 
 interface TimeSlot {
@@ -28,15 +29,86 @@ interface TimeSlot {
 
 // Default business hours (used if not configured in database)
 const DEFAULT_BUSINESS_HOURS = {
-  startHour: 9, // 9 AM
-  endHour: 17, // 5 PM
+  startHour: 9, // 9 AM local time
+  endHour: 17, // 5 PM local time
   workDays: [1, 2, 3, 4, 5, 6], // Monday through Saturday (0 = Sunday)
+  timezone: "America/Chicago", // Default timezone (CST/CDT)
 };
 
 interface BusinessHoursConfig {
   startHour: number;
   endHour: number;
   workDays: number[];
+  timezone?: string;
+}
+
+// Helper to create a date in a specific timezone
+function createDateInTimezone(date: Date, hour: number, minute: number, timezone: string): Date {
+  // Format the date components
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hourStr = String(hour).padStart(2, '0');
+  const minStr = String(minute).padStart(2, '0');
+  
+  // Create ISO string for the local time
+  const localDateStr = `${year}-${month}-${day}T${hourStr}:${minStr}:00`;
+  
+  // Get the offset for this timezone at this time
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  
+  // Parse by creating dates and finding the UTC equivalent
+  // We'll iterate to find the correct UTC time that corresponds to the local time
+  let testDate = new Date(`${localDateStr}Z`);
+  
+  for (let i = 0; i < 2; i++) {
+    const parts = formatter.formatToParts(testDate);
+    const localHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+    const localDay = parseInt(parts.find(p => p.type === 'day')?.value || '0');
+    
+    // Adjust based on difference
+    const hourDiff = hour - localHour;
+    const dayDiff = parseInt(day) - localDay;
+    
+    testDate = new Date(testDate.getTime() + (hourDiff * 60 * 60 * 1000) + (dayDiff * 24 * 60 * 60 * 1000));
+  }
+  
+  return testDate;
+}
+
+// Get current time in timezone
+function getNowInTimezone(timezone: string): { date: Date; hour: number; minute: number; dayOfWeek: number } {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    weekday: 'short',
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
+  const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+  const weekdayStr = parts.find(p => p.type === 'weekday')?.value || 'Mon';
+  
+  const weekdayMap: Record<string, number> = {
+    'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+  };
+  
+  return { date: now, hour, minute, dayOfWeek: weekdayMap[weekdayStr] || 1 };
 }
 
 Deno.serve(async (req) => {
@@ -45,7 +117,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { services, startDate, daysToCheck = 14 }: AvailabilityRequest = await req.json();
+    const { services, startDate, daysToCheck = 14, timezone: clientTimezone }: AvailabilityRequest = await req.json();
 
     if (!services || services.length === 0) {
       return new Response(
@@ -75,11 +147,15 @@ Deno.serve(async (req) => {
         startHour: (cfg.startHour as number) ?? DEFAULT_BUSINESS_HOURS.startHour,
         endHour: (cfg.endHour as number) ?? DEFAULT_BUSINESS_HOURS.endHour,
         workDays: (cfg.workDays as number[]) ?? DEFAULT_BUSINESS_HOURS.workDays,
+        timezone: (cfg.timezone as string) ?? DEFAULT_BUSINESS_HOURS.timezone,
       };
       console.log("Using configured business hours:", BUSINESS_HOURS);
     } else {
       console.log("Using default business hours (no config found):", BUSINESS_HOURS);
     }
+
+    const businessTimezone = BUSINESS_HOURS.timezone || DEFAULT_BUSINESS_HOURS.timezone;
+    console.log("Using timezone:", businessTimezone);
 
     // Map service names to service_type enum
     const serviceTypeMap: Record<string, string> = {
@@ -173,14 +249,13 @@ Deno.serve(async (req) => {
 
     console.log("Eligible technicians:", eligibleTechs);
 
-    // Calculate date range
-    const fromDate = startDate ? new Date(startDate) : new Date();
-    fromDate.setHours(0, 0, 0, 0);
+    // Calculate date range - using local timezone
+    const now = new Date();
+    const fromDate = startDate ? new Date(startDate) : now;
     
     const toDate = new Date(fromDate.getTime() + daysToCheck * 24 * 60 * 60 * 1000);
 
     // Query Jobber for scheduled visits in the date range
-    // Note: Jobber's visit filter uses 'after' and 'before' for date ranges
     const scheduledItemsQuery = `
       query GetScheduledItems {
         visits(first: 200) {
@@ -217,7 +292,7 @@ Deno.serve(async (req) => {
     if (jobberResult.data?.visits?.nodes) {
       console.log("Found visits from Jobber:", jobberResult.data.visits.nodes.length);
       
-      // Filter visits to only those in our date range (since we can't filter in the query)
+      // Filter visits to only those in our date range
       const relevantVisits = jobberResult.data.visits.nodes.filter(visit => {
         const visitStart = new Date(visit.startAt);
         return visitStart >= fromDate && visitStart < toDate;
@@ -251,39 +326,51 @@ Deno.serve(async (req) => {
       techBusyTimes.sort((a, b) => a.start.getTime() - b.start.getTime());
 
       // Generate slots for each business day
-      let currentDay = new Date(fromDate);
+      let dayOffset = 0;
       
-      while (currentDay < toDate) {
-        const dayOfWeek = currentDay.getDay();
+      while (dayOffset < daysToCheck) {
+        const currentDay = new Date(fromDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+        
+        // Get day of week in business timezone
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: businessTimezone,
+          weekday: 'short',
+        });
+        const weekdayStr = formatter.format(currentDay);
+        const weekdayMap: Record<string, number> = {
+          'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+        };
+        const dayOfWeek = weekdayMap[weekdayStr] ?? 1;
         
         // Skip non-work days
         if (!BUSINESS_HOURS.workDays.includes(dayOfWeek)) {
-          currentDay.setDate(currentDay.getDate() + 1);
+          dayOffset++;
           continue;
         }
 
-        // Create business hours for this day
-        const dayStart = new Date(currentDay);
-        dayStart.setHours(BUSINESS_HOURS.startHour, 0, 0, 0);
-        
-        const dayEnd = new Date(currentDay);
-        dayEnd.setHours(BUSINESS_HOURS.endHour, 0, 0, 0);
+        // Create business hours for this day in the correct timezone
+        const dayStart = createDateInTimezone(currentDay, BUSINESS_HOURS.startHour, 0, businessTimezone);
+        const dayEnd = createDateInTimezone(currentDay, BUSINESS_HOURS.endHour, 0, businessTimezone);
 
-        // Skip if day is in the past
-        const now = new Date();
+        console.log(`Day ${dayOffset}: ${currentDay.toDateString()} -> Start: ${dayStart.toISOString()}, End: ${dayEnd.toISOString()}`);
+
+        // Skip if day is completely in the past
         if (dayEnd <= now) {
-          currentDay.setDate(currentDay.getDate() + 1);
+          dayOffset++;
           continue;
         }
 
         // Adjust start time if it's today and past business start
         let effectiveStart = new Date(dayStart);
-        if (currentDay.toDateString() === now.toDateString() && now > dayStart) {
+        if (now > dayStart && now < dayEnd) {
           // Round up to next 30-minute slot
           effectiveStart = new Date(now);
-          effectiveStart.setMinutes(Math.ceil(now.getMinutes() / 30) * 30, 0, 0);
-          if (effectiveStart.getMinutes() === 60) {
+          const currentMinutes = effectiveStart.getMinutes();
+          const roundedMinutes = Math.ceil(currentMinutes / 30) * 30;
+          if (roundedMinutes === 60) {
             effectiveStart.setHours(effectiveStart.getHours() + 1, 0, 0, 0);
+          } else {
+            effectiveStart.setMinutes(roundedMinutes, 0, 0);
           }
         }
 
@@ -317,7 +404,7 @@ Deno.serve(async (req) => {
           slotStart = new Date(slotStart.getTime() + 30 * 60 * 1000);
         }
 
-        currentDay.setDate(currentDay.getDate() + 1);
+        dayOffset++;
       }
     }
 
