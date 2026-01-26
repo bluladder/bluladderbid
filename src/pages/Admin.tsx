@@ -12,10 +12,11 @@ import { DriveTimeSettings } from '@/components/admin/DriveTimeSettings';
 import { BookingsManager } from '@/components/admin/BookingsManager';
 import { MarketingAnalytics } from '@/components/admin/MarketingAnalytics';
 import { AdminAvailabilityViewer } from '@/components/admin/AdminAvailabilityViewer';
+import { CrewUtilizationAnalytics } from '@/components/admin/CrewUtilizationAnalytics';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3 } from 'lucide-react';
+import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Admin() {
@@ -105,40 +106,48 @@ export default function Admin() {
 
       <main className="container py-8">
         <div className="max-w-5xl mx-auto">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-7 mb-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-8 mb-6">
               <TabsTrigger value="bookings" className="flex items-center gap-2">
                 <ClipboardList className="w-4 h-4" />
-                Bookings
+                <span className="hidden sm:inline">Bookings</span>
+              </TabsTrigger>
+              <TabsTrigger value="utilization" className="flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                <span className="hidden sm:inline">Crew</span>
               </TabsTrigger>
               <TabsTrigger value="analytics" className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4" />
-                Analytics
+                <span className="hidden sm:inline">Analytics</span>
               </TabsTrigger>
               <TabsTrigger value="preview" className="flex items-center gap-2">
                 <Calculator className="w-4 h-4" />
-                Preview
+                <span className="hidden sm:inline">Preview</span>
               </TabsTrigger>
               <TabsTrigger value="compare" className="flex items-center gap-2">
                 <GitCompare className="w-4 h-4" />
-                Compare
+                <span className="hidden sm:inline">Compare</span>
               </TabsTrigger>
               <TabsTrigger value="discounts" className="flex items-center gap-2">
                 <Tag className="w-4 h-4" />
-                Discounts
+                <span className="hidden sm:inline">Discounts</span>
               </TabsTrigger>
               <TabsTrigger value="booking" className="flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
-                Settings
+                <span className="hidden sm:inline">Settings</span>
               </TabsTrigger>
               <TabsTrigger value="config" className="flex items-center gap-2">
                 <Settings className="w-4 h-4" />
-                Pricing
+                <span className="hidden sm:inline">Pricing</span>
               </TabsTrigger>
             </TabsList>
             
             <TabsContent value="bookings">
               <BookingsManager />
+            </TabsContent>
+            
+            <TabsContent value="utilization">
+              <CrewUtilizationAnalytics />
             </TabsContent>
             
             <TabsContent value="analytics">
