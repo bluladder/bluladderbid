@@ -339,11 +339,11 @@ Deno.serve(async (req) => {
       payload.notes ? `\nCustomer Notes: ${payload.notes}` : null,
     ].filter(Boolean).join("\n");
 
-    // Create quote in Jobber
+    // Create quote in Jobber using correct API structure
     console.log("Creating quote in Jobber");
     const createQuoteMutation = `
-      mutation CreateQuote($clientId: EncodedId!, $input: QuoteCreateInput!) {
-        quoteCreate(clientId: $clientId, input: $input) {
+      mutation CreateQuote($attributes: QuoteAttributes!) {
+        quoteCreate(attributes: $attributes) {
           quote {
             id
             quoteNumber
@@ -357,21 +357,30 @@ Deno.serve(async (req) => {
       }
     `;
 
-    const quoteInput = {
+    // Build line items in Jobber's expected format
+    const jobberLineItems = lineItems.map(item => ({
+      name: item.name,
+      description: item.description,
+      qty: item.quantity,
+      unitPrice: item.unitPrice,
+    }));
+
+    const quoteAttributes = {
+      clientId: jobberClientId,
       title: `${payload.selectedPlan.name} - Annual Service Plan`,
       message: quoteMessage,
-      lineItems: lineItems,
+      lineItems: jobberLineItems,
       ...(propertyId && { propertyId }),
     };
 
-    console.log("Quote creation input:", JSON.stringify(quoteInput));
+    console.log("Quote creation attributes:", JSON.stringify(quoteAttributes));
 
     const quoteResult = await jobberGraphQL<{
       quoteCreate: {
         quote: { id: string; quoteNumber: number; title: string } | null;
         userErrors: Array<{ message: string; path?: string[] }>;
       };
-    }>(createQuoteMutation, { clientId: jobberClientId, input: quoteInput });
+    }>(createQuoteMutation, { attributes: quoteAttributes });
 
     console.log("Quote creation result:", JSON.stringify(quoteResult));
 
