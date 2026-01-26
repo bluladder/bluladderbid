@@ -172,6 +172,94 @@ export function MarketingAnalytics() {
     return Object.values(grouped);
   }, [bookings]);
 
+  // Time series by source (for trend analysis)
+  const sourceTimeSeriesData = useMemo(() => {
+    const allSources = new Set<string>();
+    const grouped: Record<string, Record<string, number>> = {};
+    
+    bookings.forEach(b => {
+      const date = format(parseISO(b.created_at), 'MMM d');
+      const source = b.utm_params_json?.utm_source || 'Direct';
+      allSources.add(source);
+      if (!grouped[date]) grouped[date] = {};
+      grouped[date][source] = (grouped[date][source] || 0) + 1;
+    });
+    
+    return {
+      data: Object.entries(grouped).map(([date, sources]) => ({ date, ...sources })),
+      sources: Array.from(allSources).slice(0, 6) // Top 6 sources for readability
+    };
+  }, [bookings]);
+
+  // Time series by medium
+  const mediumTimeSeriesData = useMemo(() => {
+    const allMediums = new Set<string>();
+    const grouped: Record<string, Record<string, number>> = {};
+    
+    bookings.forEach(b => {
+      const date = format(parseISO(b.created_at), 'MMM d');
+      const medium = b.utm_params_json?.utm_medium || 'None';
+      allMediums.add(medium);
+      if (!grouped[date]) grouped[date] = {};
+      grouped[date][medium] = (grouped[date][medium] || 0) + 1;
+    });
+    
+    return {
+      data: Object.entries(grouped).map(([date, mediums]) => ({ date, ...mediums })),
+      mediums: Array.from(allMediums).slice(0, 6)
+    };
+  }, [bookings]);
+
+  // Time series by campaign
+  const campaignTimeSeriesData = useMemo(() => {
+    // Get top campaigns by volume first
+    const campaignCounts: Record<string, number> = {};
+    bookings.forEach(b => {
+      const campaign = b.utm_params_json?.utm_campaign;
+      if (campaign) {
+        campaignCounts[campaign] = (campaignCounts[campaign] || 0) + 1;
+      }
+    });
+    const topCampaigns = Object.entries(campaignCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name]) => name);
+    
+    const grouped: Record<string, Record<string, number>> = {};
+    bookings.forEach(b => {
+      const date = format(parseISO(b.created_at), 'MMM d');
+      const campaign = b.utm_params_json?.utm_campaign;
+      if (campaign && topCampaigns.includes(campaign)) {
+        if (!grouped[date]) grouped[date] = {};
+        grouped[date][campaign] = (grouped[date][campaign] || 0) + 1;
+      }
+    });
+    
+    return {
+      data: Object.entries(grouped).map(([date, campaigns]) => ({ date, ...campaigns })),
+      campaigns: topCampaigns
+    };
+  }, [bookings]);
+
+  // Revenue over time by source
+  const revenueTimeSeriesData = useMemo(() => {
+    const allSources = new Set<string>();
+    const grouped: Record<string, Record<string, number>> = {};
+    
+    bookings.forEach(b => {
+      const date = format(parseISO(b.created_at), 'MMM d');
+      const source = b.utm_params_json?.utm_source || 'Direct';
+      allSources.add(source);
+      if (!grouped[date]) grouped[date] = {};
+      grouped[date][source] = (grouped[date][source] || 0) + b.total;
+    });
+    
+    return {
+      data: Object.entries(grouped).map(([date, sources]) => ({ date, ...sources })),
+      sources: Array.from(allSources).slice(0, 6)
+    };
+  }, [bookings]);
+
   // Summary stats
   const totalBookings = bookings.length;
   const totalRevenue = bookings.reduce((sum, b) => sum + b.total, 0);
@@ -306,13 +394,167 @@ export function MarketingAnalytics() {
       )}
 
       {/* Charts Grid */}
-      <Tabs defaultValue="source" className="space-y-4">
+      <Tabs defaultValue="trends" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="trends">Trends Over Time</TabsTrigger>
           <TabsTrigger value="source">By Source</TabsTrigger>
           <TabsTrigger value="medium">By Medium</TabsTrigger>
           <TabsTrigger value="campaign">By Campaign</TabsTrigger>
           <TabsTrigger value="preset">By Preset</TabsTrigger>
         </TabsList>
+
+        {/* New Trends Tab */}
+        <TabsContent value="trends" className="space-y-4">
+          {/* Bookings by Source Over Time */}
+          {sourceTimeSeriesData.data.length > 1 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Bookings by Source Over Time</CardTitle>
+                <CardDescription>Daily booking volume by traffic source</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sourceTimeSeriesData.data}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="date" className="text-xs" />
+                      <YAxis className="text-xs" />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      {sourceTimeSeriesData.sources.map((source, idx) => (
+                        <Line
+                          key={source}
+                          type="monotone"
+                          dataKey={source}
+                          name={source}
+                          stroke={COLORS[idx % COLORS.length]}
+                          strokeWidth={2}
+                          dot={{ fill: COLORS[idx % COLORS.length], r: 3 }}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Revenue by Source Over Time */}
+          {revenueTimeSeriesData.data.length > 1 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Revenue by Source Over Time</CardTitle>
+                <CardDescription>Daily revenue by traffic source</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={revenueTimeSeriesData.data}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="date" className="text-xs" />
+                      <YAxis tickFormatter={(v) => `$${v}`} className="text-xs" />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      {revenueTimeSeriesData.sources.map((source, idx) => (
+                        <Line
+                          key={source}
+                          type="monotone"
+                          dataKey={source}
+                          name={source}
+                          stroke={COLORS[idx % COLORS.length]}
+                          strokeWidth={2}
+                          dot={{ fill: COLORS[idx % COLORS.length], r: 3 }}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Bookings by Medium Over Time */}
+          {mediumTimeSeriesData.data.length > 1 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Bookings by Medium Over Time</CardTitle>
+                <CardDescription>Daily booking volume by traffic medium</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={mediumTimeSeriesData.data}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="date" className="text-xs" />
+                      <YAxis className="text-xs" />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      {mediumTimeSeriesData.mediums.map((medium, idx) => (
+                        <Line
+                          key={medium}
+                          type="monotone"
+                          dataKey={medium}
+                          name={medium}
+                          stroke={COLORS[idx % COLORS.length]}
+                          strokeWidth={2}
+                          dot={{ fill: COLORS[idx % COLORS.length], r: 3 }}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Campaign Performance Over Time */}
+          {campaignTimeSeriesData.data.length > 1 && campaignTimeSeriesData.campaigns.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Top Campaigns Over Time</CardTitle>
+                <CardDescription>Daily booking volume for top 5 campaigns</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={campaignTimeSeriesData.data}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="date" className="text-xs" />
+                      <YAxis className="text-xs" />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      {campaignTimeSeriesData.campaigns.map((campaign, idx) => (
+                        <Line
+                          key={campaign}
+                          type="monotone"
+                          dataKey={campaign}
+                          name={campaign}
+                          stroke={COLORS[idx % COLORS.length]}
+                          strokeWidth={2}
+                          dot={{ fill: COLORS[idx % COLORS.length], r: 3 }}
+                          connectNulls
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {sourceTimeSeriesData.data.length <= 1 && (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <TrendingUp className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Not enough data to show trends.</p>
+                <p className="text-sm mt-1">Need at least 2 days of booking data.</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
         <TabsContent value="source" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
