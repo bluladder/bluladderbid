@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Sparkles, Check, Download, Calendar, FileText } from 'lucide-react';
+import { Sparkles, Check, Download, CalendarCheck, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { BookingFlow } from '@/components/booking/BookingFlow';
+import { RecurringServiceRequestFlow } from '@/components/booking/RecurringServiceRequestFlow';
 import type { ServicePrices, BundleTier, HomeDetails, AdditionalServices } from '@/types/homeowner';
 import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
 
@@ -35,20 +35,19 @@ export function PricingSummary({
   onGetStarted,
   prefillCustomerInfo,
 }: PricingSummaryProps) {
-  const [showBookingFlow, setShowBookingFlow] = useState(false);
+  const [showRequestFlow, setShowRequestFlow] = useState(false);
 
   if (!selectedBundle) return null;
 
-  // Show booking flow
-  if (showBookingFlow) {
+  // Show recurring service request flow
+  if (showRequestFlow) {
     return (
-      <BookingFlow
+      <RecurringServiceRequestFlow
         servicePrices={servicePrices}
         additionalServices={additionalServices}
         homeDetails={homeDetails}
-        appliedDiscount={null}
-        discountAmount={0}
-        onCancel={() => setShowBookingFlow(false)}
+        selectedBundle={selectedBundle}
+        onCancel={() => setShowRequestFlow(false)}
         prefillCustomerInfo={prefillCustomerInfo}
       />
     );
@@ -221,10 +220,10 @@ export function PricingSummary({
         <div className="space-y-3 pt-2">
           <Button 
             className="w-full btn-primary h-12 text-base"
-            onClick={() => setShowBookingFlow(true)}
+            onClick={() => setShowRequestFlow(true)}
           >
-            <Calendar className="w-5 h-5 mr-2" />
-            Request Scheduling
+            <CalendarCheck className="w-5 h-5 mr-2" />
+            Get Started with This Plan
           </Button>
           
           <Button 
