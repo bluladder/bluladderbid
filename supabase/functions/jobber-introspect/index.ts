@@ -11,10 +11,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Get PropertyCreateInput type details
+    // Get PropertyCreateInput and find its nested types
     const propertyInputQuery = `
-      query GetPropertyInput {
-        __type(name: "PropertyCreateInput") {
+      query GetAllPropertyTypes {
+        propertyCreateInput: __type(name: "PropertyCreateInput") {
           name
           kind
           inputFields {
@@ -25,14 +25,31 @@ Deno.serve(async (req) => {
               ofType {
                 name
                 kind
-                inputFields {
+                ofType {
                   name
-                  type {
+                  kind
+                  inputFields {
                     name
-                    kind
+                    type {
+                      name
+                      kind
+                      ofType { name kind }
+                    }
                   }
                 }
               }
+            }
+          }
+        }
+        addressAttributes: __type(name: "AddressAttributes") {
+          name
+          kind
+          inputFields {
+            name
+            type {
+              name
+              kind
+              ofType { name kind }
             }
           }
         }

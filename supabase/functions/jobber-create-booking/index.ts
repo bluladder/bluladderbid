@@ -31,6 +31,44 @@ interface BookingRequest {
   notes?: string;
 }
 
+// Simple address parser - extracts components from a single-line address
+function parseAddress(address: string): {
+  street1: string;
+  city: string;
+  province: string;
+  postalCode: string;
+} {
+  if (!address) {
+    return { street1: "", city: "", province: "", postalCode: "" };
+  }
+  
+  // Try to parse "123 Main St, City, ST 12345" format
+  const parts = address.split(",").map(p => p.trim());
+  
+  if (parts.length >= 3) {
+    // "123 Main St", "City", "ST 12345"
+    const street1 = parts[0];
+    const city = parts[1];
+    const stateZip = parts[2].split(" ").filter(Boolean);
+    const province = stateZip[0] || "";
+    const postalCode = stateZip.slice(1).join(" ") || "";
+    
+    return { street1, city, province, postalCode };
+  } else if (parts.length === 2) {
+    // "123 Main St", "City ST 12345"
+    const street1 = parts[0];
+    const cityStateZip = parts[1].split(" ").filter(Boolean);
+    const postalCode = cityStateZip.pop() || "";
+    const province = cityStateZip.pop() || "";
+    const city = cityStateZip.join(" ");
+    
+    return { street1, city, province, postalCode };
+  }
+  
+  // Fallback - use whole address as street
+  return { street1: address, city: "", province: "", postalCode: "" };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -253,7 +291,7 @@ Deno.serve(async (req) => {
     let propertyId = propertyResult.data?.client?.clientProperties?.nodes?.[0]?.id;
 
     if (!propertyId) {
-      // Property creation requires an input argument with at least an empty object
+      // PropertyCreateInput requires a 'properties' array with PropertyInput objects
       console.log("No property found, creating one for client");
       const createPropertyMutation = `
         mutation CreateProperty($clientId: EncodedId!, $input: PropertyCreateInput!) {
@@ -269,13 +307,33 @@ Deno.serve(async (req) => {
         }
       `;
 
-      // PropertyCreateInput can be empty - it will create a default property
+      // PropertyCreateInput.properties is a list of PropertyAttributes
+      // PropertyAttributes requires address: AddressAttributes
+      // Parse the address or use defaults
+      const addressParts = parseAddress(booking.customer.address || "");
+      
+      const propertyInput = {
+        properties: [
+          {
+            address: {
+              street1: addressParts.street1 || "Service Address",
+              city: addressParts.city || "Austin",
+              province: addressParts.province || "TX",
+              postalCode: addressParts.postalCode || "78701",
+              country: "US"
+            }
+          }
+        ]
+      };
+      
+      console.log("Property creation input:", JSON.stringify(propertyInput));
+
       const createPropertyResult = await jobberGraphQL<{
         propertyCreate: {
           properties: Array<{ id: string }>;
           userErrors: Array<{ message: string; path?: string[] }>;
         };
-      }>(createPropertyMutation, { clientId: jobberClientId, input: {} });
+      }>(createPropertyMutation, { clientId: jobberClientId, input: propertyInput });
 
       console.log("Property creation result:", JSON.stringify(createPropertyResult));
 
@@ -385,8 +443,8 @@ Deno.serve(async (req) => {
       instructions: notesLines.join("\n"),
       lineItems,
       invoicing: {
-        invoicingType: "PER_VISIT",
-        invoicingSchedule: "AFTER_COMPLETION",
+        invoicingType: "VISIT_BASED",
+        invoicingSchedule: "ON_COMPLETION",
       },
       scheduling: {
         createVisits: false,
@@ -445,7 +503,7 @@ Deno.serve(async (req) => {
     const scheduleVisitMutation = `
       mutation ScheduleVisit($jobId: EncodedId!, $input: VisitCreateInput!) {
         visitCreate(jobId: $jobId, input: $input) {
-          visit {
+          visits {
             id
           }
           userErrors {
@@ -466,14 +524,14 @@ Deno.serve(async (req) => {
 
     const visitResult = await jobberGraphQL<{
       visitCreate: {
-        visit: { id: string } | null;
+        visits: Array<{ id: string }> | null;
         userErrors: Array<{ message: string; path?: string[] }>;
       };
     }>(scheduleVisitMutation, { jobId: jobberJobId, input: visitInput });
 
     console.log("Visit creation result:", JSON.stringify(visitResult));
 
-    const jobberVisitId = visitResult.data?.visitCreate?.visit?.id;
+    const jobberVisitId = visitResult.data?.visitCreate?.visits?.[0]?.id;
 
     if (visitResult.data?.visitCreate?.userErrors?.length) {
       console.error("Jobber visit creation errors:", visitResult.data.visitCreate.userErrors);
