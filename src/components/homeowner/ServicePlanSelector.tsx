@@ -85,15 +85,22 @@ export function ServicePlanSelector({
               
               <CardContent className={`p-6 ${isPopular ? 'pt-12' : ''}`}>
                 <div className="text-center mb-4">
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide mb-3 ${
-                    bundle.tier === 'good' 
-                      ? 'tier-badge-good' 
-                      : bundle.tier === 'better' 
-                        ? 'tier-badge-better' 
-                        : 'tier-badge-best'
-                  }`}>
-                    {bundle.name}
-                  </span>
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
+                      bundle.tier === 'good' 
+                        ? 'tier-badge-good' 
+                        : bundle.tier === 'better' 
+                          ? 'tier-badge-better' 
+                          : 'tier-badge-best'
+                    }`}>
+                      {bundle.name}
+                    </span>
+                    {bundle.isCustomized && (
+                      <Badge variant="outline" className="text-xs border-accent text-accent">
+                        Customized
+                      </Badge>
+                    )}
+                  </div>
                   <h3 className="text-lg font-semibold text-foreground">{bundle.label}</h3>
                   <p className="text-xs text-muted-foreground mt-1">{bundle.description}</p>
                 </div>

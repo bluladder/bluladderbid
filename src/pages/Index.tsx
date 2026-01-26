@@ -10,6 +10,7 @@ import { CustomerLookup } from '@/components/booking/CustomerLookup';
 import { PastBookings } from '@/components/booking/PastBookings';
 import { ProgressStepper, type FlowStep } from '@/components/homeowner/ProgressStepper';
 import { useServicePricing } from '@/hooks/useServicePricing';
+import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { 
   HomeDetails, 
   AdditionalServices, 
@@ -40,6 +41,13 @@ const Index = () => {
   const [prefillCustomerInfo, setPrefillCustomerInfo] = useState<CustomerInfo | null>(null);
 
   const { servicePrices, bundles } = useServicePricing(homeDetails, additionalServices);
+  
+  // Persist plan customizations across page refreshes
+  const { 
+    customizations, 
+    setTierCustomization, 
+    hasCustomization 
+  } = usePlanCustomizations();
 
   const handleHomeDetailsChange = (updates: Partial<HomeDetails>) => {
     setHomeDetails(prev => ({ ...prev, ...updates }));
@@ -49,9 +57,55 @@ const Index = () => {
     setAdditionalServices(prev => ({ ...prev, ...updates }));
   };
 
+  // Apply customizations to bundles for display
+  const customizedBundles = useMemo(() => {
+    return bundles.map(bundle => {
+      const customization = customizations[bundle.tier];
+      if (!customization) return bundle;
+      
+      // Calculate price adjustments from customization
+      const freqConfig = customization.windowFrequency;
+      const originalFreqCost = 
+        servicePrices.exteriorWindows * bundle.windowFrequencyConfig.exteriorFrequency +
+        servicePrices.interiorWindows * bundle.windowFrequencyConfig.interiorFrequency;
+      const newFreqCost = 
+        servicePrices.exteriorWindows * freqConfig.exteriorFrequency +
+        servicePrices.interiorWindows * freqConfig.interiorFrequency;
+      const freqDiff = newFreqCost - originalFreqCost;
+      
+      // Calculate service swap price impact
+      const getServicePrice = (svc: string) => {
+        if (svc === 'gutter_cleaning') return servicePrices.gutterCleaning;
+        if (svc === 'house_wash') return servicePrices.houseWash;
+        if (svc === 'roof_cleaning') return servicePrices.roofCleaning;
+        return 0;
+      };
+      
+      let serviceDiff = 0;
+      for (const swap of customization.serviceSwaps) {
+        serviceDiff += getServicePrice(swap.to) - getServicePrice(swap.from);
+      }
+      for (const added of customization.addedServices) {
+        if (!customization.serviceSwaps.some(s => s.to === added)) {
+          serviceDiff += getServicePrice(added);
+        }
+      }
+      
+      const newAnnualTotal = bundle.annualTotal + freqDiff + serviceDiff;
+      
+      return {
+        ...bundle,
+        windowFrequencyConfig: freqConfig,
+        annualTotal: Math.round(newAnnualTotal),
+        monthlyPayment: Math.round(newAnnualTotal / 12),
+        isCustomized: true,
+      };
+    });
+  }, [bundles, customizations, servicePrices]);
+
   // Get selected bundle for recurring plans
   const selectedBundle = selectedTier 
-    ? bundles.find(b => b.tier === selectedTier) || null 
+    ? customizedBundles.find(b => b.tier === selectedTier) || null 
     : null;
 
   const handleDownloadPDF = () => {
@@ -290,7 +344,7 @@ const Index = () => {
                   {/* Plan Selector - shown when user wants to see all plans */}
                   {flowState === 'plan-expanded' && (
                     <ServicePlanSelector
-                      bundles={bundles}
+                      bundles={customizedBundles}
                       selectedTier={selectedTier}
                       onSelectTier={(tier) => {
                         setSelectedTier(tier);
@@ -305,9 +359,10 @@ const Index = () => {
                         roofCleaning: servicePrices.roofCleaning,
                       }}
                       onCustomizePlan={(tier, customization) => {
-                        console.log('Customize plan:', tier, customization);
-                        toast.success(`${tier.charAt(0).toUpperCase() + tier.slice(1)} plan customized!`);
-                        // TODO: Apply customization to bundle calculation
+                        setTierCustomization(tier, customization);
+                        toast.success(`${tier.charAt(0).toUpperCase() + tier.slice(1)} plan customized!`, {
+                          description: 'Your preferences have been saved.',
+                        });
                       }}
                     />
                   )}
