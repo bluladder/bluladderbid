@@ -21,6 +21,7 @@ interface BookingFlowProps {
   appliedDiscount?: ValidatedDiscount | null;
   discountAmount?: number;
   onCancel: () => void;
+  prefillCustomerInfo?: CustomerInfo | null;
 }
 
 interface BookingResult {
@@ -46,11 +47,12 @@ export function BookingFlow({
   homeDetails,
   appliedDiscount,
   discountAmount = 0,
-  onCancel 
+  onCancel,
+  prefillCustomerInfo,
 }: BookingFlowProps) {
   const [step, setStep] = useState<BookingStep>('time');
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
-  const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(prefillCustomerInfo || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
 
@@ -307,7 +309,7 @@ export function BookingFlow({
         <>
           <CustomerInfoForm
             onSubmit={handleCustomerSubmit}
-            initialData={customerInfo || undefined}
+            initialData={customerInfo || prefillCustomerInfo || undefined}
             isSubmitting={isSubmitting}
           />
           

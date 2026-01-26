@@ -7,6 +7,7 @@ import { DiscountCodeInput } from './DiscountCodeInput';
 import { BookingFlow } from '@/components/booking/BookingFlow';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
+import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
 
 interface OneTimeSummaryProps {
   servicePrices: ServicePrices;
@@ -14,6 +15,7 @@ interface OneTimeSummaryProps {
   homeDetails: HomeDetails;
   onDownloadPDF: () => void;
   onGetStarted: () => void;
+  prefillCustomerInfo?: CustomerInfo | null;
 }
 
 function formatPrice(price: number) {
@@ -30,7 +32,8 @@ export function OneTimeSummary({
   additionalServices,
   homeDetails,
   onDownloadPDF,
-  onGetStarted 
+  onGetStarted,
+  prefillCustomerInfo,
 }: OneTimeSummaryProps) {
   const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
   const [showBookingFlow, setShowBookingFlow] = useState(false);
@@ -58,6 +61,7 @@ export function OneTimeSummary({
         appliedDiscount={appliedDiscount}
         discountAmount={discountAmount}
         onCancel={() => setShowBookingFlow(false)}
+        prefillCustomerInfo={prefillCustomerInfo}
       />
     );
   }
