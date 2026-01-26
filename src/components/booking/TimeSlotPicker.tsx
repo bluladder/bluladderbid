@@ -71,40 +71,25 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
         },
       });
 
-      if (fnError) {
-        const msg = (fnError as unknown as { message?: string })?.message ?? String(fnError);
-        const jsonMatch = msg.match(/(\{[\s\S]*\})\s*$/);
-        if (jsonMatch) {
-          try {
-            const payload = JSON.parse(jsonMatch[1]) as { error?: string; retryAfter?: number };
-            if (payload?.error) {
-              setError(payload.error);
-              if (payload.retryAfter) {
-                setIsThrottled(true);
-                setRetryCountdown(payload.retryAfter);
-              }
-              setSlots([]);
-              setRecommendedDays([]);
-              return;
-            }
-          } catch {
-            // fall through
-          }
-        }
-        throw fnError;
-      }
-
-      if (data.error) {
+      // Check data.error FIRST - supabase-js returns the response body in data even on 503
+      if (data?.error) {
+        setError(data.error);
         if (data.retryAfter) {
           setIsThrottled(true);
           setRetryCountdown(data.retryAfter);
-          setError(data.error);
-        } else {
-          setError(data.error);
+        }
+        if (data.requiresAdminAction) {
+          // Show a more prominent message for admin-action-required errors
+          console.error('Jobber connection requires admin action:', data.error);
         }
         setSlots([]);
         setRecommendedDays([]);
         return;
+      }
+
+      // If fnError but no data.error, try to extract from error message
+      if (fnError) {
+        throw fnError;
       }
 
       setIsThrottled(false);
