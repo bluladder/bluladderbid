@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { AdditionalServicesForm } from '@/components/homeowner/AdditionalServicesForm';
 import { WindowPricingDisplay } from '@/components/homeowner/WindowPricingDisplay';
-import { BundleBuilder, type SelectionType } from '@/components/homeowner/BundleBuilder';
+import { ServiceModeSelector, type ServiceMode } from '@/components/homeowner/ServiceModeSelector';
+import { ServicePlanSelector } from '@/components/homeowner/ServicePlanSelector';
+import { SingleVisitServices } from '@/components/homeowner/SingleVisitServices';
 import { PricingSummary } from '@/components/homeowner/PricingSummary';
 import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
 import { CustomerLookup } from '@/components/booking/CustomerLookup';
@@ -21,7 +23,11 @@ import { toast } from 'sonner';
 const Index = () => {
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(DEFAULT_ADDITIONAL_SERVICES);
-  const [selectedOption, setSelectedOption] = useState<SelectionType>(null);
+  
+  // New simplified flow state
+  const [serviceMode, setServiceMode] = useState<ServiceMode>(null);
+  const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>(null);
+  const [showBookingFlow, setShowBookingFlow] = useState(false);
   
   // Customer lookup state
   const [showCustomerLookup, setShowCustomerLookup] = useState(true);
@@ -39,9 +45,9 @@ const Index = () => {
     setAdditionalServices(prev => ({ ...prev, ...updates }));
   };
 
-  const isOneTime = selectedOption === 'one-time';
-  const selectedBundle = !isOneTime && selectedOption 
-    ? bundles.find(b => b.tier === selectedOption) || null 
+  // Get selected bundle for recurring plans
+  const selectedBundle = selectedTier 
+    ? bundles.find(b => b.tier === selectedTier) || null 
     : null;
 
   const handleDownloadPDF = () => {
@@ -87,7 +93,8 @@ const Index = () => {
     // Load the home details from the past booking
     setHomeDetails(booking.homeDetails);
     setAdditionalServices(booking.additionalServices);
-    setSelectedOption('one-time');
+    setServiceMode('one-time');
+    setShowBookingFlow(true);
     
     toast.success('Configuration loaded!', {
       description: 'Your previous service settings have been applied.',
@@ -99,11 +106,107 @@ const Index = () => {
     // Keep customer info but let them build fresh
     setHomeDetails(DEFAULT_HOME_DETAILS);
     setAdditionalServices(DEFAULT_ADDITIONAL_SERVICES);
-    setSelectedOption(null);
+    setServiceMode(null);
+    setSelectedTier(null);
+    setShowBookingFlow(false);
+  };
+
+  // Reset service mode selection
+  const handleBackToModeSelection = () => {
+    setServiceMode(null);
+    setSelectedTier(null);
+    setShowBookingFlow(false);
   };
 
   // Show past bookings view for returning customers with booking history
-  const showPastBookingsView = returningCustomer && pastBookings.length > 0 && !selectedOption;
+  const showPastBookingsView = returningCustomer && pastBookings.length > 0 && !serviceMode;
+
+  // Determine what to show in the right column
+  const renderRightColumn = () => {
+    // One-time flow with booking
+    if (serviceMode === 'one-time' && showBookingFlow) {
+      return (
+        <OneTimeSummary
+          servicePrices={servicePrices}
+          additionalServices={additionalServices}
+          homeDetails={homeDetails}
+          onDownloadPDF={handleDownloadPDF}
+          onGetStarted={handleGetStarted}
+          prefillCustomerInfo={prefillCustomerInfo}
+        />
+      );
+    }
+    
+    // One-time flow - show simplified services summary
+    if (serviceMode === 'one-time') {
+      return (
+        <SingleVisitServices
+          servicePrices={servicePrices}
+          additionalServices={additionalServices}
+          onBack={handleBackToModeSelection}
+          onContinue={() => setShowBookingFlow(true)}
+        />
+      );
+    }
+    
+    // Recurring flow with selected tier
+    if (serviceMode === 'recurring' && selectedBundle) {
+      return (
+        <PricingSummary
+          servicePrices={servicePrices}
+          selectedBundle={selectedBundle}
+          homeDetails={homeDetails}
+          additionalServices={additionalServices}
+          onDownloadPDF={handleDownloadPDF}
+          onGetStarted={handleGetStarted}
+          prefillCustomerInfo={prefillCustomerInfo}
+        />
+      );
+    }
+    
+    // Default empty state
+    return (
+      <div className="card-gradient p-6 text-center">
+        <div className="w-12 h-12 rounded-full bg-muted mx-auto mb-4 flex items-center justify-center">
+          <span className="text-2xl">📋</span>
+        </div>
+        <h3 className="font-semibold text-foreground mb-2">
+          Your Quote Summary
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Select a service option to see your complete pricing.
+        </p>
+      </div>
+    );
+  };
+
+  // Render the service selection area based on mode
+  const renderServiceSelection = () => {
+    // No mode selected - show mode selector
+    if (!serviceMode) {
+      return (
+        <ServiceModeSelector
+          selectedMode={serviceMode}
+          onSelectMode={setServiceMode}
+        />
+      );
+    }
+    
+    // Recurring mode - show plan selector
+    if (serviceMode === 'recurring') {
+      return (
+        <ServicePlanSelector
+          bundles={bundles}
+          selectedTier={selectedTier}
+          onSelectTier={setSelectedTier}
+          onBack={handleBackToModeSelection}
+        />
+      );
+    }
+    
+    // One-time mode - just show the forms (handled in left column)
+    return null;
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -118,8 +221,8 @@ const Index = () => {
               <p className="text-xs text-muted-foreground">Next Level Clean</p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-medium text-foreground">Build Your Service Package</p>
-              <p className="text-xs text-muted-foreground">Get your instant quote</p>
+              <p className="text-sm font-medium text-foreground">Get Your Quote</p>
+              <p className="text-xs text-muted-foreground">Instant pricing</p>
             </div>
           </div>
         </div>
@@ -134,7 +237,7 @@ const Index = () => {
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Tell us about your home and we'll show you exactly what professional 
-              window cleaning and home exterior services will cost — no surprises.
+              cleaning services will cost — no surprises.
             </p>
           </div>
 
@@ -160,73 +263,58 @@ const Index = () => {
             </div>
           )}
 
-          {/* Main Content Grid (shown after lookup or for new customers) */}
+          {/* Main Content (shown after lookup or for new customers) */}
           {!showCustomerLookup && !showPastBookingsView && (
-            <div className="grid gap-8 lg:grid-cols-3">
-              {/* Left Column - Forms */}
-              <div className="lg:col-span-2 space-y-6">
-                {/* Step 1: Home Details */}
-                <HomeDetailsForm 
-                  homeDetails={homeDetails} 
-                  onChange={handleHomeDetailsChange} 
-                />
-                
-                {/* Window Pricing Display */}
-                <WindowPricingDisplay servicePrices={servicePrices} />
-                
-                {/* Step 2: Additional Services */}
-                <AdditionalServicesForm
-                  services={additionalServices}
-                  servicePrices={servicePrices}
-                  onChange={handleAdditionalServicesChange}
-                />
-                
-                {/* Step 3: Service Selection */}
-                <BundleBuilder
-                  bundles={bundles}
-                  servicePrices={servicePrices}
-                  additionalServices={additionalServices}
-                  selectedOption={selectedOption}
-                  onSelectOption={setSelectedOption}
-                />
-              </div>
+            <>
+              {/* Home Details Form - Always visible */}
+              <HomeDetailsForm 
+                homeDetails={homeDetails} 
+                onChange={handleHomeDetailsChange} 
+              />
               
-              {/* Right Column - Summary (sticky on desktop) */}
-              <div className="lg:sticky lg:top-24 lg:self-start">
-                {isOneTime ? (
-                  <OneTimeSummary
-                    servicePrices={servicePrices}
-                    additionalServices={additionalServices}
-                    homeDetails={homeDetails}
-                    onDownloadPDF={handleDownloadPDF}
-                    onGetStarted={handleGetStarted}
-                    prefillCustomerInfo={prefillCustomerInfo}
-                  />
-                ) : selectedBundle ? (
-                  <PricingSummary
-                    servicePrices={servicePrices}
-                    selectedBundle={selectedBundle}
-                    homeDetails={homeDetails}
-                    additionalServices={additionalServices}
-                    onDownloadPDF={handleDownloadPDF}
-                    onGetStarted={handleGetStarted}
-                    prefillCustomerInfo={prefillCustomerInfo}
-                  />
-                ) : (
-                  <div className="card-gradient p-6 text-center">
-                    <div className="w-12 h-12 rounded-full bg-muted mx-auto mb-4 flex items-center justify-center">
-                      <span className="text-2xl">📋</span>
-                    </div>
-                    <h3 className="font-semibold text-foreground mb-2">
-                      Your Quote Summary
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      Select a service option below to see your complete pricing and download your proposal.
-                    </p>
+              {/* Window Pricing Display */}
+              <WindowPricingDisplay servicePrices={servicePrices} />
+
+              {/* Service Mode Selection or Plan Details */}
+              {!serviceMode && (
+                <ServiceModeSelector
+                  selectedMode={serviceMode}
+                  onSelectMode={setServiceMode}
+                />
+              )}
+
+              {/* Progressive disclosure based on mode */}
+              {serviceMode && (
+                <div className="grid gap-8 lg:grid-cols-3">
+                  {/* Left Column - Mode-specific content */}
+                  <div className="lg:col-span-2 space-y-6">
+                    {/* Additional Services - visible for one-time */}
+                    {serviceMode === 'one-time' && (
+                      <AdditionalServicesForm
+                        services={additionalServices}
+                        servicePrices={servicePrices}
+                        onChange={handleAdditionalServicesChange}
+                      />
+                    )}
+                    
+                    {/* Plan Selector - visible for recurring */}
+                    {serviceMode === 'recurring' && (
+                      <ServicePlanSelector
+                        bundles={bundles}
+                        selectedTier={selectedTier}
+                        onSelectTier={setSelectedTier}
+                        onBack={handleBackToModeSelection}
+                      />
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
+                  
+                  {/* Right Column - Summary (sticky on desktop) */}
+                  <div className="lg:sticky lg:top-24 lg:self-start">
+                    {renderRightColumn()}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>
