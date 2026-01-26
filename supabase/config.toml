@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.jobber-oauth-url]
 verify_jwt = false
+
+[functions.jobber-sync-users]
+verify_jwt = false

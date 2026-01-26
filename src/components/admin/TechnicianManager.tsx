@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Users, Save, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Technician {
@@ -38,6 +38,7 @@ interface ServiceRate {
 export function TechnicianManager() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRatesDialogOpen, setIsRatesDialogOpen] = useState(false);
   const [editingTech, setEditingTech] = useState<Technician | null>(null);
@@ -72,6 +73,35 @@ export function TechnicianManager() {
   useEffect(() => {
     fetchTechnicians();
   }, []);
+
+  const handleSyncFromJobber = async () => {
+    setIsSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('jobber-sync-users');
+      
+      if (error) {
+        throw new Error(error.message || 'Failed to sync');
+      }
+      
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+      
+      if (data.newUsersSynced > 0) {
+        toast.success(`Synced ${data.newUsersSynced} new technician(s) from Jobber`);
+        fetchTechnicians();
+      } else if (data.alreadyExisted > 0) {
+        toast.info(`All ${data.alreadyExisted} Jobber user(s) already exist`);
+      } else {
+        toast.info('No users found in Jobber');
+      }
+    } catch (error) {
+      console.error('Failed to sync from Jobber:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to sync from Jobber');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!formData.name || !formData.jobber_user_id) {
@@ -251,16 +281,21 @@ export function TechnicianManager() {
               Manage technicians and their per-service hourly rates for duration calculation
             </CardDescription>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={(open) => {
-            setIsDialogOpen(open);
-            if (!open) resetForm();
-          }}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Technician
-              </Button>
-            </DialogTrigger>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleSyncFromJobber} disabled={isSyncing}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Syncing...' : 'Sync from Jobber'}
+            </Button>
+            <Dialog open={isDialogOpen} onOpenChange={(open) => {
+              setIsDialogOpen(open);
+              if (!open) resetForm();
+            }}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Technician
+                </Button>
+              </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>{editingTech ? 'Edit Technician' : 'Add Technician'}</DialogTitle>
@@ -319,6 +354,7 @@ export function TechnicianManager() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </div>
         </div>
       </CardHeader>
       <CardContent>
