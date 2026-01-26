@@ -522,7 +522,8 @@ Deno.serve(async (req) => {
       }
     `;
 
-    const jobberResult = await jobberGraphQL<{
+    // Retry logic for Jobber API with exponential backoff
+    type JobberVisitResult = {
       visits: {
         nodes: Array<{
           id: string;
@@ -543,10 +544,73 @@ Deno.serve(async (req) => {
           };
         }>;
       };
-    }>(scheduledItemsQuery, { 
-      startDateAfter: fromDateISO,
-      startDateBefore: toDateISO,
-    });
+    };
+
+    let jobberResult: { data?: JobberVisitResult; errors?: Array<{ message: string; extensions?: { code?: string } }> } | null = null;
+    let lastError: string | null = null;
+    const maxRetries = 3;
+    const baseDelayMs = 2000; // 2 seconds
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(`Jobber API attempt ${attempt}/${maxRetries}`);
+      
+      jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, { 
+        startDateAfter: fromDateISO,
+        startDateBefore: toDateISO,
+      });
+
+      // Check if throttled
+      const isThrottled = jobberResult.errors?.some(e => 
+        e.extensions?.code === 'THROTTLED' || e.message?.includes('Throttled')
+      );
+
+      if (isThrottled && attempt < maxRetries) {
+        const delayMs = baseDelayMs * Math.pow(2, attempt - 1); // Exponential backoff: 2s, 4s, 8s
+        console.log(`Jobber API throttled, waiting ${delayMs}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      // Check if we got data successfully
+      if (jobberResult.data?.visits?.nodes) {
+        console.log(`Successfully fetched ${jobberResult.data.visits.nodes.length} visits from Jobber`);
+        break;
+      }
+
+      // If there's an error other than throttling, log it
+      if (jobberResult.errors && !isThrottled) {
+        lastError = jobberResult.errors.map(e => e.message).join(', ');
+        console.error("Jobber API error:", lastError);
+        break;
+      }
+
+      // No data and no errors - empty result (which is valid)
+      if (!jobberResult.errors) {
+        console.log("Jobber returned empty visits array (no appointments in range)");
+        break;
+      }
+
+      lastError = jobberResult.errors?.map(e => e.message).join(', ') || 'Unknown error';
+    }
+
+    // CRITICAL: If we still have throttling errors after all retries, return error
+    // This prevents showing potentially conflicting slots
+    const stillThrottled = jobberResult?.errors?.some(e => 
+      e.extensions?.code === 'THROTTLED' || e.message?.includes('Throttled')
+    );
+
+    if (stillThrottled) {
+      console.error("Jobber API still throttled after all retries - returning error to prevent conflicts");
+      return new Response(
+        JSON.stringify({ 
+          error: "Scheduling system is temporarily busy. Please try again in a few moments.",
+          retryAfter: 30, // Suggest retry in 30 seconds
+          slots: [],
+          recommendedDays: [],
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+      );
+    }
 
     // Build a map of busy times per technician with addresses
     const busyTimesByTech: Record<string, Array<{ 
@@ -561,9 +625,9 @@ Deno.serve(async (req) => {
     const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
     console.log("Looking for Jobber User IDs:", techJobberIds);
 
-    if (jobberResult.data?.visits?.nodes) {
+    if (jobberResult?.data?.visits?.nodes) {
       const visits = jobberResult.data.visits.nodes;
-      console.log(`Jobber returned ${visits.length} visits in date range`);
+      console.log(`Processing ${visits.length} visits for conflict detection`);
       
       for (const visit of visits) {
         const users = visit.assignedUsers?.nodes || [];
@@ -587,7 +651,7 @@ Deno.serve(async (req) => {
         for (const user of users) {
           const matchesTech = techJobberIds.includes(user.id);
           if (matchesTech) {
-            console.log(`  -> User ${user.id} MATCHES one of our technicians`);
+            console.log(`  -> User ${user.id} MATCHES technician - marking as busy from ${visit.startAt} to ${visit.endAt}`);
           }
           
           if (!busyTimesByTech[user.id]) {
@@ -601,19 +665,17 @@ Deno.serve(async (req) => {
         }
       }
       
-      console.log("Busy times by tech ID:", Object.keys(busyTimesByTech).map(id => ({
+      console.log("Busy times summary:", Object.entries(busyTimesByTech).map(([id, times]) => ({
         jobberUserId: id,
-        busyCount: busyTimesByTech[id].length
+        busyCount: times.length,
+        times: times.map(t => `${t.start.toISOString()} - ${t.end.toISOString()}`)
       })));
       console.log("Jobs by date:", Object.entries(jobsByDate).map(([date, addrs]) => ({
         date,
         jobCount: addrs.length
       })));
     } else {
-      console.log("No visits returned from Jobber or empty result");
-      if (jobberResult.errors) {
-        console.error("Jobber errors:", jobberResult.errors);
-      }
+      console.log("No visits returned from Jobber - calendar appears empty for date range");
     }
 
     // Track day metrics for recommended days calculation
