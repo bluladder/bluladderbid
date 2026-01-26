@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
 import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
@@ -22,6 +23,9 @@ import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
 import { toast } from 'sonner';
 
 const Index = () => {
+  const [searchParams] = useSearchParams();
+  const isEmbedMode = searchParams.get('embed') === 'true';
+  
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(DEFAULT_ADDITIONAL_SERVICES);
   
@@ -245,23 +249,25 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card sticky top-0 z-50">
-        <div className="container py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-display font-bold text-primary">
-                BluLadder
-              </h1>
-              <p className="text-xs text-muted-foreground">Next Level Clean</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm font-medium text-foreground">Get Your Quote</p>
-              <p className="text-xs text-muted-foreground">Instant pricing</p>
+      {/* Header - hidden in embed mode */}
+      {!isEmbedMode && (
+        <header className="border-b border-border bg-card sticky top-0 z-50">
+          <div className="container py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-display font-bold text-primary">
+                  BluLadder
+                </h1>
+                <p className="text-xs text-muted-foreground">Next Level Clean</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-medium text-foreground">Get Your Quote</p>
+                <p className="text-xs text-muted-foreground">Instant pricing</p>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <main className="container py-8">
         <div className="max-w-6xl mx-auto space-y-8">
@@ -378,12 +384,14 @@ const Index = () => {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border mt-16">
-        <div className="container py-6 text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()} BluLadder • Next Level Clean
-        </div>
-      </footer>
+      {/* Footer - hidden in embed mode */}
+      {!isEmbedMode && (
+        <footer className="border-t border-border mt-16">
+          <div className="container py-6 text-center text-sm text-muted-foreground">
+            © {new Date().getFullYear()} BluLadder • Next Level Clean
+          </div>
+        </footer>
+      )}
     </div>
   );
 };
