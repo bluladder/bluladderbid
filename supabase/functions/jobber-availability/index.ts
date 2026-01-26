@@ -26,13 +26,20 @@ interface TimeSlot {
   isRecommended?: boolean;
 }
 
+// Business hours configuration
+const BUSINESS_HOURS = {
+  startHour: 8, // 8 AM
+  endHour: 18, // 6 PM
+  workDays: [1, 2, 3, 4, 5, 6], // Monday through Saturday (0 = Sunday)
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { services, startDate, daysToCheck = 7 }: AvailabilityRequest = await req.json();
+    const { services, startDate, daysToCheck = 14 }: AvailabilityRequest = await req.json();
 
     if (!services || services.length === 0) {
       return new Response(
@@ -76,11 +83,15 @@ Deno.serve(async (req) => {
       .eq("is_active", true);
 
     if (techError || !technicians?.length) {
+      console.error("Tech query error:", techError);
       return new Response(
         JSON.stringify({ error: "No technicians available", slots: [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    console.log("Found technicians:", technicians.length);
+    console.log("Services requested:", services);
 
     // Calculate duration for each technician
     const eligibleTechs: Array<{
@@ -100,8 +111,11 @@ Deno.serve(async (req) => {
           (r: { service_type: string }) => r.service_type === serviceType
         );
 
+        console.log(`Tech ${tech.name}: service ${svc.service} -> ${serviceType}, rate:`, rate);
+
         if (!rate || rate.dollars_per_hour <= 0) {
           canPerformAll = false;
+          console.log(`Tech ${tech.name} disqualified: no rate for ${serviceType}`);
           break;
         }
 
@@ -111,6 +125,7 @@ Deno.serve(async (req) => {
       }
 
       if (canPerformAll && totalDuration > 0) {
+        console.log(`Tech ${tech.name} eligible with duration ${totalDuration} minutes`);
         eligibleTechs.push({
           id: tech.id,
           jobberUserId: tech.jobber_user_id,
@@ -127,87 +142,146 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Query Jobber for schedule availability
-    const fromDate = startDate || new Date().toISOString().split("T")[0];
-    const toDate = new Date(new Date(fromDate).getTime() + daysToCheck * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0];
+    console.log("Eligible technicians:", eligibleTechs);
 
-    // Get schedule items for each technician
-    const slots: TimeSlot[] = [];
+    // Calculate date range
+    const fromDate = startDate ? new Date(startDate) : new Date();
+    fromDate.setHours(0, 0, 0, 0);
     
-    for (const tech of eligibleTechs) {
-      // Query Jobber for the user's schedule
-      const scheduleQuery = `
-        query GetUserSchedule($userId: EncodedId!, $startDate: ISO8601Date!, $endDate: ISO8601Date!) {
-          user(id: $userId) {
+    const toDate = new Date(fromDate.getTime() + daysToCheck * 24 * 60 * 60 * 1000);
+
+    // Query Jobber for scheduled visits in the date range
+    const scheduledItemsQuery = `
+      query GetScheduledItems($startDate: ISO8601DateTime!, $endDate: ISO8601DateTime!) {
+        visits(
+          filter: {
+            startAt: { gte: $startDate, lt: $endDate }
+          }
+          first: 200
+        ) {
+          nodes {
             id
-            name {
-              full
-            }
-            scheduleAvailability(startDate: $startDate, endDate: $endDate) {
-              date
-              availableSlots {
-                startAt
-                endAt
-              }
+            startAt
+            endAt
+            assignedUsers {
+              id
             }
           }
         }
-      `;
-
-      const result = await jobberGraphQL<{
-        user: {
-          id: string;
-          name: { full: string };
-          scheduleAvailability: Array<{
-            date: string;
-            availableSlots: Array<{
-              startAt: string;
-              endAt: string;
-            }>;
-          }>;
-        };
-      }>(scheduleQuery, {
-        userId: tech.jobberUserId,
-        startDate: fromDate,
-        endDate: toDate,
-      });
-
-      if (result.errors || !result.data?.user?.scheduleAvailability) {
-        console.error("Jobber schedule query error for tech", tech.id, result.errors);
-        continue;
       }
+    `;
 
-      // Find slots that can fit the duration
-      for (const day of result.data.user.scheduleAvailability) {
-        for (const slot of day.availableSlots) {
-          const slotStart = new Date(slot.startAt);
-          const slotEnd = new Date(slot.endAt);
-          const slotDuration = (slotEnd.getTime() - slotStart.getTime()) / (1000 * 60);
+    const jobberResult = await jobberGraphQL<{
+      visits: {
+        nodes: Array<{
+          id: string;
+          startAt: string;
+          endAt: string;
+          assignedUsers: Array<{ id: string }>;
+        }>;
+      };
+    }>(scheduledItemsQuery, {
+      startDate: fromDate.toISOString(),
+      endDate: toDate.toISOString(),
+    });
 
-          // Check if this slot can fit the job
-          if (slotDuration >= tech.durationMinutes) {
-            // Generate potential start times (every 30 minutes within the slot)
-            let currentStart = new Date(slotStart);
-            const maxStart = new Date(slotEnd.getTime() - tech.durationMinutes * 60 * 1000);
+    // Build a map of busy times per technician
+    const busyTimesByTech: Record<string, Array<{ start: Date; end: Date }>> = {};
 
-            while (currentStart <= maxStart) {
-              const jobEnd = new Date(currentStart.getTime() + tech.durationMinutes * 60 * 1000);
-              
-              slots.push({
-                technicianId: tech.id,
-                technicianName: tech.name,
-                startTime: currentStart.toISOString(),
-                endTime: jobEnd.toISOString(),
-                durationMinutes: tech.durationMinutes,
-              });
+    if (jobberResult.data?.visits?.nodes) {
+      console.log("Found visits from Jobber:", jobberResult.data.visits.nodes.length);
+      for (const visit of jobberResult.data.visits.nodes) {
+        for (const user of visit.assignedUsers || []) {
+          if (!busyTimesByTech[user.id]) {
+            busyTimesByTech[user.id] = [];
+          }
+          busyTimesByTech[user.id].push({
+            start: new Date(visit.startAt),
+            end: new Date(visit.endAt),
+          });
+        }
+      }
+    } else {
+      console.log("No visits found or query failed:", jobberResult.errors);
+    }
 
-              // Move to next 30-minute interval
-              currentStart = new Date(currentStart.getTime() + 30 * 60 * 1000);
-            }
+    // Generate available slots for each eligible technician
+    const slots: TimeSlot[] = [];
+
+    for (const tech of eligibleTechs) {
+      const techBusyTimes = busyTimesByTech[tech.jobberUserId] || [];
+      
+      // Sort busy times by start
+      techBusyTimes.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+      // Generate slots for each business day
+      let currentDay = new Date(fromDate);
+      
+      while (currentDay < toDate) {
+        const dayOfWeek = currentDay.getDay();
+        
+        // Skip non-work days
+        if (!BUSINESS_HOURS.workDays.includes(dayOfWeek)) {
+          currentDay.setDate(currentDay.getDate() + 1);
+          continue;
+        }
+
+        // Create business hours for this day
+        const dayStart = new Date(currentDay);
+        dayStart.setHours(BUSINESS_HOURS.startHour, 0, 0, 0);
+        
+        const dayEnd = new Date(currentDay);
+        dayEnd.setHours(BUSINESS_HOURS.endHour, 0, 0, 0);
+
+        // Skip if day is in the past
+        const now = new Date();
+        if (dayEnd <= now) {
+          currentDay.setDate(currentDay.getDate() + 1);
+          continue;
+        }
+
+        // Adjust start time if it's today and past business start
+        let effectiveStart = new Date(dayStart);
+        if (currentDay.toDateString() === now.toDateString() && now > dayStart) {
+          // Round up to next 30-minute slot
+          effectiveStart = new Date(now);
+          effectiveStart.setMinutes(Math.ceil(now.getMinutes() / 30) * 30, 0, 0);
+          if (effectiveStart.getMinutes() === 60) {
+            effectiveStart.setHours(effectiveStart.getHours() + 1, 0, 0, 0);
           }
         }
+
+        // Get busy times for this day
+        const todayBusyTimes = techBusyTimes.filter(
+          bt => bt.start >= dayStart && bt.start < dayEnd
+        );
+
+        // Generate available slots avoiding busy times
+        let slotStart = new Date(effectiveStart);
+        
+        while (slotStart.getTime() + tech.durationMinutes * 60 * 1000 <= dayEnd.getTime()) {
+          const slotEnd = new Date(slotStart.getTime() + tech.durationMinutes * 60 * 1000);
+          
+          // Check if this slot conflicts with any busy time
+          const hasConflict = todayBusyTimes.some(bt => 
+            (slotStart < bt.end && slotEnd > bt.start)
+          );
+
+          if (!hasConflict) {
+            slots.push({
+              technicianId: tech.id,
+              technicianName: tech.name,
+              startTime: slotStart.toISOString(),
+              endTime: slotEnd.toISOString(),
+              durationMinutes: tech.durationMinutes,
+            });
+          }
+
+          // Move to next 30-minute interval
+          slotStart = new Date(slotStart.getTime() + 30 * 60 * 1000);
+        }
+
+        currentDay.setDate(currentDay.getDate() + 1);
       }
     }
 
@@ -222,11 +296,13 @@ Deno.serve(async (req) => {
     // Limit to first 50 slots
     const limitedSlots = slots.slice(0, 50);
 
+    console.log(`Generated ${slots.length} total slots, returning ${limitedSlots.length}`);
+
     return new Response(
       JSON.stringify({
         slots: limitedSlots,
         totalAvailable: slots.length,
-        eligibleTechnicians: eligibleTechs.map(t => ({ id: t.id, name: t.name })),
+        eligibleTechnicians: eligibleTechs.map(t => ({ id: t.id, name: t.name, durationMinutes: t.durationMinutes })),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -234,7 +310,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error("Availability error:", error);
     return new Response(
-      JSON.stringify({ error: "Failed to check availability" }),
+      JSON.stringify({ error: "Failed to check availability", details: error instanceof Error ? error.message : String(error) }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
     );
   }
