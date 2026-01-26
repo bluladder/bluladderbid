@@ -207,8 +207,10 @@ const Index = () => {
                     servicePrices={servicePrices}
                     selectedBundle={selectedBundle}
                     homeDetails={homeDetails}
+                    additionalServices={additionalServices}
                     onDownloadPDF={handleDownloadPDF}
                     onGetStarted={handleGetStarted}
+                    prefillCustomerInfo={prefillCustomerInfo}
                   />
                 ) : (
                   <div className="card-gradient p-6 text-center">

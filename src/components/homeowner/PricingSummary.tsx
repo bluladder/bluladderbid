@@ -1,15 +1,20 @@
+import { useState } from 'react';
 import { Sparkles, Check, Download, Calendar, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import type { ServicePrices, BundleTier, HomeDetails } from '@/types/homeowner';
+import { BookingFlow } from '@/components/booking/BookingFlow';
+import type { ServicePrices, BundleTier, HomeDetails, AdditionalServices } from '@/types/homeowner';
+import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
 
 interface PricingSummaryProps {
   servicePrices: ServicePrices;
   selectedBundle: BundleTier | null;
   homeDetails: HomeDetails;
+  additionalServices: AdditionalServices;
   onDownloadPDF: () => void;
   onGetStarted: () => void;
+  prefillCustomerInfo?: CustomerInfo | null;
 }
 
 function formatPrice(price: number) {
@@ -25,10 +30,29 @@ export function PricingSummary({
   servicePrices, 
   selectedBundle, 
   homeDetails,
+  additionalServices,
   onDownloadPDF,
-  onGetStarted 
+  onGetStarted,
+  prefillCustomerInfo,
 }: PricingSummaryProps) {
+  const [showBookingFlow, setShowBookingFlow] = useState(false);
+
   if (!selectedBundle) return null;
+
+  // Show booking flow
+  if (showBookingFlow) {
+    return (
+      <BookingFlow
+        servicePrices={servicePrices}
+        additionalServices={additionalServices}
+        homeDetails={homeDetails}
+        appliedDiscount={null}
+        discountAmount={0}
+        onCancel={() => setShowBookingFlow(false)}
+        prefillCustomerInfo={prefillCustomerInfo}
+      />
+    );
+  }
   
   return (
     <Card className="card-summary">
@@ -197,7 +221,7 @@ export function PricingSummary({
         <div className="space-y-3 pt-2">
           <Button 
             className="w-full btn-primary h-12 text-base"
-            onClick={onGetStarted}
+            onClick={() => setShowBookingFlow(true)}
           >
             <Calendar className="w-5 h-5 mr-2" />
             Request Scheduling
