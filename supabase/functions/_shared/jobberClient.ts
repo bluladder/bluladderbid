@@ -26,7 +26,18 @@ export async function getJobberAccessToken(): Promise<string | null> {
   }
 
   // Check if token is expired (with 5 minute buffer)
-  const expiresAt = new Date(tokens.expires_at);
+  let expiresAt: Date;
+  try {
+    expiresAt = new Date(tokens.expires_at);
+    if (isNaN(expiresAt.getTime())) {
+      throw new Error("Invalid expires_at date");
+    }
+  } catch (error) {
+    console.error("Invalid token expiration date, forcing refresh:", error);
+    // Force refresh by setting expiration to past
+    expiresAt = new Date(0);
+  }
+  
   const now = new Date(Date.now() + 5 * 60 * 1000);
 
   if (now < expiresAt) {
