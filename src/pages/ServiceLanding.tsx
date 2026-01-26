@@ -9,6 +9,7 @@ import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
 import { ProgressStepper, type FlowStep } from '@/components/homeowner/ProgressStepper';
 import { useServicePricing } from '@/hooks/useServicePricing';
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
+import { useUtmTracking } from '@/hooks/useUtmTracking';
 import { 
   HomeDetails, 
   AdditionalServices, 
@@ -79,6 +80,9 @@ const ServiceLanding = () => {
   const service = location.pathname.substring(1); // Remove leading slash
   const config = SERVICE_CONFIG[service as ServiceSlug];
   const isEmbedMode = searchParams.get('embed') === 'true';
+  
+  // Capture UTM tracking parameters for marketing attribution
+  const { getStoredUtmParams } = useUtmTracking();
   
   // Optional URL param to preselect a specific service (e.g., ?preset=roofCleaning)
   const presetParam = searchParams.get('preset') as 
