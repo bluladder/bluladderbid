@@ -11,37 +11,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Get PropertyCreateInput and find its nested types
+    // Get ScheduledItemAttributes for visit scheduling
     const propertyInputQuery = `
-      query GetAllPropertyTypes {
-        propertyCreateInput: __type(name: "PropertyCreateInput") {
-          name
-          kind
-          inputFields {
-            name
-            type {
-              name
-              kind
-              ofType {
-                name
-                kind
-                ofType {
-                  name
-                  kind
-                  inputFields {
-                    name
-                    type {
-                      name
-                      kind
-                      ofType { name kind }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        addressAttributes: __type(name: "AddressAttributes") {
+      query GetVisitTypes {
+        scheduledItemAttributes: __type(name: "ScheduledItemAttributes") {
           name
           kind
           inputFields {
