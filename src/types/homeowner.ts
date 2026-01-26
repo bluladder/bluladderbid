@@ -165,7 +165,9 @@ export const DEFAULT_HOME_DETAILS: HomeDetails = {
 };
 
 export const DEFAULT_ADDITIONAL_SERVICES: AdditionalServices = {
-  windowCleaning: true,
+  // IMPORTANT: Window Cleaning should not be auto-selected globally.
+  // Dedicated landing pages (e.g. /window-cleaning) may pre-select it locally.
+  windowCleaning: false,
   drivewayCleaning: {
     enabled: false,
     sqft: FLATWORK_DEFAULT_SQFT.driveway,
