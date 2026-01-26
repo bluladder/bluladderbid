@@ -9,10 +9,11 @@ import { JobberIntegration } from '@/components/admin/JobberIntegration';
 import { TechnicianManager } from '@/components/admin/TechnicianManager';
 import { BusinessHoursSettings } from '@/components/admin/BusinessHoursSettings';
 import { BookingsManager } from '@/components/admin/BookingsManager';
+import { MarketingAnalytics } from '@/components/admin/MarketingAnalytics';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList } from 'lucide-react';
+import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Admin() {
@@ -103,14 +104,18 @@ export default function Admin() {
       <main className="container py-8">
         <div className="max-w-5xl mx-auto">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-6 mb-6">
+            <TabsList className="grid w-full grid-cols-7 mb-6">
               <TabsTrigger value="bookings" className="flex items-center gap-2">
                 <ClipboardList className="w-4 h-4" />
                 Bookings
               </TabsTrigger>
+              <TabsTrigger value="analytics" className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
+                Analytics
+              </TabsTrigger>
               <TabsTrigger value="preview" className="flex items-center gap-2">
                 <Calculator className="w-4 h-4" />
-                Quote Preview
+                Preview
               </TabsTrigger>
               <TabsTrigger value="compare" className="flex items-center gap-2">
                 <GitCompare className="w-4 h-4" />
@@ -132,6 +137,10 @@ export default function Admin() {
             
             <TabsContent value="bookings">
               <BookingsManager />
+            </TabsContent>
+            
+            <TabsContent value="analytics">
+              <MarketingAnalytics />
             </TabsContent>
             
             <TabsContent value="preview">
