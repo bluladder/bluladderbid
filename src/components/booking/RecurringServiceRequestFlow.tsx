@@ -42,38 +42,49 @@ export function RecurringServiceRequestFlow({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Build services array for the request
+  // Build services array for the request with frequency info
   const buildServicesArray = () => {
-    const services: Array<{ name: string; price: number }> = [];
+    const services: Array<{ name: string; price: number; frequency: string }> = [];
     
+    // Window cleaning uses windowFrequency from the selected bundle
     if (servicePrices.windowCleaningTotal > 0) {
       services.push({ 
         name: 'Window Cleaning', 
         price: servicePrices.windowCleaningTotal,
+        frequency: `${selectedBundle.windowFrequency}x per year`,
       });
     }
+    
+    // Gutter cleaning frequency varies by tier (use additionalServicesFrequency pattern)
+    // For simplicity, we derive from tier: good=1x, better=1x, best=2x
+    const additionalFreq = selectedBundle.tier === 'best' ? 2 : 1;
+    
     if (servicePrices.gutterCleaning > 0) {
       services.push({ 
         name: 'Gutter Cleaning', 
         price: servicePrices.gutterCleaning,
+        frequency: `${additionalFreq}x per year`,
       });
     }
     if (servicePrices.houseWash > 0) {
       services.push({ 
         name: 'House Wash', 
         price: servicePrices.houseWash,
+        frequency: '1x per year',
       });
     }
     if (servicePrices.roofCleaning > 0) {
       services.push({ 
         name: 'Roof Cleaning', 
         price: servicePrices.roofCleaning,
+        frequency: '1x per year',
       });
     }
     if ((servicePrices.pressureWashing + servicePrices.pressureWashingAddons) > 0) {
       services.push({ 
         name: 'Pressure Washing', 
         price: servicePrices.pressureWashing + servicePrices.pressureWashingAddons,
+        frequency: '1x per year',
       });
     }
     

@@ -24,6 +24,7 @@ interface ServiceRequestPayload {
   services: Array<{
     name: string;
     price: number;
+    frequency?: string;
   }>;
   homeDetails: Record<string, unknown>;
   notes?: string;
@@ -229,6 +230,7 @@ Deno.serve(async (req) => {
     }
 
     // Create property if address provided
+    let propertyId: string | null = null;
     if (payload.customer.address) {
       console.log("Checking for existing property");
       const getClientPropertyQuery = `
@@ -251,9 +253,9 @@ Deno.serve(async (req) => {
         };
       }>(getClientPropertyQuery, { clientId: jobberClientId });
 
-      const existingPropertyId = propertyResult.data?.client?.clientProperties?.nodes?.[0]?.id;
+      propertyId = propertyResult.data?.client?.clientProperties?.nodes?.[0]?.id || null;
 
-      if (!existingPropertyId) {
+      if (!propertyId) {
         console.log("Creating property for client");
         const createPropertyMutation = `
           mutation CreateProperty($clientId: EncodedId!, $input: PropertyCreateInput!) {
@@ -285,49 +287,66 @@ Deno.serve(async (req) => {
           ]
         };
         
-        await jobberGraphQL<{
+        const createPropertyResult = await jobberGraphQL<{
           propertyCreate: {
             properties: Array<{ id: string }>;
             userErrors: Array<{ message: string; path?: string[] }>;
           };
         }>(createPropertyMutation, { clientId: jobberClientId, input: propertyInput });
         
-        console.log("Property created");
+        propertyId = createPropertyResult.data?.propertyCreate?.properties?.[0]?.id || null;
+        console.log("Property created:", propertyId);
+      } else {
+        console.log("Using existing property:", propertyId);
       }
     }
 
-    // Build task description with service plan details
-    const planDetails = [
-      `RECURRING SERVICE PLAN REQUEST`,
-      `================================`,
+    // Build line items for the quote with service details and frequencies
+    const lineItems = payload.services.map(service => {
+      const frequency = service.frequency || '1x per year';
+      return {
+        name: service.name,
+        description: `${frequency} - Annual service as part of ${payload.selectedPlan.name} (${payload.selectedPlan.label}) plan`,
+        quantity: 1,
+        unitPrice: service.price,
+      };
+    });
+
+    // Build quote message with home details and notes
+    const homeDetailsLines = [
+      `Home Details:`,
+      `• Square Footage: ${(payload.homeDetails.squareFootage as number)?.toLocaleString() || 'N/A'} sq ft`,
+      `• Stories: ${payload.homeDetails.stories || 1}`,
+    ];
+    
+    if (payload.homeDetails.condition) {
+      homeDetailsLines.push(`• Condition: ${payload.homeDetails.condition}`);
+    }
+    if (payload.homeDetails.drivewaySize) {
+      homeDetailsLines.push(`• Driveway: ${payload.homeDetails.drivewaySize}`);
+    }
+    if (payload.homeDetails.drivewaySurface) {
+      homeDetailsLines.push(`• Surface: ${payload.homeDetails.drivewaySurface}`);
+    }
+
+    const quoteMessage = [
+      `${payload.selectedPlan.name} (${payload.selectedPlan.label}) - Annual Service Plan`,
       ``,
-      `Customer: ${payload.customer.firstName} ${payload.customer.lastName}`,
-      `Email: ${payload.customer.email}`,
-      payload.customer.phone ? `Phone: ${payload.customer.phone}` : null,
-      payload.customer.address ? `Address: ${payload.customer.address}` : null,
-      ``,
-      `Selected Plan: ${payload.selectedPlan.name} (${payload.selectedPlan.label})`,
       `Monthly Payment: $${payload.selectedPlan.monthlyPayment}/month`,
       `Annual Total: $${payload.selectedPlan.annualTotal}/year`,
       ``,
-      `Services Included:`,
-      ...payload.services.map(s => `  • ${s.name}: $${s.price}`),
-      ``,
-      `Home Details:`,
-      `  • Square Footage: ${(payload.homeDetails.squareFootage as number)?.toLocaleString() || 'N/A'} sq ft`,
-      `  • Stories: ${payload.homeDetails.stories || 1}`,
-      payload.notes ? `\nCustomer Notes:\n${payload.notes}` : null,
-      ``,
-      `ACTION REQUIRED: Contact customer to schedule first service and set up recurring plan.`,
+      ...homeDetailsLines,
+      payload.notes ? `\nCustomer Notes: ${payload.notes}` : null,
     ].filter(Boolean).join("\n");
 
-    // Create task in Jobber
-    console.log("Creating task in Jobber");
-    const createTaskMutation = `
-      mutation CreateTask($clientId: EncodedId!, $input: TaskCreateInput!) {
-        taskCreate(clientId: $clientId, input: $input) {
-          task {
+    // Create quote in Jobber
+    console.log("Creating quote in Jobber");
+    const createQuoteMutation = `
+      mutation CreateQuote($clientId: EncodedId!, $input: QuoteCreateInput!) {
+        quoteCreate(clientId: $clientId, input: $input) {
+          quote {
             id
+            quoteNumber
             title
           }
           userErrors {
@@ -338,63 +357,51 @@ Deno.serve(async (req) => {
       }
     `;
 
-    // Task due date is tomorrow to prompt quick follow-up
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 1);
-    const dueDateStr = dueDate.toISOString().split('T')[0];
-
-    const taskInput = {
-      title: `📋 Service Plan Request: ${payload.selectedPlan.name} - ${payload.customer.firstName} ${payload.customer.lastName}`,
-      description: planDetails,
-      startAt: {
-        date: dueDateStr,
-        time: "09:00",
-        timezone: "America/Chicago",
-      },
-      endAt: {
-        date: dueDateStr,
-        time: "17:00",
-        timezone: "America/Chicago",
-      },
-      isAllDay: true,
+    const quoteInput = {
+      title: `${payload.selectedPlan.name} - Annual Service Plan`,
+      message: quoteMessage,
+      lineItems: lineItems,
+      ...(propertyId && { propertyId }),
     };
 
-    console.log("Task creation input:", JSON.stringify(taskInput));
+    console.log("Quote creation input:", JSON.stringify(quoteInput));
 
-    const taskResult = await jobberGraphQL<{
-      taskCreate: {
-        task: { id: string; title: string } | null;
+    const quoteResult = await jobberGraphQL<{
+      quoteCreate: {
+        quote: { id: string; quoteNumber: number; title: string } | null;
         userErrors: Array<{ message: string; path?: string[] }>;
       };
-    }>(createTaskMutation, { clientId: jobberClientId, input: taskInput });
+    }>(createQuoteMutation, { clientId: jobberClientId, input: quoteInput });
 
-    console.log("Task creation result:", JSON.stringify(taskResult));
+    console.log("Quote creation result:", JSON.stringify(quoteResult));
 
-    if (taskResult.errors?.length) {
-      console.error("Jobber task GraphQL errors:", taskResult.errors);
+    if (quoteResult.errors?.length) {
+      console.error("Jobber quote GraphQL errors:", quoteResult.errors);
       return new Response(
-        JSON.stringify({ error: "Failed to create task in Jobber", details: taskResult.errors.map(e => e.message).join(", ") }),
+        JSON.stringify({ error: "Failed to create quote in Jobber", details: quoteResult.errors.map(e => e.message).join(", ") }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
       );
     }
 
-    if (taskResult.data?.taskCreate?.userErrors?.length) {
-      console.error("Jobber task creation errors:", taskResult.data.taskCreate.userErrors);
+    if (quoteResult.data?.quoteCreate?.userErrors?.length) {
+      console.error("Jobber quote creation errors:", quoteResult.data.quoteCreate.userErrors);
       return new Response(
-        JSON.stringify({ error: "Failed to create task in Jobber", details: taskResult.data.taskCreate.userErrors.map(e => e.message).join(", ") }),
+        JSON.stringify({ error: "Failed to create quote in Jobber", details: quoteResult.data.quoteCreate.userErrors.map(e => e.message).join(", ") }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
       );
     }
 
-    const taskId = taskResult.data?.taskCreate?.task?.id;
+    const quoteId = quoteResult.data?.quoteCreate?.quote?.id;
+    const quoteNumber = quoteResult.data?.quoteCreate?.quote?.quoteNumber;
 
     console.log("=== Service request completed successfully ===");
-    console.log("Created task:", taskId);
+    console.log("Created quote:", quoteId, "Number:", quoteNumber);
 
     return new Response(
       JSON.stringify({
         success: true,
-        taskId,
+        quoteId,
+        quoteNumber,
         customerId: customer.id,
         jobberClientId,
         message: "Service plan request submitted successfully",
