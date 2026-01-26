@@ -7,6 +7,7 @@ import { ScenarioCompare } from '@/components/admin/ScenarioCompare';
 import { DiscountCodesManager } from '@/components/admin/DiscountCodesManager';
 import { JobberIntegration } from '@/components/admin/JobberIntegration';
 import { TechnicianManager } from '@/components/admin/TechnicianManager';
+import { BusinessHoursSettings } from '@/components/admin/BusinessHoursSettings';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -137,6 +138,7 @@ export default function Admin() {
             </TabsContent>
             
             <TabsContent value="booking" className="space-y-6">
+              <BusinessHoursSettings />
               <JobberIntegration />
               <TechnicianManager />
             </TabsContent>
