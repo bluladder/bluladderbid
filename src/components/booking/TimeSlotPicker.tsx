@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,43 @@ import { CalendarView, type CalendarViewMode } from './CalendarView';
 import { SuggestedDaysChips, type RecommendedDay } from './SuggestedDaysChips';
 import { TimeSlotList } from './TimeSlotList';
 import { useBookingSettings } from '@/components/admin/BookingSettings';
+
+type AvailabilityErrorPayload = {
+  error?: string;
+  retryAfter?: number;
+  requiresAdminAction?: boolean;
+  code?: string;
+};
+
+async function extractAvailabilityErrorPayload(err: unknown): Promise<AvailabilityErrorPayload | null> {
+  const anyErr = err as any;
+
+  // Supabase FunctionsHttpError has `context: Response`
+  const context = anyErr?.context as Response | undefined;
+  if (context && typeof context.clone === 'function') {
+    try {
+      const text = await context.clone().text();
+      const maybeJson = JSON.parse(text) as AvailabilityErrorPayload;
+      if (maybeJson && (maybeJson.error || maybeJson.retryAfter)) return maybeJson;
+    } catch {
+      // fall through
+    }
+  }
+
+  // Fallback: try to parse trailing JSON from message
+  const msg = anyErr?.message ? String(anyErr.message) : String(err);
+  const jsonMatch = msg.match(/(\{[\s\S]*\})\s*$/);
+  if (jsonMatch) {
+    try {
+      const maybeJson = JSON.parse(jsonMatch[1]) as AvailabilityErrorPayload;
+      if (maybeJson && (maybeJson.error || maybeJson.retryAfter)) return maybeJson;
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
 
 export interface TimeSlot {
   technicianId: string;
@@ -51,8 +88,21 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
   const { data: bookingSettings } = useBookingSettings();
   const horizonDays = bookingSettings?.bookingHorizonDays || 21;
   const showSuggestedDays = bookingSettings?.showSuggestedDays !== false;
+  const routeDensityWeight = bookingSettings?.routeDensityWeight || 'medium';
 
-  const fetchAvailability = async (isRetry = false) => {
+  // Prevent re-fetch spam due to new array identities
+  const servicesKey = useMemo(
+    () => services.map(s => `${s.service}:${s.price}`).join('|'),
+    [services]
+  );
+
+  // Stable access to latest services without re-creating callbacks on every render
+  const servicesRef = useRef(services);
+  useEffect(() => {
+    servicesRef.current = services;
+  }, [services]);
+
+  const fetchAvailability = useCallback(async (isRetry = false) => {
     setIsLoading(true);
     setError(null);
     if (!isRetry) {
@@ -63,13 +113,32 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
     try {
       const { data, error: fnError } = await supabase.functions.invoke('jobber-availability', {
         body: {
-          services,
+          services: servicesRef.current,
           startDate: format(new Date(), 'yyyy-MM-dd'),
           daysToCheck: horizonDays,
           customerAddress,
-          routeDensityWeight: bookingSettings?.routeDensityWeight || 'medium',
+          routeDensityWeight,
         },
       });
+
+      // If we got a Functions error, try to extract the JSON payload and show it instead
+      if (fnError) {
+        const payload = await extractAvailabilityErrorPayload(fnError);
+        if (payload?.error) {
+          setError(payload.error);
+          if (payload.retryAfter) {
+            setIsThrottled(true);
+            setRetryCountdown(payload.retryAfter);
+          }
+          if (payload.requiresAdminAction) {
+            console.error('Jobber connection requires admin action:', payload.error);
+          }
+          setSlots([]);
+          setRecommendedDays([]);
+          return;
+        }
+        throw fnError;
+      }
 
       // Check data.error FIRST - supabase-js returns the response body in data even on 503
       if (data?.error) {
@@ -87,11 +156,6 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
         return;
       }
 
-      // If fnError but no data.error, try to extract from error message
-      if (fnError) {
-        throw fnError;
-      }
-
       setIsThrottled(false);
       setRetryCountdown(0);
 
@@ -100,27 +164,41 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
       setRecommendedDays(data.recommendedDays || []);
 
       // Auto-select a date if none selected
-      if (!selectedDate && fetchedSlots.length > 0) {
-        // Prefer recommended day with high efficiency
-        const bestDay = data.recommendedDays?.find((d: RecommendedDay) => d.efficiencyScore >= 75);
-        if (bestDay) {
-          const bestDate = parseISO(bestDay.date);
-          if (fetchedSlots.some(s => isSameDay(parseISO(s.startTime), bestDate))) {
-            setSelectedDate(bestDate);
-            return;
+      if (fetchedSlots.length > 0) {
+        setSelectedDate((prev) => {
+          if (prev) return prev;
+
+          // Prefer recommended day with high efficiency
+          const bestDay = data.recommendedDays?.find((d: RecommendedDay) => d.efficiencyScore >= 75);
+          if (bestDay) {
+            const bestDate = parseISO(bestDay.date);
+            if (fetchedSlots.some(s => isSameDay(parseISO(s.startTime), bestDate))) {
+              return bestDate;
+            }
           }
-        }
-        // Otherwise select first available date
-        const firstSlotDate = parseISO(fetchedSlots[0].startTime);
-        setSelectedDate(firstSlotDate);
+
+          // Otherwise select first available date
+          return parseISO(fetchedSlots[0].startTime);
+        });
       }
     } catch (err) {
       console.error('Failed to fetch availability:', err);
+      const payload = await extractAvailabilityErrorPayload(err);
+      if (payload?.error) {
+        setError(payload.error);
+        if (payload.retryAfter) {
+          setIsThrottled(true);
+          setRetryCountdown(payload.retryAfter);
+        }
+        setSlots([]);
+        setRecommendedDays([]);
+        return;
+      }
       setError('Unable to load available times. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [customerAddress, horizonDays, routeDensityWeight]);
 
   // Countdown (no auto-retry)
   useEffect(() => {
@@ -132,11 +210,18 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
     }
   }, [retryCountdown]);
 
+  // Auto-retry when throttle cooldown finishes
+  useEffect(() => {
+    if (isThrottled && retryCountdown === 0 && error) {
+      fetchAvailability(true);
+    }
+  }, [isThrottled, retryCountdown, error, fetchAvailability]);
+
   useEffect(() => {
     if (services.length > 0) {
       fetchAvailability();
     }
-  }, [services, customerAddress, horizonDays]);
+  }, [servicesKey, customerAddress, horizonDays, routeDensityWeight, fetchAvailability, services.length]);
 
   // Compute available dates and their availability info
   const { availableDates, dayAvailabilityMap } = useMemo(() => {
