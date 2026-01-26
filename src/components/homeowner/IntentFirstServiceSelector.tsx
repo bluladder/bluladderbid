@@ -43,73 +43,78 @@ interface ServiceCardProps {
 }
 
 function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggle, children, isFeatured }: ServiceCardProps) {
+  // Compact view when not enabled
+  if (!isEnabled) {
+    return (
+      <div 
+        className={`relative flex items-center gap-3 p-3 rounded-lg border transition-all duration-200 cursor-pointer ${
+          isFeatured
+            ? 'border-primary/60 bg-primary/5 ring-1 ring-primary/20'
+            : 'border-border hover:border-primary/40 hover:bg-muted/30 bg-card'
+        }`}
+        onClick={onToggle}
+      >
+        {/* Featured badge - smaller for compact */}
+        {isFeatured && (
+          <div className="absolute -top-2 left-3 px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-semibold rounded-full">
+            ✨ Featured
+          </div>
+        )}
+        
+        <div className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 bg-muted text-muted-foreground">
+          <Icon className="w-4 h-4" />
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <span className="font-medium text-sm text-foreground/80">{title}</span>
+        </div>
+        
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {price > 0 && (
+            <span className="text-xs text-muted-foreground">{formatPrice(price)}</span>
+          )}
+          <div className="w-5 h-5 rounded-full flex items-center justify-center bg-muted/80 text-muted-foreground">
+            <Plus className="w-3 h-3" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Expanded view when enabled
   return (
     <div 
-      className={`relative p-4 rounded-xl border-2 transition-all duration-200 cursor-pointer ${
-        isFeatured && !isEnabled
-          ? 'border-primary/60 bg-primary/5 ring-2 ring-primary/20 shadow-md'
-          : isEnabled 
-            ? 'border-primary bg-primary/5 shadow-md' 
-            : 'border-border hover:border-primary/40 hover:shadow-sm bg-card'
-      }`}
+      className="relative p-4 rounded-xl border-2 border-primary bg-primary/5 shadow-md transition-all duration-200 cursor-pointer"
       onClick={(e) => {
-        // Don't toggle if clicking on a child input
         if ((e.target as HTMLElement).closest('select, input, button, [role="radio"], [role="switch"]')) return;
         onToggle();
       }}
     >
-      {/* Featured badge */}
-      {isFeatured && (
-        <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 bg-primary text-primary-foreground text-xs font-semibold rounded-full shadow-sm animate-fade-in">
-          ✨ Featured
-        </div>
-      )}
-      
       {/* Selection indicator */}
-      <div className={`
-        absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200
-        ${isEnabled 
-          ? 'bg-primary text-primary-foreground shadow-sm' 
-          : 'bg-muted/80 text-muted-foreground'
-        }
-      `}>
-        {isEnabled ? (
-          <Check className="w-3.5 h-3.5" />
-        ) : (
-          <Plus className="w-3.5 h-3.5" />
-        )}
+      <div className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-sm">
+        <Check className="w-3.5 h-3.5" />
       </div>
       
       <div className="flex items-start gap-3 pr-8">
-        <div className={`
-          w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-200
-          ${isEnabled 
-            ? 'bg-primary text-primary-foreground shadow-md' 
-            : 'bg-muted text-muted-foreground'
-          }
-        `}>
+        <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary text-primary-foreground shadow-md">
           <Icon className="w-5 h-5" />
         </div>
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <h3 className={`font-semibold ${isEnabled ? 'text-foreground' : 'text-foreground/80'}`}>
-              {title}
-            </h3>
-            {isEnabled && price > 0 && (
+            <h3 className="font-semibold text-foreground">{title}</h3>
+            {price > 0 && (
               <span className="text-primary font-bold price-display">
                 {formatPrice(price)}
               </span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {description}
-          </p>
+          <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
         </div>
       </div>
       
       {/* Expandable options */}
-      {isEnabled && children && (
+      {children && (
         <div className="mt-4 pt-4 border-t border-border" onClick={e => e.stopPropagation()}>
           {children}
         </div>
