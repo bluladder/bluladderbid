@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
 import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
@@ -8,6 +8,7 @@ import { PricingSummary } from '@/components/homeowner/PricingSummary';
 import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
 import { CustomerLookup } from '@/components/booking/CustomerLookup';
 import { PastBookings } from '@/components/booking/PastBookings';
+import { ProgressStepper, type FlowStep } from '@/components/homeowner/ProgressStepper';
 import { useServicePricing } from '@/hooks/useServicePricing';
 import { 
   HomeDetails, 
@@ -135,6 +136,13 @@ const Index = () => {
   // Show past bookings view for returning customers with booking history
   const showPastBookingsView = returningCustomer && pastBookings.length > 0 && flowState === 'selecting';
 
+  // Map flow state to progress step
+  const currentProgressStep = useMemo<FlowStep>(() => {
+    if (flowState === 'selecting') return 'services';
+    if (flowState === 'one-time-booking' || flowState === 'plan-selected') return 'quote';
+    return 'book';
+  }, [flowState]);
+
   // Determine what to show in the right column
   const renderRightColumn = () => {
     // One-time booking flow
@@ -213,6 +221,13 @@ const Index = () => {
               cleaning services will cost — no surprises.
             </p>
           </div>
+
+          {/* Progress Stepper (shown after customer lookup) */}
+          {!showCustomerLookup && !showPastBookingsView && (
+            <div className="animate-fade-in">
+              <ProgressStepper currentStep={currentProgressStep} />
+            </div>
+          )}
 
           {/* Customer Lookup (shown initially) */}
           {showCustomerLookup && (
