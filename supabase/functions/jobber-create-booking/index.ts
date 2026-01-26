@@ -202,7 +202,6 @@ Deno.serve(async (req) => {
 
         if (createResult.data?.clientCreate?.userErrors?.length) {
           console.error("Jobber client creation errors:", createResult.data.clientCreate.userErrors);
-          // Don't fail - client might already exist with different search term
         }
 
         jobberClientId = createResult.data?.clientCreate?.client?.id;
@@ -227,6 +226,83 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get or create property for the client
+    console.log("Getting property for client:", jobberClientId);
+    const getClientPropertyQuery = `
+      query GetClientProperty($clientId: EncodedId!) {
+        client(id: $clientId) {
+          id
+          properties(first: 1) {
+            nodes {
+              id
+            }
+          }
+        }
+      }
+    `;
+
+    const propertyResult = await jobberGraphQL<{
+      client: {
+        id: string;
+        properties: {
+          nodes: Array<{ id: string }>;
+        };
+      };
+    }>(getClientPropertyQuery, { clientId: jobberClientId });
+
+    console.log("Client properties result:", JSON.stringify(propertyResult));
+
+    let propertyId = propertyResult.data?.client?.properties?.nodes?.[0]?.id;
+
+    if (!propertyId) {
+      // Create a property for the client
+      console.log("Creating property for client");
+      const createPropertyMutation = `
+        mutation CreateProperty($clientId: EncodedId!, $input: PropertyCreateInput!) {
+          propertyCreate(clientId: $clientId, input: $input) {
+            properties {
+              id
+            }
+            userErrors {
+              message
+              path
+            }
+          }
+        }
+      `;
+
+      const propertyInput = {
+        address: {
+          street: booking.customer.address || "Address TBD",
+          city: "",
+          province: "",
+          postalCode: "",
+          country: "US",
+        },
+      };
+
+      const createPropertyResult = await jobberGraphQL<{
+        propertyCreate: {
+          property: { id: string } | null;
+          userErrors: Array<{ message: string; path?: string[] }>;
+        };
+      }>(createPropertyMutation, { clientId: jobberClientId, input: propertyInput });
+
+      console.log("Property creation result:", JSON.stringify(createPropertyResult));
+
+      propertyId = createPropertyResult.data?.propertyCreate?.property?.id;
+
+      if (!propertyId) {
+        console.error("Failed to create property:", createPropertyResult);
+        return new Response(
+          JSON.stringify({ error: "Failed to create property in Jobber" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+        );
+      }
+    }
+
+    console.log("Using property ID:", propertyId);
+
     // Build notes for the job
     const notesLines = [
       "--- BluLadder Online Booking ---",
@@ -249,10 +325,11 @@ Deno.serve(async (req) => {
       notesLines.push("", "Customer Notes:", booking.notes);
     }
 
-    // Create job in Jobber
+    // Create job in Jobber using JobCreateAttributes
     console.log("Creating job in Jobber");
+    
     const createJobMutation = `
-      mutation CreateJob($input: JobInput!) {
+      mutation CreateJob($input: JobCreateAttributes!) {
         jobCreate(input: $input) {
           job {
             id
@@ -271,6 +348,7 @@ Deno.serve(async (req) => {
       description: svc.description || "",
       unitPrice: svc.price,
       quantity: 1,
+      saveToProductsAndServices: false,
     }));
 
     // Add discount as negative line item if applicable
@@ -280,20 +358,32 @@ Deno.serve(async (req) => {
         description: "Promotional discount",
         unitPrice: -booking.discountAmount,
         quantity: 1,
+        saveToProductsAndServices: false,
       });
     }
 
+    // JobCreateAttributes requires propertyId, invoicing, and optional fields
     const jobInput = {
-      client: jobberClientId,
+      propertyId: propertyId,
       title: `BluLadder Services - ${booking.customer.firstName} ${booking.customer.lastName}`,
       instructions: notesLines.join("\n"),
       lineItems,
+      invoicing: {
+        invoicingType: "PER_VISIT",
+        invoicingSchedule: "AFTER_COMPLETION",
+      },
+      scheduling: {
+        createVisits: false,
+        notifyTeam: false,
+        assignedTo: [technician.jobber_user_id],
+      },
     };
     
     console.log("Job creation input:", JSON.stringify({ 
-      client: jobberClientId, 
+      propertyId: propertyId, 
       title: jobInput.title,
-      lineItemsCount: lineItems.length 
+      lineItemsCount: lineItems.length,
+      invoicing: jobInput.invoicing,
     }));
 
     const jobResult = await jobberGraphQL<{
@@ -334,11 +424,11 @@ Deno.serve(async (req) => {
 
     console.log("Created job:", jobberJobId, "Job number:", jobNumber);
 
-    // Schedule a visit for the job
+    // Schedule a visit for the job using VisitCreateInput
     console.log("Creating visit for job");
     const scheduleVisitMutation = `
-      mutation ScheduleVisit($input: VisitCreateInput!) {
-        visitCreate(input: $input) {
+      mutation ScheduleVisit($jobId: EncodedId!, $input: VisitCreateInput!) {
+        visitCreate(jobId: $jobId, input: $input) {
           visit {
             id
           }
@@ -351,20 +441,19 @@ Deno.serve(async (req) => {
     `;
 
     const visitInput = {
-      jobId: jobberJobId,
       startAt: booking.scheduledStart,
       endAt: booking.scheduledEnd,
       assignedUserIds: [technician.jobber_user_id],
     };
     
-    console.log("Visit creation input:", JSON.stringify(visitInput));
+    console.log("Visit creation input:", JSON.stringify({ jobId: jobberJobId, ...visitInput }));
 
     const visitResult = await jobberGraphQL<{
       visitCreate: {
         visit: { id: string } | null;
         userErrors: Array<{ message: string; path?: string[] }>;
       };
-    }>(scheduleVisitMutation, { input: visitInput });
+    }>(scheduleVisitMutation, { jobId: jobberJobId, input: visitInput });
 
     console.log("Visit creation result:", JSON.stringify(visitResult));
 
