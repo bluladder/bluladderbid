@@ -47,12 +47,18 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
   const [recommendedDays, setRecommendedDays] = useState<RecommendedDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isThrottled, setIsThrottled] = useState(false);
+  const [retryCountdown, setRetryCountdown] = useState(0);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
 
-  const fetchAvailability = async () => {
+  const fetchAvailability = async (isRetry = false) => {
     setIsLoading(true);
     setError(null);
+    if (!isRetry) {
+      setIsThrottled(false);
+      setRetryCountdown(0);
+    }
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke('jobber-availability', {
@@ -67,11 +73,22 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
       if (fnError) throw fnError;
 
       if (data.error) {
-        setError(data.error);
+        // Check if it's a throttle/busy error
+        if (data.retryAfter) {
+          setIsThrottled(true);
+          setRetryCountdown(data.retryAfter);
+          setError(data.error);
+        } else {
+          setError(data.error);
+        }
         setSlots([]);
         setRecommendedDays([]);
         return;
       }
+
+      // Success - clear throttle state
+      setIsThrottled(false);
+      setRetryCountdown(0);
 
       const fetchedSlots: TimeSlot[] = data.slots || [];
       setSlots(fetchedSlots);
@@ -107,6 +124,19 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
       setIsLoading(false);
     }
   };
+
+  // Auto-retry countdown for throttled state
+  useEffect(() => {
+    if (retryCountdown > 0) {
+      const timer = setTimeout(() => {
+        setRetryCountdown(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (isThrottled && retryCountdown === 0) {
+      // Auto-retry when countdown reaches 0
+      fetchAvailability(true);
+    }
+  }, [retryCountdown, isThrottled]);
 
   useEffect(() => {
     if (services.length > 0) {
@@ -198,12 +228,23 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Alert variant="destructive">
+          <Alert variant={isThrottled ? "default" : "destructive"}>
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>
+              {error}
+              {isThrottled && retryCountdown > 0 && (
+                <span className="block mt-2 text-sm">
+                  Automatically retrying in {retryCountdown} seconds...
+                </span>
+              )}
+            </AlertDescription>
           </Alert>
-          <Button onClick={fetchAvailability} className="mt-4">
-            Try Again
+          <Button 
+            onClick={() => fetchAvailability()} 
+            className="mt-4"
+            disabled={isThrottled && retryCountdown > 0}
+          >
+            {isThrottled && retryCountdown > 0 ? `Retrying in ${retryCountdown}s` : 'Try Again'}
           </Button>
         </CardContent>
       </Card>
