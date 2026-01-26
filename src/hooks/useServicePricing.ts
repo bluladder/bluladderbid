@@ -267,130 +267,220 @@ export function useServicePricing(
   const bundles = useMemo<BundleTier[]>(() => {
     if (!PRICING) return [];
     
-    const { windowCleaningTotal, gutterCleaning, houseWash, roofCleaning, drivewayCleaning, pressureWashing } = servicePrices;
+    const { 
+      windowCleaningTotal, exteriorWindows, interiorWindows,
+      gutterCleaning, houseWash, roofCleaning, drivewayCleaning, pressureWashing 
+    } = servicePrices;
     
     const BUNDLE_CONFIG = PRICING.bundle_config;
     
-    return (['good', 'better', 'best'] as const).map((tier) => {
+    // Calculate raw tier pricing first
+    const rawTiers = (['good', 'better', 'best'] as const).map((tier) => {
       const config = BUNDLE_CONFIG[tier];
-      if (!config) {
-        return {
-          name: 'Good' as const,
-          tier,
-          label: tier,
-          description: '',
-          features: [],
-          windowFrequency: 1,
-          additionalServicesIncluded: [],
-          annualTotal: 0,
-          monthlyPayment: 0,
-          savings: 0,
-          savingsPercent: 0,
-          isPopular: false,
-        };
-      }
+      if (!config) return null;
       
-      // Map tier to proper name type
-      const tierNameMap: Record<string, 'Good' | 'Better' | 'Best'> = {
-        good: 'Good',
-        better: 'Better',
-        best: 'Best',
-      };
+      // Window cleaning costs (separate interior/exterior)
+      const exteriorCost = exteriorWindows * config.exteriorWindowFrequency;
+      const interiorCost = interiorWindows * config.interiorWindowFrequency;
+      const windowCost = exteriorCost + interiorCost;
       
-      // Window cleaning annual cost
-      const windowAnnual = windowCleaningTotal * config.windowFrequency;
+      // Calculate window frequency display
+      const totalWindowFrequency = config.exteriorWindowFrequency + 
+        (config.interiorWindowFrequency > 0 ? config.interiorWindowFrequency : 0);
       
-      // Additional services based on tier
-      let additionalAnnual = 0;
+      // Base included services based on tier config
+      let baseServicesCost = 0;
       const includedServices: string[] = [];
+      const baseServices: string[] = [];
       
-      // Driveway cleaning (annual for all tiers if enabled)
-      if (additionalServices.drivewayCleaning.enabled) {
-        additionalAnnual += drivewayCleaning;
-        includedServices.push('Driveway Cleaning');
-      }
-      
-      // Pressure washing (annual for all tiers if enabled)
-      if (additionalServices.pressureWashing.enabled) {
-        additionalAnnual += pressureWashing;
-        includedServices.push('Pressure Washing');
-      }
-      
-      // Gutter cleaning frequency varies by tier
-      if (additionalServices.gutterCleaning) {
-        additionalAnnual += gutterCleaning * config.additionalServicesFrequency;
+      // Gutter cleaning - check if in includedServices
+      if (config.includedServices.includes('gutter_cleaning') && additionalServices.gutterCleaning) {
+        baseServicesCost += gutterCleaning * config.additionalServicesFrequency;
         includedServices.push(`Gutter Cleaning (${config.additionalServicesFrequency}x/year)`);
+        baseServices.push('gutter_cleaning');
       }
       
-      // House wash (annual for Better/Best only)
-      if (additionalServices.houseWash && tier !== 'good') {
-        additionalAnnual += houseWash;
+      // House wash - check if in includedServices
+      if (config.includedServices.includes('house_wash') && additionalServices.houseWash) {
+        baseServicesCost += houseWash;
         includedServices.push('House Wash');
+        baseServices.push('house_wash');
       }
       
-      // Roof cleaning (Best only)
-      if (additionalServices.roofCleaning && tier === 'best') {
-        additionalAnnual += roofCleaning;
+      // Roof cleaning - Best only perk
+      if (tier === 'best' && additionalServices.roofCleaning) {
+        baseServicesCost += roofCleaning;
         includedServices.push('Roof Cleaning');
+        baseServices.push('roof_cleaning');
       }
       
-      const subtotal = windowAnnual + additionalAnnual;
-      const discount = subtotal * config.discount;
-      const annualTotal = Math.round(subtotal - discount);
+      // Customer-added services (apply tier addon discount)
+      let addonsCost = 0;
+      const addonsList: string[] = [];
+      
+      // Driveway - always an addon
+      if (additionalServices.drivewayCleaning.enabled) {
+        const discountedPrice = drivewayCleaning * (1 - config.addonDiscount);
+        addonsCost += discountedPrice;
+        addonsList.push('Driveway Cleaning');
+      }
+      
+      // Pressure washing - always an addon
+      if (additionalServices.pressureWashing.enabled) {
+        const discountedPrice = pressureWashing * (1 - config.addonDiscount);
+        addonsCost += discountedPrice;
+        addonsList.push('Pressure Washing');
+      }
+      
+      // Gutter cleaning as addon (if not in base)
+      if (!config.includedServices.includes('gutter_cleaning') && additionalServices.gutterCleaning) {
+        const discountedPrice = gutterCleaning * config.additionalServicesFrequency * (1 - config.addonDiscount);
+        addonsCost += discountedPrice;
+        addonsList.push(`Gutter Cleaning (${config.additionalServicesFrequency}x/year)`);
+      }
+      
+      // House wash as addon (if not in base)
+      if (!config.includedServices.includes('house_wash') && additionalServices.houseWash) {
+        const discountedPrice = houseWash * (1 - config.addonDiscount);
+        addonsCost += discountedPrice;
+        addonsList.push('House Wash');
+      }
+      
+      // Roof cleaning as addon (if not Best tier)
+      if (tier !== 'best' && additionalServices.roofCleaning) {
+        const discountedPrice = roofCleaning * (1 - config.addonDiscount);
+        addonsCost += discountedPrice;
+        addonsList.push('Roof Cleaning');
+      }
+      
+      // Calculate totals
+      const subtotal = windowCost + baseServicesCost + addonsCost;
+      const bundleDiscount = subtotal * config.bundleDiscount;
+      const annualTotal = Math.round(subtotal - bundleDiscount);
       const monthlyPayment = Math.round(annualTotal / 12);
       
-      // Calculate savings vs buying services individually
-      let individualTotal = windowCleaningTotal * config.windowFrequency;
-      if (additionalServices.drivewayCleaning.enabled) {
-        individualTotal += drivewayCleaning;
-      }
-      if (additionalServices.pressureWashing.enabled) {
-        individualTotal += pressureWashing;
-      }
-      if (additionalServices.gutterCleaning) {
-        individualTotal += gutterCleaning * config.additionalServicesFrequency;
-      }
-      if (additionalServices.houseWash && tier !== 'good') {
-        individualTotal += houseWash;
-      }
-      if (additionalServices.roofCleaning && tier === 'best') {
-        individualTotal += roofCleaning;
-      }
+      // Calculate addon savings (what they saved with tier discount)
+      const fullPriceAddons = (additionalServices.drivewayCleaning.enabled ? drivewayCleaning : 0) +
+        (additionalServices.pressureWashing.enabled ? pressureWashing : 0) +
+        (!config.includedServices.includes('gutter_cleaning') && additionalServices.gutterCleaning ? gutterCleaning * config.additionalServicesFrequency : 0) +
+        (!config.includedServices.includes('house_wash') && additionalServices.houseWash ? houseWash : 0) +
+        (tier !== 'best' && additionalServices.roofCleaning ? roofCleaning : 0);
+      const addonSavings = Math.round(fullPriceAddons - addonsCost);
       
+      // Calculate total savings vs individual purchases
+      const individualTotal = windowCost + baseServicesCost + fullPriceAddons;
       const savings = Math.round(individualTotal - annualTotal);
       const savingsPercent = individualTotal > 0 ? Math.round((savings / individualTotal) * 100) : 0;
       
-      // Build features list
-      const features: string[] = [
-        `Window Cleaning ${config.windowFrequency}x per year`,
+      // Available addons for customization
+      const availableAddons = [
+        'driveway_cleaning',
+        'pressure_washing',
+        ...(!config.includedServices.includes('gutter_cleaning') ? ['gutter_cleaning'] : []),
+        ...(!config.includedServices.includes('house_wash') ? ['house_wash'] : []),
+        ...(tier !== 'best' ? ['roof_cleaning'] : []),
       ];
       
-      if (tier === 'better' || tier === 'best') {
-        features.push('Priority scheduling');
-      }
-      
-      if (tier === 'best') {
-        features.push('Interior + Exterior windows');
-        features.push('Free touch-ups between visits');
-      }
-      
-      if (config.discount > 0) {
-        features.push(`${Math.round(config.discount * 100)}% bundle discount`);
-      }
-      
       return {
-        name: tierNameMap[tier],
         tier,
-        label: config.label,
-        description: config.description,
-        features,
-        windowFrequency: config.windowFrequency,
-        additionalServicesIncluded: includedServices,
+        config,
+        windowCost: Math.round(windowCost),
+        baseServicesCost: Math.round(baseServicesCost),
+        addonsCost: Math.round(addonsCost),
+        bundleDiscount: Math.round(bundleDiscount),
         annualTotal,
         monthlyPayment,
         savings,
         savingsPercent,
-        isPopular: tier === 'better',
+        addonSavings,
+        includedServices: [...includedServices, ...addonsList],
+        baseServices,
+        availableAddons,
+        totalWindowFrequency,
+        exteriorFreq: config.exteriorWindowFrequency,
+        interiorFreq: config.interiorWindowFrequency,
+      };
+    }).filter(Boolean) as NonNullable<typeof rawTiers[number]>[];
+    
+    // Apply pricing guardrails: Good < Better < Best
+    const MINIMUM_TIER_BUFFER = 25; // Minimum $25 difference between tiers
+    const adjustedTiers = [...rawTiers];
+    
+    // Ensure Better > Good
+    if (adjustedTiers[1] && adjustedTiers[0] && adjustedTiers[1].annualTotal <= adjustedTiers[0].annualTotal) {
+      adjustedTiers[1].annualTotal = adjustedTiers[0].annualTotal + MINIMUM_TIER_BUFFER;
+      adjustedTiers[1].monthlyPayment = Math.round(adjustedTiers[1].annualTotal / 12);
+    }
+    
+    // Ensure Best > Better
+    if (adjustedTiers[2] && adjustedTiers[1] && adjustedTiers[2].annualTotal <= adjustedTiers[1].annualTotal) {
+      adjustedTiers[2].annualTotal = adjustedTiers[1].annualTotal + MINIMUM_TIER_BUFFER;
+      adjustedTiers[2].monthlyPayment = Math.round(adjustedTiers[2].annualTotal / 12);
+    }
+    
+    // Map to proper tier names
+    const tierNameMap: Record<string, 'Good' | 'Better' | 'Best'> = {
+      good: 'Good',
+      better: 'Better',
+      best: 'Best',
+    };
+    
+    return adjustedTiers.map((t) => {
+      const config = t.config;
+      
+      // Build features list
+      const features: string[] = [];
+      
+      // Window frequency description
+      if (t.interiorFreq > 0) {
+        features.push(`Exterior windows ${t.exteriorFreq}x/year`);
+        features.push(`Interior windows ${t.interiorFreq}x/year`);
+      } else {
+        features.push(`Exterior window cleaning ${t.exteriorFreq}x/year`);
+      }
+      
+      if (t.tier === 'better' || t.tier === 'best') {
+        features.push('Priority scheduling');
+      }
+      
+      if (t.tier === 'best') {
+        features.push('Free touch-ups between visits');
+      }
+      
+      if (config.bundleDiscount > 0) {
+        features.push(`${Math.round(config.bundleDiscount * 100)}% bundle discount`);
+      }
+      
+      if (config.addonDiscount > 0) {
+        features.push(`${Math.round(config.addonDiscount * 100)}% off additional services`);
+      }
+      
+      return {
+        name: tierNameMap[t.tier],
+        tier: t.tier,
+        label: config.label,
+        description: config.description,
+        features,
+        windowFrequency: t.totalWindowFrequency,
+        windowFrequencyConfig: {
+          exteriorFrequency: config.exteriorWindowFrequency as 1 | 2 | 3 | 4,
+          interiorFrequency: config.interiorWindowFrequency as 0 | 1 | 2,
+        },
+        additionalServicesIncluded: t.includedServices,
+        baseServices: t.baseServices,
+        availableAddons: t.availableAddons,
+        annualTotal: t.annualTotal,
+        monthlyPayment: t.monthlyPayment,
+        savings: t.savings,
+        savingsPercent: t.savingsPercent,
+        addonDiscountPercent: Math.round(config.addonDiscount * 100),
+        addonSavings: t.addonSavings,
+        windowCost: t.windowCost,
+        additionalServicesCost: t.baseServicesCost,
+        addonsCost: t.addonsCost,
+        bundleDiscount: t.bundleDiscount,
+        isPopular: t.tier === 'better',
+        isCustomized: false,
       };
     });
   }, [servicePrices, additionalServices, PRICING]);

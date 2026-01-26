@@ -74,9 +74,16 @@ export interface PricingData {
     name: string;
     label: string;
     description: string;
-    windowFrequency: number;
+    // Window frequencies
+    exteriorWindowFrequency: number;  // times per year
+    interiorWindowFrequency: number;  // times per year (0 = not included)
+    // Other services
     additionalServicesFrequency: number;
-    discount: number;
+    // Discounts
+    bundleDiscount: number;           // Overall bundle discount (0-1)
+    addonDiscount: number;            // Discount on added services (0.05/0.10/0.15)
+    // Services included by default
+    includedServices: string[];       // e.g., ['gutter_cleaning', 'house_wash']
   }>;
 }
 
@@ -148,27 +155,36 @@ export const DEFAULT_PRICING: PricingData = {
   bundle_config: {
     good: {
       name: "Good",
-      label: "Essential Care",
-      description: "Keep your home looking great with regular exterior cleaning",
-      windowFrequency: 2,
+      label: "Core Exterior Care",
+      description: "Essential exterior window cleaning to keep your home looking great",
+      exteriorWindowFrequency: 4,      // Quarterly exterior
+      interiorWindowFrequency: 0,      // No interior
       additionalServicesFrequency: 1,
-      discount: 0,
+      bundleDiscount: 0,
+      addonDiscount: 0.05,             // 5% off added services
+      includedServices: [],            // Base package - no extras
     },
     better: {
       name: "Better",
-      label: "Complete Care",
-      description: "More frequent cleaning for a consistently sparkling home",
-      windowFrequency: 3,
+      label: "Consistent Window Care",
+      description: "Complete window care with interior cleaning included",
+      exteriorWindowFrequency: 4,      // Quarterly exterior
+      interiorWindowFrequency: 1,      // 1x interior per year
       additionalServicesFrequency: 1,
-      discount: 0.05,
+      bundleDiscount: 0.05,
+      addonDiscount: 0.10,             // 10% off added services
+      includedServices: ['gutter_cleaning'],
     },
     best: {
       name: "Best",
-      label: "Premium Care",
-      description: "The ultimate in home maintenance with maximum coverage",
-      windowFrequency: 4,
+      label: "Total Window & Home Care",
+      description: "Maximum coverage with frequent interior cleaning and premium perks",
+      exteriorWindowFrequency: 4,      // Quarterly exterior
+      interiorWindowFrequency: 2,      // 2x interior per year
       additionalServicesFrequency: 2,
-      discount: 0.10,
+      bundleDiscount: 0.10,
+      addonDiscount: 0.15,             // 15% off added services
+      includedServices: ['gutter_cleaning', 'house_wash'],
     },
   },
 };

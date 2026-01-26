@@ -96,6 +96,19 @@ export interface ServicePrices {
   grandTotal: number;
 }
 
+// Window frequency configuration for bundles
+export interface WindowFrequencyConfig {
+  exteriorFrequency: 1 | 2 | 3 | 4;  // times per year
+  interiorFrequency: 0 | 1 | 2;       // times per year (0 = not included)
+}
+
+// Bundle customization state
+export interface BundleCustomization {
+  windowFrequency: WindowFrequencyConfig;
+  addedServices: string[];      // Services added beyond tier defaults
+  swappedServices: { from: string; to: string }[];  // Service swaps
+}
+
 // Bundle tier configuration
 export interface BundleTier {
   name: 'Good' | 'Better' | 'Best';
@@ -103,13 +116,35 @@ export interface BundleTier {
   label: string;
   description: string;
   features: string[];
-  windowFrequency: number; // times per year
+  
+  // Window frequency details
+  windowFrequency: number;  // Legacy: total visits (for backward compat)
+  windowFrequencyConfig: WindowFrequencyConfig;
+  
+  // Services
   additionalServicesIncluded: string[];
+  baseServices: string[];           // Services included by default
+  availableAddons: string[];        // Services that can be added
+  
+  // Pricing
   annualTotal: number;
   monthlyPayment: number;
   savings: number;
   savingsPercent: number;
+  
+  // Addon discount for this tier (5%/10%/15%)
+  addonDiscountPercent: number;
+  addonSavings: number;
+  
+  // Pricing breakdown for transparency
+  windowCost: number;
+  additionalServicesCost: number;
+  addonsCost: number;
+  bundleDiscount: number;
+  
+  // Display
   isPopular?: boolean;
+  isCustomized?: boolean;
 }
 
 export const DEFAULT_HOME_DETAILS: HomeDetails = {

@@ -1,6 +1,7 @@
-import { Sparkles, Check, Star, ArrowLeft } from 'lucide-react';
+import { Sparkles, Check, Star, ArrowLeft, Percent, Calendar } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import type { BundleTier } from '@/types/homeowner';
 
 interface ServicePlanSelectorProps {
@@ -70,7 +71,7 @@ export function ServicePlanSelector({
               )}
               
               <CardContent className={`p-6 ${isPopular ? 'pt-12' : ''}`}>
-                <div className="text-center mb-6">
+                <div className="text-center mb-4">
                   <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide mb-3 ${
                     bundle.tier === 'good' 
                       ? 'tier-badge-good' 
@@ -81,9 +82,10 @@ export function ServicePlanSelector({
                     {bundle.name}
                   </span>
                   <h3 className="text-lg font-semibold text-foreground">{bundle.label}</h3>
+                  <p className="text-xs text-muted-foreground mt-1">{bundle.description}</p>
                 </div>
                 
-                <div className="text-center mb-6">
+                <div className="text-center mb-4">
                   <div className="price-display text-4xl text-foreground">
                     {formatPrice(bundle.monthlyPayment)}
                     <span className="text-base font-normal text-muted-foreground">/mo</span>
@@ -98,15 +100,49 @@ export function ServicePlanSelector({
                   )}
                 </div>
                 
+                {/* Window Frequency Highlight */}
+                <div className="p-3 rounded-lg bg-muted/50 mb-4">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar className="w-4 h-4 text-primary" />
+                    <span className="font-medium">Window Cleaning</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1 pl-6">
+                    {bundle.windowFrequencyConfig.interiorFrequency > 0 ? (
+                      <>
+                        Exterior: {bundle.windowFrequencyConfig.exteriorFrequency}x/year
+                        <br />
+                        Interior: {bundle.windowFrequencyConfig.interiorFrequency}x/year
+                      </>
+                    ) : (
+                      <>Exterior only: {bundle.windowFrequencyConfig.exteriorFrequency}x/year</>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Addon Discount Badge */}
+                {bundle.addonDiscountPercent > 0 && (
+                  <div className="flex items-center justify-center gap-1 mb-4">
+                    <Badge variant="secondary" className="text-xs">
+                      <Percent className="w-3 h-3 mr-1" />
+                      {bundle.addonDiscountPercent}% off add-ons
+                    </Badge>
+                    {bundle.addonSavings > 0 && (
+                      <span className="text-xs text-green-600">
+                        (saving {formatPrice(bundle.addonSavings)})
+                      </span>
+                    )}
+                  </div>
+                )}
+                
                 {/* Key features - limited to reduce cognitive load */}
                 <div className="space-y-2 mb-6">
-                  {bundle.features.slice(0, 3).map((feature, idx) => (
+                  {bundle.features.slice(0, 4).map((feature, idx) => (
                     <div key={idx} className="flex items-start gap-2">
                       <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
                       <span className="text-sm">{feature}</span>
                     </div>
                   ))}
-                  {bundle.additionalServicesIncluded.slice(0, 2).map((service, idx) => (
+                  {bundle.additionalServicesIncluded.slice(0, 3).map((service, idx) => (
                     <div key={`add-${idx}`} className="flex items-start gap-2">
                       <Sparkles className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                       <span className="text-sm">{service}</span>
@@ -133,10 +169,15 @@ export function ServicePlanSelector({
         })}
       </div>
       
-      {/* Reassurance */}
-      <p className="text-center text-xs text-muted-foreground">
-        No payment due today. We'll contact you to set up your first service.
-      </p>
+      {/* Value proposition */}
+      <div className="text-center space-y-2">
+        <p className="text-sm text-muted-foreground">
+          All plans include automated scheduling, priority service, and satisfaction guarantee
+        </p>
+        <p className="text-xs text-muted-foreground">
+          No payment due today. We'll contact you to set up your first service.
+        </p>
+      </div>
     </div>
   );
 }
