@@ -80,8 +80,16 @@ const ServiceLanding = () => {
   const config = SERVICE_CONFIG[service as ServiceSlug];
   const isEmbedMode = searchParams.get('embed') === 'true';
   
+  // Optional URL param to preselect a specific service (e.g., ?preset=roofCleaning)
+  const presetParam = searchParams.get('preset') as 
+    | 'windowCleaning' | 'gutterCleaning' | 'houseWash' | 'roofCleaning' | 'drivewayCleaning' | 'pressureWashing' 
+    | null;
+  
+  // Determine which service to preselect: URL param takes priority over route default
+  const effectivePreselect = presetParam || config?.preSelectService;
+  
   const getLandingDefaultAdditionalServices = (
-    preSelectService?: (typeof SERVICE_CONFIG)[ServiceSlug]['preSelectService']
+    preSelectService?: 'windowCleaning' | 'gutterCleaning' | 'houseWash' | 'roofCleaning' | 'drivewayCleaning' | 'pressureWashing'
   ): AdditionalServices => {
     // Deep-ish clone so we never mutate the exported defaults (nested objects exist)
     const base: AdditionalServices = {
@@ -124,14 +132,14 @@ const ServiceLanding = () => {
   
   const [homeDetails, setHomeDetails] = useState<HomeDetails>(DEFAULT_HOME_DETAILS);
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>(() =>
-    getLandingDefaultAdditionalServices(config?.preSelectService)
+    getLandingDefaultAdditionalServices(effectivePreselect)
   );
 
-  // When navigating between service landing routes, reset to that page's defaults.
-  // This prevents Window Cleaning (or any other selection) from "carrying over".
+  // When navigating between service landing routes or preset changes, reset to defaults.
+  // This prevents selections from "carrying over".
   useEffect(() => {
-    setAdditionalServices(getLandingDefaultAdditionalServices(config?.preSelectService));
-  }, [config?.preSelectService]);
+    setAdditionalServices(getLandingDefaultAdditionalServices(effectivePreselect));
+  }, [effectivePreselect]);
   
   type FlowState = 'selecting' | 'one-time-booking' | 'plan-selected' | 'plan-expanded';
   const [flowState, setFlowState] = useState<FlowState>('selecting');
