@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Copy, Check, ExternalLink, Code, Link2, Frame, Share2, Target, ChevronDown } from 'lucide-react';
+import { Copy, Check, ExternalLink, Code, Link2, Frame, Share2, Target, ChevronDown, Eye, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 const BASE_URL = 'https://bluladderbid.lovable.app';
@@ -46,6 +46,8 @@ export function EmbedCodeManager() {
   const [embedHeight, setEmbedHeight] = useState('800');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [utmOpen, setUtmOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewKey, setPreviewKey] = useState(0);
   const [utm, setUtm] = useState<UtmParams>({
     source: '',
     medium: '',
@@ -351,6 +353,89 @@ export function EmbedCodeManager() {
                 <p><strong>utm_campaign:</strong> Campaign name for grouping (e.g., spring_promo)</p>
                 <p><strong>utm_term:</strong> Paid search keywords</p>
                 <p><strong>utm_content:</strong> Differentiate similar links (e.g., sidebar_cta)</p>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+
+      {/* Live Preview Panel */}
+      <Card>
+        <Collapsible open={previewOpen} onOpenChange={setPreviewOpen}>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-5 h-5" />
+                  <div>
+                    <CardTitle className="text-base">Live Preview</CardTitle>
+                    <CardDescription>
+                      See how the embedded calculator will look at your configured dimensions
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="text-xs">
+                    {embedWidth} × {embedHeight}px
+                  </Badge>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${previewOpen ? 'rotate-180' : ''}`} />
+                </div>
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-0">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                  Previewing: <Badge variant="outline">{pageConfig.label}</Badge>
+                  {hasUtmParams && <span className="ml-2">with UTM tracking</span>}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPreviewKey(k => k + 1)}
+                >
+                  <RefreshCw className="w-4 h-4 mr-1" />
+                  Refresh
+                </Button>
+              </div>
+              
+              {/* Preview Container */}
+              <div 
+                className="border-2 border-dashed border-muted-foreground/25 rounded-lg bg-muted/20 overflow-hidden"
+                style={{ 
+                  maxWidth: embedWidth.includes('%') ? '100%' : embedWidth,
+                  margin: '0 auto'
+                }}
+              >
+                <div className="bg-muted/50 px-3 py-1.5 border-b flex items-center gap-2">
+                  <div className="flex gap-1.5">
+                    <div className="w-3 h-3 rounded-full bg-red-400" />
+                    <div className="w-3 h-3 rounded-full bg-yellow-400" />
+                    <div className="w-3 h-3 rounded-full bg-green-400" />
+                  </div>
+                  <span className="text-xs text-muted-foreground truncate flex-1">
+                    {embedUrl}
+                  </span>
+                </div>
+                <iframe
+                  key={previewKey}
+                  src={embedUrl}
+                  width={embedWidth}
+                  height={`${embedHeight}px`}
+                  style={{ 
+                    border: 'none', 
+                    display: 'block',
+                    maxWidth: '100%'
+                  }}
+                  title="Embed Preview"
+                  loading="lazy"
+                />
+              </div>
+
+              <div className="text-xs text-muted-foreground text-center">
+                <p>Actual embed dimensions: {embedWidth} width × {embedHeight}px height</p>
+                <p className="mt-1">Note: Preview may be scaled to fit this panel</p>
               </div>
             </CardContent>
           </CollapsibleContent>
