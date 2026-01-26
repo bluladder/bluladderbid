@@ -54,9 +54,33 @@ interface TimeSlot {
   estimatedDriveMinutes?: number;
   isFirstJob?: boolean;
   isLongFirstDrive?: boolean;
+  // Route-density scoring
+  routeDensityScore?: number;
+  routeDensityLabel?: string;
+  nearbyJobCount?: number;
   // For admin visibility
   excluded?: boolean;
   exclusionReason?: ExclusionReason;
+}
+
+interface RecommendedDay {
+  date: string;
+  dayOfWeek: string;
+  label: string;
+  reason: string;
+  jobCount: number;
+  availableSlots: number;
+  efficiencyScore: number;
+}
+
+interface DayMetrics {
+  date: Date;
+  dateStr: string;
+  totalSlots: number;
+  bookedJobs: number;
+  avgDriveEfficiency: number;
+  capacityUtilization: number;
+  jobAddresses: string[];
 }
 
 // Default business hours (used if not configured in database)
@@ -138,19 +162,79 @@ function getHourInTimezone(date: Date, timezone: string): number {
   return parseInt(parts.find(p => p.type === 'hour')?.value || '0');
 }
 
-// Estimate drive time between two addresses (simplified - returns random 5-40 min)
-// In production, you'd integrate with Google Maps Distance Matrix API
+// Format date string for a given timezone
+function formatDateInTimezone(date: Date, timezone: string): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find(p => p.type === 'year')?.value;
+  const month = parts.find(p => p.type === 'month')?.value;
+  const day = parts.find(p => p.type === 'day')?.value;
+  return `${year}-${month}-${day}`;
+}
+
+// Get weekday name for a date in a timezone
+function getWeekdayInTimezone(date: Date, timezone: string): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'long',
+  });
+  return formatter.format(date);
+}
+
+// Extract city from address for zone matching
+function extractZone(address: string | null): string {
+  if (!address) return 'unknown';
+  // Simple extraction - get city or first significant part
+  const parts = address.split(',').map(p => p.trim());
+  if (parts.length >= 2) {
+    return parts[1].toLowerCase(); // Usually city
+  }
+  return parts[0].toLowerCase().substring(0, 20);
+}
+
+// Calculate rough distance score between two addresses (0-100, 100 = same zone)
+function calculateProximityScore(addr1: string | null, addr2: string | null): number {
+  if (!addr1 || !addr2) return 50; // Unknown addresses get neutral score
+  
+  const zone1 = extractZone(addr1);
+  const zone2 = extractZone(addr2);
+  
+  // Same city = high score
+  if (zone1 === zone2) return 100;
+  
+  // Check if they share any significant words
+  const words1 = zone1.split(/\s+/);
+  const words2 = zone2.split(/\s+/);
+  const commonWords = words1.filter(w => words2.includes(w) && w.length > 3);
+  
+  if (commonWords.length > 0) return 75;
+  
+  return 30; // Different zones
+}
+
+// Estimate drive time between two addresses (simplified - returns 5-45 min range)
+// In production, integrate with Google Maps Distance Matrix API
 function estimateDriveTime(fromAddress: string | null, toAddress: string | null): number {
   if (!fromAddress || !toAddress) {
     return 15; // Default estimate when addresses unknown
   }
-  // Simplified estimation - in production use actual routing API
-  // For now, return a pseudo-random but consistent value based on address hash
+  
+  // Check if same zone for reduced drive time
+  const proximity = calculateProximityScore(fromAddress, toAddress);
+  if (proximity >= 100) return 8; // Same city
+  if (proximity >= 75) return 18; // Nearby
+  
+  // Hash-based pseudo-random but consistent value
   const hash = (fromAddress + toAddress).split('').reduce((a, b) => {
     a = ((a << 5) - a) + b.charCodeAt(0);
     return a & a;
   }, 0);
-  return 10 + Math.abs(hash % 35); // 10-45 minutes
+  return 15 + Math.abs(hash % 30); // 15-45 minutes
 }
 
 // Get buffer for drive time based on tiers
@@ -163,6 +247,56 @@ function getBufferForDriveTime(driveMinutes: number, config: DriveTimeConfig): n
   // If beyond all tiers, use the last tier's buffer
   const lastTier = config.buffer_tiers[config.buffer_tiers.length - 1];
   return lastTier?.buffer || config.base_buffer_minutes;
+}
+
+// Calculate route density score for a slot
+function calculateRouteDensityScore(
+  slotStart: Date,
+  customerAddress: string | null,
+  dayJobAddresses: string[],
+  previousJobAddress: string | null,
+  nextJobAddress: string | null
+): { score: number; label: string; nearbyJobCount: number } {
+  if (!customerAddress || dayJobAddresses.length === 0) {
+    return { score: 50, label: '', nearbyJobCount: 0 };
+  }
+  
+  // Count nearby jobs (same zone)
+  const customerZone = extractZone(customerAddress);
+  const nearbyJobs = dayJobAddresses.filter(addr => {
+    const jobZone = extractZone(addr);
+    return jobZone === customerZone;
+  });
+  
+  let score = 50; // Base score
+  
+  // Boost for same-zone jobs
+  score += Math.min(nearbyJobs.length * 15, 40);
+  
+  // Boost for adjacent job proximity
+  if (previousJobAddress) {
+    const prevProximity = calculateProximityScore(customerAddress, previousJobAddress);
+    score += (prevProximity - 50) * 0.2;
+  }
+  if (nextJobAddress) {
+    const nextProximity = calculateProximityScore(customerAddress, nextJobAddress);
+    score += (nextProximity - 50) * 0.2;
+  }
+  
+  // Clamp to 0-100
+  score = Math.max(0, Math.min(100, score));
+  
+  // Determine label based on score
+  let label = '';
+  if (score >= 85) {
+    label = 'Best fit for your area';
+  } else if (score >= 70) {
+    label = 'Recommended';
+  } else if (nearbyJobs.length >= 2) {
+    label = 'Good route fit';
+  }
+  
+  return { score, label, nearbyJobCount: nearbyJobs.length };
 }
 
 Deno.serve(async (req) => {
@@ -361,8 +495,6 @@ Deno.serve(async (req) => {
     console.log(`Querying Jobber visits from ${fromDateISO} to ${toDateISO}`);
 
     // Query Jobber for scheduled visits with property addresses
-    // Filter by date range to only get relevant future visits
-    // Jobber uses 'after' and 'before' for datetime range filters
     const scheduledItemsQuery = `
       query GetScheduledItems($startDateAfter: ISO8601DateTime!, $startDateBefore: ISO8601DateTime!) {
         visits(first: 200, filter: { startAt: { after: $startDateAfter, before: $startDateBefore } }) {
@@ -423,7 +555,9 @@ Deno.serve(async (req) => {
       address: string | null;
     }>> = {};
 
-    // Debug: Log all technician Jobber IDs we're looking for
+    // Track jobs by date for route density analysis
+    const jobsByDate: Record<string, string[]> = {}; // dateStr -> addresses
+
     const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
     console.log("Looking for Jobber User IDs:", techJobberIds);
 
@@ -431,7 +565,6 @@ Deno.serve(async (req) => {
       const visits = jobberResult.data.visits.nodes;
       console.log(`Jobber returned ${visits.length} visits in date range`);
       
-      // Log details of each relevant visit
       for (const visit of visits) {
         const users = visit.assignedUsers?.nodes || [];
         const userIds = users.map(u => u.id);
@@ -441,14 +574,20 @@ Deno.serve(async (req) => {
         const address = addr 
           ? `${addr.street || ''}, ${addr.city || ''}, ${addr.province || ''} ${addr.postalCode || ''}`.trim()
           : null;
+        
+        // Track job addresses by date for route density
+        const visitDate = formatDateInTimezone(new Date(visit.startAt), businessTimezone);
+        if (!jobsByDate[visitDate]) {
+          jobsByDate[visitDate] = [];
+        }
+        if (address) {
+          jobsByDate[visitDate].push(address);
+        }
           
         for (const user of users) {
-          // Check if this user ID matches any of our technicians
           const matchesTech = techJobberIds.includes(user.id);
           if (matchesTech) {
             console.log(`  -> User ${user.id} MATCHES one of our technicians`);
-          } else {
-            console.log(`  -> User ${user.id} does NOT match our technicians`);
           }
           
           if (!busyTimesByTech[user.id]) {
@@ -462,10 +601,13 @@ Deno.serve(async (req) => {
         }
       }
       
-      // Debug: Show busy times map
       console.log("Busy times by tech ID:", Object.keys(busyTimesByTech).map(id => ({
         jobberUserId: id,
         busyCount: busyTimesByTech[id].length
+      })));
+      console.log("Jobs by date:", Object.entries(jobsByDate).map(([date, addrs]) => ({
+        date,
+        jobCount: addrs.length
       })));
     } else {
       console.log("No visits returned from Jobber or empty result");
@@ -473,6 +615,9 @@ Deno.serve(async (req) => {
         console.error("Jobber errors:", jobberResult.errors);
       }
     }
+
+    // Track day metrics for recommended days calculation
+    const dayMetrics: Map<string, DayMetrics> = new Map();
 
     // Generate available slots for each eligible technician
     const allSlots: TimeSlot[] = [];
@@ -486,6 +631,7 @@ Deno.serve(async (req) => {
       
       while (dayOffset < daysToCheck) {
         const currentDay = new Date(fromDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+        const currentDateStr = formatDateInTimezone(currentDay, businessTimezone);
         
         // Get day of week in business timezone
         const formatter = new Intl.DateTimeFormat('en-US', {
@@ -513,6 +659,19 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Initialize day metrics if needed
+        if (!dayMetrics.has(currentDateStr)) {
+          dayMetrics.set(currentDateStr, {
+            date: currentDay,
+            dateStr: currentDateStr,
+            totalSlots: 0,
+            bookedJobs: jobsByDate[currentDateStr]?.length || 0,
+            avgDriveEfficiency: 0,
+            capacityUtilization: 0,
+            jobAddresses: jobsByDate[currentDateStr] || [],
+          });
+        }
+
         let effectiveStart = new Date(dayStart);
         if (now > dayStart && now < dayEnd) {
           effectiveStart = new Date(now);
@@ -529,6 +688,9 @@ Deno.serve(async (req) => {
         const todayBusyTimes = techBusyTimes.filter(
           bt => bt.start >= dayStart && bt.start < dayEnd
         );
+        
+        // Get day's job addresses for route density
+        const dayJobAddresses = jobsByDate[currentDateStr] || [];
 
         // Check if this is the first job of the day
         const hasEarlierJobToday = todayBusyTimes.some(bt => bt.start < effectiveStart);
@@ -549,16 +711,29 @@ Deno.serve(async (req) => {
           const isFirstJob = !hasEarlierJobToday && 
             !todayBusyTimes.some(bt => bt.end <= slotStart);
 
-          // Get previous appointment (for drive time calculation)
+          // Get previous and next appointments (for route density calculation)
           const previousAppointment = todayBusyTimes
             .filter(bt => bt.end <= slotStart)
             .sort((a, b) => b.end.getTime() - a.end.getTime())[0];
+          
+          const nextAppointment = todayBusyTimes
+            .filter(bt => bt.start >= slotEnd)
+            .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
 
           // Calculate drive time
           const fromAddress = isFirstJob 
             ? tech.startingAddress 
             : previousAppointment?.address;
           const driveMinutes = estimateDriveTime(fromAddress || null, customerAddress || null);
+          
+    // Calculate route density score
+    const routeDensity = calculateRouteDensityScore(
+      slotStart,
+      customerAddress || null,
+      dayJobAddresses,
+      previousAppointment?.address || null,
+      nextAppointment?.address || null
+    );
           
           // Get buffer based on drive time
           const driveBuffer = getBufferForDriveTime(driveMinutes, DRIVE_TIME_CONFIG);
@@ -572,6 +747,9 @@ Deno.serve(async (req) => {
             durationMinutes: tech.durationMinutes,
             estimatedDriveMinutes: driveMinutes,
             isFirstJob,
+            routeDensityScore: routeDensity.score,
+            routeDensityLabel: routeDensity.label,
+            nearbyJobCount: routeDensity.nearbyJobCount,
           };
 
           // Check exclusion reasons
@@ -602,7 +780,6 @@ Deno.serve(async (req) => {
               // Check if first job exception applies
               if (isFirstJob && DRIVE_TIME_CONFIG.allow_long_first_drive) {
                 slot.isLongFirstDrive = true;
-                // Allow it, but mark it
               } else {
                 exclusionReason = {
                   code: 'DRIVE_TIME',
@@ -616,10 +793,8 @@ Deno.serve(async (req) => {
           // Check last job rules
           const isLikelyLastJob = !todayBusyTimes.some(bt => bt.start > slotEnd);
           if (isLikelyLastJob && !exclusionReason) {
-            // Use per-technician max drive time or fall back to global
             const maxDriveTime = tech.maxDriveTimeMinutes ?? DRIVE_TIME_CONFIG.max_drive_time_minutes;
             
-            // Check if long drive as last job
             if (DRIVE_TIME_CONFIG.no_long_last_drive && driveMinutes > maxDriveTime) {
               exclusionReason = {
                 code: 'LAST_JOB',
@@ -632,7 +807,6 @@ Deno.serve(async (req) => {
           // Check buffer timing
           if (!exclusionReason && previousAppointment) {
             const gapMinutes = (slotStart.getTime() - previousAppointment.end.getTime()) / (60 * 1000);
-            // Use per-technician buffer or fall back to global
             const baseBuffer = tech.bufferMinutes ?? DRIVE_TIME_CONFIG.base_buffer_minutes;
             const requiredBuffer = driveBuffer + baseBuffer;
             
@@ -651,6 +825,10 @@ Deno.serve(async (req) => {
             excludedSlots.push(slot);
           } else {
             allSlots.push(slot);
+            
+            // Update day metrics
+            const metrics = dayMetrics.get(currentDateStr)!;
+            metrics.totalSlots++;
           }
 
           // Move to next 30-minute interval
@@ -661,24 +839,113 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Sort slots by start time
-    allSlots.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    // Sort slots by:
+    // 1. Date (earliest first)
+    // 2. Route density score (highest first within same date)
+    // 3. Start time
+    allSlots.sort((a, b) => {
+      const dateA = new Date(a.startTime).toDateString();
+      const dateB = new Date(b.startTime).toDateString();
+      
+      if (dateA !== dateB) {
+        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+      }
+      
+      // Same date - sort by route density score (descending)
+      const scoreA = a.routeDensityScore || 50;
+      const scoreB = b.routeDensityScore || 50;
+      if (scoreA !== scoreB) {
+        return scoreB - scoreA;
+      }
+      
+      // Same score - sort by time
+      return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+    });
+    
     excludedSlots.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-    // Mark the first slot as recommended
-    if (allSlots.length > 0) {
+    // Mark recommended slots (high route density score)
+    let recommendedCount = 0;
+    for (const slot of allSlots) {
+      if ((slot.routeDensityScore || 0) >= 70 && recommendedCount < 10) {
+        slot.isRecommended = true;
+        recommendedCount++;
+      }
+    }
+    
+    // If no high-density slots, mark first few as recommended
+    if (recommendedCount === 0 && allSlots.length > 0) {
       allSlots[0].isRecommended = true;
     }
+
+    // Calculate recommended days
+    const recommendedDays: RecommendedDay[] = [];
+    const sortedDays = Array.from(dayMetrics.values())
+      .filter(dm => dm.totalSlots > 0)
+      .sort((a, b) => {
+        // Score: combination of job density and available capacity
+        const scoreA = (a.bookedJobs * 20) + (a.totalSlots > 0 ? 30 : 0);
+        const scoreB = (b.bookedJobs * 20) + (b.totalSlots > 0 ? 30 : 0);
+        return scoreB - scoreA;
+      });
+
+    // Get customer zone for matching
+    const customerZone = extractZone(customerAddress || null);
+    
+    for (let i = 0; i < Math.min(3, sortedDays.length); i++) {
+      const day = sortedDays[i];
+      
+      // Check if customer zone matches any job on this day
+      const matchingZoneJobs = day.jobAddresses.filter(addr => 
+        extractZone(addr) === customerZone
+      ).length;
+      
+      let label = 'Available';
+      let reason = 'Good availability';
+      let efficiencyScore = 50;
+      
+      if (matchingZoneJobs >= 2) {
+        label = 'Best fit for your area';
+        reason = `${matchingZoneJobs} jobs already scheduled in your area`;
+        efficiencyScore = 90;
+      } else if (matchingZoneJobs === 1) {
+        label = 'Good route fit';
+        reason = 'Another job nearby on this day';
+        efficiencyScore = 75;
+      } else if (day.bookedJobs >= 3) {
+        label = 'Most efficient';
+        reason = 'Busy day with tight routes';
+        efficiencyScore = 70;
+      } else if (day.totalSlots >= 5) {
+        label = 'Fastest availability';
+        reason = 'Many open time slots';
+        efficiencyScore = 60;
+      }
+      
+      recommendedDays.push({
+        date: day.dateStr,
+        dayOfWeek: getWeekdayInTimezone(day.date, businessTimezone),
+        label,
+        reason,
+        jobCount: day.bookedJobs,
+        availableSlots: day.totalSlots,
+        efficiencyScore,
+      });
+    }
+
+    // Sort recommended days by efficiency score
+    recommendedDays.sort((a, b) => b.efficiencyScore - a.efficiencyScore);
 
     // Limit results
     const limitedSlots = allSlots.slice(0, 50);
 
-    console.log(`Generated ${allSlots.length} available slots, ${excludedSlots.length} excluded`);
+    console.log(`Generated ${allSlots.length} available slots, ${excludedSlots.length} excluded, ${recommendedDays.length} recommended days`);
 
     const response: {
       slots: TimeSlot[];
       totalAvailable: number;
       eligibleTechnicians: Array<{ id: string; name: string; durationMinutes: number }>;
+      recommendedDays: RecommendedDay[];
       excludedSlots?: TimeSlot[];
       totalExcluded?: number;
     } = {
@@ -689,6 +956,7 @@ Deno.serve(async (req) => {
         name: t.name, 
         durationMinutes: t.durationMinutes 
       })),
+      recommendedDays,
     };
 
     // Include excluded slots if admin mode

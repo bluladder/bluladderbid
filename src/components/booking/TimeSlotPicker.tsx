@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Calendar, Clock, User, ChevronLeft, ChevronRight, Star, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, User, ChevronLeft, ChevronRight, Star, AlertCircle, MapPin, Sparkles, TrendingUp } from 'lucide-react';
 import { format, parseISO, isSameDay, addDays } from 'date-fns';
 
 export interface TimeSlot {
@@ -15,6 +15,19 @@ export interface TimeSlot {
   endTime: string;
   durationMinutes: number;
   isRecommended?: boolean;
+  routeDensityScore?: number;
+  routeDensityLabel?: string;
+  nearbyJobCount?: number;
+}
+
+interface RecommendedDay {
+  date: string;
+  dayOfWeek: string;
+  label: string;
+  reason: string;
+  jobCount: number;
+  availableSlots: number;
+  efficiencyScore: number;
 }
 
 interface ServiceForAvailability {
@@ -26,10 +39,12 @@ interface TimeSlotPickerProps {
   services: ServiceForAvailability[];
   onSelectSlot: (slot: TimeSlot) => void;
   selectedSlot: TimeSlot | null;
+  customerAddress?: string;
 }
 
-export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlotPickerProps) {
+export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerAddress }: TimeSlotPickerProps) {
   const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [recommendedDays, setRecommendedDays] = useState<RecommendedDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -45,6 +60,7 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
           services,
           startDate: format(new Date(), 'yyyy-MM-dd'),
           daysToCheck: 14,
+          customerAddress,
         },
       });
 
@@ -53,11 +69,15 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
       if (data.error) {
         setError(data.error);
         setSlots([]);
+        setRecommendedDays([]);
         return;
       }
 
       const fetchedSlots: TimeSlot[] = data.slots || [];
       setSlots(fetchedSlots);
+      
+      // Set recommended days
+      setRecommendedDays(data.recommendedDays || []);
 
       // Extract unique dates that have availability
       const dates = [...new Set(fetchedSlots.map(s => 
@@ -66,7 +86,17 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
       
       setAvailableDates(dates);
       
-      // Select first available date
+      // If there's a recommended day with high efficiency, pre-select it
+      const bestDay = data.recommendedDays?.find((d: RecommendedDay) => d.efficiencyScore >= 75);
+      if (bestDay && !selectedSlot) {
+        const bestDate = parseISO(bestDay.date);
+        if (dates.some(d => isSameDay(d, bestDate))) {
+          setSelectedDate(bestDate);
+          return;
+        }
+      }
+      
+      // Otherwise select first available date
       if (dates.length > 0 && !selectedSlot) {
         setSelectedDate(dates[0]);
       }
@@ -82,14 +112,14 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
     if (services.length > 0) {
       fetchAvailability();
     }
-  }, [services]);
+  }, [services, customerAddress]);
 
   // Filter slots for selected date
   const slotsForSelectedDate = slots.filter(slot =>
     isSameDay(parseISO(slot.startTime), selectedDate)
   );
 
-  // Group slots by technician
+  // Group slots by technician, with recommended slots first
   const slotsByTech = slotsForSelectedDate.reduce((acc, slot) => {
     if (!acc[slot.technicianId]) {
       acc[slot.technicianId] = {
@@ -101,6 +131,21 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
     return acc;
   }, {} as Record<string, { name: string; slots: TimeSlot[] }>);
 
+  // Sort slots within each technician - recommended first, then by time
+  Object.values(slotsByTech).forEach(tech => {
+    tech.slots.sort((a, b) => {
+      // Recommended slots first
+      if (a.isRecommended && !b.isRecommended) return -1;
+      if (!a.isRecommended && b.isRecommended) return 1;
+      // Then by route density score
+      const scoreA = a.routeDensityScore || 50;
+      const scoreB = b.routeDensityScore || 50;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      // Then by time
+      return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+    });
+  });
+
   const navigateDate = (direction: 'prev' | 'next') => {
     const currentIndex = availableDates.findIndex(d => isSameDay(d, selectedDate));
     if (direction === 'prev' && currentIndex > 0) {
@@ -109,6 +154,18 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
       setSelectedDate(availableDates[currentIndex + 1]);
     }
   };
+
+  const handleDayRecommendationClick = (dateStr: string) => {
+    const date = parseISO(dateStr);
+    if (availableDates.some(d => isSameDay(d, date))) {
+      setSelectedDate(date);
+    }
+  };
+
+  // Check if selected date is a recommended day
+  const selectedDateRecommendation = recommendedDays.find(rd => 
+    isSameDay(parseISO(rd.date), selectedDate)
+  );
 
   if (isLoading) {
     return (
@@ -186,6 +243,52 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Recommended Days Section */}
+        {recommendedDays.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span>Recommended days for faster, more efficient service</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {recommendedDays.map((day) => {
+                const dayDate = parseISO(day.date);
+                const isSelected = isSameDay(dayDate, selectedDate);
+                const isAvailable = availableDates.some(d => isSameDay(d, dayDate));
+                
+                return (
+                  <button
+                    key={day.date}
+                    onClick={() => handleDayRecommendationClick(day.date)}
+                    disabled={!isAvailable}
+                    className={`
+                      flex flex-col items-start p-3 rounded-lg border text-left transition-all
+                      ${isSelected 
+                        ? 'border-primary bg-primary/10 ring-1 ring-primary' 
+                        : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                      }
+                      ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                    `}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{day.dayOfWeek}</span>
+                      <Badge 
+                        variant={day.efficiencyScore >= 75 ? 'default' : 'secondary'}
+                        className="text-xs"
+                      >
+                        {day.label}
+                      </Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground mt-1">
+                      {format(dayDate, 'MMM d')} • {day.reason}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Date Navigation */}
         <div className="flex items-center justify-between bg-muted/50 rounded-lg p-3">
           <Button
@@ -198,9 +301,17 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
           </Button>
           
           <div className="text-center">
-            <p className="font-semibold text-lg">
-              {format(selectedDate, 'EEEE, MMMM d')}
-            </p>
+            <div className="flex items-center justify-center gap-2">
+              <p className="font-semibold text-lg">
+                {format(selectedDate, 'EEEE, MMMM d')}
+              </p>
+              {selectedDateRecommendation && (
+                <Badge variant="secondary" className="text-xs">
+                  <TrendingUp className="w-3 h-3 mr-1" />
+                  {selectedDateRecommendation.label}
+                </Badge>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">
               {slotsForSelectedDate.length} time{slotsForSelectedDate.length !== 1 ? 's' : ''} available
             </p>
@@ -218,20 +329,26 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
 
         {/* Date Quick Select */}
         <div className="flex gap-2 overflow-x-auto pb-2">
-          {availableDates.slice(0, 7).map((date) => (
-            <Button
-              key={date.toISOString()}
-              variant={isSameDay(date, selectedDate) ? 'default' : 'outline'}
-              size="sm"
-              className="flex-shrink-0"
-              onClick={() => setSelectedDate(date)}
-            >
-              <div className="text-center">
-                <div className="text-xs">{format(date, 'EEE')}</div>
-                <div className="font-bold">{format(date, 'd')}</div>
-              </div>
-            </Button>
-          ))}
+          {availableDates.slice(0, 7).map((date) => {
+            const dayRec = recommendedDays.find(rd => isSameDay(parseISO(rd.date), date));
+            return (
+              <Button
+                key={date.toISOString()}
+                variant={isSameDay(date, selectedDate) ? 'default' : 'outline'}
+                size="sm"
+                className="flex-shrink-0 relative"
+                onClick={() => setSelectedDate(date)}
+              >
+                <div className="text-center">
+                  <div className="text-xs">{format(date, 'EEE')}</div>
+                  <div className="font-bold">{format(date, 'd')}</div>
+                </div>
+                {dayRec && dayRec.efficiencyScore >= 70 && (
+                  <Sparkles className="w-3 h-3 absolute -top-1 -right-1 text-yellow-500" />
+                )}
+              </Button>
+            );
+          })}
         </div>
 
         {/* Time Slots by Technician */}
@@ -242,20 +359,30 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
                 <User className="w-4 h-4" />
                 <span>{name}</span>
               </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                 {techSlots.map((slot, idx) => {
                   const isSelected = selectedSlot?.startTime === slot.startTime && 
                                      selectedSlot?.technicianId === slot.technicianId;
+                  const hasLabel = slot.routeDensityLabel && slot.routeDensityLabel.length > 0;
+                  
                   return (
                     <Button
                       key={idx}
                       variant={isSelected ? 'default' : 'outline'}
                       size="sm"
-                      className="relative"
+                      className={`relative flex flex-col items-center py-2 h-auto ${hasLabel ? 'border-primary/50' : ''}`}
                       onClick={() => onSelectSlot(slot)}
                     >
-                      <Clock className="w-3 h-3 mr-1" />
-                      {format(parseISO(slot.startTime), 'h:mm a')}
+                      <div className="flex items-center">
+                        <Clock className="w-3 h-3 mr-1" />
+                        {format(parseISO(slot.startTime), 'h:mm a')}
+                      </div>
+                      {hasLabel && (
+                        <span className="text-[10px] text-primary mt-0.5 flex items-center">
+                          <MapPin className="w-2.5 h-2.5 mr-0.5" />
+                          {slot.routeDensityLabel}
+                        </span>
+                      )}
                       {slot.isRecommended && (
                         <Star className="w-3 h-3 absolute -top-1 -right-1 text-yellow-500 fill-yellow-500" />
                       )}
@@ -277,6 +404,12 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot }: TimeSlo
             <p className="text-sm text-muted-foreground mt-1">
               With {selectedSlot.technicianName} • ~{Math.round(selectedSlot.durationMinutes / 60 * 10) / 10} hours
             </p>
+            {selectedSlot.routeDensityLabel && (
+              <p className="text-xs text-primary mt-1 flex items-center">
+                <MapPin className="w-3 h-3 mr-1" />
+                {selectedSlot.routeDensityLabel}
+              </p>
+            )}
           </div>
         )}
       </CardContent>
