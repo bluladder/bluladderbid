@@ -1,1 +1,16 @@
 project_id = "gyndziiuizpgwhqwyrvn"
+
+[functions.jobber-oauth-callback]
+verify_jwt = false
+
+[functions.jobber-webhook]
+verify_jwt = false
+
+[functions.jobber-availability]
+verify_jwt = false
+
+[functions.jobber-create-booking]
+verify_jwt = false
+
+[functions.jobber-connection-status]
+verify_jwt = false
