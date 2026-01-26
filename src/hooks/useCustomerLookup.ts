@@ -125,6 +125,7 @@ function extractAdditionalServices(services: Array<{ name: string; price: number
   const serviceNames = services.map(s => s.name.toLowerCase());
   
   return {
+    windowCleaning: serviceNames.some(n => n.includes('window')),
     pressureWashing: {
       enabled: serviceNames.some(n => n.includes('pressure')),
       drivewaySize: 'medium',
