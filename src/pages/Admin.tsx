@@ -8,16 +8,17 @@ import { DiscountCodesManager } from '@/components/admin/DiscountCodesManager';
 import { JobberIntegration } from '@/components/admin/JobberIntegration';
 import { TechnicianManager } from '@/components/admin/TechnicianManager';
 import { BusinessHoursSettings } from '@/components/admin/BusinessHoursSettings';
+import { BookingsManager } from '@/components/admin/BookingsManager';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar } from 'lucide-react';
+import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Admin() {
   const { isAdmin, loading, user } = useIsAdmin();
   const { signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('preview');
+  const [activeTab, setActiveTab] = useState('bookings');
 
   // Show login if not authenticated
   if (!user && !loading) {
@@ -102,7 +103,11 @@ export default function Admin() {
       <main className="container py-8">
         <div className="max-w-5xl mx-auto">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-5 mb-6">
+            <TabsList className="grid w-full grid-cols-6 mb-6">
+              <TabsTrigger value="bookings" className="flex items-center gap-2">
+                <ClipboardList className="w-4 h-4" />
+                Bookings
+              </TabsTrigger>
               <TabsTrigger value="preview" className="flex items-center gap-2">
                 <Calculator className="w-4 h-4" />
                 Quote Preview
@@ -117,13 +122,17 @@ export default function Admin() {
               </TabsTrigger>
               <TabsTrigger value="booking" className="flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
-                Booking
+                Settings
               </TabsTrigger>
               <TabsTrigger value="config" className="flex items-center gap-2">
                 <Settings className="w-4 h-4" />
-                Pricing Config
+                Pricing
               </TabsTrigger>
             </TabsList>
+            
+            <TabsContent value="bookings">
+              <BookingsManager />
+            </TabsContent>
             
             <TabsContent value="preview">
               <PricingPreview />

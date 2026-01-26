@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
 import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
+import { getStoredUtmParams } from '@/hooks/useUtmTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 
@@ -228,6 +229,7 @@ export function BookingFlow({
           total: finalTotal,
           discountCode: appliedDiscount?.code,
           notes: info.notes,
+          utmParams: getStoredUtmParams(),
         },
       });
 

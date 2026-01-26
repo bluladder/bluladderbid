@@ -36,6 +36,7 @@ export type Database = {
           technician_id: string | null
           total: number
           updated_at: string
+          utm_params_json: Json | null
         }
         Insert: {
           created_at?: string
@@ -58,6 +59,7 @@ export type Database = {
           technician_id?: string | null
           total: number
           updated_at?: string
+          utm_params_json?: Json | null
         }
         Update: {
           created_at?: string
@@ -80,6 +82,7 @@ export type Database = {
           technician_id?: string | null
           total?: number
           updated_at?: string
+          utm_params_json?: Json | null
         }
         Relationships: [
           {
