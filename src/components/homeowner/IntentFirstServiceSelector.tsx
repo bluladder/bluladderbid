@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Check, Plus, Sparkles, Droplets, Home, Cloud, Warehouse, ChevronDown, ChevronUp, Grid3X3, SunMedium, ArrowUpFromLine, Square, Car } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import type { AdditionalServices, ServicePrices, HomeDetails, FlatworkArea } from '@/types/homeowner';
 import { FLATWORK_DEFAULT_SQFT } from '@/types/homeowner';
 import { SqftCalculator } from './SqftCalculator';
+import { usePricingConfig, DEFAULT_PRICING } from '@/hooks/usePricingConfig';
 interface IntentFirstServiceSelectorProps {
   services: AdditionalServices;
   servicePrices: ServicePrices;
@@ -40,9 +41,10 @@ interface ServiceCardProps {
   onToggle: () => void;
   children?: React.ReactNode;
   isFeatured?: boolean;
+  estimatedPrice?: number; // Estimated price when not enabled (based on sqft)
 }
 
-function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggle, children, isFeatured }: ServiceCardProps) {
+function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggle, children, isFeatured, estimatedPrice }: ServiceCardProps) {
   // Compact view when not enabled
   if (!isEnabled) {
     return (
@@ -70,8 +72,10 @@ function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggl
         </div>
         
         <div className="flex items-center gap-2 flex-shrink-0">
-          {price > 0 ? (
-            <span className="text-sm font-semibold text-primary">{formatPrice(price)}</span>
+          {estimatedPrice && estimatedPrice > 0 ? (
+            <span className="text-sm font-medium text-muted-foreground">
+              ~{formatPrice(estimatedPrice)}
+            </span>
           ) : (
             <span className="text-xs text-muted-foreground italic">Get quote</span>
           )}
@@ -182,6 +186,75 @@ export function IntentFirstServiceSelector({
   featuredService
 }: IntentFirstServiceSelectorProps) {
   const [windowExpanded, setWindowExpanded] = useState(true);
+  const { data: PRICING } = usePricingConfig();
+  
+  // Calculate estimated prices for collapsed service cards based on sqft
+  const estimatedPrices = useMemo(() => {
+    const sqft = homeDetails.squareFootage;
+    const stories = homeDetails.stories;
+    const pricing = PRICING || DEFAULT_PRICING;
+    
+    // Only show estimates if we have a valid square footage
+    if (!sqft || sqft <= 0) {
+      return {
+        windowCleaning: 0,
+        gutterCleaning: 0,
+        houseWash: 0,
+        roofCleaning: 0,
+        drivewayCleaning: 0,
+        pressureWashing: 0,
+      };
+    }
+    
+    // Helper to apply story modifier
+    const withStoryMod = (base: number, modifiers: Record<string, number>) => {
+      const mod = modifiers[stories.toString()] ?? 0;
+      return Math.round(base * (1 + mod / 100));
+    };
+    
+    // Window cleaning estimate (exterior only, maintenance condition)
+    const windowBase = sqft * pricing.window_cleaning.exteriorPerSqFt;
+    const windowEstimate = Math.max(
+      withStoryMod(windowBase, pricing.window_cleaning.modifiers.stories),
+      pricing.window_cleaning.minimumPrice
+    );
+    
+    // Gutter cleaning estimate
+    const gutterBase = sqft * pricing.gutter_cleaning.perSqFt;
+    const gutterEstimate = Math.max(
+      withStoryMod(gutterBase, pricing.gutter_cleaning.modifiers.stories),
+      pricing.gutter_cleaning.minimumPrice
+    );
+    
+    // House wash estimate
+    const houseBase = sqft * pricing.house_wash.perSqFt;
+    const houseEstimate = Math.max(
+      withStoryMod(houseBase, pricing.house_wash.modifiers.stories),
+      pricing.house_wash.minimumPrice
+    );
+    
+    // Roof cleaning estimate (default type/severity)
+    const roofBase = sqft * pricing.roof_cleaning.perSqFt;
+    const roofEstimate = Math.max(
+      withStoryMod(roofBase, pricing.roof_cleaning.modifiers.stories),
+      pricing.roof_cleaning.minimumPrice
+    );
+    
+    // Driveway - use minimum as estimate (sqft varies widely)
+    const drivewayEstimate = pricing.driveway_cleaning.minimumPrice;
+    
+    // Pressure washing - use minimum as estimate
+    const pressureEstimate = pricing.pressure_washing.minimumPrice;
+    
+    return {
+      windowCleaning: windowEstimate,
+      gutterCleaning: gutterEstimate,
+      houseWash: houseEstimate,
+      roofCleaning: roofEstimate,
+      drivewayCleaning: drivewayEstimate,
+      pressureWashing: pressureEstimate,
+    };
+  }, [homeDetails.squareFootage, homeDetails.stories, PRICING]);
   
   // Helper to check if a service is featured
   const isFeatured = (serviceId: string) => featuredService === serviceId;
@@ -210,6 +283,7 @@ export function IntentFirstServiceSelector({
       title="Window Cleaning"
       description="Crystal clear windows, inside or out"
       price={servicePrices.windowCleaningTotal}
+      estimatedPrice={estimatedPrices.windowCleaning}
       isEnabled={services.windowCleaning}
       onToggle={() => onChange({ windowCleaning: !services.windowCleaning })}
       isFeatured={isFeatured('windowCleaning')}
@@ -478,6 +552,7 @@ export function IntentFirstServiceSelector({
       title="Driveway Cleaning"
       description="Power wash your driveway to remove stains and buildup"
       price={servicePrices.drivewayCleaning}
+      estimatedPrice={estimatedPrices.drivewayCleaning}
       isEnabled={services.drivewayCleaning.enabled}
       onToggle={() => onChange({ 
         drivewayCleaning: { ...services.drivewayCleaning, enabled: !services.drivewayCleaning.enabled } 
@@ -550,6 +625,7 @@ export function IntentFirstServiceSelector({
       title="Pressure Washing"
       description="Porches, patios, pool decks, and walkways"
       price={servicePrices.pressureWashing}
+      estimatedPrice={estimatedPrices.pressureWashing}
       isEnabled={services.pressureWashing.enabled}
       onToggle={() => onChange({ 
         pressureWashing: { ...services.pressureWashing, enabled: !services.pressureWashing.enabled } 
@@ -641,6 +717,7 @@ export function IntentFirstServiceSelector({
       title="Gutter Cleaning"
       description="Full gutter and downspout cleaning"
       price={servicePrices.gutterCleaning}
+      estimatedPrice={estimatedPrices.gutterCleaning}
       isEnabled={services.gutterCleaning}
       onToggle={() => onChange({ gutterCleaning: !services.gutterCleaning })}
       isFeatured={isFeatured('gutterCleaning')}
@@ -655,6 +732,7 @@ export function IntentFirstServiceSelector({
       title="House Wash"
       description="Gentle exterior soft washing"
       price={servicePrices.houseWash}
+      estimatedPrice={estimatedPrices.houseWash}
       isEnabled={services.houseWash}
       onToggle={() => onChange({ houseWash: !services.houseWash })}
       isFeatured={isFeatured('houseWash')}
@@ -669,6 +747,7 @@ export function IntentFirstServiceSelector({
       title="Roof Cleaning"
       description="Safe, low-pressure roof treatment"
       price={servicePrices.roofCleaning}
+      estimatedPrice={estimatedPrices.roofCleaning}
       isEnabled={services.roofCleaning}
       onToggle={() => onChange({ roofCleaning: !services.roofCleaning })}
       isFeatured={isFeatured('roofCleaning')}
