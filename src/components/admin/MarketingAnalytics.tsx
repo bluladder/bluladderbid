@@ -22,7 +22,7 @@ import {
   Funnel,
   LabelList,
 } from 'recharts';
-import { RefreshCw, TrendingUp, Users, DollarSign, Megaphone, Filter, FileText, ArrowRightLeft } from 'lucide-react';
+import { RefreshCw, TrendingUp, Users, DollarSign, Megaphone, Filter, FileText, ArrowRightLeft, Tag, Percent } from 'lucide-react';
 import { format, parseISO, subDays, startOfDay, endOfDay } from 'date-fns';
 import { toast } from 'sonner';
 
@@ -38,6 +38,9 @@ interface UtmParams {
 interface Booking {
   id: string;
   total: number;
+  subtotal: number;
+  discount_code: string | null;
+  discount_amount: number | null;
   utm_params_json: UtmParams | null;
   created_at: string;
   status: string;
@@ -94,7 +97,7 @@ export function MarketingAnalytics() {
       const [bookingsRes, quotesRes] = await Promise.all([
         supabase
           .from('bookings')
-          .select('id, total, utm_params_json, created_at, status')
+          .select('id, total, subtotal, discount_code, discount_amount, utm_params_json, created_at, status')
           .order('created_at', { ascending: true })
           .gte('created_at', startDate || '1970-01-01'),
         supabase
@@ -352,6 +355,46 @@ export function MarketingAnalytics() {
   const quoteConversionRate = totalQuotes > 0 ? (convertedQuotes / totalQuotes) * 100 : 0;
   const avgOrderValue = totalBookings > 0 ? totalRevenue / totalBookings : 0;
 
+  // Discount code analytics
+  const discountAnalytics = useMemo(() => {
+    const bookingsWithDiscount = bookings.filter(b => b.discount_code);
+    const discountsByCode: Record<string, {
+      code: string;
+      uses: number;
+      totalDiscount: number;
+      revenue: number;
+      avgOrderValue: number;
+    }> = {};
+
+    bookingsWithDiscount.forEach(b => {
+      const code = b.discount_code!;
+      if (!discountsByCode[code]) {
+        discountsByCode[code] = {
+          code,
+          uses: 0,
+          totalDiscount: 0,
+          revenue: 0,
+          avgOrderValue: 0,
+        };
+      }
+      discountsByCode[code].uses++;
+      discountsByCode[code].totalDiscount += b.discount_amount || 0;
+      discountsByCode[code].revenue += b.total;
+    });
+
+    // Calculate avg order value
+    Object.values(discountsByCode).forEach(d => {
+      d.avgOrderValue = d.uses > 0 ? d.revenue / d.uses : 0;
+    });
+
+    return {
+      bookingsWithDiscount: bookingsWithDiscount.length,
+      totalDiscountGiven: bookingsWithDiscount.reduce((sum, b) => sum + (b.discount_amount || 0), 0),
+      revenueWithDiscounts: bookingsWithDiscount.reduce((sum, b) => sum + b.total, 0),
+      byCode: Object.values(discountsByCode).sort((a, b) => b.uses - a.uses),
+    };
+  }, [bookings]);
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
@@ -502,6 +545,7 @@ export function MarketingAnalytics() {
       <Tabs defaultValue="funnel" className="space-y-4">
         <TabsList className="flex-wrap">
           <TabsTrigger value="funnel">Conversion Funnel</TabsTrigger>
+          <TabsTrigger value="discounts">Discount Codes</TabsTrigger>
           <TabsTrigger value="trends">Trends Over Time</TabsTrigger>
           <TabsTrigger value="source">By Source</TabsTrigger>
           <TabsTrigger value="medium">By Medium</TabsTrigger>
@@ -676,6 +720,138 @@ export function MarketingAnalytics() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        {/* Discount Codes Tab */}
+        <TabsContent value="discounts" className="space-y-4">
+          {/* Discount Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Bookings with Discounts</span>
+                </div>
+                <p className="text-2xl font-bold mt-1">{discountAnalytics.bookingsWithDiscount}</p>
+                <p className="text-xs text-muted-foreground">
+                  {totalBookings > 0 ? ((discountAnalytics.bookingsWithDiscount / totalBookings) * 100).toFixed(1) : 0}% of all bookings
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <Percent className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Total Discounts Given</span>
+                </div>
+                <p className="text-2xl font-bold mt-1">{formatPrice(discountAnalytics.totalDiscountGiven)}</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Revenue (Discounted)</span>
+                </div>
+                <p className="text-2xl font-bold mt-1">{formatPrice(discountAnalytics.revenueWithDiscounts)}</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Unique Codes Used</span>
+                </div>
+                <p className="text-2xl font-bold mt-1">{discountAnalytics.byCode.length}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Discount Code Performance Chart */}
+          {discountAnalytics.byCode.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium">Discount Code Usage</CardTitle>
+                <CardDescription>Number of times each code was used</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={discountAnalytics.byCode.slice(0, 10)}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="code" className="text-xs" />
+                      <YAxis className="text-xs" />
+                      <Tooltip 
+                        formatter={(value: number, name: string) => {
+                          if (name === 'uses') return [value, 'Uses'];
+                          return [formatPrice(value), name];
+                        }}
+                        contentStyle={{ 
+                          backgroundColor: 'hsl(var(--background))', 
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px'
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="uses" name="Uses" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Discount Code Performance Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Discount Code Performance</CardTitle>
+              <CardDescription>Detailed breakdown of each discount code's impact</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {discountAnalytics.byCode.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-3 px-2 font-medium">Code</th>
+                        <th className="text-right py-3 px-2 font-medium">Uses</th>
+                        <th className="text-right py-3 px-2 font-medium">Total Discount</th>
+                        <th className="text-right py-3 px-2 font-medium">Revenue Generated</th>
+                        <th className="text-right py-3 px-2 font-medium">Avg Order Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {discountAnalytics.byCode.map((discount, idx) => (
+                        <tr key={discount.code} className="border-b last:border-0 hover:bg-muted/50">
+                          <td className="py-3 px-2">
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                              />
+                              <span className="font-mono font-medium">{discount.code}</span>
+                            </div>
+                          </td>
+                          <td className="text-right py-3 px-2">{discount.uses}</td>
+                          <td className="text-right py-3 px-2 text-destructive">-{formatPrice(discount.totalDiscount)}</td>
+                          <td className="text-right py-3 px-2 font-medium">{formatPrice(discount.revenue)}</td>
+                          <td className="text-right py-3 px-2 text-muted-foreground">{formatPrice(discount.avgOrderValue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-muted-foreground">
+                  <Tag className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No discount codes have been used yet.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* New Trends Tab */}

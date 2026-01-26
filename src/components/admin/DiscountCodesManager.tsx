@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Plus, Trash2, Pencil, Calendar } from 'lucide-react';
+import { Plus, Trash2, Pencil, Calendar, DollarSign, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 import {
   useDiscountCodes,
   useCreateDiscountCode,
@@ -23,6 +24,22 @@ import {
   type CreateDiscountCodeInput,
 } from '@/hooks/useDiscountCodes';
 
+interface BookingStats {
+  discount_code: string;
+  total_revenue: number;
+  total_discount: number;
+  booking_count: number;
+}
+
+function formatPrice(price: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(price);
+}
+
 export function DiscountCodesManager() {
   const { data: codes, isLoading } = useDiscountCodes();
   const createCode = useCreateDiscountCode();
@@ -32,6 +49,50 @@ export function DiscountCodesManager() {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCode, setEditingCode] = useState<DiscountCode | null>(null);
+  const [bookingStats, setBookingStats] = useState<BookingStats[]>([]);
+
+  // Fetch booking stats for discount codes
+  useEffect(() => {
+    const fetchBookingStats = async () => {
+      const { data } = await supabase
+        .from('bookings')
+        .select('discount_code, total, discount_amount')
+        .not('discount_code', 'is', null);
+
+      if (data) {
+        const statsMap: Record<string, BookingStats> = {};
+        data.forEach((booking) => {
+          const code = booking.discount_code!;
+          if (!statsMap[code]) {
+            statsMap[code] = {
+              discount_code: code,
+              total_revenue: 0,
+              total_discount: 0,
+              booking_count: 0,
+            };
+          }
+          statsMap[code].total_revenue += booking.total || 0;
+          statsMap[code].total_discount += booking.discount_amount || 0;
+          statsMap[code].booking_count++;
+        });
+        setBookingStats(Object.values(statsMap));
+      }
+    };
+    fetchBookingStats();
+  }, [codes]);
+
+  const getStatsForCode = (code: string) => {
+    return bookingStats.find((s) => s.discount_code === code);
+  };
+
+  // Calculate totals
+  const totals = useMemo(() => {
+    return {
+      totalRevenue: bookingStats.reduce((sum, s) => sum + s.total_revenue, 0),
+      totalDiscount: bookingStats.reduce((sum, s) => sum + s.total_discount, 0),
+      totalBookings: bookingStats.reduce((sum, s) => sum + s.booking_count, 0),
+    };
+  }, [bookingStats]);
 
   const handleCreate = async (input: CreateDiscountCodeInput) => {
     await createCode.mutateAsync(input);
@@ -63,114 +124,157 @@ export function DiscountCodesManager() {
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle>Discount Codes</CardTitle>
-          <CardDescription>Manage promotional codes for customer discounts</CardDescription>
-        </div>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Code
-            </Button>
-          </DialogTrigger>
-          <DiscountCodeForm
-            onSubmit={handleCreate}
-            onCancel={() => setIsCreateOpen(false)}
-            isLoading={createCode.isPending}
-          />
-        </Dialog>
-      </CardHeader>
-      <CardContent>
-        {codes && codes.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Discount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Expires</TableHead>
-                <TableHead>Uses</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {codes.map((code) => (
-                <TableRow key={code.id}>
-                  <TableCell>
-                    <div>
-                      <span className="font-mono font-semibold">{code.code}</span>
-                      {code.description && (
-                        <p className="text-xs text-muted-foreground">{code.description}</p>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {code.discount_type === 'percentage'
-                      ? `${code.discount_value}%`
-                      : `$${code.discount_value.toFixed(2)}`}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={code.is_active}
-                        onCheckedChange={() => handleToggle(code.id, code.is_active)}
-                      />
-                      {isExpired(code.expires_at) ? (
-                        <Badge variant="destructive">Expired</Badge>
-                      ) : code.is_active ? (
-                        <Badge variant="default">Active</Badge>
-                      ) : (
-                        <Badge variant="secondary">Inactive</Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {code.expires_at
-                      ? format(new Date(code.expires_at), 'MMM d, yyyy')
-                      : 'Never'}
-                  </TableCell>
-                  <TableCell>
-                    {code.usage_count}
-                    {code.max_uses ? ` / ${code.max_uses}` : ''}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Dialog
-                        open={editingCode?.id === code.id}
-                        onOpenChange={(open) => !open && setEditingCode(null)}
-                      >
-                        <DialogTrigger asChild>
+    <div className="space-y-4">
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Discounted Bookings</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{totals.totalBookings}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Revenue (Discounted)</span>
+            </div>
+            <p className="text-2xl font-bold mt-1">{formatPrice(totals.totalRevenue)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-destructive" />
+              <span className="text-sm text-muted-foreground">Total Discounts Given</span>
+            </div>
+            <p className="text-2xl font-bold mt-1 text-destructive">-{formatPrice(totals.totalDiscount)}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Discount Codes</CardTitle>
+            <CardDescription>Manage promotional codes for customer discounts</CardDescription>
+          </div>
+          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Code
+              </Button>
+            </DialogTrigger>
+            <DiscountCodeForm
+              onSubmit={handleCreate}
+              onCancel={() => setIsCreateOpen(false)}
+              isLoading={createCode.isPending}
+            />
+          </Dialog>
+        </CardHeader>
+        <CardContent>
+          {codes && codes.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Discount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead>Uses</TableHead>
+                  <TableHead className="text-right">Revenue</TableHead>
+                  <TableHead className="text-right">Discounted</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {codes.map((code) => {
+                  const stats = getStatsForCode(code.code);
+                  return (
+                    <TableRow key={code.id}>
+                      <TableCell>
+                        <div>
+                          <span className="font-mono font-semibold">{code.code}</span>
+                          {code.description && (
+                            <p className="text-xs text-muted-foreground">{code.description}</p>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {code.discount_type === 'percentage'
+                          ? `${code.discount_value}%`
+                          : `$${code.discount_value.toFixed(2)}`}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={code.is_active}
+                            onCheckedChange={() => handleToggle(code.id, code.is_active)}
+                          />
+                          {isExpired(code.expires_at) ? (
+                            <Badge variant="destructive">Expired</Badge>
+                          ) : code.is_active ? (
+                            <Badge variant="default">Active</Badge>
+                          ) : (
+                            <Badge variant="secondary">Inactive</Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {code.expires_at
+                          ? format(new Date(code.expires_at), 'MMM d, yyyy')
+                          : 'Never'}
+                      </TableCell>
+                      <TableCell>
+                        {code.usage_count}
+                        {code.max_uses ? ` / ${code.max_uses}` : ''}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {stats ? formatPrice(stats.total_revenue) : '-'}
+                      </TableCell>
+                      <TableCell className="text-right text-destructive">
+                        {stats ? `-${formatPrice(stats.total_discount)}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Dialog
+                            open={editingCode?.id === code.id}
+                            onOpenChange={(open) => !open && setEditingCode(null)}
+                          >
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setEditingCode(code)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            {editingCode && (
+                              <DiscountCodeForm
+                                initialData={editingCode}
+                                onSubmit={(data) => handleUpdate({ id: editingCode.id, ...data })}
+                                onCancel={() => setEditingCode(null)}
+                                isLoading={updateCode.isPending}
+                              />
+                            )}
+                          </Dialog>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setEditingCode(code)}
+                            onClick={() => handleDelete(code.id)}
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
-                        </DialogTrigger>
-                        {editingCode && (
-                          <DiscountCodeForm
-                            initialData={editingCode}
-                            onSubmit={(data) => handleUpdate({ id: editingCode.id, ...data })}
-                            onCancel={() => setEditingCode(null)}
-                            isLoading={updateCode.isPending}
-                          />
-                        )}
-                      </Dialog>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(code.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
             </TableBody>
           </Table>
         ) : (
@@ -178,8 +282,9 @@ export function DiscountCodesManager() {
             No discount codes yet. Create one to get started.
           </div>
         )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
