@@ -6,6 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const JOBBER_MAX_ATTEMPTS = 3;
+const JOBBER_BACKOFF_MS = [500, 1500, 3000];
+
 // ---------------- Jobber throttling + cache (fail-closed, but avoid hard downtime) ----------------
 // If Jobber rate-limits us, we:
 // 1) enter a short cooldown to avoid repeatedly triggering throttling
@@ -624,15 +627,45 @@ Deno.serve(async (req) => {
         );
       }
 
-      console.log("Jobber API attempt 1/1");
-      jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, {
-        startDateAfter: fromDateISO,
-        startDateBefore: toDateISO,
-      });
+      // Jobber can occasionally throttle bursts; do a few short backoff retries before failing closed.
+      for (let attempt = 1; attempt <= JOBBER_MAX_ATTEMPTS; attempt++) {
+        console.log(`Jobber API attempt ${attempt}/${JOBBER_MAX_ATTEMPTS}`);
+        jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, {
+          startDateAfter: fromDateISO,
+          startDateBefore: toDateISO,
+        });
 
-      const isThrottled = jobberResult.errors?.some((e) =>
-        e.extensions?.code === "THROTTLED" || e.message?.includes("Throttled")
+        const isThrottledAttempt = jobberResult.errors?.some((e) =>
+          e.extensions?.code === "THROTTLED" || (e.message || "").includes("Throttled")
+        );
+
+        // If not throttled, proceed immediately (even if it contains other errors).
+        if (!isThrottledAttempt) break;
+
+        // If throttled and we have more attempts, wait a bit and retry.
+        if (attempt < JOBBER_MAX_ATTEMPTS) {
+          const waitMs = JOBBER_BACKOFF_MS[Math.min(attempt - 1, JOBBER_BACKOFF_MS.length - 1)] ?? 1500;
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+      }
+
+      const isThrottled = jobberResult?.errors?.some((e) =>
+        e.extensions?.code === "THROTTLED" || (e.message || "").includes("Throttled")
       );
+
+      if (!jobberResult) {
+        console.error("Jobber API returned no result - failing closed");
+        return new Response(
+          JSON.stringify({
+            error: "Scheduling system is temporarily unavailable. Please try again shortly.",
+            code: "JOBBER_ERROR",
+            retryAfter: 60,
+            slots: [],
+            recommendedDays: [],
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+        );
+      }
 
       if (isThrottled) {
         lastJobberThrottleAtMs = nowMs;
