@@ -44,27 +44,25 @@ export function JobberIntegration() {
     }
   }, []);
 
-  const handleConnect = () => {
-    const clientId = import.meta.env.VITE_JOBBER_CLIENT_ID;
-    
-    if (!clientId) {
-      // For production, we need to call an edge function to get the OAuth URL
-      // For now, use a placeholder that redirects through our callback
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const redirectUri = `${supabaseUrl}/functions/v1/jobber-oauth-callback`;
+  const handleConnect = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('jobber-oauth-url');
       
-      // Open a message about needing to configure
-      toast.error('Jobber Client ID not configured. Please add JOBBER_CLIENT_ID secret.');
-      return;
+      if (error) {
+        throw new Error(error.message || 'Failed to get authorization URL');
+      }
+      
+      if (!data?.authUrl) {
+        throw new Error('No authorization URL returned');
+      }
+      
+      window.location.href = data.authUrl;
+    } catch (error) {
+      console.error('Failed to initiate Jobber connection:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to connect to Jobber');
+      setIsLoading(false);
     }
-
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const redirectUri = `${supabaseUrl}/functions/v1/jobber-oauth-callback`;
-    const scope = 'read_clients write_clients read_jobs write_jobs read_users read_schedule write_visits';
-    
-    const authUrl = `https://api.getjobber.com/api/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}`;
-    
-    window.location.href = authUrl;
   };
 
   const handleDisconnect = async () => {
