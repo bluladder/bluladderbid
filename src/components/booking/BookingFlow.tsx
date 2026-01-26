@@ -58,35 +58,74 @@ export function BookingFlow({
 
   // Build services array for availability check and booking
   const buildServicesArray = () => {
-    const services: Array<{ service: string; name: string; price: number }> = [];
+    const services: Array<{ service: string; name: string; price: number; description: string }> = [];
+    
+    // Helper to format home details for descriptions
+    const sqft = homeDetails.squareFootage?.toLocaleString() || 'N/A';
+    const stories = homeDetails.stories || 1;
+    const storyLabel = stories === 1 ? '1 story' : `${stories} stories`;
     
     if (servicePrices.windowCleaningTotal > 0) {
+      const windowType = homeDetails.windowCleaningType === 'both' ? 'Interior & Exterior' : 'Exterior Only';
+      const condition = homeDetails.condition === 'heavy' ? 'Heavy Cleaning' : 'Maintenance Clean';
+      
       if (servicePrices.exteriorWindows > 0) {
         services.push({ 
           service: 'windows_exterior', 
           name: 'Window Cleaning (Exterior)', 
-          price: servicePrices.exteriorWindows 
+          price: servicePrices.exteriorWindows,
+          description: `${sqft} sq ft, ${storyLabel}, ${condition}`,
         });
       }
       if (servicePrices.interiorWindows > 0) {
         services.push({ 
           service: 'windows_interior', 
           name: 'Window Cleaning (Interior)', 
-          price: servicePrices.interiorWindows 
+          price: servicePrices.interiorWindows,
+          description: `${sqft} sq ft, ${storyLabel}`,
         });
       }
       if (servicePrices.hardWaterAddon > 0) {
+        const percent = homeDetails.hardWaterPercent || 25;
         services.push({ 
           service: 'windows_exterior', 
           name: 'Hard Water Treatment', 
-          price: servicePrices.hardWaterAddon 
+          price: servicePrices.hardWaterAddon,
+          description: `${percent}% of windows affected`,
         });
       }
       if (servicePrices.frenchPanesAddon > 0) {
+        const percent = homeDetails.frenchPanesPercent || 25;
         services.push({ 
           service: 'windows_exterior', 
           name: 'French Panes', 
-          price: servicePrices.frenchPanesAddon 
+          price: servicePrices.frenchPanesAddon,
+          description: `${percent}% of windows`,
+        });
+      }
+      if (servicePrices.solarScreensAddon > 0) {
+        const percent = homeDetails.solarScreensPercent || 25;
+        services.push({ 
+          service: 'windows_exterior', 
+          name: 'Solar Screen Removal', 
+          price: servicePrices.solarScreensAddon,
+          description: `${percent}% of windows`,
+        });
+      }
+      if (servicePrices.ladderWorkAddon > 0) {
+        services.push({ 
+          service: 'windows_exterior', 
+          name: 'Ladder Work', 
+          price: servicePrices.ladderWorkAddon,
+          description: `${homeDetails.ladderWorkCount || '1-3'} windows requiring ladder`,
+        });
+      }
+      if (servicePrices.sunroomAddon > 0) {
+        services.push({ 
+          service: 'windows_exterior', 
+          name: 'Sunroom Cleaning', 
+          price: servicePrices.sunroomAddon,
+          description: `${homeDetails.sunroom} sunroom`,
         });
       }
     }
@@ -95,7 +134,8 @@ export function BookingFlow({
       services.push({ 
         service: 'gutters', 
         name: 'Gutter Cleaning', 
-        price: servicePrices.gutterCleaning 
+        price: servicePrices.gutterCleaning,
+        description: `${sqft} sq ft home, ${storyLabel}`,
       });
     }
     
@@ -103,25 +143,38 @@ export function BookingFlow({
       services.push({ 
         service: 'house_wash', 
         name: 'House Wash', 
-        price: servicePrices.houseWash 
+        price: servicePrices.houseWash,
+        description: `${sqft} sq ft, ${storyLabel}`,
       });
     }
     
     if (additionalServices.roofCleaning && servicePrices.roofCleaning > 0) {
+      const roofType = additionalServices.roofType || 'asphalt';
+      const severity = additionalServices.roofSeverity || 'light';
       services.push({ 
         service: 'roof_wash', 
         name: 'Roof Cleaning', 
-        price: servicePrices.roofCleaning 
+        price: servicePrices.roofCleaning,
+        description: `${roofType} roof, ${severity} cleaning, ${sqft} sq ft`,
       });
     }
     
     if (additionalServices.pressureWashing.enabled) {
       const pwTotal = servicePrices.pressureWashing + servicePrices.pressureWashingAddons;
       if (pwTotal > 0) {
+        const pw = additionalServices.pressureWashing;
+        const areas: string[] = [];
+        areas.push(`${pw.drivewaySize} driveway (${pw.surfaceType})`);
+        if (pw.frontPorch) areas.push('front porch');
+        if (pw.backPatio) areas.push('back patio');
+        if (pw.poolDeck) areas.push('pool deck');
+        if (pw.sidewalks) areas.push('sidewalks');
+        
         services.push({ 
           service: 'driveway', 
           name: 'Pressure Washing', 
-          price: pwTotal 
+          price: pwTotal,
+          description: areas.join(', '),
         });
       }
     }
@@ -163,7 +216,7 @@ export function BookingFlow({
           services: services.map(s => ({ 
             name: s.name, 
             price: s.price,
-            description: '',
+            description: s.description,
           })),
           homeDetails,
           subtotal,
