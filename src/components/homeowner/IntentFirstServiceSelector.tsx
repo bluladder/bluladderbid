@@ -178,35 +178,35 @@ export function IntentFirstServiceSelector({
   
   // Helper to check if a service is featured
   const isFeatured = (serviceId: string) => featuredService === serviceId;
+
+  // Define service order - featured service goes first
+  const serviceOrder: Array<'windowCleaning' | 'drivewayCleaning' | 'pressureWashing' | 'gutterCleaning' | 'houseWash' | 'roofCleaning'> = [
+    'windowCleaning',
+    'drivewayCleaning', 
+    'pressureWashing',
+    'gutterCleaning',
+    'houseWash',
+    'roofCleaning',
+  ];
   
-  return (
-    <Card className="card-elevated">
-      <CardHeader className="pb-4">
-        <div className="section-header">
-          <div className="section-icon">
-            <Sparkles className="w-5 h-5 text-primary-foreground" />
-          </div>
-          <div>
-            <CardTitle className="text-xl">What service are you looking for today?</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Select all that apply — we'll show you pricing instantly
-            </p>
-          </div>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="space-y-3">
-        {/* Window Cleaning - Toggleable like other services */}
-        <ServiceCard
-          id="window-cleaning"
-          icon={Sparkles}
-          title="Window Cleaning"
-          description="Crystal clear windows, inside or out"
-          price={servicePrices.windowCleaningTotal}
-          isEnabled={services.windowCleaning}
-          onToggle={() => onChange({ windowCleaning: !services.windowCleaning })}
-          isFeatured={isFeatured('windowCleaning')}
-        >
+  // Reorder to put featured service first
+  const orderedServices = featuredService 
+    ? [featuredService, ...serviceOrder.filter(s => s !== featuredService)]
+    : serviceOrder;
+
+  // Render individual service cards
+  const renderWindowCleaning = () => (
+    <ServiceCard
+      key="windowCleaning"
+      id="window-cleaning"
+      icon={Sparkles}
+      title="Window Cleaning"
+      description="Crystal clear windows, inside or out"
+      price={servicePrices.windowCleaningTotal}
+      isEnabled={services.windowCleaning}
+      onToggle={() => onChange({ windowCleaning: !services.windowCleaning })}
+      isFeatured={isFeatured('windowCleaning')}
+    >
           {/* Window Options - shown when enabled */}
           <div className="space-y-4">
             {/* Window Cleaning Type */}
@@ -460,241 +460,279 @@ export function IntentFirstServiceSelector({
               </CollapsibleContent>
             </Collapsible>
           </div>
-        </ServiceCard>
-        
-        {/* Driveway Cleaning - NEW separate service */}
-        <ServiceCard
-          id="drivewayCleaning"
-          icon={Car}
-          title="Driveway Cleaning"
-          description="Power wash your driveway to remove stains and buildup"
-          price={servicePrices.drivewayCleaning}
-          isEnabled={services.drivewayCleaning.enabled}
-          onToggle={() => onChange({ 
-            drivewayCleaning: { ...services.drivewayCleaning, enabled: !services.drivewayCleaning.enabled } 
-          })}
-          isFeatured={isFeatured('drivewayCleaning')}
-        >
-          <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-sm">Driveway Area</Label>
-                <div className="flex items-center gap-1">
-                  <Input
-                    type="number"
-                    value={services.drivewayCleaning.sqft || ''}
-                    onChange={(e) => 
-                      onChange({ 
-                        drivewayCleaning: { 
-                          ...services.drivewayCleaning, 
-                          sqft: parseInt(e.target.value) || FLATWORK_DEFAULT_SQFT.driveway 
-                        } 
-                      })
-                    }
-                    placeholder={`~${FLATWORK_DEFAULT_SQFT.driveway}`}
-                    className="w-28"
-                  />
-                  <span className="text-sm text-muted-foreground">sq ft</span>
-                  <SqftCalculator
-                    type="driveway"
-                    currentValue={services.drivewayCleaning.sqft}
-                    onApply={(sqft) => onChange({ 
-                      drivewayCleaning: { ...services.drivewayCleaning, sqft } 
-                    })}
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label className="text-sm">Surface Type</Label>
-                <Select
-                  value={services.drivewayCleaning.surfaceType}
-                  onValueChange={(v) => 
-                    onChange({ 
-                      drivewayCleaning: { ...services.drivewayCleaning, surfaceType: v as any } 
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="concrete">Concrete</SelectItem>
-                    <SelectItem value="stamped">Stamped Concrete</SelectItem>
-                    <SelectItem value="pavers">Pavers</SelectItem>
-                    <SelectItem value="brick">Brick</SelectItem>
-                    <SelectItem value="stone">Stone</SelectItem>
-                    <SelectItem value="tile">Tile</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-        </ServiceCard>
-        
-        {/* Pressure Washing - for flatwork areas */}
-        <ServiceCard
-          id="pressureWashing"
-          icon={Droplets}
-          title="Pressure Washing"
-          description="Porches, patios, pool decks, and walkways"
-          price={servicePrices.pressureWashing}
-          isEnabled={services.pressureWashing.enabled}
-          onToggle={() => onChange({ 
-            pressureWashing: { ...services.pressureWashing, enabled: !services.pressureWashing.enabled } 
-          })}
-          isFeatured={isFeatured('pressureWashing')}
-        >
-          <div className="space-y-4">
-            {/* Surface Type Selection */}
-            <div className="space-y-2">
-              <Label className="text-sm">Surface Type</Label>
-              <Select
-                value={services.pressureWashing.surfaceType}
-                onValueChange={(v) => 
+    </ServiceCard>
+  );
+
+  const renderDrivewayCleaning = () => (
+    <ServiceCard
+      key="drivewayCleaning"
+      id="drivewayCleaning"
+      icon={Car}
+      title="Driveway Cleaning"
+      description="Power wash your driveway to remove stains and buildup"
+      price={servicePrices.drivewayCleaning}
+      isEnabled={services.drivewayCleaning.enabled}
+      onToggle={() => onChange({ 
+        drivewayCleaning: { ...services.drivewayCleaning, enabled: !services.drivewayCleaning.enabled } 
+      })}
+      isFeatured={isFeatured('drivewayCleaning')}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label className="text-sm">Driveway Area</Label>
+            <div className="flex items-center gap-1">
+              <Input
+                type="number"
+                value={services.drivewayCleaning.sqft || ''}
+                onChange={(e) => 
                   onChange({ 
-                    pressureWashing: { ...services.pressureWashing, surfaceType: v as any } 
+                    drivewayCleaning: { 
+                      ...services.drivewayCleaning, 
+                      sqft: parseInt(e.target.value) || FLATWORK_DEFAULT_SQFT.driveway 
+                    } 
                   })
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="concrete">Concrete</SelectItem>
-                  <SelectItem value="stamped">Stamped Concrete</SelectItem>
-                  <SelectItem value="pavers">Pavers</SelectItem>
-                  <SelectItem value="brick">Brick</SelectItem>
-                  <SelectItem value="stone">Stone</SelectItem>
-                  <SelectItem value="tile">Tile</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Flatwork Areas with sqft inputs */}
-            <div className="space-y-2">
-              <Label className="text-sm">Select Areas to Clean</Label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FlatworkAreaInput
-                  label="Front Porch"
-                  area={services.pressureWashing.frontPorch}
-                  price={servicePrices.pressureWashingBreakdown.frontPorch}
-                  defaultSqft={FLATWORK_DEFAULT_SQFT.frontPorch}
-                  calculatorType="porch"
-                  onChange={(area) => onChange({
-                    pressureWashing: { ...services.pressureWashing, frontPorch: area }
-                  })}
-                />
-                
-                <FlatworkAreaInput
-                  label="Back Patio"
-                  area={services.pressureWashing.backPatio}
-                  price={servicePrices.pressureWashingBreakdown.backPatio}
-                  defaultSqft={FLATWORK_DEFAULT_SQFT.backPatio}
-                  calculatorType="patio"
-                  onChange={(area) => onChange({
-                    pressureWashing: { ...services.pressureWashing, backPatio: area }
-                  })}
-                />
-                
-                <FlatworkAreaInput
-                  label="Pool Deck"
-                  area={services.pressureWashing.poolDeck}
-                  price={servicePrices.pressureWashingBreakdown.poolDeck}
-                  defaultSqft={FLATWORK_DEFAULT_SQFT.poolDeck}
-                  calculatorType="poolDeck"
-                  onChange={(area) => onChange({
-                    pressureWashing: { ...services.pressureWashing, poolDeck: area }
-                  })}
-                />
-                
-                <FlatworkAreaInput
-                  label="Walkways"
-                  area={services.pressureWashing.walkways}
-                  price={servicePrices.pressureWashingBreakdown.walkways}
-                  defaultSqft={FLATWORK_DEFAULT_SQFT.walkways}
-                  calculatorType="walkways"
-                  onChange={(area) => onChange({
-                    pressureWashing: { ...services.pressureWashing, walkways: area }
-                  })}
-                />
-              </div>
+                placeholder={`~${FLATWORK_DEFAULT_SQFT.driveway}`}
+                className="w-28"
+              />
+              <span className="text-sm text-muted-foreground">sq ft</span>
+              <SqftCalculator
+                type="driveway"
+                currentValue={services.drivewayCleaning.sqft}
+                onApply={(sqft) => onChange({ 
+                  drivewayCleaning: { ...services.drivewayCleaning, sqft } 
+                })}
+              />
             </div>
           </div>
-        </ServiceCard>
-        
-        {/* Gutter Cleaning */}
-        <ServiceCard
-          id="gutterCleaning"
-          icon={Home}
-          title="Gutter Cleaning"
-          description="Full gutter and downspout cleaning"
-          price={servicePrices.gutterCleaning}
-          isEnabled={services.gutterCleaning}
-          onToggle={() => onChange({ gutterCleaning: !services.gutterCleaning })}
-          isFeatured={isFeatured('gutterCleaning')}
-        />
-        
-        {/* House Wash */}
-        <ServiceCard
-          id="houseWash"
-          icon={Warehouse}
-          title="House Wash"
-          description="Gentle exterior soft washing"
-          price={servicePrices.houseWash}
-          isEnabled={services.houseWash}
-          onToggle={() => onChange({ houseWash: !services.houseWash })}
-          isFeatured={isFeatured('houseWash')}
-        />
-        
-        {/* Roof Cleaning */}
-        <ServiceCard
-          id="roofCleaning"
-          icon={Cloud}
-          title="Roof Cleaning"
-          description="Safe, low-pressure roof treatment"
-          price={servicePrices.roofCleaning}
-          isEnabled={services.roofCleaning}
-          onToggle={() => onChange({ roofCleaning: !services.roofCleaning })}
-          isFeatured={isFeatured('roofCleaning')}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-sm">Roof Type</Label>
-              <Select
-                value={services.roofType}
-                onValueChange={(v) => onChange({ roofType: v as any })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="asphalt">Asphalt Shingles</SelectItem>
-                  <SelectItem value="tile">Tile</SelectItem>
-                  <SelectItem value="metal">Metal</SelectItem>
-                  <SelectItem value="flat">Flat Roof</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label className="text-sm">Condition</Label>
-              <Select
-                value={services.roofSeverity}
-                onValueChange={(v) => onChange({ roofSeverity: v as any })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="light">Light (minimal buildup)</SelectItem>
-                  <SelectItem value="moderate">Moderate (some staining)</SelectItem>
-                  <SelectItem value="heavy">Heavy (significant buildup)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          
+          <div className="space-y-2">
+            <Label className="text-sm">Surface Type</Label>
+            <Select
+              value={services.drivewayCleaning.surfaceType}
+              onValueChange={(v) => 
+                onChange({ 
+                  drivewayCleaning: { ...services.drivewayCleaning, surfaceType: v as any } 
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="concrete">Concrete</SelectItem>
+                <SelectItem value="stamped">Stamped Concrete</SelectItem>
+                <SelectItem value="pavers">Pavers</SelectItem>
+                <SelectItem value="brick">Brick</SelectItem>
+                <SelectItem value="stone">Stone</SelectItem>
+                <SelectItem value="tile">Tile</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        </ServiceCard>
+        </div>
+      </div>
+    </ServiceCard>
+  );
+
+  const renderPressureWashing = () => (
+    <ServiceCard
+      key="pressureWashing"
+      id="pressureWashing"
+      icon={Droplets}
+      title="Pressure Washing"
+      description="Porches, patios, pool decks, and walkways"
+      price={servicePrices.pressureWashing}
+      isEnabled={services.pressureWashing.enabled}
+      onToggle={() => onChange({ 
+        pressureWashing: { ...services.pressureWashing, enabled: !services.pressureWashing.enabled } 
+      })}
+      isFeatured={isFeatured('pressureWashing')}
+    >
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label className="text-sm">Surface Type</Label>
+          <Select
+            value={services.pressureWashing.surfaceType}
+            onValueChange={(v) => 
+              onChange({ 
+                pressureWashing: { ...services.pressureWashing, surfaceType: v as any } 
+              })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="concrete">Concrete</SelectItem>
+              <SelectItem value="stamped">Stamped Concrete</SelectItem>
+              <SelectItem value="pavers">Pavers</SelectItem>
+              <SelectItem value="brick">Brick</SelectItem>
+              <SelectItem value="stone">Stone</SelectItem>
+              <SelectItem value="tile">Tile</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        <div className="space-y-2">
+          <Label className="text-sm">Select Areas to Clean</Label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FlatworkAreaInput
+              label="Front Porch"
+              area={services.pressureWashing.frontPorch}
+              price={servicePrices.pressureWashingBreakdown.frontPorch}
+              defaultSqft={FLATWORK_DEFAULT_SQFT.frontPorch}
+              calculatorType="porch"
+              onChange={(area) => onChange({
+                pressureWashing: { ...services.pressureWashing, frontPorch: area }
+              })}
+            />
+            
+            <FlatworkAreaInput
+              label="Back Patio"
+              area={services.pressureWashing.backPatio}
+              price={servicePrices.pressureWashingBreakdown.backPatio}
+              defaultSqft={FLATWORK_DEFAULT_SQFT.backPatio}
+              calculatorType="patio"
+              onChange={(area) => onChange({
+                pressureWashing: { ...services.pressureWashing, backPatio: area }
+              })}
+            />
+            
+            <FlatworkAreaInput
+              label="Pool Deck"
+              area={services.pressureWashing.poolDeck}
+              price={servicePrices.pressureWashingBreakdown.poolDeck}
+              defaultSqft={FLATWORK_DEFAULT_SQFT.poolDeck}
+              calculatorType="poolDeck"
+              onChange={(area) => onChange({
+                pressureWashing: { ...services.pressureWashing, poolDeck: area }
+              })}
+            />
+            
+            <FlatworkAreaInput
+              label="Walkways"
+              area={services.pressureWashing.walkways}
+              price={servicePrices.pressureWashingBreakdown.walkways}
+              defaultSqft={FLATWORK_DEFAULT_SQFT.walkways}
+              calculatorType="walkways"
+              onChange={(area) => onChange({
+                pressureWashing: { ...services.pressureWashing, walkways: area }
+              })}
+            />
+          </div>
+        </div>
+      </div>
+    </ServiceCard>
+  );
+
+  const renderGutterCleaning = () => (
+    <ServiceCard
+      key="gutterCleaning"
+      id="gutterCleaning"
+      icon={Home}
+      title="Gutter Cleaning"
+      description="Full gutter and downspout cleaning"
+      price={servicePrices.gutterCleaning}
+      isEnabled={services.gutterCleaning}
+      onToggle={() => onChange({ gutterCleaning: !services.gutterCleaning })}
+      isFeatured={isFeatured('gutterCleaning')}
+    />
+  );
+
+  const renderHouseWash = () => (
+    <ServiceCard
+      key="houseWash"
+      id="houseWash"
+      icon={Warehouse}
+      title="House Wash"
+      description="Gentle exterior soft washing"
+      price={servicePrices.houseWash}
+      isEnabled={services.houseWash}
+      onToggle={() => onChange({ houseWash: !services.houseWash })}
+      isFeatured={isFeatured('houseWash')}
+    />
+  );
+
+  const renderRoofCleaning = () => (
+    <ServiceCard
+      key="roofCleaning"
+      id="roofCleaning"
+      icon={Cloud}
+      title="Roof Cleaning"
+      description="Safe, low-pressure roof treatment"
+      price={servicePrices.roofCleaning}
+      isEnabled={services.roofCleaning}
+      onToggle={() => onChange({ roofCleaning: !services.roofCleaning })}
+      isFeatured={isFeatured('roofCleaning')}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label className="text-sm">Roof Type</Label>
+          <Select
+            value={services.roofType}
+            onValueChange={(v) => onChange({ roofType: v as any })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="asphalt">Asphalt Shingles</SelectItem>
+              <SelectItem value="tile">Tile</SelectItem>
+              <SelectItem value="metal">Metal</SelectItem>
+              <SelectItem value="flat">Flat Roof</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        <div className="space-y-2">
+          <Label className="text-sm">Condition</Label>
+          <Select
+            value={services.roofSeverity}
+            onValueChange={(v) => onChange({ roofSeverity: v as any })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="light">Light (minimal buildup)</SelectItem>
+              <SelectItem value="moderate">Moderate (some staining)</SelectItem>
+              <SelectItem value="heavy">Heavy (significant buildup)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </ServiceCard>
+  );
+
+  // Map service IDs to their render functions
+  const serviceRenderers: Record<string, () => JSX.Element> = {
+    windowCleaning: renderWindowCleaning,
+    drivewayCleaning: renderDrivewayCleaning,
+    pressureWashing: renderPressureWashing,
+    gutterCleaning: renderGutterCleaning,
+    houseWash: renderHouseWash,
+    roofCleaning: renderRoofCleaning,
+  };
+
+  return (
+    <Card className="card-elevated">
+      <CardHeader className="pb-4">
+        <div className="section-header">
+          <div className="section-icon">
+            <Sparkles className="w-5 h-5 text-primary-foreground" />
+          </div>
+          <div>
+            <CardTitle className="text-xl">What service are you looking for today?</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Select all that apply — we'll show you pricing instantly
+            </p>
+          </div>
+        </div>
+      </CardHeader>
+      
+      <CardContent className="space-y-3">
+        {orderedServices.map((serviceId) => serviceRenderers[serviceId]())}
       </CardContent>
     </Card>
   );
