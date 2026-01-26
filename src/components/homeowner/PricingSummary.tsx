@@ -151,17 +151,48 @@ export function PricingSummary({
             )}
             
             {servicePrices.drivewayCleaning > 0 && (
-              <div className="flex justify-between">
-                <span>Driveway Cleaning</span>
-                <span className="font-medium">{formatPrice(servicePrices.drivewayCleaning)}</span>
-              </div>
+              <>
+                <div className="flex justify-between">
+                  <span>Driveway Cleaning</span>
+                  <span className="font-medium">{formatPrice(servicePrices.drivewayCleaning)}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground pl-4 text-xs">
+                  <span>• {additionalServices.drivewayCleaning.sqft.toLocaleString()} sqft × {additionalServices.drivewayCleaning.surfaceType}</span>
+                </div>
+              </>
             )}
             
             {servicePrices.pressureWashing > 0 && (
-              <div className="flex justify-between">
-                <span>Pressure Washing</span>
-                <span className="font-medium">{formatPrice(servicePrices.pressureWashing)}</span>
-              </div>
+              <>
+                <div className="flex justify-between">
+                  <span>Pressure Washing</span>
+                  <span className="font-medium">{formatPrice(servicePrices.pressureWashing)}</span>
+                </div>
+                {servicePrices.pressureWashingBreakdown.frontPorch > 0 && (
+                  <div className="flex justify-between text-muted-foreground pl-4 text-xs">
+                    <span>• Front Porch ({additionalServices.pressureWashing.frontPorch.sqft} sqft)</span>
+                    <span>{formatPrice(servicePrices.pressureWashingBreakdown.frontPorch)}</span>
+                  </div>
+                )}
+                {servicePrices.pressureWashingBreakdown.backPatio > 0 && (
+                  <div className="flex justify-between text-muted-foreground pl-4 text-xs">
+                    <span>• Back Patio ({additionalServices.pressureWashing.backPatio.sqft} sqft)</span>
+                    <span>{formatPrice(servicePrices.pressureWashingBreakdown.backPatio)}</span>
+                  </div>
+                )}
+                {servicePrices.pressureWashingBreakdown.poolDeck > 0 && (
+                  <div className="flex justify-between text-muted-foreground pl-4 text-xs">
+                    <span>• Pool Deck ({additionalServices.pressureWashing.poolDeck.sqft} sqft)</span>
+                    <span>{formatPrice(servicePrices.pressureWashingBreakdown.poolDeck)}</span>
+                  </div>
+                )}
+                {servicePrices.pressureWashingBreakdown.walkways > 0 && (
+                  <div className="flex justify-between text-muted-foreground pl-4 text-xs">
+                    <span>• Walkways ({additionalServices.pressureWashing.walkways.sqft} sqft)</span>
+                    <span>{formatPrice(servicePrices.pressureWashingBreakdown.walkways)}</span>
+                  </div>
+                )}
+              </>
             )}
             
             {servicePrices.gutterCleaning > 0 && (
