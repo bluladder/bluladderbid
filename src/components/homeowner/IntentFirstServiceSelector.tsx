@@ -18,6 +18,7 @@ interface IntentFirstServiceSelectorProps {
   homeDetails: HomeDetails;
   onChange: (updates: Partial<AdditionalServices>) => void;
   onHomeDetailsChange: (updates: Partial<HomeDetails>) => void;
+  featuredService?: 'windowCleaning' | 'gutterCleaning' | 'houseWash' | 'roofCleaning' | 'drivewayCleaning' | 'pressureWashing';
 }
 
 function formatPrice(price: number) {
@@ -38,15 +39,18 @@ interface ServiceCardProps {
   isEnabled: boolean;
   onToggle: () => void;
   children?: React.ReactNode;
+  isFeatured?: boolean;
 }
 
-function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggle, children }: ServiceCardProps) {
+function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggle, children, isFeatured }: ServiceCardProps) {
   return (
     <div 
       className={`relative p-4 rounded-xl border-2 transition-all duration-200 cursor-pointer ${
-        isEnabled 
-          ? 'border-primary bg-primary/5 shadow-md' 
-          : 'border-border hover:border-primary/40 hover:shadow-sm bg-card'
+        isFeatured && !isEnabled
+          ? 'border-primary/60 bg-primary/5 ring-2 ring-primary/20 shadow-md'
+          : isEnabled 
+            ? 'border-primary bg-primary/5 shadow-md' 
+            : 'border-border hover:border-primary/40 hover:shadow-sm bg-card'
       }`}
       onClick={(e) => {
         // Don't toggle if clicking on a child input
@@ -54,6 +58,13 @@ function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggl
         onToggle();
       }}
     >
+      {/* Featured badge */}
+      {isFeatured && (
+        <div className="absolute -top-2.5 left-4 px-2.5 py-0.5 bg-primary text-primary-foreground text-xs font-semibold rounded-full shadow-sm animate-fade-in">
+          ✨ Featured
+        </div>
+      )}
+      
       {/* Selection indicator */}
       <div className={`
         absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-200
@@ -160,9 +171,13 @@ export function IntentFirstServiceSelector({
   servicePrices, 
   homeDetails,
   onChange,
-  onHomeDetailsChange 
+  onHomeDetailsChange,
+  featuredService
 }: IntentFirstServiceSelectorProps) {
   const [windowExpanded, setWindowExpanded] = useState(true);
+  
+  // Helper to check if a service is featured
+  const isFeatured = (serviceId: string) => featuredService === serviceId;
   
   return (
     <Card className="card-elevated">
@@ -190,6 +205,7 @@ export function IntentFirstServiceSelector({
           price={servicePrices.windowCleaningTotal}
           isEnabled={services.windowCleaning}
           onToggle={() => onChange({ windowCleaning: !services.windowCleaning })}
+          isFeatured={isFeatured('windowCleaning')}
         >
           {/* Window Options - shown when enabled */}
           <div className="space-y-4">
@@ -457,6 +473,7 @@ export function IntentFirstServiceSelector({
           onToggle={() => onChange({ 
             drivewayCleaning: { ...services.drivewayCleaning, enabled: !services.drivewayCleaning.enabled } 
           })}
+          isFeatured={isFeatured('drivewayCleaning')}
         >
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -526,6 +543,7 @@ export function IntentFirstServiceSelector({
           onToggle={() => onChange({ 
             pressureWashing: { ...services.pressureWashing, enabled: !services.pressureWashing.enabled } 
           })}
+          isFeatured={isFeatured('pressureWashing')}
         >
           <div className="space-y-4">
             {/* Surface Type Selection */}
@@ -614,6 +632,7 @@ export function IntentFirstServiceSelector({
           price={servicePrices.gutterCleaning}
           isEnabled={services.gutterCleaning}
           onToggle={() => onChange({ gutterCleaning: !services.gutterCleaning })}
+          isFeatured={isFeatured('gutterCleaning')}
         />
         
         {/* House Wash */}
@@ -625,6 +644,7 @@ export function IntentFirstServiceSelector({
           price={servicePrices.houseWash}
           isEnabled={services.houseWash}
           onToggle={() => onChange({ houseWash: !services.houseWash })}
+          isFeatured={isFeatured('houseWash')}
         />
         
         {/* Roof Cleaning */}
@@ -636,6 +656,7 @@ export function IntentFirstServiceSelector({
           price={servicePrices.roofCleaning}
           isEnabled={services.roofCleaning}
           onToggle={() => onChange({ roofCleaning: !services.roofCleaning })}
+          isFeatured={isFeatured('roofCleaning')}
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

@@ -330,6 +330,7 @@ const ServiceLanding = () => {
                   homeDetails={homeDetails}
                   onChange={handleAdditionalServicesChange}
                   onHomeDetailsChange={handleHomeDetailsChange}
+                  featuredService={config.preSelectService}
                 />
               )}
               
