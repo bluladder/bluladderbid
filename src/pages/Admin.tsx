@@ -9,6 +9,7 @@ import { JobberIntegration } from '@/components/admin/JobberIntegration';
 import { TechnicianManager } from '@/components/admin/TechnicianManager';
 import { BusinessHoursSettings } from '@/components/admin/BusinessHoursSettings';
 import { DriveTimeSettings } from '@/components/admin/DriveTimeSettings';
+import { BookingSettings } from '@/components/admin/BookingSettings';
 import { BookingsManager } from '@/components/admin/BookingsManager';
 import { MarketingAnalytics } from '@/components/admin/MarketingAnalytics';
 import { AdminAvailabilityViewer } from '@/components/admin/AdminAvailabilityViewer';
@@ -18,7 +19,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
 export default function Admin() {
   const { isAdmin, loading, user } = useIsAdmin();
   const { signOut } = useAuth();
@@ -167,6 +167,7 @@ export default function Admin() {
             </TabsContent>
             
             <TabsContent value="booking" className="space-y-6">
+              <BookingSettings />
               <BusinessHoursSettings />
               <DriveTimeSettings />
               <AdminAvailabilityViewer 
