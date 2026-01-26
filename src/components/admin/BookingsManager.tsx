@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import { 
   Calendar, 
   User, 
@@ -17,10 +20,13 @@ import {
   MousePointer,
   Search,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  CalendarIcon
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, subDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
+
+type DateRange = '7d' | '30d' | '90d' | 'all' | 'custom';
 
 interface UtmParams {
   utm_source?: string;
@@ -253,6 +259,9 @@ export function BookingsManager() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange>('30d');
+  const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
+  const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -277,7 +286,7 @@ export function BookingsManager() {
           technician:technicians(name)
         `)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(500);
 
       if (error) throw error;
       setBookings((data as unknown as Booking[]) || []);
@@ -293,20 +302,115 @@ export function BookingsManager() {
     fetchBookings();
   }, []);
 
-  // Attribution stats
-  const attributionStats = bookings.reduce((acc, b) => {
+  // Filter bookings by date range
+  const filteredBookings = useMemo(() => {
+    if (dateRange === 'all') return bookings;
+    
+    const now = new Date();
+    let startDate: Date;
+    let endDate = endOfDay(now);
+    
+    if (dateRange === 'custom') {
+      if (!customStartDate || !customEndDate) return bookings;
+      startDate = startOfDay(customStartDate);
+      endDate = endOfDay(customEndDate);
+    } else {
+      const days = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
+      startDate = startOfDay(subDays(now, days));
+    }
+    
+    return bookings.filter(b => {
+      const bookingDate = parseISO(b.created_at);
+      return isWithinInterval(bookingDate, { start: startDate, end: endDate });
+    });
+  }, [bookings, dateRange, customStartDate, customEndDate]);
+
+  // Attribution stats (using filtered bookings)
+  const attributionStats = filteredBookings.reduce((acc, b) => {
     const source = b.utm_params_json?.utm_source || 'Direct';
     acc[source] = (acc[source] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
-  const totalRevenue = bookings.reduce((sum, b) => sum + b.total, 0);
-  const attributedBookings = bookings.filter(b => 
+  const totalRevenue = filteredBookings.reduce((sum, b) => sum + b.total, 0);
+  const attributedBookings = filteredBookings.filter(b => 
     b.utm_params_json && Object.keys(b.utm_params_json).some(k => b.utm_params_json![k as keyof UtmParams])
   );
 
   return (
     <div className="space-y-6">
+      {/* Date Range Filter */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-muted-foreground mr-2">Date Range:</span>
+            {(['7d', '30d', '90d', 'all'] as const).map((range) => (
+              <Button
+                key={range}
+                variant={dateRange === range ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setDateRange(range)}
+              >
+                {range === 'all' ? 'All Time' : `Last ${range.replace('d', ' days')}`}
+              </Button>
+            ))}
+            
+            {/* Custom Date Range */}
+            <div className="flex items-center gap-2 ml-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={dateRange === 'custom' ? 'default' : 'outline'}
+                    size="sm"
+                    className={cn(!customStartDate && 'text-muted-foreground')}
+                  >
+                    <CalendarIcon className="w-4 h-4 mr-2" />
+                    {customStartDate ? format(customStartDate, 'MMM d') : 'Start'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={customStartDate}
+                    onSelect={(date) => {
+                      setCustomStartDate(date);
+                      if (date) setDateRange('custom');
+                    }}
+                    initialFocus
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+              <span className="text-muted-foreground">–</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={dateRange === 'custom' ? 'default' : 'outline'}
+                    size="sm"
+                    className={cn(!customEndDate && 'text-muted-foreground')}
+                  >
+                    <CalendarIcon className="w-4 h-4 mr-2" />
+                    {customEndDate ? format(customEndDate, 'MMM d') : 'End'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={customEndDate}
+                    onSelect={(date) => {
+                      setCustomEndDate(date);
+                      if (date) setDateRange('custom');
+                    }}
+                    initialFocus
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -315,7 +419,7 @@ export function BookingsManager() {
               <Calendar className="w-4 h-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Total Bookings</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{bookings.length}</p>
+            <p className="text-2xl font-bold mt-1">{filteredBookings.length}</p>
           </CardContent>
         </Card>
         
@@ -383,8 +487,14 @@ export function BookingsManager() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Recent Bookings</CardTitle>
-              <CardDescription>View booking details and marketing attribution</CardDescription>
+              <CardTitle>Bookings ({filteredBookings.length})</CardTitle>
+              <CardDescription>
+                {dateRange === 'custom' && customStartDate && customEndDate
+                  ? `${format(customStartDate, 'MMM d, yyyy')} – ${format(customEndDate, 'MMM d, yyyy')}`
+                  : dateRange === 'all' 
+                    ? 'All time'
+                    : `Last ${dateRange.replace('d', ' days')}`}
+              </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={fetchBookings} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -397,14 +507,14 @@ export function BookingsManager() {
             <div className="text-center py-8 text-muted-foreground">
               Loading bookings...
             </div>
-          ) : bookings.length === 0 ? (
+          ) : filteredBookings.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No bookings found
+              No bookings found for this date range
             </div>
           ) : (
             <ScrollArea className="max-h-[600px] pr-4">
               <div className="space-y-3">
-                {bookings.map((booking) => (
+                {filteredBookings.map((booking) => (
                   <BookingCard
                     key={booking.id}
                     booking={booking}
