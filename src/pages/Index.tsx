@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
 import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
-import { WindowPricingDisplay } from '@/components/homeowner/WindowPricingDisplay';
+
 import { ServicePlanSelector } from '@/components/homeowner/ServicePlanSelector';
 import { PricingSummary } from '@/components/homeowner/PricingSummary';
 import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
@@ -260,8 +260,6 @@ const Index = () => {
                 onChange={handleHomeDetailsChange} 
               />
               
-              {/* Window Pricing Display */}
-              <WindowPricingDisplay servicePrices={servicePrices} />
 
               {/* Intent-First Flow: Services + Upsell */}
               <div className="grid gap-8 lg:grid-cols-3">
