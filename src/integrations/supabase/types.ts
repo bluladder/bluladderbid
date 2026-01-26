@@ -23,6 +23,7 @@ export type Database = {
           duration_minutes: number
           home_details_json: Json
           id: string
+          is_hidden: boolean
           jobber_job_id: string | null
           jobber_quote_id: string | null
           jobber_visit_id: string | null
@@ -46,6 +47,7 @@ export type Database = {
           duration_minutes: number
           home_details_json: Json
           id?: string
+          is_hidden?: boolean
           jobber_job_id?: string | null
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
@@ -69,6 +71,7 @@ export type Database = {
           duration_minutes?: number
           home_details_json?: Json
           id?: string
+          is_hidden?: boolean
           jobber_job_id?: string | null
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null

@@ -33,7 +33,10 @@ import {
   ChevronDown,
   ChevronUp,
   CalendarIcon,
-  Trash2
+  Trash2,
+  EyeOff,
+  Eye,
+  RotateCcw
 } from 'lucide-react';
 import { format, parseISO, subDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
 import { toast } from 'sonner';
@@ -63,6 +66,7 @@ interface Booking {
   home_details_json: Record<string, unknown>;
   utm_params_json: UtmParams | null;
   created_at: string;
+  is_hidden: boolean;
   customer: {
     first_name: string | null;
     last_name: string | null;
@@ -152,14 +156,17 @@ function BookingCard({
   booking, 
   expanded, 
   onToggle, 
-  onDelete 
+  onDelete,
+  onHide,
+  onRestore,
 }: { 
   booking: Booking; 
   expanded: boolean; 
   onToggle: () => void;
   onDelete: (id: string) => void;
+  onHide: (id: string) => void;
+  onRestore: (id: string) => void;
 }) {
-  const [isDeleting, setIsDeleting] = useState(false);
   const customerName = [booking.customer?.first_name, booking.customer?.last_name]
     .filter(Boolean).join(' ') || 'Unknown';
 
@@ -176,6 +183,12 @@ function BookingCard({
               <Badge className={getStatusColor(booking.status)} variant="secondary">
                 {booking.status.replace('_', ' ')}
               </Badge>
+              {booking.is_hidden && (
+                <Badge variant="outline" className="text-xs bg-muted">
+                  <EyeOff className="w-3 h-3 mr-1" />
+                  Hidden
+                </Badge>
+              )}
             </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
@@ -273,9 +286,35 @@ function BookingCard({
             </>
           )}
 
-          {/* Delete Action */}
+          {/* Actions */}
           <Separator />
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {booking.is_hidden ? (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRestore(booking.id);
+                }}
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Restore Booking
+              </Button>
+            ) : (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onHide(booking.id);
+                }}
+              >
+                <EyeOff className="w-4 h-4 mr-2" />
+                Hide Booking
+              </Button>
+            )}
+            
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button 
@@ -284,15 +323,15 @@ function BookingCard({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
-                  Delete Booking
+                  Delete Permanently
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Booking?</AlertDialogTitle>
+                  <AlertDialogTitle>Permanently Delete Booking?</AlertDialogTitle>
                   <AlertDialogDescription>
                     This will permanently delete booking <strong>{booking.reference_number}</strong> for {customerName}.
-                    This action cannot be undone and will affect your analytics data.
+                    This action cannot be undone. Consider hiding the booking instead if you want to keep it for records.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -301,7 +340,7 @@ function BookingCard({
                     onClick={() => onDelete(booking.id)}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
-                    Delete
+                    Delete Permanently
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -320,6 +359,7 @@ export function BookingsManager() {
   const [dateRange, setDateRange] = useState<DateRange>('30d');
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
+  const [showHidden, setShowHidden] = useState(false);
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -340,6 +380,7 @@ export function BookingsManager() {
           home_details_json,
           utm_params_json,
           created_at,
+          is_hidden,
           customer:customers(first_name, last_name, email, phone),
           technician:technicians(name)
         `)
@@ -365,13 +406,47 @@ export function BookingsManager() {
       
       if (error) throw error;
       
-      // Remove from local state
       setBookings(prev => prev.filter(b => b.id !== id));
       setExpandedId(null);
-      toast.success('Booking deleted successfully');
+      toast.success('Booking permanently deleted');
     } catch (err) {
       console.error('Failed to delete booking:', err);
       toast.error('Failed to delete booking');
+    }
+  };
+
+  const hideBooking = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ is_hidden: true })
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      setBookings(prev => prev.map(b => b.id === id ? { ...b, is_hidden: true } : b));
+      setExpandedId(null);
+      toast.success('Booking hidden from analytics');
+    } catch (err) {
+      console.error('Failed to hide booking:', err);
+      toast.error('Failed to hide booking');
+    }
+  };
+
+  const restoreBooking = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('bookings')
+        .update({ is_hidden: false })
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      setBookings(prev => prev.map(b => b.id === id ? { ...b, is_hidden: false } : b));
+      toast.success('Booking restored');
+    } catch (err) {
+      console.error('Failed to restore booking:', err);
+      toast.error('Failed to restore booking');
     }
   };
 
@@ -379,16 +454,24 @@ export function BookingsManager() {
     fetchBookings();
   }, []);
 
-  // Filter bookings by date range
+  // Filter bookings by date range and hidden status
   const filteredBookings = useMemo(() => {
-    if (dateRange === 'all') return bookings;
+    let filtered = bookings;
+    
+    // Filter by hidden status
+    if (!showHidden) {
+      filtered = filtered.filter(b => !b.is_hidden);
+    }
+    
+    // Filter by date range
+    if (dateRange === 'all') return filtered;
     
     const now = new Date();
     let startDate: Date;
     let endDate = endOfDay(now);
     
     if (dateRange === 'custom') {
-      if (!customStartDate || !customEndDate) return bookings;
+      if (!customStartDate || !customEndDate) return filtered;
       startDate = startOfDay(customStartDate);
       endDate = endOfDay(customEndDate);
     } else {
@@ -396,11 +479,13 @@ export function BookingsManager() {
       startDate = startOfDay(subDays(now, days));
     }
     
-    return bookings.filter(b => {
+    return filtered.filter(b => {
       const bookingDate = parseISO(b.created_at);
       return isWithinInterval(bookingDate, { start: startDate, end: endDate });
     });
-  }, [bookings, dateRange, customStartDate, customEndDate]);
+  }, [bookings, dateRange, customStartDate, customEndDate, showHidden]);
+
+  const hiddenCount = bookings.filter(b => b.is_hidden).length;
 
   // Attribution stats (using filtered bookings)
   const attributionStats = filteredBookings.reduce((acc, b) => {
@@ -483,6 +568,24 @@ export function BookingsManager() {
                   />
                 </PopoverContent>
               </Popover>
+            </div>
+            
+            {/* Show Hidden Toggle */}
+            <div className="flex items-center gap-2 ml-auto">
+              <Button
+                variant={showHidden ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setShowHidden(!showHidden)}
+                className="gap-2"
+              >
+                {showHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                {showHidden ? 'Showing Hidden' : 'Show Hidden'}
+                {hiddenCount > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {hiddenCount}
+                  </Badge>
+                )}
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -598,6 +701,8 @@ export function BookingsManager() {
                     expanded={expandedId === booking.id}
                     onToggle={() => setExpandedId(expandedId === booking.id ? null : booking.id)}
                     onDelete={deleteBooking}
+                    onHide={hideBooking}
+                    onRestore={restoreBooking}
                   />
                 ))}
               </div>
