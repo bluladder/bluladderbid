@@ -22,9 +22,10 @@ import {
   Funnel,
   LabelList,
 } from 'recharts';
-import { RefreshCw, TrendingUp, Users, DollarSign, Megaphone, Filter, FileText, ArrowRightLeft, Tag, Percent } from 'lucide-react';
+import { RefreshCw, TrendingUp, Users, DollarSign, Megaphone, Filter, FileText, ArrowRightLeft, Tag, Percent, MousePointerClick } from 'lucide-react';
 import { format, parseISO, subDays, startOfDay, endOfDay } from 'date-fns';
 import { toast } from 'sonner';
+import { BookingFunnelAnalytics } from './BookingFunnelAnalytics';
 
 interface UtmParams {
   utm_source?: string;
@@ -542,9 +543,10 @@ export function MarketingAnalytics() {
       )}
 
       {/* Charts Grid */}
-      <Tabs defaultValue="funnel" className="space-y-4">
+      <Tabs defaultValue="booking-funnel" className="space-y-4">
         <TabsList className="flex-wrap">
-          <TabsTrigger value="funnel">Conversion Funnel</TabsTrigger>
+          <TabsTrigger value="booking-funnel">Booking Flow</TabsTrigger>
+          <TabsTrigger value="funnel">Quote Funnel</TabsTrigger>
           <TabsTrigger value="discounts">Discount Codes</TabsTrigger>
           <TabsTrigger value="trends">Trends Over Time</TabsTrigger>
           <TabsTrigger value="source">By Source</TabsTrigger>
@@ -552,6 +554,11 @@ export function MarketingAnalytics() {
           <TabsTrigger value="campaign">By Campaign</TabsTrigger>
           <TabsTrigger value="preset">By Preset</TabsTrigger>
         </TabsList>
+
+        {/* Booking Flow Funnel Tab */}
+        <TabsContent value="booking-funnel">
+          <BookingFunnelAnalytics dateRange={dateRange} />
+        </TabsContent>
 
         {/* Conversion Funnel Tab */}
         <TabsContent value="funnel" className="space-y-4">
