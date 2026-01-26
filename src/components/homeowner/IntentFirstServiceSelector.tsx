@@ -70,10 +70,12 @@ function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggl
         </div>
         
         <div className="flex items-center gap-2 flex-shrink-0">
-          {price > 0 && (
-            <span className="text-xs text-muted-foreground">{formatPrice(price)}</span>
+          {price > 0 ? (
+            <span className="text-sm font-semibold text-primary">{formatPrice(price)}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground italic">Get quote</span>
           )}
-          <div className="w-5 h-5 rounded-full flex items-center justify-center bg-muted/80 text-muted-foreground">
+          <div className="w-5 h-5 rounded-full flex items-center justify-center bg-primary/10 text-primary">
             <Plus className="w-3 h-3" />
           </div>
         </div>
