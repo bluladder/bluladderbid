@@ -1,14 +1,18 @@
-import { Sparkles, Check, Star, ArrowLeft, Percent, Calendar } from 'lucide-react';
+import { Sparkles, Check, Star, ArrowLeft, Percent, Calendar, Settings2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { BundleTier } from '@/types/homeowner';
+import { PlanCustomizeDrawer } from './PlanCustomizeDrawer';
+import type { BundleTier, WindowFrequencyConfig } from '@/types/homeowner';
 
 interface ServicePlanSelectorProps {
   bundles: BundleTier[];
   selectedTier: 'good' | 'better' | 'best' | null;
   onSelectTier: (tier: 'good' | 'better' | 'best') => void;
   onBack: () => void;
+  baseExteriorPrice: number;
+  baseInteriorPrice: number;
+  onCustomizePlan?: (tier: 'good' | 'better' | 'best', config: WindowFrequencyConfig) => void;
 }
 
 function formatPrice(price: number) {
@@ -25,6 +29,9 @@ export function ServicePlanSelector({
   selectedTier,
   onSelectTier,
   onBack,
+  baseExteriorPrice,
+  baseInteriorPrice,
+  onCustomizePlan,
 }: ServicePlanSelectorProps) {
   return (
     <div className="space-y-6">
@@ -101,7 +108,7 @@ export function ServicePlanSelector({
                 </div>
                 
                 {/* Window Frequency Highlight */}
-                <div className="p-3 rounded-lg bg-muted/50 mb-4">
+                <div className="p-3 rounded-lg bg-muted/50 mb-2">
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="w-4 h-4 text-primary" />
                     <span className="font-medium">Window Cleaning</span>
@@ -118,6 +125,26 @@ export function ServicePlanSelector({
                     )}
                   </div>
                 </div>
+                
+                {/* Customize Button */}
+                {onCustomizePlan && (
+                  <PlanCustomizeDrawer
+                    bundle={bundle}
+                    baseExteriorPrice={baseExteriorPrice}
+                    baseInteriorPrice={baseInteriorPrice}
+                    onCustomize={(config) => onCustomizePlan(bundle.tier, config)}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full mb-4 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                      Customize Frequency
+                    </Button>
+                  </PlanCustomizeDrawer>
+                )}
                 
                 {/* Addon Discount Badge */}
                 {bundle.addonDiscountPercent > 0 && (

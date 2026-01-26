@@ -297,6 +297,13 @@ const Index = () => {
                         setFlowState('plan-selected');
                       }}
                       onBack={handleBackToSelection}
+                      baseExteriorPrice={servicePrices.exteriorWindows}
+                      baseInteriorPrice={servicePrices.interiorWindows}
+                      onCustomizePlan={(tier, config) => {
+                        console.log('Customize plan:', tier, config);
+                        toast.success(`${tier.charAt(0).toUpperCase() + tier.slice(1)} plan customized!`);
+                        // TODO: Apply customization to bundle calculation
+                      }}
                     />
                   )}
                 </div>
