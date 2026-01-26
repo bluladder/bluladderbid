@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Calendar, Download, Check, Sparkles } from 'lucide-react';
+import { Calendar, Download, Check, Sparkles, ArrowLeft } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { DiscountCodeInput } from './DiscountCodeInput';
+import { BookingFlow } from '@/components/booking/BookingFlow';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 
@@ -32,6 +33,7 @@ export function OneTimeSummary({
   onGetStarted 
 }: OneTimeSummaryProps) {
   const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
+  const [showBookingFlow, setShowBookingFlow] = useState(false);
   
   // Calculate discounted total
   const subtotal = servicePrices.grandTotal;
@@ -45,6 +47,20 @@ export function OneTimeSummary({
   }
   const finalTotal = subtotal - discountAmount;
   const hasServices = servicePrices.grandTotal > 0;
+
+  // Show booking flow
+  if (showBookingFlow) {
+    return (
+      <BookingFlow
+        servicePrices={servicePrices}
+        additionalServices={additionalServices}
+        homeDetails={homeDetails}
+        appliedDiscount={appliedDiscount}
+        discountAmount={discountAmount}
+        onCancel={() => setShowBookingFlow(false)}
+      />
+    );
+  }
   
   return (
     <Card className="card-summary">
@@ -234,11 +250,11 @@ export function OneTimeSummary({
         <div className="space-y-3 pt-2">
           <Button 
             className="w-full btn-primary h-12 text-base"
-            onClick={onGetStarted}
+            onClick={() => setShowBookingFlow(true)}
             disabled={!hasServices}
           >
             <Calendar className="w-5 h-5 mr-2" />
-            Schedule Appointment
+            Book Now
           </Button>
           
           <Button 
