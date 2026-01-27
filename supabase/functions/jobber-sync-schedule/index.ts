@@ -47,7 +47,7 @@ async function fetchAllVisits(startDate: string, endDate: string): Promise<Visit
   const maxPages = 50; // Safety limit
 
   const query = `
-    query GetVisits($after: String, $startDate: DateTime!, $endDate: DateTime!) {
+    query GetVisits($after: String, $startDate: ISO8601DateTime!, $endDate: ISO8601DateTime!) {
       visits(
         first: 100,
         after: $after,
