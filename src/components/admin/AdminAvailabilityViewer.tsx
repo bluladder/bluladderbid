@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -91,6 +91,9 @@ export function AdminAvailabilityViewer({
   const [overrideMode, setOverrideMode] = useState(false);
   const [pendingOverrideSlot, setPendingOverrideSlot] = useState<TimeSlot | null>(null);
 
+  // Debounce availability requests so typing an address doesn't spam the provider.
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const fetchAvailability = async () => {
     setIsLoading(true);
     setError(null);
@@ -100,7 +103,9 @@ export function AdminAvailabilityViewer({
         body: {
           services,
           startDate: format(new Date(), 'yyyy-MM-dd'),
-          daysToCheck: 14,
+          // Keep admin requests small to avoid triggering provider throttling.
+          // The admin can page forward/back as needed instead of prefetching weeks at a time.
+          daysToCheck: 3,
           customerAddress,
           includeExcluded: true, // Admin mode
         },
@@ -141,9 +146,22 @@ export function AdminAvailabilityViewer({
   };
 
   useEffect(() => {
-    if (services.length > 0) {
-      fetchAvailability();
+    if (services.length === 0) return;
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
     }
+
+    debounceTimerRef.current = setTimeout(() => {
+      fetchAvailability();
+    }, 800);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+    };
   }, [services, customerAddress]);
 
   // Combine and filter slots for selected date
