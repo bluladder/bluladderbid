@@ -502,10 +502,14 @@ Deno.serve(async (req) => {
     const fromDate = startDate ? new Date(startDate) : now;
     const toDate = new Date(fromDate.getTime() + effectiveDaysToCheck * 24 * 60 * 60 * 1000);
 
-    console.log(`Querying local busy blocks from ${fromDate.toISOString()} to ${toDate.toISOString()}`);
+    console.log(`[Availability] 🔍 Querying local busy blocks from ${fromDate.toISOString()} to ${toDate.toISOString()}`);
+    console.log(`[Availability] 📋 Input params: services=${JSON.stringify(services)}, daysToCheck=${effectiveDaysToCheck}`);
+    console.log(`[Availability] 👷 Eligible technicians: ${eligibleTechs.map(t => `${t.name} (${t.jobberUserId})`).join(', ')}`);
 
     // ========== KEY CHANGE: Query local jobber_busy_blocks instead of Jobber API ==========
     const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
+    
+    console.log(`[Availability] 🔎 Querying crew_ids: ${techJobberIds.join(', ')}`);
     
     // Overlap-safe query: block starts before range ends AND ends after range starts
     // Include both "scheduled" and "in_progress" to block techs with ongoing jobs
@@ -518,14 +522,21 @@ Deno.serve(async (req) => {
       .in("status", ["scheduled", "in_progress"]);
 
     if (blocksError) {
-      console.error("Failed to fetch busy blocks:", blocksError);
+      console.error("[Availability] ❌ Failed to fetch busy blocks:", blocksError);
       return new Response(
         JSON.stringify({ error: "Failed to load schedule data", slots: [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
       );
     }
 
-    console.log(`Found ${busyBlocks?.length || 0} busy blocks from local mirror`);
+    console.log(`[Availability] ✅ Found ${busyBlocks?.length || 0} busy blocks from local mirror`);
+    
+    // Debug: Log each busy block for transparency
+    for (const block of (busyBlocks || [])) {
+      const startLocal = new Date(block.start_at).toLocaleString('en-US', { timeZone: businessTimezone });
+      const endLocal = new Date(block.end_at).toLocaleString('en-US', { timeZone: businessTimezone });
+      console.log(`[Availability]    📅 Block: crew=${block.crew_id.slice(-10)}, ${startLocal} - ${endLocal}, status=${block.status}`);
+    }
 
     // Build a map of busy times per technician with buffer expansion
     const busyTimesByTech: Record<string, Array<{ 
