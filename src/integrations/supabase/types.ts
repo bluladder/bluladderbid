@@ -451,31 +451,37 @@ export type Database = {
       }
       jobber_webhook_events: {
         Row: {
-          event_id: string
+          event_id: string | null
+          headers: Json | null
           id: string
-          payload: Json
+          payload: Json | null
           processed_at: string | null
           processing_error: string | null
+          raw_body: string | null
           received_at: string
-          topic: string
+          topic: string | null
         }
         Insert: {
-          event_id: string
+          event_id?: string | null
+          headers?: Json | null
           id?: string
-          payload: Json
+          payload?: Json | null
           processed_at?: string | null
           processing_error?: string | null
+          raw_body?: string | null
           received_at?: string
-          topic: string
+          topic?: string | null
         }
         Update: {
-          event_id?: string
+          event_id?: string | null
+          headers?: Json | null
           id?: string
-          payload?: Json
+          payload?: Json | null
           processed_at?: string | null
           processing_error?: string | null
+          raw_body?: string | null
           received_at?: string
-          topic?: string
+          topic?: string | null
         }
         Relationships: []
       }

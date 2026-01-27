@@ -15,6 +15,22 @@ interface JobberWebhookPayload {
   data?: Record<string, unknown>;
 }
 
+// Convert Headers to plain object for logging
+function headersToObject(headers: Headers): Record<string, string> {
+  const obj: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    // Redact sensitive headers in logs but keep for storage
+    obj[key] = value;
+  });
+  return obj;
+}
+
+// Truncate string to max length
+function truncate(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen) + `...[truncated, total ${str.length} chars]`;
+}
+
 // Generate a unique event ID from the payload
 function generateEventId(payload: JobberWebhookPayload): string {
   const timestamp = Date.now();
@@ -25,7 +41,6 @@ function generateEventId(payload: JobberWebhookPayload): string {
 async function fetchVisitDetails(visitId: string) {
   console.log(`[Webhook] 🔍 Fetching visit details for: ${visitId}`);
   
-  // Use assignedUsers (correct for 2025-04-16 schema), not assignedServicers
   const query = `
     query GetVisit($id: EncodedId!) {
       visit(id: $id) {
@@ -118,7 +133,6 @@ async function upsertBusyBlock(
   
   console.log(`[Webhook] 💾 Upserting busy blocks for ${assignees.length} assignee(s)`);
   
-  // Create a busy block for each assigned crew member
   for (const assignee of assignees) {
     const address = visit.job?.property?.address;
     const fullAddress = address 
@@ -179,8 +193,10 @@ async function markBusyBlockCancelled(
 
 Deno.serve(async (req) => {
   const requestId = crypto.randomUUID().slice(0, 8);
+  const receivedAt = new Date().toISOString();
+  
   console.log(`\n[Webhook] ═══════════════════════════════════════`);
-  console.log(`[Webhook] 📨 Request received (${requestId})`);
+  console.log(`[Webhook] 📨 Request received (${requestId}) at ${receivedAt}`);
   console.log(`[Webhook]    Method: ${req.method}`);
   console.log(`[Webhook]    URL: ${req.url}`);
 
@@ -189,6 +205,110 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Check if DEBUG_MODE is enabled via environment variable
+  const DEBUG_MODE = Deno.env.get("JOBBER_WEBHOOK_DEBUG") === "true";
+  console.log(`[Webhook] 🔧 DEBUG_MODE (env): ${DEBUG_MODE}`);
+
+  // Capture all headers for logging
+  const headersObj = headersToObject(req.headers);
+  console.log(`[Webhook] 📋 Headers received:`, JSON.stringify(headersObj, null, 2));
+
+  // Read raw body
+  let rawBody = "";
+  try {
+    rawBody = await req.text();
+    console.log(`[Webhook] 📦 Raw body length: ${rawBody.length} chars`);
+    console.log(`[Webhook] 📦 Raw body preview: ${truncate(rawBody, 500)}`);
+  } catch (e) {
+    console.error(`[Webhook] ❌ Failed to read body:`, e);
+    // In debug mode, still return 200 to keep Jobber happy
+    if (DEBUG_MODE) {
+      return new Response(
+        JSON.stringify({ ok: true, debug: true, error: "Failed to read body" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      );
+    }
+    return new Response(
+      JSON.stringify({ error: "Failed to read body" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+    );
+  }
+
+  // Try to parse JSON
+  let parsedJson: unknown = null;
+  let eventType: string | null = null;
+  
+  try {
+    parsedJson = JSON.parse(rawBody);
+    // Try to extract event type from various possible fields
+    const p = parsedJson as Record<string, unknown>;
+    eventType = (p.webHookEvent || p.event || p.topic || p.type || 
+                 (p.data as Record<string, unknown>)?.type || null) as string | null;
+    console.log(`[Webhook] ✅ JSON parsed successfully, event_type: ${eventType}`);
+  } catch (e) {
+    console.log(`[Webhook] ⚠️ JSON parse failed (might be form data or other format)`);
+  }
+
+  // Initialize Supabase with service role for DB writes
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error(`[Webhook] ❌ Missing Supabase credentials`);
+    return new Response(
+      JSON.stringify({ ok: DEBUG_MODE, error: "Server configuration error" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: DEBUG_MODE ? 200 : 500 }
+    );
+  }
+  
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  // ======== DEBUG MODE: Log everything, accept all, return 200 ========
+  if (DEBUG_MODE) {
+    console.log(`[Webhook] 🧪 DEBUG MODE ACTIVE - skipping verification, logging all`);
+    
+    // Store in jobber_webhook_events for debugging
+    const debugEventId = `debug-${requestId}-${Date.now()}`;
+    const { error: insertError } = await supabase
+      .from("jobber_webhook_events")
+      .insert({
+        event_id: debugEventId,
+        topic: eventType || 'unknown',
+        received_at: receivedAt,
+        headers: headersObj,
+        raw_body: truncate(rawBody, 20000),
+        payload: parsedJson,
+      });
+
+    if (insertError) {
+      console.error(`[Webhook] ❌ Failed to store debug event:`, insertError.message);
+    } else {
+      console.log(`[Webhook] ✅ Debug event stored with ID: ${debugEventId}`);
+    }
+
+    // Log summary line for easy grep
+    const payloadId = parsedJson ? ((parsedJson as Record<string, unknown>).itemId || 
+                                     (parsedJson as Record<string, unknown>).id || 'no-id') : 'no-parse';
+    console.log(`[Webhook] 📝 SUMMARY: event_type=${eventType} | received_at=${receivedAt} | payload_id=${payloadId}`);
+    
+    console.log(`[Webhook] ═══════════════════════════════════════\n`);
+    
+    // Always return 200 in debug mode
+    return new Response(
+      JSON.stringify({ 
+        ok: true, 
+        debug: true,
+        requestId,
+        eventType,
+        receivedAt,
+        stored: !insertError,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+    );
+  }
+
+  // ======== PRODUCTION MODE: Normal verification + processing ========
+  
   if (req.method !== "POST") {
     console.log(`[Webhook] ❌ Method not allowed: ${req.method}`);
     return new Response(
@@ -197,11 +317,7 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Check for debug mode
-  const isDebugMode = req.headers.get("x-debug-webhook") === "true";
-  console.log(`[Webhook]    Debug mode: ${isDebugMode}`);
-
-  // Verify webhook secret
+  // Verify webhook secret (production only)
   const webhookSecret = Deno.env.get("JOBBER_WEBHOOK_SECRET");
   const providedSecret = req.headers.get("x-webhook-secret");
   
@@ -209,8 +325,7 @@ Deno.serve(async (req) => {
   console.log(`[Webhook]    Expected secret configured: ${!!webhookSecret}`);
   console.log(`[Webhook]    Provided secret present: ${!!providedSecret}`);
   
-  // In debug mode, skip secret verification
-  if (!isDebugMode && webhookSecret && providedSecret !== webhookSecret) {
+  if (webhookSecret && providedSecret !== webhookSecret) {
     console.log(`[Webhook] ❌ Secret mismatch - rejecting`);
     return new Response(
       JSON.stringify({ error: "Unauthorized" }),
@@ -224,18 +339,8 @@ Deno.serve(async (req) => {
     console.log(`[Webhook] ⚠️ No secret configured - accepting all requests`);
   }
 
-  // Parse payload
-  let payload: JobberWebhookPayload;
-  let rawBody: string;
-  
-  try {
-    rawBody = await req.text();
-    payload = JSON.parse(rawBody);
-    console.log(`[Webhook] 📦 Payload parsed:`);
-    console.log(`[Webhook]    Event: ${payload.webHookEvent}`);
-    console.log(`[Webhook]    Item ID: ${payload.itemId}`);
-    console.log(`[Webhook]    Data keys: ${payload.data ? Object.keys(payload.data).join(', ') : 'none'}`);
-  } catch (e) {
+  // Validate payload structure
+  if (!parsedJson) {
     console.log(`[Webhook] ❌ Invalid JSON payload`);
     return new Response(
       JSON.stringify({ error: "Invalid JSON payload" }),
@@ -243,44 +348,20 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Debug mode - return parsed info without processing
-  if (isDebugMode) {
-    console.log(`[Webhook] 🧪 Debug mode - returning parsed payload without processing`);
+  const payload = parsedJson as JobberWebhookPayload;
+  
+  if (!payload.webHookEvent || !payload.itemId) {
+    console.log(`[Webhook] ❌ Missing required fields (webHookEvent, itemId)`);
     return new Response(
-      JSON.stringify({
-        debug: true,
-        requestId,
-        parsed: {
-          webHookEvent: payload.webHookEvent,
-          itemId: payload.itemId,
-          dataKeys: payload.data ? Object.keys(payload.data) : [],
-          rawPayload: payload,
-        },
-        configuration: {
-          webhookSecretConfigured: !!webhookSecret,
-          supabaseConfigured: !!Deno.env.get("SUPABASE_URL"),
-        },
-        supportedEvents: [
-          "VISIT_SCHEDULED",
-          "VISIT_RESCHEDULED", 
-          "VISIT_UPDATED",
-          "VISIT_COMPLETED",
-          "VISIT_CANCELLED",
-          "VISIT_DELETED",
-          "JOB_CREATED",
-          "JOB_UPDATED",
-          "JOB_COMPLETED",
-          "JOB_CANCELLED",
-        ],
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: "Missing required fields" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
     );
   }
 
-  // Initialize Supabase
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  console.log(`[Webhook] 📦 Payload parsed:`);
+  console.log(`[Webhook]    Event: ${payload.webHookEvent}`);
+  console.log(`[Webhook]    Item ID: ${payload.itemId}`);
+  console.log(`[Webhook]    Data keys: ${payload.data ? Object.keys(payload.data).join(', ') : 'none'}`);
 
   const eventId = generateEventId(payload);
   console.log(`[Webhook] 🆔 Generated event ID: ${eventId}`);
@@ -293,6 +374,8 @@ Deno.serve(async (req) => {
       event_id: eventId,
       topic: payload.webHookEvent,
       payload: payload,
+      headers: headersObj,
+      raw_body: truncate(rawBody, 20000),
     });
 
   if (eventError?.code === '23505') {
@@ -313,9 +396,7 @@ Deno.serve(async (req) => {
   try {
     console.log(`[Webhook] 🔄 Processing event: ${payload.webHookEvent}`);
     
-    // Handle different webhook events
     switch (payload.webHookEvent) {
-      // ===== VISIT EVENTS - Mirror to busy_blocks =====
       case "VISIT_SCHEDULED":
       case "VISIT_RESCHEDULED":
       case "VISIT_UPDATED": {
@@ -331,7 +412,6 @@ Deno.serve(async (req) => {
           result = { action: 'fetch_failed' };
         }
         
-        // Also update local bookings table if we have schedule data
         if (payload.data?.startAt || payload.data?.endAt) {
           console.log(`[Webhook] 📝 Updating bookings table...`);
           await supabase
@@ -381,7 +461,6 @@ Deno.serve(async (req) => {
         break;
       }
 
-      // ===== JOB EVENTS =====
       case "JOB_CREATED":
       case "JOB_UPDATED": {
         console.log(`[Webhook] 📋 Job event - updating bookings`);
@@ -428,7 +507,6 @@ Deno.serve(async (req) => {
         result = { action: 'unhandled' };
     }
 
-    // Mark event as processed
     console.log(`[Webhook] 📝 Marking event as processed...`);
     await supabase
       .from("jobber_webhook_events")
