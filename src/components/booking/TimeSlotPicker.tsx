@@ -217,12 +217,10 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
     }
   }, [retryCountdown]);
 
-  // Auto-retry when throttle cooldown finishes
-  useEffect(() => {
-    if (isThrottled && retryCountdown === 0 && error) {
-      fetchAvailability(true);
-    }
-  }, [isThrottled, retryCountdown, error, fetchAvailability]);
+  // IMPORTANT: Do not auto-retry here.
+  // Auto-retry loops can easily hammer the provider during a throttle window,
+  // keeping us in a permanent 503 "temporarily busy" state.
+  // Users can manually retry once the countdown finishes.
 
   useEffect(() => {
     if (services.length === 0) return;

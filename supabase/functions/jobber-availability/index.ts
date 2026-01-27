@@ -149,10 +149,13 @@ async function setDbCache(
 // Helper: Clean up expired cache entries (fire-and-forget)
 async function cleanupExpiredCache(supabase: any): Promise<void> {
   try {
+    // Keep expired rows long enough to serve as a stale fallback during provider throttling.
+    // If we delete everything as soon as it expires, the STALE_CACHE_TTL_MINUTES logic can never work.
+    const staleThreshold = new Date(Date.now() - STALE_CACHE_TTL_MINUTES * 60 * 1000).toISOString();
     await (supabase as any)
       .from("availability_cache")
       .delete()
-      .lt("expires_at", new Date().toISOString());
+      .lt("cached_at", staleThreshold);
   } catch {
     // Ignore cleanup errors
   }
