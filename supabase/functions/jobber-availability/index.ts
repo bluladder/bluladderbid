@@ -17,6 +17,9 @@ interface AvailabilityRequest {
   timezone?: string;
   customerAddress?: string;
   includeExcluded?: boolean;
+  mode?: 'recommended' | 'dayGrid'; // New mode param
+  preference?: 'AM' | 'PM' | 'none'; // Time preference
+  selectedDate?: string; // For dayGrid mode
 }
 
 interface BufferTier {
@@ -38,7 +41,7 @@ interface DriveTimeConfig {
 }
 
 interface ExclusionReason {
-  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB';
+  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB' | 'GAP_PENALTY';
   message: string;
   details?: string;
 }
@@ -48,6 +51,7 @@ interface TimeSlot {
   technicianName: string;
   startTime: string;
   endTime: string;
+  displayTime?: string; // 30-min snapped time for UI
   durationMinutes: number;
   isRecommended?: boolean;
   estimatedDriveMinutes?: number;
@@ -58,6 +62,10 @@ interface TimeSlot {
   nearbyJobCount?: number;
   excluded?: boolean;
   exclusionReason?: ExclusionReason;
+  // Scoring/dispatch fields
+  gapMinutes?: number;
+  gapScore?: number;
+  whyLabel?: string; // "soonest_available", "minimizes_gaps", "alternative"
 }
 
 interface RecommendedDay {
@@ -78,6 +86,7 @@ interface DayMetrics {
   avgDriveEfficiency: number;
   capacityUtilization: number;
   jobAddresses: string[];
+  hasAnySlot: boolean; // Track if ANY slot fits
 }
 
 interface BusyBlock {
@@ -90,10 +99,16 @@ interface BusyBlock {
   client_address: string | null;
 }
 
+interface DriveCacheEntry {
+  origin_hash: string;
+  dest_hash: string;
+  drive_minutes: number;
+}
+
 const DEFAULT_BUSINESS_HOURS = {
   startHour: 9,
   endHour: 17,
-  workDays: [1, 2, 3, 4, 5, 6],
+  workDays: [1, 2, 3, 4, 5],
   timezone: "America/Chicago",
 };
 
@@ -115,9 +130,18 @@ const DEFAULT_DRIVE_TIME_CONFIG: DriveTimeConfig = {
 
 // Configurable slot generation settings
 const SLOT_GENERATION_CONFIG = {
-  slotIncrementMinutes: 15, // Generate slots every 15 minutes
-  bufferBeforeMinutes: 0,   // Buffer to add before busy blocks
-  bufferAfterMinutes: 15,   // Buffer to add after appointments to prevent tight scheduling
+  internalIncrementMinutes: 15, // Generate at 15-min resolution
+  displayIncrementMinutes: 30,  // Display snapped to 30-min
+  bufferBeforeMinutes: 0,
+  bufferAfterMinutes: 15,
+};
+
+// Gap-scoring constants
+const GAP_SCORING = {
+  idealGapMax: 15, // 0-15 min gap is ideal
+  microGapThreshold: 60, // < 60 min gap is "micro" and penalized
+  longJobMinutes: 480, // 8 hours
+  mediumJobMinutes: 240, // 4 hours
 };
 
 interface BusinessHoursConfig {
@@ -174,6 +198,15 @@ function getHourInTimezone(date: Date, timezone: string): number {
   return parseInt(parts.find(p => p.type === 'hour')?.value || '0');
 }
 
+function getMinutesInTimezone(date: Date, timezone: string): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    minute: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  return parseInt(parts.find(p => p.type === 'minute')?.value || '0');
+}
+
 function formatDateInTimezone(date: Date, timezone: string): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
@@ -222,7 +255,31 @@ function calculateProximityScore(addr1: string | null, addr2: string | null): nu
   return 30;
 }
 
-function estimateDriveTime(fromAddress: string | null, toAddress: string | null): number {
+// Hash function for drive time cache keys
+function hashAddress(address: string | null): string {
+  if (!address) return 'null';
+  // Normalize: lowercase, remove extra spaces, common abbreviations
+  const normalized = address
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\bstreet\b/g, 'st')
+    .replace(/\bavenue\b/g, 'ave')
+    .replace(/\bdrive\b/g, 'dr')
+    .replace(/\broad\b/g, 'rd')
+    .trim();
+  
+  // Simple hash
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return `addr_${Math.abs(hash).toString(36)}`;
+}
+
+// Fallback drive time estimation (used when no cache or API)
+function estimateDriveTimeFallback(fromAddress: string | null, toAddress: string | null): number {
   if (!fromAddress || !toAddress) {
     return 15;
   }
@@ -291,6 +348,73 @@ function calculateRouteDensityScore(
   return { score, label, nearbyJobCount: nearbyJobs.length };
 }
 
+// Snap time to 30-min display increments
+function snapTo30Min(date: Date, timezone: string): string {
+  const hour = getHourInTimezone(date, timezone);
+  const minutes = getMinutesInTimezone(date, timezone);
+  const snappedMinutes = Math.round(minutes / 30) * 30;
+  
+  let displayHour = hour;
+  let displayMin = snappedMinutes;
+  
+  if (snappedMinutes >= 60) {
+    displayHour = hour + 1;
+    displayMin = 0;
+  }
+  
+  const ampm = displayHour >= 12 ? 'PM' : 'AM';
+  const displayHour12 = displayHour > 12 ? displayHour - 12 : (displayHour === 0 ? 12 : displayHour);
+  
+  return `${displayHour12}:${String(displayMin).padStart(2, '0')} ${ampm}`;
+}
+
+// Calculate gap score - higher is better
+function calculateGapScore(
+  gapMinutes: number,
+  preference: 'AM' | 'PM' | 'none',
+  slotHour: number,
+  durationMinutes: number
+): { score: number; penalized: boolean } {
+  let score = 100;
+  let penalized = false;
+  
+  // Ideal gap: 0-15 minutes
+  if (gapMinutes >= 0 && gapMinutes <= GAP_SCORING.idealGapMax) {
+    score = 100;
+  } else if (gapMinutes > GAP_SCORING.idealGapMax && gapMinutes < GAP_SCORING.microGapThreshold) {
+    // Micro gap (16-59 min): penalize heavily UNLESS PM preference
+    if (preference !== 'PM') {
+      score = 30; // Heavy penalty
+      penalized = true;
+    } else {
+      score = 60; // Lighter penalty for PM preference
+    }
+  } else if (gapMinutes >= GAP_SCORING.microGapThreshold) {
+    // Longer gaps: linear decay
+    score = Math.max(20, 80 - (gapMinutes - 60) * 0.5);
+  }
+  
+  // AM/PM preference bonus
+  const isAM = slotHour < 12;
+  if (preference === 'AM' && isAM) {
+    score += 10;
+  } else if (preference === 'PM' && !isAM) {
+    score += 10;
+  }
+  
+  // Long job rule: 8+ hours must start AM
+  if (durationMinutes >= GAP_SCORING.longJobMinutes && !isAM) {
+    score = 0; // Reject
+  }
+  
+  // Medium job (4-8 hours): prefer AM
+  if (durationMinutes >= GAP_SCORING.mediumJobMinutes && durationMinutes < GAP_SCORING.longJobMinutes && !isAM) {
+    score -= 20;
+  }
+  
+  return { score: Math.max(0, Math.min(100, score)), penalized };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -302,13 +426,16 @@ Deno.serve(async (req) => {
       startDate, 
       daysToCheck = 14, 
       customerAddress,
-      includeExcluded = false 
+      includeExcluded = false,
+      mode = 'recommended',
+      preference = 'none',
+      selectedDate,
     }: AvailabilityRequest = await req.json();
 
     const requestedDaysToCheck = Number.isFinite(daysToCheck) ? Math.floor(daysToCheck) : 14;
     const effectiveDaysToCheck = includeExcluded
       ? Math.max(1, Math.min(requestedDaysToCheck, 60))
-      : Math.max(1, Math.min(requestedDaysToCheck, 14)); // Increased since we read local DB
+      : Math.max(1, Math.min(requestedDaysToCheck, 30));
 
     if (!services || services.length === 0) {
       return new Response(
@@ -335,7 +462,8 @@ Deno.serve(async (req) => {
           code: "SYNC_REQUIRED",
           requiresAdminAction: true,
           slots: [],
-          recommendedDays: [],
+          recommendations: [],
+          fullyBookedDays: [],
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
       );
@@ -384,7 +512,7 @@ Deno.serve(async (req) => {
     }
 
     const businessTimezone = BUSINESS_HOURS.timezone || DEFAULT_BUSINESS_HOURS.timezone;
-    console.log("Using timezone:", businessTimezone);
+    console.log(`[Availability] Mode: ${mode}, Preference: ${preference}, Timezone: ${businessTimezone}`);
 
     // Map service names to service_type enum
     const serviceTypeMap: Record<string, string> = {
@@ -426,12 +554,12 @@ Deno.serve(async (req) => {
     if (techError || !technicians?.length) {
       console.error("Tech query error:", techError);
       return new Response(
-        JSON.stringify({ error: "No technicians available", slots: [] }),
+        JSON.stringify({ error: "No technicians available", slots: [], recommendations: [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log("Found technicians:", technicians.length);
+    console.log(`[Availability] Found ${technicians.length} technicians`);
 
     // Calculate duration for each technician
     const eligibleTechs: Array<{
@@ -487,12 +615,14 @@ Deno.serve(async (req) => {
           bufferMinutes: tech.buffer_minutes,
           maxDriveTimeMinutes: tech.max_drive_time_minutes,
         });
+        
+        console.log(`[Tech] ${tech.name}: duration=${totalDuration}min, hours=${tech.schedule_start_hour || BUSINESS_HOURS.startHour}-${tech.schedule_end_hour || BUSINESS_HOURS.endHour}, days=${JSON.stringify(workDays)}`);
       }
     }
 
     if (eligibleTechs.length === 0) {
       return new Response(
-        JSON.stringify({ error: "No technicians can perform all selected services", slots: [] }),
+        JSON.stringify({ error: "No technicians can perform all selected services", slots: [], recommendations: [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -502,17 +632,18 @@ Deno.serve(async (req) => {
     const fromDate = startDate ? new Date(startDate) : now;
     const toDate = new Date(fromDate.getTime() + effectiveDaysToCheck * 24 * 60 * 60 * 1000);
 
-    console.log(`[Availability] 🔍 Querying local busy blocks from ${fromDate.toISOString()} to ${toDate.toISOString()}`);
-    console.log(`[Availability] 📋 Input params: services=${JSON.stringify(services)}, daysToCheck=${effectiveDaysToCheck}`);
-    console.log(`[Availability] 👷 Eligible technicians: ${eligibleTechs.map(t => `${t.name} (${t.jobberUserId})`).join(', ')}`);
+    // For dayGrid mode with specific date, narrow the range
+    let filterToDate: Date | null = null;
+    if (mode === 'dayGrid' && selectedDate) {
+      const selDate = new Date(selectedDate);
+      filterToDate = new Date(selDate.getTime() + 24 * 60 * 60 * 1000);
+    }
 
-    // ========== KEY CHANGE: Query local jobber_busy_blocks instead of Jobber API ==========
+    console.log(`[Availability] Date range: ${fromDate.toISOString()} to ${toDate.toISOString()}`);
+
+    // Fetch busy blocks from local mirror
     const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
     
-    console.log(`[Availability] 🔎 Querying crew_ids: ${techJobberIds.join(', ')}`);
-    
-    // Overlap-safe query: block starts before range ends AND ends after range starts
-    // Include both "scheduled" and "in_progress" to block techs with ongoing jobs
     const { data: busyBlocks, error: blocksError } = await supabase
       .from("jobber_busy_blocks")
       .select("*")
@@ -522,28 +653,52 @@ Deno.serve(async (req) => {
       .in("status", ["scheduled", "in_progress"]);
 
     if (blocksError) {
-      console.error("[Availability] ❌ Failed to fetch busy blocks:", blocksError);
+      console.error("[Availability] Failed to fetch busy blocks:", blocksError);
       return new Response(
-        JSON.stringify({ error: "Failed to load schedule data", slots: [] }),
+        JSON.stringify({ error: "Failed to load schedule data", slots: [], recommendations: [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
       );
     }
 
-    console.log(`[Availability] ✅ Found ${busyBlocks?.length || 0} busy blocks from local mirror`);
-    
-    // Debug: Log each busy block for transparency
-    for (const block of (busyBlocks || [])) {
-      const startLocal = new Date(block.start_at).toLocaleString('en-US', { timeZone: businessTimezone });
-      const endLocal = new Date(block.end_at).toLocaleString('en-US', { timeZone: businessTimezone });
-      console.log(`[Availability]    📅 Block: crew=${block.crew_id.slice(-10)}, ${startLocal} - ${endLocal}, status=${block.status}`);
+    console.log(`[Availability] Found ${busyBlocks?.length || 0} busy blocks`);
+
+    // Fetch cached drive times if customer address provided
+    const driveCache = new Map<string, number>();
+    if (customerAddress) {
+      const destHash = hashAddress(customerAddress);
+      const { data: cachedTimes } = await supabase
+        .from("drive_time_cache")
+        .select("origin_hash, dest_hash, drive_minutes")
+        .eq("dest_hash", destHash)
+        .gt("expires_at", new Date().toISOString());
+      
+      if (cachedTimes) {
+        for (const entry of cachedTimes as DriveCacheEntry[]) {
+          driveCache.set(`${entry.origin_hash}|${entry.dest_hash}`, entry.drive_minutes);
+        }
+        console.log(`[DriveCache] Loaded ${cachedTimes.length} cached routes`);
+      }
     }
 
-    // Build a map of busy times per technician with buffer expansion
+    // Function to get drive time (cache or fallback)
+    function getDriveTime(fromAddr: string | null, toAddr: string | null): number {
+      const originHash = hashAddress(fromAddr);
+      const destHash = hashAddress(toAddr);
+      const cacheKey = `${originHash}|${destHash}`;
+      
+      if (driveCache.has(cacheKey)) {
+        return driveCache.get(cacheKey)!;
+      }
+      
+      return estimateDriveTimeFallback(fromAddr, toAddr);
+    }
+
+    // Build busy times per technician
     const busyTimesByTech: Record<string, Array<{ 
       start: Date; 
       end: Date;
-      expandedStart: Date; // Start with buffer before
-      expandedEnd: Date;   // End with buffer after
+      expandedStart: Date;
+      expandedEnd: Date;
       address: string | null;
     }>> = {};
 
@@ -566,7 +721,6 @@ Deno.serve(async (req) => {
       const blockStart = new Date(block.start_at);
       const blockEnd = new Date(block.end_at);
       
-      // Expand busy blocks by configurable buffers to prevent tight back-to-backs
       const expandedStart = new Date(blockStart.getTime() - SLOT_GENERATION_CONFIG.bufferBeforeMinutes * 60 * 1000);
       const expandedEnd = new Date(blockEnd.getTime() + SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000);
       
@@ -579,13 +733,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Track day metrics for recommended days calculation
+    // Track day metrics for fully-booked detection
     const dayMetrics: Map<string, DayMetrics> = new Map();
-
-    // Generate available slots for each eligible technician
     const allSlots: TimeSlot[] = [];
     const excludedSlots: TimeSlot[] = [];
 
+    // Generate candidates at 15-min resolution
     for (const tech of eligibleTechs) {
       const techBusyTimes = busyTimesByTech[tech.jobberUserId] || [];
       techBusyTimes.sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -595,6 +748,15 @@ Deno.serve(async (req) => {
       while (dayOffset < effectiveDaysToCheck) {
         const currentDay = new Date(fromDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
         const currentDateStr = formatDateInTimezone(currentDay, businessTimezone);
+        
+        // Skip if dayGrid mode and not the selected date
+        if (mode === 'dayGrid' && selectedDate) {
+          const selectedDateStr = selectedDate.split('T')[0];
+          if (currentDateStr !== selectedDateStr) {
+            dayOffset++;
+            continue;
+          }
+        }
         
         const formatter = new Intl.DateTimeFormat('en-US', {
           timeZone: businessTimezone,
@@ -628,14 +790,14 @@ Deno.serve(async (req) => {
             avgDriveEfficiency: 0,
             capacityUtilization: 0,
             jobAddresses: jobsByDate[currentDateStr] || [],
+            hasAnySlot: false,
           });
         }
 
         let effectiveStart = new Date(dayStart);
         if (now > dayStart && now < dayEnd) {
           effectiveStart = new Date(now);
-          // Round up to next slot increment
-          const slotIncrement = SLOT_GENERATION_CONFIG.slotIncrementMinutes;
+          const slotIncrement = SLOT_GENERATION_CONFIG.internalIncrementMinutes;
           const currentMinutes = effectiveStart.getMinutes();
           const roundedMinutes = Math.ceil(currentMinutes / slotIncrement) * slotIncrement;
           if (roundedMinutes === 60) {
@@ -653,33 +815,18 @@ Deno.serve(async (req) => {
         const hasEarlierJobToday = todayBusyTimes.some(bt => bt.start < effectiveStart);
 
         let slotStart = new Date(effectiveStart);
-        let candidateSlotsGenerated = 0;
-        let slotsAfterDurationFilter = 0;
-        let slotsAfterOverlapFilter = 0;
-        
-        // Generate slots in configurable increments (default 15 min)
-        const slotIncrementMs = SLOT_GENERATION_CONFIG.slotIncrementMinutes * 60 * 1000;
+        const slotIncrementMs = SLOT_GENERATION_CONFIG.internalIncrementMinutes * 60 * 1000;
         
         while (slotStart.getTime() + tech.durationMinutes * 60 * 1000 <= dayEnd.getTime()) {
-          candidateSlotsGenerated++;
           const slotEnd = new Date(slotStart.getTime() + tech.durationMinutes * 60 * 1000);
-          
-          // For overlap checking, we also add the bufferAfterMinutes to the appointment block
-          // This ensures we don't schedule something that would end too close to the next appointment
           const slotEndWithBuffer = new Date(slotEnd.getTime() + SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000);
           
           const slotHour = getHourInTimezone(slotStart, businessTimezone);
           
-          // Check overlap using EXPANDED busy times (which include before/after buffers)
-          // This prevents scheduling too close to existing appointments
-          // Core overlap check: slotStart < expandedEnd AND slotEndWithBuffer > expandedStart
+          // Check overlap
           const hasConflict = todayBusyTimes.some(bt => 
             (slotStart.getTime() < bt.expandedEnd.getTime() && slotEndWithBuffer.getTime() > bt.expandedStart.getTime())
           );
-          
-          if (!hasConflict) {
-            slotsAfterOverlapFilter++;
-          }
 
           const isFirstJob = !hasEarlierJobToday && 
             !todayBusyTimes.some(bt => bt.end <= slotStart);
@@ -695,7 +842,7 @@ Deno.serve(async (req) => {
           const fromAddress = isFirstJob 
             ? tech.startingAddress 
             : previousAppointment?.address;
-          const driveMinutes = estimateDriveTime(fromAddress || null, customerAddress || null);
+          const driveMinutes = getDriveTime(fromAddress || null, customerAddress || null);
           
           const routeDensity = calculateRouteDensityScore(
             slotStart,
@@ -707,17 +854,37 @@ Deno.serve(async (req) => {
           
           const driveBuffer = getBufferForDriveTime(driveMinutes, DRIVE_TIME_CONFIG);
           
+          // Calculate gap from previous appointment
+          let gapMinutes = 0;
+          if (previousAppointment) {
+            const requiredStart = previousAppointment.end.getTime() + driveMinutes * 60 * 1000;
+            gapMinutes = (slotStart.getTime() - requiredStart) / (60 * 1000);
+          }
+          
+          // Gap scoring
+          const { score: gapScore, penalized } = calculateGapScore(
+            gapMinutes, 
+            preference as 'AM' | 'PM' | 'none',
+            slotHour,
+            tech.durationMinutes
+          );
+          
+          const displayTime = snapTo30Min(slotStart, businessTimezone);
+          
           const slot: TimeSlot = {
             technicianId: tech.id,
             technicianName: tech.name,
             startTime: slotStart.toISOString(),
             endTime: slotEnd.toISOString(),
+            displayTime,
             durationMinutes: tech.durationMinutes,
             estimatedDriveMinutes: driveMinutes,
             isFirstJob,
             routeDensityScore: routeDensity.score,
             routeDensityLabel: routeDensity.label,
             nearbyJobCount: routeDensity.nearbyJobCount,
+            gapMinutes: Math.round(gapMinutes),
+            gapScore,
           };
 
           let exclusionReason: ExclusionReason | null = null;
@@ -725,19 +892,22 @@ Deno.serve(async (req) => {
           if (hasConflict) {
             exclusionReason = {
               code: 'OVERLAP',
-              message: 'Overlaps existing appointment or buffer zone',
+              message: 'Overlaps existing appointment',
             };
           } else if (slotHour < tech.scheduleStartHour) {
             exclusionReason = {
               code: 'BOUNDARY',
-              message: 'Before earliest start time',
-              details: `Slot starts at ${slotHour}:00, earliest allowed is ${tech.scheduleStartHour}:00`,
+              message: 'Before work hours',
             };
           } else if (slotHour >= tech.scheduleEndHour - 1) {
             exclusionReason = {
               code: 'BOUNDARY',
-              message: 'After latest start time',
-              details: `Slot starts at ${slotHour}:00, latest allowed is ${tech.scheduleEndHour - 1}:00`,
+              message: 'After work hours',
+            };
+          } else if (gapScore === 0) {
+            exclusionReason = {
+              code: 'GAP_PENALTY',
+              message: 'Long job must start AM',
             };
           } else {
             const maxDriveTime = tech.maxDriveTimeMinutes ?? DRIVE_TIME_CONFIG.max_drive_time_minutes;
@@ -748,36 +918,21 @@ Deno.serve(async (req) => {
               } else {
                 exclusionReason = {
                   code: 'DRIVE_TIME',
-                  message: 'Exceeds drive time limit',
-                  details: `${driveMinutes} min drive exceeds ${maxDriveTime} min max`,
+                  message: 'Drive time too long',
                 };
               }
             }
           }
 
-          const isLikelyLastJob = !todayBusyTimes.some(bt => bt.start > slotEnd);
-          if (isLikelyLastJob && !exclusionReason) {
-            const maxDriveTime = tech.maxDriveTimeMinutes ?? DRIVE_TIME_CONFIG.max_drive_time_minutes;
-            
-            if (DRIVE_TIME_CONFIG.no_long_last_drive && driveMinutes > maxDriveTime) {
-              exclusionReason = {
-                code: 'LAST_JOB',
-                message: 'Long drive not allowed for last job',
-                details: `${driveMinutes} min drive too long for last job of day`,
-              };
-            }
-          }
-
           if (!exclusionReason && previousAppointment) {
-            const gapMinutes = (slotStart.getTime() - previousAppointment.end.getTime()) / (60 * 1000);
+            const actualGap = (slotStart.getTime() - previousAppointment.end.getTime()) / (60 * 1000);
             const baseBuffer = tech.bufferMinutes ?? DRIVE_TIME_CONFIG.base_buffer_minutes;
             const requiredBuffer = driveBuffer + baseBuffer;
             
-            if (gapMinutes < requiredBuffer) {
+            if (actualGap < requiredBuffer) {
               exclusionReason = {
                 code: 'BUFFER',
-                message: 'Insufficient buffer time',
-                details: `${gapMinutes.toFixed(0)} min gap, need ${requiredBuffer} min (${driveMinutes} min drive + buffer)`,
+                message: 'Insufficient buffer',
               };
             }
           }
@@ -787,141 +942,147 @@ Deno.serve(async (req) => {
             slot.exclusionReason = exclusionReason;
             excludedSlots.push(slot);
           } else {
-            slotsAfterDurationFilter++;
             allSlots.push(slot);
             const metrics = dayMetrics.get(currentDateStr)!;
             metrics.totalSlots++;
+            metrics.hasAnySlot = true;
           }
 
-          // Move to next slot using configurable increment (default 15 min)
           slotStart = new Date(slotStart.getTime() + slotIncrementMs);
-        }
-        
-        // Log slot filtering stats for this day/tech combination
-        if (candidateSlotsGenerated > 0) {
-          console.log(`[${currentDateStr}][${tech.name}] Slots: ${candidateSlotsGenerated} candidates -> ${slotsAfterOverlapFilter} no-overlap -> ${slotsAfterDurationFilter} valid`);
         }
 
         dayOffset++;
       }
     }
 
-    // Sort slots
-    allSlots.sort((a, b) => {
-      const dateA = new Date(a.startTime).toDateString();
-      const dateB = new Date(b.startTime).toDateString();
+    // Calculate fully booked days (no slots available for any tech)
+    const fullyBookedDays: string[] = [];
+    for (const [dateStr, metrics] of dayMetrics) {
+      if (!metrics.hasAnySlot) {
+        fullyBookedDays.push(dateStr);
+      }
+    }
+
+    console.log(`[Availability] Generated ${allSlots.length} valid slots, ${fullyBookedDays.length} fully booked days`);
+
+    // Build response based on mode
+    if (mode === 'dayGrid') {
+      // Return all slots for the selected date, snapped to 30-min display
+      const deduped = new Map<string, TimeSlot>();
       
-      if (dateA !== dateB) {
+      for (const slot of allSlots) {
+        // Dedupe by display time + technician
+        const key = `${slot.displayTime}|${slot.technicianId}`;
+        const existing = deduped.get(key);
+        
+        if (!existing || (slot.gapScore || 0) > (existing.gapScore || 0)) {
+          deduped.set(key, slot);
+        }
+      }
+      
+      const dayGridSlots = Array.from(deduped.values()).sort((a, b) => {
         return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-      }
+      });
       
-      const scoreA = a.routeDensityScore || 50;
-      const scoreB = b.routeDensityScore || 50;
-      if (scoreA !== scoreB) {
-        return scoreB - scoreA;
-      }
+      return new Response(
+        JSON.stringify({
+          mode: 'dayGrid',
+          slots: dayGridSlots,
+          totalAvailable: dayGridSlots.length,
+          fullyBookedDays,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Recommended mode: return top 3 candidates
+    // Score and sort all slots
+    const scoredSlots = allSlots.map(slot => {
+      const slotDate = new Date(slot.startTime);
+      const daysSinceNow = (slotDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
       
-      return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+      // Combined score: gap minimization + recency + route density
+      const recencyScore = Math.max(0, 100 - daysSinceNow * 5); // Prefer sooner
+      const gapScore = slot.gapScore || 50;
+      const routeScore = slot.routeDensityScore || 50;
+      
+      const totalScore = (gapScore * 0.4) + (recencyScore * 0.35) + (routeScore * 0.25);
+      
+      return { ...slot, totalScore };
     });
     
-    excludedSlots.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-
-    // Mark recommended slots
-    let recommendedCount = 0;
-    for (const slot of allSlots) {
-      if ((slot.routeDensityScore || 0) >= 70 && recommendedCount < 10) {
+    scoredSlots.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
+    
+    // Get top 3 with diversity (different days/techs if possible)
+    const recommendations: TimeSlot[] = [];
+    const usedDays = new Set<string>();
+    const usedTechs = new Set<string>();
+    
+    for (const slot of scoredSlots) {
+      if (recommendations.length >= 3) break;
+      
+      const slotDateStr = formatDateInTimezone(new Date(slot.startTime), businessTimezone);
+      
+      // First pick: best overall
+      if (recommendations.length === 0) {
+        slot.whyLabel = 'soonest_available';
         slot.isRecommended = true;
-        recommendedCount++;
+        recommendations.push(slot);
+        usedDays.add(slotDateStr);
+        usedTechs.add(slot.technicianId);
+        continue;
+      }
+      
+      // Second pick: try different day or tech, prioritize gap minimization
+      if (recommendations.length === 1) {
+        if (!usedDays.has(slotDateStr) || !usedTechs.has(slot.technicianId)) {
+          slot.whyLabel = 'minimizes_gaps';
+          slot.isRecommended = true;
+          recommendations.push(slot);
+          usedDays.add(slotDateStr);
+          usedTechs.add(slot.technicianId);
+          continue;
+        }
+      }
+      
+      // Third pick: alternative
+      if (recommendations.length === 2) {
+        slot.whyLabel = 'alternative';
+        slot.isRecommended = true;
+        recommendations.push(slot);
+        break;
       }
     }
     
-    if (recommendedCount === 0 && allSlots.length > 0) {
-      allSlots[0].isRecommended = true;
-    }
-
-    // Calculate recommended days
-    const recommendedDays: RecommendedDay[] = [];
-    const sortedDays = Array.from(dayMetrics.values())
-      .filter(dm => dm.totalSlots > 0)
-      .sort((a, b) => {
-        const scoreA = (a.bookedJobs * 20) + (a.totalSlots > 0 ? 30 : 0);
-        const scoreB = (b.bookedJobs * 20) + (b.totalSlots > 0 ? 30 : 0);
-        return scoreB - scoreA;
-      });
-
-    const customerZone = extractZone(customerAddress || null);
-    
-    for (let i = 0; i < Math.min(3, sortedDays.length); i++) {
-      const day = sortedDays[i];
-      
-      const matchingZoneJobs = day.jobAddresses.filter(addr => 
-        extractZone(addr) === customerZone
-      ).length;
-      
-      let label = 'Available';
-      let reason = 'Good availability';
-      let efficiencyScore = 50;
-      
-      if (matchingZoneJobs >= 2) {
-        label = 'Best fit for your area';
-        reason = `${matchingZoneJobs} jobs already scheduled in your area`;
-        efficiencyScore = 90;
-      } else if (matchingZoneJobs === 1) {
-        label = 'Good route fit';
-        reason = 'Another job nearby on this day';
-        efficiencyScore = 75;
-      } else if (day.bookedJobs >= 3) {
-        label = 'Most efficient';
-        reason = 'Busy day with tight routes';
-        efficiencyScore = 70;
-      } else if (day.totalSlots >= 5) {
-        label = 'Fastest availability';
-        reason = 'Many open time slots';
-        efficiencyScore = 60;
+    // Fill remaining if needed
+    for (const slot of scoredSlots) {
+      if (recommendations.length >= 3) break;
+      if (!recommendations.includes(slot)) {
+        slot.whyLabel = 'alternative';
+        slot.isRecommended = true;
+        recommendations.push(slot);
       }
-      
-      recommendedDays.push({
-        date: day.dateStr,
-        dayOfWeek: getWeekdayInTimezone(day.date, businessTimezone),
-        label,
-        reason,
-        jobCount: day.bookedJobs,
-        availableSlots: day.totalSlots,
-        efficiencyScore,
-      });
     }
-
-    recommendedDays.sort((a, b) => b.efficiencyScore - a.efficiencyScore);
-
-    const limitedSlots = allSlots.slice(0, 50);
-
-    console.log(`Generated ${allSlots.length} available slots, ${excludedSlots.length} excluded, ${recommendedDays.length} recommended days`);
-
-    const response: {
-      slots: TimeSlot[];
-      totalAvailable: number;
-      eligibleTechnicians: Array<{ id: string; name: string; durationMinutes: number }>;
-      recommendedDays: RecommendedDay[];
-      excludedSlots?: TimeSlot[];
-      totalExcluded?: number;
-    } = {
-      slots: limitedSlots,
-      totalAvailable: allSlots.length,
-      eligibleTechnicians: eligibleTechs.map(t => ({ 
-        id: t.id, 
-        name: t.name, 
-        durationMinutes: t.durationMinutes 
-      })),
-      recommendedDays,
-    };
-
-    if (includeExcluded) {
-      response.excludedSlots = excludedSlots.slice(0, 50);
-      response.totalExcluded = excludedSlots.length;
+    
+    console.log(`[Availability] Returning ${recommendations.length} recommendations`);
+    
+    // Log recommendation details
+    for (const rec of recommendations) {
+      console.log(`[Rec] ${rec.whyLabel}: ${rec.technicianName} @ ${rec.displayTime} (gap=${rec.gapMinutes}min, score=${rec.gapScore})`);
     }
 
     return new Response(
-      JSON.stringify(response),
+      JSON.stringify({
+        mode: 'recommended',
+        recommendations,
+        fullyBookedDays,
+        totalAvailable: allSlots.length,
+        eligibleTechnicians: eligibleTechs.map(t => ({ 
+          id: t.id, 
+          name: t.name, 
+          durationMinutes: t.durationMinutes 
+        })),
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

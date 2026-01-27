@@ -30,17 +30,9 @@ export function TimeSlotList({
     return acc;
   }, {} as Record<string, { name: string; slots: TimeSlot[] }>);
 
-  // Sort slots within each technician - route density first, then by time
+  // Sort slots within each technician by time (they should already be sorted, but let's be safe)
   Object.values(slotsByTech).forEach(tech => {
     tech.slots.sort((a, b) => {
-      // Recommended slots first
-      if (a.isRecommended && !b.isRecommended) return -1;
-      if (!a.isRecommended && b.isRecommended) return 1;
-      // Then by route density score (higher = better)
-      const scoreA = a.routeDensityScore || 50;
-      const scoreB = b.routeDensityScore || 50;
-      if (scoreA !== scoreB) return scoreB - scoreA;
-      // Then by time
       return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
     });
   });
@@ -73,7 +65,8 @@ export function TimeSlotList({
             <span>{name}</span>
           </div>
           
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          {/* 30-min grid display */}
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
             {techSlots.map((slot, idx) => {
               const isSelected = 
                 selectedSlot?.startTime === slot.startTime &&
@@ -81,21 +74,23 @@ export function TimeSlotList({
               const hasLabel = slot.routeDensityLabel && slot.routeDensityLabel.length > 0;
               const isTopSlot = idx < 2 && (slot.routeDensityScore || 0) >= 70;
 
+              // Use displayTime (30-min snapped) if available, otherwise format startTime
+              const displayTime = slot.displayTime || format(parseISO(slot.startTime), 'h:mm a');
+
               return (
                 <Button
                   key={`${slot.technicianId}-${slot.startTime}-${idx}`}
                   variant={isSelected ? 'default' : 'outline'}
                   size="sm"
                   className={cn(
-                    'relative flex flex-col items-center py-2 h-auto',
+                    'relative flex flex-col items-center py-3 h-auto min-w-[80px]',
                     hasLabel && !isSelected && 'border-primary/50',
                     isTopSlot && !isSelected && 'ring-1 ring-primary/30'
                   )}
                   onClick={() => onSelectSlot(slot)}
                 >
-                  <div className="flex items-center">
-                    <Clock className="w-3 h-3 mr-1" />
-                    {format(parseISO(slot.startTime), 'h:mm a')}
+                  <div className="flex items-center font-medium">
+                    {displayTime}
                   </div>
                   
                   {hasLabel && (
@@ -104,7 +99,9 @@ export function TimeSlotList({
                       isSelected ? 'text-primary-foreground/80' : 'text-primary'
                     )}>
                       <MapPin className="w-2.5 h-2.5 mr-0.5" />
-                      {slot.routeDensityLabel}
+                      {slot.routeDensityLabel!.length > 12 
+                        ? slot.routeDensityLabel!.substring(0, 10) + '...'
+                        : slot.routeDensityLabel}
                     </span>
                   )}
                   
@@ -121,6 +118,11 @@ export function TimeSlotList({
           </div>
         </div>
       ))}
+
+      {/* Duration note */}
+      <p className="text-xs text-muted-foreground text-center pt-2 border-t">
+        Times shown in 30-minute increments • Appointment duration: ~{Math.round(slots[0]?.durationMinutes / 60 * 10) / 10} hours
+      </p>
     </div>
   );
 }

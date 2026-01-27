@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, XCircle } from 'lucide-react';
 import { 
   format, 
   startOfMonth, 
@@ -31,6 +31,7 @@ interface DateFirstCalendarProps {
   minDate?: Date;
   maxDate?: Date;
   workDays?: number[]; // 0=Sun, 1=Mon, etc. Default: [1,2,3,4,5] (Mon-Fri)
+  fullyBookedDays?: string[]; // Array of date strings (YYYY-MM-DD) that are fully booked
   isLoadingSlots?: boolean;
 }
 
@@ -42,11 +43,13 @@ export function DateFirstCalendar({
   minDate = new Date(),
   maxDate,
   workDays = [1, 2, 3, 4, 5],
+  fullyBookedDays = [],
   isLoadingSlots = false,
 }: DateFirstCalendarProps) {
   const [currentDate, setCurrentDate] = useState(selectedDate || new Date());
 
   const workDaysSet = useMemo(() => new Set(workDays), [workDays]);
+  const fullyBookedSet = useMemo(() => new Set(fullyBookedDays), [fullyBookedDays]);
 
   const navigatePrevious = () => {
     if (viewMode === 'month') {
@@ -108,34 +111,52 @@ export function DateFirstCalendar({
     return false;
   };
 
+  const isDateFullyBooked = (date: Date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return fullyBookedSet.has(dateStr);
+  };
+
   const renderDay = (date: Date) => {
     const dayKey = format(date, 'yyyy-MM-dd');
     const isDisabled = isDateDisabled(date);
+    const isFullyBooked = isDateFullyBooked(date);
     const isSelected = selectedDate && isSameDay(date, selectedDate);
     const isToday = isSameDay(date, today);
     const isCurrentMonth = isSameMonth(date, currentDate);
     const isWorkDay = workDaysSet.has(getDay(date));
 
+    // Fully booked days are disabled
+    const isClickable = !isDisabled && !isFullyBooked;
+
     return (
       <button
         key={dayKey}
-        onClick={() => !isDisabled && onSelectDate(date)}
-        disabled={isDisabled}
+        onClick={() => isClickable && onSelectDate(date)}
+        disabled={!isClickable}
         className={cn(
           'relative p-2 min-h-[60px] flex flex-col items-center justify-start rounded-lg transition-all',
           viewMode === 'week' ? 'flex-1' : 'w-full aspect-square',
+          // Disabled state (past, non-work days)
           isDisabled && 'opacity-40 cursor-not-allowed',
-          !isDisabled && 'hover:bg-accent cursor-pointer',
+          // Fully booked state - distinct styling
+          isFullyBooked && !isDisabled && 'opacity-60 cursor-not-allowed bg-muted/80',
+          // Clickable state
+          isClickable && 'hover:bg-accent cursor-pointer',
+          // Selected state
           isSelected && 'bg-primary text-primary-foreground hover:bg-primary/90',
           isSelected && isLoadingSlots && 'animate-pulse',
+          // Today indicator
           isToday && !isSelected && 'ring-2 ring-primary ring-inset',
+          // Non-current month fade
           !isCurrentMonth && viewMode === 'month' && 'opacity-30',
+          // Non-work day background
           !isWorkDay && 'bg-muted/50'
         )}
       >
         <span className={cn(
           'text-sm font-medium',
-          isSelected && 'text-primary-foreground'
+          isSelected && 'text-primary-foreground',
+          isFullyBooked && !isSelected && 'text-muted-foreground line-through'
         )}>
           {format(date, 'd')}
         </span>
@@ -147,6 +168,16 @@ export function DateFirstCalendar({
           )}>
             {format(date, 'EEE')}
           </span>
+        )}
+        
+        {/* Fully booked indicator */}
+        {isFullyBooked && !isDisabled && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <XCircle className={cn(
+              'w-4 h-4 opacity-50',
+              isSelected ? 'text-primary-foreground' : 'text-muted-foreground'
+            )} />
+          </div>
         )}
         
         {isSelected && isLoadingSlots && (
@@ -247,7 +278,7 @@ export function DateFirstCalendar({
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t">
+      <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t flex-wrap">
         <div className="flex items-center gap-1">
           <div className="w-3 h-3 rounded bg-primary" />
           <span>Selected</span>
@@ -260,6 +291,14 @@ export function DateFirstCalendar({
           <div className="w-3 h-3 rounded bg-muted/50" />
           <span>Weekend</span>
         </div>
+        {fullyBookedDays.length > 0 && (
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded bg-muted/80 flex items-center justify-center">
+              <XCircle className="w-2 h-2 text-muted-foreground" />
+            </div>
+            <span>Fully Booked</span>
+          </div>
+        )}
       </div>
     </div>
   );
