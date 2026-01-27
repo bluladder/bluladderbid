@@ -24,7 +24,7 @@ import {
 const BASE_URL = 'https://bluladderbid.lovable.app';
 
 const SERVICE_PAGES = [
-  { slug: '', label: 'Main Quote Page', description: 'Full service selector with all options' },
+  { slug: 'home', label: 'Main Quote Page', description: 'Full service selector with all options' },
   { slug: 'window-cleaning', label: 'Window Cleaning', description: 'Pre-selects window cleaning service' },
   { slug: 'gutter-cleaning', label: 'Gutter Cleaning', description: 'Pre-selects gutter cleaning service' },
   { slug: 'house-wash', label: 'House Wash', description: 'Pre-selects house washing service' },
@@ -51,7 +51,7 @@ interface UtmParams {
 }
 
 export function EmbedCodeManager() {
-  const [selectedPage, setSelectedPage] = useState('');
+  const [selectedPage, setSelectedPage] = useState('home');
   const [embedWidth, setEmbedWidth] = useState('100%');
   const [embedHeight, setEmbedHeight] = useState('800');
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -76,7 +76,7 @@ export function EmbedCodeManager() {
   const deletePreset = useDeleteEmbedPreset();
 
   const pageConfig = SERVICE_PAGES.find(p => p.slug === selectedPage) || SERVICE_PAGES[0];
-  const pagePath = selectedPage ? `/${selectedPage}` : '/';
+  const pagePath = selectedPage === 'home' ? '/' : `/${selectedPage}`;
 
   // Build UTM query string
   const utmQueryString = useMemo(() => {
