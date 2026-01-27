@@ -305,6 +305,12 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
     );
   }
 
+  // Check if error is an admin-action-required error (don't show technical details to customers)
+  const isAdminActionRequired = error?.includes('admin') || error?.includes('reconnect');
+  const userFriendlyError = isAdminActionRequired 
+    ? "Our scheduling system is temporarily offline. Please call us to book your appointment or try again later."
+    : error;
+
   if (error) {
     return (
       <Card>
@@ -318,7 +324,7 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
           <Alert variant={isThrottled ? "default" : "destructive"}>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              {error}
+              {userFriendlyError}
               {isThrottled && retryCountdown > 0 && (
                 <span className="block mt-2 text-sm">
                   Ready to retry in {retryCountdown} seconds...
@@ -326,13 +332,15 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
               )}
             </AlertDescription>
           </Alert>
-          <Button
-            onClick={() => fetchAvailability()}
-            className="mt-4"
-            disabled={isThrottled && retryCountdown > 0}
-          >
-            {isThrottled && retryCountdown > 0 ? `Retry in ${retryCountdown}s` : 'Try Again'}
-          </Button>
+          {!isAdminActionRequired && (
+            <Button
+              onClick={() => fetchAvailability()}
+              className="mt-4"
+              disabled={isThrottled && retryCountdown > 0}
+            >
+              {isThrottled && retryCountdown > 0 ? `Retry in ${retryCountdown}s` : 'Try Again'}
+            </Button>
+          )}
         </CardContent>
       </Card>
     );

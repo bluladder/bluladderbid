@@ -24,10 +24,13 @@ const DEFAULT_BOOKING_SETTINGS: BookingSettingsConfig = {
 
 const HORIZON_OPTIONS = [
   { value: 14, label: '2 weeks' },
-  { value: 21, label: '3 weeks (default)' },
+  { value: 21, label: '3 weeks' },
   { value: 30, label: '1 month' },
   { value: 45, label: '6 weeks' },
   { value: 60, label: '2 months' },
+  { value: 90, label: '3 months' },
+  { value: 180, label: '6 months' },
+  { value: 365, label: '1 year' },
 ];
 
 const DENSITY_WEIGHTS = [
