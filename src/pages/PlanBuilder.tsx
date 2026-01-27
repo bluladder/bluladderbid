@@ -5,9 +5,9 @@ import { PlanHomeDetailsForm } from '@/components/plan-builder/PlanHomeDetailsFo
 import { ServiceSelectionCard } from '@/components/plan-builder/ServiceSelectionCard';
 import { PlanPaymentSummary } from '@/components/plan-builder/PlanPaymentSummary';
 import { PlanCustomerForm } from '@/components/plan-builder/PlanCustomerForm';
+import { QuoteSavedSuccess } from '@/components/plan-builder/QuoteSavedSuccess';
 import { useServicePlanBuilder } from '@/hooks/useServicePlanBuilder';
 import { toast } from 'sonner';
-import type { PlanBuilderServiceId } from '@/types/servicePlanBuilder';
 
 export default function PlanBuilder() {
   const {
@@ -15,10 +15,14 @@ export default function PlanBuilder() {
     customer,
     services,
     payment,
+    savedQuoteId,
+    isSaving,
     updateHomeDetails,
     updateCustomer,
     toggleService,
     updateFrequency,
+    saveQuote,
+    resetQuote,
     isValid,
     hasSelectedServices,
     isLoading,
@@ -26,20 +30,40 @@ export default function PlanBuilder() {
   
   const enabledServiceIds = services.filter(s => s.enabled).map(s => s.id);
   
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!isValid) {
       toast.error('Please complete all required fields');
       return;
     }
     
-    // TODO: Submit the plan - create quote/booking
-    toast.success('Plan submitted! We\'ll be in touch shortly.');
+    const quoteId = await saveQuote();
+    
+    if (quoteId) {
+      toast.success('Quote saved successfully!');
+    } else {
+      toast.error('Failed to save quote. Please try again.');
+    }
   };
   
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Loading pricing...</div>
+      </div>
+    );
+  }
+  
+  // Show success state if quote was saved
+  if (savedQuoteId) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-2xl mx-auto px-4 py-8 md:py-16">
+          <PlanBuilderHeader />
+          <QuoteSavedSuccess 
+            quoteId={savedQuoteId} 
+            onCreateNew={resetQuote} 
+          />
+        </div>
       </div>
     );
   }
@@ -110,6 +134,7 @@ export default function PlanBuilder() {
               payment={payment}
               services={services}
               isValid={isValid}
+              isSaving={isSaving}
               onSubmit={handleSubmit}
             />
           </div>
