@@ -299,9 +299,15 @@ Deno.serve(async (req) => {
   }
 
   // Check if DEBUG_MODE is enabled (tolerant parsing)
-  const rawDebug = Deno.env.get("JOBBER_WEBHOOK_DEBUG") ?? "";
-  const DEBUG_MODE = ["true", "1", "yes", "on"].includes(rawDebug.trim().toLowerCase());
-  console.log(`[Webhook] 🔧 DEBUG_MODE: ${DEBUG_MODE} (raw env: "${rawDebug}")`);
+  const rawDebugEnvName = "JOBBER_WEBHOOK_DEBUG";
+  const rawDebugValue = Deno.env.get(rawDebugEnvName) ?? "";
+  const DEBUG_MODE = ["true", "1", "yes", "on"].includes(rawDebugValue.trim().toLowerCase());
+  console.log(`[Webhook] 🔧 DEBUG_MODE: ${DEBUG_MODE} (env ${rawDebugEnvName}="${rawDebugValue}")`);
+  
+  // Check if HMAC should be skipped
+  const skipHmacEnvValue = Deno.env.get("JOBBER_SKIP_HMAC") ?? "";
+  const SKIP_HMAC_GLOBAL = ["true", "1", "yes", "on"].includes(skipHmacEnvValue.trim().toLowerCase());
+  console.log(`[Webhook] 🔐 SKIP_HMAC_GLOBAL: ${SKIP_HMAC_GLOBAL} (env JOBBER_SKIP_HMAC="${skipHmacEnvValue}")`);
 
   // Capture all headers for logging
   const headersObj = headersToObject(req.headers);
@@ -423,7 +429,7 @@ Deno.serve(async (req) => {
   // Verify Jobber HMAC signature (x-jobber-hmac-sha256)
   const webhookSecret = Deno.env.get("JOBBER_WEBHOOK_SECRET");
   const providedHmac = req.headers.get("x-jobber-hmac-sha256");
-  const skipHmac = Deno.env.get("JOBBER_SKIP_HMAC") === "true";
+  const skipHmac = SKIP_HMAC_GLOBAL;
   
   console.log(`[Webhook] 🔐 HMAC verification:`);
   console.log(`[Webhook]    Secret configured: ${!!webhookSecret}`);
