@@ -29,6 +29,9 @@ const CONFIG = {
   chunkDays: 1,
   pageSize: 100,
   maxPagesPerChunk: 20,
+  
+  // Lock TTL in minutes (if sync takes longer, lock expires)
+  lockTtlMinutes: 30,
 };
 
 interface Visit {
@@ -68,6 +71,22 @@ interface GraphQLError {
 interface GraphQLResult<T> {
   data?: T;
   errors?: GraphQLError[];
+}
+
+interface AutosyncConfig {
+  id: string;
+  enabled: boolean;
+  near_term_horizon_days: number;
+  near_term_interval_minutes: number;
+  far_term_current_horizon_days: number;
+  far_term_max_horizon_days: number;
+  far_term_daily_chunk_days: number;
+  last_near_term_sync: string | null;
+  last_far_term_sync: string | null;
+  lock_holder_id: string | null;
+  lock_acquired_at: string | null;
+  last_run_status: string;
+  last_run_error: string | null;
 }
 
 // ============= Rate-Limited GraphQL Client =============
@@ -291,6 +310,41 @@ async function syncChunk(
   return { visits: allVisits.length, blocks: blocksInserted, throttled: false };
 }
 
+// ============= Lock Management =============
+// deno-lint-ignore no-explicit-any
+async function acquireLock(supabase: SupabaseClient<any>, holderId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('acquire_autosync_lock', {
+    p_holder_id: holderId,
+    p_lock_ttl_minutes: CONFIG.lockTtlMinutes,
+  });
+  
+  if (error) {
+    console.error('[Lock] Failed to acquire lock:', error);
+    return false;
+  }
+  
+  return data === true;
+}
+
+// deno-lint-ignore no-explicit-any
+async function releaseLock(
+  supabase: SupabaseClient<any>, 
+  holderId: string, 
+  status: string = 'completed',
+  errorMsg: string | null = null
+): Promise<void> {
+  await supabase.rpc('release_autosync_lock', {
+    p_holder_id: holderId,
+    p_status: status,
+    p_error: errorMsg,
+  });
+}
+
+// deno-lint-ignore no-explicit-any
+async function updateCoverageStats(supabase: SupabaseClient<any>): Promise<void> {
+  await supabase.rpc('update_autosync_coverage');
+}
+
 // ============= Main Handler =============
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -301,160 +355,238 @@ Deno.serve(async (req) => {
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  // Generate unique run ID for this invocation
+  const runId = crypto.randomUUID();
+  console.log(`[Autosync] Starting run ${runId}`);
+
   try {
+    // Parse request for manual trigger options
+    let forceRun = false;
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        forceRun = body.force === true;
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
     // Get autosync config
-    const { data: config } = await supabase
+    const { data: configData } = await supabase
       .from("autosync_config")
       .select("*")
       .eq("id", "default")
       .maybeSingle();
 
-    if (!config?.enabled) {
+    const config: AutosyncConfig = configData as unknown as AutosyncConfig || {
+      id: 'default',
+      enabled: true,
+      near_term_horizon_days: CONFIG.nearTermHorizonDays,
+      near_term_interval_minutes: CONFIG.nearTermMinIntervalMinutes,
+      far_term_current_horizon_days: CONFIG.nearTermHorizonDays,
+      far_term_max_horizon_days: CONFIG.farTermMaxHorizonDays,
+      far_term_daily_chunk_days: CONFIG.farTermChunkDays,
+      last_near_term_sync: null,
+      last_far_term_sync: null,
+      lock_holder_id: null,
+      lock_acquired_at: null,
+      last_run_status: 'idle',
+      last_run_error: null,
+    };
+
+    if (!config.enabled && !forceRun) {
       return new Response(
-        JSON.stringify({ message: "Autosync is disabled" }),
+        JSON.stringify({ message: "Autosync is disabled", skipped: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // Try to acquire lock (mutex)
+    const lockAcquired = await acquireLock(supabase, runId);
+    
+    if (!lockAcquired) {
+      console.log('[Autosync] Another sync is in progress, skipping');
+      return new Response(
+        JSON.stringify({ 
+          message: "Another sync is in progress", 
+          skipped: true,
+          lockHolder: config?.lock_holder_id,
+          lockAcquiredAt: config?.lock_acquired_at,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log('[Autosync] Lock acquired');
+
     const now = new Date();
     const results: { nearTerm?: object; farTerm?: object } = {};
+    let overallThrottled = false;
+    let overallError: string | null = null;
 
-    // ============= Near-Term Sync =============
-    const lastNearTerm = config.last_near_term_sync 
-      ? new Date(config.last_near_term_sync)
-      : null;
-    
-    const nearTermIntervalMs = (config.near_term_interval_minutes || CONFIG.nearTermMinIntervalMinutes) * 60 * 1000;
-    const shouldRunNearTerm = !lastNearTerm || 
-      (now.getTime() - lastNearTerm.getTime() >= nearTermIntervalMs);
+    try {
+      // ============= Near-Term Sync =============
+      const lastNearTerm = config.last_near_term_sync 
+        ? new Date(config.last_near_term_sync)
+        : null;
+      
+      const nearTermIntervalMs = (config.near_term_interval_minutes || CONFIG.nearTermMinIntervalMinutes) * 60 * 1000;
+      const shouldRunNearTerm = forceRun || !lastNearTerm || 
+        (now.getTime() - lastNearTerm.getTime() >= nearTermIntervalMs);
 
-    if (shouldRunNearTerm) {
-      console.log("[Autosync] Running near-term sync...");
-      
-      const nearTermDays = config.near_term_horizon_days || CONFIG.nearTermHorizonDays;
-      const nearTermEnd = new Date(now.getTime() + nearTermDays * 24 * 60 * 60 * 1000);
-      
-      let totalVisits = 0;
-      let totalBlocks = 0;
-      let throttled = false;
-      
-      // Sync in 1-day chunks
-      let currentStart = new Date(now);
-      while (currentStart < nearTermEnd && !throttled) {
-        const currentEnd = new Date(currentStart.getTime() + CONFIG.chunkDays * 24 * 60 * 60 * 1000);
+      if (shouldRunNearTerm) {
+        console.log("[Autosync] Running near-term sync...");
         
-        const chunkResult = await syncChunk(supabase, currentStart, currentEnd);
-        totalVisits += chunkResult.visits;
-        totalBlocks += chunkResult.blocks;
-        throttled = chunkResult.throttled;
+        const nearTermDays = config.near_term_horizon_days || CONFIG.nearTermHorizonDays;
+        const nearTermEnd = new Date(now.getTime() + nearTermDays * 24 * 60 * 60 * 1000);
         
-        currentStart = currentEnd;
+        let totalVisits = 0;
+        let totalBlocks = 0;
+        let throttled = false;
+        
+        // Sync in 1-day chunks
+        let currentStart = new Date(now);
+        while (currentStart < nearTermEnd && !throttled) {
+          const currentEnd = new Date(currentStart.getTime() + CONFIG.chunkDays * 24 * 60 * 60 * 1000);
+          
+          const chunkResult = await syncChunk(supabase, currentStart, currentEnd);
+          totalVisits += chunkResult.visits;
+          totalBlocks += chunkResult.blocks;
+          throttled = chunkResult.throttled;
+          
+          currentStart = currentEnd;
+        }
+        
+        overallThrottled = throttled;
+        
+        // Update last sync time
+        await supabase
+          .from("autosync_config")
+          .update({ 
+            last_near_term_sync: now.toISOString(),
+            updated_at: now.toISOString(),
+          })
+          .eq("id", "default");
+        
+        results.nearTerm = {
+          syncedDays: nearTermDays,
+          totalVisits,
+          totalBlocks,
+          throttled,
+        };
+        
+        console.log(`[Autosync] Near-term complete: ${totalVisits} visits, ${totalBlocks} blocks`);
       }
-      
-      // Update last sync time
-      await supabase
-        .from("autosync_config")
-        .update({ 
-          last_near_term_sync: now.toISOString(),
-          updated_at: now.toISOString(),
-        })
-        .eq("id", "default");
-      
-      results.nearTerm = {
-        syncedDays: nearTermDays,
-        totalVisits,
-        totalBlocks,
-        throttled,
-      };
-      
-      console.log(`[Autosync] Near-term complete: ${totalVisits} visits, ${totalBlocks} blocks`);
-    }
 
-    // ============= Far-Term Sync =============
-    const lastFarTerm = config.last_far_term_sync 
-      ? new Date(config.last_far_term_sync)
-      : null;
-    
-    const farTermIntervalMs = (config.far_term_daily_chunk_days || 1) * 24 * 60 * 60 * 1000;
-    const shouldRunFarTerm = !lastFarTerm || 
-      (now.getTime() - lastFarTerm.getTime() >= farTermIntervalMs);
+      // ============= Far-Term Sync (only if near-term wasn't throttled) =============
+      if (!overallThrottled) {
+        const lastFarTerm = config.last_far_term_sync 
+          ? new Date(config.last_far_term_sync)
+          : null;
+        
+        const farTermIntervalMs = (config.far_term_daily_chunk_days || 1) * 24 * 60 * 60 * 1000;
+        const shouldRunFarTerm = forceRun || !lastFarTerm || 
+          (now.getTime() - lastFarTerm.getTime() >= farTermIntervalMs);
 
-    const currentHorizon = config.far_term_current_horizon_days || CONFIG.nearTermHorizonDays;
-    const maxHorizon = config.far_term_max_horizon_days || CONFIG.farTermMaxHorizonDays;
-    
-    if (shouldRunFarTerm && currentHorizon < maxHorizon) {
-      console.log("[Autosync] Running far-term sync...");
-      
-      const chunkDays = config.far_term_daily_chunk_days || CONFIG.farTermChunkDays;
-      const newHorizon = Math.min(currentHorizon + chunkDays, maxHorizon);
-      
-      // Sync the new chunk (from currentHorizon to newHorizon)
-      const chunkStart = new Date(now.getTime() + currentHorizon * 24 * 60 * 60 * 1000);
-      const chunkEnd = new Date(now.getTime() + newHorizon * 24 * 60 * 60 * 1000);
-      
-      let totalVisits = 0;
-      let totalBlocks = 0;
-      let throttled = false;
-      
-      let currentStart = new Date(chunkStart);
-      while (currentStart < chunkEnd && !throttled) {
-        const currentEnd = new Date(currentStart.getTime() + CONFIG.chunkDays * 24 * 60 * 60 * 1000);
+        const currentHorizon = config.far_term_current_horizon_days || CONFIG.nearTermHorizonDays;
+        const maxHorizon = config.far_term_max_horizon_days || CONFIG.farTermMaxHorizonDays;
         
-        const chunkResult = await syncChunk(supabase, currentStart, currentEnd);
-        totalVisits += chunkResult.visits;
-        totalBlocks += chunkResult.blocks;
-        throttled = chunkResult.throttled;
-        
-        currentStart = currentEnd;
+        if (shouldRunFarTerm && currentHorizon < maxHorizon) {
+          console.log("[Autosync] Running far-term sync...");
+          
+          const chunkDays = config.far_term_daily_chunk_days || CONFIG.farTermChunkDays;
+          const newHorizon = Math.min(currentHorizon + chunkDays, maxHorizon);
+          
+          // Sync the new chunk (from currentHorizon to newHorizon)
+          const chunkStart = new Date(now.getTime() + currentHorizon * 24 * 60 * 60 * 1000);
+          const chunkEnd = new Date(now.getTime() + newHorizon * 24 * 60 * 60 * 1000);
+          
+          let totalVisits = 0;
+          let totalBlocks = 0;
+          let throttled = false;
+          
+          let currentStart = new Date(chunkStart);
+          while (currentStart < chunkEnd && !throttled) {
+            const currentEnd = new Date(currentStart.getTime() + CONFIG.chunkDays * 24 * 60 * 60 * 1000);
+            
+            const chunkResult = await syncChunk(supabase, currentStart, currentEnd);
+            totalVisits += chunkResult.visits;
+            totalBlocks += chunkResult.blocks;
+            throttled = chunkResult.throttled;
+            
+            currentStart = currentEnd;
+          }
+          
+          overallThrottled = throttled;
+          
+          // Update horizon and last sync time
+          await supabase
+            .from("autosync_config")
+            .update({ 
+              last_far_term_sync: now.toISOString(),
+              far_term_current_horizon_days: throttled ? currentHorizon : newHorizon,
+              updated_at: now.toISOString(),
+            })
+            .eq("id", "default");
+          
+          results.farTerm = {
+            previousHorizon: currentHorizon,
+            newHorizon: throttled ? currentHorizon : newHorizon,
+            totalVisits,
+            totalBlocks,
+            throttled,
+          };
+          
+          console.log(`[Autosync] Far-term complete: horizon ${currentHorizon} -> ${newHorizon}`);
+        }
       }
-      
-      // Update horizon and last sync time
-      await supabase
-        .from("autosync_config")
-        .update({ 
-          last_far_term_sync: now.toISOString(),
-          far_term_current_horizon_days: throttled ? currentHorizon : newHorizon,
-          updated_at: now.toISOString(),
-        })
-        .eq("id", "default");
-      
-      results.farTerm = {
-        previousHorizon: currentHorizon,
-        newHorizon: throttled ? currentHorizon : newHorizon,
-        totalVisits,
-        totalBlocks,
-        throttled,
-      };
-      
-      console.log(`[Autosync] Far-term complete: horizon ${currentHorizon} -> ${newHorizon}`);
+
+      // Update main sync state for availability engine
+      if (results.nearTerm || results.farTerm) {
+        await supabase
+          .from("jobber_sync_state")
+          .upsert({
+            id: "default",
+            last_backfill_at: now.toISOString(),
+            backfill_in_progress: false,
+            updated_at: now.toISOString(),
+          });
+      }
+
+      // Update coverage statistics
+      await updateCoverageStats(supabase);
+
+    } catch (error) {
+      overallError = error instanceof Error ? error.message : String(error);
+      console.error("[Autosync] Error during sync:", overallError);
     }
 
-    // Also update the main sync state for availability engine
-    if (results.nearTerm || results.farTerm) {
-      await supabase
-        .from("jobber_sync_state")
-        .upsert({
-          id: "default",
-          last_backfill_at: now.toISOString(),
-          backfill_in_progress: false,
-          updated_at: now.toISOString(),
-        });
-    }
+    // Release lock with appropriate status
+    const status = overallError ? 'failed' : (overallThrottled ? 'throttled' : 'completed');
+    await releaseLock(supabase, runId, status, overallError);
+    console.log(`[Autosync] Lock released with status: ${status}`);
 
     return new Response(
       JSON.stringify({
-        success: true,
+        success: !overallError,
+        runId,
         timestamp: now.toISOString(),
+        status,
         ...results,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error) {
-    console.error("[Autosync] Error:", error);
+    console.error("[Autosync] Fatal error:", error);
+    
+    // Try to release lock on fatal error
+    await releaseLock(supabase, runId, 'failed', error instanceof Error ? error.message : String(error));
+    
     return new Response(
       JSON.stringify({ 
         error: "Autosync failed", 
+        runId,
         details: error instanceof Error ? error.message : String(error) 
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }

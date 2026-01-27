@@ -17,6 +17,7 @@ export type Database = {
       autosync_config: {
         Row: {
           created_at: string
+          earliest_coverage_date: string | null
           enabled: boolean
           far_term_current_horizon_days: number
           far_term_daily_chunk_days: number
@@ -24,12 +25,19 @@ export type Database = {
           id: string
           last_far_term_sync: string | null
           last_near_term_sync: string | null
+          last_run_error: string | null
+          last_run_status: string | null
+          latest_coverage_date: string | null
+          lock_acquired_at: string | null
+          lock_holder_id: string | null
           near_term_horizon_days: number
           near_term_interval_minutes: number
+          total_blocks_synced: number | null
           updated_at: string
         }
         Insert: {
           created_at?: string
+          earliest_coverage_date?: string | null
           enabled?: boolean
           far_term_current_horizon_days?: number
           far_term_daily_chunk_days?: number
@@ -37,12 +45,19 @@ export type Database = {
           id?: string
           last_far_term_sync?: string | null
           last_near_term_sync?: string | null
+          last_run_error?: string | null
+          last_run_status?: string | null
+          latest_coverage_date?: string | null
+          lock_acquired_at?: string | null
+          lock_holder_id?: string | null
           near_term_horizon_days?: number
           near_term_interval_minutes?: number
+          total_blocks_synced?: number | null
           updated_at?: string
         }
         Update: {
           created_at?: string
+          earliest_coverage_date?: string | null
           enabled?: boolean
           far_term_current_horizon_days?: number
           far_term_daily_chunk_days?: number
@@ -50,8 +65,14 @@ export type Database = {
           id?: string
           last_far_term_sync?: string | null
           last_near_term_sync?: string | null
+          last_run_error?: string | null
+          last_run_status?: string | null
+          latest_coverage_date?: string | null
+          lock_acquired_at?: string | null
+          lock_holder_id?: string | null
           near_term_horizon_days?: number
           near_term_interval_minutes?: number
+          total_blocks_synced?: number | null
           updated_at?: string
         }
         Relationships: []
@@ -870,6 +891,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      acquire_autosync_lock: {
+        Args: { p_holder_id: string; p_lock_ttl_minutes?: number }
+        Returns: boolean
+      }
       generate_booking_reference: { Args: never; Returns: string }
       has_role: {
         Args: {
@@ -879,6 +904,11 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      release_autosync_lock: {
+        Args: { p_error?: string; p_holder_id: string; p_status?: string }
+        Returns: boolean
+      }
+      update_autosync_coverage: { Args: never; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "user"
