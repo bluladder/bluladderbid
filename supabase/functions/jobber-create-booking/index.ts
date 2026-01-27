@@ -6,6 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Configuration for local mirror staleness threshold
+const MIRROR_STALE_THRESHOLD_MINUTES = 30;
+
 interface UtmParams {
   utm_source?: string;
   utm_medium?: string;
@@ -77,6 +80,169 @@ function parseAddress(address: string): {
   
   // Fallback - use whole address as street
   return { street1: address, city: "", province: "", postalCode: "" };
+}
+
+// Busy block type from database
+interface BusyBlock {
+  start_at: string;
+  end_at: string;
+  updated_at: string;
+  crew_id: string;
+}
+
+// Check for conflicts using local busy_blocks mirror
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function checkLocalMirrorConflicts(
+  supabase: any,
+  jobberUserId: string,
+  requestedStart: Date,
+  requestedEnd: Date
+): Promise<{ hasConflict: boolean; conflictingBlock?: { start_at: string; end_at: string }; mirrorStale: boolean; noData: boolean }> {
+  
+  // Query local busy_blocks for the technician on the requested date
+  const dayStart = new Date(requestedStart);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(requestedStart);
+  dayEnd.setHours(23, 59, 59, 999);
+  
+  // Get blocks for this technician on this day
+  const { data: blocks, error } = await supabase
+    .from("jobber_busy_blocks")
+    .select("start_at, end_at, updated_at, crew_id")
+    .gte("start_at", dayStart.toISOString())
+    .lte("start_at", dayEnd.toISOString());
+  
+  if (error) {
+    console.error("Error querying busy_blocks:", error);
+    return { hasConflict: false, mirrorStale: true, noData: true };
+  }
+  
+  // Cast blocks to proper type
+  const typedBlocks = (blocks || []) as BusyBlock[];
+  
+  // Filter to blocks for this technician
+  // crew_id in busy_blocks should match jobber_user_id from technicians
+  const techBlocks = typedBlocks.filter(b => b.crew_id === jobberUserId);
+  
+  if (techBlocks.length === 0) {
+    // No data for this day/technician - need fallback
+    console.log("No local mirror data found for technician on this date");
+    return { hasConflict: false, mirrorStale: false, noData: true };
+  }
+  
+  // Check if mirror data is stale
+  const now = Date.now();
+  const stalestBlock = techBlocks.reduce((oldest, block) => {
+    const updatedAt = new Date(block.updated_at).getTime();
+    return updatedAt < oldest ? updatedAt : oldest;
+  }, now);
+  
+  const ageMinutes = (now - stalestBlock) / (1000 * 60);
+  const mirrorStale = ageMinutes > MIRROR_STALE_THRESHOLD_MINUTES;
+  
+  if (mirrorStale) {
+    console.log(`Mirror data is stale (${Math.round(ageMinutes)} min old > ${MIRROR_STALE_THRESHOLD_MINUTES} min threshold)`);
+  }
+  
+  // Check for overlaps: (newStart < existingEnd) AND (newEnd > existingStart)
+  for (const block of techBlocks) {
+    const blockStart = new Date(block.start_at);
+    const blockEnd = new Date(block.end_at);
+    
+    const hasOverlap = requestedStart < blockEnd && requestedEnd > blockStart;
+    
+    if (hasOverlap) {
+      console.log(`LOCAL CONFLICT DETECTED: ${requestedStart.toISOString()} - ${requestedEnd.toISOString()} overlaps with block ${block.start_at} - ${block.end_at}`);
+      return { 
+        hasConflict: true, 
+        conflictingBlock: { start_at: block.start_at, end_at: block.end_at },
+        mirrorStale,
+        noData: false,
+      };
+    }
+  }
+  
+  return { hasConflict: false, mirrorStale, noData: false };
+}
+
+// Fallback: Check conflicts via Jobber API with narrow window
+async function checkJobberConflicts(
+  jobberUserId: string,
+  requestedStart: Date,
+  requestedEnd: Date,
+  technicianName: string
+): Promise<{ hasConflict: boolean; conflictingVisit?: { startAt: string; endAt: string }; throttled: boolean }> {
+  
+  // Narrow window: ±6 hours around requested time
+  const rangeAfter = new Date(requestedStart.getTime() - 6 * 60 * 60 * 1000);
+  const rangeBefore = new Date(requestedEnd.getTime() + 6 * 60 * 60 * 1000);
+  
+  // Minimal query - only needed fields, smaller page size
+  const conflictCheckQuery = `
+    query CheckConflicts($after: ISO8601DateTime!, $before: ISO8601DateTime!) {
+      visits(first: 50, filter: { startAt: { after: $after, before: $before } }) {
+        nodes {
+          id
+          startAt
+          endAt
+          assignedUsers {
+            nodes { id }
+          }
+        }
+      }
+    }
+  `;
+  
+  const conflictResult = await jobberGraphQL<{
+    visits: {
+      nodes: Array<{
+        id: string;
+        startAt: string;
+        endAt: string;
+        assignedUsers?: { nodes: Array<{ id: string }> };
+      }>;
+    };
+  }>(conflictCheckQuery, {
+    after: rangeAfter.toISOString(),
+    before: rangeBefore.toISOString(),
+  });
+  
+  console.log("Jobber conflict check result:", JSON.stringify(conflictResult));
+  
+  // Check if throttled
+  if (conflictResult.throttled) {
+    console.error("Jobber conflict check was throttled");
+    return { hasConflict: false, throttled: true };
+  }
+  
+  if (conflictResult.errors?.length) {
+    console.error("Conflict validation failed (Jobber errors):", conflictResult.errors);
+    // Fail closed - treat errors as potential conflict to prevent double-booking
+    return { hasConflict: false, throttled: false };
+  }
+  
+  if (conflictResult.data?.visits?.nodes) {
+    const existingVisits = conflictResult.data.visits.nodes
+      .filter(v => (v.assignedUsers?.nodes ?? []).some(u => u.id === jobberUserId));
+    
+    for (const visit of existingVisits) {
+      const existingStart = new Date(visit.startAt);
+      const existingEnd = new Date(visit.endAt);
+      
+      const hasOverlap = requestedStart < existingEnd && requestedEnd > existingStart;
+      
+      if (hasOverlap) {
+        console.log(`JOBBER CONFLICT DETECTED: ${requestedStart.toISOString()} - ${requestedEnd.toISOString()} overlaps with visit ${visit.id} (${visit.startAt} - ${visit.endAt})`);
+        return {
+          hasConflict: true,
+          conflictingVisit: { startAt: visit.startAt, endAt: visit.endAt },
+          throttled: false,
+        };
+      }
+    }
+  }
+  
+  return { hasConflict: false, throttled: false };
 }
 
 Deno.serve(async (req) => {
@@ -387,100 +553,80 @@ Deno.serve(async (req) => {
 
     console.log("Using property ID:", propertyId);
 
-    // === REAL-TIME CONFLICT DETECTION ===
-    // Before creating the job, check if the technician has any overlapping visits
-    console.log("Checking for scheduling conflicts...");
+    // === CONFLICT DETECTION ===
+    // Step 1: Check local busy_blocks mirror first
+    console.log("Checking for scheduling conflicts (local mirror first)...");
     
-    const conflictCheckQuery = `
-      query CheckConflicts($after: ISO8601DateTime!, $before: ISO8601DateTime!) {
-        visits(first: 200, filter: { startAt: { after: $after, before: $before } }) {
-          nodes {
-            id
-            startAt
-            endAt
-            title
-            assignedUsers {
-              nodes { id }
-            }
-          }
-        }
-      }
-    `;
-    
-    // Parse the requested booking times
     const requestedStart = new Date(booking.scheduledStart);
     const requestedEnd = new Date(booking.scheduledEnd);
-
-    // Query a generous window around the requested time.
-    // (Avoid timezone edge cases from setHours() running in server timezone.)
-    const rangeAfter = new Date(requestedStart.getTime() - 24 * 60 * 60 * 1000);
-    const rangeBefore = new Date(requestedEnd.getTime() + 24 * 60 * 60 * 1000);
     
-    const conflictResult = await jobberGraphQL<{
-      visits: {
-        nodes: Array<{
-          id: string;
-          startAt: string;
-          endAt: string;
-          title: string;
-          assignedUsers?: { nodes: Array<{ id: string }> };
-        }>;
-      };
-    }>(conflictCheckQuery, {
-      after: rangeAfter.toISOString(),
-      before: rangeBefore.toISOString(),
-    });
+    const localCheck = await checkLocalMirrorConflicts(
+      supabase,
+      technician.jobber_user_id,
+      requestedStart,
+      requestedEnd
+    );
     
-    console.log("Conflict check result:", JSON.stringify(conflictResult));
-
-    // If we can't validate conflicts due to provider error, fail closed to prevent double-booking.
-    if (conflictResult.errors?.length) {
-      console.error("Conflict validation failed (Jobber errors):", conflictResult.errors);
+    // If local mirror found a conflict, return immediately
+    if (localCheck.hasConflict && localCheck.conflictingBlock) {
+      const existingStartLocal = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      }).format(new Date(localCheck.conflictingBlock.start_at));
+      
       return new Response(
-        JSON.stringify({
-          error: "Scheduling validation temporarily unavailable",
-          details: "We couldn't confirm availability with our scheduling provider. Please try again in a moment.",
-          code: "JOBBER_CONFLICT_CHECK_FAILED",
+        JSON.stringify({ 
+          error: "Time slot conflict", 
+          details: `This time slot is no longer available. ${technician.name} has another appointment at ${existingStartLocal}. Please select a different time.`,
+          code: "CONFLICT",
+          conflictingVisit: localCheck.conflictingBlock,
         }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
       );
     }
     
-    if (conflictResult.data?.visits?.nodes) {
-      const existingVisits = conflictResult.data.visits.nodes
-        .filter(v => (v.assignedUsers?.nodes ?? []).some(u => u.id === technician.jobber_user_id));
+    // Step 2: Fallback to Jobber API only if mirror has no data or is stale
+    if (localCheck.noData || localCheck.mirrorStale) {
+      console.log(`Falling back to Jobber API for conflict check (noData: ${localCheck.noData}, stale: ${localCheck.mirrorStale})`);
       
-      // Check for overlaps: (newStart < existingEnd) AND (newEnd > existingStart)
-      for (const visit of existingVisits) {
-        const existingStart = new Date(visit.startAt);
-        const existingEnd = new Date(visit.endAt);
+      const jobberCheck = await checkJobberConflicts(
+        technician.jobber_user_id,
+        requestedStart,
+        requestedEnd,
+        technician.name
+      );
+      
+      // Fail-soft: If Jobber is throttled, return 503 with friendly message
+      if (jobberCheck.throttled) {
+        return new Response(
+          JSON.stringify({
+            error: "Scheduling is busy",
+            details: "Our scheduling system is currently busy. Please try again in 1-2 minutes.",
+            code: "SCHEDULING_BUSY",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+        );
+      }
+      
+      if (jobberCheck.hasConflict && jobberCheck.conflictingVisit) {
+        const existingStartLocal = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Chicago',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        }).format(new Date(jobberCheck.conflictingVisit.startAt));
         
-        const hasOverlap = requestedStart < existingEnd && requestedEnd > existingStart;
-        
-        if (hasOverlap) {
-          console.error(`CONFLICT DETECTED: Requested ${booking.scheduledStart} - ${booking.scheduledEnd} overlaps with existing visit ${visit.id} (${visit.startAt} - ${visit.endAt})`);
-          
-          // Format times for user-friendly message
-          const existingStartLocal = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/Chicago',
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-          }).format(existingStart);
-          
-          return new Response(
-            JSON.stringify({ 
-              error: "Time slot conflict", 
-              details: `This time slot is no longer available. ${technician.name} has another appointment at ${existingStartLocal}. Please select a different time.`,
-              code: "CONFLICT",
-              conflictingVisit: {
-                startAt: visit.startAt,
-                endAt: visit.endAt,
-              }
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
-          );
-        }
+        return new Response(
+          JSON.stringify({ 
+            error: "Time slot conflict", 
+            details: `This time slot is no longer available. ${technician.name} has another appointment at ${existingStartLocal}. Please select a different time.`,
+            code: "CONFLICT",
+            conflictingVisit: jobberCheck.conflictingVisit,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
+        );
       }
     }
     

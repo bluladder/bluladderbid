@@ -6,6 +6,44 @@ interface JobberTokens {
   expires_at: string;
 }
 
+// Rate limit configuration
+const RATE_LIMIT_CONFIG = {
+  maxRetries: 6,
+  baseDelayMs: 1000,
+  multiplier: 2,
+  maxDelayMs: 30000,
+  jitterFactor: 0.3, // 30% jitter
+};
+
+// Add jitter to delay to prevent thundering herd
+function addJitter(delayMs: number): number {
+  const jitter = delayMs * RATE_LIMIT_CONFIG.jitterFactor * (Math.random() - 0.5) * 2;
+  return Math.max(100, Math.round(delayMs + jitter));
+}
+
+// Calculate delay for retry attempt
+function calculateBackoffDelay(attempt: number): number {
+  const baseDelay = RATE_LIMIT_CONFIG.baseDelayMs * Math.pow(RATE_LIMIT_CONFIG.multiplier, attempt);
+  const cappedDelay = Math.min(baseDelay, RATE_LIMIT_CONFIG.maxDelayMs);
+  return addJitter(cappedDelay);
+}
+
+// Sleep for specified milliseconds
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Check if error is a throttle/rate limit error
+function isThrottleError(response: Response, data?: { errors?: Array<{ message: string }> }): boolean {
+  if (response.status === 429) return true;
+  if (data?.errors?.some(e => 
+    e.message.toLowerCase().includes('throttle') || 
+    e.message.toLowerCase().includes('rate limit') ||
+    e.message.toLowerCase().includes('too many requests')
+  )) return true;
+  return false;
+}
+
 // Get valid Jobber access token, refreshing if needed
 export async function getJobberAccessToken(): Promise<string | null> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -101,32 +139,103 @@ export async function getJobberAccessToken(): Promise<string | null> {
   return newTokenData.access_token;
 }
 
-// Execute GraphQL query against Jobber API
+// Result type for jobberGraphQL with throttle info
+export interface JobberGraphQLResult<T> {
+  data?: T;
+  errors?: Array<{ message: string }>;
+  throttled?: boolean;
+}
+
+// Execute GraphQL query against Jobber API with retry and backoff
 export async function jobberGraphQL<T>(
   query: string,
   variables?: Record<string, unknown>
-): Promise<{ data?: T; errors?: Array<{ message: string }> }> {
+): Promise<JobberGraphQLResult<T>> {
   const accessToken = await getJobberAccessToken();
   
   if (!accessToken) {
     return { errors: [{ message: "No valid Jobber access token" }] };
   }
 
-  const response = await fetch("https://api.getjobber.com/api/graphql", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${accessToken}`,
-      "X-JOBBER-GRAPHQL-VERSION": "2025-04-16",
-    },
-    body: JSON.stringify({ query, variables }),
-  });
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= RATE_LIMIT_CONFIG.maxRetries; attempt++) {
+    try {
+      const response = await fetch("https://api.getjobber.com/api/graphql", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+          "X-JOBBER-GRAPHQL-VERSION": "2025-04-16",
+        },
+        body: JSON.stringify({ query, variables }),
+      });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Jobber API error:", errorText);
-    return { errors: [{ message: `API error: ${response.status}` }] };
+      // Parse response body
+      let data: JobberGraphQLResult<T>;
+      if (response.ok || response.status === 429) {
+        try {
+          data = await response.json();
+        } catch {
+          data = { errors: [{ message: `Failed to parse response: ${response.status}` }] };
+        }
+      } else {
+        const errorText = await response.text();
+        console.error("Jobber API error:", errorText);
+        data = { errors: [{ message: `API error: ${response.status}` }] };
+      }
+
+      // Check for throttling
+      if (isThrottleError(response, data)) {
+        if (attempt < RATE_LIMIT_CONFIG.maxRetries) {
+          // Check for Retry-After header
+          const retryAfter = response.headers.get('Retry-After');
+          let delayMs: number;
+          
+          if (retryAfter) {
+            // Retry-After can be seconds or a date
+            const retrySeconds = parseInt(retryAfter, 10);
+            if (!isNaN(retrySeconds)) {
+              delayMs = retrySeconds * 1000;
+            } else {
+              const retryDate = new Date(retryAfter);
+              delayMs = Math.max(0, retryDate.getTime() - Date.now());
+            }
+            // Cap it to our max delay
+            delayMs = Math.min(delayMs, RATE_LIMIT_CONFIG.maxDelayMs);
+          } else {
+            delayMs = calculateBackoffDelay(attempt);
+          }
+          
+          console.log(`Jobber throttled (attempt ${attempt + 1}/${RATE_LIMIT_CONFIG.maxRetries + 1}). Retrying in ${delayMs}ms...`);
+          await sleep(delayMs);
+          continue;
+        } else {
+          // Max retries exceeded
+          console.error("Jobber API throttled - max retries exceeded");
+          return { 
+            errors: [{ message: "Jobber API rate limited after max retries" }],
+            throttled: true,
+          };
+        }
+      }
+
+      // Not throttled, return the result
+      return data;
+      
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`Jobber GraphQL request failed (attempt ${attempt + 1}):`, lastError.message);
+      
+      if (attempt < RATE_LIMIT_CONFIG.maxRetries) {
+        const delayMs = calculateBackoffDelay(attempt);
+        console.log(`Retrying in ${delayMs}ms...`);
+        await sleep(delayMs);
+      }
+    }
   }
 
-  return await response.json();
+  return { 
+    errors: [{ message: lastError?.message || "Request failed after max retries" }] 
+  };
 }
