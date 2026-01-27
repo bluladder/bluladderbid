@@ -11,8 +11,7 @@ interface Visit {
   title: string;
   startAt: string;
   endAt: string;
-  status: string;
-  assignedServicers: { nodes: Array<{ id: string; name: string }> };
+  assignedUsers: { nodes: Array<{ id: string; name: { full: string } }> };
   job: {
     id: string;
     title: string;
@@ -60,11 +59,12 @@ async function fetchAllVisits(startDate: string, endDate: string): Promise<Visit
           title
           startAt
           endAt
-          status
-          assignedServicers {
+          assignedUsers {
             nodes {
               id
-              name
+              name {
+                full
+              }
             }
           }
           job {
@@ -262,7 +262,7 @@ Deno.serve(async (req) => {
     let errorCount = 0;
 
     for (const visit of visits) {
-      const assignees = visit.assignedServicers?.nodes || [];
+      const assignees = visit.assignedUsers?.nodes || [];
       
       for (const assignee of assignees) {
         const address = visit.job?.property?.address;
@@ -278,7 +278,7 @@ Deno.serve(async (req) => {
               crew_id: assignee.id,
               start_at: visit.startAt,
               end_at: visit.endAt,
-              status: visit.status?.toLowerCase() || 'scheduled',
+              status: 'scheduled',
               jobber_job_id: visit.job?.id || null,
               client_name: visit.job?.client?.name || null,
               client_address: fullAddress,
