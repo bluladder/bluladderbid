@@ -1,5 +1,8 @@
 project_id = "gyndziiuizpgwhqwyrvn"
 
+[functions.jobber-autosync]
+verify_jwt = false
+
 [functions.jobber-oauth-callback]
 verify_jwt = false
 

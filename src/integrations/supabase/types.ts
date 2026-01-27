@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      autosync_config: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          far_term_current_horizon_days: number
+          far_term_daily_chunk_days: number
+          far_term_max_horizon_days: number
+          id: string
+          last_far_term_sync: string | null
+          last_near_term_sync: string | null
+          near_term_horizon_days: number
+          near_term_interval_minutes: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          far_term_current_horizon_days?: number
+          far_term_daily_chunk_days?: number
+          far_term_max_horizon_days?: number
+          id?: string
+          last_far_term_sync?: string | null
+          last_near_term_sync?: string | null
+          near_term_horizon_days?: number
+          near_term_interval_minutes?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          far_term_current_horizon_days?: number
+          far_term_daily_chunk_days?: number
+          far_term_max_horizon_days?: number
+          id?: string
+          last_far_term_sync?: string | null
+          last_near_term_sync?: string | null
+          near_term_horizon_days?: number
+          near_term_interval_minutes?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       availability_cache: {
         Row: {
           cache_key: string
@@ -248,6 +290,39 @@ export type Database = {
           max_uses?: number | null
           updated_at?: string
           usage_count?: number
+        }
+        Relationships: []
+      }
+      drive_time_cache: {
+        Row: {
+          created_at: string
+          dest_hash: string
+          distance_meters: number | null
+          drive_minutes: number
+          expires_at: string
+          id: string
+          origin_hash: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          dest_hash: string
+          distance_meters?: number | null
+          drive_minutes: number
+          expires_at?: string
+          id?: string
+          origin_hash: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          dest_hash?: string
+          distance_meters?: number | null
+          drive_minutes?: number
+          expires_at?: string
+          id?: string
+          origin_hash?: string
+          updated_at?: string
         }
         Relationships: []
       }
