@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Admin from "./pages/Admin";
 import Services from "./pages/Services";
 import ServiceLanding from "./pages/ServiceLanding";
+import PlanBuilder from "./pages/PlanBuilder";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/services" element={<Services />} />
+          <Route path="/plan-builder" element={<PlanBuilder />} />
           {/* Service-specific landing pages */}
           <Route path="/window-cleaning" element={<ServiceLanding />} />
           <Route path="/gutter-cleaning" element={<ServiceLanding />} />

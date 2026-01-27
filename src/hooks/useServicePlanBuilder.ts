@@ -1,0 +1,257 @@
+import { useState, useMemo, useCallback } from 'react';
+import { usePricingConfig } from './usePricingConfig';
+import type {
+  ServicePlanHomeDetails,
+  ServicePlanService,
+  ServicePlanPayment,
+  ServicePlanCustomer,
+  PlanBuilderServiceId,
+} from '@/types/servicePlanBuilder';
+import {
+  DEFAULT_PLAN_HOME_DETAILS,
+  DEFAULT_PLAN_CUSTOMER,
+  PLAN_BUILDER_SERVICES,
+} from '@/types/servicePlanBuilder';
+
+interface ServiceSelection {
+  id: PlanBuilderServiceId;
+  enabled: boolean;
+  frequency: 1 | 2 | 3 | 4;
+}
+
+function applyModifiers(basePrice: number, modifierPercents: number[]): number {
+  const totalPercent = modifierPercents.reduce((sum, pct) => sum + pct, 0);
+  return Math.round(basePrice * (1 + totalPercent / 100));
+}
+
+export function useServicePlanBuilder() {
+  const { data: PRICING, isLoading } = usePricingConfig();
+  
+  // State
+  const [homeDetails, setHomeDetails] = useState<ServicePlanHomeDetails>(DEFAULT_PLAN_HOME_DETAILS);
+  const [customer, setCustomer] = useState<ServicePlanCustomer>(DEFAULT_PLAN_CUSTOMER);
+  const [selections, setSelections] = useState<ServiceSelection[]>(
+    PLAN_BUILDER_SERVICES.map(s => ({
+      id: s.id as PlanBuilderServiceId,
+      enabled: false,
+      frequency: 1,
+    }))
+  );
+  
+  // Update home details
+  const updateHomeDetails = useCallback((updates: Partial<ServicePlanHomeDetails>) => {
+    setHomeDetails(prev => ({ ...prev, ...updates }));
+  }, []);
+  
+  // Update customer info
+  const updateCustomer = useCallback((updates: Partial<ServicePlanCustomer>) => {
+    setCustomer(prev => ({ ...prev, ...updates }));
+  }, []);
+  
+  // Toggle service selection
+  const toggleService = useCallback((serviceId: PlanBuilderServiceId) => {
+    setSelections(prev =>
+      prev.map(s =>
+        s.id === serviceId ? { ...s, enabled: !s.enabled } : s
+      )
+    );
+  }, []);
+  
+  // Update service frequency
+  const updateFrequency = useCallback((serviceId: PlanBuilderServiceId, frequency: 1 | 2 | 3 | 4) => {
+    setSelections(prev =>
+      prev.map(s =>
+        s.id === serviceId ? { ...s, frequency } : s
+      )
+    );
+  }, []);
+  
+  // Calculate individual service prices
+  const calculateServicePrice = useCallback((serviceId: PlanBuilderServiceId): number => {
+    if (!PRICING || homeDetails.squareFootage === 0) return 0;
+    
+    const { squareFootage, stories, condition } = homeDetails;
+    
+    switch (serviceId) {
+      case 'window-cleaning-exterior': {
+        const config = PRICING.window_cleaning;
+        const base = squareFootage * config.exteriorPerSqFt;
+        const modifiers: number[] = [];
+        modifiers.push(config.modifiers.stories[stories.toString()] ?? 0);
+        modifiers.push(config.modifiers.condition?.[condition] ?? 0);
+        let price = applyModifiers(base, modifiers);
+        
+        // Add advanced modifiers
+        if (homeDetails.hardWaterStains && config.modifiers.hardWater) {
+          const addon = Math.round(price * (config.modifiers.hardWater / 100) * (homeDetails.hardWaterPercent / 100));
+          price += addon;
+        }
+        if (homeDetails.frenchPanes && config.modifiers.frenchPanes) {
+          const addon = Math.round(price * (config.modifiers.frenchPanes / 100) * (homeDetails.frenchPanesPercent / 100));
+          price += addon;
+        }
+        if (homeDetails.solarScreens && config.modifiers.solarScreens) {
+          const addon = Math.round(price * (config.modifiers.solarScreens / 100) * (homeDetails.solarScreensPercent / 100));
+          price += addon;
+        }
+        
+        return Math.max(price, config.minimumPrice ?? 0);
+      }
+      
+      case 'window-cleaning-interior': {
+        const config = PRICING.window_cleaning;
+        const base = squareFootage * config.interiorPerSqFt;
+        const modifiers: number[] = [];
+        modifiers.push(config.modifiers.stories[stories.toString()] ?? 0);
+        modifiers.push(config.modifiers.condition?.[condition] ?? 0);
+        let price = applyModifiers(base, modifiers);
+        
+        if (homeDetails.hardWaterStains && config.modifiers.hardWater) {
+          const addon = Math.round(price * (config.modifiers.hardWater / 100) * (homeDetails.hardWaterPercent / 100));
+          price += addon;
+        }
+        if (homeDetails.frenchPanes && config.modifiers.frenchPanes) {
+          const addon = Math.round(price * (config.modifiers.frenchPanes / 100) * (homeDetails.frenchPanesPercent / 100));
+          price += addon;
+        }
+        
+        return Math.max(price, Math.round((config.minimumPrice ?? 0) * 0.6));
+      }
+      
+      case 'gutter-cleaning': {
+        const config = PRICING.gutter_cleaning;
+        const base = squareFootage * config.perSqFt;
+        const modifiers: number[] = [];
+        modifiers.push(config.modifiers.stories[stories.toString()] ?? 0);
+        const price = applyModifiers(base, modifiers);
+        return Math.max(price, config.minimumPrice ?? 0);
+      }
+      
+      case 'house-wash': {
+        const config = PRICING.house_wash;
+        const base = squareFootage * config.perSqFt;
+        const modifiers: number[] = [];
+        modifiers.push(config.modifiers.stories[stories.toString()] ?? 0);
+        const price = applyModifiers(base, modifiers);
+        return Math.max(price, config.minimumPrice ?? 0);
+      }
+      
+      case 'roof-cleaning': {
+        const config = PRICING.roof_cleaning;
+        const base = squareFootage * config.perSqFt;
+        const modifiers: number[] = [];
+        modifiers.push(config.modifiers.stories[stories.toString()] ?? 0);
+        modifiers.push(config.modifiers.roofType?.[homeDetails.roofType] ?? 0);
+        modifiers.push(config.modifiers.severity?.[homeDetails.roofSeverity] ?? 0);
+        const price = applyModifiers(base, modifiers);
+        return Math.max(price, config.minimumPrice ?? 0);
+      }
+      
+      case 'driveway-cleaning': {
+        const config = PRICING.driveway_cleaning;
+        const base = homeDetails.drivewaySqft * config.perSqFt;
+        const surfaceMult = config.surfaceMultipliers[homeDetails.drivewaySurfaceType] ?? 1;
+        const price = Math.round(base * surfaceMult);
+        return Math.max(price, config.minimumPrice ?? 0);
+      }
+      
+      case 'pressure-washing': {
+        const config = PRICING.pressure_washing;
+        const surfaceMult = config.surfaceMultipliers[homeDetails.flatworkSurfaceType] ?? 1;
+        
+        let total = 0;
+        if (homeDetails.frontPorchSqft > 0) {
+          total += homeDetails.frontPorchSqft * config.perSqFt * surfaceMult;
+        }
+        if (homeDetails.backPatioSqft > 0) {
+          total += homeDetails.backPatioSqft * config.perSqFt * surfaceMult;
+        }
+        if (homeDetails.poolDeckSqft > 0) {
+          total += homeDetails.poolDeckSqft * config.perSqFt * surfaceMult;
+        }
+        if (homeDetails.walkwaysSqft > 0) {
+          total += homeDetails.walkwaysSqft * config.perSqFt * surfaceMult;
+        }
+        
+        return Math.max(Math.round(total), config.minimumPrice ?? 0);
+      }
+      
+      default:
+        return 0;
+    }
+  }, [PRICING, homeDetails]);
+  
+  // Build service list with calculated prices
+  const services = useMemo<ServicePlanService[]>(() => {
+    return selections.map(selection => {
+      const serviceInfo = PLAN_BUILDER_SERVICES.find(s => s.id === selection.id);
+      const pricePerVisit = calculateServicePrice(selection.id);
+      
+      return {
+        id: selection.id,
+        name: serviceInfo?.name ?? '',
+        description: serviceInfo?.description ?? '',
+        icon: serviceInfo?.icon ?? 'Circle',
+        enabled: selection.enabled,
+        frequency: selection.frequency,
+        calculatedPrice: pricePerVisit,
+        annualTotal: pricePerVisit * selection.frequency,
+      };
+    });
+  }, [selections, calculateServicePrice]);
+  
+  // Calculate payment breakdown
+  const payment = useMemo<ServicePlanPayment>(() => {
+    const enabledServices = services.filter(s => s.enabled);
+    const annualTotal = enabledServices.reduce((sum, s) => sum + s.annualTotal, 0);
+    
+    // 20% down payment
+    const downPayment = Math.round(annualTotal * 0.2);
+    
+    // Remaining 80% split into 11 monthly payments
+    const remainingBalance = annualTotal - downPayment;
+    const monthlyPayment = Math.round(remainingBalance / 11);
+    
+    return {
+      annualTotal,
+      downPayment,
+      monthlyPayment,
+      totalPayments: 12,
+    };
+  }, [services]);
+  
+  // Validation
+  const isValid = useMemo(() => {
+    const hasServices = services.some(s => s.enabled);
+    const hasHomeDetails = homeDetails.squareFootage > 0;
+    const hasCustomerInfo = 
+      customer.firstName.trim() !== '' &&
+      customer.lastName.trim() !== '' &&
+      customer.email.trim() !== '' &&
+      customer.phone.trim() !== '' &&
+      customer.address.trim() !== '';
+    
+    return hasServices && hasHomeDetails && hasCustomerInfo;
+  }, [services, homeDetails, customer]);
+  
+  const hasSelectedServices = useMemo(() => services.some(s => s.enabled), [services]);
+  
+  return {
+    // State
+    homeDetails,
+    customer,
+    services,
+    payment,
+    
+    // Actions
+    updateHomeDetails,
+    updateCustomer,
+    toggleService,
+    updateFrequency,
+    
+    // Validation
+    isValid,
+    hasSelectedServices,
+    isLoading,
+  };
+}
