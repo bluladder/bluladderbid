@@ -15,7 +15,8 @@ const JOBBER_BACKOFF_MS = [500, 1500, 3000];
 // 2) check DB-backed cache for recent visits data that covers the requested range
 let lastJobberThrottleAtMs: number | null = null;
 const JOBBER_THROTTLE_COOLDOWN_MS = 60_000; // 60s
-const DB_CACHE_TTL_MINUTES = 10; // DB cache lasts longer than in-memory
+const DB_CACHE_TTL_MINUTES = 30; // DB cache lasts 30 minutes to survive throttling
+const STALE_CACHE_TTL_MINUTES = 120; // Allow stale cache up to 2 hours as last resort
 
 let lastJobberAuthErrorAtMs: number | null = null;
 const JOBBER_AUTH_COOLDOWN_MS = 5 * 60_000; // 5 minutes
@@ -27,7 +28,7 @@ let inMemoryVisitsCache: {
   fetchedAtMs: number;
   data: JobberVisitResult;
 } | null = null;
-const IN_MEMORY_CACHE_TTL_MS = 2 * 60_000; // 2 minutes
+const IN_MEMORY_CACHE_TTL_MS = 5 * 60_000; // 5 minutes in-memory
 
 type JobberVisitResult = {
   visits: {
@@ -59,38 +60,62 @@ type JobberGraphQLResult<T> = { data?: T; errors?: JobberGraphQLError[] };
 async function getDbCache(
   supabase: any,
   fromDate: string,
-  toDate: string
-): Promise<JobberVisitResult | null> {
+  toDate: string,
+  allowStale = false
+): Promise<{ data: JobberVisitResult; isStale: boolean } | null> {
   const cacheKey = `visits:${fromDate}:${toDate}`;
   
+  // Try fresh cache first
   const { data, error } = await (supabase as any)
     .from("availability_cache")
-    .select("visits_json, cached_at")
+    .select("visits_json, cached_at, expires_at")
     .eq("cache_key", cacheKey)
     .gt("expires_at", new Date().toISOString())
     .maybeSingle();
 
-  if (error || !data) {
-    // Also try to find a cache that covers this range (superset)
-    const { data: coveringCache } = await (supabase as any)
+  if (!error && data?.visits_json) {
+    console.log(`DB cache hit for ${cacheKey}`);
+    return { data: { visits: { nodes: data.visits_json as JobberVisitResult["visits"]["nodes"] } }, isStale: false };
+  }
+
+  // Try covering range from fresh cache
+  const { data: coveringCache } = await (supabase as any)
+    .from("availability_cache")
+    .select("visits_json, cached_at, from_date, to_date")
+    .lte("from_date", fromDate)
+    .gte("to_date", toDate)
+    .gt("expires_at", new Date().toISOString())
+    .order("cached_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (coveringCache?.visits_json) {
+    console.log(`DB cache hit (covering range ${coveringCache.from_date} to ${coveringCache.to_date})`);
+    return { data: { visits: { nodes: coveringCache.visits_json as JobberVisitResult["visits"]["nodes"] } }, isStale: false };
+  }
+
+  // If allowStale, try to find any recent cache even if expired (up to STALE_CACHE_TTL_MINUTES)
+  if (allowStale) {
+    const staleThreshold = new Date(Date.now() - STALE_CACHE_TTL_MINUTES * 60 * 1000).toISOString();
+    
+    const { data: staleCache } = await (supabase as any)
       .from("availability_cache")
       .select("visits_json, cached_at, from_date, to_date")
       .lte("from_date", fromDate)
       .gte("to_date", toDate)
-      .gt("expires_at", new Date().toISOString())
+      .gt("cached_at", staleThreshold)
       .order("cached_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (coveringCache?.visits_json) {
-      console.log(`DB cache hit (covering range ${coveringCache.from_date} to ${coveringCache.to_date})`);
-      return { visits: { nodes: coveringCache.visits_json as JobberVisitResult["visits"]["nodes"] } };
+    if (staleCache?.visits_json) {
+      const ageMinutes = Math.round((Date.now() - new Date(staleCache.cached_at).getTime()) / 60000);
+      console.log(`Using STALE cache (${ageMinutes} minutes old) from ${staleCache.from_date} to ${staleCache.to_date}`);
+      return { data: { visits: { nodes: staleCache.visits_json as JobberVisitResult["visits"]["nodes"] } }, isStale: true };
     }
-    return null;
   }
 
-  console.log(`DB cache hit for ${cacheKey}`);
-  return { visits: { nodes: data.visits_json as JobberVisitResult["visits"]["nodes"] } };
+  return null;
 }
 
 // Helper: Write to DB cache
@@ -689,11 +714,11 @@ Deno.serve(async (req) => {
         );
         jobberResult = { data: inMemoryVisitsCache!.data };
       } else {
-        // Fall back to DB cache
-        const dbCachedData = await getDbCache(supabase, fromDateStr, toDateStr);
-        if (dbCachedData) {
-          console.log("Jobber throttling cooldown active; using DB cache");
-          jobberResult = { data: dbCachedData };
+        // Fall back to DB cache (allow stale as last resort)
+        const dbCachedResult = await getDbCache(supabase, fromDateStr, toDateStr, true);
+        if (dbCachedResult) {
+          console.log(`Jobber throttling cooldown active; using ${dbCachedResult.isStale ? 'STALE ' : ''}DB cache`);
+          jobberResult = { data: dbCachedResult.data };
         } else {
           console.error("Jobber throttling cooldown active and no usable cache - returning 503");
           return new Response(
@@ -770,11 +795,11 @@ Deno.serve(async (req) => {
           console.log("Jobber throttled; falling back to in-memory cache");
           jobberResult = { data: inMemoryVisitsCache!.data };
         } else {
-          // Fall back to DB cache
-          const dbCachedData = await getDbCache(supabase, fromDateStr, toDateStr);
-          if (dbCachedData) {
-            console.log("Jobber throttled; falling back to DB cache");
-            jobberResult = { data: dbCachedData };
+          // Fall back to DB cache (allow stale as last resort)
+          const dbCachedResult = await getDbCache(supabase, fromDateStr, toDateStr, true);
+          if (dbCachedResult) {
+            console.log(`Jobber throttled; falling back to ${dbCachedResult.isStale ? 'STALE ' : ''}DB cache`);
+            jobberResult = { data: dbCachedResult.data };
           } else {
             console.error("Jobber API throttled and no usable cache - returning 503 to prevent conflicts");
             return new Response(

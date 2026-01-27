@@ -7,18 +7,17 @@ import { ScenarioCompare } from '@/components/admin/ScenarioCompare';
 import { DiscountCodesManager } from '@/components/admin/DiscountCodesManager';
 import { JobberIntegration } from '@/components/admin/JobberIntegration';
 import { TechnicianManager } from '@/components/admin/TechnicianManager';
-import { BusinessHoursSettings } from '@/components/admin/BusinessHoursSettings';
 import { DriveTimeSettings } from '@/components/admin/DriveTimeSettings';
 import { BookingSettings } from '@/components/admin/BookingSettings';
 import { BookingsManager } from '@/components/admin/BookingsManager';
 import { MarketingAnalytics } from '@/components/admin/MarketingAnalytics';
-import { AdminAvailabilityViewer } from '@/components/admin/AdminAvailabilityViewer';
 import { CrewUtilizationAnalytics } from '@/components/admin/CrewUtilizationAnalytics';
 import { EmbedCodeManager } from '@/components/admin/EmbedCodeManager';
+import { SchedulingPortal } from '@/components/admin/SchedulingPortal';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3, Users, Code } from 'lucide-react';
+import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3, Users, Code, Phone } from 'lucide-react';
 import { Link } from 'react-router-dom';
 export default function Admin() {
   const { isAdmin, loading, user } = useIsAdmin();
@@ -108,10 +107,14 @@ export default function Admin() {
       <main className="container py-8">
         <div className="max-w-5xl mx-auto">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-9 mb-6">
+            <TabsList className="grid w-full grid-cols-10 mb-6">
               <TabsTrigger value="bookings" className="flex items-center gap-2">
                 <ClipboardList className="w-4 h-4" />
                 <span className="hidden sm:inline">Bookings</span>
+              </TabsTrigger>
+              <TabsTrigger value="scheduling" className="flex items-center gap-2">
+                <Phone className="w-4 h-4" />
+                <span className="hidden sm:inline">Schedule</span>
               </TabsTrigger>
               <TabsTrigger value="utilization" className="flex items-center gap-2">
                 <Users className="w-4 h-4" />
@@ -137,9 +140,9 @@ export default function Admin() {
                 <Tag className="w-4 h-4" />
                 <span className="hidden sm:inline">Discounts</span>
               </TabsTrigger>
-              <TabsTrigger value="booking" className="flex items-center gap-2">
+              <TabsTrigger value="crew" className="flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
-                <span className="hidden sm:inline">Settings</span>
+                <span className="hidden sm:inline">Crew</span>
               </TabsTrigger>
               <TabsTrigger value="config" className="flex items-center gap-2">
                 <Settings className="w-4 h-4" />
@@ -149,6 +152,10 @@ export default function Admin() {
             
             <TabsContent value="bookings">
               <BookingsManager />
+            </TabsContent>
+            
+            <TabsContent value="scheduling">
+              <SchedulingPortal />
             </TabsContent>
             
             <TabsContent value="utilization">
@@ -175,17 +182,11 @@ export default function Admin() {
               <DiscountCodesManager />
             </TabsContent>
             
-            <TabsContent value="booking" className="space-y-6">
-              <BookingSettings />
-              <BusinessHoursSettings />
-              <DriveTimeSettings />
-              <AdminAvailabilityViewer 
-                services={[
-                  { service: 'windows_exterior', price: 200 },
-                ]}
-              />
-              <JobberIntegration />
+            <TabsContent value="crew" className="space-y-6">
               <TechnicianManager />
+              <DriveTimeSettings />
+              <BookingSettings />
+              <JobberIntegration />
             </TabsContent>
             
             <TabsContent value="config">
