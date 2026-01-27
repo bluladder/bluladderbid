@@ -14,7 +14,7 @@ import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 
-type BookingStep = 'time' | 'info' | 'confirmation';
+type BookingStep = 'info' | 'time' | 'confirmation';
 
 interface BookingFlowProps {
   servicePrices: ServicePrices;
@@ -52,7 +52,7 @@ export function BookingFlow({
   onCancel,
   prefillCustomerInfo,
 }: BookingFlowProps) {
-  const [step, setStep] = useState<BookingStep>('time');
+  const [step, setStep] = useState<BookingStep>('info');
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(prefillCustomerInfo || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,10 +62,9 @@ export function BookingFlow({
 
   const { trackCalendarView, trackTimeSelection, trackInfoStep, trackConfirmation } = useBookingStepTracking();
 
-  // Track calendar view on mount
+  // Track info step on mount (first step now)
   useEffect(() => {
-    const servicesForTracking = buildServicesArray().map(s => ({ service: s.service, price: s.price }));
-    trackCalendarView(servicesForTracking);
+    trackInfoStep();
   }, []);
 
   // Build services array for availability check and booking
@@ -208,24 +207,45 @@ export function BookingFlow({
     if (slot.isRecommended) setUsedRecommendedSlot(true);
   };
 
-  const handleCustomerSubmit = async (info: CustomerInfo) => {
-    if (!selectedSlot) {
-      toast.error('Please select a time slot first');
+  // Called when customer info form is submitted (first step)
+  const handleCustomerInfoSubmit = (info: CustomerInfo) => {
+    setCustomerInfo(info);
+    // Track calendar view now that we're proceeding to time selection
+    const servicesForTracking = buildServicesArray().map(s => ({ service: s.service, price: s.price }));
+    trackCalendarView(servicesForTracking);
+    setStep('time');
+  };
+
+  // Called when user confirms booking from time selection step
+  const handleConfirmBooking = async () => {
+    if (!selectedSlot || !customerInfo) {
+      toast.error('Please select a time slot');
       return;
     }
 
+    // Track time selection before confirming
+    trackTimeSelection(
+      {
+        startTime: selectedSlot.startTime,
+        endTime: selectedSlot.endTime,
+        technicianId: selectedSlot.technicianId,
+        isRecommended: selectedSlot.isRecommended,
+      },
+      usedSuggestedDay,
+      usedRecommendedSlot
+    );
+
     setIsSubmitting(true);
-    setCustomerInfo(info);
 
     try {
       const { data, error } = await supabase.functions.invoke('jobber-create-booking', {
         body: {
           customer: {
-            email: info.email,
-            firstName: info.firstName,
-            lastName: info.lastName,
-            phone: info.phone,
-            address: info.address,
+            email: customerInfo.email,
+            firstName: customerInfo.firstName,
+            lastName: customerInfo.lastName,
+            phone: customerInfo.phone,
+            address: customerInfo.address,
           },
           technicianId: selectedSlot.technicianId,
           scheduledStart: selectedSlot.startTime,
@@ -241,7 +261,7 @@ export function BookingFlow({
           discountAmount,
           total: finalTotal,
           discountCode: appliedDiscount?.code,
-          notes: info.notes,
+          notes: customerInfo.notes,
           utmParams: getStoredUtmParams(),
         },
       });
@@ -293,29 +313,11 @@ export function BookingFlow({
     }
   };
 
-  const handleGoToInfo = () => {
-    if (selectedSlot) {
-      // Track time selection with suggested day / recommended slot flags
-      trackTimeSelection(
-        {
-          startTime: selectedSlot.startTime,
-          endTime: selectedSlot.endTime,
-          technicianId: selectedSlot.technicianId,
-          isRecommended: selectedSlot.isRecommended,
-        },
-        usedSuggestedDay,
-        usedRecommendedSlot
-      );
-      trackInfoStep();
-    }
-    setStep('info');
-  };
-
   const handleGoHome = () => {
     window.location.href = '/';
   };
 
-  const stepProgress = step === 'time' ? 33 : step === 'info' ? 66 : 100;
+  const stepProgress = step === 'info' ? 33 : step === 'time' ? 66 : 100;
 
   // Confirmation step
   if (step === 'confirmation' && bookingResult && customerInfo) {
@@ -346,11 +348,11 @@ export function BookingFlow({
         <CardContent className="pt-6">
           <div className="space-y-4">
             <div className="flex justify-between text-sm">
-              <span className={step === 'time' ? 'text-primary font-medium' : 'text-muted-foreground'}>
-                1. Pick Time
-              </span>
               <span className={step === 'info' ? 'text-primary font-medium' : 'text-muted-foreground'}>
-                2. Your Info
+                1. Your Info
+              </span>
+              <span className={step === 'time' ? 'text-primary font-medium' : 'text-muted-foreground'}>
+                2. Pick Time
               </span>
               <span className={step === 'confirmation' ? 'text-primary font-medium' : 'text-muted-foreground'}>
                 3. Confirmed
@@ -393,43 +395,45 @@ export function BookingFlow({
       </Card>
 
       {/* Step Content */}
-      {step === 'time' && (
+      {step === 'info' && (
+        <>
+          <CustomerInfoForm
+            onSubmit={handleCustomerInfoSubmit}
+            initialData={customerInfo || prefillCustomerInfo || undefined}
+            isSubmitting={false}
+            submitButtonText="Continue to Schedule"
+          />
+          
+          <Button variant="outline" onClick={onCancel} className="w-full">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Quote
+          </Button>
+        </>
+      )}
+
+      {step === 'time' && customerInfo && (
         <>
           <TimeSlotPicker
             services={services.map(s => ({ service: s.service, price: s.price }))}
             onSelectSlot={handleSelectSlot}
             selectedSlot={selectedSlot}
+            customerAddress={customerInfo.address}
           />
           
           <div className="flex gap-3">
-            <Button variant="outline" onClick={onCancel} className="flex-1">
+            <Button variant="outline" onClick={() => setStep('info')} className="flex-1">
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Quote
+              Edit Info
             </Button>
             <Button 
-              onClick={handleGoToInfo} 
-              disabled={!selectedSlot}
+              onClick={handleConfirmBooking} 
+              disabled={!selectedSlot || isSubmitting}
               className="flex-1"
             >
-              Continue
-              <ArrowRight className="w-4 h-4 ml-2" />
+              {isSubmitting ? 'Booking...' : 'Confirm Booking'}
+              {!isSubmitting && <Check className="w-4 h-4 ml-2" />}
             </Button>
           </div>
-        </>
-      )}
-
-      {step === 'info' && (
-        <>
-          <CustomerInfoForm
-            onSubmit={handleCustomerSubmit}
-            initialData={customerInfo || prefillCustomerInfo || undefined}
-            isSubmitting={isSubmitting}
-          />
-          
-          <Button variant="outline" onClick={() => setStep('time')} className="w-full">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Time Selection
-          </Button>
         </>
       )}
     </div>
