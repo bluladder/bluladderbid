@@ -8,8 +8,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Copy, Check, ExternalLink, Code, Link2, Frame, Share2, Target, ChevronDown, Eye, RefreshCw } from 'lucide-react';
+import { Copy, Check, ExternalLink, Code, Link2, Frame, Share2, Target, ChevronDown, Eye, RefreshCw, Save, Trash2, FolderOpen, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useEmbedPresets, useCreateEmbedPreset, useDeleteEmbedPreset, type EmbedPreset } from '@/hooks/useEmbedPresets';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 const BASE_URL = 'https://bluladderbid.lovable.app';
 
@@ -48,6 +58,10 @@ export function EmbedCodeManager() {
   const [utmOpen, setUtmOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
+  const [presetsOpen, setPresetsOpen] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [presetDescription, setPresetDescription] = useState('');
   const [utm, setUtm] = useState<UtmParams>({
     source: '',
     medium: '',
@@ -55,6 +69,11 @@ export function EmbedCodeManager() {
     term: '',
     content: '',
   });
+
+  // Saved presets hooks
+  const { data: savedPresets = [], isLoading: presetsLoading } = useEmbedPresets();
+  const createPreset = useCreateEmbedPreset();
+  const deletePreset = useDeleteEmbedPreset();
 
   const pageConfig = SERVICE_PAGES.find(p => p.slug === selectedPage) || SERVICE_PAGES[0];
   const pagePath = selectedPage ? `/${selectedPage}` : '/';
@@ -150,6 +169,50 @@ export function EmbedCodeManager() {
     setUtm({ source: '', medium: '', campaign: '', term: '', content: '' });
   };
 
+  const loadPreset = (preset: EmbedPreset) => {
+    setSelectedPage(preset.selected_page);
+    setEmbedWidth(preset.embed_width);
+    setEmbedHeight(preset.embed_height);
+    setUtm({
+      source: preset.utm_source || '',
+      medium: preset.utm_medium || '',
+      campaign: preset.utm_campaign || '',
+      term: preset.utm_term || '',
+      content: preset.utm_content || '',
+    });
+    toast.success(`Loaded preset: ${preset.name}`);
+  };
+
+  const handleSavePreset = async () => {
+    if (!presetName.trim()) {
+      toast.error('Please enter a preset name');
+      return;
+    }
+    
+    await createPreset.mutateAsync({
+      name: presetName.trim(),
+      description: presetDescription.trim() || undefined,
+      selected_page: selectedPage,
+      embed_width: embedWidth,
+      embed_height: embedHeight,
+      utm_source: utm.source || undefined,
+      utm_medium: utm.medium || undefined,
+      utm_campaign: utm.campaign || undefined,
+      utm_term: utm.term || undefined,
+      utm_content: utm.content || undefined,
+    });
+    
+    setPresetName('');
+    setPresetDescription('');
+    setSaveDialogOpen(false);
+  };
+
+  const handleDeletePreset = async (id: string, name: string) => {
+    if (confirm(`Delete preset "${name}"?`)) {
+      await deletePreset.mutateAsync(id);
+    }
+  };
+
   const CopyButton = ({ text, fieldId }: { text: string; fieldId: string }) => (
     <Button
       variant="outline"
@@ -225,6 +288,171 @@ export function EmbedCodeManager() {
             </div>
           </div>
         </CardContent>
+      </Card>
+
+      {/* Saved Presets */}
+      <Card>
+        <Collapsible open={presetsOpen} onOpenChange={setPresetsOpen}>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="w-5 h-5" />
+                  <div>
+                    <CardTitle className="text-base">Saved Presets</CardTitle>
+                    <CardDescription>
+                      Save and reuse common embed configurations with UTM parameters
+                    </CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {savedPresets.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {savedPresets.length} saved
+                    </Badge>
+                  )}
+                  <ChevronDown className={`w-4 h-4 transition-transform ${presetsOpen ? 'rotate-180' : ''}`} />
+                </div>
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-0">
+              {/* Save Current Config */}
+              <div className="flex items-center justify-between border-b pb-4">
+                <div className="text-sm text-muted-foreground">
+                  Save current configuration as a reusable preset
+                </div>
+                <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm">
+                      <Save className="w-4 h-4 mr-1" />
+                      Save Current
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Save Embed Preset</DialogTitle>
+                      <DialogDescription>
+                        Save your current page, dimensions, and UTM settings for quick reuse.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="preset-name">Preset Name *</Label>
+                        <Input
+                          id="preset-name"
+                          value={presetName}
+                          onChange={(e) => setPresetName(e.target.value)}
+                          placeholder="e.g., Facebook Spring Campaign"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="preset-desc">Description (optional)</Label>
+                        <Input
+                          id="preset-desc"
+                          value={presetDescription}
+                          onChange={(e) => setPresetDescription(e.target.value)}
+                          placeholder="e.g., Window cleaning promo for Facebook"
+                        />
+                      </div>
+                      <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-sm">
+                        <p><strong>Page:</strong> {pageConfig.label}</p>
+                        <p><strong>Size:</strong> {embedWidth} × {embedHeight}px</p>
+                        {hasUtmParams && (
+                          <p><strong>UTM:</strong> {utm.source}/{utm.medium}{utm.campaign ? `/${utm.campaign}` : ''}</p>
+                        )}
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button 
+                        onClick={handleSavePreset} 
+                        disabled={createPreset.isPending || !presetName.trim()}
+                      >
+                        {createPreset.isPending ? (
+                          <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Saving...</>
+                        ) : (
+                          <><Save className="w-4 h-4 mr-1" /> Save Preset</>
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              {/* Saved Presets List */}
+              {presetsLoading ? (
+                <div className="flex items-center justify-center py-8 text-muted-foreground">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  Loading presets...
+                </div>
+              ) : savedPresets.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FolderOpen className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                  <p>No saved presets yet</p>
+                  <p className="text-xs mt-1">Configure your embed settings and save them for quick reuse</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {savedPresets.map((preset) => {
+                    const presetPage = SERVICE_PAGES.find(p => p.slug === preset.selected_page) || SERVICE_PAGES[0];
+                    const hasPresetUtm = preset.utm_source || preset.utm_medium;
+                    
+                    return (
+                      <div
+                        key={preset.id}
+                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium truncate">{preset.name}</span>
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              {presetPage.label}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3">
+                            <span>{preset.embed_width} × {preset.embed_height}px</span>
+                            {hasPresetUtm && (
+                              <span className="flex items-center gap-1">
+                                <Target className="w-3 h-3" />
+                                {preset.utm_source}/{preset.utm_medium}
+                              </span>
+                            )}
+                          </div>
+                          {preset.description && (
+                            <p className="text-xs text-muted-foreground mt-1 truncate">
+                              {preset.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 ml-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadPreset(preset)}
+                          >
+                            Load
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeletePreset(preset.id, preset.name)}
+                            disabled={deletePreset.isPending}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
 
       {/* UTM Parameter Builder */}
