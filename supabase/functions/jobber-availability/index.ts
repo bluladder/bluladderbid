@@ -747,25 +747,41 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Jobber can occasionally throttle bursts; do a few short backoff retries before failing closed.
-      for (let attempt = 1; attempt <= JOBBER_MAX_ATTEMPTS; attempt++) {
-        console.log(`Jobber API attempt ${attempt}/${JOBBER_MAX_ATTEMPTS}`);
-        jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, {
-          startDateAfter: fromDateISO,
-          startDateBefore: toDateISO,
-        });
+      // ========== CACHE-FIRST: Try DB cache before calling Jobber ==========
+      // This drastically reduces API calls and prevents throttling during normal use.
+      const freshDbCache = await getDbCache(supabase, fromDateStr, toDateStr, false);
+      if (freshDbCache) {
+        console.log(`Using fresh DB cache - skipping Jobber API call`);
+        jobberResult = { data: freshDbCache.data };
+        
+        // Also update in-memory cache for faster subsequent requests
+        inMemoryVisitsCache = {
+          data: freshDbCache.data,
+          fromISO: fromDateISO,
+          toISO: toDateISO,
+          fetchedAtMs: Date.now(),
+        };
+      } else {
+        // No fresh cache - call Jobber API with backoff retries
+        for (let attempt = 1; attempt <= JOBBER_MAX_ATTEMPTS; attempt++) {
+          console.log(`Jobber API attempt ${attempt}/${JOBBER_MAX_ATTEMPTS}`);
+          jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, {
+            startDateAfter: fromDateISO,
+            startDateBefore: toDateISO,
+          });
 
-        const isThrottledAttempt = jobberResult.errors?.some((e) =>
-          e.extensions?.code === "THROTTLED" || (e.message || "").includes("Throttled")
-        );
+          const isThrottledAttempt = jobberResult.errors?.some((e) =>
+            e.extensions?.code === "THROTTLED" || (e.message || "").includes("Throttled")
+          );
 
-        // If not throttled, proceed immediately (even if it contains other errors).
-        if (!isThrottledAttempt) break;
+          // If not throttled, proceed immediately (even if it contains other errors).
+          if (!isThrottledAttempt) break;
 
-        // If throttled and we have more attempts, wait a bit and retry.
-        if (attempt < JOBBER_MAX_ATTEMPTS) {
-          const waitMs = JOBBER_BACKOFF_MS[Math.min(attempt - 1, JOBBER_BACKOFF_MS.length - 1)] ?? 1500;
-          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          // If throttled and we have more attempts, wait a bit and retry.
+          if (attempt < JOBBER_MAX_ATTEMPTS) {
+            const waitMs = JOBBER_BACKOFF_MS[Math.min(attempt - 1, JOBBER_BACKOFF_MS.length - 1)] ?? 1500;
+            await new Promise((resolve) => setTimeout(resolve, waitMs));
+          }
         }
       }
 
