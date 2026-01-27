@@ -15,6 +15,7 @@ const JOBBER_BACKOFF_MS = [500, 1500, 3000];
 // 2) check DB-backed cache for recent visits data that covers the requested range
 let lastJobberThrottleAtMs: number | null = null;
 const JOBBER_THROTTLE_COOLDOWN_MS = 60_000; // 60s
+const JOBBER_THROTTLE_STATE_CACHE_KEY = "throttle:jobber";
 const DB_CACHE_TTL_MINUTES = 30; // DB cache lasts 30 minutes to survive throttling
 const STALE_CACHE_TTL_MINUTES = 120; // Allow stale cache up to 2 hours as last resort
 
@@ -82,6 +83,7 @@ async function getDbCache(
   const { data: coveringCache } = await (supabase as any)
     .from("availability_cache")
     .select("visits_json, cached_at, from_date, to_date")
+    .like("cache_key", "visits:%")
     .lte("from_date", fromDate)
     .gte("to_date", toDate)
     .gt("expires_at", new Date().toISOString())
@@ -101,6 +103,7 @@ async function getDbCache(
     const { data: staleCache } = await (supabase as any)
       .from("availability_cache")
       .select("visits_json, cached_at, from_date, to_date")
+      .like("cache_key", "visits:%")
       .lte("from_date", fromDate)
       .gte("to_date", toDate)
       .gt("cached_at", staleThreshold)
@@ -158,6 +161,52 @@ async function cleanupExpiredCache(supabase: any): Promise<void> {
       .lt("cached_at", staleThreshold);
   } catch {
     // Ignore cleanup errors
+  }
+}
+
+type DbThrottleState = {
+  until?: string;
+};
+
+async function getDbThrottleUntilMs(supabase: any): Promise<number | null> {
+  try {
+    const { data, error } = await (supabase as any)
+      .from("availability_cache")
+      .select("visits_json, expires_at")
+      .eq("cache_key", JOBBER_THROTTLE_STATE_CACHE_KEY)
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+
+    if (error || !data?.visits_json) return null;
+    const until = (data.visits_json as DbThrottleState)?.until;
+    if (!until) return null;
+    const ms = new Date(until).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  } catch {
+    return null;
+  }
+}
+
+async function setDbThrottleUntilMs(supabase: any, untilMs: number): Promise<void> {
+  const today = new Date().toISOString().split("T")[0];
+  const untilIso = new Date(untilMs).toISOString();
+
+  try {
+    await (supabase as any)
+      .from("availability_cache")
+      .upsert(
+        {
+          cache_key: JOBBER_THROTTLE_STATE_CACHE_KEY,
+          from_date: today,
+          to_date: today,
+          visits_json: { until: untilIso },
+          cached_at: new Date().toISOString(),
+          expires_at: untilIso,
+        },
+        { onConflict: "cache_key" }
+      );
+  } catch {
+    // ignore
   }
 }
 
@@ -721,13 +770,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    const inCooldown =
-      lastJobberThrottleAtMs !== null &&
-      (nowMs - lastJobberThrottleAtMs) < JOBBER_THROTTLE_COOLDOWN_MS;
+    // Persist throttling cooldown across cold starts by storing a short-lived marker in the DB.
+    // Without this, parallel instances can all hammer Jobber even though we're already throttled.
+    const dbThrottleUntilMs = await getDbThrottleUntilMs(supabase);
 
-    const retryAfterSec = inCooldown && lastJobberThrottleAtMs !== null
-      ? Math.max(1, Math.ceil((JOBBER_THROTTLE_COOLDOWN_MS - (nowMs - lastJobberThrottleAtMs)) / 1000))
-      : 30;
+    const cooldownUntilMs =
+      dbThrottleUntilMs !== null && nowMs < dbThrottleUntilMs
+        ? dbThrottleUntilMs
+        : lastJobberThrottleAtMs !== null
+          ? lastJobberThrottleAtMs + JOBBER_THROTTLE_COOLDOWN_MS
+          : null;
+
+    const inCooldown = cooldownUntilMs !== null && nowMs < cooldownUntilMs;
+
+    const retryAfterSec = inCooldown && cooldownUntilMs !== null
+      ? Math.max(1, Math.ceil((cooldownUntilMs - nowMs) / 1000))
+      : 60;
 
     let jobberResult: JobberGraphQLResult<JobberVisitResult> | null = null;
 
@@ -778,7 +836,7 @@ Deno.serve(async (req) => {
         };
       } else {
         // No fresh cache - call Jobber API with backoff retries
-        for (let attempt = 1; attempt <= JOBBER_MAX_ATTEMPTS; attempt++) {
+         for (let attempt = 1; attempt <= JOBBER_MAX_ATTEMPTS; attempt++) {
           console.log(`Jobber API attempt ${attempt}/${JOBBER_MAX_ATTEMPTS}`);
           jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, {
             startDateAfter: fromDateISO,
@@ -789,14 +847,14 @@ Deno.serve(async (req) => {
             e.extensions?.code === "THROTTLED" || (e.message || "").includes("Throttled")
           );
 
-          // If not throttled, proceed immediately (even if it contains other errors).
-          if (!isThrottledAttempt) break;
+           // If not throttled, proceed immediately (even if it contains other errors).
+           if (!isThrottledAttempt) break;
 
-          // If throttled and we have more attempts, wait a bit and retry.
-          if (attempt < JOBBER_MAX_ATTEMPTS) {
-            const waitMs = JOBBER_BACKOFF_MS[Math.min(attempt - 1, JOBBER_BACKOFF_MS.length - 1)] ?? 1500;
-            await new Promise((resolve) => setTimeout(resolve, waitMs));
-          }
+           // If throttled, do NOT keep retrying within the same request.
+           // Jobber throttling is rarely resolved in a few seconds, and retries only add pressure.
+           lastJobberThrottleAtMs = nowMs;
+           void setDbThrottleUntilMs(supabase, nowMs + JOBBER_THROTTLE_COOLDOWN_MS);
+           break;
         }
       }
 
@@ -820,6 +878,7 @@ Deno.serve(async (req) => {
 
       if (isThrottled) {
         lastJobberThrottleAtMs = nowMs;
+         void setDbThrottleUntilMs(supabase, nowMs + JOBBER_THROTTLE_COOLDOWN_MS);
         
         // Try in-memory cache first
         if (inMemoryCacheCoversRange) {
@@ -833,10 +892,11 @@ Deno.serve(async (req) => {
             jobberResult = { data: dbCachedResult.data };
           } else {
             console.error("Jobber API throttled and no usable cache - returning 503 to prevent conflicts");
+             void setDbThrottleUntilMs(supabase, nowMs + JOBBER_THROTTLE_COOLDOWN_MS);
             return new Response(
               JSON.stringify({
                 error: "Scheduling system is temporarily busy. Please try again in a few moments.",
-                retryAfter: Math.max(30, retryAfterSec),
+                 retryAfter: Math.max(60, retryAfterSec),
                 slots: [],
                 recommendedDays: [],
               }),
