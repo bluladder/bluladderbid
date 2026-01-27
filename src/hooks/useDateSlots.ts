@@ -101,6 +101,10 @@ export function useDateSlots({
   const fetchSlotsForDate = useCallback(async (date: Date) => {
     if (services.length === 0) return;
 
+    // Prevent hammering the backend while we're in a provider cooldown window.
+    // The UI already shows a countdown; users can retry once it reaches 0.
+    if (isThrottled && retryCountdown > 0) return;
+
     setIsLoading(true);
     setError(null);
     setRequiresAdminAction(false);
@@ -171,7 +175,7 @@ export function useDateSlots({
     } finally {
       setIsLoading(false);
     }
-  }, [services, customerAddress, routeDensityWeight, daysToFetch, startCountdown]);
+  }, [services, customerAddress, routeDensityWeight, daysToFetch, startCountdown, isThrottled, retryCountdown]);
 
   const clearSlots = useCallback(() => {
     setSlots([]);
