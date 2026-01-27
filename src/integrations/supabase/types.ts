@@ -296,6 +296,57 @@ export type Database = {
         }
         Relationships: []
       }
+      embed_presets: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          embed_height: string
+          embed_width: string
+          id: string
+          name: string
+          selected_page: string
+          updated_at: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          embed_height?: string
+          embed_width?: string
+          id?: string
+          name: string
+          selected_page?: string
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          embed_height?: string
+          embed_width?: string
+          id?: string
+          name?: string
+          selected_page?: string
+          updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Relationships: []
+      }
       jobber_oauth_tokens: {
         Row: {
           access_token: string
