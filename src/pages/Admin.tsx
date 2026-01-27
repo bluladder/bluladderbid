@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useIsAdmin, useAuth } from '@/hooks/useAuth';
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { PricingEditor } from '@/components/admin/PricingEditor';
@@ -19,10 +20,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LogOut, Home, ShieldX, Settings, Calculator, GitCompare, Tag, Calendar, ClipboardList, BarChart3, Users, Code, Phone } from 'lucide-react';
 import { Link } from 'react-router-dom';
-export default function Admin() {
+export default function Admin({ initialTab }: { initialTab?: string }) {
   const { isAdmin, loading, user } = useIsAdmin();
   const { signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('bookings');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(initialTab || searchParams.get('tab') || 'bookings');
+
+  // Update tab when initialTab prop changes
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Show login if not authenticated
   if (!user && !loading) {
