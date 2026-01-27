@@ -392,18 +392,16 @@ Deno.serve(async (req) => {
     console.log("Checking for scheduling conflicts...");
     
     const conflictCheckQuery = `
-      query CheckConflicts($assignedUserId: EncodedId!, $after: ISO8601DateTime!, $before: ISO8601DateTime!) {
-        visits(
-          filter: { assignedUserIds: [$assignedUserId] }
-          after: $after
-          before: $before
-          first: 50
-        ) {
+      query CheckConflicts($after: ISO8601DateTime!, $before: ISO8601DateTime!) {
+        visits(first: 200, filter: { startAt: { after: $after, before: $before } }) {
           nodes {
             id
             startAt
             endAt
             title
+            assignedUsers {
+              nodes { id }
+            }
           }
         }
       }
@@ -412,12 +410,11 @@ Deno.serve(async (req) => {
     // Parse the requested booking times
     const requestedStart = new Date(booking.scheduledStart);
     const requestedEnd = new Date(booking.scheduledEnd);
-    
-    // Query for visits on the same day (buffer of ±1 day to catch edge cases)
-    const dayStart = new Date(requestedStart);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(requestedStart);
-    dayEnd.setHours(23, 59, 59, 999);
+
+    // Query a generous window around the requested time.
+    // (Avoid timezone edge cases from setHours() running in server timezone.)
+    const rangeAfter = new Date(requestedStart.getTime() - 24 * 60 * 60 * 1000);
+    const rangeBefore = new Date(requestedEnd.getTime() + 24 * 60 * 60 * 1000);
     
     const conflictResult = await jobberGraphQL<{
       visits: {
@@ -426,18 +423,32 @@ Deno.serve(async (req) => {
           startAt: string;
           endAt: string;
           title: string;
+          assignedUsers?: { nodes: Array<{ id: string }> };
         }>;
       };
     }>(conflictCheckQuery, {
-      assignedUserId: technician.jobber_user_id,
-      after: dayStart.toISOString(),
-      before: dayEnd.toISOString(),
+      after: rangeAfter.toISOString(),
+      before: rangeBefore.toISOString(),
     });
     
     console.log("Conflict check result:", JSON.stringify(conflictResult));
+
+    // If we can't validate conflicts due to provider error, fail closed to prevent double-booking.
+    if (conflictResult.errors?.length) {
+      console.error("Conflict validation failed (Jobber errors):", conflictResult.errors);
+      return new Response(
+        JSON.stringify({
+          error: "Scheduling validation temporarily unavailable",
+          details: "We couldn't confirm availability with our scheduling provider. Please try again in a moment.",
+          code: "JOBBER_CONFLICT_CHECK_FAILED",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+      );
+    }
     
     if (conflictResult.data?.visits?.nodes) {
-      const existingVisits = conflictResult.data.visits.nodes;
+      const existingVisits = conflictResult.data.visits.nodes
+        .filter(v => (v.assignedUsers?.nodes ?? []).some(u => u.id === technician.jobber_user_id));
       
       // Check for overlaps: (newStart < existingEnd) AND (newEnd > existingStart)
       for (const visit of existingVisits) {
@@ -600,6 +611,22 @@ Deno.serve(async (req) => {
     // Jobber requires: { date: "YYYY-MM-DD", time: "HH:MM", timezone: "America/Chicago" }
     // CRITICAL: Use Intl.DateTimeFormat to convert UTC to Central time correctly
     const parseToLocalDateTime = (isoString: string) => {
+      // If the incoming string has no timezone information, assume it's already local (America/Chicago)
+      // and avoid accidentally treating it as UTC.
+      const hasTz = /Z$|[+-]\d{2}:\d{2}$/.test(isoString);
+      if (!hasTz && isoString.includes('T')) {
+        const [datePart, timePartRaw] = isoString.split('T');
+        const timePart = (timePartRaw || '').slice(0, 5);
+        const localTime = timePart && /^\d{2}:\d{2}$/.test(timePart) ? timePart : '00:00';
+
+        console.log(`Timezone conversion (no TZ provided; treating as local): ${isoString} -> date: ${datePart}, time: ${localTime} (America/Chicago)`);
+        return {
+          date: datePart,
+          time: localTime,
+          timezone: "America/Chicago",
+        };
+      }
+
       const date = new Date(isoString);
       
       // Use Intl.DateTimeFormat to get the correct local time in America/Chicago
