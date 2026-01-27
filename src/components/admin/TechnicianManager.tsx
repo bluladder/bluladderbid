@@ -367,7 +367,7 @@ export function TechnicianManager() {
                   Add Technician
                 </Button>
               </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingTech ? 'Edit Technician' : 'Add Technician'}</DialogTitle>
                 <DialogDescription>
