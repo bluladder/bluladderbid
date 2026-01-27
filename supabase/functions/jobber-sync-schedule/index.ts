@@ -153,8 +153,17 @@ Deno.serve(async (req) => {
     );
   }
 
-  const { data: isAdmin } = await supabase.rpc("is_admin");
-  if (!isAdmin) {
+  const userId = claims.claims.sub as string;
+  
+  // Check admin role using service client with explicit user_id
+  const { data: hasRole } = await supabase
+    .from("user_roles")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("role", "admin")
+    .maybeSingle();
+  
+  if (!hasRole) {
     return new Response(
       JSON.stringify({ error: "Admin access required" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
