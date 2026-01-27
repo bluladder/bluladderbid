@@ -347,6 +347,51 @@ export type Database = {
         }
         Relationships: []
       }
+      jobber_busy_blocks: {
+        Row: {
+          client_address: string | null
+          client_name: string | null
+          created_at: string
+          crew_id: string
+          end_at: string
+          id: string
+          jobber_job_id: string | null
+          jobber_visit_id: string | null
+          source: string
+          start_at: string
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_address?: string | null
+          client_name?: string | null
+          created_at?: string
+          crew_id: string
+          end_at: string
+          id?: string
+          jobber_job_id?: string | null
+          jobber_visit_id?: string | null
+          source?: string
+          start_at: string
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_address?: string | null
+          client_name?: string | null
+          created_at?: string
+          crew_id?: string
+          end_at?: string
+          id?: string
+          jobber_job_id?: string | null
+          jobber_visit_id?: string | null
+          source?: string
+          start_at?: string
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       jobber_oauth_tokens: {
         Row: {
           access_token: string
@@ -374,6 +419,63 @@ export type Database = {
           refresh_token?: string
           scope?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      jobber_sync_state: {
+        Row: {
+          backfill_horizon_days: number
+          backfill_in_progress: boolean
+          backfill_started_at: string | null
+          id: string
+          last_backfill_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          backfill_horizon_days?: number
+          backfill_in_progress?: boolean
+          backfill_started_at?: string | null
+          id?: string
+          last_backfill_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          backfill_horizon_days?: number
+          backfill_in_progress?: boolean
+          backfill_started_at?: string | null
+          id?: string
+          last_backfill_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      jobber_webhook_events: {
+        Row: {
+          event_id: string
+          id: string
+          payload: Json
+          processed_at: string | null
+          processing_error: string | null
+          received_at: string
+          topic: string
+        }
+        Insert: {
+          event_id: string
+          id?: string
+          payload: Json
+          processed_at?: string | null
+          processing_error?: string | null
+          received_at?: string
+          topic: string
+        }
+        Update: {
+          event_id?: string
+          id?: string
+          payload?: Json
+          processed_at?: string | null
+          processing_error?: string | null
+          received_at?: string
+          topic?: string
         }
         Relationships: []
       }
