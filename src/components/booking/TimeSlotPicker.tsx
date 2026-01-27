@@ -57,7 +57,7 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
     services,
     customerAddress,
     routeDensityWeight,
-    daysToFetch: 1, // Only fetch 1 day at a time to avoid throttling
+    daysToFetch: 3, // Fetch 3 days at a time for better UX while staying under provider limits
   });
 
   // Handle date selection - fetch slots for that date

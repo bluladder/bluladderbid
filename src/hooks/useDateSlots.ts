@@ -12,7 +12,7 @@ interface UseDateSlotsOptions {
   services: ServiceForAvailability[];
   customerAddress?: string;
   routeDensityWeight?: string;
-  daysToFetch?: number; // How many days to fetch from the selected date (1-3)
+  daysToFetch?: number; // How many days to fetch from the selected date (1-3), default 3
 }
 
 interface UseDateSlotsResult {
@@ -66,7 +66,7 @@ export function useDateSlots({
   services,
   customerAddress,
   routeDensityWeight = 'medium',
-  daysToFetch = 1,
+  daysToFetch = 3,
 }: UseDateSlotsOptions): UseDateSlotsResult {
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [isLoading, setIsLoading] = useState(false);
