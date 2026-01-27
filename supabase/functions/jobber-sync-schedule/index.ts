@@ -9,8 +9,9 @@ const corsHeaders = {
 // ============= Configuration =============
 const CONFIG = {
   // Rate limiting: delay between successful requests (ms)
-  minRequestDelayMs: 300,
-  maxRequestDelayMs: 500,
+  // Increased from 300-500ms to prevent Jobber throttling
+  minRequestDelayMs: 2000,
+  maxRequestDelayMs: 3000,
   
   // Retry settings for throttled requests (exponential backoff)
   maxRetries: 6,
@@ -479,10 +480,11 @@ Deno.serve(async (req) => {
         .eq("id", activeRun.id);
     }
 
-    // Check for resumable partial run
+    // Check for resumable partial run (auto-resume if no explicit resumeRunId)
     let syncRun: SyncRun | null = null;
     
     if (resumeRunId) {
+      // Explicit resume request
       const { data: existingRun } = await supabase
         .from("schedule_sync_runs")
         .select("*")
@@ -493,6 +495,20 @@ Deno.serve(async (req) => {
       if (existingRun) {
         syncRun = existingRun as SyncRun;
         console.log(`[Resume] Resuming run ${syncRun.id} from ${syncRun.current_cursor_date}`);
+      }
+    } else {
+      // Auto-resume: check for any partial run from today
+      const { data: partialRun } = await supabase
+        .from("schedule_sync_runs")
+        .select("*")
+        .eq("status", "partial")
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (partialRun) {
+        syncRun = partialRun as SyncRun;
+        console.log(`[AutoResume] Found partial run ${syncRun.id} at ${syncRun.chunks_completed}/${syncRun.total_chunks} chunks. Resuming from ${syncRun.current_cursor_date}`);
       }
     }
 
