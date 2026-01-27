@@ -113,6 +113,13 @@ const DEFAULT_DRIVE_TIME_CONFIG: DriveTimeConfig = {
   office_address: null,
 };
 
+// Configurable slot generation settings
+const SLOT_GENERATION_CONFIG = {
+  slotIncrementMinutes: 15, // Generate slots every 15 minutes
+  bufferBeforeMinutes: 0,   // Buffer to add before busy blocks
+  bufferAfterMinutes: 15,   // Buffer to add after appointments to prevent tight scheduling
+};
+
 interface BusinessHoursConfig {
   startHour: number;
   endHour: number;
@@ -518,10 +525,12 @@ Deno.serve(async (req) => {
 
     console.log(`Found ${busyBlocks?.length || 0} busy blocks from local mirror`);
 
-    // Build a map of busy times per technician
+    // Build a map of busy times per technician with buffer expansion
     const busyTimesByTech: Record<string, Array<{ 
       start: Date; 
       end: Date;
+      expandedStart: Date; // Start with buffer before
+      expandedEnd: Date;   // End with buffer after
       address: string | null;
     }>> = {};
 
@@ -540,9 +549,19 @@ Deno.serve(async (req) => {
       if (!busyTimesByTech[block.crew_id]) {
         busyTimesByTech[block.crew_id] = [];
       }
+      
+      const blockStart = new Date(block.start_at);
+      const blockEnd = new Date(block.end_at);
+      
+      // Expand busy blocks by configurable buffers to prevent tight back-to-backs
+      const expandedStart = new Date(blockStart.getTime() - SLOT_GENERATION_CONFIG.bufferBeforeMinutes * 60 * 1000);
+      const expandedEnd = new Date(blockEnd.getTime() + SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000);
+      
       busyTimesByTech[block.crew_id].push({
-        start: new Date(block.start_at),
-        end: new Date(block.end_at),
+        start: blockStart,
+        end: blockEnd,
+        expandedStart,
+        expandedEnd,
         address: block.client_address,
       });
     }
@@ -602,8 +621,10 @@ Deno.serve(async (req) => {
         let effectiveStart = new Date(dayStart);
         if (now > dayStart && now < dayEnd) {
           effectiveStart = new Date(now);
+          // Round up to next slot increment
+          const slotIncrement = SLOT_GENERATION_CONFIG.slotIncrementMinutes;
           const currentMinutes = effectiveStart.getMinutes();
-          const roundedMinutes = Math.ceil(currentMinutes / 30) * 30;
+          const roundedMinutes = Math.ceil(currentMinutes / slotIncrement) * slotIncrement;
           if (roundedMinutes === 60) {
             effectiveStart.setHours(effectiveStart.getHours() + 1, 0, 0, 0);
           } else {
@@ -619,14 +640,33 @@ Deno.serve(async (req) => {
         const hasEarlierJobToday = todayBusyTimes.some(bt => bt.start < effectiveStart);
 
         let slotStart = new Date(effectiveStart);
+        let candidateSlotsGenerated = 0;
+        let slotsAfterDurationFilter = 0;
+        let slotsAfterOverlapFilter = 0;
+        
+        // Generate slots in configurable increments (default 15 min)
+        const slotIncrementMs = SLOT_GENERATION_CONFIG.slotIncrementMinutes * 60 * 1000;
         
         while (slotStart.getTime() + tech.durationMinutes * 60 * 1000 <= dayEnd.getTime()) {
+          candidateSlotsGenerated++;
           const slotEnd = new Date(slotStart.getTime() + tech.durationMinutes * 60 * 1000);
+          
+          // For overlap checking, we also add the bufferAfterMinutes to the appointment block
+          // This ensures we don't schedule something that would end too close to the next appointment
+          const slotEndWithBuffer = new Date(slotEnd.getTime() + SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000);
+          
           const slotHour = getHourInTimezone(slotStart, businessTimezone);
           
+          // Check overlap using EXPANDED busy times (which include before/after buffers)
+          // This prevents scheduling too close to existing appointments
+          // Core overlap check: slotStart < expandedEnd AND slotEndWithBuffer > expandedStart
           const hasConflict = todayBusyTimes.some(bt => 
-            (slotStart < bt.end && slotEnd > bt.start)
+            (slotStart.getTime() < bt.expandedEnd.getTime() && slotEndWithBuffer.getTime() > bt.expandedStart.getTime())
           );
+          
+          if (!hasConflict) {
+            slotsAfterOverlapFilter++;
+          }
 
           const isFirstJob = !hasEarlierJobToday && 
             !todayBusyTimes.some(bt => bt.end <= slotStart);
@@ -672,7 +712,7 @@ Deno.serve(async (req) => {
           if (hasConflict) {
             exclusionReason = {
               code: 'OVERLAP',
-              message: 'Overlaps existing appointment',
+              message: 'Overlaps existing appointment or buffer zone',
             };
           } else if (slotHour < tech.scheduleStartHour) {
             exclusionReason = {
@@ -734,12 +774,19 @@ Deno.serve(async (req) => {
             slot.exclusionReason = exclusionReason;
             excludedSlots.push(slot);
           } else {
+            slotsAfterDurationFilter++;
             allSlots.push(slot);
             const metrics = dayMetrics.get(currentDateStr)!;
             metrics.totalSlots++;
           }
 
-          slotStart = new Date(slotStart.getTime() + 30 * 60 * 1000);
+          // Move to next slot using configurable increment (default 15 min)
+          slotStart = new Date(slotStart.getTime() + slotIncrementMs);
+        }
+        
+        // Log slot filtering stats for this day/tech combination
+        if (candidateSlotsGenerated > 0) {
+          console.log(`[${currentDateStr}][${tech.name}] Slots: ${candidateSlotsGenerated} candidates -> ${slotsAfterOverlapFilter} no-overlap -> ${slotsAfterDurationFilter} valid`);
         }
 
         dayOffset++;
