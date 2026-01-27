@@ -69,12 +69,20 @@ export async function getJobberAccessToken(): Promise<string | null> {
   });
 
   if (!refreshResponse.ok) {
-    console.error("Token refresh failed:", await refreshResponse.text());
+    const errorText = await refreshResponse.text();
+    console.error("Token refresh failed:", errorText);
     return null;
   }
 
   const newTokenData = await refreshResponse.json();
-  const newExpiresAt = new Date(Date.now() + newTokenData.expires_in * 1000);
+  
+  // Safely parse expires_in - default to 1 hour if not provided
+  const expiresInSeconds = parseInt(String(newTokenData.expires_in || 3600), 10);
+  if (isNaN(expiresInSeconds) || expiresInSeconds <= 0) {
+    console.error("Invalid expires_in value:", newTokenData.expires_in);
+    return null;
+  }
+  const newExpiresAt = new Date(Date.now() + expiresInSeconds * 1000);
 
   // Update tokens in database
   const { error: updateError } = await supabase
