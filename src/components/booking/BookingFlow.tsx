@@ -248,8 +248,19 @@ export function BookingFlow({
 
       if (error) throw error;
 
+      // Handle conflict response (409)
+      if (data.code === 'CONFLICT' || data.error?.includes('conflict')) {
+        toast.error(data.details || 'This time slot is no longer available. Please select a different time.', {
+          duration: 6000,
+        });
+        // Go back to time selection to pick a new slot
+        setSelectedSlot(null);
+        setStep('time');
+        return;
+      }
+
       if (data.error) {
-        throw new Error(data.error);
+        throw new Error(data.details || data.error);
       }
 
       setBookingResult({
@@ -265,9 +276,18 @@ export function BookingFlow({
       
       setStep('confirmation');
       toast.success('Booking confirmed!');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Booking failed:', err);
-      toast.error('Failed to create booking. Please try again.');
+      
+      // Check if error message indicates a conflict
+      const errorMessage = err?.message || String(err);
+      if (errorMessage.toLowerCase().includes('conflict') || errorMessage.toLowerCase().includes('no longer available')) {
+        toast.error(errorMessage, { duration: 6000 });
+        setSelectedSlot(null);
+        setStep('time');
+      } else {
+        toast.error('Failed to create booking. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }

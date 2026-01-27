@@ -387,6 +387,94 @@ Deno.serve(async (req) => {
 
     console.log("Using property ID:", propertyId);
 
+    // === REAL-TIME CONFLICT DETECTION ===
+    // Before creating the job, check if the technician has any overlapping visits
+    console.log("Checking for scheduling conflicts...");
+    
+    const conflictCheckQuery = `
+      query CheckConflicts($assignedUserId: EncodedId!, $after: ISO8601DateTime!, $before: ISO8601DateTime!) {
+        visits(
+          filter: { assignedUserIds: [$assignedUserId] }
+          after: $after
+          before: $before
+          first: 50
+        ) {
+          nodes {
+            id
+            startAt
+            endAt
+            title
+          }
+        }
+      }
+    `;
+    
+    // Parse the requested booking times
+    const requestedStart = new Date(booking.scheduledStart);
+    const requestedEnd = new Date(booking.scheduledEnd);
+    
+    // Query for visits on the same day (buffer of ±1 day to catch edge cases)
+    const dayStart = new Date(requestedStart);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(requestedStart);
+    dayEnd.setHours(23, 59, 59, 999);
+    
+    const conflictResult = await jobberGraphQL<{
+      visits: {
+        nodes: Array<{
+          id: string;
+          startAt: string;
+          endAt: string;
+          title: string;
+        }>;
+      };
+    }>(conflictCheckQuery, {
+      assignedUserId: technician.jobber_user_id,
+      after: dayStart.toISOString(),
+      before: dayEnd.toISOString(),
+    });
+    
+    console.log("Conflict check result:", JSON.stringify(conflictResult));
+    
+    if (conflictResult.data?.visits?.nodes) {
+      const existingVisits = conflictResult.data.visits.nodes;
+      
+      // Check for overlaps: (newStart < existingEnd) AND (newEnd > existingStart)
+      for (const visit of existingVisits) {
+        const existingStart = new Date(visit.startAt);
+        const existingEnd = new Date(visit.endAt);
+        
+        const hasOverlap = requestedStart < existingEnd && requestedEnd > existingStart;
+        
+        if (hasOverlap) {
+          console.error(`CONFLICT DETECTED: Requested ${booking.scheduledStart} - ${booking.scheduledEnd} overlaps with existing visit ${visit.id} (${visit.startAt} - ${visit.endAt})`);
+          
+          // Format times for user-friendly message
+          const existingStartLocal = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Chicago',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          }).format(existingStart);
+          
+          return new Response(
+            JSON.stringify({ 
+              error: "Time slot conflict", 
+              details: `This time slot is no longer available. ${technician.name} has another appointment at ${existingStartLocal}. Please select a different time.`,
+              code: "CONFLICT",
+              conflictingVisit: {
+                startAt: visit.startAt,
+                endAt: visit.endAt,
+              }
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
+          );
+        }
+      }
+    }
+    
+    console.log("No conflicts detected, proceeding with booking");
+
     // Build notes for the job
     // Only include customer's special instructions in Jobber job notes
     // The detailed home info, services, and pricing are tracked in our local booking record
@@ -510,12 +598,40 @@ Deno.serve(async (req) => {
 
     // Parse the scheduled times into LocalDateTimeAttributes format
     // Jobber requires: { date: "YYYY-MM-DD", time: "HH:MM", timezone: "America/Chicago" }
+    // CRITICAL: Use Intl.DateTimeFormat to convert UTC to Central time correctly
     const parseToLocalDateTime = (isoString: string) => {
       const date = new Date(isoString);
+      
+      // Use Intl.DateTimeFormat to get the correct local time in America/Chicago
+      const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      
+      const timeFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Chicago',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      
+      // en-CA gives YYYY-MM-DD format
+      const localDate = dateFormatter.format(date);
+      
+      // Extract HH:MM from the formatted time
+      const timeParts = timeFormatter.formatToParts(date);
+      const hour = timeParts.find(p => p.type === 'hour')?.value || '00';
+      const minute = timeParts.find(p => p.type === 'minute')?.value || '00';
+      const localTime = `${hour}:${minute}`;
+      
+      console.log(`Timezone conversion: ${isoString} -> date: ${localDate}, time: ${localTime} (America/Chicago)`);
+      
       return {
-        date: date.toISOString().split('T')[0], // "YYYY-MM-DD"
-        time: date.toISOString().split('T')[1].substring(0, 5), // "HH:MM"
-        timezone: "America/Chicago" // Default timezone for business
+        date: localDate,
+        time: localTime,
+        timezone: "America/Chicago"
       };
     };
 
