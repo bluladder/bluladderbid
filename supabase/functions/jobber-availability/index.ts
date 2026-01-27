@@ -468,6 +468,13 @@ Deno.serve(async (req) => {
       includeExcluded = false 
     }: AvailabilityRequest = await req.json();
 
+    // Date-first loading: customers should query a very small window (1–3 days max)
+    // to avoid provider throttling. Admin tools (includeExcluded=true) may request longer.
+    const requestedDaysToCheck = Number.isFinite(daysToCheck) ? Math.floor(daysToCheck) : 14;
+    const effectiveDaysToCheck = includeExcluded
+      ? Math.max(1, Math.min(requestedDaysToCheck, 60))
+      : Math.max(1, Math.min(requestedDaysToCheck, 3));
+
     if (!services || services.length === 0) {
       return new Response(
         JSON.stringify({ error: "No services provided" }),
@@ -641,12 +648,15 @@ Deno.serve(async (req) => {
     // Calculate date range
     const now = new Date();
     const fromDate = startDate ? new Date(startDate) : now;
-    const toDate = new Date(fromDate.getTime() + daysToCheck * 24 * 60 * 60 * 1000);
+    const toDate = new Date(fromDate.getTime() + effectiveDaysToCheck * 24 * 60 * 60 * 1000);
 
     // Format dates for Jobber query (ISO8601DateTime)
     const fromDateISO = fromDate.toISOString();
     const toDateISO = toDate.toISOString();
     
+    console.log(
+      `Availability request window: requested=${requestedDaysToCheck}d effective=${effectiveDaysToCheck}d includeExcluded=${includeExcluded}`
+    );
     console.log(`Querying Jobber visits from ${fromDateISO} to ${toDateISO}`);
 
     // Query Jobber for scheduled visits with property addresses
@@ -691,6 +701,26 @@ Deno.serve(async (req) => {
       inMemoryVisitsCache.fromISO <= fromDateISO &&
       inMemoryVisitsCache.toISO >= toDateISO;
 
+    const inAuthCooldown =
+      lastJobberAuthErrorAtMs !== null &&
+      (nowMs - lastJobberAuthErrorAtMs) < JOBBER_AUTH_COOLDOWN_MS;
+
+    // If we already know auth is broken, surface that immediately (even if we were also throttled).
+    // Returning a generic "temporarily busy" message here hides the real fix (reconnect).
+    if (inAuthCooldown) {
+      return new Response(
+        JSON.stringify({
+          error: "Scheduling connection needs admin re-authentication. Please reconnect in Admin → Jobber Integration.",
+          code: "JOBBER_AUTH",
+          retryAfter: Math.max(60, Math.ceil((JOBBER_AUTH_COOLDOWN_MS - (nowMs - lastJobberAuthErrorAtMs!)) / 1000)),
+          requiresAdminAction: true,
+          slots: [],
+          recommendedDays: [],
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+      );
+    }
+
     const inCooldown =
       lastJobberThrottleAtMs !== null &&
       (nowMs - lastJobberThrottleAtMs) < JOBBER_THROTTLE_COOLDOWN_MS;
@@ -698,10 +728,6 @@ Deno.serve(async (req) => {
     const retryAfterSec = inCooldown && lastJobberThrottleAtMs !== null
       ? Math.max(1, Math.ceil((JOBBER_THROTTLE_COOLDOWN_MS - (nowMs - lastJobberThrottleAtMs)) / 1000))
       : 30;
-
-    const inAuthCooldown =
-      lastJobberAuthErrorAtMs !== null &&
-      (nowMs - lastJobberAuthErrorAtMs) < JOBBER_AUTH_COOLDOWN_MS;
 
     let jobberResult: JobberGraphQLResult<JobberVisitResult> | null = null;
 
@@ -736,20 +762,6 @@ Deno.serve(async (req) => {
         }
       }
     } else {
-      if (inAuthCooldown) {
-        return new Response(
-          JSON.stringify({
-            error: "Scheduling connection needs admin re-authentication. Please reconnect in Admin → Jobber Integration.",
-            code: "JOBBER_AUTH",
-            retryAfter: Math.max(60, Math.ceil((JOBBER_AUTH_COOLDOWN_MS - (nowMs - lastJobberAuthErrorAtMs!)) / 1000)),
-            requiresAdminAction: true,
-            slots: [],
-            recommendedDays: [],
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-        );
-      }
-
       // ========== CACHE-FIRST: Try DB cache before calling Jobber ==========
       // This drastically reduces API calls and prevents throttling during normal use.
       const freshDbCache = await getDbCache(supabase, fromDateStr, toDateStr, false);
