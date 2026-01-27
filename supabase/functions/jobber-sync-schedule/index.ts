@@ -1,11 +1,34 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { jobberGraphQL } from "../_shared/jobberClient.ts";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getJobberAccessToken } from "../_shared/jobberClient.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// ============= Configuration =============
+const CONFIG = {
+  // Rate limiting: min delay between requests (ms)
+  minRequestDelayMs: 900,
+  maxRequestDelayMs: 1200,
+  
+  // Retry settings for throttled requests
+  maxRetries: 6,
+  retryBaseMs: 1000,
+  retryMultiplier: 2,
+  retryCapMs: 30000,
+  
+  // Chunk settings
+  defaultChunkDays: 7,
+  defaultHorizonDays: 30,
+  maxHorizonDays: 90,
+  
+  // Safety limits
+  maxPagesPerChunk: 20,
+  pageSize: 100,
+};
+
+// ============= Types =============
 interface Visit {
   id: string;
   title: string;
@@ -37,73 +60,225 @@ interface VisitsResponse {
   };
 }
 
-// Fetch all visits from Jobber within a date range
-async function fetchAllVisits(startDate: string, endDate: string): Promise<Visit[]> {
+interface GraphQLError {
+  message: string;
+  extensions?: { code?: string };
+}
+
+interface GraphQLResult<T> {
+  data?: T;
+  errors?: GraphQLError[];
+}
+
+interface SyncRun {
+  id: string;
+  status: string;
+  from_date: string;
+  to_date: string;
+  chunk_days: number;
+  current_cursor_date: string | null;
+  chunks_completed: number;
+  total_chunks: number;
+  visits_synced: number;
+  blocks_inserted: number;
+  last_error: string | null;
+}
+
+// ============= Rate-Limited GraphQL Client =============
+let lastRequestTime = 0;
+
+async function rateLimitedDelay(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - lastRequestTime;
+  const targetDelay = CONFIG.minRequestDelayMs + 
+    Math.random() * (CONFIG.maxRequestDelayMs - CONFIG.minRequestDelayMs);
+  
+  if (elapsed < targetDelay) {
+    const waitTime = targetDelay - elapsed;
+    console.log(`[RateLimit] Waiting ${Math.round(waitTime)}ms before next request`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  lastRequestTime = Date.now();
+}
+
+function calculateBackoff(attempt: number, retryAfterHeader?: string | null): number {
+  // Respect Retry-After header if present
+  if (retryAfterHeader) {
+    const retryAfterSeconds = parseInt(retryAfterHeader, 10);
+    if (!isNaN(retryAfterSeconds)) {
+      return Math.min(retryAfterSeconds * 1000, CONFIG.retryCapMs);
+    }
+  }
+  
+  // Exponential backoff with jitter
+  const baseDelay = CONFIG.retryBaseMs * Math.pow(CONFIG.retryMultiplier, attempt);
+  const jitter = Math.random() * 0.3 * baseDelay; // 0-30% jitter
+  return Math.min(baseDelay + jitter, CONFIG.retryCapMs);
+}
+
+async function jobberGraphQLWithRetry<T>(
+  query: string,
+  variables?: Record<string, unknown>
+): Promise<GraphQLResult<T>> {
+  const accessToken = await getJobberAccessToken();
+  
+  if (!accessToken) {
+    return { errors: [{ message: "No valid Jobber access token" }] };
+  }
+
+  for (let attempt = 0; attempt <= CONFIG.maxRetries; attempt++) {
+    // Apply rate limiting before each request
+    await rateLimitedDelay();
+    
+    try {
+      console.log(`[Jobber] Making request (attempt ${attempt + 1}/${CONFIG.maxRetries + 1})`);
+      
+      const response = await fetch("https://api.getjobber.com/api/graphql", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+          "X-JOBBER-GRAPHQL-VERSION": "2025-04-16",
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+
+      // Check for HTTP-level throttling
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("Retry-After");
+        const backoff = calculateBackoff(attempt, retryAfter);
+        console.log(`[Throttle] HTTP 429 received. Retry-After: ${retryAfter}. Backing off ${Math.round(backoff)}ms`);
+        
+        if (attempt < CONFIG.maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, backoff));
+          continue;
+        }
+        
+        return { errors: [{ message: "Rate limit exceeded after max retries" }] };
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Jobber] API error ${response.status}:`, errorText);
+        return { errors: [{ message: `API error: ${response.status}` }] };
+      }
+
+      const jsonResult: GraphQLResult<T> = await response.json();
+      
+      // Check for GraphQL-level throttling
+      if (jsonResult.errors?.some((e: GraphQLError) => 
+        e.extensions?.code === "THROTTLED"
+      )) {
+        const backoff = calculateBackoff(attempt);
+        console.log(`[Throttle] GraphQL THROTTLED error. Backing off ${Math.round(backoff)}ms`);
+        
+        if (attempt < CONFIG.maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, backoff));
+          continue;
+        }
+        
+        return { errors: [{ message: "Throttled after max retries" }] };
+      }
+      
+      // Success!
+      return jsonResult;
+      
+    } catch (error) {
+      console.error(`[Jobber] Request failed (attempt ${attempt + 1}):`, error);
+      
+      if (attempt < CONFIG.maxRetries) {
+        const backoff = calculateBackoff(attempt);
+        console.log(`[Retry] Waiting ${Math.round(backoff)}ms before retry`);
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        continue;
+      }
+      
+      throw error;
+    }
+  }
+  
+  return { errors: [{ message: "Max retries exceeded" }] };
+}
+
+// ============= Visits Fetching =============
+const VISITS_QUERY = `
+  query GetVisits($after: String, $startDate: ISO8601DateTime!, $endDate: ISO8601DateTime!) {
+    visits(
+      first: ${CONFIG.pageSize},
+      after: $after,
+      filter: {
+        startAt: { after: $startDate, before: $endDate }
+      }
+    ) {
+      nodes {
+        id
+        title
+        startAt
+        endAt
+        assignedUsers {
+          nodes {
+            id
+            name {
+              full
+            }
+          }
+        }
+        job {
+          id
+          title
+          property {
+            address {
+              street
+              city
+              province
+              postalCode
+            }
+          }
+          client {
+            name
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
+async function fetchVisitsForChunk(
+  startDate: string, 
+  endDate: string
+): Promise<{ visits: Visit[]; throttled: boolean; error?: string }> {
   const allVisits: Visit[] = [];
   let hasNextPage = true;
   let cursor: string | null = null;
   let page = 0;
-  const maxPages = 50; // Safety limit
 
-  const query = `
-    query GetVisits($after: String, $startDate: ISO8601DateTime!, $endDate: ISO8601DateTime!) {
-      visits(
-        first: 100,
-        after: $after,
-        filter: {
-          startAt: { after: $startDate, before: $endDate }
-        }
-      ) {
-        nodes {
-          id
-          title
-          startAt
-          endAt
-          assignedUsers {
-            nodes {
-              id
-              name {
-                full
-              }
-            }
-          }
-          job {
-            id
-            title
-            property {
-              address {
-                street
-                city
-                province
-                postalCode
-              }
-            }
-            client {
-              name
-            }
-          }
-        }
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
-      }
-    }
-  `;
+  console.log(`[Chunk] Fetching visits from ${startDate} to ${endDate}`);
 
-  while (hasNextPage && page < maxPages) {
-    console.log(`Fetching visits page ${page + 1}...`);
+  while (hasNextPage && page < CONFIG.maxPagesPerChunk) {
+    console.log(`[Chunk] Page ${page + 1}...`);
     
-    // deno-lint-ignore no-explicit-any
-    const result: { data?: VisitsResponse; errors?: Array<{ message: string }> } = await jobberGraphQL<VisitsResponse>(query, {
+    const result: GraphQLResult<VisitsResponse> = await jobberGraphQLWithRetry<VisitsResponse>(VISITS_QUERY, {
       after: cursor,
       startDate,
       endDate,
     });
 
+    // Check for throttle exhaustion
+    if (result.errors?.some((e: GraphQLError) => 
+      e.message.includes("Throttled") || 
+      e.message.includes("Rate limit")
+    )) {
+      console.log(`[Chunk] Throttle exhausted after ${allVisits.length} visits`);
+      return { visits: allVisits, throttled: true, error: result.errors[0]?.message };
+    }
+
     if (result.errors) {
-      console.error("Jobber API errors:", result.errors);
-      throw new Error(result.errors[0]?.message || "Failed to fetch visits");
+      console.error("[Chunk] API errors:", result.errors);
+      return { visits: allVisits, throttled: false, error: result.errors[0]?.message };
     }
 
     const visitsData = result.data?.visits;
@@ -117,10 +292,82 @@ async function fetchAllVisits(startDate: string, endDate: string): Promise<Visit
     page++;
   }
 
-  console.log(`Fetched ${allVisits.length} total visits across ${page} pages`);
-  return allVisits;
+  console.log(`[Chunk] Fetched ${allVisits.length} visits in ${page} pages`);
+  return { visits: allVisits, throttled: false };
 }
 
+// ============= Sync Logic =============
+// deno-lint-ignore no-explicit-any
+async function upsertVisits(
+  supabase: SupabaseClient<any>,
+  visits: Visit[]
+): Promise<{ inserted: number; errors: number }> {
+  let insertedCount = 0;
+  let errorCount = 0;
+
+  for (const visit of visits) {
+    const assignees = visit.assignedUsers?.nodes || [];
+    
+    for (const assignee of assignees) {
+      const address = visit.job?.property?.address;
+      const fullAddress = address 
+        ? `${address.street}, ${address.city}, ${address.province} ${address.postalCode}`
+        : null;
+
+      const { error } = await supabase
+        .from("jobber_busy_blocks")
+        .upsert(
+          {
+            jobber_visit_id: visit.id,
+            crew_id: assignee.id,
+            start_at: visit.startAt,
+            end_at: visit.endAt,
+            status: 'scheduled',
+            jobber_job_id: visit.job?.id || null,
+            client_name: visit.job?.client?.name || null,
+            client_address: fullAddress,
+            source: 'jobber',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'jobber_visit_id' }
+        );
+
+      if (error) {
+        console.error("[Upsert] Failed:", error.message);
+        errorCount++;
+      } else {
+        insertedCount++;
+      }
+    }
+  }
+
+  return { inserted: insertedCount, errors: errorCount };
+}
+
+function generateChunks(
+  fromDate: Date, 
+  toDate: Date, 
+  chunkDays: number
+): Array<{ start: Date; end: Date }> {
+  const chunks: Array<{ start: Date; end: Date }> = [];
+  let current = new Date(fromDate);
+  
+  while (current < toDate) {
+    const chunkEnd = new Date(current);
+    chunkEnd.setDate(chunkEnd.getDate() + chunkDays);
+    
+    chunks.push({
+      start: new Date(current),
+      end: chunkEnd > toDate ? new Date(toDate) : chunkEnd,
+    });
+    
+    current = chunkEnd;
+  }
+  
+  return chunks;
+}
+
+// ============= Main Handler =============
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -155,7 +402,6 @@ Deno.serve(async (req) => {
 
   const userId = claims.claims.sub as string;
   
-  // Check admin role using service client with explicit user_id
   const { data: hasRole } = await supabase
     .from("user_roles")
     .select("id")
@@ -171,167 +417,238 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Check if backfill is already in progress
-    const { data: syncState, error: stateError } = await supabase
-      .from("jobber_sync_state")
+    // Parse request body
+    let horizonDays = CONFIG.defaultHorizonDays;
+    let chunkDays = CONFIG.defaultChunkDays;
+    let resumeRunId: string | null = null;
+    
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        if (body.horizonDays && body.horizonDays > 0 && body.horizonDays <= CONFIG.maxHorizonDays) {
+          horizonDays = body.horizonDays;
+        }
+        if (body.chunkDays && body.chunkDays >= 1 && body.chunkDays <= 14) {
+          chunkDays = body.chunkDays;
+        }
+        if (body.resumeRunId) {
+          resumeRunId = body.resumeRunId;
+        }
+      } catch {
+        // Use defaults
+      }
+    }
+
+    // Check for active sync run
+    const { data: activeRun } = await supabase
+      .from("schedule_sync_runs")
       .select("*")
-      .eq("id", "default")
-      .single();
+      .eq("status", "running")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (stateError) throw stateError;
-
-    // Prevent concurrent backfills
-    if (syncState.backfill_in_progress) {
-      const startedAt = new Date(syncState.backfill_started_at);
+    if (activeRun) {
+      const startedAt = new Date(activeRun.started_at);
       const elapsed = Date.now() - startedAt.getTime();
       
       // Allow restart if stuck for more than 10 minutes
       if (elapsed < 10 * 60 * 1000) {
         return new Response(
           JSON.stringify({ 
-            error: "Backfill already in progress",
-            startedAt: syncState.backfill_started_at 
+            error: "Sync already in progress",
+            runId: activeRun.id,
+            startedAt: activeRun.started_at,
+            progress: `${activeRun.chunks_completed}/${activeRun.total_chunks} chunks`
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 429 }
         );
       }
-    }
-
-    // Prevent too frequent backfills (5 minute minimum)
-    if (syncState.last_backfill_at) {
-      const lastBackfill = new Date(syncState.last_backfill_at);
-      const elapsed = Date.now() - lastBackfill.getTime();
       
-      if (elapsed < 5 * 60 * 1000) {
-        const waitSeconds = Math.ceil((5 * 60 * 1000 - elapsed) / 1000);
-        return new Response(
-          JSON.stringify({ 
-            error: `Please wait ${waitSeconds} seconds before syncing again`,
-            lastBackfillAt: syncState.last_backfill_at 
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 429 }
-        );
-      }
+      // Mark stale run as failed
+      await supabase
+        .from("schedule_sync_runs")
+        .update({ status: "failed", last_error: "Timed out" })
+        .eq("id", activeRun.id);
     }
 
-    // Parse request body for horizon days
-    let horizonDays = syncState.backfill_horizon_days || 60;
-    if (req.method === "POST") {
-      try {
-        const body = await req.json();
-        if (body.horizonDays && [30, 60, 90].includes(body.horizonDays)) {
-          horizonDays = body.horizonDays;
-        }
-      } catch {
-        // Use default
+    // Check for resumable partial run
+    let syncRun: SyncRun | null = null;
+    
+    if (resumeRunId) {
+      const { data: existingRun } = await supabase
+        .from("schedule_sync_runs")
+        .select("*")
+        .eq("id", resumeRunId)
+        .eq("status", "partial")
+        .maybeSingle();
+      
+      if (existingRun) {
+        syncRun = existingRun as SyncRun;
+        console.log(`[Resume] Resuming run ${syncRun.id} from ${syncRun.current_cursor_date}`);
       }
     }
-
-    // Mark backfill as in progress
-    await supabase
-      .from("jobber_sync_state")
-      .update({ 
-        backfill_in_progress: true,
-        backfill_started_at: new Date().toISOString(),
-        backfill_horizon_days: horizonDays,
-      })
-      .eq("id", "default");
 
     // Calculate date range
     const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 7); // Include past week for context
-    const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() + horizonDays);
+    const fromDate = new Date(now);
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(fromDate);
+    toDate.setDate(toDate.getDate() + horizonDays);
 
-    console.log(`Syncing visits from ${startDate.toISOString()} to ${endDate.toISOString()}`);
-
-    // Fetch all visits from Jobber
-    const visits = await fetchAllVisits(startDate.toISOString(), endDate.toISOString());
-
-    // Clear existing blocks in the date range (except manually created ones)
-    await supabase
-      .from("jobber_busy_blocks")
-      .delete()
-      .eq("source", "jobber")
-      .gte("start_at", startDate.toISOString())
-      .lte("start_at", endDate.toISOString());
-
-    // Upsert all visits as busy blocks
-    let insertedCount = 0;
-    let errorCount = 0;
-
-    for (const visit of visits) {
-      const assignees = visit.assignedUsers?.nodes || [];
+    // Create or update sync run
+    if (!syncRun) {
+      const chunks = generateChunks(fromDate, toDate, chunkDays);
       
-      for (const assignee of assignees) {
-        const address = visit.job?.property?.address;
-        const fullAddress = address 
-          ? `${address.street}, ${address.city}, ${address.province} ${address.postalCode}`
-          : null;
+      const { data: newRun, error: createError } = await supabase
+        .from("schedule_sync_runs")
+        .insert({
+          status: "running",
+          from_date: fromDate.toISOString().split('T')[0],
+          to_date: toDate.toISOString().split('T')[0],
+          chunk_days: chunkDays,
+          total_chunks: chunks.length,
+        })
+        .select()
+        .single();
+      
+      if (createError) throw createError;
+      syncRun = newRun as SyncRun;
+      
+      console.log(`[Sync] Created run ${syncRun.id}: ${chunks.length} chunks, ${chunkDays} days each`);
+    } else {
+      await supabase
+        .from("schedule_sync_runs")
+        .update({ status: "running" })
+        .eq("id", syncRun.id);
+    }
 
-        const { error } = await supabase
-          .from("jobber_busy_blocks")
-          .upsert(
-            {
-              jobber_visit_id: visit.id,
-              crew_id: assignee.id,
-              start_at: visit.startAt,
-              end_at: visit.endAt,
-              status: 'scheduled',
-              jobber_job_id: visit.job?.id || null,
-              client_name: visit.job?.client?.name || null,
-              client_address: fullAddress,
-              source: 'jobber',
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'jobber_visit_id' }
-          );
+    // Generate chunks for processing
+    const startFrom = syncRun.current_cursor_date 
+      ? new Date(syncRun.current_cursor_date)
+      : new Date(syncRun.from_date);
+    const endAt = new Date(syncRun.to_date);
+    
+    const chunks = generateChunks(startFrom, endAt, syncRun.chunk_days);
+    console.log(`[Sync] Processing ${chunks.length} chunks from ${startFrom.toISOString().split('T')[0]}`);
 
-        if (error) {
-          console.error("Failed to upsert busy block:", error);
-          errorCount++;
-        } else {
-          insertedCount++;
+    let totalVisits = syncRun.visits_synced;
+    let totalBlocks = syncRun.blocks_inserted;
+    let chunksCompleted = syncRun.chunks_completed;
+    let lastSuccessfulDate = startFrom;
+    let throttled = false;
+    let lastError: string | null = null;
+
+    // Process chunks sequentially (no parallel!)
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const chunkStart = chunk.start.toISOString();
+      const chunkEnd = chunk.end.toISOString();
+      
+      console.log(`[Sync] Chunk ${i + 1}/${chunks.length}: ${chunkStart.split('T')[0]} to ${chunkEnd.split('T')[0]}`);
+
+      // Fetch visits for this chunk
+      const { visits, throttled: wasThrottled, error } = await fetchVisitsForChunk(chunkStart, chunkEnd);
+      
+      if (error && !wasThrottled) {
+        lastError = error;
+        console.error(`[Sync] Chunk ${i + 1} failed:`, error);
+        break;
+      }
+
+      // Upsert whatever we got
+      if (visits.length > 0) {
+        const { inserted, errors: upsertErrors } = await upsertVisits(supabase, visits);
+        totalVisits += visits.length;
+        totalBlocks += inserted;
+        
+        if (upsertErrors > 0) {
+          console.log(`[Sync] Chunk ${i + 1}: ${upsertErrors} upsert errors`);
         }
+      }
+
+      chunksCompleted++;
+      lastSuccessfulDate = chunk.end;
+
+      // Update progress
+      await supabase
+        .from("schedule_sync_runs")
+        .update({
+          chunks_completed: chunksCompleted,
+          current_cursor_date: chunk.end.toISOString().split('T')[0],
+          visits_synced: totalVisits,
+          blocks_inserted: totalBlocks,
+        })
+        .eq("id", syncRun.id);
+
+      console.log(`[Sync] Chunk ${i + 1} complete: ${visits.length} visits → ${totalBlocks} blocks`);
+
+      // If throttled, stop and return partial
+      if (wasThrottled) {
+        throttled = true;
+        lastError = "Throttled by Jobber API";
+        break;
       }
     }
 
-    // Update sync state
+    // Determine final status
+    const allComplete = chunksCompleted >= chunks.length + syncRun.chunks_completed;
+    const finalStatus = allComplete ? "completed" : throttled ? "partial" : lastError ? "failed" : "completed";
+
+    // Update final state
+    await supabase
+      .from("schedule_sync_runs")
+      .update({
+        status: finalStatus,
+        chunks_completed: chunksCompleted,
+        current_cursor_date: lastSuccessfulDate.toISOString().split('T')[0],
+        visits_synced: totalVisits,
+        blocks_inserted: totalBlocks,
+        last_error: lastError,
+        completed_at: finalStatus === "completed" ? new Date().toISOString() : null,
+      })
+      .eq("id", syncRun.id);
+
+    // Also update legacy sync state for backwards compatibility
     await supabase
       .from("jobber_sync_state")
       .update({
         backfill_in_progress: false,
         last_backfill_at: new Date().toISOString(),
-        backfill_horizon_days: horizonDays,
       })
       .eq("id", "default");
 
-    console.log(`Sync complete: ${insertedCount} blocks inserted, ${errorCount} errors`);
+    const response = {
+      status: finalStatus,
+      runId: syncRun.id,
+      chunksCompleted,
+      totalChunks: chunks.length + (syncRun.chunks_completed || 0),
+      visitsProcessed: totalVisits,
+      blocksInserted: totalBlocks,
+      syncedThrough: lastSuccessfulDate.toISOString().split('T')[0],
+      dateRange: {
+        start: syncRun.from_date,
+        end: syncRun.to_date,
+      },
+      ...(finalStatus === "partial" && {
+        message: "Sync paused due to rate limiting. Click 'Resume Sync' to continue.",
+        remainingChunks: chunks.length - (chunksCompleted - (syncRun.chunks_completed || 0)),
+      }),
+      ...(lastError && { error: lastError }),
+    };
+
+    console.log(`[Sync] Finished with status: ${finalStatus}`, response);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        visitsProcessed: visits.length,
-        blocksInserted: insertedCount,
-        errors: errorCount,
-        horizonDays,
-        dateRange: {
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-        },
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify(response),
+      { 
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: finalStatus === "failed" ? 500 : 200,
+      }
     );
 
   } catch (error) {
-    console.error("Sync failed:", error);
-
-    // Reset backfill state on error
-    await supabase
-      .from("jobber_sync_state")
-      .update({ backfill_in_progress: false })
-      .eq("id", "default");
+    console.error("[Sync] Fatal error:", error);
 
     return new Response(
       JSON.stringify({ 
