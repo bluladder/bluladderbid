@@ -1,214 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { jobberGraphQL } from "../_shared/jobberClient.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-const JOBBER_MAX_ATTEMPTS = 3;
-const JOBBER_BACKOFF_MS = [500, 1500, 3000];
-
-// ---------------- Jobber throttling + DB-backed cache (fail-closed, but avoid hard downtime) ----------------
-// If Jobber rate-limits us, we:
-// 1) enter a short cooldown to avoid repeatedly triggering throttling
-// 2) check DB-backed cache for recent visits data that covers the requested range
-let lastJobberThrottleAtMs: number | null = null;
-const JOBBER_THROTTLE_COOLDOWN_MS = 60_000; // 60s
-const JOBBER_THROTTLE_STATE_CACHE_KEY = "throttle:jobber";
-const DB_CACHE_TTL_MINUTES = 30; // DB cache lasts 30 minutes to survive throttling
-const STALE_CACHE_TTL_MINUTES = 120; // Allow stale cache up to 2 hours as last resort
-
-let lastJobberAuthErrorAtMs: number | null = null;
-const JOBBER_AUTH_COOLDOWN_MS = 5 * 60_000; // 5 minutes
-
-// In-memory fallback (for same-instance reuse)
-let inMemoryVisitsCache: {
-  fromISO: string;
-  toISO: string;
-  fetchedAtMs: number;
-  data: JobberVisitResult;
-} | null = null;
-const IN_MEMORY_CACHE_TTL_MS = 5 * 60_000; // 5 minutes in-memory
-
-type JobberVisitResult = {
-  visits: {
-    nodes: Array<{
-      id: string;
-      startAt: string;
-      endAt: string;
-      assignedUsers: {
-        nodes: Array<{ id: string }>;
-      };
-      job?: {
-        property?: {
-          address?: {
-            street?: string;
-            city?: string;
-            province?: string;
-            postalCode?: string;
-          };
-        };
-      };
-    }>;
-  };
-};
-
-type JobberGraphQLError = { message: string; extensions?: { code?: string } };
-type JobberGraphQLResult<T> = { data?: T; errors?: JobberGraphQLError[] };
-
-// Helper: Read from DB cache (uses any to bypass type generation lag)
-async function getDbCache(
-  supabase: any,
-  fromDate: string,
-  toDate: string,
-  allowStale = false
-): Promise<{ data: JobberVisitResult; isStale: boolean } | null> {
-  const cacheKey = `visits:${fromDate}:${toDate}`;
-  
-  // Try fresh cache first
-  const { data, error } = await (supabase as any)
-    .from("availability_cache")
-    .select("visits_json, cached_at, expires_at")
-    .eq("cache_key", cacheKey)
-    .gt("expires_at", new Date().toISOString())
-    .maybeSingle();
-
-  if (!error && data?.visits_json) {
-    console.log(`DB cache hit for ${cacheKey}`);
-    return { data: { visits: { nodes: data.visits_json as JobberVisitResult["visits"]["nodes"] } }, isStale: false };
-  }
-
-  // Try covering range from fresh cache
-  const { data: coveringCache } = await (supabase as any)
-    .from("availability_cache")
-    .select("visits_json, cached_at, from_date, to_date")
-    .like("cache_key", "visits:%")
-    .lte("from_date", fromDate)
-    .gte("to_date", toDate)
-    .gt("expires_at", new Date().toISOString())
-    .order("cached_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (coveringCache?.visits_json) {
-    console.log(`DB cache hit (covering range ${coveringCache.from_date} to ${coveringCache.to_date})`);
-    return { data: { visits: { nodes: coveringCache.visits_json as JobberVisitResult["visits"]["nodes"] } }, isStale: false };
-  }
-
-  // If allowStale, try to find any recent cache even if expired (up to STALE_CACHE_TTL_MINUTES)
-  if (allowStale) {
-    const staleThreshold = new Date(Date.now() - STALE_CACHE_TTL_MINUTES * 60 * 1000).toISOString();
-    
-    const { data: staleCache } = await (supabase as any)
-      .from("availability_cache")
-      .select("visits_json, cached_at, from_date, to_date")
-      .like("cache_key", "visits:%")
-      .lte("from_date", fromDate)
-      .gte("to_date", toDate)
-      .gt("cached_at", staleThreshold)
-      .order("cached_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (staleCache?.visits_json) {
-      const ageMinutes = Math.round((Date.now() - new Date(staleCache.cached_at).getTime()) / 60000);
-      console.log(`Using STALE cache (${ageMinutes} minutes old) from ${staleCache.from_date} to ${staleCache.to_date}`);
-      return { data: { visits: { nodes: staleCache.visits_json as JobberVisitResult["visits"]["nodes"] } }, isStale: true };
-    }
-  }
-
-  return null;
-}
-
-// Helper: Write to DB cache
-async function setDbCache(
-  supabase: any,
-  fromDate: string,
-  toDate: string,
-  visits: JobberVisitResult["visits"]["nodes"]
-): Promise<void> {
-  const cacheKey = `visits:${fromDate}:${toDate}`;
-  const expiresAt = new Date(Date.now() + DB_CACHE_TTL_MINUTES * 60 * 1000).toISOString();
-
-  try {
-    await (supabase as any)
-      .from("availability_cache")
-      .upsert({
-        cache_key: cacheKey,
-        from_date: fromDate,
-        to_date: toDate,
-        visits_json: visits,
-        cached_at: new Date().toISOString(),
-        expires_at: expiresAt,
-      }, { onConflict: "cache_key" });
-    
-    console.log(`DB cache updated for ${cacheKey}, expires ${expiresAt}`);
-  } catch (err) {
-    console.error("Failed to update DB cache:", err);
-  }
-}
-
-// Helper: Clean up expired cache entries (fire-and-forget)
-async function cleanupExpiredCache(supabase: any): Promise<void> {
-  try {
-    // Keep expired rows long enough to serve as a stale fallback during provider throttling.
-    // If we delete everything as soon as it expires, the STALE_CACHE_TTL_MINUTES logic can never work.
-    const staleThreshold = new Date(Date.now() - STALE_CACHE_TTL_MINUTES * 60 * 1000).toISOString();
-    await (supabase as any)
-      .from("availability_cache")
-      .delete()
-      .lt("cached_at", staleThreshold);
-  } catch {
-    // Ignore cleanup errors
-  }
-}
-
-type DbThrottleState = {
-  until?: string;
-};
-
-async function getDbThrottleUntilMs(supabase: any): Promise<number | null> {
-  try {
-    const { data, error } = await (supabase as any)
-      .from("availability_cache")
-      .select("visits_json, expires_at")
-      .eq("cache_key", JOBBER_THROTTLE_STATE_CACHE_KEY)
-      .gt("expires_at", new Date().toISOString())
-      .maybeSingle();
-
-    if (error || !data?.visits_json) return null;
-    const until = (data.visits_json as DbThrottleState)?.until;
-    if (!until) return null;
-    const ms = new Date(until).getTime();
-    return Number.isFinite(ms) ? ms : null;
-  } catch {
-    return null;
-  }
-}
-
-async function setDbThrottleUntilMs(supabase: any, untilMs: number): Promise<void> {
-  const today = new Date().toISOString().split("T")[0];
-  const untilIso = new Date(untilMs).toISOString();
-
-  try {
-    await (supabase as any)
-      .from("availability_cache")
-      .upsert(
-        {
-          cache_key: JOBBER_THROTTLE_STATE_CACHE_KEY,
-          from_date: today,
-          to_date: today,
-          visits_json: { until: untilIso },
-          cached_at: new Date().toISOString(),
-          expires_at: untilIso,
-        },
-        { onConflict: "cache_key" }
-      );
-  } catch {
-    // ignore
-  }
-}
 
 interface ServicePrice {
   service: string;
@@ -221,7 +16,7 @@ interface AvailabilityRequest {
   daysToCheck?: number;
   timezone?: string;
   customerAddress?: string;
-  includeExcluded?: boolean; // Admin mode to see hidden slots
+  includeExcluded?: boolean;
 }
 
 interface BufferTier {
@@ -258,11 +53,9 @@ interface TimeSlot {
   estimatedDriveMinutes?: number;
   isFirstJob?: boolean;
   isLongFirstDrive?: boolean;
-  // Route-density scoring
   routeDensityScore?: number;
   routeDensityLabel?: string;
   nearbyJobCount?: number;
-  // For admin visibility
   excluded?: boolean;
   exclusionReason?: ExclusionReason;
 }
@@ -287,7 +80,16 @@ interface DayMetrics {
   jobAddresses: string[];
 }
 
-// Default business hours (used if not configured in database)
+interface BusyBlock {
+  id: string;
+  crew_id: string;
+  start_at: string;
+  end_at: string;
+  jobber_visit_id: string | null;
+  status: string;
+  client_address: string | null;
+}
+
 const DEFAULT_BUSINESS_HOURS = {
   startHour: 9,
   endHour: 17,
@@ -355,7 +157,6 @@ function createDateInTimezone(date: Date, hour: number, minute: number, timezone
   return testDate;
 }
 
-// Get hour in timezone
 function getHourInTimezone(date: Date, timezone: string): number {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
@@ -366,7 +167,6 @@ function getHourInTimezone(date: Date, timezone: string): number {
   return parseInt(parts.find(p => p.type === 'hour')?.value || '0');
 }
 
-// Format date string for a given timezone
 function formatDateInTimezone(date: Date, timezone: string): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
@@ -381,7 +181,6 @@ function formatDateInTimezone(date: Date, timezone: string): string {
   return `${year}-${month}-${day}`;
 }
 
-// Get weekday name for a date in a timezone
 function getWeekdayInTimezone(date: Date, timezone: string): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
@@ -390,70 +189,58 @@ function getWeekdayInTimezone(date: Date, timezone: string): string {
   return formatter.format(date);
 }
 
-// Extract city from address for zone matching
 function extractZone(address: string | null): string {
   if (!address) return 'unknown';
-  // Simple extraction - get city or first significant part
   const parts = address.split(',').map(p => p.trim());
   if (parts.length >= 2) {
-    return parts[1].toLowerCase(); // Usually city
+    return parts[1].toLowerCase();
   }
   return parts[0].toLowerCase().substring(0, 20);
 }
 
-// Calculate rough distance score between two addresses (0-100, 100 = same zone)
 function calculateProximityScore(addr1: string | null, addr2: string | null): number {
-  if (!addr1 || !addr2) return 50; // Unknown addresses get neutral score
+  if (!addr1 || !addr2) return 50;
   
   const zone1 = extractZone(addr1);
   const zone2 = extractZone(addr2);
   
-  // Same city = high score
   if (zone1 === zone2) return 100;
   
-  // Check if they share any significant words
   const words1 = zone1.split(/\s+/);
   const words2 = zone2.split(/\s+/);
   const commonWords = words1.filter(w => words2.includes(w) && w.length > 3);
   
   if (commonWords.length > 0) return 75;
   
-  return 30; // Different zones
+  return 30;
 }
 
-// Estimate drive time between two addresses (simplified - returns 5-45 min range)
-// In production, integrate with Google Maps Distance Matrix API
 function estimateDriveTime(fromAddress: string | null, toAddress: string | null): number {
   if (!fromAddress || !toAddress) {
-    return 15; // Default estimate when addresses unknown
+    return 15;
   }
   
-  // Check if same zone for reduced drive time
   const proximity = calculateProximityScore(fromAddress, toAddress);
-  if (proximity >= 100) return 8; // Same city
-  if (proximity >= 75) return 18; // Nearby
+  if (proximity >= 100) return 8;
+  if (proximity >= 75) return 18;
   
-  // Hash-based pseudo-random but consistent value
   const hash = (fromAddress + toAddress).split('').reduce((a, b) => {
     a = ((a << 5) - a) + b.charCodeAt(0);
     return a & a;
   }, 0);
-  return 15 + Math.abs(hash % 30); // 15-45 minutes
+  return 15 + Math.abs(hash % 30);
 }
 
-// Get buffer for drive time based on tiers
 function getBufferForDriveTime(driveMinutes: number, config: DriveTimeConfig): number {
   for (const tier of config.buffer_tiers) {
     if (driveMinutes >= tier.min_drive && driveMinutes < tier.max_drive) {
       return tier.buffer;
     }
   }
-  // If beyond all tiers, use the last tier's buffer
   const lastTier = config.buffer_tiers[config.buffer_tiers.length - 1];
   return lastTier?.buffer || config.base_buffer_minutes;
 }
 
-// Calculate route density score for a slot
 function calculateRouteDensityScore(
   slotStart: Date,
   customerAddress: string | null,
@@ -465,19 +252,15 @@ function calculateRouteDensityScore(
     return { score: 50, label: '', nearbyJobCount: 0 };
   }
   
-  // Count nearby jobs (same zone)
   const customerZone = extractZone(customerAddress);
   const nearbyJobs = dayJobAddresses.filter(addr => {
     const jobZone = extractZone(addr);
     return jobZone === customerZone;
   });
   
-  let score = 50; // Base score
-  
-  // Boost for same-zone jobs
+  let score = 50;
   score += Math.min(nearbyJobs.length * 15, 40);
   
-  // Boost for adjacent job proximity
   if (previousJobAddress) {
     const prevProximity = calculateProximityScore(customerAddress, previousJobAddress);
     score += (prevProximity - 50) * 0.2;
@@ -487,10 +270,8 @@ function calculateRouteDensityScore(
     score += (nextProximity - 50) * 0.2;
   }
   
-  // Clamp to 0-100
   score = Math.max(0, Math.min(100, score));
   
-  // Determine label based on score
   let label = '';
   if (score >= 85) {
     label = 'Best fit for your area';
@@ -517,12 +298,10 @@ Deno.serve(async (req) => {
       includeExcluded = false 
     }: AvailabilityRequest = await req.json();
 
-    // Date-first loading: customers should query a very small window (1–3 days max)
-    // to avoid provider throttling. Admin tools (includeExcluded=true) may request longer.
     const requestedDaysToCheck = Number.isFinite(daysToCheck) ? Math.floor(daysToCheck) : 14;
     const effectiveDaysToCheck = includeExcluded
       ? Math.max(1, Math.min(requestedDaysToCheck, 60))
-      : Math.max(1, Math.min(requestedDaysToCheck, 3));
+      : Math.max(1, Math.min(requestedDaysToCheck, 14)); // Increased since we read local DB
 
     if (!services || services.length === 0) {
       return new Response(
@@ -534,6 +313,26 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Check sync state - warn if not synced
+    const { data: syncState } = await supabase
+      .from("jobber_sync_state")
+      .select("last_backfill_at, backfill_in_progress")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (!syncState?.last_backfill_at) {
+      return new Response(
+        JSON.stringify({
+          error: "Schedule not synced yet. Please run 'Sync Jobber Schedule' in Admin → Crew settings.",
+          code: "SYNC_REQUIRED",
+          requiresAdminAction: true,
+          slots: [],
+          recommendedDays: [],
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+      );
+    }
 
     // Fetch business hours
     let BUSINESS_HOURS: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS;
@@ -579,7 +378,6 @@ Deno.serve(async (req) => {
 
     const businessTimezone = BUSINESS_HOURS.timezone || DEFAULT_BUSINESS_HOURS.timezone;
     console.log("Using timezone:", businessTimezone);
-    console.log("Drive time config:", DRIVE_TIME_CONFIG);
 
     // Map service names to service_type enum
     const serviceTypeMap: Record<string, string> = {
@@ -596,7 +394,7 @@ Deno.serve(async (req) => {
       "pressureWashing": "driveway",
     };
 
-    // Get all active technicians with their rates and locations
+    // Get all active technicians with their rates
     const { data: technicians, error: techError } = await supabase
       .from("technicians")
       .select(`
@@ -663,12 +461,10 @@ Deno.serve(async (req) => {
       }
 
       if (canPerformAll && totalDuration > 0) {
-        // Determine starting address
         const startingAddress = tech.location_type === 'home' 
           ? tech.starting_address 
           : DRIVE_TIME_CONFIG.office_address;
         
-        // Get per-technician work days
         const workDays = (tech.work_days as number[]) || BUSINESS_HOURS.workDays;
           
         eligibleTechs.push({
@@ -699,334 +495,56 @@ Deno.serve(async (req) => {
     const fromDate = startDate ? new Date(startDate) : now;
     const toDate = new Date(fromDate.getTime() + effectiveDaysToCheck * 24 * 60 * 60 * 1000);
 
-    // Format dates for Jobber query (ISO8601DateTime)
-    const fromDateISO = fromDate.toISOString();
-    const toDateISO = toDate.toISOString();
+    console.log(`Querying local busy blocks from ${fromDate.toISOString()} to ${toDate.toISOString()}`);
+
+    // ========== KEY CHANGE: Query local jobber_busy_blocks instead of Jobber API ==========
+    const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
     
-    console.log(
-      `Availability request window: requested=${requestedDaysToCheck}d effective=${effectiveDaysToCheck}d includeExcluded=${includeExcluded}`
-    );
-    console.log(`Querying Jobber visits from ${fromDateISO} to ${toDateISO}`);
+    const { data: busyBlocks, error: blocksError } = await supabase
+      .from("jobber_busy_blocks")
+      .select("*")
+      .in("crew_id", techJobberIds)
+      .gte("start_at", fromDate.toISOString())
+      .lte("start_at", toDate.toISOString())
+      .eq("status", "scheduled");
 
-    // Query Jobber for scheduled visits with property addresses
-    const scheduledItemsQuery = `
-      query GetScheduledItems($startDateAfter: ISO8601DateTime!, $startDateBefore: ISO8601DateTime!) {
-        visits(first: 200, filter: { startAt: { after: $startDateAfter, before: $startDateBefore } }) {
-          nodes {
-            id
-            startAt
-            endAt
-            assignedUsers {
-              nodes {
-                id
-              }
-            }
-            job {
-              property {
-                address {
-                  street
-                  city
-                  province
-                  postalCode
-                }
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    // Fetch visits from Jobber with:
-    // - cooldown when throttled (reduces repeated throttle hits)
-    // - DB-backed cache fallback (persists across function instances)
-    // - in-memory cache for same-instance reuse
-    const nowMs = Date.now();
-    
-    // Check in-memory cache first (fastest)
-    const inMemoryCacheFresh = !!inMemoryVisitsCache && (nowMs - inMemoryVisitsCache.fetchedAtMs) < IN_MEMORY_CACHE_TTL_MS;
-    const inMemoryCacheCoversRange =
-      inMemoryCacheFresh &&
-      !!inMemoryVisitsCache &&
-      inMemoryVisitsCache.fromISO <= fromDateISO &&
-      inMemoryVisitsCache.toISO >= toDateISO;
-
-    const inAuthCooldown =
-      lastJobberAuthErrorAtMs !== null &&
-      (nowMs - lastJobberAuthErrorAtMs) < JOBBER_AUTH_COOLDOWN_MS;
-
-    // If we already know auth is broken, surface that immediately (even if we were also throttled).
-    // Returning a generic "temporarily busy" message here hides the real fix (reconnect).
-    if (inAuthCooldown) {
+    if (blocksError) {
+      console.error("Failed to fetch busy blocks:", blocksError);
       return new Response(
-        JSON.stringify({
-          error: "Scheduling connection needs admin re-authentication. Please reconnect in Admin → Jobber Integration.",
-          code: "JOBBER_AUTH",
-          retryAfter: Math.max(60, Math.ceil((JOBBER_AUTH_COOLDOWN_MS - (nowMs - lastJobberAuthErrorAtMs!)) / 1000)),
-          requiresAdminAction: true,
-          slots: [],
-          recommendedDays: [],
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+        JSON.stringify({ error: "Failed to load schedule data", slots: [] }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
       );
     }
 
-    // Persist throttling cooldown across cold starts by storing a short-lived marker in the DB.
-    // Without this, parallel instances can all hammer Jobber even though we're already throttled.
-    const dbThrottleUntilMs = await getDbThrottleUntilMs(supabase);
+    console.log(`Found ${busyBlocks?.length || 0} busy blocks from local mirror`);
 
-    const cooldownUntilMs =
-      dbThrottleUntilMs !== null && nowMs < dbThrottleUntilMs
-        ? dbThrottleUntilMs
-        : lastJobberThrottleAtMs !== null
-          ? lastJobberThrottleAtMs + JOBBER_THROTTLE_COOLDOWN_MS
-          : null;
-
-    const inCooldown = cooldownUntilMs !== null && nowMs < cooldownUntilMs;
-
-    const retryAfterSec = inCooldown && cooldownUntilMs !== null
-      ? Math.max(1, Math.ceil((cooldownUntilMs - nowMs) / 1000))
-      : 60;
-
-    let jobberResult: JobberGraphQLResult<JobberVisitResult> | null = null;
-
-    // Convert ISO to date strings for DB cache lookup
-    const fromDateStr = fromDateISO.split('T')[0];
-    const toDateStr = toDateISO.split('T')[0];
-
-    if (inCooldown) {
-      // Try in-memory cache first
-      if (inMemoryCacheCoversRange) {
-        console.log(
-          `Jobber throttling cooldown active; using in-memory cache (${Math.round((nowMs - inMemoryVisitsCache!.fetchedAtMs) / 1000)}s old)`
-        );
-        jobberResult = { data: inMemoryVisitsCache!.data };
-      } else {
-        // Fall back to DB cache (allow stale as last resort)
-        const dbCachedResult = await getDbCache(supabase, fromDateStr, toDateStr, true);
-        if (dbCachedResult) {
-          console.log(`Jobber throttling cooldown active; using ${dbCachedResult.isStale ? 'STALE ' : ''}DB cache`);
-          jobberResult = { data: dbCachedResult.data };
-        } else {
-          console.error("Jobber throttling cooldown active and no usable cache - returning 503");
-          return new Response(
-            JSON.stringify({
-              error: "Scheduling system is temporarily busy. Please try again in a few moments.",
-              retryAfter: retryAfterSec,
-              slots: [],
-              recommendedDays: [],
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-          );
-        }
-      }
-    } else {
-      // ========== CACHE-FIRST: Try DB cache before calling Jobber ==========
-      // This drastically reduces API calls and prevents throttling during normal use.
-      const freshDbCache = await getDbCache(supabase, fromDateStr, toDateStr, false);
-      if (freshDbCache) {
-        console.log(`Using fresh DB cache - skipping Jobber API call`);
-        jobberResult = { data: freshDbCache.data };
-        
-        // Also update in-memory cache for faster subsequent requests
-        inMemoryVisitsCache = {
-          data: freshDbCache.data,
-          fromISO: fromDateISO,
-          toISO: toDateISO,
-          fetchedAtMs: Date.now(),
-        };
-      } else {
-        // No fresh cache - call Jobber API with backoff retries
-         for (let attempt = 1; attempt <= JOBBER_MAX_ATTEMPTS; attempt++) {
-          console.log(`Jobber API attempt ${attempt}/${JOBBER_MAX_ATTEMPTS}`);
-          jobberResult = await jobberGraphQL<JobberVisitResult>(scheduledItemsQuery, {
-            startDateAfter: fromDateISO,
-            startDateBefore: toDateISO,
-          });
-
-          const isThrottledAttempt = jobberResult.errors?.some((e) =>
-            e.extensions?.code === "THROTTLED" || (e.message || "").includes("Throttled")
-          );
-
-           // If not throttled, proceed immediately (even if it contains other errors).
-           if (!isThrottledAttempt) break;
-
-           // If throttled, do NOT keep retrying within the same request.
-           // Jobber throttling is rarely resolved in a few seconds, and retries only add pressure.
-           lastJobberThrottleAtMs = nowMs;
-           void setDbThrottleUntilMs(supabase, nowMs + JOBBER_THROTTLE_COOLDOWN_MS);
-           break;
-        }
-      }
-
-      const isThrottled = jobberResult?.errors?.some((e) =>
-        e.extensions?.code === "THROTTLED" || (e.message || "").includes("Throttled")
-      );
-
-      if (!jobberResult) {
-        console.error("Jobber API returned no result - failing closed");
-        return new Response(
-          JSON.stringify({
-            error: "Scheduling system is temporarily unavailable. Please try again shortly.",
-            code: "JOBBER_ERROR",
-            retryAfter: 60,
-            slots: [],
-            recommendedDays: [],
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-        );
-      }
-
-      if (isThrottled) {
-        lastJobberThrottleAtMs = nowMs;
-         void setDbThrottleUntilMs(supabase, nowMs + JOBBER_THROTTLE_COOLDOWN_MS);
-        
-        // Try in-memory cache first
-        if (inMemoryCacheCoversRange) {
-          console.log("Jobber throttled; falling back to in-memory cache");
-          jobberResult = { data: inMemoryVisitsCache!.data };
-        } else {
-          // Fall back to DB cache (allow stale as last resort)
-          const dbCachedResult = await getDbCache(supabase, fromDateStr, toDateStr, true);
-          if (dbCachedResult) {
-            console.log(`Jobber throttled; falling back to ${dbCachedResult.isStale ? 'STALE ' : ''}DB cache`);
-            jobberResult = { data: dbCachedResult.data };
-          } else {
-            console.error("Jobber API throttled and no usable cache - returning 503 to prevent conflicts");
-             void setDbThrottleUntilMs(supabase, nowMs + JOBBER_THROTTLE_COOLDOWN_MS);
-            return new Response(
-              JSON.stringify({
-                error: "Scheduling system is temporarily busy. Please try again in a few moments.",
-                 retryAfter: Math.max(60, retryAfterSec),
-                slots: [],
-                recommendedDays: [],
-              }),
-              { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-            );
-          }
-        }
-      } else {
-        // If we have any non-throttle errors, fail closed (do not show availability that could conflict)
-        if (jobberResult.errors && jobberResult.errors.length > 0) {
-          const isAuthError = jobberResult.errors.some((e) =>
-            (e.message || "").toLowerCase().includes("no valid jobber access token") ||
-            (e.message || "").toLowerCase().includes("unauthorized") ||
-            (e.message || "").toLowerCase().includes("invalid")
-          );
-
-          if (isAuthError) {
-            lastJobberAuthErrorAtMs = nowMs;
-            console.error("Jobber auth error - admin re-authentication required:", jobberResult.errors);
-            return new Response(
-              JSON.stringify({
-                error: "Scheduling connection needs admin re-authentication. Please reconnect in Admin → Jobber Integration.",
-                code: "JOBBER_AUTH",
-                retryAfter: 300,
-                requiresAdminAction: true,
-                slots: [],
-                recommendedDays: [],
-              }),
-              { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-            );
-          }
-
-          console.error("Jobber API error (non-throttle) - failing closed:", jobberResult.errors);
-          return new Response(
-            JSON.stringify({
-              error: "Scheduling system is temporarily unavailable. Please try again shortly.",
-              code: "JOBBER_ERROR",
-              retryAfter: 60,
-              slots: [],
-              recommendedDays: [],
-            }),
-            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-          );
-        }
-
-        // On success, update both in-memory and DB cache
-        if (jobberResult.data?.visits?.nodes) {
-          // Update in-memory cache
-          inMemoryVisitsCache = {
-            fromISO: fromDateISO,
-            toISO: toDateISO,
-            fetchedAtMs: nowMs,
-            data: jobberResult.data,
-          };
-          
-          // Update DB cache (fire-and-forget for performance)
-          setDbCache(supabase, fromDateStr, toDateStr, jobberResult.data.visits.nodes);
-          
-          // Occasionally clean up expired cache entries
-          if (Math.random() < 0.1) {
-            cleanupExpiredCache(supabase);
-          }
-        }
-      }
-    }
-
-    // Build a map of busy times per technician with addresses
+    // Build a map of busy times per technician
     const busyTimesByTech: Record<string, Array<{ 
       start: Date; 
       end: Date;
       address: string | null;
     }>> = {};
 
-    // Track jobs by date for route density analysis
-    const jobsByDate: Record<string, string[]> = {}; // dateStr -> addresses
+    const jobsByDate: Record<string, string[]> = {};
 
-    const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
-    console.log("Looking for Jobber User IDs:", techJobberIds);
-
-    if (jobberResult?.data?.visits?.nodes) {
-      const visits = jobberResult.data.visits.nodes;
-      console.log(`Processing ${visits.length} visits for conflict detection`);
+    for (const block of (busyBlocks || []) as BusyBlock[]) {
+      const visitDate = formatDateInTimezone(new Date(block.start_at), businessTimezone);
       
-      for (const visit of visits) {
-        const users = visit.assignedUsers?.nodes || [];
-        const userIds = users.map(u => u.id);
-        console.log(`Visit ${visit.id}: ${visit.startAt} - ${visit.endAt}, assigned to users: ${JSON.stringify(userIds)}`);
-        
-        const addr = visit.job?.property?.address;
-        const address = addr 
-          ? `${addr.street || ''}, ${addr.city || ''}, ${addr.province || ''} ${addr.postalCode || ''}`.trim()
-          : null;
-        
-        // Track job addresses by date for route density
-        const visitDate = formatDateInTimezone(new Date(visit.startAt), businessTimezone);
-        if (!jobsByDate[visitDate]) {
-          jobsByDate[visitDate] = [];
-        }
-        if (address) {
-          jobsByDate[visitDate].push(address);
-        }
-          
-        for (const user of users) {
-          const matchesTech = techJobberIds.includes(user.id);
-          if (matchesTech) {
-            console.log(`  -> User ${user.id} MATCHES technician - marking as busy from ${visit.startAt} to ${visit.endAt}`);
-          }
-          
-          if (!busyTimesByTech[user.id]) {
-            busyTimesByTech[user.id] = [];
-          }
-          busyTimesByTech[user.id].push({
-            start: new Date(visit.startAt),
-            end: new Date(visit.endAt),
-            address,
-          });
-        }
+      if (!jobsByDate[visitDate]) {
+        jobsByDate[visitDate] = [];
       }
-      
-      console.log("Busy times summary:", Object.entries(busyTimesByTech).map(([id, times]) => ({
-        jobberUserId: id,
-        busyCount: times.length,
-        times: times.map(t => `${t.start.toISOString()} - ${t.end.toISOString()}`)
-      })));
-      console.log("Jobs by date:", Object.entries(jobsByDate).map(([date, addrs]) => ({
-        date,
-        jobCount: addrs.length
-      })));
-    } else {
-      console.log("No visits returned from Jobber - calendar appears empty for date range");
+      if (block.client_address) {
+        jobsByDate[visitDate].push(block.client_address);
+      }
+
+      if (!busyTimesByTech[block.crew_id]) {
+        busyTimesByTech[block.crew_id] = [];
+      }
+      busyTimesByTech[block.crew_id].push({
+        start: new Date(block.start_at),
+        end: new Date(block.end_at),
+        address: block.client_address,
+      });
     }
 
     // Track day metrics for recommended days calculation
@@ -1042,11 +560,10 @@ Deno.serve(async (req) => {
 
       let dayOffset = 0;
       
-      while (dayOffset < daysToCheck) {
+      while (dayOffset < effectiveDaysToCheck) {
         const currentDay = new Date(fromDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
         const currentDateStr = formatDateInTimezone(currentDay, businessTimezone);
         
-        // Get day of week in business timezone
         const formatter = new Intl.DateTimeFormat('en-US', {
           timeZone: businessTimezone,
           weekday: 'short',
@@ -1057,13 +574,11 @@ Deno.serve(async (req) => {
         };
         const dayOfWeek = weekdayMap[weekdayStr] ?? 1;
         
-        // Use per-technician work days
         if (!tech.workDays.includes(dayOfWeek)) {
           dayOffset++;
           continue;
         }
 
-        // Use per-technician schedule hours
         const dayStart = createDateInTimezone(currentDay, tech.scheduleStartHour, 0, businessTimezone);
         const dayEnd = createDateInTimezone(currentDay, tech.scheduleEndHour, 0, businessTimezone);
 
@@ -1072,7 +587,6 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Initialize day metrics if needed
         if (!dayMetrics.has(currentDateStr)) {
           dayMetrics.set(currentDateStr, {
             date: currentDay,
@@ -1097,34 +611,26 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Get busy times for this day
         const todayBusyTimes = techBusyTimes.filter(
           bt => bt.start >= dayStart && bt.start < dayEnd
         );
         
-        // Get day's job addresses for route density
         const dayJobAddresses = jobsByDate[currentDateStr] || [];
-
-        // Check if this is the first job of the day
         const hasEarlierJobToday = todayBusyTimes.some(bt => bt.start < effectiveStart);
 
-        // Generate slots
         let slotStart = new Date(effectiveStart);
         
         while (slotStart.getTime() + tech.durationMinutes * 60 * 1000 <= dayEnd.getTime()) {
           const slotEnd = new Date(slotStart.getTime() + tech.durationMinutes * 60 * 1000);
           const slotHour = getHourInTimezone(slotStart, businessTimezone);
           
-          // Check for overlap
           const hasConflict = todayBusyTimes.some(bt => 
             (slotStart < bt.end && slotEnd > bt.start)
           );
 
-          // Determine if this is first job
           const isFirstJob = !hasEarlierJobToday && 
             !todayBusyTimes.some(bt => bt.end <= slotStart);
 
-          // Get previous and next appointments (for route density calculation)
           const previousAppointment = todayBusyTimes
             .filter(bt => bt.end <= slotStart)
             .sort((a, b) => b.end.getTime() - a.end.getTime())[0];
@@ -1133,25 +639,21 @@ Deno.serve(async (req) => {
             .filter(bt => bt.start >= slotEnd)
             .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
 
-          // Calculate drive time
           const fromAddress = isFirstJob 
             ? tech.startingAddress 
             : previousAppointment?.address;
           const driveMinutes = estimateDriveTime(fromAddress || null, customerAddress || null);
           
-    // Calculate route density score
-    const routeDensity = calculateRouteDensityScore(
-      slotStart,
-      customerAddress || null,
-      dayJobAddresses,
-      previousAppointment?.address || null,
-      nextAppointment?.address || null
-    );
+          const routeDensity = calculateRouteDensityScore(
+            slotStart,
+            customerAddress || null,
+            dayJobAddresses,
+            previousAppointment?.address || null,
+            nextAppointment?.address || null
+          );
           
-          // Get buffer based on drive time
           const driveBuffer = getBufferForDriveTime(driveMinutes, DRIVE_TIME_CONFIG);
           
-          // Build slot object
           const slot: TimeSlot = {
             technicianId: tech.id,
             technicianName: tech.name,
@@ -1165,7 +667,6 @@ Deno.serve(async (req) => {
             nearbyJobCount: routeDensity.nearbyJobCount,
           };
 
-          // Check exclusion reasons
           let exclusionReason: ExclusionReason | null = null;
 
           if (hasConflict) {
@@ -1186,11 +687,9 @@ Deno.serve(async (req) => {
               details: `Slot starts at ${slotHour}:00, latest allowed is ${tech.scheduleEndHour - 1}:00`,
             };
           } else {
-            // Use per-technician max drive time or fall back to global
             const maxDriveTime = tech.maxDriveTimeMinutes ?? DRIVE_TIME_CONFIG.max_drive_time_minutes;
             
             if (driveMinutes > maxDriveTime) {
-              // Check if first job exception applies
               if (isFirstJob && DRIVE_TIME_CONFIG.allow_long_first_drive) {
                 slot.isLongFirstDrive = true;
               } else {
@@ -1203,7 +702,6 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Check last job rules
           const isLikelyLastJob = !todayBusyTimes.some(bt => bt.start > slotEnd);
           if (isLikelyLastJob && !exclusionReason) {
             const maxDriveTime = tech.maxDriveTimeMinutes ?? DRIVE_TIME_CONFIG.max_drive_time_minutes;
@@ -1217,7 +715,6 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Check buffer timing
           if (!exclusionReason && previousAppointment) {
             const gapMinutes = (slotStart.getTime() - previousAppointment.end.getTime()) / (60 * 1000);
             const baseBuffer = tech.bufferMinutes ?? DRIVE_TIME_CONFIG.base_buffer_minutes;
@@ -1238,13 +735,10 @@ Deno.serve(async (req) => {
             excludedSlots.push(slot);
           } else {
             allSlots.push(slot);
-            
-            // Update day metrics
             const metrics = dayMetrics.get(currentDateStr)!;
             metrics.totalSlots++;
           }
 
-          // Move to next 30-minute interval
           slotStart = new Date(slotStart.getTime() + 30 * 60 * 1000);
         }
 
@@ -1252,10 +746,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Sort slots by:
-    // 1. Date (earliest first)
-    // 2. Route density score (highest first within same date)
-    // 3. Start time
+    // Sort slots
     allSlots.sort((a, b) => {
       const dateA = new Date(a.startTime).toDateString();
       const dateB = new Date(b.startTime).toDateString();
@@ -1264,20 +755,18 @@ Deno.serve(async (req) => {
         return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
       }
       
-      // Same date - sort by route density score (descending)
       const scoreA = a.routeDensityScore || 50;
       const scoreB = b.routeDensityScore || 50;
       if (scoreA !== scoreB) {
         return scoreB - scoreA;
       }
       
-      // Same score - sort by time
       return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
     });
     
     excludedSlots.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-    // Mark recommended slots (high route density score)
+    // Mark recommended slots
     let recommendedCount = 0;
     for (const slot of allSlots) {
       if ((slot.routeDensityScore || 0) >= 70 && recommendedCount < 10) {
@@ -1286,7 +775,6 @@ Deno.serve(async (req) => {
       }
     }
     
-    // If no high-density slots, mark first few as recommended
     if (recommendedCount === 0 && allSlots.length > 0) {
       allSlots[0].isRecommended = true;
     }
@@ -1296,19 +784,16 @@ Deno.serve(async (req) => {
     const sortedDays = Array.from(dayMetrics.values())
       .filter(dm => dm.totalSlots > 0)
       .sort((a, b) => {
-        // Score: combination of job density and available capacity
         const scoreA = (a.bookedJobs * 20) + (a.totalSlots > 0 ? 30 : 0);
         const scoreB = (b.bookedJobs * 20) + (b.totalSlots > 0 ? 30 : 0);
         return scoreB - scoreA;
       });
 
-    // Get customer zone for matching
     const customerZone = extractZone(customerAddress || null);
     
     for (let i = 0; i < Math.min(3, sortedDays.length); i++) {
       const day = sortedDays[i];
       
-      // Check if customer zone matches any job on this day
       const matchingZoneJobs = day.jobAddresses.filter(addr => 
         extractZone(addr) === customerZone
       ).length;
@@ -1346,10 +831,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Sort recommended days by efficiency score
     recommendedDays.sort((a, b) => b.efficiencyScore - a.efficiencyScore);
 
-    // Limit results
     const limitedSlots = allSlots.slice(0, 50);
 
     console.log(`Generated ${allSlots.length} available slots, ${excludedSlots.length} excluded, ${recommendedDays.length} recommended days`);
@@ -1372,7 +855,6 @@ Deno.serve(async (req) => {
       recommendedDays,
     };
 
-    // Include excluded slots if admin mode
     if (includeExcluded) {
       response.excludedSlots = excludedSlots.slice(0, 50);
       response.totalExcluded = excludedSlots.length;
