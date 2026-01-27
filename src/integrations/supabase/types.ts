@@ -623,6 +623,57 @@ export type Database = {
         }
         Relationships: []
       }
+      schedule_sync_runs: {
+        Row: {
+          blocks_inserted: number
+          chunk_days: number
+          chunks_completed: number
+          completed_at: string | null
+          current_cursor_date: string | null
+          from_date: string
+          id: string
+          last_error: string | null
+          started_at: string
+          status: string
+          to_date: string
+          total_chunks: number
+          updated_at: string
+          visits_synced: number
+        }
+        Insert: {
+          blocks_inserted?: number
+          chunk_days?: number
+          chunks_completed?: number
+          completed_at?: string | null
+          current_cursor_date?: string | null
+          from_date: string
+          id?: string
+          last_error?: string | null
+          started_at?: string
+          status?: string
+          to_date: string
+          total_chunks?: number
+          updated_at?: string
+          visits_synced?: number
+        }
+        Update: {
+          blocks_inserted?: number
+          chunk_days?: number
+          chunks_completed?: number
+          completed_at?: string | null
+          current_cursor_date?: string | null
+          from_date?: string
+          id?: string
+          last_error?: string | null
+          started_at?: string
+          status?: string
+          to_date?: string
+          total_chunks?: number
+          updated_at?: string
+          visits_synced?: number
+        }
+        Relationships: []
+      }
       technician_service_rates: {
         Row: {
           buffer_minutes: number
