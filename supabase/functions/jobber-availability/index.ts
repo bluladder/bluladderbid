@@ -507,13 +507,15 @@ Deno.serve(async (req) => {
     // ========== KEY CHANGE: Query local jobber_busy_blocks instead of Jobber API ==========
     const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
     
+    // Overlap-safe query: block starts before range ends AND ends after range starts
+    // Include both "scheduled" and "in_progress" to block techs with ongoing jobs
     const { data: busyBlocks, error: blocksError } = await supabase
       .from("jobber_busy_blocks")
       .select("*")
       .in("crew_id", techJobberIds)
-      .gte("start_at", fromDate.toISOString())
-      .lte("start_at", toDate.toISOString())
-      .eq("status", "scheduled");
+      .lt("start_at", toDate.toISOString())
+      .gt("end_at", fromDate.toISOString())
+      .in("status", ["scheduled", "in_progress"]);
 
     if (blocksError) {
       console.error("Failed to fetch busy blocks:", blocksError);
