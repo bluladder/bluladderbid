@@ -22,7 +22,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/admin" element={<Admin />} />
-          <Route path="/admin/jobber" element={<Admin initialTab="crew" />} />
+          <Route path="/admin/jobber" element={<Admin initialTab="integrations" />} />
           <Route path="/services" element={<Services />} />
           <Route path="/plan-builder" element={<PlanBuilder />} />
           <Route path="/quote/:id" element={<QuoteView />} />
