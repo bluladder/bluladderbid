@@ -96,6 +96,13 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
     [services]
   );
 
+  // Dedupe identical requests (prevents burst calls that can trigger provider throttling)
+  const requestKey = useMemo(
+    () => `${servicesKey}::${customerAddress ?? ''}::${horizonDays}::${routeDensityWeight}`,
+    [servicesKey, customerAddress, horizonDays, routeDensityWeight]
+  );
+  const lastRequestKeyRef = useRef<string>('');
+
   // Stable access to latest services without re-creating callbacks on every render
   const servicesRef = useRef(services);
   useEffect(() => {
@@ -218,10 +225,14 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
   }, [isThrottled, retryCountdown, error, fetchAvailability]);
 
   useEffect(() => {
-    if (services.length > 0) {
-      fetchAvailability();
-    }
-  }, [servicesKey, customerAddress, horizonDays, routeDensityWeight, fetchAvailability, services.length]);
+    if (services.length === 0) return;
+
+    // Only fetch when the *meaningful* request inputs change.
+    if (lastRequestKeyRef.current === requestKey) return;
+    lastRequestKeyRef.current = requestKey;
+
+    fetchAvailability();
+  }, [requestKey, fetchAvailability, services.length]);
 
   // Compute available dates and their availability info
   const { availableDates, dayAvailabilityMap } = useMemo(() => {
