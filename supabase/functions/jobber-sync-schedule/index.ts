@@ -8,18 +8,18 @@ const corsHeaders = {
 
 // ============= Configuration =============
 const CONFIG = {
-  // Rate limiting: min delay between requests (ms)
-  minRequestDelayMs: 900,
-  maxRequestDelayMs: 1200,
+  // Rate limiting: delay between successful requests (ms)
+  minRequestDelayMs: 300,
+  maxRequestDelayMs: 500,
   
-  // Retry settings for throttled requests
+  // Retry settings for throttled requests (exponential backoff)
   maxRetries: 6,
-  retryBaseMs: 1000,
-  retryMultiplier: 2,
-  retryCapMs: 30000,
+  retryBaseMs: 1000,      // 1s base
+  retryMultiplier: 2,     // 1s, 2s, 4s, 8s, 16s, 32s
+  retryCapMs: 30000,      // cap at 30s
   
-  // Chunk settings
-  defaultChunkDays: 7,
+  // Chunk settings - 1 day per request to minimize throttle risk
+  defaultChunkDays: 1,
   defaultHorizonDays: 30,
   maxHorizonDays: 90,
   
@@ -256,10 +256,12 @@ async function fetchVisitsForChunk(
   let cursor: string | null = null;
   let page = 0;
 
-  console.log(`[Chunk] Fetching visits from ${startDate} to ${endDate}`);
+  const startDay = startDate.split('T')[0];
+  const endDay = endDate.split('T')[0];
+  console.log(`[Chunk] 📅 Fetching visits: ${startDay} to ${endDay}`);
 
   while (hasNextPage && page < CONFIG.maxPagesPerChunk) {
-    console.log(`[Chunk] Page ${page + 1}...`);
+    console.log(`[Chunk]   Page ${page + 1}...`);
     
     const result: GraphQLResult<VisitsResponse> = await jobberGraphQLWithRetry<VisitsResponse>(VISITS_QUERY, {
       after: cursor,
@@ -272,12 +274,12 @@ async function fetchVisitsForChunk(
       e.message.includes("Throttled") || 
       e.message.includes("Rate limit")
     )) {
-      console.log(`[Chunk] Throttle exhausted after ${allVisits.length} visits`);
+      console.log(`[Chunk] ⚠️ Throttle exhausted after ${allVisits.length} visits`);
       return { visits: allVisits, throttled: true, error: result.errors[0]?.message };
     }
 
     if (result.errors) {
-      console.error("[Chunk] API errors:", result.errors);
+      console.error("[Chunk] ❌ API errors:", result.errors);
       return { visits: allVisits, throttled: false, error: result.errors[0]?.message };
     }
 
@@ -290,9 +292,14 @@ async function fetchVisitsForChunk(
     hasNextPage = visitsData.pageInfo.hasNextPage;
     cursor = visitsData.pageInfo.endCursor;
     page++;
+
+    // Small delay between pagination requests within same chunk
+    if (hasNextPage) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
   }
 
-  console.log(`[Chunk] Fetched ${allVisits.length} visits in ${page} pages`);
+  console.log(`[Chunk] ✅ Fetched ${allVisits.length} visits in ${page} page(s)`);
   return { visits: allVisits, throttled: false };
 }
 
@@ -539,38 +546,41 @@ Deno.serve(async (req) => {
     let throttled = false;
     let lastError: string | null = null;
 
-    // Process chunks sequentially (no parallel!)
+    // Process chunks sequentially with delays
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const chunkStart = chunk.start.toISOString();
       const chunkEnd = chunk.end.toISOString();
+      const chunkDay = chunkStart.split('T')[0];
       
-      console.log(`[Sync] Chunk ${i + 1}/${chunks.length}: ${chunkStart.split('T')[0]} to ${chunkEnd.split('T')[0]}`);
+      console.log(`\n[Sync] ━━━ Chunk ${i + 1}/${chunks.length}: ${chunkDay} ━━━`);
 
       // Fetch visits for this chunk
       const { visits, throttled: wasThrottled, error } = await fetchVisitsForChunk(chunkStart, chunkEnd);
       
       if (error && !wasThrottled) {
         lastError = error;
-        console.error(`[Sync] Chunk ${i + 1} failed:`, error);
+        console.error(`[Sync] ❌ Chunk ${i + 1} failed:`, error);
         break;
       }
 
       // Upsert whatever we got
+      let insertedThisChunk = 0;
       if (visits.length > 0) {
         const { inserted, errors: upsertErrors } = await upsertVisits(supabase, visits);
         totalVisits += visits.length;
         totalBlocks += inserted;
+        insertedThisChunk = inserted;
         
         if (upsertErrors > 0) {
-          console.log(`[Sync] Chunk ${i + 1}: ${upsertErrors} upsert errors`);
+          console.log(`[Sync] ⚠️ ${upsertErrors} upsert errors in chunk ${i + 1}`);
         }
       }
 
       chunksCompleted++;
       lastSuccessfulDate = chunk.end;
 
-      // Update progress
+      // Update progress in database (partial save)
       await supabase
         .from("schedule_sync_runs")
         .update({
@@ -581,13 +591,21 @@ Deno.serve(async (req) => {
         })
         .eq("id", syncRun.id);
 
-      console.log(`[Sync] Chunk ${i + 1} complete: ${visits.length} visits → ${totalBlocks} blocks`);
+      console.log(`[Sync] ✅ Chunk ${i + 1}: ${visits.length} visits → ${insertedThisChunk} blocks inserted (total: ${totalBlocks})`);
 
       // If throttled, stop and return partial
       if (wasThrottled) {
         throttled = true;
         lastError = "Throttled by Jobber API";
+        console.log(`[Sync] ⏸️ Pausing due to throttle. Completed ${chunksCompleted}/${chunks.length + syncRun.chunks_completed} chunks.`);
         break;
+      }
+
+      // Delay between chunks to be respectful of API limits
+      if (i < chunks.length - 1) {
+        const delay = CONFIG.minRequestDelayMs + Math.random() * (CONFIG.maxRequestDelayMs - CONFIG.minRequestDelayMs);
+        console.log(`[Sync] 💤 Waiting ${Math.round(delay)}ms before next chunk...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
