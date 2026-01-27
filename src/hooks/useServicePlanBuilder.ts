@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { usePricingConfig } from './usePricingConfig';
+import { supabase } from '@/integrations/supabase/client';
 import type {
   ServicePlanHomeDetails,
   ServicePlanService,
@@ -37,6 +38,8 @@ export function useServicePlanBuilder() {
       frequency: 1,
     }))
   );
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedQuoteId, setSavedQuoteId] = useState<string | null>(null);
   
   // Update home details
   const updateHomeDetails = useCallback((updates: Partial<ServicePlanHomeDetails>) => {
@@ -220,6 +223,75 @@ export function useServicePlanBuilder() {
     };
   }, [services]);
   
+  // Save quote to database
+  const saveQuote = useCallback(async (): Promise<string | null> => {
+    if (isSaving) return null;
+    
+    setIsSaving(true);
+    
+    try {
+      const enabledServices = services.filter(s => s.enabled);
+      
+      // Build services JSON with payment plan info
+      const servicesJson = {
+        type: '12-month-plan',
+        paymentStructure: {
+          downPaymentPercent: 20,
+          monthlyPayments: 11,
+          totalPayments: 12,
+        },
+        services: enabledServices.map(s => ({
+          id: s.id,
+          name: s.name,
+          frequency: s.frequency,
+          pricePerVisit: s.calculatedPrice,
+          annualTotal: s.annualTotal,
+        })),
+        payment: {
+          annualTotal: payment.annualTotal,
+          downPayment: payment.downPayment,
+          monthlyPayment: payment.monthlyPayment,
+        },
+      };
+      
+      // Build home details JSON
+      const homeDetailsJson = {
+        ...homeDetails,
+        customerAddress: {
+          street: customer.address,
+          city: customer.city,
+          state: customer.state,
+          zip: customer.zip,
+        },
+      };
+      
+      const { data, error } = await supabase
+        .from('quotes')
+        .insert({
+          customer_name: `${customer.firstName} ${customer.lastName}`.trim(),
+          customer_email: customer.email,
+          customer_phone: customer.phone,
+          services_json: servicesJson,
+          home_details_json: homeDetailsJson,
+          subtotal: payment.annualTotal,
+          total: payment.annualTotal,
+          status: 'pending',
+        })
+        .select('id')
+        .single();
+      
+      if (error) throw error;
+      
+      setSavedQuoteId(data.id);
+      return data.id;
+    } catch (error) {
+      console.error('Error saving quote:', error);
+      return null;
+    } finally {
+      setIsSaving(false);
+    }
+  }, [services, payment, homeDetails, customer, isSaving]);
+  
   // Validation
   const isValid = useMemo(() => {
     const hasServices = services.some(s => s.enabled);
@@ -236,18 +308,27 @@ export function useServicePlanBuilder() {
   
   const hasSelectedServices = useMemo(() => services.some(s => s.enabled), [services]);
   
+  // Reset the saved quote state to allow creating a new one
+  const resetQuote = useCallback(() => {
+    setSavedQuoteId(null);
+  }, []);
+  
   return {
     // State
     homeDetails,
     customer,
     services,
     payment,
+    savedQuoteId,
+    isSaving,
     
     // Actions
     updateHomeDetails,
     updateCustomer,
     toggleService,
     updateFrequency,
+    saveQuote,
+    resetQuote,
     
     // Validation
     isValid,

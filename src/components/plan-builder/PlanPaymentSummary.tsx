@@ -1,4 +1,4 @@
-import { CreditCard, Calendar, DollarSign, ArrowRight } from 'lucide-react';
+import { CreditCard, Calendar, DollarSign, ArrowRight, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -8,10 +8,11 @@ interface PlanPaymentSummaryProps {
   payment: ServicePlanPayment;
   services: ServicePlanService[];
   isValid: boolean;
+  isSaving?: boolean;
   onSubmit: () => void;
 }
 
-export function PlanPaymentSummary({ payment, services, isValid, onSubmit }: PlanPaymentSummaryProps) {
+export function PlanPaymentSummary({ payment, services, isValid, isSaving, onSubmit }: PlanPaymentSummaryProps) {
   const enabledServices = services.filter(s => s.enabled);
   
   if (enabledServices.length === 0) {
@@ -115,11 +116,20 @@ export function PlanPaymentSummary({ payment, services, isValid, onSubmit }: Pla
         {/* Submit Button */}
         <Button 
           className="w-full btn-primary h-12 text-base"
-          disabled={!isValid}
+          disabled={!isValid || isSaving}
           onClick={onSubmit}
         >
-          Continue to Review
-          <ArrowRight className="w-4 h-4 ml-2" />
+          {isSaving ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Saving Quote...
+            </>
+          ) : (
+            <>
+              Save & Get Quote Link
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </>
+          )}
         </Button>
         
         {!isValid && (
