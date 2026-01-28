@@ -42,18 +42,14 @@ export function TimePreferenceSelector({
   isLoading = false,
 }: TimePreferenceSelectorProps) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Clock className="w-5 h-5" />
-          When would you prefer your appointment?
+    <Card className="border-border/50">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          Time Preference
         </CardTitle>
-        <CardDescription>
-          We'll find the best times that fit your schedule
-        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-3 gap-2">
           {preferences.map((pref) => {
             const Icon = pref.icon;
             const isSelected = value === pref.value;
@@ -63,25 +59,23 @@ export function TimePreferenceSelector({
                 key={pref.value}
                 variant={isSelected ? 'default' : 'outline'}
                 className={cn(
-                  'h-auto py-4 flex flex-col items-center gap-2',
-                  isSelected && 'ring-2 ring-primary ring-offset-2'
+                  'h-auto py-2.5 px-2 flex flex-col items-center gap-1',
+                  isSelected && 'ring-1 ring-primary ring-offset-1',
+                  !isSelected && 'border-border/50'
                 )}
                 onClick={() => onChange(pref.value)}
                 disabled={isLoading}
               >
                 <Icon className={cn(
-                  'w-6 h-6',
+                  'w-4 h-4',
                   isSelected ? 'text-primary-foreground' : 'text-primary'
                 )} />
-                <div className="text-center">
-                  <div className="font-medium">{pref.label}</div>
-                  <div className={cn(
-                    'text-xs',
-                    isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'
-                  )}>
-                    {pref.description}
-                  </div>
-                </div>
+                <span className={cn(
+                  'text-xs font-medium',
+                  isSelected ? 'text-primary-foreground' : 'text-foreground'
+                )}>
+                  {pref.label}
+                </span>
               </Button>
             );
           })}

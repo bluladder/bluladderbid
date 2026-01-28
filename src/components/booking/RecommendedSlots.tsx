@@ -1,9 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Separator } from '@/components/ui/separator';
-import { Clock, Star, TrendingUp, Calendar, MapPin, User, Sparkles, Check } from 'lucide-react';
+import { Clock, Calendar, User, Sparkles, Check } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { RecommendedSlot } from '@/hooks/useSmartAvailability';
@@ -18,24 +16,6 @@ interface RecommendedSlotsProps {
 
 // Maximum number of recommended slots to show
 const MAX_RECOMMENDED_SLOTS = 3;
-
-const whyLabels: Record<string, { label: string; icon: typeof Star; color: string }> = {
-  soonest_available: {
-    label: 'Soonest',
-    icon: Clock,
-    color: 'text-green-600',
-  },
-  minimizes_gaps: {
-    label: 'Best Fit',
-    icon: TrendingUp,
-    color: 'text-blue-600',
-  },
-  alternative: {
-    label: 'Option',
-    icon: Calendar,
-    color: 'text-muted-foreground',
-  },
-};
 
 export function RecommendedSlots({
   slots,
@@ -86,25 +66,23 @@ export function RecommendedSlots({
   const displaySlots = slots.slice(0, MAX_RECOMMENDED_SLOTS);
 
   return (
-    <div className="space-y-4">
-      {/* Header with confidence messaging */}
-      <div className="text-center space-y-1">
-        <div className="flex items-center justify-center gap-2">
-          <Sparkles className="w-5 h-5 text-primary" />
-          <h3 className="text-lg font-semibold">Best Times for You</h3>
+    <div className="space-y-3">
+      {/* Header - compact */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Sparkles className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-semibold">Best Times for You</h3>
         </div>
-        <p className="text-sm text-muted-foreground">
-          We've selected {displaySlots.length} optimal time{displaySlots.length !== 1 ? 's' : ''} based on our schedule
-        </p>
+        <span className="text-xs text-muted-foreground">
+          {displaySlots.length} option{displaySlots.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      {/* Recommended slots - primary cards */}
-      <div className="space-y-2">
+      {/* Recommended slots */}
+      <div className="space-y-1.5">
         {displaySlots.map((slot, index) => {
           const isSelected = selectedSlot?.startTime === slot.startTime && 
                             selectedSlot?.technicianId === slot.technicianId;
-          const whyInfo = whyLabels[slot.whyLabel || 'alternative'];
-          const WhyIcon = whyInfo.icon;
           const slotDate = parseISO(slot.startTime);
           const durationHrs = Math.round(slot.durationMinutes / 60 * 10) / 10;
           const isTopPick = index === 0;
@@ -114,64 +92,59 @@ export function RecommendedSlots({
               key={`${slot.technicianId}-${slot.startTime}`}
               onClick={() => onSelectSlot(slot)}
               className={cn(
-                'w-full p-4 rounded-xl text-left transition-all',
-                'border-2',
+                'w-full p-3 rounded-lg text-left',
+                'border',
                 isSelected 
-                  ? 'border-primary bg-primary/10 ring-2 ring-primary ring-offset-2 shadow-md' 
+                  ? 'border-primary bg-primary/10 ring-1 ring-primary' 
                   : isTopPick
-                    ? 'border-primary bg-primary/5 hover:bg-primary/10 shadow-sm'
-                    : 'border-border bg-card hover:border-muted-foreground/50 hover:bg-accent/30'
+                    ? 'border-primary/60 bg-primary/5 hover:bg-primary/10'
+                    : 'border-border bg-card hover:bg-accent/50'
               )}
             >
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  {/* Top pick indicator */}
-                  {isTopPick && !isSelected && (
-                    <div className="flex items-center gap-1.5 text-primary text-xs font-medium mb-1.5">
-                      <Star className="w-3.5 h-3.5 fill-current" />
-                      <span>Top Pick</span>
-                    </div>
-                  )}
-                  
-                  {/* Date, Time & Duration */}
+                  {/* Top pick label inline */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={cn(
-                      "font-bold",
-                      isTopPick || isSelected ? "text-lg" : "text-base"
+                      "font-semibold",
+                      isTopPick || isSelected ? "text-base" : "text-sm"
                     )}>
                       {slot.displayTime || format(slotDate, 'h:mm a')}
                     </span>
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {format(slotDate, 'EEE, MMM d')}
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      • {durationHrs}hr
-                    </span>
+                    {isTopPick && !isSelected && (
+                      <span className="text-[10px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                        Top Pick
+                      </span>
+                    )}
                   </div>
                   
-                  {/* Technician - compact */}
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                  {/* Technician + duration */}
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
                     <User className="w-3 h-3" />
                     <span>{slot.technicianName}</span>
+                    <span>•</span>
+                    <span>{durationHrs}hr</span>
                     {slot.routeDensityLabel && (
                       <>
                         <span>•</span>
-                        <MapPin className="w-3 h-3 text-primary" />
                         <span className="text-primary">{slot.routeDensityLabel}</span>
                       </>
                     )}
                   </div>
                 </div>
                 
-                {/* Selection state */}
+                {/* Selection indicator */}
                 <div className="flex-shrink-0">
                   {isSelected ? (
-                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center shadow-sm">
-                      <Check className="w-4 h-4 text-primary-foreground" />
+                    <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                      <Check className="w-3 h-3 text-primary-foreground" />
                     </div>
                   ) : (
                     <div className={cn(
-                      "w-7 h-7 rounded-full border-2 flex items-center justify-center",
+                      "w-5 h-5 rounded-full border",
                       isTopPick ? "border-primary/50" : "border-muted-foreground/30"
                     )} />
                   )}
@@ -182,21 +155,16 @@ export function RecommendedSlots({
         })}
       </div>
         
-      {/* Secondary action - clearly separated */}
-      <Separator className="my-4" />
-      
-      <div className="text-center">
-        <p className="text-xs text-muted-foreground mb-2">
-          Need a specific date?
-        </p>
+      {/* Secondary action - subtle separator */}
+      <div className="pt-2 border-t border-border/50 text-center">
         <Button 
-          variant="outline" 
+          variant="ghost" 
           size="sm"
-          className="text-muted-foreground hover:text-foreground"
+          className="text-xs text-muted-foreground hover:text-foreground h-8"
           onClick={onPickDayInstead}
         >
-          <Calendar className="w-4 h-4 mr-2" />
-          Browse All Dates
+          <Calendar className="w-3.5 h-3.5 mr-1.5" />
+          Browse all dates
         </Button>
       </div>
     </div>

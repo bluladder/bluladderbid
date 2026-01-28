@@ -72,29 +72,29 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <User className="w-5 h-5" />
+    <Card className="border-border/50">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <User className="w-4 h-4" />
           Your Information
         </CardTitle>
-        <CardDescription>
-          Tell us how to reach you and where we'll be servicing
+        <CardDescription className="text-xs">
+          Contact details and service address
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="firstName">First Name *</Label>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="firstName" className="text-xs">First Name *</Label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                 <Input
                   id="firstName"
                   value={formData.firstName}
                   onChange={(e) => handleChange('firstName', e.target.value)}
                   placeholder="John"
-                  className={`pl-10 ${errors.firstName ? 'border-destructive' : ''}`}
+                  className={`pl-8 h-9 text-sm ${errors.firstName ? 'border-destructive' : ''}`}
                 />
               </div>
               {errors.firstName && (
@@ -102,14 +102,14 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
               )}
             </div>
             
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name *</Label>
+            <div className="space-y-1">
+              <Label htmlFor="lastName" className="text-xs">Last Name *</Label>
               <Input
                 id="lastName"
                 value={formData.lastName}
                 onChange={(e) => handleChange('lastName', e.target.value)}
                 placeholder="Smith"
-                className={errors.lastName ? 'border-destructive' : ''}
+                className={`h-9 text-sm ${errors.lastName ? 'border-destructive' : ''}`}
               />
               {errors.lastName && (
                 <p className="text-xs text-destructive">{errors.lastName}</p>
@@ -117,17 +117,17 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
             </div>
           </div>
           
-          <div className="space-y-2">
-            <Label htmlFor="email">Email Address *</Label>
+          <div className="space-y-1">
+            <Label htmlFor="email" className="text-xs">Email Address *</Label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 id="email"
                 type="email"
                 value={formData.email}
                 onChange={(e) => handleChange('email', e.target.value)}
                 placeholder="john@example.com"
-                className={`pl-10 ${errors.email ? 'border-destructive' : ''}`}
+                className={`pl-8 h-9 text-sm ${errors.email ? 'border-destructive' : ''}`}
               />
             </div>
             {errors.email && (
@@ -135,17 +135,17 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
             )}
           </div>
           
-          <div className="space-y-2">
-            <Label htmlFor="phone">Phone Number *</Label>
+          <div className="space-y-1">
+            <Label htmlFor="phone" className="text-xs">Phone Number *</Label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 id="phone"
                 type="tel"
                 value={formData.phone}
                 onChange={(e) => handleChange('phone', e.target.value)}
                 placeholder="(555) 123-4567"
-                className={`pl-10 ${errors.phone ? 'border-destructive' : ''}`}
+                className={`pl-8 h-9 text-sm ${errors.phone ? 'border-destructive' : ''}`}
               />
             </div>
             {errors.phone && (
@@ -153,16 +153,16 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
             )}
           </div>
           
-          <div className="space-y-2">
-            <Label htmlFor="address">Service Address *</Label>
+          <div className="space-y-1">
+            <Label htmlFor="address" className="text-xs">Service Address *</Label>
             <div className="relative">
-              <MapPin className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+              <MapPin className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
               <Textarea
                 id="address"
                 value={formData.address}
                 onChange={(e) => handleChange('address', e.target.value)}
                 placeholder="123 Main St, City, State 12345"
-                className={`pl-10 min-h-[80px] ${errors.address ? 'border-destructive' : ''}`}
+                className={`pl-8 min-h-[60px] text-sm ${errors.address ? 'border-destructive' : ''}`}
               />
             </div>
             {errors.address && (
@@ -170,33 +170,26 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
             )}
           </div>
           
-          <div className="space-y-2">
-            <Label htmlFor="notes">Special Instructions (Optional)</Label>
+          <div className="space-y-1">
+            <Label htmlFor="notes" className="text-xs text-muted-foreground">Special Instructions (Optional)</Label>
             <div className="relative">
-              <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+              <MessageSquare className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
               <Textarea
                 id="notes"
                 value={formData.notes}
                 onChange={(e) => handleChange('notes', e.target.value)}
-                placeholder="Gate code, pet information, specific areas of concern..."
-                className="pl-10 min-h-[80px]"
+                placeholder="Gate code, pet info, specific concerns..."
+                className="pl-8 min-h-[50px] text-sm"
               />
             </div>
           </div>
           
           <Button 
             type="submit" 
-            className="w-full h-12 text-base"
+            className="w-full h-11 text-sm font-semibold shadow-sm"
             disabled={isSubmitting}
           >
-            {isSubmitting ? (
-              <>
-                <span className="animate-spin mr-2">⏳</span>
-                Submitting...
-              </>
-            ) : (
-              submitButtonText
-            )}
+            {isSubmitting ? 'Submitting...' : submitButtonText}
           </Button>
         </form>
       </CardContent>
