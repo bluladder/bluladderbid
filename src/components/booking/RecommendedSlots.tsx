@@ -80,80 +80,79 @@ export function RecommendedSlots({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-primary" />
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="w-4 h-4 text-primary" />
           Recommended Times
         </CardTitle>
-        <CardDescription>
-          These times work best with our schedule
+        <CardDescription className="text-xs">
+          Best options based on our schedule
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2 pt-0">
         {slots.map((slot, index) => {
           const isSelected = selectedSlot?.startTime === slot.startTime && 
                             selectedSlot?.technicianId === slot.technicianId;
           const whyInfo = whyLabels[slot.whyLabel || 'alternative'];
           const WhyIcon = whyInfo.icon;
           const slotDate = parseISO(slot.startTime);
+          const durationHrs = Math.round(slot.durationMinutes / 60 * 10) / 10;
           
           return (
             <button
               key={`${slot.technicianId}-${slot.startTime}`}
               onClick={() => onSelectSlot(slot)}
               className={cn(
-                'w-full p-4 rounded-lg border-2 text-left transition-all',
+                'w-full p-3 rounded-lg border-2 text-left transition-all',
                 'hover:border-primary hover:bg-accent/50',
                 isSelected 
-                  ? 'border-primary bg-primary/10 ring-2 ring-primary ring-offset-2' 
+                  ? 'border-primary bg-primary/10 ring-2 ring-primary ring-offset-1' 
                   : 'border-border bg-card',
-                index === 0 && !isSelected && 'border-primary/50 bg-primary/5'
+                index === 0 && !isSelected && 'border-primary/40 bg-primary/5'
               )}
             >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 space-y-2">
-                  {/* Date and Time */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  {/* Date, Time & Duration - single line */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-base">
                       {slot.displayTime || format(slotDate, 'h:mm a')}
                     </span>
-                    <span className="text-muted-foreground">
-                      {format(slotDate, 'EEEE, MMM d')}
+                    <span className="text-sm text-muted-foreground">
+                      {format(slotDate, 'EEE, MMM d')}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      • {durationHrs}hr
                     </span>
                   </div>
                   
-                  {/* Technician */}
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  {/* Technician - compact */}
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
                     <User className="w-3 h-3" />
                     <span>{slot.technicianName}</span>
-                    <span>•</span>
-                    <span>~{Math.round(slot.durationMinutes / 60 * 10) / 10}hr</span>
+                    {slot.routeDensityLabel && (
+                      <>
+                        <span>•</span>
+                        <MapPin className="w-3 h-3 text-primary" />
+                        <span className="text-primary">{slot.routeDensityLabel}</span>
+                      </>
+                    )}
                   </div>
-                  
-                  {/* Route label if present */}
-                  {slot.routeDensityLabel && (
-                    <div className="flex items-center gap-1 text-xs text-primary">
-                      <MapPin className="w-3 h-3" />
-                      <span>{slot.routeDensityLabel}</span>
-                    </div>
-                  )}
                 </div>
                 
-                {/* Why badge */}
-                <div className="flex flex-col items-end gap-2">
-                  <Badge 
-                    variant={index === 0 ? 'default' : 'secondary'}
-                    className="flex items-center gap-1"
-                  >
-                    <WhyIcon className="w-3 h-3" />
-                    {whyInfo.label}
-                  </Badge>
-                  
-                  {isSelected && (
-                    <div className="flex items-center gap-1 text-primary text-sm font-medium">
-                      <Star className="w-4 h-4 fill-current" />
-                      Selected
+                {/* Selection state */}
+                <div className="flex-shrink-0">
+                  {isSelected ? (
+                    <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                      <Star className="w-3.5 h-3.5 text-primary-foreground fill-current" />
                     </div>
+                  ) : index === 0 ? (
+                    <Badge variant="default" className="text-xs px-2 py-0.5">
+                      <WhyIcon className="w-3 h-3 mr-1" />
+                      Best
+                    </Badge>
+                  ) : (
+                    <div className="w-6 h-6 rounded-full border-2 border-muted-foreground/30" />
                   )}
                 </div>
               </div>
@@ -161,17 +160,15 @@ export function RecommendedSlots({
           );
         })}
         
-        {/* Pick a day instead link */}
-        <div className="pt-4 border-t">
-          <Button 
-            variant="ghost" 
-            className="w-full text-muted-foreground hover:text-foreground"
-            onClick={onPickDayInstead}
-          >
-            <Calendar className="w-4 h-4 mr-2" />
-            Pick a specific day instead
-          </Button>
-        </div>
+        {/* Pick a day instead link - more compact */}
+        <Button 
+          variant="ghost" 
+          className="w-full text-xs text-muted-foreground hover:text-foreground h-9 mt-2"
+          onClick={onPickDayInstead}
+        >
+          <Calendar className="w-3.5 h-3.5 mr-1.5" />
+          Pick a specific day instead
+        </Button>
       </CardContent>
     </Card>
   );

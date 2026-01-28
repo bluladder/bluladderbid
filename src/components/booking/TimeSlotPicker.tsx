@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Calendar, Clock, AlertCircle, MapPin, ArrowLeft } from 'lucide-react';
-import { format, parseISO, isSameDay, addDays } from 'date-fns';
+import { Calendar, Clock, AlertCircle, ArrowLeft } from 'lucide-react';
+import { format, addDays } from 'date-fns';
 import { TimePreferenceSelector } from './TimePreferenceSelector';
 import { RecommendedSlots } from './RecommendedSlots';
 import { DateFirstCalendar, type CalendarViewMode } from './DateFirstCalendar';
@@ -220,24 +220,7 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
         </Card>
       )}
 
-      {/* Selected Slot Summary */}
-      {selectedSlot && (
-        <div className="p-4 rounded-lg bg-primary/10 border border-primary/30">
-          <div className="flex items-center gap-2 text-primary font-medium">
-            <Clock className="w-4 h-4" />
-            Selected: {format(parseISO(selectedSlot.startTime), 'EEEE, MMMM d')} at {selectedSlot.displayTime || format(parseISO(selectedSlot.startTime), 'h:mm a')}
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            With {selectedSlot.technicianName} • ~{Math.round(selectedSlot.durationMinutes / 60 * 10) / 10} hours
-          </p>
-          {selectedSlot.routeDensityLabel && (
-            <p className="text-xs text-primary mt-1 flex items-center">
-              <MapPin className="w-3 h-3 mr-1" />
-              {selectedSlot.routeDensityLabel}
-            </p>
-          )}
-        </div>
-      )}
+      {/* Removed duplicate selected slot summary - info is shown in the slot cards */}
     </div>
   );
 }

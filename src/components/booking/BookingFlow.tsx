@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { ArrowLeft, ArrowRight, Check, Calendar, User, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Check, Calendar, Clock, User } from 'lucide-react';
 import { toast } from 'sonner';
+import { format, parseISO } from 'date-fns';
 import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
 import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
+import { CompactQuoteSummary } from './CompactQuoteSummary';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
 import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
@@ -344,57 +345,31 @@ export function BookingFlow({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Progress Header */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-4">
-            <div className="flex justify-between text-sm">
-              <span className={step === 'info' ? 'text-primary font-medium' : 'text-muted-foreground'}>
-                1. Your Info
-              </span>
-              <span className={step === 'time' ? 'text-primary font-medium' : 'text-muted-foreground'}>
-                2. Pick Time
-              </span>
-              <span className={step === 'confirmation' ? 'text-primary font-medium' : 'text-muted-foreground'}>
-                3. Confirmed
-              </span>
-            </div>
-            <Progress value={stepProgress} className="h-2" />
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-4">
+      {/* Compact Progress Header */}
+      <div className="space-y-3">
+        <div className="flex justify-between text-xs font-medium">
+          <span className={step === 'info' ? 'text-primary' : 'text-muted-foreground'}>
+            1. Your Info
+          </span>
+          <span className={step === 'time' ? 'text-primary' : 'text-muted-foreground'}>
+            2. Pick Time
+          </span>
+          <span className={step === 'confirmation' ? 'text-primary' : 'text-muted-foreground'}>
+            3. Confirmed
+          </span>
+        </div>
+        <Progress value={stepProgress} className="h-1.5" />
+      </div>
 
-      {/* Quote Summary */}
-      <Card className="bg-muted/50">
-        <CardContent className="pt-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">Your Quote</p>
-              <p className="text-2xl font-bold">
-                {appliedDiscount && discountAmount > 0 ? (
-                  <>
-                    <span className="line-through text-muted-foreground text-lg mr-2">
-                      {formatPrice(subtotal)}
-                    </span>
-                    {formatPrice(finalTotal)}
-                  </>
-                ) : (
-                  formatPrice(subtotal)
-                )}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-muted-foreground">{services.length} services</p>
-              {appliedDiscount && (
-                <p className="text-sm text-green-600">
-                  {appliedDiscount.code} applied
-                </p>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Compact Quote Summary - collapsible after step 1 */}
+      <CompactQuoteSummary
+        servicePrices={servicePrices}
+        additionalServices={additionalServices}
+        appliedDiscount={appliedDiscount}
+        discountAmount={discountAmount}
+        minimal={step === 'time'}
+      />
 
       {/* Step Content */}
       {step === 'info' && (
@@ -406,7 +381,7 @@ export function BookingFlow({
             submitButtonText="Continue to Schedule"
           />
           
-          <Button variant="outline" onClick={onCancel} className="w-full">
+          <Button variant="ghost" onClick={onCancel} className="w-full text-muted-foreground">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Quote
           </Button>
@@ -414,7 +389,14 @@ export function BookingFlow({
       )}
 
       {step === 'time' && customerInfo && (
-        <>
+        <div className="space-y-4">
+          {/* Address confirmation - single line */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 text-sm">
+            <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <span className="text-muted-foreground">Scheduling for:</span>
+            <span className="font-medium truncate">{customerInfo.address}</span>
+          </div>
+
           <TimeSlotPicker
             services={services.map(s => ({ service: s.service, price: s.price }))}
             onSelectSlot={handleSelectSlot}
@@ -422,21 +404,39 @@ export function BookingFlow({
             customerAddress={customerInfo.address}
           />
           
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setStep('info')} className="flex-1">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Edit Info
-            </Button>
-            <Button 
-              onClick={handleConfirmBooking} 
-              disabled={!selectedSlot || isSubmitting}
-              className="flex-1"
-            >
-              {isSubmitting ? 'Booking...' : 'Confirm Booking'}
-              {!isSubmitting && <Check className="w-4 h-4 ml-2" />}
-            </Button>
+          {/* Fixed CTA area */}
+          <div className="sticky bottom-0 pt-4 pb-2 bg-gradient-to-t from-background via-background to-transparent -mx-4 px-4">
+            <div className="flex gap-3">
+              <Button 
+                variant="ghost" 
+                onClick={() => setStep('info')} 
+                className="text-muted-foreground"
+                size="sm"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+              <Button 
+                onClick={handleConfirmBooking} 
+                disabled={!selectedSlot || isSubmitting}
+                className="flex-1 h-12 text-base font-semibold"
+                size="lg"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Clock className="w-4 h-4 mr-2 animate-spin" />
+                    Booking...
+                  </>
+                ) : (
+                  <>
+                    Confirm Booking • {formatPrice(finalTotal)}
+                    <Check className="w-5 h-5 ml-2" />
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
