@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { Check, Plus, Minus, ChevronDown, ChevronUp, Sparkles, Home, Warehouse, Cloud, Droplets, Info, ArrowRight } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Check, ChevronDown, ChevronUp, Sparkles, Home, Warehouse, Cloud, Droplets, Info, ArrowRight, Lock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { PriceUpdateIndicator } from './PriceUpdateIndicator';
 import type { TierConfig } from './TierSelector';
 import type { ServicePlanService, ServicePlanPayment } from '@/types/servicePlanBuilder';
 
@@ -62,25 +64,24 @@ export function PlanCustomizationPanel({
   const hasValidPricing = homeSquareFootage > 0;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
-      {/* Panel Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">
-            Customize Your {tier.name} Plan
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {enabledServices.length} services selected • Changes update pricing instantly
-          </p>
+    <TooltipProvider>
+      <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
+        {/* Minimal Header with Update Indicator */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Badge className={`px-3 py-1.5 ${
+              tier.id === 'good' ? 'bg-slate-100 text-slate-700' :
+              tier.id === 'better' ? 'bg-primary/10 text-primary' :
+              'bg-amber-100 text-amber-700'
+            }`}>
+              {tier.name} Plan
+            </Badge>
+            <span className="text-sm text-muted-foreground">
+              {enabledServices.length} services
+            </span>
+            <PriceUpdateIndicator price={payment.annualTotal} />
+          </div>
         </div>
-        <Badge className={`px-3 py-1 ${
-          tier.id === 'good' ? 'bg-slate-100 text-slate-700' :
-          tier.id === 'better' ? 'bg-primary/10 text-primary' :
-          'bg-amber-100 text-amber-700'
-        }`}>
-          {tier.name} Plan
-        </Badge>
-      </div>
 
       {/* Main Content Grid */}
       <div className="grid lg:grid-cols-3 gap-6">
@@ -231,91 +232,98 @@ export function PlanCustomizationPanel({
           </Card>
         </div>
 
-        {/* Live Price Breakdown (Sticky Sidebar) */}
-        <div className="lg:col-span-1">
-          <div className="lg:sticky lg:top-24">
-            <Card className="bg-gradient-to-b from-primary/5 to-background border-primary/20">
-              <CardContent className="p-4 space-y-4">
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground mb-1">Your {tier.name} Plan</p>
-                  <div className="text-3xl font-bold text-primary">
-                    {formatPrice(payment.monthlyPayment)}
-                    <span className="text-base font-normal text-muted-foreground">/mo</span>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Price Breakdown */}
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Annual total</span>
-                    <span className="font-medium">{formatPrice(payment.annualTotal)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Deposit (20%)</span>
-                    <span className="font-medium">{formatPrice(payment.downPayment)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Remaining balance</span>
-                    <span className="font-medium">{formatPrice(payment.annualTotal - payment.downPayment)}</span>
-                  </div>
-                  <div className="flex justify-between text-primary font-semibold">
-                    <span>11 monthly payments</span>
-                    <span>{formatPrice(payment.monthlyPayment)}</span>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Enabled Services Summary */}
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {enabledServices.length} Services Included
-                  </p>
-                  {enabledServices.map(s => (
-                    <div key={s.id} className="flex items-center gap-1.5 text-xs">
-                      <Check className="w-3 h-3 text-success" />
-                      <span>{s.name}</span>
-                      <span className="text-muted-foreground">({s.frequency}x)</span>
+          {/* Live Price Breakdown (Sticky Sidebar) */}
+          <div className="lg:col-span-1">
+            <div className="lg:sticky lg:top-24">
+              <Card className="bg-gradient-to-b from-primary/5 to-background border-primary/20 shadow-lg">
+                <CardContent className="p-4 space-y-4">
+                  {/* Monthly Price with Tooltip */}
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-primary transition-all duration-300">
+                      {formatPrice(payment.monthlyPayment)}
+                      <span className="text-base font-normal text-muted-foreground">/mo</span>
                     </div>
-                  ))}
-                </div>
+                    <div className="flex items-center justify-center gap-1 mt-1">
+                      <span className="text-xs text-muted-foreground">
+                        Billed monthly after 20% deposit
+                      </span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button className="text-muted-foreground/70 hover:text-muted-foreground">
+                            <Info className="w-3 h-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <p className="text-xs">
+                            Deposit secures your annual service schedule. 
+                            Remaining balance is split into 11 easy monthly payments.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
 
-                <Separator />
+                  <Separator />
 
-                {/* CTAs */}
-                <div className="space-y-2">
-                  <Button 
-                    onClick={onContinue}
-                    className="w-full btn-primary"
-                    size="lg"
-                    disabled={enabledServices.length === 0 || !hasValidPricing}
-                  >
-                    Continue with This Plan
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                  <Button 
-                    onClick={onCompare}
-                    variant="ghost"
-                    className="w-full text-sm"
-                  >
-                    Compare Plans
-                  </Button>
-                </div>
+                  {/* Price Breakdown */}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Annual value</span>
+                      <span className="font-medium">{formatPrice(payment.annualTotal)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Today's deposit (20%)</span>
+                      <span className="font-medium">{formatPrice(payment.downPayment)}</span>
+                    </div>
+                    <div className="flex justify-between text-primary font-semibold border-t pt-2">
+                      <span>Then 11 payments of</span>
+                      <span>{formatPrice(payment.monthlyPayment)}</span>
+                    </div>
+                  </div>
 
-                {/* Reassurance */}
-                <div className="flex items-start gap-2 p-2 rounded-lg bg-muted/50">
-                  <Info className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground">
-                    You'll review everything before booking. Prices update live as you customize.
+                  <Separator />
+
+                  {/* Enabled Services Summary */}
+                  <div className="space-y-1.5">
+                    {enabledServices.map(s => (
+                      <div key={s.id} className="flex items-center gap-1.5 text-xs">
+                        <Check className="w-3 h-3 text-success flex-shrink-0" />
+                        <span className="truncate">{s.name}</span>
+                        <span className="text-muted-foreground">({s.frequency}x)</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* CTAs */}
+                  <div className="space-y-2 pt-2">
+                    <Button 
+                      onClick={onContinue}
+                      className="w-full shadow-md"
+                      size="lg"
+                      disabled={enabledServices.length === 0 || !hasValidPricing}
+                    >
+                      <Lock className="w-4 h-4 mr-2" />
+                      Lock in This Plan
+                    </Button>
+                    <Button 
+                      onClick={onCompare}
+                      variant="ghost"
+                      className="w-full text-sm"
+                    >
+                      Compare Plans
+                    </Button>
+                  </div>
+
+                  {/* Reassurance */}
+                  <p className="text-xs text-center text-muted-foreground">
+                    Review everything before booking
                   </p>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
