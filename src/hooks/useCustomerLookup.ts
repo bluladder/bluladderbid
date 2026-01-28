@@ -135,15 +135,25 @@ function extractAdditionalServices(services: Array<{ name: string; price: number
     pressureWashing: {
       enabled: serviceNames.some(n => n.includes('pressure') && !n.includes('driveway')),
       surfaceType: 'concrete',
-      frontPorch: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.frontPorch },
-      backPatio: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.backPatio },
-      poolDeck: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.poolDeck },
-      walkways: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.walkways },
+      frontPorch: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.frontPorch, surfaceType: 'concrete' },
+      backPatio: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.backPatio, surfaceType: 'concrete' },
+      poolDeck: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.poolDeck, surfaceType: 'concrete' },
+      walkways: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.walkways, surfaceType: 'concrete' },
     },
     gutterCleaning: serviceNames.some(n => n.includes('gutter')),
+    gutterAddons: {
+      undergroundDrains: { enabled: false, count: '1' },
+      minorRepairs: false,
+      gutterGuards: { enabled: false, linearFeet: 150 },
+    },
     houseWash: serviceNames.some(n => n.includes('house wash')),
+    houseWashDetails: {
+      sidingMaterial: 'vinyl',
+      stainType: 'organic',
+    },
     roofCleaning: serviceNames.some(n => n.includes('roof')),
     roofType: 'asphalt',
     roofSeverity: 'light',
+    roofPitch: 'walkable',
   };
 }

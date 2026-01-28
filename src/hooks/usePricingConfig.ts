@@ -30,15 +30,14 @@ export interface PricingData {
     minimumPrice: number;
     modifiers: ServiceModifiers;
   };
-  house_wash: {
-    perSqFt: number;
-    minimumPrice: number;
-    modifiers: ServiceModifiers;
-  };
   gutter_cleaning: {
     perSqFt: number;
     minimumPrice: number;
     modifiers: ServiceModifiers;
+    // Gutter add-ons pricing
+    undergroundDrainPricing: Record<string, number>; // '1', '2', '3', '4+'
+    minorRepairsPrice: number;
+    gutterGuardsPerLinearFoot: number;
   };
   roof_cleaning: {
     perSqFt: number;
@@ -47,6 +46,14 @@ export interface PricingData {
       roofType: Record<string, number>;   // asphalt: 0, tile: 20, etc.
       severity: Record<string, number>;   // light: 0, moderate: 25, heavy: 50
     };
+  };
+  
+  // House wash with stain type
+  house_wash: {
+    perSqFt: number;
+    minimumPrice: number;
+    modifiers: ServiceModifiers;
+    rustStainSurcharge: number; // percentage increase for rust stains
   };
   
   // Window-specific add-ons (flat fees)
@@ -107,6 +114,7 @@ export const DEFAULT_PRICING: PricingData = {
     modifiers: {
       stories: { "1": 0, "2": 30, "3": 60 },
     },
+    rustStainSurcharge: 15, // +15% for rust/irrigation stains
   },
   gutter_cleaning: {
     perSqFt: 0.06,
@@ -114,6 +122,14 @@ export const DEFAULT_PRICING: PricingData = {
     modifiers: {
       stories: { "1": 0, "2": 25, "3": 50 },
     },
+    undergroundDrainPricing: {
+      "1": 75,
+      "2": 125,
+      "3": 175,
+      "4+": 225,
+    },
+    minorRepairsPrice: 85,
+    gutterGuardsPerLinearFoot: 8, // $8 per linear foot
   },
   roof_cleaning: {
     perSqFt: 0.10,

@@ -62,12 +62,12 @@ const SECTION_INFO: Record<string, { title: string; description: string; icon: R
   },
   house_wash: {
     title: 'House Wash',
-    description: 'Base rate per sq ft with story-based modifiers',
+    description: 'Base rate per sq ft with story-based modifiers. Includes rust stain surcharge.',
     icon: <Droplets className="w-5 h-5" />,
   },
   gutter_cleaning: {
     title: 'Gutter Cleaning',
-    description: 'Base rate per sq ft with story-based modifiers',
+    description: 'Base rate per sq ft with add-ons for drains, repairs, and gutter guards',
     icon: <Home className="w-5 h-5" />,
   },
   roof_cleaning: {
@@ -359,6 +359,130 @@ function ServicePricingSection({
     return null;
   };
 
+  // Render gutter cleaning add-ons section
+  const renderGutterAddons = () => {
+    if (row.config_key !== 'gutter_cleaning') return null;
+    
+    const drainPricing = values.undergroundDrainPricing as Record<string, number> | undefined;
+    const minorRepairs = values.minorRepairsPrice as number | undefined;
+    const gutterGuards = values.gutterGuardsPerLinearFoot as number | undefined;
+
+    return (
+      <div className="space-y-4">
+        {/* Underground Drain Pricing */}
+        {drainPricing && (
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-blue-600" />
+              Underground Drain Cleaning
+              <Badge variant="outline" className="text-xs">Flat Fee Add-on</Badge>
+            </h4>
+            <div className="grid gap-2 pl-4 border-l-2 border-blue-600/20">
+              {Object.entries(drainPricing).map(([count, price]) => (
+                <div key={count} className="flex items-center gap-2">
+                  <Label className="min-w-[80px] text-sm text-muted-foreground">
+                    {count} drain{count !== '1' ? 's' : ''}
+                  </Label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      type="number"
+                      step="5"
+                      value={price}
+                      onChange={(e) => handleValueChange(['undergroundDrainPricing', count], parseFloat(e.target.value) || 0)}
+                      className="w-24 pl-7"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground pl-4">
+              Clears buried downspout lines to restore proper drainage
+            </p>
+          </div>
+        )}
+        
+        {/* Minor Repairs */}
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-green-600" />
+            Minor Gutter Repairs
+          </h4>
+          <div className="flex items-center gap-2 pl-4 border-l-2 border-green-600/20">
+            <Label className="min-w-[80px] text-sm text-muted-foreground">Flat Fee</Label>
+            <div className="relative">
+              <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="number"
+                step="5"
+                value={minorRepairs ?? 85}
+                onChange={(e) => handleValueChange(['minorRepairsPrice'], parseFloat(e.target.value) || 0)}
+                className="w-24 pl-7"
+              />
+            </div>
+          </div>
+        </div>
+        
+        {/* Gutter Guards */}
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-purple-600" />
+            Gutter Guards Installation
+            <Badge variant="outline" className="text-xs">Per Linear Foot</Badge>
+          </h4>
+          <div className="flex items-center gap-2 pl-4 border-l-2 border-purple-600/20">
+            <Label className="min-w-[80px] text-sm text-muted-foreground">Rate</Label>
+            <div className="relative">
+              <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="number"
+                step="0.5"
+                value={gutterGuards ?? 8}
+                onChange={(e) => handleValueChange(['gutterGuardsPerLinearFoot'], parseFloat(e.target.value) || 0)}
+                className="w-24 pl-7"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">per linear ft</span>
+          </div>
+          <p className="text-xs text-muted-foreground pl-4">
+            Premium stainless steel micro-mesh with 2-year workmanship warranty
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  // Render house wash stain surcharge
+  const renderHouseWashSurcharge = () => {
+    if (row.config_key !== 'house_wash') return null;
+    
+    const rustSurcharge = values.rustStainSurcharge as number | undefined;
+
+    return (
+      <div className="space-y-3">
+        <h4 className="text-sm font-semibold flex items-center gap-2">
+          <Percent className="w-4 h-4 text-amber-600" />
+          Rust / Irrigation Stain Surcharge
+          <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">Percentage</Badge>
+        </h4>
+        <div className="flex items-center gap-2 pl-4 border-l-2 border-amber-600/20">
+          <Label className="min-w-[120px] text-sm text-muted-foreground">Surcharge</Label>
+          <Input
+            type="number"
+            step="1"
+            value={rustSurcharge ?? 15}
+            onChange={(e) => handleValueChange(['rustStainSurcharge'], parseFloat(e.target.value) || 0)}
+            className="w-20"
+          />
+          <Percent className="w-4 h-4 text-muted-foreground" />
+        </div>
+        <p className="text-xs text-muted-foreground pl-4">
+          Applied when customer selects "Rust / Irrigation Stains" as their primary stain type
+        </p>
+      </div>
+    );
+  };
+
   // Render surface multipliers for sqft-based services
   const renderSurfaceMultipliers = () => {
     const multipliers = values.surfaceMultipliers as Record<string, number> | undefined;
@@ -544,6 +668,20 @@ function ServicePricingSection({
               {renderMinimumPrice()}
               <Separator />
               {renderModifiers()}
+              {/* House wash specific surcharge */}
+              {row.config_key === 'house_wash' && (
+                <>
+                  <Separator />
+                  {renderHouseWashSurcharge()}
+                </>
+              )}
+              {/* Gutter cleaning specific add-ons */}
+              {row.config_key === 'gutter_cleaning' && (
+                <>
+                  <Separator />
+                  {renderGutterAddons()}
+                </>
+              )}
             </>
           )}
           
