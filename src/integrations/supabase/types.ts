@@ -110,6 +110,39 @@ export type Database = {
         }
         Relationships: []
       }
+      big_job_settings: {
+        Row: {
+          allowed_tech_pairs: Json
+          auto_assign_two_techs: boolean
+          big_job_solo_hours_threshold: number | null
+          big_job_value_threshold: number
+          created_at: string
+          crew_efficiency_factor: number
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          allowed_tech_pairs?: Json
+          auto_assign_two_techs?: boolean
+          big_job_solo_hours_threshold?: number | null
+          big_job_value_threshold?: number
+          created_at?: string
+          crew_efficiency_factor?: number
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          allowed_tech_pairs?: Json
+          auto_assign_two_techs?: boolean
+          big_job_solo_hours_threshold?: number | null
+          big_job_value_threshold?: number
+          created_at?: string
+          crew_efficiency_factor?: number
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       booking_step_events: {
         Row: {
           created_at: string
@@ -391,6 +424,59 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      eligibility_rules: {
+        Row: {
+          allowed_tech_ids: string[] | null
+          conditions: Json
+          created_at: string
+          default_tech_id: string | null
+          description: string | null
+          excluded_tech_ids: string[] | null
+          id: string
+          is_active: boolean
+          priority: number
+          rule_name: string
+          rule_type: string
+          updated_at: string
+        }
+        Insert: {
+          allowed_tech_ids?: string[] | null
+          conditions?: Json
+          created_at?: string
+          default_tech_id?: string | null
+          description?: string | null
+          excluded_tech_ids?: string[] | null
+          id?: string
+          is_active?: boolean
+          priority?: number
+          rule_name: string
+          rule_type?: string
+          updated_at?: string
+        }
+        Update: {
+          allowed_tech_ids?: string[] | null
+          conditions?: Json
+          created_at?: string
+          default_tech_id?: string | null
+          description?: string | null
+          excluded_tech_ids?: string[] | null
+          id?: string
+          is_active?: boolean
+          priority?: number
+          rule_name?: string
+          rule_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "eligibility_rules_default_tech_id_fkey"
+            columns: ["default_tech_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       embed_presets: {
         Row: {
@@ -725,6 +811,50 @@ export type Database = {
         }
         Relationships: []
       }
+      schedule_blocks: {
+        Row: {
+          block_type: string
+          created_at: string
+          created_by: string | null
+          end_at: string
+          id: string
+          reason: string | null
+          start_at: string
+          technician_id: string
+          updated_at: string
+        }
+        Insert: {
+          block_type?: string
+          created_at?: string
+          created_by?: string | null
+          end_at: string
+          id?: string
+          reason?: string | null
+          start_at: string
+          technician_id: string
+          updated_at?: string
+        }
+        Update: {
+          block_type?: string
+          created_at?: string
+          created_by?: string | null
+          end_at?: string
+          id?: string
+          reason?: string | null
+          start_at?: string
+          technician_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_blocks_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       schedule_sync_runs: {
         Row: {
           blocks_inserted: number
@@ -827,6 +957,8 @@ export type Database = {
           name: string
           schedule_end_hour: number | null
           schedule_start_hour: number | null
+          service_capabilities: Json | null
+          skill_level: string | null
           starting_address: string | null
           updated_at: string
           work_days: Json | null
@@ -843,6 +975,8 @@ export type Database = {
           name: string
           schedule_end_hour?: number | null
           schedule_start_hour?: number | null
+          service_capabilities?: Json | null
+          skill_level?: string | null
           starting_address?: string | null
           updated_at?: string
           work_days?: Json | null
@@ -859,6 +993,8 @@ export type Database = {
           name?: string
           schedule_end_hour?: number | null
           schedule_start_hour?: number | null
+          service_capabilities?: Json | null
+          skill_level?: string | null
           starting_address?: string | null
           updated_at?: string
           work_days?: Json | null

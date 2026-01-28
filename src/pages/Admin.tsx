@@ -8,6 +8,8 @@ import { ScenarioCompare } from '@/components/admin/ScenarioCompare';
 import { DiscountCodesManager } from '@/components/admin/DiscountCodesManager';
 import { JobberIntegration } from '@/components/admin/JobberIntegration';
 import { TechnicianManager } from '@/components/admin/TechnicianManager';
+import { EligibilityRulesManager } from '@/components/admin/EligibilityRulesManager';
+import { BigJobSettingsEditor } from '@/components/admin/BigJobSettingsEditor';
 import { DriveTimeSettings } from '@/components/admin/DriveTimeSettings';
 import { BookingSettings } from '@/components/admin/BookingSettings';
 import { BookingsManager } from '@/components/admin/BookingsManager';
@@ -160,9 +162,11 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
               <CrewUtilizationAnalytics />
             </TabsContent>
             
-            {/* Crew Tab - Technician config, availability, hours, locations */}
+            {/* Crew Tab - Technician config, capabilities, eligibility rules, big job settings */}
             <TabsContent value="crew" className="space-y-6">
               <TechnicianManager />
+              <EligibilityRulesManager />
+              <BigJobSettingsEditor />
               <DriveTimeSettings />
               <BookingSettings />
             </TabsContent>

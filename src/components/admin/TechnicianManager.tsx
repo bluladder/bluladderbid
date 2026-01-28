@@ -14,6 +14,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 
+interface TechnicianCapabilities {
+  can_do_windows?: boolean;
+  can_do_gutters?: boolean;
+  can_do_pressure?: boolean;
+  has_pressure_washer?: boolean;
+  requires_bundle_for_windows?: boolean;
+  eligible_for_big_job_pairing?: boolean;
+}
+
 interface Technician {
   id: string;
   jobber_user_id: string;
@@ -27,7 +36,17 @@ interface Technician {
   work_days: number[];
   buffer_minutes: number | null;
   max_drive_time_minutes: number | null;
+  service_capabilities: TechnicianCapabilities | null;
 }
+
+const CAPABILITY_OPTIONS = [
+  { key: 'can_do_windows', label: 'Can Do Windows' },
+  { key: 'can_do_gutters', label: 'Can Do Gutters' },
+  { key: 'can_do_pressure', label: 'Can Do Pressure Washing' },
+  { key: 'has_pressure_washer', label: 'Has Pressure Washer Equipment' },
+  { key: 'requires_bundle_for_windows', label: 'Requires Bundle for Windows', hint: 'Exclude from windows-only bookings' },
+  { key: 'eligible_for_big_job_pairing', label: 'Eligible for Big Job Pairing' },
+];
 
 const DAYS_OF_WEEK = [
   { value: 0, label: 'Sun' },
@@ -77,6 +96,14 @@ export function TechnicianManager() {
     work_days: [1, 2, 3, 4, 5] as number[],
     buffer_minutes: null as number | null,
     max_drive_time_minutes: null as number | null,
+    capabilities: {
+      can_do_windows: true,
+      can_do_gutters: false,
+      can_do_pressure: false,
+      has_pressure_washer: false,
+      requires_bundle_for_windows: false,
+      eligible_for_big_job_pairing: false,
+    } as TechnicianCapabilities,
   });
 
   const fetchTechnicians = async () => {
@@ -92,6 +119,7 @@ export function TechnicianManager() {
         ...t,
         location_type: t.location_type as 'office' | 'home',
         work_days: (t.work_days as number[]) || [1, 2, 3, 4, 5],
+        service_capabilities: (t.service_capabilities as TechnicianCapabilities) || null,
       })));
     } catch (error) {
       console.error('Failed to fetch technicians:', error);
@@ -156,6 +184,7 @@ export function TechnicianManager() {
             work_days: formData.work_days,
             buffer_minutes: formData.buffer_minutes,
             max_drive_time_minutes: formData.max_drive_time_minutes,
+            service_capabilities: JSON.parse(JSON.stringify(formData.capabilities)),
           })
           .eq('id', editingTech.id);
 
@@ -164,7 +193,7 @@ export function TechnicianManager() {
       } else {
         const { error } = await supabase
           .from('technicians')
-          .insert({
+          .insert([{
             name: formData.name,
             jobber_user_id: formData.jobber_user_id,
             email: formData.email || null,
@@ -176,7 +205,8 @@ export function TechnicianManager() {
             work_days: formData.work_days,
             buffer_minutes: formData.buffer_minutes,
             max_drive_time_minutes: formData.max_drive_time_minutes,
-          });
+            service_capabilities: JSON.parse(JSON.stringify(formData.capabilities)),
+          }]);
 
         if (error) throw error;
         toast.success('Technician added');
@@ -305,6 +335,14 @@ export function TechnicianManager() {
       work_days: [1, 2, 3, 4, 5],
       buffer_minutes: null,
       max_drive_time_minutes: null,
+      capabilities: {
+        can_do_windows: true,
+        can_do_gutters: false,
+        can_do_pressure: false,
+        has_pressure_washer: false,
+        requires_bundle_for_windows: false,
+        eligible_for_big_job_pairing: false,
+      },
     });
     setEditingTech(null);
   };
@@ -323,8 +361,26 @@ export function TechnicianManager() {
       work_days: tech.work_days ?? [1, 2, 3, 4, 5],
       buffer_minutes: tech.buffer_minutes,
       max_drive_time_minutes: tech.max_drive_time_minutes,
+      capabilities: tech.service_capabilities || {
+        can_do_windows: true,
+        can_do_gutters: false,
+        can_do_pressure: false,
+        has_pressure_washer: false,
+        requires_bundle_for_windows: false,
+        eligible_for_big_job_pairing: false,
+      },
     });
     setIsDialogOpen(true);
+  };
+
+  const toggleCapability = (key: keyof TechnicianCapabilities) => {
+    setFormData({
+      ...formData,
+      capabilities: {
+        ...formData.capabilities,
+        [key]: !formData.capabilities[key],
+      },
+    });
   };
 
   const toggleWorkDay = (day: number) => {
@@ -548,6 +604,35 @@ export function TechnicianManager() {
                       </div>
                     </div>
                   </div>
+
+                  <Separator className="my-4" />
+
+                  {/* Service Capabilities */}
+                  <div className="space-y-3">
+                    <h4 className="font-medium flex items-center gap-2 text-sm">
+                      Service Capabilities & Booking Behavior
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {CAPABILITY_OPTIONS.map((cap) => (
+                        <div 
+                          key={cap.key}
+                          className="flex items-center justify-between p-2 rounded-md border bg-muted/30"
+                        >
+                          <div>
+                            <Label htmlFor={cap.key} className="cursor-pointer">{cap.label}</Label>
+                            {'hint' in cap && cap.hint && (
+                              <p className="text-xs text-muted-foreground">{cap.hint}</p>
+                            )}
+                          </div>
+                          <Checkbox
+                            id={cap.key}
+                            checked={formData.capabilities[cap.key as keyof TechnicianCapabilities] ?? false}
+                            onCheckedChange={() => toggleCapability(cap.key as keyof TechnicianCapabilities)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
               <DialogFooter>
@@ -580,7 +665,7 @@ export function TechnicianManager() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Location</TableHead>
+                <TableHead>Capabilities</TableHead>
                 <TableHead>Schedule</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -601,14 +686,21 @@ export function TechnicianManager() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1 text-sm">
-                      <MapPin className="h-3 w-3 text-muted-foreground" />
-                      {tech.location_type === 'home' ? (
-                        <span className="truncate max-w-[120px]" title={tech.starting_address || 'Home'}>
-                          {tech.starting_address?.split(',')[0] || 'Home'}
-                        </span>
-                      ) : (
-                        'Office'
+                    <div className="flex flex-wrap gap-1">
+                      {tech.service_capabilities?.can_do_windows && (
+                        <Badge variant="outline" className="text-xs">Windows</Badge>
+                      )}
+                      {tech.service_capabilities?.can_do_gutters && (
+                        <Badge variant="outline" className="text-xs">Gutters</Badge>
+                      )}
+                      {tech.service_capabilities?.has_pressure_washer && (
+                        <Badge variant="outline" className="text-xs">PW</Badge>
+                      )}
+                      {tech.service_capabilities?.eligible_for_big_job_pairing && (
+                        <Badge variant="secondary" className="text-xs">Big Job</Badge>
+                      )}
+                      {tech.service_capabilities?.requires_bundle_for_windows && (
+                        <Badge variant="destructive" className="text-xs">Bundle Req</Badge>
                       )}
                     </div>
                   </TableCell>
