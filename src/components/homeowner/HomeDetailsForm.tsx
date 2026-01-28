@@ -51,10 +51,7 @@ export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps)
                 onChange({ squareFootage: value === '' ? 0 : parseInt(value, 10) });
               }}
               onFocus={(e) => {
-                // Clear default value on focus for easier mobile input
-                if (homeDetails.squareFootage === 2000) {
-                  onChange({ squareFootage: 0 });
-                }
+                // Select all text on focus for easy replacement
                 e.target.select();
               }}
               className="input-field"

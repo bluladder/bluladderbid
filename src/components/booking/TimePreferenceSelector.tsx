@@ -52,7 +52,7 @@ export function TimePreferenceSelector({
           Time Preference
         </CardTitle>
         <CardDescription className="text-xs">
-          We'll only show times matching your preference
+          Only times matching your selection will be shown
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-0">

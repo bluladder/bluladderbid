@@ -331,15 +331,23 @@ export function IntentFirstServiceSelector({
                 </label>
               </RadioGroup>
               
-              {/* Complimentary services note */}
-              <div className="flex items-start gap-2 p-2 rounded-md bg-success/10 border border-success/20">
+              {/* Complimentary services note - more detailed */}
+              <div className="flex items-start gap-2 p-2.5 rounded-md bg-success/10 border border-success/20">
                 <ShieldCheck className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-success-foreground">
-                  {homeDetails.windowCleaningType === 'both' 
-                    ? 'Complimentary screen & track cleaning included'
-                    : 'Complimentary screen cleaning included'
-                  }
-                </p>
+                <div className="text-xs">
+                  <p className="font-medium text-success-foreground">
+                    {homeDetails.windowCleaningType === 'both' 
+                      ? 'Complimentary screen & track cleaning included'
+                      : 'Complimentary screen cleaning included'
+                    }
+                  </p>
+                  <p className="text-muted-foreground mt-0.5">
+                    {homeDetails.windowCleaningType === 'both'
+                      ? 'We\'ll clean all screens and tracks at no extra charge'
+                      : 'All removable screens cleaned at no extra charge'
+                    }
+                  </p>
+                </div>
               </div>
             </div>
             

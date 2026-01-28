@@ -7,8 +7,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { User, Mail, Phone, MapPin, MessageSquare, AlertCircle } from 'lucide-react';
 import { z } from 'zod';
 
-// Enhanced address validation to require city + zip
+// Enhanced address validation to require city + state + zip
+// Pattern: "123 Main St, Austin, TX 78701" or similar
 const addressRegex = /^.+,\s*.+,\s*[A-Z]{2}\s*\d{5}(-\d{4})?$/i;
+
+// Looser check for minimum structure (has at least 2 commas for street, city, state zip)
+const hasProperStructure = (val: string) => {
+  const commaCount = (val.match(/,/g) || []).length;
+  return commaCount >= 2 || addressRegex.test(val);
+};
 
 const customerSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(50),
@@ -19,8 +26,8 @@ const customerSchema = z.object({
     .min(10, 'Please enter your complete service address')
     .max(200)
     .refine(
-      (val) => addressRegex.test(val) || val.includes(','),
-      'Please include Street Address, City, State, and ZIP'
+      hasProperStructure,
+      'Please include: Street Address, City, State, ZIP'
     ),
   notes: z.string().max(500).optional(),
 });
@@ -177,15 +184,21 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
                 id="address"
                 value={formData.address}
                 onChange={(e) => handleChange('address', e.target.value)}
-                placeholder="Street Address, City, State, ZIP"
+                placeholder="123 Main Street, City, TX 78701"
                 className={`pl-8 min-h-[60px] text-sm ${errors.address ? 'border-destructive' : ''}`}
               />
             </div>
-            {/* Address format hint */}
+            {/* Structured hint always visible when empty */}
+            {formData.address.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Format: Street Address, City, State, ZIP
+              </p>
+            )}
+            {/* Address format warning */}
             {addressWarning && !errors.address && (
               <div className="flex items-start gap-1.5 text-xs text-amber-600">
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                <span>Include city and ZIP for accurate scheduling</span>
+                <span>Include City, State, and ZIP for accurate scheduling</span>
               </div>
             )}
             {errors.address && (
