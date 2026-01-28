@@ -40,10 +40,12 @@ interface TimeSlotPickerProps {
 type ViewMode = 'preference' | 'recommendations' | 'dayPicker' | 'daySlots';
 
 export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerAddress }: TimeSlotPickerProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('preference');
-  const [preference, setPreference] = useState<TimePreference | null>(null);
+  // Default directly to recommendations view with 'none' preference
+  const [viewMode, setViewMode] = useState<ViewMode>('recommendations');
+  const [preference, setPreference] = useState<TimePreference>('none');
   const [calendarView, setCalendarView] = useState<CalendarViewMode>('week');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [hasLoadedInitial, setHasLoadedInitial] = useState(false);
   
   // Fetch admin booking settings
   const { data: bookingSettings } = useBookingSettings();
@@ -66,10 +68,17 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
     customerAddress,
   });
 
-  // Handle preference selection
-  const handlePreferenceSelect = (pref: TimePreference) => {
+  // Auto-fetch recommendations on mount
+  useMemo(() => {
+    if (!hasLoadedInitial && services.length > 0) {
+      setHasLoadedInitial(true);
+      fetchRecommendations('none');
+    }
+  }, [services, hasLoadedInitial, fetchRecommendations]);
+
+  // Handle preference change (from the filter)
+  const handlePreferenceChange = (pref: TimePreference) => {
     setPreference(pref);
-    setViewMode('recommendations');
     fetchRecommendations(pref);
   };
 
@@ -143,24 +152,26 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
         </Alert>
       )}
 
-      {/* Step 1: Time Preference */}
-      {viewMode === 'preference' && (
-        <TimePreferenceSelector
-          value={preference}
-          onChange={handlePreferenceSelect}
-          isLoading={isLoadingRecommendations}
-        />
-      )}
+      {/* Removed old preference step - now defaults to recommendations */}
 
-      {/* Step 2: Recommendations */}
+      {/* Step 2: Recommendations (default view) */}
       {viewMode === 'recommendations' && (
-        <RecommendedSlots
-          slots={recommendations}
-          isLoading={isLoadingRecommendations}
-          selectedSlot={selectedSlot as RecommendedSlot | null}
-          onSelectSlot={handleSelectRecommendation}
-          onPickDayInstead={handlePickDayInstead}
-        />
+        <>
+          {/* Quick preference filter */}
+          <TimePreferenceSelector
+            value={preference}
+            onChange={handlePreferenceChange}
+            isLoading={isLoadingRecommendations}
+          />
+          
+          <RecommendedSlots
+            slots={recommendations}
+            isLoading={isLoadingRecommendations}
+            selectedSlot={selectedSlot as RecommendedSlot | null}
+            onSelectSlot={handleSelectRecommendation}
+            onPickDayInstead={handlePickDayInstead}
+          />
+        </>
       )}
 
       {/* Step 3: Day Picker (alternative) */}
