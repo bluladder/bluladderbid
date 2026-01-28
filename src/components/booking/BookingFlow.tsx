@@ -68,6 +68,7 @@ export function BookingFlow({
   }, []);
 
   // Build services array for availability check and booking
+  // CRITICAL: Service inclusion is driven ONLY by additionalServices selection state (single source of truth)
   const buildServicesArray = () => {
     const services: Array<{ service: string; name: string; price: number; description: string }> = [];
     
@@ -76,7 +77,8 @@ export function BookingFlow({
     const stories = homeDetails.stories || 1;
     const storyLabel = stories === 1 ? '1 story' : `${stories} stories`;
     
-    if (servicePrices.windowCleaningTotal > 0) {
+    // Window Cleaning - only include if explicitly selected in additionalServices
+    if (additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0) {
       const windowType = homeDetails.windowCleaningType === 'both' ? 'Interior & Exterior' : 'Exterior Only';
       const condition = homeDetails.condition === 'heavy' ? 'Heavy Cleaning' : 'Maintenance Clean';
       

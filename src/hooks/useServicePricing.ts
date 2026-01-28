@@ -13,6 +13,17 @@ function applyModifiers(basePrice: number, modifierPercents: number[]): number {
   return Math.round(basePrice * (1 + totalPercent / 100));
 }
 
+/**
+ * SINGLE SOURCE OF TRUTH: Service pricing hook
+ * 
+ * All pricing calculations are gated by the corresponding selection boolean in additionalServices.
+ * If a service is not selected (e.g., additionalServices.windowCleaning === false),
+ * its price MUST be 0, ensuring UI selection state and pricing always match.
+ * 
+ * Components consuming servicePrices should:
+ * - Always check additionalServices.[service] before showing a service as "selected"
+ * - Use servicePrices.[service] > 0 as a secondary validation, not the primary source
+ */
 export function useServicePricing(
   homeDetails: HomeDetails,
   additionalServices: AdditionalServices
