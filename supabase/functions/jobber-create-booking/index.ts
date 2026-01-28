@@ -91,6 +91,7 @@ interface BusyBlock {
   end_at: string;
   updated_at: string;
   crew_id: string;
+  status: string;
 }
 
 // Check for conflicts using local busy_blocks mirror
@@ -103,17 +104,21 @@ async function checkLocalMirrorConflicts(
 ): Promise<{ hasConflict: boolean; conflictingBlock?: { start_at: string; end_at: string }; mirrorStale: boolean; noData: boolean }> {
   
   // Query local busy_blocks for the technician on the requested date
+  // IMPORTANT: Match the same status filter as availability engine to ensure consistency
   const dayStart = new Date(requestedStart);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(requestedStart);
   dayEnd.setHours(23, 59, 59, 999);
   
-  // Get blocks for this technician on this day
+  // Get ACTIVE blocks for this technician on this day (same filter as availability engine)
+  // Status must be 'scheduled' or 'in_progress' - cancelled blocks don't count
   const { data: blocks, error } = await supabase
     .from("jobber_busy_blocks")
-    .select("start_at, end_at, updated_at, crew_id")
+    .select("start_at, end_at, updated_at, crew_id, status")
+    .eq("crew_id", jobberUserId)
     .gte("start_at", dayStart.toISOString())
-    .lte("start_at", dayEnd.toISOString());
+    .lte("start_at", dayEnd.toISOString())
+    .in("status", ["scheduled", "in_progress"]);
   
   if (error) {
     console.error("Error querying busy_blocks:", error);
@@ -123,39 +128,47 @@ async function checkLocalMirrorConflicts(
   // Cast blocks to proper type
   const typedBlocks = (blocks || []) as BusyBlock[];
   
-  // Filter to blocks for this technician
-  // crew_id in busy_blocks should match jobber_user_id from technicians
-  const techBlocks = typedBlocks.filter(b => b.crew_id === jobberUserId);
+  console.log(`[LocalConflictCheck] Found ${typedBlocks.length} active blocks for tech ${jobberUserId} on ${dayStart.toISOString().split('T')[0]}`);
   
-  if (techBlocks.length === 0) {
-    // No data for this day/technician - need fallback
-    console.log("No local mirror data found for technician on this date");
-    return { hasConflict: false, mirrorStale: false, noData: true };
+  // Check autosync coverage to determine if mirror is populated for this date
+  const { data: autosyncConfig } = await supabase
+    .from("autosync_config")
+    .select("earliest_coverage_date, latest_coverage_date, updated_at")
+    .eq("id", "default")
+    .maybeSingle();
+  
+  // Determine if we have coverage for this date
+  const requestedDate = requestedStart.toISOString().split('T')[0];
+  const hasCoverage = autosyncConfig?.earliest_coverage_date && autosyncConfig?.latest_coverage_date &&
+    requestedDate >= autosyncConfig.earliest_coverage_date &&
+    requestedDate <= autosyncConfig.latest_coverage_date;
+  
+  if (!hasCoverage) {
+    console.log(`[LocalConflictCheck] No mirror coverage for ${requestedDate} (coverage: ${autosyncConfig?.earliest_coverage_date} to ${autosyncConfig?.latest_coverage_date})`);
+    return { hasConflict: false, mirrorStale: true, noData: true };
   }
   
-  // Check if mirror data is stale
+  // Check if autosync ran recently (within 30 minutes)
   const now = Date.now();
-  const stalestBlock = techBlocks.reduce((oldest, block) => {
-    const updatedAt = new Date(block.updated_at).getTime();
-    return updatedAt < oldest ? updatedAt : oldest;
-  }, now);
+  const autosyncAge = autosyncConfig?.updated_at 
+    ? (now - new Date(autosyncConfig.updated_at).getTime()) / (1000 * 60)
+    : 999;
   
-  const ageMinutes = (now - stalestBlock) / (1000 * 60);
-  const mirrorStale = ageMinutes > MIRROR_STALE_THRESHOLD_MINUTES;
+  const mirrorStale = autosyncAge > MIRROR_STALE_THRESHOLD_MINUTES;
   
   if (mirrorStale) {
-    console.log(`Mirror data is stale (${Math.round(ageMinutes)} min old > ${MIRROR_STALE_THRESHOLD_MINUTES} min threshold)`);
+    console.log(`[LocalConflictCheck] Autosync is stale (${Math.round(autosyncAge)} min old > ${MIRROR_STALE_THRESHOLD_MINUTES} min threshold)`);
   }
   
   // Check for overlaps: (newStart < existingEnd) AND (newEnd > existingStart)
-  for (const block of techBlocks) {
+  for (const block of typedBlocks) {
     const blockStart = new Date(block.start_at);
     const blockEnd = new Date(block.end_at);
     
     const hasOverlap = requestedStart < blockEnd && requestedEnd > blockStart;
     
     if (hasOverlap) {
-      console.log(`LOCAL CONFLICT DETECTED: ${requestedStart.toISOString()} - ${requestedEnd.toISOString()} overlaps with block ${block.start_at} - ${block.end_at}`);
+      console.log(`[LocalConflictCheck] CONFLICT DETECTED: ${requestedStart.toISOString()} - ${requestedEnd.toISOString()} overlaps with block ${block.start_at} - ${block.end_at} (status: ${block.status})`);
       return { 
         hasConflict: true, 
         conflictingBlock: { start_at: block.start_at, end_at: block.end_at },
@@ -165,6 +178,9 @@ async function checkLocalMirrorConflicts(
     }
   }
   
+  // No conflicts found in local mirror
+  // If no active blocks exist but we have coverage, treat as no conflict
+  console.log(`[LocalConflictCheck] No conflicts found in local mirror (${typedBlocks.length} active blocks checked)`);
   return { hasConflict: false, mirrorStale, noData: false };
 }
 
