@@ -184,6 +184,34 @@
     box-shadow: var(--shadow-card), var(--shadow-glow);
   }
 
+  .card-recommended {
+    @apply rounded-xl border-2;
+    background: var(--gradient-selected);
+    border-color: hsl(var(--primary));
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+    position: relative;
+  }
+
+  .card-secondary-option {
+    @apply rounded-lg border border-border/60;
+    background: var(--gradient-card);
+    box-shadow: var(--shadow-sm);
+    opacity: 0.9;
+  }
+
+  .card-secondary-option:hover {
+    @apply border-border;
+    box-shadow: var(--shadow-card);
+    opacity: 1;
+  }
+
+  .recommendation-badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide;
+    background: var(--gradient-primary);
+    color: hsl(var(--primary-foreground));
+    box-shadow: var(--shadow-md);
+  }
+
   .card-summary {
     @apply rounded-xl border border-border/60;
     background: var(--gradient-summary);

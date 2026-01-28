@@ -1,7 +1,6 @@
-import { Sparkles, Calendar, Check } from 'lucide-react';
+import { Calendar, Check } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import type { ServicePrices, AdditionalServices } from '@/types/homeowner';
 
@@ -64,33 +63,25 @@ export function OneTimeQuote({
   ].filter(Boolean).length;
   
   return (
-    <Card className={`relative overflow-hidden transition-all duration-300 ${
+    <Card className={`relative overflow-hidden transition-all duration-200 ${
       isSelected 
-        ? 'ring-2 ring-accent shadow-lg scale-[1.02]' 
-        : 'hover:shadow-md hover:scale-[1.01]'
+        ? 'card-selected scale-[1.02]' 
+        : 'card-secondary-option'
     }`}>
-      <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-accent to-primary py-1.5 text-center">
-        <span className="text-xs font-bold uppercase tracking-wide text-primary-foreground flex items-center justify-center gap-1">
-          <Sparkles className="w-3 h-3" />
-          One-Time Service
-          <Sparkles className="w-3 h-3" />
-        </span>
-      </div>
-      
-      <CardHeader className="pt-10 pb-2">
+      <CardHeader className="pt-5 pb-2">
         <CardTitle className="text-center">
-          <span className="text-sm text-muted-foreground block mb-1">Single Appointment</span>
-          <span className="text-lg font-semibold">Pay Per Visit</span>
+          <span className="text-xs text-muted-foreground block mb-1 uppercase tracking-wide">Single Visit</span>
+          <span className="text-base font-semibold">One-Time Service</span>
         </CardTitle>
       </CardHeader>
       
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         {/* Real-time price display */}
-        <div className="text-center py-4 rounded-lg bg-muted/50">
-          <div className="text-4xl font-bold price-display text-foreground">
+        <div className="text-center py-3 rounded-lg bg-muted/30">
+          <div className="text-2xl font-bold price-display text-foreground">
             {hasServices ? formatPrice(servicePrices.grandTotal) : '$0'}
           </div>
-          <div className="text-sm text-muted-foreground mt-1">
+          <div className="text-xs text-muted-foreground mt-0.5">
             {hasServices 
               ? `${enabledServices} service${enabledServices !== 1 ? 's' : ''} selected`
               : 'Configure services above'
@@ -158,38 +149,32 @@ export function OneTimeQuote({
         
         <Separator />
         
-        {/* Benefits */}
-        <div className="space-y-2 text-sm">
-          <div className="flex items-start gap-2">
-            <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
-            <span>No commitment — schedule when you need</span>
+        {/* Compact Benefits */}
+        <div className="text-xs text-muted-foreground space-y-1">
+          <div className="flex items-center gap-1.5">
+            <Check className="w-3 h-3 text-success flex-shrink-0" />
+            <span>No commitment</span>
           </div>
-          <div className="flex items-start gap-2">
-            <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
+          <div className="flex items-center gap-1.5">
+            <Check className="w-3 h-3 text-success flex-shrink-0" />
             <span>Perfect for one-time deep cleans</span>
-          </div>
-          <div className="flex items-start gap-2">
-            <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
-            <span>Bundle multiple services in one visit</span>
           </div>
         </div>
         
         <Button
-          className={`w-full ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
-          variant={isSelected ? 'default' : 'outline'}
+          className="w-full btn-secondary"
+          variant="outline"
+          size="sm"
           onClick={onSelect}
           disabled={!hasServices}
         >
           {isSelected ? (
             <>
-              <Check className="w-4 h-4 mr-2" />
+              <Check className="w-3.5 h-3.5 mr-1.5" />
               Selected
             </>
           ) : (
-            <>
-              <Calendar className="w-4 h-4 mr-2" />
-              Book One-Time Service
-            </>
+            'Book One-Time'
           )}
         </Button>
       </CardContent>
