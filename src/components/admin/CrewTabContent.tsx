@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Settings2, Car, Truck, Scale, ChevronDown, ChevronUp, CalendarOff, ShieldCheck, CalendarDays } from 'lucide-react';
+import { Users, Settings2, Car, Truck, Scale, ChevronDown, ChevronUp, CalendarOff, ShieldCheck, CalendarDays, Info } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -12,6 +12,9 @@ import { BookingSettings } from './BookingSettings';
 import { ScheduleBlocksManager } from './ScheduleBlocksManager';
 import { AdminRoleManager } from './AdminRoleManager';
 import { AdminScheduleCalendar } from './AdminScheduleCalendar';
+import { ScheduleSourceIndicator } from './ScheduleSourceIndicator';
+import { BigJobExplainer } from './BigJobExplainer';
+import { BookingImpactWarning } from './BookingImpactWarning';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 
 export function CrewTabContent() {
@@ -96,6 +99,12 @@ export function CrewTabContent() {
       {/* Scheduling Section */}
       {activeSection === 'scheduling' && (
         <div className="space-y-6">
+          {/* Schedule Source Info */}
+          <ScheduleSourceIndicator isConnected={true} />
+          
+          {/* Big Job Logic Explainer - Read-only summary */}
+          <BigJobExplainer />
+          
           {/* Primary Settings - Always visible */}
           <Card>
             <CardHeader>
@@ -115,9 +124,9 @@ export function CrewTabContent() {
           {/* Advanced Settings - Collapsed by default */}
           <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
             <CollapsibleTrigger asChild>
-              <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full justify-center py-2">
+              <button className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full justify-center py-2 border-t border-b border-dashed py-3 my-2">
                 <Settings2 className="w-4 h-4" />
-                {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
+                {showAdvanced ? 'Hide' : 'Show'} Advanced Scheduling Rules
                 {showAdvanced ? (
                   <ChevronUp className="w-4 h-4" />
                 ) : (
@@ -127,6 +136,10 @@ export function CrewTabContent() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="space-y-6 pt-4">
+                {/* Warning about advanced settings */}
+                <BookingImpactWarning 
+                  message="Changes to these settings directly affect customer booking behavior. Review carefully before saving."
+                />
                 <DriveTimeSettings />
                 <BigJobSettingsEditor />
               </div>

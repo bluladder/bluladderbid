@@ -8,7 +8,9 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin, Clock, Calendar } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin, Clock, Calendar, AlertTriangle } from 'lucide-react';
+import { TechnicianRulesSummary } from './TechnicianRulesSummary';
+import { BookingImpactWarning } from './BookingImpactWarning';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -927,26 +929,11 @@ export function TechnicianManager() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {tech.service_capabilities?.can_do_windows && (
-                        <Badge variant="outline" className="text-xs">Windows</Badge>
-                      )}
-                      {tech.service_capabilities?.can_do_gutters && (
-                        <Badge variant="outline" className="text-xs">Gutters</Badge>
-                      )}
-                      {tech.service_capabilities?.has_pressure_washer && (
-                        <Badge variant="outline" className="text-xs">PW</Badge>
-                      )}
-                      {tech.service_capabilities?.eligible_for_big_job_pairing && (
-                        <Badge variant="secondary" className="text-xs">Big Job</Badge>
-                      )}
-                      {tech.service_capabilities?.requires_bundle_for_windows && (
-                        <Badge variant="destructive" className="text-xs">Bundle Req</Badge>
-                      )}
-                      {tech.max_stories && (
-                        <Badge variant="outline" className="text-xs">≤{tech.max_stories} Story</Badge>
-                      )}
-                    </div>
+                    <TechnicianRulesSummary 
+                      capabilities={tech.service_capabilities}
+                      maxStories={tech.max_stories}
+                      name={tech.name}
+                    />
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">
