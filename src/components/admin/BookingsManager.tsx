@@ -47,9 +47,10 @@ import {
 } from 'lucide-react';
 import { format, parseISO, subDays, startOfDay, endOfDay, isWithinInterval, differenceInHours } from 'date-fns';
 import { toast } from 'sonner';
-import { RescheduleDialog } from '@/components/customer/RescheduleDialog';
-import { ModifyServicesDialog } from '@/components/customer/ModifyServicesDialog';
-import { CancelDialog } from '@/components/customer/CancelDialog';
+import { AdminRescheduleDialog } from './AdminRescheduleDialog';
+import { AdminModifyServicesDialog } from './AdminModifyServicesDialog';
+import { AdminCancelDialog } from './AdminCancelDialog';
+import { BookingAuditLog } from './BookingAuditLog';
 
 type DateRange = '7d' | '30d' | '90d' | 'all' | 'custom';
 
@@ -68,6 +69,7 @@ interface Booking {
   status: string;
   scheduled_start: string | null;
   scheduled_end: string | null;
+  duration_minutes: number;
   total: number;
   subtotal: number;
   discount_amount: number | null;
@@ -172,7 +174,7 @@ function BookingCard({
   onReschedule,
   onModify,
   onCancel,
-  adminUserId,
+  onViewHistory,
 }: { 
   booking: Booking; 
   expanded: boolean; 
@@ -183,7 +185,7 @@ function BookingCard({
   onReschedule: (booking: Booking) => void;
   onModify: (booking: Booking) => void;
   onCancel: (booking: Booking) => void;
-  adminUserId?: string;
+  onViewHistory: (booking: Booking) => void;
 }) {
   const customerName = [booking.customer?.first_name, booking.customer?.last_name]
     .filter(Boolean).join(' ') || 'Unknown';
@@ -339,6 +341,10 @@ function BookingCard({
                     <XCircle className="w-4 h-4 mr-1.5" />
                     Cancel
                   </Button>
+                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onViewHistory(booking); }}>
+                    <Clock className="w-4 h-4 mr-1.5" />
+                    History
+                  </Button>
                 </div>
               </div>
             </>
@@ -397,6 +403,7 @@ function BookingCard({
 }
 
 export function BookingsManager() {
+  const { user } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -404,6 +411,12 @@ export function BookingsManager() {
   const [customStartDate, setCustomStartDate] = useState<Date | undefined>(undefined);
   const [customEndDate, setCustomEndDate] = useState<Date | undefined>(undefined);
   const [showHidden, setShowHidden] = useState(false);
+  
+  // Dialog states
+  const [rescheduleTarget, setRescheduleTarget] = useState<Booking | null>(null);
+  const [modifyTarget, setModifyTarget] = useState<Booking | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<Booking | null>(null);
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -416,6 +429,7 @@ export function BookingsManager() {
           status,
           scheduled_start,
           scheduled_end,
+          duration_minutes,
           total,
           subtotal,
           discount_amount,
@@ -747,9 +761,10 @@ export function BookingsManager() {
                     onDelete={deleteBooking}
                     onHide={hideBooking}
                     onRestore={restoreBooking}
-                    onReschedule={() => {/* TODO: Add admin reschedule dialog */}}
-                    onModify={() => {/* TODO: Add admin modify dialog */}}
-                    onCancel={() => {/* TODO: Add admin cancel dialog */}}
+                    onReschedule={(b) => setRescheduleTarget(b)}
+                    onModify={(b) => setModifyTarget(b)}
+                    onCancel={(b) => setCancelTarget(b)}
+                    onViewHistory={(b) => setHistoryTarget(b)}
                   />
                 ))}
               </div>
@@ -757,6 +772,56 @@ export function BookingsManager() {
           )}
         </CardContent>
       </Card>
+
+      {/* Admin Dialogs */}
+      {rescheduleTarget && (
+        <AdminRescheduleDialog
+          appointment={rescheduleTarget}
+          open={!!rescheduleTarget}
+          onOpenChange={(open) => !open && setRescheduleTarget(null)}
+          onComplete={() => {
+            setRescheduleTarget(null);
+            fetchBookings();
+            toast.success('Appointment rescheduled');
+          }}
+          adminUserId={user?.id || ''}
+        />
+      )}
+
+      {modifyTarget && (
+        <AdminModifyServicesDialog
+          appointment={modifyTarget}
+          open={!!modifyTarget}
+          onOpenChange={(open) => !open && setModifyTarget(null)}
+          onComplete={() => {
+            setModifyTarget(null);
+            fetchBookings();
+          }}
+          adminUserId={user?.id || ''}
+        />
+      )}
+
+      {cancelTarget && (
+        <AdminCancelDialog
+          appointment={cancelTarget}
+          open={!!cancelTarget}
+          onOpenChange={(open) => !open && setCancelTarget(null)}
+          onComplete={() => {
+            setCancelTarget(null);
+            fetchBookings();
+          }}
+          adminUserId={user?.id || ''}
+        />
+      )}
+
+      {historyTarget && (
+        <BookingAuditLog
+          bookingId={historyTarget.id}
+          referenceNumber={historyTarget.reference_number}
+          open={!!historyTarget}
+          onOpenChange={(open) => !open && setHistoryTarget(null)}
+        />
+      )}
     </div>
   );
 }
