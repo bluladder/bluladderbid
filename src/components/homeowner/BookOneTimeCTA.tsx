@@ -1,6 +1,7 @@
-import { Calendar, ArrowRight } from 'lucide-react';
+import { Calendar, ArrowRight, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface BookOneTimeCTAProps {
   total: number;
@@ -24,27 +25,43 @@ export function BookOneTimeCTA({
   isSticky = false,
   onBook 
 }: BookOneTimeCTAProps) {
+  const isMobile = useIsMobile();
+  
+  // Always show sticky on mobile when services are selected
+  const showSticky = isSticky || (isMobile && hasServices);
+  
   return (
     <div className={cn(
-      'transition-all',
-      isSticky && 'fixed bottom-0 left-0 right-0 z-50 p-4 bg-background/95 backdrop-blur-md border-t border-border shadow-2xl md:static md:p-0 md:bg-transparent md:backdrop-blur-none md:border-0 md:shadow-none'
+      'transition-all duration-300',
+      showSticky && 'fixed bottom-0 left-0 right-0 z-50 p-4 bg-background/98 backdrop-blur-lg border-t-2 border-primary/20 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] md:static md:p-0 md:bg-transparent md:backdrop-blur-none md:border-0 md:shadow-none'
     )}>
+      {/* Mobile urgency indicator */}
+      {showSticky && hasServices && isMobile && (
+        <div className="flex items-center justify-center gap-2 mb-2 text-xs text-primary font-medium">
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Lock in your price</span>
+        </div>
+      )}
+      
       <Button
         onClick={onBook}
         disabled={!hasServices}
         size="lg"
         className={cn(
-          'w-full text-base font-bold shadow-lg',
-          'bg-primary hover:bg-primary/90',
-          'h-14 md:h-12',
-          isSticky && 'rounded-xl'
+          'w-full font-bold shadow-xl',
+          'bg-primary hover:bg-primary/90 text-primary-foreground',
+          'h-16 text-lg md:h-14 md:text-base',
+          'transition-all duration-200 active:scale-[0.98]',
+          showSticky && 'rounded-xl'
         )}
       >
         {hasServices ? (
           <>
-            <Calendar className="w-5 h-5 mr-2" />
-            Book One-Time Service
-            <span className="ml-2 font-mono">{formatPrice(total)}</span>
+            <Calendar className="w-6 h-6 mr-2 md:w-5 md:h-5" />
+            <span>Book One-Time Service</span>
+            <span className="ml-2 font-mono bg-primary-foreground/20 px-2 py-0.5 rounded-md">
+              {formatPrice(total)}
+            </span>
             <ArrowRight className="w-5 h-5 ml-2" />
           </>
         ) : (
@@ -54,7 +71,7 @@ export function BookOneTimeCTA({
       
       {/* Trust microcopy */}
       {hasServices && (
-        <p className="text-center text-xs text-muted-foreground mt-2 md:mt-1.5">
+        <p className="text-center text-xs text-muted-foreground mt-2">
           No payment required until service is complete
         </p>
       )}
