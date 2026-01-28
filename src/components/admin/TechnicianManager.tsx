@@ -766,14 +766,14 @@ export function TechnicianManager() {
                         <div key={svc.value} className="space-y-1">
                           <Label className="text-xs">{svc.label}</Label>
                           <Select
-                            value={String(formData.capabilities.skill_levels?.[svc.value as keyof ServiceSkillLevels] ?? '')}
+                            value={String(formData.capabilities.skill_levels?.[svc.value as keyof ServiceSkillLevels] ?? '__default__')}
                             onValueChange={(v) => setFormData({
                               ...formData,
                               capabilities: {
                                 ...formData.capabilities,
                                 skill_levels: {
                                   ...(formData.capabilities.skill_levels || {}),
-                                  [svc.value]: v === '' ? undefined : parseInt(v),
+                                  [svc.value]: v === '__default__' ? undefined : parseInt(v),
                                 },
                               },
                             })}
@@ -782,7 +782,7 @@ export function TechnicianManager() {
                               <SelectValue placeholder="Default" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Default (3)</SelectItem>
+                              <SelectItem value="__default__">Default (3)</SelectItem>
                               <SelectItem value="1">1 - Basic</SelectItem>
                               <SelectItem value="2">2 - Developing</SelectItem>
                               <SelectItem value="3">3 - Competent</SelectItem>
