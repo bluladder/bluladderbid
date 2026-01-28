@@ -20,6 +20,7 @@ interface TechnicianCapabilities {
   is_roof_safe?: boolean;
   requires_bundle_for_windows?: boolean;
   eligible_for_big_job_pairing?: boolean;
+  custom_tags?: string[];
   [key: string]: boolean | undefined | object | string[];
 }
 
@@ -95,6 +96,7 @@ export function TechnicianRulesSummary({ capabilities, maxStories, name }: Techn
   const cannotDo = rules.filter(r => r.type === 'cannot');
   const restrictions = rules.filter(r => r.type === 'requires');
   const info = rules.filter(r => r.type === 'info');
+  const customTags = capabilities.custom_tags || [];
 
   return (
     <TooltipProvider>
@@ -149,6 +151,17 @@ export function TechnicianRulesSummary({ capabilities, maxStories, name }: Techn
               <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0.5">
                 {rule.icon}
                 <span className="ml-1">{rule.text}</span>
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {/* Custom tags */}
+        {customTags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {customTags.map((tag, i) => (
+              <Badge key={i} variant="secondary" className="text-[10px] px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800">
+                <span>{tag}</span>
               </Badge>
             ))}
           </div>

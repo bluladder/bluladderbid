@@ -8,13 +8,15 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin, Clock, Calendar, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin, Clock, Calendar, AlertTriangle, PlusCircle, XCircle } from 'lucide-react';
 import { TechnicianRulesSummary } from './TechnicianRulesSummary';
 import { BookingImpactWarning } from './BookingImpactWarning';
+import { SkillLevelLegend } from './SkillLevelLegend';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 // Skill level per service (1-5 scale)
 interface ServiceSkillLevels {
@@ -44,6 +46,8 @@ interface TechnicianCapabilities {
   // Soft preferences
   preferred_services?: string[];
   discouraged_services?: string[];
+  // Custom tags for special designations (e.g., "No Pressure Washing", "VIP Only")
+  custom_tags?: string[];
   [key: string]: boolean | ServiceSkillLevels | string[] | undefined;
 }
 
@@ -116,6 +120,7 @@ export function TechnicianManager() {
   const [editingTech, setEditingTech] = useState<Technician | null>(null);
   const [selectedTechRates, setSelectedTechRates] = useState<ServiceRate[]>([]);
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
+  const [newCustomTag, setNewCustomTag] = useState('');
   
   const [formData, setFormData] = useState({
     name: '',
@@ -142,6 +147,7 @@ export function TechnicianManager() {
       skill_levels: {},
       preferred_services: [] as string[],
       discouraged_services: [] as string[],
+      custom_tags: [] as string[],
     } as TechnicianCapabilities,
   });
 
@@ -390,6 +396,7 @@ export function TechnicianManager() {
         skill_levels: {},
         preferred_services: [],
         discouraged_services: [],
+        custom_tags: [],
       },
     });
     setEditingTech(null);
@@ -422,6 +429,7 @@ export function TechnicianManager() {
         skill_levels: {},
         preferred_services: [],
         discouraged_services: [],
+        custom_tags: [],
       },
     });
     setIsDialogOpen(true);
@@ -753,11 +761,145 @@ export function TechnicianManager() {
                     </div>
                   </div>
 
-                  {/* Skill Levels per Service */}
+                  {/* Custom Tags / Special Designations */}
                   <div className="space-y-3">
                     <h4 className="font-medium flex items-center gap-2 text-sm">
-                      Skill Levels (1-5)
+                      Special Designations
                     </h4>
+                    <p className="text-xs text-muted-foreground">
+                      Add custom labels for special restrictions or capabilities (e.g., "No Pressure Washing", "VIP Only", "Training").
+                    </p>
+                    
+                    {/* Existing tags */}
+                    <div className="flex flex-wrap gap-2">
+                      {(formData.capabilities.custom_tags || []).map((tag, idx) => (
+                        <Badge
+                          key={idx}
+                          variant="secondary"
+                          className="pl-2 pr-1 py-1 flex items-center gap-1"
+                        >
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = (formData.capabilities.custom_tags || []).filter((_, i) => i !== idx);
+                              setFormData({
+                                ...formData,
+                                capabilities: {
+                                  ...formData.capabilities,
+                                  custom_tags: updated,
+                                },
+                              });
+                            }}
+                            className="ml-1 hover:bg-destructive/20 rounded p-0.5"
+                          >
+                            <XCircle className="w-3.5 h-3.5 text-destructive" />
+                          </button>
+                        </Badge>
+                      ))}
+                      {(formData.capabilities.custom_tags || []).length === 0 && (
+                        <span className="text-xs text-muted-foreground italic">No custom tags</span>
+                      )}
+                    </div>
+
+                    {/* Add new tag */}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8">
+                          <PlusCircle className="w-3.5 h-3.5 mr-1.5" />
+                          Add Tag
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 p-3" align="start">
+                        <div className="space-y-3">
+                          <Label className="text-xs">New Tag Name</Label>
+                          <Input
+                            value={newCustomTag}
+                            onChange={(e) => setNewCustomTag(e.target.value)}
+                            placeholder="e.g., No Pressure Washing"
+                            className="h-8"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && newCustomTag.trim()) {
+                                e.preventDefault();
+                                const currentTags = formData.capabilities.custom_tags || [];
+                                if (!currentTags.includes(newCustomTag.trim())) {
+                                  setFormData({
+                                    ...formData,
+                                    capabilities: {
+                                      ...formData.capabilities,
+                                      custom_tags: [...currentTags, newCustomTag.trim()],
+                                    },
+                                  });
+                                }
+                                setNewCustomTag('');
+                              }
+                            }}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-7 text-xs flex-1"
+                              onClick={() => {
+                                if (newCustomTag.trim()) {
+                                  const currentTags = formData.capabilities.custom_tags || [];
+                                  if (!currentTags.includes(newCustomTag.trim())) {
+                                    setFormData({
+                                      ...formData,
+                                      capabilities: {
+                                        ...formData.capabilities,
+                                        custom_tags: [...currentTags, newCustomTag.trim()],
+                                      },
+                                    });
+                                  }
+                                  setNewCustomTag('');
+                                }
+                              }}
+                              disabled={!newCustomTag.trim()}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                          <div className="pt-2 border-t">
+                            <p className="text-[10px] text-muted-foreground mb-2">Quick Add:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {['No Pressure Washing', 'VIP Only', 'Training', 'Lead Tech'].map((suggestion) => {
+                                const alreadyExists = (formData.capabilities.custom_tags || []).includes(suggestion);
+                                return (
+                                  <Badge
+                                    key={suggestion}
+                                    variant="outline"
+                                    className={`text-[10px] cursor-pointer ${alreadyExists ? 'opacity-50' : 'hover:bg-primary/10'}`}
+                                    onClick={() => {
+                                      if (!alreadyExists) {
+                                        setFormData({
+                                          ...formData,
+                                          capabilities: {
+                                            ...formData.capabilities,
+                                            custom_tags: [...(formData.capabilities.custom_tags || []), suggestion],
+                                          },
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    {suggestion}
+                                  </Badge>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium flex items-center gap-2 text-sm">
+                        Skill Levels (1-5)
+                      </h4>
+                      <SkillLevelLegend />
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Higher skill = preferred for complex jobs. Leave blank for default (3).
                     </p>
