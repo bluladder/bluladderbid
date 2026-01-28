@@ -65,6 +65,8 @@ interface TimeSlot {
   // Scoring/dispatch fields
   gapMinutes?: number;
   gapScore?: number;
+  gapEfficiencyLabel?: string; // "Optimal timing", "Efficient", "Close to prior job"
+  routeBonus?: number;
   whyLabel?: string; // "soonest_available", "minimizes_gaps", "alternative"
 }
 
@@ -136,13 +138,30 @@ const SLOT_GENERATION_CONFIG = {
   bufferAfterMinutes: 15,
 };
 
-// Gap-scoring constants
+// Gap-scoring constants (configurable dispatch-smart settings)
 const GAP_SCORING = {
-  idealGapMax: 15, // 0-15 min gap is ideal
-  microGapThreshold: 60, // < 60 min gap is "micro" and penalized
-  longJobMinutes: 480, // 8 hours
-  mediumJobMinutes: 240, // 4 hours
+  idealGapMax: 15,            // 0-15 min gap is ideal (score 100)
+  goodGapMax: 30,             // 16-30 min gap is still good (score 85)
+  microGapThreshold: 60,      // < 60 min gap is "micro" and penalized
+  longJobMinutes: 480,        // 8 hours - must start AM
+  mediumJobMinutes: 240,      // 4 hours - strongly prefer AM
+  routeProximityBonus: 15,    // Bonus for <12 min drive from previous job
+  routeProximityThreshold: 12, // Minutes - if drive < this, apply bonus
 };
+
+// Debug logging helper for admin visibility
+interface SlotScoreDebug {
+  techName: string;
+  slotTime: string;
+  gapMinutes: number;
+  gapScore: number;
+  driveMinutes: number;
+  routeScore: number;
+  routeBonus: number;
+  preferenceMatch: boolean;
+  finalScore: number;
+  whyRejected?: string;
+}
 
 interface BusinessHoursConfig {
   startHour: number;
@@ -368,51 +387,72 @@ function snapTo30Min(date: Date, timezone: string): string {
   return `${displayHour12}:${String(displayMin).padStart(2, '0')} ${ampm}`;
 }
 
-// Calculate gap score - higher is better
+// Calculate gap score - higher is better (dispatch-smart gap minimization)
 function calculateGapScore(
   gapMinutes: number,
   preference: 'AM' | 'PM' | 'none',
   slotHour: number,
-  durationMinutes: number
-): { score: number; penalized: boolean } {
+  durationMinutes: number,
+  driveMinutes: number = 0
+): { score: number; penalized: boolean; routeBonus: number; preferenceMatch: boolean } {
   let score = 100;
   let penalized = false;
+  let routeBonus = 0;
   
-  // Ideal gap: 0-15 minutes
+  // Gap scoring with tiered thresholds
   if (gapMinutes >= 0 && gapMinutes <= GAP_SCORING.idealGapMax) {
+    // Ideal: 0-15 min gap
     score = 100;
-  } else if (gapMinutes > GAP_SCORING.idealGapMax && gapMinutes < GAP_SCORING.microGapThreshold) {
-    // Micro gap (16-59 min): penalize heavily UNLESS PM preference
+  } else if (gapMinutes > GAP_SCORING.idealGapMax && gapMinutes <= GAP_SCORING.goodGapMax) {
+    // Good: 16-30 min gap
+    score = 85;
+  } else if (gapMinutes > GAP_SCORING.goodGapMax && gapMinutes < GAP_SCORING.microGapThreshold) {
+    // Micro gap (31-59 min): penalize UNLESS PM preference
     if (preference !== 'PM') {
-      score = 30; // Heavy penalty
+      score = 40; // Moderate penalty
       penalized = true;
     } else {
-      score = 60; // Lighter penalty for PM preference
+      score = 60; // Lighter penalty for PM preference (more gap tolerance)
     }
   } else if (gapMinutes >= GAP_SCORING.microGapThreshold) {
-    // Longer gaps: linear decay
-    score = Math.max(20, 80 - (gapMinutes - 60) * 0.5);
+    // Longer gaps (60+ min): graduated decay
+    score = Math.max(25, 75 - (gapMinutes - 60) * 0.4);
   }
   
-  // AM/PM preference bonus
+  // Route continuity bonus: if drive time is short, boost score
+  if (driveMinutes > 0 && driveMinutes <= GAP_SCORING.routeProximityThreshold) {
+    routeBonus = GAP_SCORING.routeProximityBonus;
+    score += routeBonus;
+  }
+  
+  // AM/PM preference matching
   const isAM = slotHour < 12;
+  const preferenceMatch = (preference === 'AM' && isAM) || 
+                          (preference === 'PM' && !isAM) || 
+                          preference === 'none';
+  
   if (preference === 'AM' && isAM) {
     score += 10;
   } else if (preference === 'PM' && !isAM) {
     score += 10;
   }
   
-  // Long job rule: 8+ hours must start AM
+  // Long job rule: 8+ hours MUST start AM (hard reject if PM)
   if (durationMinutes >= GAP_SCORING.longJobMinutes && !isAM) {
-    score = 0; // Reject
+    score = 0;
   }
   
-  // Medium job (4-8 hours): prefer AM
+  // Medium job (4-8 hours): strongly prefer AM (penalty if PM)
   if (durationMinutes >= GAP_SCORING.mediumJobMinutes && durationMinutes < GAP_SCORING.longJobMinutes && !isAM) {
-    score -= 20;
+    score -= 25;
   }
   
-  return { score: Math.max(0, Math.min(100, score)), penalized };
+  return { 
+    score: Math.max(0, Math.min(115, score)), // Allow up to 115 with bonuses
+    penalized, 
+    routeBonus,
+    preferenceMatch,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -902,15 +942,26 @@ Deno.serve(async (req) => {
             gapMinutes = (slotStart.getTime() - requiredStart) / (60 * 1000);
           }
           
-          // Gap scoring
-          const { score: gapScore, penalized } = calculateGapScore(
+          // Gap scoring with route bonus
+          const { score: gapScore, penalized, routeBonus, preferenceMatch } = calculateGapScore(
             gapMinutes, 
             preference as 'AM' | 'PM' | 'none',
             slotHour,
-            tech.durationMinutes
+            tech.durationMinutes,
+            driveMinutes
           );
           
           const displayTime = snapTo30Min(slotStart, businessTimezone);
+          
+          // Determine efficiency label based on gap score
+          let gapEfficiencyLabel = '';
+          if (gapScore >= 95) {
+            gapEfficiencyLabel = 'Optimal timing';
+          } else if (gapScore >= 80) {
+            gapEfficiencyLabel = 'Efficient';
+          } else if (routeBonus > 0) {
+            gapEfficiencyLabel = 'Close to prior job';
+          }
           
           const slot: TimeSlot = {
             technicianId: tech.id,
@@ -926,6 +977,8 @@ Deno.serve(async (req) => {
             nearbyJobCount: routeDensity.nearbyJobCount,
             gapMinutes: Math.round(gapMinutes),
             gapScore,
+            gapEfficiencyLabel,
+            routeBonus,
           };
 
           let exclusionReason: ExclusionReason | null = null;
@@ -1137,10 +1190,22 @@ Deno.serve(async (req) => {
     
     console.log(`[Availability] Returning ${recommendations.length} recommendations`);
     
-    // Log recommendation details
+    // Detailed admin debug logging - score breakdown for each recommendation
+    console.log(`[ADMIN DEBUG] Slot Score Breakdown:`);
     for (const rec of recommendations) {
-      console.log(`[Rec] ${rec.whyLabel}: ${rec.technicianName} @ ${rec.displayTime} (gap=${rec.gapMinutes}min, score=${rec.gapScore})`);
+      const recDate = formatDateInTimezone(new Date(rec.startTime), businessTimezone);
+      console.log(`[ADMIN DEBUG] ──────────────────────────────`);
+      console.log(`[ADMIN DEBUG] Slot: ${rec.technicianName} @ ${rec.displayTime} (${recDate})`);
+      console.log(`[ADMIN DEBUG]   └─ whyLabel: ${rec.whyLabel}`);
+      console.log(`[ADMIN DEBUG]   └─ gapMinutes: ${rec.gapMinutes}`);
+      console.log(`[ADMIN DEBUG]   └─ gapScore: ${rec.gapScore}`);
+      console.log(`[ADMIN DEBUG]   └─ driveMinutes: ${rec.estimatedDriveMinutes}`);
+      console.log(`[ADMIN DEBUG]   └─ routeDensityScore: ${rec.routeDensityScore}`);
+      console.log(`[ADMIN DEBUG]   └─ routeBonus: ${rec.routeBonus || 0}`);
+      console.log(`[ADMIN DEBUG]   └─ gapEfficiencyLabel: ${rec.gapEfficiencyLabel || 'none'}`);
+      console.log(`[ADMIN DEBUG]   └─ isFirstJob: ${rec.isFirstJob}`);
     }
+    console.log(`[ADMIN DEBUG] ══════════════════════════════`);
 
     return new Response(
       JSON.stringify({
