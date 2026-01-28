@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { ArrowLeft, Check, Calendar, Clock, User } from 'lucide-react';
+import { ArrowLeft, Check, Clock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
@@ -345,21 +345,21 @@ export function BookingFlow({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Compact Progress Header */}
-      <div className="space-y-3">
+      <div className="space-y-2">
         <div className="flex justify-between text-xs font-medium">
-          <span className={step === 'info' ? 'text-primary' : 'text-muted-foreground'}>
+          <span className={step === 'info' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
             1. Your Info
           </span>
-          <span className={step === 'time' ? 'text-primary' : 'text-muted-foreground'}>
+          <span className={step === 'time' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
             2. Pick Time
           </span>
-          <span className={step === 'confirmation' ? 'text-primary' : 'text-muted-foreground'}>
+          <span className={step === 'confirmation' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
             3. Confirmed
           </span>
         </div>
-        <Progress value={stepProgress} className="h-1.5" />
+        <Progress value={stepProgress} className="h-1" />
       </div>
 
       {/* Compact Quote Summary - collapsible after step 1 */}
@@ -373,7 +373,7 @@ export function BookingFlow({
 
       {/* Step Content */}
       {step === 'info' && (
-        <>
+        <div className="space-y-3">
           <CustomerInfoForm
             onSubmit={handleCustomerInfoSubmit}
             initialData={customerInfo || prefillCustomerInfo || undefined}
@@ -381,19 +381,23 @@ export function BookingFlow({
             submitButtonText="Continue to Schedule"
           />
           
-          <Button variant="ghost" onClick={onCancel} className="w-full text-muted-foreground">
-            <ArrowLeft className="w-4 h-4 mr-2" />
+          <Button 
+            variant="ghost" 
+            onClick={onCancel} 
+            className="w-full text-muted-foreground h-9 text-sm"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
             Back to Quote
           </Button>
-        </>
+        </div>
       )}
 
       {step === 'time' && customerInfo && (
-        <div className="space-y-4">
-          {/* Address confirmation - single line */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 text-sm">
-            <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <span className="text-muted-foreground">Scheduling for:</span>
+        <div className="space-y-3">
+          {/* Address confirmation - compact */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/40 text-xs">
+            <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+            <span className="text-muted-foreground">Service at:</span>
             <span className="font-medium truncate">{customerInfo.address}</span>
           </div>
 
@@ -405,21 +409,21 @@ export function BookingFlow({
           />
           
           {/* Fixed CTA area */}
-          <div className="sticky bottom-0 pt-4 pb-2 bg-gradient-to-t from-background via-background to-transparent -mx-4 px-4">
-            <div className="flex gap-3">
+          <div className="sticky bottom-0 pt-3 pb-1 bg-gradient-to-t from-background via-background to-transparent -mx-4 px-4">
+            <div className="flex gap-2">
               <Button 
-                variant="ghost" 
+                variant="outline" 
                 onClick={() => setStep('info')} 
-                className="text-muted-foreground"
+                className="text-muted-foreground border-muted"
                 size="sm"
               >
-                <ArrowLeft className="w-4 h-4 mr-1" />
+                <ArrowLeft className="w-3.5 h-3.5 mr-1" />
                 Back
               </Button>
               <Button 
                 onClick={handleConfirmBooking} 
                 disabled={!selectedSlot || isSubmitting}
-                className="flex-1 h-12 text-base font-semibold"
+                className="flex-1 h-11 text-base font-semibold shadow-sm"
                 size="lg"
               >
                 {isSubmitting ? (
@@ -429,8 +433,8 @@ export function BookingFlow({
                   </>
                 ) : (
                   <>
-                    Confirm Booking • {formatPrice(finalTotal)}
-                    <Check className="w-5 h-5 ml-2" />
+                    Confirm • {formatPrice(finalTotal)}
+                    <Check className="w-4 h-4 ml-1.5" />
                   </>
                 )}
               </Button>
