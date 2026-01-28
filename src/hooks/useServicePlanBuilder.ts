@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { usePricingConfig } from './usePricingConfig';
 import { supabase } from '@/integrations/supabase/client';
 import type {
@@ -13,6 +13,7 @@ import {
   DEFAULT_PLAN_CUSTOMER,
   PLAN_BUILDER_SERVICES,
 } from '@/types/servicePlanBuilder';
+import { TIER_CONFIGS, type PlanTier } from '@/components/plan-builder/TierSelector';
 
 interface ServiceSelection {
   id: PlanBuilderServiceId;
@@ -20,24 +21,52 @@ interface ServiceSelection {
   frequency: 1 | 2 | 3 | 4;
 }
 
+// Tier presets define default service configurations
+const TIER_PRESETS: Record<PlanTier, Array<{ id: PlanBuilderServiceId; frequency: 1 | 2 | 3 | 4 }>> = {
+  good: [
+    { id: 'window-cleaning-exterior', frequency: 2 },
+    { id: 'gutter-cleaning', frequency: 1 },
+  ],
+  better: [
+    { id: 'window-cleaning-exterior', frequency: 3 },
+    { id: 'window-cleaning-interior', frequency: 1 },
+    { id: 'gutter-cleaning', frequency: 2 },
+    { id: 'house-wash', frequency: 1 },
+  ],
+  best: [
+    { id: 'window-cleaning-exterior', frequency: 4 },
+    { id: 'window-cleaning-interior', frequency: 2 },
+    { id: 'gutter-cleaning', frequency: 2 },
+    { id: 'house-wash', frequency: 1 },
+    { id: 'roof-cleaning', frequency: 1 },
+  ],
+};
+
 function applyModifiers(basePrice: number, modifierPercents: number[]): number {
   const totalPercent = modifierPercents.reduce((sum, pct) => sum + pct, 0);
   return Math.round(basePrice * (1 + totalPercent / 100));
+}
+
+function getSelectionsForTier(tier: PlanTier): ServiceSelection[] {
+  const preset = TIER_PRESETS[tier];
+  return PLAN_BUILDER_SERVICES.map(s => {
+    const presetService = preset.find(p => p.id === s.id);
+    return {
+      id: s.id as PlanBuilderServiceId,
+      enabled: !!presetService,
+      frequency: presetService?.frequency ?? 1,
+    };
+  });
 }
 
 export function useServicePlanBuilder() {
   const { data: PRICING, isLoading } = usePricingConfig();
   
   // State
+  const [selectedTier, setSelectedTier] = useState<PlanTier>('better');
   const [homeDetails, setHomeDetails] = useState<ServicePlanHomeDetails>(DEFAULT_PLAN_HOME_DETAILS);
   const [customer, setCustomer] = useState<ServicePlanCustomer>(DEFAULT_PLAN_CUSTOMER);
-  const [selections, setSelections] = useState<ServiceSelection[]>(
-    PLAN_BUILDER_SERVICES.map(s => ({
-      id: s.id as PlanBuilderServiceId,
-      enabled: false,
-      frequency: 1,
-    }))
-  );
+  const [selections, setSelections] = useState<ServiceSelection[]>(getSelectionsForTier('better'));
   const [isSaving, setIsSaving] = useState(false);
   const [savedQuoteId, setSavedQuoteId] = useState<string | null>(null);
   
@@ -50,6 +79,17 @@ export function useServicePlanBuilder() {
   const updateCustomer = useCallback((updates: Partial<ServicePlanCustomer>) => {
     setCustomer(prev => ({ ...prev, ...updates }));
   }, []);
+  
+  // Select a tier (applies preset configuration)
+  const selectTier = useCallback((tier: PlanTier) => {
+    setSelectedTier(tier);
+    setSelections(getSelectionsForTier(tier));
+  }, []);
+  
+  // Get current tier config
+  const currentTierConfig = useMemo(() => {
+    return TIER_CONFIGS.find(t => t.id === selectedTier) || TIER_CONFIGS[1];
+  }, [selectedTier]);
   
   // Toggle service selection
   const toggleService = useCallback((serviceId: PlanBuilderServiceId) => {
@@ -223,6 +263,37 @@ export function useServicePlanBuilder() {
     };
   }, [services]);
   
+  // Calculate tier prices for comparison display
+  const tierPrices = useMemo(() => {
+    const calculateTierPrice = (tier: PlanTier) => {
+      const tierSelections = getSelectionsForTier(tier);
+      let annual = 0;
+      
+      for (const selection of tierSelections) {
+        if (selection.enabled) {
+          const price = calculateServicePrice(selection.id);
+          annual += price * selection.frequency;
+        }
+      }
+      
+      // Calculate one-time price for savings comparison
+      const oneTimePrice = calculateServicePrice('window-cleaning-exterior') + 
+                          calculateServicePrice('gutter-cleaning');
+      
+      return {
+        monthly: Math.round((annual * 0.8) / 11), // Monthly payment (80% / 11)
+        annual,
+        savings: Math.max(0, Math.round(oneTimePrice * 2 - annual * 0.85)), // Rough savings estimate
+      };
+    };
+    
+    return {
+      good: calculateTierPrice('good'),
+      better: calculateTierPrice('better'),
+      best: calculateTierPrice('best'),
+    };
+  }, [calculateServicePrice]);
+  
   // Save quote to database
   const saveQuote = useCallback(async (): Promise<string | null> => {
     if (isSaving) return null;
@@ -315,14 +386,18 @@ export function useServicePlanBuilder() {
   
   return {
     // State
+    selectedTier,
     homeDetails,
     customer,
     services,
     payment,
     savedQuoteId,
     isSaving,
+    tierPrices,
+    currentTierConfig,
     
     // Actions
+    selectTier,
     updateHomeDetails,
     updateCustomer,
     toggleService,

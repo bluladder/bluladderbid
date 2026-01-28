@@ -1,22 +1,33 @@
-import { Package } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { PlanBuilderHeader } from '@/components/plan-builder/PlanBuilderHeader';
 import { PlanHomeDetailsForm } from '@/components/plan-builder/PlanHomeDetailsForm';
-import { ServiceSelectionCard } from '@/components/plan-builder/ServiceSelectionCard';
+import { TierSelector } from '@/components/plan-builder/TierSelector';
+import { TierCustomizer } from '@/components/plan-builder/TierCustomizer';
 import { PlanPaymentSummary } from '@/components/plan-builder/PlanPaymentSummary';
 import { PlanCustomerForm } from '@/components/plan-builder/PlanCustomerForm';
 import { QuoteSavedSuccess } from '@/components/plan-builder/QuoteSavedSuccess';
 import { useServicePlanBuilder } from '@/hooks/useServicePlanBuilder';
 import { toast } from 'sonner';
+import type { PlanBuilderServiceId } from '@/types/servicePlanBuilder';
+
+type BuilderStep = 'home' | 'tier' | 'customize' | 'customer';
 
 export default function PlanBuilder() {
+  const [currentStep, setCurrentStep] = useState<BuilderStep>('home');
+  
   const {
+    selectedTier,
     homeDetails,
     customer,
     services,
     payment,
     savedQuoteId,
     isSaving,
+    tierPrices,
+    currentTierConfig,
+    selectTier,
     updateHomeDetails,
     updateCustomer,
     toggleService,
@@ -45,6 +56,36 @@ export default function PlanBuilder() {
     }
   };
   
+  const handleHomeDetailsComplete = () => {
+    if (homeDetails.squareFootage === 0) {
+      toast.error('Please enter your home\'s square footage');
+      return;
+    }
+    setCurrentStep('tier');
+  };
+  
+  const handleTierSelected = () => {
+    setCurrentStep('customize');
+  };
+  
+  const handleCustomizeComplete = () => {
+    setCurrentStep('customer');
+  };
+  
+  const handleBack = () => {
+    switch (currentStep) {
+      case 'tier':
+        setCurrentStep('home');
+        break;
+      case 'customize':
+        setCurrentStep('tier');
+        break;
+      case 'customer':
+        setCurrentStep('customize');
+        break;
+    }
+  };
+  
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -68,59 +109,123 @@ export default function PlanBuilder() {
     );
   }
   
+  // Step indicator
+  const steps = [
+    { id: 'home', label: 'Home Details' },
+    { id: 'tier', label: 'Choose Plan' },
+    { id: 'customize', label: 'Customize' },
+    { id: 'customer', label: 'Your Info' },
+  ];
+  const currentStepIndex = steps.findIndex(s => s.id === currentStep);
+  
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
         <PlanBuilderHeader />
         
+        {/* Progress Steps */}
+        <div className="mb-8">
+          <div className="flex items-center justify-center gap-2 md:gap-4">
+            {steps.map((step, idx) => (
+              <div key={step.id} className="flex items-center">
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  idx < currentStepIndex
+                    ? 'bg-success/20 text-success'
+                    : idx === currentStepIndex
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                }`}>
+                  <span className="w-5 h-5 rounded-full bg-current/20 flex items-center justify-center text-xs">
+                    {idx + 1}
+                  </span>
+                  <span className="hidden sm:inline">{step.label}</span>
+                </div>
+                {idx < steps.length - 1 && (
+                  <div className={`w-8 h-0.5 mx-1 ${
+                    idx < currentStepIndex ? 'bg-success' : 'bg-muted'
+                  }`} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Main Layout */}
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Back Button */}
+            {currentStep !== 'home' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleBack}
+                className="text-muted-foreground -ml-2"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            )}
+            
             {/* Step 1: Home Details */}
-            <PlanHomeDetailsForm
-              homeDetails={homeDetails}
-              onChange={updateHomeDetails}
-              enabledServices={enabledServiceIds}
-            />
-            
-            {/* Step 2: Service Selection */}
-            <Card className="card-elevated">
-              <CardHeader className="pb-4">
-                <div className="section-header">
-                  <div className="section-icon">
-                    <Package className="w-5 h-5 text-primary-foreground" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-xl">Build Your Bundle</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Select services and choose how often you want them
-                    </p>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {homeDetails.squareFootage === 0 && (
-                  <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-700 dark:text-amber-400">
-                    Enter your home's square footage above to see pricing
-                  </div>
-                )}
+            {currentStep === 'home' && (
+              <div className="space-y-6">
+                <PlanHomeDetailsForm
+                  homeDetails={homeDetails}
+                  onChange={updateHomeDetails}
+                  enabledServices={enabledServiceIds}
+                />
                 
-                <div className="grid gap-4 md:grid-cols-2">
-                  {services.map((service) => (
-                    <ServiceSelectionCard
-                      key={service.id}
-                      service={service}
-                      onToggle={toggleService}
-                      onFrequencyChange={updateFrequency}
-                      hasHomeDetails={homeDetails.squareFootage > 0}
-                    />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                <Button
+                  onClick={handleHomeDetailsComplete}
+                  disabled={homeDetails.squareFootage === 0}
+                  className="w-full md:w-auto btn-primary"
+                  size="lg"
+                >
+                  Continue to Plans
+                </Button>
+              </div>
+            )}
             
-            {/* Step 3: Customer Info - only show after services selected */}
-            {hasSelectedServices && (
+            {/* Step 2: Tier Selection */}
+            {currentStep === 'tier' && (
+              <div className="space-y-6">
+                <TierSelector
+                  selectedTier={selectedTier}
+                  onSelectTier={(tier) => {
+                    selectTier(tier);
+                    handleTierSelected();
+                  }}
+                  tierPrices={tierPrices}
+                  hasHomeDetails={homeDetails.squareFootage > 0}
+                />
+              </div>
+            )}
+            
+            {/* Step 3: Customize */}
+            {currentStep === 'customize' && currentTierConfig && (
+              <div className="space-y-6">
+                <TierCustomizer
+                  tier={currentTierConfig}
+                  services={services}
+                  onToggleService={(id) => toggleService(id as PlanBuilderServiceId)}
+                  onChangeFrequency={(id, freq) => updateFrequency(id as PlanBuilderServiceId, freq)}
+                  addonDiscount={currentTierConfig.addonDiscount}
+                />
+                
+                <Button
+                  onClick={handleCustomizeComplete}
+                  disabled={!hasSelectedServices}
+                  className="w-full md:w-auto btn-primary"
+                  size="lg"
+                >
+                  Continue to Your Info
+                </Button>
+              </div>
+            )}
+            
+            {/* Step 4: Customer Info */}
+            {currentStep === 'customer' && (
               <PlanCustomerForm
                 customer={customer}
                 onChange={updateCustomer}
@@ -130,13 +235,17 @@ export default function PlanBuilder() {
           
           {/* Sidebar - Payment Summary */}
           <div className="lg:col-span-1">
-            <PlanPaymentSummary
-              payment={payment}
-              services={services}
-              isValid={isValid}
-              isSaving={isSaving}
-              onSubmit={handleSubmit}
-            />
+            <div className="lg:sticky lg:top-24">
+              <PlanPaymentSummary
+                payment={payment}
+                services={services}
+                isValid={isValid}
+                isSaving={isSaving}
+                onSubmit={handleSubmit}
+                showSubmitButton={currentStep === 'customer'}
+                selectedTierName={currentTierConfig?.name || 'Better'}
+              />
+            </div>
           </div>
         </div>
       </div>
