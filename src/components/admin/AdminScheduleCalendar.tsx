@@ -313,8 +313,11 @@ export function AdminScheduleCalendar() {
               <Calendar className="w-5 h-5" />
               Schedule Calendar
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="flex items-center gap-2">
               View appointments and manage time blocks
+              <span className="inline-flex items-center text-[10px] text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-1.5 py-0.5 rounded-full ml-2">
+                Synced from Jobber
+              </span>
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
