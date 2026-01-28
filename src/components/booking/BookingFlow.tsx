@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ArrowLeft, Check, Clock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
+import { format, parseISO } from 'date-fns';
 import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
 import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
@@ -365,13 +366,19 @@ export function BookingFlow({
               1. Your Info
             </span>
             <span className={step === 'time' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
-              2. Pick Time
+              2. Pick a Time
             </span>
             <span className="text-muted-foreground">
-              3. Confirmed
+              3. Confirm Booking
             </span>
           </div>
           <Progress value={stepProgress} className="h-1" />
+          {/* Microcopy for time selection step */}
+          {step === 'time' && (
+            <p className="text-xs text-muted-foreground text-center">
+              Your price is locked — only availability is changing.
+            </p>
+          )}
         </div>
       )}
 
@@ -412,7 +419,7 @@ export function BookingFlow({
 
       {/* Step: Time Selection */}
       {step === 'time' && customerInfo && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {/* Address confirmation - compact */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/40 text-xs">
             <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -427,22 +434,53 @@ export function BookingFlow({
             customerAddress={customerInfo.address}
           />
           
-          {/* Fixed CTA area */}
-          <div className="sticky bottom-0 pt-3 pb-1 bg-gradient-to-t from-background via-background to-transparent -mx-4 px-4">
-            <div className="flex gap-2">
+          {/* Fixed CTA area with appointment summary */}
+          <div className="sticky bottom-0 pt-4 pb-2 bg-gradient-to-t from-background via-background to-transparent -mx-4 px-4">
+            {/* Selected Appointment Summary - visible when slot is selected */}
+            {selectedSlot && (
+              <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <Check className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium text-primary">Your Appointment</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Date:</span>
+                    <span className="font-medium">{format(parseISO(selectedSlot.startTime), 'EEE, MMM d')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Time:</span>
+                    <span className="font-medium">{selectedSlot.displayTime || format(parseISO(selectedSlot.startTime), 'h:mm a')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Technician:</span>
+                    <span className="font-medium">{selectedSlot.technicianName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Duration:</span>
+                    <span className="font-medium">~{Math.round(selectedSlot.durationMinutes / 60 * 10) / 10} hrs</span>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 text-center italic">
+                  This time works best with our current schedule.
+                </p>
+              </div>
+            )}
+            
+            <div className="flex gap-3">
               <Button 
-                variant="outline" 
+                variant="ghost" 
                 onClick={() => setStep('info')} 
-                className="text-muted-foreground border-muted"
+                className="text-muted-foreground"
                 size="sm"
               >
                 <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-                Back
+                Edit Info
               </Button>
               <Button 
                 onClick={handleConfirmBooking} 
                 disabled={!selectedSlot || isSubmitting}
-                className="flex-1 h-11 text-base font-semibold shadow-sm"
+                className="flex-1 h-12 text-base font-semibold shadow-md"
                 size="lg"
               >
                 {isSubmitting ? (
@@ -452,7 +490,7 @@ export function BookingFlow({
                   </>
                 ) : (
                   <>
-                    Confirm • {formatPrice(finalTotal)}
+                    Confirm Booking • {formatPrice(finalTotal)}
                     <Check className="w-4 h-4 ml-1.5" />
                   </>
                 )}

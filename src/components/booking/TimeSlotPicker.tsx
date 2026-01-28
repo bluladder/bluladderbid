@@ -174,16 +174,19 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
         </>
       )}
 
-      {/* Step 3: Day Picker (alternative) */}
+      {/* Step 3: Day Picker (alternative - clearly labeled as manual override) */}
       {viewMode === 'dayPicker' && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calendar className="w-5 h-5" />
-              Select a Date
+              Pick a Specific Date
             </CardTitle>
             <CardDescription>
-              Choose a specific day to see all available times
+              Browse the calendar to find available times on a specific day.
+              <span className="block mt-1 text-xs text-muted-foreground/80">
+                Days marked as "Fully Booked" have no remaining availability.
+              </span>
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -210,7 +213,7 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
               Available Times
             </CardTitle>
             <CardDescription>
-              Select a time for {format(selectedDate, 'EEEE, MMMM d')}
+              {format(selectedDate, 'EEEE, MMMM d')} — Select a time to continue
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -218,6 +221,16 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
               <div className="flex items-center justify-center py-8 text-muted-foreground">
                 <Clock className="w-5 h-5 mr-2 animate-pulse" />
                 <span>Loading available times...</span>
+              </div>
+            ) : formattedDaySlots.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-3">
+                  This day is fully booked. Try the next available day or choose a recommended time.
+                </p>
+                <Button variant="outline" onClick={handleBack}>
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Pick Another Day
+                </Button>
               </div>
             ) : (
               <TimeSlotList

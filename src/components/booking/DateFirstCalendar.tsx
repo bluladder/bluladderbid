@@ -187,10 +187,10 @@ export function DateFirstCalendar({
           </span>
         )}
         
-        {/* Fully booked label - subtle indicator below date */}
-        {isFullyBooked && !isDisabled && viewMode === 'week' && (
-          <span className="text-[10px] text-muted-foreground mt-0.5">
-            Full
+        {/* Fully booked label - more prominent indicator */}
+        {isFullyBooked && !isDisabled && (
+          <span className="text-[10px] font-medium text-destructive/70 mt-0.5">
+            Fully Booked
           </span>
         )}
         
@@ -288,7 +288,7 @@ export function DateFirstCalendar({
         {days.map(renderDay)}
       </div>
 
-      {/* Legend */}
+      {/* Legend - updated with fully booked indicator */}
       <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t flex-wrap">
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded bg-primary" />
@@ -299,8 +299,14 @@ export function DateFirstCalendar({
           <span>Today</span>
         </div>
         <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-muted/40 relative">
+            <span className="absolute inset-0 flex items-center justify-center text-[8px] text-destructive/70 font-bold">—</span>
+          </div>
+          <span>Fully Booked</span>
+        </div>
+        <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded bg-muted/60" />
-          <span>Unavailable</span>
+          <span>Weekend</span>
         </div>
       </div>
     </div>

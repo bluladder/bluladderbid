@@ -48,14 +48,13 @@ export function RecommendedSlots({
         <CardHeader>
           <CardTitle>No Availability Found</CardTitle>
           <CardDescription>
-            We couldn't find any available times in the next 30 days. 
-            Please try a different preference or contact us directly.
+            This day is fully booked. Try the next available day or choose a recommended time.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button variant="outline" onClick={onPickDayInstead}>
             <Calendar className="w-4 h-4 mr-2" />
-            Browse Calendar
+            View Next Available Days
           </Button>
         </CardContent>
       </Card>
@@ -67,15 +66,20 @@ export function RecommendedSlots({
 
   return (
     <div className="space-y-3">
-      {/* Header - compact */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="w-4 h-4 text-primary" />
-          <h3 className="text-sm font-semibold">Best Times for You</h3>
+      {/* Header with helper text */}
+      <div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-semibold">Recommended Times</h3>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {displaySlots.length} option{displaySlots.length !== 1 ? 's' : ''}
+          </span>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {displaySlots.length} option{displaySlots.length !== 1 ? 's' : ''}
-        </span>
+        <p className="text-xs text-muted-foreground mt-1 ml-5.5">
+          These options help us group jobs efficiently and keep prices low.
+        </p>
       </div>
 
       {/* Recommended slots */}
@@ -155,17 +159,22 @@ export function RecommendedSlots({
         })}
       </div>
         
-      {/* Secondary action - subtle separator */}
-      <div className="pt-2 border-t border-border/50 text-center">
-        <Button 
-          variant="ghost" 
-          size="sm"
-          className="text-xs text-muted-foreground hover:text-foreground h-8"
-          onClick={onPickDayInstead}
-        >
-          <Calendar className="w-3.5 h-3.5 mr-1.5" />
-          Browse all dates
-        </Button>
+      {/* Secondary action - clearly labeled as optional override */}
+      <div className="pt-3 border-t border-border/50">
+        <div className="text-center">
+          <p className="text-xs text-muted-foreground mb-2">
+            Need a specific date instead?
+          </p>
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="text-xs h-8"
+            onClick={onPickDayInstead}
+          >
+            <Calendar className="w-3.5 h-3.5 mr-1.5" />
+            Pick a Date Manually
+          </Button>
+        </div>
       </div>
     </div>
   );
