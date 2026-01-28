@@ -148,7 +148,7 @@ export interface BundleTier {
 }
 
 export const DEFAULT_HOME_DETAILS: HomeDetails = {
-  squareFootage: 2000,
+  squareFootage: 0, // Changed from 2000 - blank by default, placeholder shows "e.g. 2,000 sq ft"
   stories: 1,
   windowCleaningType: 'exterior',
   condition: 'maintenance',

@@ -4,15 +4,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { User, Mail, Phone, MapPin, MessageSquare } from 'lucide-react';
+import { User, Mail, Phone, MapPin, MessageSquare, AlertCircle } from 'lucide-react';
 import { z } from 'zod';
+
+// Enhanced address validation to require city + zip
+const addressRegex = /^.+,\s*.+,\s*[A-Z]{2}\s*\d{5}(-\d{4})?$/i;
 
 const customerSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(50),
   lastName: z.string().min(1, 'Last name is required').max(50),
   email: z.string().email('Please enter a valid email'),
   phone: z.string().min(10, 'Please enter a valid phone number').max(20),
-  address: z.string().min(5, 'Please enter your service address').max(200),
+  address: z.string()
+    .min(10, 'Please enter your complete service address')
+    .max(200)
+    .refine(
+      (val) => addressRegex.test(val) || val.includes(','),
+      'Please include Street Address, City, State, and ZIP'
+    ),
   notes: z.string().max(500).optional(),
 });
 
@@ -43,12 +52,19 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
   });
   
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [addressWarning, setAddressWarning] = useState(false);
 
   const handleChange = (field: keyof CustomerInfo, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     // Clear error when user types
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+    
+    // Check address format on change
+    if (field === 'address') {
+      const hasComma = value.includes(',');
+      setAddressWarning(value.length > 5 && !hasComma);
     }
   };
 
@@ -161,10 +177,17 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
                 id="address"
                 value={formData.address}
                 onChange={(e) => handleChange('address', e.target.value)}
-                placeholder="123 Main St, City, State 12345"
+                placeholder="Street Address, City, State, ZIP"
                 className={`pl-8 min-h-[60px] text-sm ${errors.address ? 'border-destructive' : ''}`}
               />
             </div>
+            {/* Address format hint */}
+            {addressWarning && !errors.address && (
+              <div className="flex items-start gap-1.5 text-xs text-amber-600">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>Include city and ZIP for accurate scheduling</span>
+              </div>
+            )}
             {errors.address && (
               <p className="text-xs text-destructive">{errors.address}</p>
             )}

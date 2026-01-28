@@ -90,6 +90,11 @@ export function RecommendedSlots({
           const slotDate = parseISO(slot.startTime);
           const durationHrs = Math.round(slot.durationMinutes / 60 * 10) / 10;
           const isTopPick = index === 0;
+          const isAlternative = slot.whyLabel === 'alternative';
+          
+          // Get display date info - alternative should always be different day
+          const firstSlotDate = displaySlots[0] ? parseISO(displaySlots[0].startTime) : null;
+          const isDifferentDay = firstSlotDate && format(slotDate, 'yyyy-MM-dd') !== format(firstSlotDate, 'yyyy-MM-dd');
           
           return (
             <button
@@ -102,12 +107,14 @@ export function RecommendedSlots({
                   ? 'border-primary bg-primary/10 ring-1 ring-primary' 
                   : isTopPick
                     ? 'border-primary/60 bg-primary/5 hover:bg-primary/10'
-                    : 'border-border bg-card hover:bg-accent/50'
+                    : isAlternative
+                      ? 'border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-100/50'
+                      : 'border-border bg-card hover:bg-accent/50'
               )}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  {/* Top pick label inline */}
+                  {/* Top pick / Alternative labels */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={cn(
                       "font-semibold",
@@ -121,6 +128,11 @@ export function RecommendedSlots({
                     {isTopPick && !isSelected && (
                       <span className="text-[10px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">
                         Top Pick
+                      </span>
+                    )}
+                    {isAlternative && isDifferentDay && !isSelected && (
+                      <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                        Different Day
                       </span>
                     )}
                   </div>
