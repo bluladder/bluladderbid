@@ -161,6 +161,50 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_audit_log: {
+        Row: {
+          action: string
+          booking_id: string
+          changed_by: string
+          changed_by_id: string | null
+          created_at: string
+          id: string
+          is_admin_override: boolean
+          new_values: Json | null
+          old_values: Json | null
+        }
+        Insert: {
+          action: string
+          booking_id: string
+          changed_by?: string
+          changed_by_id?: string | null
+          created_at?: string
+          id?: string
+          is_admin_override?: boolean
+          new_values?: Json | null
+          old_values?: Json | null
+        }
+        Update: {
+          action?: string
+          booking_id?: string
+          changed_by?: string
+          changed_by_id?: string | null
+          created_at?: string
+          id?: string
+          is_admin_override?: boolean
+          new_values?: Json | null
+          old_values?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_audit_log_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_step_events: {
         Row: {
           created_at: string

@@ -10,11 +10,11 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Loader2, Calendar, Clock, AlertCircle, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO, addDays, startOfWeek, addWeeks, subWeeks, isBefore, startOfDay, getDay, isSameDay } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { useSmartAvailability, type DayGridSlot } from '@/hooks/useSmartAvailability';
 
 interface RescheduleDialogProps {
   appointment: {
@@ -29,28 +29,41 @@ interface RescheduleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onComplete: () => void;
+  // Admin override props
+  isAdminOverride?: boolean;
+  adminUserId?: string;
 }
 
-interface TimeSlot {
-  startTime: string;
-  endTime: string;
-  technicianId: string;
-  technicianName: string;
-  displayTime: string;
-}
-
-// Simplified slot picker for reschedule flow
-function SimpleSlotPicker({ 
+// Simplified slot picker using the real availability engine
+function AvailabilitySlotPicker({ 
   onSelect, 
-  minDate 
+  services,
+  homeDetails,
 }: { 
-  onSelect: (slot: TimeSlot) => void;
-  minDate: Date;
+  onSelect: (slot: DayGridSlot) => void;
+  services: Array<{ name: string; price: number }>;
+  homeDetails: Record<string, unknown>;
 }) {
+  const minDate = addDays(new Date(), 3); // 48 hours + buffer
   const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(minDate));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [slots, setSlots] = useState<TimeSlot[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
+  
+  // Convert services to the format the availability hook expects
+  const servicePrices = services.map(s => ({
+    service: s.name.toLowerCase().replace(/\s+/g, '_'),
+    price: s.price,
+  }));
+
+  const {
+    daySlots,
+    isLoadingDaySlots,
+    fetchDaySlots,
+    error,
+  } = useSmartAvailability({
+    services: servicePrices,
+    customerAddress: homeDetails.address as string | undefined,
+    numStories: (homeDetails.stories as number) || 1,
+  });
 
   const workDays = [1, 2, 3, 4, 5]; // Mon-Fri
   const workDaysSet = new Set(workDays);
@@ -65,29 +78,9 @@ function SimpleSlotPicker({
     return false;
   };
 
-  const fetchSlotsForDate = async (date: Date) => {
-    setLoadingSlots(true);
-    try {
-      // For demo purposes, generate sample slots
-      // In production, this would call the availability edge function
-      const mockSlots: TimeSlot[] = [
-        { startTime: `${format(date, 'yyyy-MM-dd')}T09:00:00`, endTime: `${format(date, 'yyyy-MM-dd')}T12:00:00`, technicianId: '1', technicianName: 'Team A', displayTime: '9:00 AM' },
-        { startTime: `${format(date, 'yyyy-MM-dd')}T10:00:00`, endTime: `${format(date, 'yyyy-MM-dd')}T13:00:00`, technicianId: '1', technicianName: 'Team A', displayTime: '10:00 AM' },
-        { startTime: `${format(date, 'yyyy-MM-dd')}T13:00:00`, endTime: `${format(date, 'yyyy-MM-dd')}T16:00:00`, technicianId: '2', technicianName: 'Team B', displayTime: '1:00 PM' },
-        { startTime: `${format(date, 'yyyy-MM-dd')}T14:00:00`, endTime: `${format(date, 'yyyy-MM-dd')}T17:00:00`, technicianId: '2', technicianName: 'Team B', displayTime: '2:00 PM' },
-      ];
-      setSlots(mockSlots);
-    } catch (err) {
-      console.error('Failed to fetch slots:', err);
-      setSlots([]);
-    } finally {
-      setLoadingSlots(false);
-    }
-  };
-
-  const handleDateSelect = (date: Date) => {
+  const handleDateSelect = async (date: Date) => {
     setSelectedDate(date);
-    fetchSlotsForDate(date);
+    await fetchDaySlots(date);
   };
 
   return (
@@ -138,23 +131,31 @@ function SimpleSlotPicker({
         })}
       </div>
 
+      {/* Error State */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       {/* Time Slots */}
-      {selectedDate && (
+      {selectedDate && !error && (
         <div className="space-y-2">
           <div className="text-sm font-medium">
             Available times for {format(selectedDate, 'EEEE, MMM d')}
           </div>
-          {loadingSlots ? (
+          {isLoadingDaySlots ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : slots.length === 0 ? (
+          ) : daySlots.length === 0 ? (
             <p className="text-center py-4 text-muted-foreground text-sm">
-              No available times on this date
+              No available times on this date. Try another day.
             </p>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {slots.map((slot, idx) => (
+            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+              {daySlots.map((slot, idx) => (
                 <Button
                   key={idx}
                   variant="outline"
@@ -162,8 +163,8 @@ function SimpleSlotPicker({
                   onClick={() => onSelect(slot)}
                 >
                   <Clock className="w-4 h-4 mr-2" />
-                  {slot.displayTime}
-                  <span className="ml-auto text-xs text-muted-foreground">
+                  {slot.displayTime || format(parseISO(slot.startTime), 'h:mm a')}
+                  <span className="ml-auto text-xs text-muted-foreground truncate max-w-[80px]">
                     {slot.technicianName}
                   </span>
                 </Button>
@@ -187,9 +188,11 @@ export function RescheduleDialog({
   open,
   onOpenChange,
   onComplete,
+  isAdminOverride,
+  adminUserId,
 }: RescheduleDialogProps) {
   const [step, setStep] = useState<'select' | 'confirm'>('select');
-  const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<DayGridSlot | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -199,7 +202,7 @@ export function RescheduleDialog({
     }
   }, [open]);
 
-  const handleSlotSelect = (slot: TimeSlot) => {
+  const handleSlotSelect = (slot: DayGridSlot) => {
     setSelectedSlot(slot);
     setStep('confirm');
   };
@@ -209,17 +212,33 @@ export function RescheduleDialog({
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase
-        .from('bookings')
-        .update({
-          scheduled_start: selectedSlot.startTime,
-          scheduled_end: selectedSlot.endTime,
-          technician_id: selectedSlot.technicianId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', appointment.id);
+      // Call edge function for reschedule
+      const { data, error } = await supabase.functions.invoke('customer-appointment-actions', {
+        body: {
+          action: 'reschedule',
+          bookingId: appointment.id,
+          newSlot: {
+            startTime: selectedSlot.startTime,
+            endTime: selectedSlot.endTime,
+            technicianId: selectedSlot.technicianId,
+            technicianIds: selectedSlot.teamTechnicianIds,
+          },
+          isAdminOverride,
+          adminUserId,
+        },
+      });
 
       if (error) throw error;
+      
+      if (data?.error) {
+        if (data.code === 'LOCKOUT') {
+          toast.error(data.details || 'Changes cannot be made within 48 hours of appointment');
+        } else {
+          throw new Error(data.details || data.error);
+        }
+        return;
+      }
+
       onComplete();
     } catch (err) {
       console.error('Failed to reschedule:', err);
@@ -252,9 +271,10 @@ export function RescheduleDialog({
               </AlertDescription>
             </Alert>
 
-            <SimpleSlotPicker
+            <AvailabilitySlotPicker
               onSelect={handleSlotSelect}
-              minDate={addDays(new Date(), 3)}
+              services={appointment.services_json}
+              homeDetails={appointment.home_details_json}
             />
 
             <p className="text-xs text-center text-muted-foreground">
@@ -277,7 +297,7 @@ export function RescheduleDialog({
                 </div>
                 <div>
                   <span className="text-muted-foreground">Time:</span>
-                  <p className="font-medium">{selectedSlot.displayTime}</p>
+                  <p className="font-medium">{selectedSlot.displayTime || format(parseISO(selectedSlot.startTime), 'h:mm a')}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Technician:</span>

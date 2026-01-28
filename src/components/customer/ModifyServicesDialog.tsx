@@ -12,8 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, Edit, AlertCircle, Check, ArrowRight, Clock } from 'lucide-react';
+import { Loader2, Edit, AlertCircle, Check, Clock, CalendarClock } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 
@@ -31,17 +30,12 @@ interface ModifyServicesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onComplete: () => void;
+  // For triggering reschedule flow if needed
+  onNeedsReschedule?: () => void;
+  // Admin override props
+  isAdminOverride?: boolean;
+  adminUserId?: string;
 }
-
-// Available services that can be added (simplified for customer self-service)
-const AVAILABLE_SERVICES = [
-  { id: 'windows_exterior', name: 'Exterior Windows', description: 'Professional exterior window cleaning' },
-  { id: 'windows_interior', name: 'Interior + Exterior Windows', description: 'Complete window cleaning inside and out' },
-  { id: 'gutters', name: 'Gutter Cleaning', description: 'Clear debris and flush downspouts' },
-  { id: 'house_wash', name: 'House Wash', description: 'Soft wash exterior siding' },
-  { id: 'roof_wash', name: 'Roof Cleaning', description: 'Soft wash roof treatment' },
-  { id: 'driveway', name: 'Driveway Cleaning', description: 'Pressure wash driveway' },
-];
 
 function formatPrice(price: number) {
   return new Intl.NumberFormat('en-US', {
@@ -57,17 +51,22 @@ export function ModifyServicesDialog({
   open,
   onOpenChange,
   onComplete,
+  onNeedsReschedule,
+  isAdminOverride,
+  adminUserId,
 }: ModifyServicesDialogProps) {
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [needsReschedule, setNeedsReschedule] = useState(false);
+  const [requiresReschedule, setRequiresReschedule] = useState(false);
+  const [rescheduleReason, setRescheduleReason] = useState('');
 
   // Initialize with current services
   useEffect(() => {
     if (open) {
       const currentServiceNames = appointment.services_json.map(s => s.name);
       setSelectedServices(currentServiceNames);
-      setNeedsReschedule(false);
+      setRequiresReschedule(false);
+      setRescheduleReason('');
     }
   }, [open, appointment]);
 
@@ -87,6 +86,9 @@ export function ModifyServicesDialog({
         ? prev.filter(s => s !== serviceName)
         : [...prev, serviceName]
     );
+    // Reset reschedule state when services change
+    setRequiresReschedule(false);
+    setRescheduleReason('');
   };
 
   const handleConfirm = async () => {
@@ -103,26 +105,41 @@ export function ModifyServicesDialog({
         return existing || { name, price: 0 }; // Keep existing prices
       });
 
-      // Update the booking
-      const { error } = await supabase
-        .from('bookings')
-        .update({
-          services_json: updatedServices,
-          subtotal: newTotal,
-          total: newTotal - (appointment.subtotal - appointment.total), // Preserve discount
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', appointment.id);
+      const newSubtotal = updatedServices.reduce((sum, s) => sum + s.price, 0);
+      const discountAmount = appointment.subtotal - appointment.total;
+      const finalTotal = newSubtotal - (discountAmount > 0 ? discountAmount : 0);
+
+      // Call edge function
+      const { data, error } = await supabase.functions.invoke('customer-appointment-actions', {
+        body: {
+          action: 'modify_services',
+          bookingId: appointment.id,
+          newServices: updatedServices,
+          newSubtotal: newSubtotal,
+          newTotal: finalTotal,
+          // TODO: Calculate new duration based on pricing engine
+          isAdminOverride,
+          adminUserId,
+        },
+      });
 
       if (error) throw error;
+      
+      if (data?.error) {
+        if (data.code === 'LOCKOUT') {
+          toast.error(data.details || 'Changes cannot be made within 48 hours of appointment');
+        } else {
+          throw new Error(data.details || data.error);
+        }
+        return;
+      }
 
-      // Log the change for audit
-      console.log('Services modified:', {
-        bookingId: appointment.id,
-        oldServices: currentServices,
-        newServices: updatedServices,
-        timestamp: new Date().toISOString(),
-      });
+      // Check if reschedule is required
+      if (data?.requiresReschedule) {
+        setRequiresReschedule(true);
+        setRescheduleReason(data.reason || 'New services exceed current time slot');
+        return;
+      }
 
       onComplete();
     } catch (err) {
@@ -130,6 +147,13 @@ export function ModifyServicesDialog({
       toast.error('Failed to update services. Please try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleReschedule = () => {
+    onOpenChange(false);
+    if (onNeedsReschedule) {
+      onNeedsReschedule();
     }
   };
 
@@ -148,6 +172,24 @@ export function ModifyServicesDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Reschedule Required Alert */}
+          {requiresReschedule && (
+            <Alert variant="default" className="border-amber-200 bg-amber-50">
+              <CalendarClock className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-sm">
+                <strong className="text-amber-800">Reschedule Required</strong>
+                <p className="text-amber-700 mt-1">{rescheduleReason}</p>
+                <Button 
+                  size="sm" 
+                  className="mt-2" 
+                  onClick={handleReschedule}
+                >
+                  Choose New Time
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Current Services */}
           <div>
             <div className="text-sm font-medium mb-2">Current Services</div>
@@ -187,7 +229,7 @@ export function ModifyServicesDialog({
                   <span className="font-medium">{formatPrice(newTotal)}</span>
                 </div>
                 {totalChange !== 0 && (
-                  <div className={`flex justify-between text-sm font-medium ${totalChange > 0 ? 'text-amber-600' : 'text-success'}`}>
+                  <div className={`flex justify-between text-sm font-medium ${totalChange > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                     <span>Difference:</span>
                     <span>{totalChange > 0 ? '+' : ''}{formatPrice(totalChange)}</span>
                   </div>
@@ -197,7 +239,7 @@ export function ModifyServicesDialog({
           </div>
 
           {/* Duration Warning */}
-          {servicesChanged && (
+          {servicesChanged && !requiresReschedule && (
             <Alert>
               <Clock className="h-4 w-4" />
               <AlertDescription className="text-sm">
@@ -225,7 +267,7 @@ export function ModifyServicesDialog({
           </Button>
           <Button 
             onClick={handleConfirm} 
-            disabled={isSubmitting || !servicesChanged || selectedServices.length === 0}
+            disabled={isSubmitting || !servicesChanged || selectedServices.length === 0 || requiresReschedule}
           >
             {isSubmitting ? (
               <>
