@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface ServiceSelection {
@@ -21,6 +20,7 @@ interface Technician {
   name: string;
   jobber_user_id: string;
   is_active: boolean;
+  max_stories: number | null;
   service_capabilities: TechnicianCapabilities | null;
 }
 
@@ -45,6 +45,10 @@ interface BigJobSettings {
   big_job_solo_hours_threshold: number | null;
   auto_assign_two_techs: boolean;
   crew_efficiency_factor: number;
+  workday_length_hours: number;
+  min_buffer_minutes: number;
+  big_job_trigger_mode: 'PRICE_ONLY' | 'HOURS_ONLY' | 'PRICE_OR_HOURS' | 'FITS_IN_DAY';
+  pairing_mode: 'AUTO_PAIR' | 'RESTRICTED' | 'PREFER_LIST';
 }
 
 export interface EligibilityResult {
@@ -57,13 +61,57 @@ export interface EligibilityResult {
 }
 
 /**
+ * Determines if a job qualifies as a "big job" based on settings and triggers
+ */
+function evaluateBigJobTrigger(
+  settings: BigJobSettings,
+  totalPrice: number,
+  estimatedSoloHours: number | null
+): boolean {
+  const { 
+    big_job_trigger_mode, 
+    big_job_value_threshold, 
+    big_job_solo_hours_threshold,
+    workday_length_hours,
+    min_buffer_minutes
+  } = settings;
+
+  const priceExceeds = totalPrice >= big_job_value_threshold;
+  const hoursExceeds = big_job_solo_hours_threshold !== null && 
+    estimatedSoloHours !== null && 
+    estimatedSoloHours >= big_job_solo_hours_threshold;
+
+  switch (big_job_trigger_mode) {
+    case 'PRICE_ONLY':
+      return priceExceeds;
+    
+    case 'HOURS_ONLY':
+      return hoursExceeds;
+    
+    case 'PRICE_OR_HOURS':
+      return priceExceeds || hoursExceeds;
+    
+    case 'FITS_IN_DAY':
+    default:
+      // Job doesn't fit in one workday
+      if (estimatedSoloHours === null) {
+        // Fall back to price threshold if hours not available
+        return priceExceeds;
+      }
+      const availableHours = (workday_length_hours * 60 - min_buffer_minutes) / 60;
+      return estimatedSoloHours > availableHours;
+  }
+}
+
+/**
  * Evaluates eligibility rules against selected services and returns eligible technicians.
  * This is the client-side evaluation - server-side validation should also be performed.
  */
 export async function evaluateEligibility(
   services: ServiceSelection[],
   totalPrice: number,
-  estimatedSoloHours: number | null
+  estimatedSoloHours: number | null,
+  propertyStories?: number
 ): Promise<EligibilityResult> {
   // Fetch all data in parallel
   const [techsRes, rulesRes, settingsRes] = await Promise.all([
@@ -91,11 +139,19 @@ export async function evaluateEligibility(
     big_job_solo_hours_threshold: settingsRes.data.big_job_solo_hours_threshold,
     auto_assign_two_techs: settingsRes.data.auto_assign_two_techs,
     crew_efficiency_factor: Number(settingsRes.data.crew_efficiency_factor),
+    workday_length_hours: Number(settingsRes.data.workday_length_hours) || 8,
+    min_buffer_minutes: settingsRes.data.min_buffer_minutes || 30,
+    big_job_trigger_mode: (settingsRes.data.big_job_trigger_mode as BigJobSettings['big_job_trigger_mode']) || 'FITS_IN_DAY',
+    pairing_mode: (settingsRes.data.pairing_mode as BigJobSettings['pairing_mode']) || 'RESTRICTED',
   } : {
     big_job_value_threshold: 900,
     big_job_solo_hours_threshold: null,
     auto_assign_two_techs: true,
     crew_efficiency_factor: 1.8,
+    workday_length_hours: 8,
+    min_buffer_minutes: 30,
+    big_job_trigger_mode: 'FITS_IN_DAY',
+    pairing_mode: 'RESTRICTED',
   };
 
   const serviceTypes = services.map(s => s.service);
@@ -104,11 +160,29 @@ export async function evaluateEligibility(
   const appliedRules: string[] = [];
   let requiredCrewSize = 1;
 
-  // Check if this is a big job
-  const isBigJob = totalPrice >= settings.big_job_value_threshold ||
-    (settings.big_job_solo_hours_threshold !== null && 
-     estimatedSoloHours !== null && 
-     estimatedSoloHours >= settings.big_job_solo_hours_threshold);
+  // Phase 2: Filter by property stories first
+  if (propertyStories !== undefined && propertyStories > 0) {
+    const storiesToRemove: Technician[] = [];
+    for (const tech of eligibleTechs) {
+      if (tech.max_stories !== null && tech.max_stories < propertyStories) {
+        storiesToRemove.push(tech);
+        excludedTechs.push({ 
+          technician: tech, 
+          reason: `Property height constraint: max ${tech.max_stories} stories, property has ${propertyStories}` 
+        });
+      }
+    }
+    for (const tech of storiesToRemove) {
+      const idx = eligibleTechs.findIndex(t => t.id === tech.id);
+      if (idx > -1) eligibleTechs.splice(idx, 1);
+    }
+    if (storiesToRemove.length > 0) {
+      appliedRules.push('Property height constraint');
+    }
+  }
+
+  // Check if this is a big job using configurable trigger mode
+  const isBigJob = evaluateBigJobTrigger(settings, totalPrice, estimatedSoloHours);
 
   if (isBigJob && settings.auto_assign_two_techs) {
     requiredCrewSize = 2;
@@ -200,27 +274,30 @@ export async function evaluateEligibility(
     }
   }
 
-  // For big jobs, filter to only eligible_for_big_job_pairing techs
+  // For big jobs, filter based on pairing mode
   if (isBigJob && settings.auto_assign_two_techs) {
-    const bigJobEligible = eligibleTechs.filter(t => 
-      t.service_capabilities?.eligible_for_big_job_pairing === true
-    );
-    
-    // Move non-eligible to excluded
-    for (const tech of eligibleTechs) {
-      if (!tech.service_capabilities?.eligible_for_big_job_pairing) {
-        const alreadyExcluded = excludedTechs.some(e => e.technician.id === tech.id);
-        if (!alreadyExcluded) {
-          excludedTechs.push({ 
-            technician: tech, 
-            reason: 'Not eligible for big job pairing' 
-          });
+    if (settings.pairing_mode === 'RESTRICTED') {
+      const bigJobEligible = eligibleTechs.filter(t => 
+        t.service_capabilities?.eligible_for_big_job_pairing === true
+      );
+      
+      // Move non-eligible to excluded
+      for (const tech of eligibleTechs) {
+        if (!tech.service_capabilities?.eligible_for_big_job_pairing) {
+          const alreadyExcluded = excludedTechs.some(e => e.technician.id === tech.id);
+          if (!alreadyExcluded) {
+            excludedTechs.push({ 
+              technician: tech, 
+              reason: 'Not eligible for big job pairing' 
+            });
+          }
         }
       }
-    }
 
-    eligibleTechs.length = 0;
-    eligibleTechs.push(...bigJobEligible);
+      eligibleTechs.length = 0;
+      eligibleTechs.push(...bigJobEligible);
+    }
+    // AUTO_PAIR keeps all eligible techs, PREFER_LIST is future
     appliedRules.push('Big job auto-crew');
   }
 

@@ -115,31 +115,49 @@ export type Database = {
           allowed_tech_pairs: Json
           auto_assign_two_techs: boolean
           big_job_solo_hours_threshold: number | null
+          big_job_trigger_mode: string | null
           big_job_value_threshold: number
           created_at: string
           crew_efficiency_factor: number
           id: string
+          min_buffer_minutes: number | null
+          pairing_mode: string | null
           updated_at: string
+          workday_end_time: string | null
+          workday_length_hours: number | null
+          workday_start_time: string | null
         }
         Insert: {
           allowed_tech_pairs?: Json
           auto_assign_two_techs?: boolean
           big_job_solo_hours_threshold?: number | null
+          big_job_trigger_mode?: string | null
           big_job_value_threshold?: number
           created_at?: string
           crew_efficiency_factor?: number
           id?: string
+          min_buffer_minutes?: number | null
+          pairing_mode?: string | null
           updated_at?: string
+          workday_end_time?: string | null
+          workday_length_hours?: number | null
+          workday_start_time?: string | null
         }
         Update: {
           allowed_tech_pairs?: Json
           auto_assign_two_techs?: boolean
           big_job_solo_hours_threshold?: number | null
+          big_job_trigger_mode?: string | null
           big_job_value_threshold?: number
           created_at?: string
           crew_efficiency_factor?: number
           id?: string
+          min_buffer_minutes?: number | null
+          pairing_mode?: string | null
           updated_at?: string
+          workday_end_time?: string | null
+          workday_length_hours?: number | null
+          workday_start_time?: string | null
         }
         Relationships: []
       }
@@ -954,6 +972,7 @@ export type Database = {
           jobber_user_id: string
           location_type: string
           max_drive_time_minutes: number | null
+          max_stories: number | null
           name: string
           schedule_end_hour: number | null
           schedule_start_hour: number | null
@@ -972,6 +991,7 @@ export type Database = {
           jobber_user_id: string
           location_type?: string
           max_drive_time_minutes?: number | null
+          max_stories?: number | null
           name: string
           schedule_end_hour?: number | null
           schedule_start_hour?: number | null
@@ -990,6 +1010,7 @@ export type Database = {
           jobber_user_id?: string
           location_type?: string
           max_drive_time_minutes?: number | null
+          max_stories?: number | null
           name?: string
           schedule_end_hour?: number | null
           schedule_start_hour?: number | null
