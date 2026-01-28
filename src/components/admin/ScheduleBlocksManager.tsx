@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import { format, parseISO, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 
-type BlockCategory = 'vacation' | 'pto' | 'blackout' | 'manual' | 'appointment';
+type BlockCategory = 'vacation' | 'pto' | 'sick' | 'training' | 'blackout' | 'manual' | 'appointment';
 
 interface ScheduleBlock {
   id: string;
@@ -38,11 +38,13 @@ interface Technician {
   is_active: boolean;
 }
 
-const BLOCK_CATEGORIES: { value: BlockCategory; label: string; icon: typeof Calendar; color: string }[] = [
-  { value: 'vacation', label: 'Vacation', icon: Palmtree, color: 'bg-amber-100 text-amber-800' },
-  { value: 'pto', label: 'PTO', icon: Calendar, color: 'bg-blue-100 text-blue-800' },
-  { value: 'blackout', label: 'Blackout', icon: CalendarOff, color: 'bg-red-100 text-red-800' },
-  { value: 'manual', label: 'Manual Block', icon: Clock, color: 'bg-gray-100 text-gray-800' },
+const BLOCK_CATEGORIES: { value: BlockCategory; label: string; icon: typeof Calendar; color: string; description: string }[] = [
+  { value: 'vacation', label: 'Vacation', icon: Palmtree, color: 'bg-amber-100 text-amber-800', description: 'Planned vacation time' },
+  { value: 'pto', label: 'PTO', icon: Calendar, color: 'bg-blue-100 text-blue-800', description: 'Paid time off' },
+  { value: 'sick', label: 'Sick', icon: AlertCircle, color: 'bg-orange-100 text-orange-800', description: 'Sick leave' },
+  { value: 'training', label: 'Training', icon: Clock, color: 'bg-purple-100 text-purple-800', description: 'Training or meetings' },
+  { value: 'blackout', label: 'Blackout', icon: CalendarOff, color: 'bg-red-100 text-red-800', description: 'No booking allowed (hard block)' },
+  { value: 'manual', label: 'Manual Block', icon: Clock, color: 'bg-gray-100 text-gray-800', description: 'Custom time block' },
 ];
 
 export function ScheduleBlocksManager() {
@@ -293,7 +295,10 @@ export function ScheduleBlocksManager() {
                           <SelectItem key={cat.value} value={cat.value}>
                             <div className="flex items-center gap-2">
                               <cat.icon className="w-4 h-4" />
-                              {cat.label}
+                              <div>
+                                <span>{cat.label}</span>
+                                <span className="text-xs text-muted-foreground ml-2">- {cat.description}</span>
+                              </div>
                             </div>
                           </SelectItem>
                         ))}
