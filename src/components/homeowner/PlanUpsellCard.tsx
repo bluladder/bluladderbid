@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight } from 'lucide-react';
+import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +59,11 @@ export function PlanUpsellCard({
   // Calculate annual value if they booked one-time multiple times
   const annualOneTimeValue = oneTimeTotal * (currentBundle?.windowFrequency || 2);
   const annualSavings = annualOneTimeValue - (currentBundle?.annualTotal || 0);
+  
+  // Calculate monthly payment structure (20% deposit + 11 monthly payments)
+  const deposit = currentBundle ? Math.round(currentBundle.annualTotal * 0.20) : 0;
+  const remainingBalance = currentBundle ? currentBundle.annualTotal - deposit : 0;
+  const monthlyPayment = Math.round(remainingBalance / 11);
   
   if (!hasServices) {
     return (
@@ -158,13 +163,12 @@ export function PlanUpsellCard({
             )}
           </div>
           
-          {/* Book One-Time CTA (Secondary) */}
+          {/* Book One-Time CTA - NOW PRIMARY */}
           <Button 
-            variant="outline" 
-            className="w-full btn-secondary"
+            className="w-full btn-primary h-14 text-lg font-semibold shadow-lg"
             onClick={onBookOneTime}
           >
-            <Calendar className="w-4 h-4 mr-2" />
+            <Calendar className="w-5 h-5 mr-2" />
             Book One-Time Service
           </Button>
         </CardContent>
@@ -181,74 +185,33 @@ export function PlanUpsellCard({
         </div>
         
         <CardContent className="p-5">
-          {/* Recommended Plan */}
-          <div className="text-center mb-4">
-            <Badge className="tier-badge-better mb-3">
-              {currentBundle?.name || 'Better'} Plan
-            </Badge>
-            <div className="flex items-baseline justify-center gap-2">
-              <span className="text-4xl font-bold price-display text-foreground">
-                {formatPrice(currentBundle?.monthlyPayment || 0)}
-              </span>
-              <span className="text-muted-foreground">/month</span>
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              {formatPrice(currentBundle?.annualTotal || 0)} per year
-            </p>
-            {annualSavings > 0 && (
-              <div className="savings-badge mt-2 inline-flex">
-                Save {formatPrice(annualSavings)} vs one-time
-              </div>
-            )}
-          </div>
-          
-          {/* What's included */}
-          <div className="space-y-2 mb-4">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              What you get
-            </h4>
-            {currentBundle?.features.slice(0, 3).map((feature, idx) => (
-              <div key={idx} className="flex items-start gap-2 text-sm">
-                <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
-                <span>{feature}</span>
-              </div>
-            ))}
-            {currentBundle?.additionalServicesIncluded.slice(0, 2).map((service, idx) => (
-              <div key={`add-${idx}`} className="flex items-start gap-2 text-sm">
-                <Sparkles className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                <span>{service}</span>
-              </div>
-            ))}
-          </div>
-          
-          {/* Upgrade CTA (Primary) */}
+          {/* Upgrade CTA - MOVED ABOVE PLAN CARDS */}
           <Button 
-            className="w-full btn-primary h-12 text-base mb-3"
+            className="w-full btn-secondary h-12 text-base mb-4"
+            variant="outline"
             onClick={onUpgradeAndBook}
           >
             <RefreshCw className="w-5 h-5 mr-2" />
             Upgrade & Book on Autopilot
           </Button>
           
-          {/* Social proof */}
-          <p className="text-center text-xs text-muted-foreground mb-4">
-            Most homeowners choose this option to keep things clean year-round.
-          </p>
-          
-          <Separator className="my-4" />
-          
-          {/* See All Plans (Collapsed) */}
+          {/* See All Plans - MOVED DIRECTLY BELOW CTA */}
           <Collapsible open={showAllPlans} onOpenChange={setShowAllPlans}>
-            <CollapsibleTrigger className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-2">
+            <CollapsibleTrigger className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-2 mb-4">
               <ChevronDown className={`w-4 h-4 transition-transform ${showAllPlans ? 'rotate-180' : ''}`} />
               {showAllPlans ? 'Hide plan options' : 'See all plan options'}
             </CollapsibleTrigger>
             
-            <CollapsibleContent className="pt-4">
+            <CollapsibleContent className="pb-4">
               <div className="space-y-3">
                 {bundles.map((bundle) => {
                   const isSelected = selectedTier === bundle.tier;
                   const isRecommended = bundle.tier === 'better';
+                  
+                  // Calculate this bundle's payment structure
+                  const bundleDeposit = Math.round(bundle.annualTotal * 0.20);
+                  const bundleRemaining = bundle.annualTotal - bundleDeposit;
+                  const bundleMonthly = Math.round(bundleRemaining / 11);
                   
                   return (
                     <div
@@ -289,7 +252,7 @@ export function PlanUpsellCard({
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold">{formatPrice(bundle.monthlyPayment)}/mo</div>
+                          <div className="font-bold">{formatPrice(bundleMonthly)}/mo</div>
                           {bundle.savings > 0 && (
                             <div className="text-xs text-success">
                               Save {formatPrice(bundle.savings)}
@@ -303,6 +266,69 @@ export function PlanUpsellCard({
               </div>
             </CollapsibleContent>
           </Collapsible>
+          
+          {/* Selected Plan Summary - Live updates */}
+          <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+            <div className="flex items-center justify-between mb-2">
+              <Badge className={`${
+                currentBundle?.tier === 'good' 
+                  ? 'tier-badge-good' 
+                  : currentBundle?.tier === 'better' 
+                    ? 'tier-badge-better' 
+                    : 'tier-badge-best'
+              }`}>
+                {currentBundle?.name || 'Better'} Plan
+              </Badge>
+              <span className="text-sm font-medium text-primary">
+                {formatPrice(currentBundle?.annualTotal || 0)}/year
+              </span>
+            </div>
+            
+            <div className="flex items-baseline justify-center gap-2 mb-2">
+              <span className="text-3xl font-bold price-display text-foreground">
+                {formatPrice(monthlyPayment)}
+              </span>
+              <span className="text-muted-foreground">/month</span>
+            </div>
+            
+            {annualSavings > 0 && (
+              <div className="savings-badge mb-3 inline-flex">
+                Save {formatPrice(annualSavings)} vs one-time
+              </div>
+            )}
+            
+            {/* Monthly Pricing Clarity */}
+            <div className="flex items-start gap-2 p-2 rounded-md bg-muted/50 border border-border mb-3">
+              <CreditCard className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground">
+                20% deposit today ({formatPrice(deposit)}), remaining balance split into 11 monthly payments
+              </p>
+            </div>
+            
+            {/* What's included */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                What you get
+              </h4>
+              {currentBundle?.features.slice(0, 3).map((feature, idx) => (
+                <div key={idx} className="flex items-start gap-2 text-sm">
+                  <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
+                  <span>{feature}</span>
+                </div>
+              ))}
+              {currentBundle?.additionalServicesIncluded.slice(0, 2).map((service, idx) => (
+                <div key={`add-${idx}`} className="flex items-start gap-2 text-sm">
+                  <Sparkles className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                  <span>{service}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Social proof */}
+          <p className="text-center text-xs text-muted-foreground mt-4">
+            Most homeowners choose this option to keep things clean year-round.
+          </p>
         </CardContent>
       </Card>
       

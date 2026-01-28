@@ -1,14 +1,23 @@
-import { Home } from 'lucide-react';
+import { Home, Car } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Button } from '@/components/ui/button';
 import type { HomeDetails } from '@/types/homeowner';
 
 interface HomeDetailsFormProps {
   homeDetails: HomeDetails;
   onChange: (updates: Partial<HomeDetails>) => void;
 }
+
+// Driveway preset sizes in sq ft
+const DRIVEWAY_PRESETS = [
+  { label: '1-car', sqft: 200, description: '~200 sq ft' },
+  { label: '2-car', sqft: 400, description: '~400 sq ft' },
+  { label: '3-car', sqft: 600, description: '~600 sq ft' },
+  { label: 'RV / Extended', sqft: 800, description: '~800 sq ft' },
+] as const;
 
 export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps) {
   return (
@@ -41,8 +50,16 @@ export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps)
                 const value = e.target.value;
                 onChange({ squareFootage: value === '' ? 0 : parseInt(value, 10) });
               }}
+              onFocus={(e) => {
+                // Clear default value on focus for easier mobile input
+                if (homeDetails.squareFootage === 2000) {
+                  onChange({ squareFootage: 0 });
+                }
+                e.target.select();
+              }}
               className="input-field"
-              placeholder="e.g. 3200 (typical: 2,000-5,000 sqft)"
+              placeholder="e.g. 2,000 sq ft"
+              inputMode="numeric"
             />
           </div>
           

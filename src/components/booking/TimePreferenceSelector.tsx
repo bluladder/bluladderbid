@@ -15,24 +15,28 @@ const preferences: Array<{
   label: string;
   description: string;
   icon: typeof Sun;
+  timeRange: string;
 }> = [
   {
     value: 'AM',
     label: 'Morning',
     description: 'Before noon',
     icon: Sun,
+    timeRange: '8am–12pm',
   },
   {
     value: 'PM',
     label: 'Afternoon',
     description: 'After noon',
     icon: Moon,
+    timeRange: '12pm–5pm',
   },
   {
     value: 'none',
     label: 'No Preference',
     description: 'Any time works',
     icon: Clock,
+    timeRange: 'All day',
   },
 ];
 
@@ -47,6 +51,9 @@ export function TimePreferenceSelector({
         <CardTitle className="text-sm font-medium text-muted-foreground">
           Time Preference
         </CardTitle>
+        <CardDescription className="text-xs">
+          We'll only show times matching your preference
+        </CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="grid grid-cols-3 gap-2">
@@ -75,6 +82,12 @@ export function TimePreferenceSelector({
                   isSelected ? 'text-primary-foreground' : 'text-foreground'
                 )}>
                   {pref.label}
+                </span>
+                <span className={cn(
+                  'text-[10px]',
+                  isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'
+                )}>
+                  {pref.timeRange}
                 </span>
               </Button>
             );

@@ -127,18 +127,17 @@ export function ServiceReviewStep({
         </p>
       </div>
       
-      {/* Property Summary */}
-      <Card className="bg-muted/30 border-muted">
-        <CardContent className="p-3">
-          <div className="flex items-center gap-2 text-sm">
-            <Home className="w-4 h-4 text-muted-foreground" />
-            <span className="text-muted-foreground">Property:</span>
-            <span className="font-medium">
-              {homeDetails.squareFootage.toLocaleString()} sq ft • {homeDetails.stories} {homeDetails.stories === 1 ? 'story' : 'stories'}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Property Summary - Compact, no duplicate "Tell us about your home" */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/40 text-sm">
+        <Home className="w-4 h-4 text-muted-foreground" />
+        <span className="text-muted-foreground">Property:</span>
+        <span className="font-medium">
+          {homeDetails.squareFootage > 0 
+            ? `${homeDetails.squareFootage.toLocaleString()} sq ft` 
+            : 'Size not specified'
+          } • {homeDetails.stories} {homeDetails.stories === 1 ? 'story' : 'stories'}
+        </span>
+      </div>
       
       {/* Services List */}
       <Card>
