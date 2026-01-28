@@ -17,10 +17,10 @@ interface AvailabilityRequest {
   timezone?: string;
   customerAddress?: string;
   includeExcluded?: boolean;
-  mode?: 'recommended' | 'dayGrid'; // New mode param
-  preference?: 'AM' | 'PM' | 'none'; // Time preference
-  selectedDate?: string; // For dayGrid mode
-  numStories?: number; // Property stories for technician filtering
+  mode?: 'recommended' | 'dayGrid';
+  preference?: 'AM' | 'PM' | 'none';
+  selectedDate?: string;
+  numStories?: number;
 }
 
 interface BufferTier {
@@ -41,6 +41,19 @@ interface DriveTimeConfig {
   office_address: string | null;
 }
 
+interface BigJobSettings {
+  big_job_value_threshold: number;
+  big_job_solo_hours_threshold: number | null;
+  auto_assign_two_techs: boolean;
+  crew_efficiency_factor: number;
+  workday_start_time: string;
+  workday_end_time: string;
+  workday_length_hours: number;
+  min_buffer_minutes: number;
+  big_job_trigger_mode: 'PRICE_ONLY' | 'HOURS_ONLY' | 'PRICE_OR_HOURS' | 'FITS_IN_DAY';
+  pairing_mode: 'AUTO_PAIR' | 'RESTRICTED' | 'PREFER_LIST';
+}
+
 interface ExclusionReason {
   code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB' | 'GAP_PENALTY';
   message: string;
@@ -52,7 +65,7 @@ interface TimeSlot {
   technicianName: string;
   startTime: string;
   endTime: string;
-  displayTime?: string; // 30-min snapped time for UI
+  displayTime?: string;
   durationMinutes: number;
   isRecommended?: boolean;
   estimatedDriveMinutes?: number;
@@ -63,17 +76,23 @@ interface TimeSlot {
   nearbyJobCount?: number;
   excluded?: boolean;
   exclusionReason?: ExclusionReason;
-  // Scoring/dispatch fields
   gapMinutes?: number;
   gapScore?: number;
-  gapEfficiencyLabel?: string; // "Optimal timing", "Efficient", "Close to prior job"
+  gapEfficiencyLabel?: string;
   routeBonus?: number;
-  // Technician preference scoring
   skillMultiplier?: number;
   preferenceBonus?: number;
   discouragedPenalty?: number;
-  technicianScore?: number; // Combined tech preference score
-  whyLabel?: string; // "soonest_available", "minimizes_gaps", "alternative"
+  technicianScore?: number;
+  whyLabel?: string;
+  // Team booking fields
+  isTeamJob?: boolean;
+  crewSize?: number;
+  teamTechnicianIds?: string[];
+  teamTechnicianNames?: string[];
+  estimatedTeamHours?: number;
+  estimatedSoloHours?: number;
+  teamTriggerReason?: 'price' | 'hours' | 'fits_in_day';
 }
 
 interface RecommendedDay {
@@ -94,7 +113,7 @@ interface DayMetrics {
   avgDriveEfficiency: number;
   capacityUtilization: number;
   jobAddresses: string[];
-  hasAnySlot: boolean; // Track if ANY slot fits
+  hasAnySlot: boolean;
 }
 
 interface BusyBlock {
@@ -136,23 +155,36 @@ const DEFAULT_DRIVE_TIME_CONFIG: DriveTimeConfig = {
   office_address: null,
 };
 
+const DEFAULT_BIG_JOB_SETTINGS: BigJobSettings = {
+  big_job_value_threshold: 900,
+  big_job_solo_hours_threshold: 8,
+  auto_assign_two_techs: true,
+  crew_efficiency_factor: 1.8,
+  workday_start_time: '09:00',
+  workday_end_time: '17:00',
+  workday_length_hours: 8,
+  min_buffer_minutes: 30,
+  big_job_trigger_mode: 'FITS_IN_DAY',
+  pairing_mode: 'RESTRICTED',
+};
+
 // Configurable slot generation settings
 const SLOT_GENERATION_CONFIG = {
-  internalIncrementMinutes: 15, // Generate at 15-min resolution
-  displayIncrementMinutes: 30,  // Display snapped to 30-min
+  internalIncrementMinutes: 15,
+  displayIncrementMinutes: 30,
   bufferBeforeMinutes: 0,
   bufferAfterMinutes: 15,
 };
 
-// Gap-scoring constants (configurable dispatch-smart settings)
+// Gap-scoring constants
 const GAP_SCORING = {
-  idealGapMax: 15,            // 0-15 min gap is ideal (score 100)
-  goodGapMax: 30,             // 16-30 min gap is still good (score 85)
-  microGapThreshold: 60,      // < 60 min gap is "micro" and penalized
-  longJobMinutes: 480,        // 8 hours - must start AM
-  mediumJobMinutes: 240,      // 4 hours - strongly prefer AM
-  routeProximityBonus: 15,    // Bonus for <12 min drive from previous job
-  routeProximityThreshold: 12, // Minutes - if drive < this, apply bonus
+  idealGapMax: 15,
+  goodGapMax: 30,
+  microGapThreshold: 60,
+  longJobMinutes: 480,
+  mediumJobMinutes: 240,
+  routeProximityBonus: 15,
+  routeProximityThreshold: 12,
 };
 
 // Debug logging helper for admin visibility
@@ -558,8 +590,37 @@ Deno.serve(async (req) => {
       };
     }
 
+    // Fetch big job settings
+    let BIG_JOB_SETTINGS: BigJobSettings = DEFAULT_BIG_JOB_SETTINGS;
+    
+    const { data: bigJobData } = await supabase
+      .from("big_job_settings")
+      .select("*")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (bigJobData) {
+      const parseTime = (t: string | null) => t ? t.substring(0, 5) : '09:00';
+      BIG_JOB_SETTINGS = {
+        big_job_value_threshold: bigJobData.big_job_value_threshold,
+        big_job_solo_hours_threshold: bigJobData.big_job_solo_hours_threshold,
+        auto_assign_two_techs: bigJobData.auto_assign_two_techs,
+        crew_efficiency_factor: Number(bigJobData.crew_efficiency_factor) || 1.8,
+        workday_start_time: parseTime(bigJobData.workday_start_time),
+        workday_end_time: parseTime(bigJobData.workday_end_time),
+        workday_length_hours: Number(bigJobData.workday_length_hours) || 8,
+        min_buffer_minutes: bigJobData.min_buffer_minutes || 30,
+        big_job_trigger_mode: (bigJobData.big_job_trigger_mode as BigJobSettings['big_job_trigger_mode']) || 'FITS_IN_DAY',
+        pairing_mode: (bigJobData.pairing_mode as BigJobSettings['pairing_mode']) || 'RESTRICTED',
+      };
+    }
+
     const businessTimezone = BUSINESS_HOURS.timezone || DEFAULT_BUSINESS_HOURS.timezone;
     console.log(`[Availability] Mode: ${mode}, Preference: ${preference}, Timezone: ${businessTimezone}`);
+
+    // Calculate total job price for big job detection
+    const totalJobPrice = services.reduce((sum, s) => sum + s.price, 0);
+    console.log(`[Availability] Total job price: $${totalJobPrice}`);
 
     // Map service names to service_type enum
     const serviceTypeMap: Record<string, string> = {
@@ -752,6 +813,79 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // === BIG JOB DETECTION & TEAM BOOKING ===
+    // Calculate solo hours for big job detection (use average of eligible tech durations)
+    const avgSoloDuration = eligibleTechs.reduce((sum, t) => sum + t.durationMinutes, 0) / eligibleTechs.length;
+    const estimatedSoloHours = avgSoloDuration / 60;
+    
+    // Determine if this is a big job based on trigger mode
+    let isBigJob = false;
+    let teamTriggerReason: 'price' | 'hours' | 'fits_in_day' | null = null;
+    const workdayMinutes = (BIG_JOB_SETTINGS.workday_length_hours * 60) - BIG_JOB_SETTINGS.min_buffer_minutes;
+    
+    switch (BIG_JOB_SETTINGS.big_job_trigger_mode) {
+      case 'PRICE_ONLY':
+        if (totalJobPrice >= BIG_JOB_SETTINGS.big_job_value_threshold) {
+          isBigJob = true;
+          teamTriggerReason = 'price';
+        }
+        break;
+      case 'HOURS_ONLY':
+        if (BIG_JOB_SETTINGS.big_job_solo_hours_threshold && estimatedSoloHours >= BIG_JOB_SETTINGS.big_job_solo_hours_threshold) {
+          isBigJob = true;
+          teamTriggerReason = 'hours';
+        }
+        break;
+      case 'PRICE_OR_HOURS':
+        if (totalJobPrice >= BIG_JOB_SETTINGS.big_job_value_threshold) {
+          isBigJob = true;
+          teamTriggerReason = 'price';
+        } else if (BIG_JOB_SETTINGS.big_job_solo_hours_threshold && estimatedSoloHours >= BIG_JOB_SETTINGS.big_job_solo_hours_threshold) {
+          isBigJob = true;
+          teamTriggerReason = 'hours';
+        }
+        break;
+      case 'FITS_IN_DAY':
+        // Big job if solo hours exceed available workday time
+        if (avgSoloDuration > workdayMinutes) {
+          isBigJob = true;
+          teamTriggerReason = 'fits_in_day';
+        }
+        break;
+    }
+
+    // If auto-assign is disabled, don't use team booking
+    if (!BIG_JOB_SETTINGS.auto_assign_two_techs) {
+      isBigJob = false;
+    }
+
+    // Calculate team duration if big job
+    let teamDurationMinutes = avgSoloDuration;
+    let estimatedTeamHours = estimatedSoloHours;
+    
+    if (isBigJob && BIG_JOB_SETTINGS.crew_efficiency_factor > 0) {
+      teamDurationMinutes = avgSoloDuration / BIG_JOB_SETTINGS.crew_efficiency_factor;
+      estimatedTeamHours = teamDurationMinutes / 60;
+    }
+
+    // Filter eligible technicians for team pairing based on pairing mode
+    let pairingEligibleTechs = eligibleTechs;
+    if (isBigJob && BIG_JOB_SETTINGS.pairing_mode === 'RESTRICTED') {
+      pairingEligibleTechs = eligibleTechs.filter(t => 
+        t.capabilities?.eligible_for_big_job_pairing === true
+      );
+      console.log(`[Team] Restricted pairing: ${pairingEligibleTechs.length} of ${eligibleTechs.length} techs eligible`);
+    }
+
+    // Check if we have enough techs for team booking
+    const canDoTeamBooking = isBigJob && pairingEligibleTechs.length >= 2;
+    
+    if (isBigJob && !canDoTeamBooking) {
+      console.log(`[Team] Big job detected but only ${pairingEligibleTechs.length} eligible tech(s) - falling back to solo`);
+    }
+
+    console.log(`[Team] isBigJob: ${isBigJob}, trigger: ${teamTriggerReason || 'none'}, canDoTeam: ${canDoTeamBooking}, soloHours: ${estimatedSoloHours.toFixed(1)}, teamHours: ${estimatedTeamHours.toFixed(1)}`);
 
     // Calculate date range
     const now = new Date();
@@ -1155,6 +1289,198 @@ Deno.serve(async (req) => {
         }
 
         dayOffset++;
+      }
+    }
+
+    // === TEAM JOB SLOT GENERATION ===
+    // If this is a big job and we can do team booking, generate team slots
+    // Team slots require ALL assigned technicians to be free at the SAME time window
+    const teamSlots: TimeSlot[] = [];
+    
+    if (canDoTeamBooking) {
+      console.log(`[Team] Generating team slots with ${pairingEligibleTechs.length} eligible techs, teamDuration=${Math.round(teamDurationMinutes)}min`);
+      
+      // Create all possible pairs of eligible technicians
+      const techPairs: Array<[typeof pairingEligibleTechs[0], typeof pairingEligibleTechs[0]]> = [];
+      for (let i = 0; i < pairingEligibleTechs.length; i++) {
+        for (let j = i + 1; j < pairingEligibleTechs.length; j++) {
+          techPairs.push([pairingEligibleTechs[i], pairingEligibleTechs[j]]);
+        }
+      }
+      
+      console.log(`[Team] Generated ${techPairs.length} tech pairs`);
+      
+      // For each pair, find common available time windows
+      for (const [tech1, tech2] of techPairs) {
+        const tech1BusyTimes = busyTimesByTech[tech1.jobberUserId] || [];
+        const tech2BusyTimes = busyTimesByTech[tech2.jobberUserId] || [];
+        
+        // Get common work days (intersection)
+        const commonWorkDays = tech1.workDays.filter(d => tech2.workDays.includes(d));
+        if (commonWorkDays.length === 0) {
+          console.log(`[Team] ${tech1.name} + ${tech2.name}: no common work days`);
+          continue;
+        }
+        
+        // Use later start hour and earlier end hour for the pair
+        const pairStartHour = Math.max(tech1.scheduleStartHour, tech2.scheduleStartHour);
+        const pairEndHour = Math.min(tech1.scheduleEndHour, tech2.scheduleEndHour);
+        
+        if (pairEndHour - pairStartHour < teamDurationMinutes / 60) {
+          console.log(`[Team] ${tech1.name} + ${tech2.name}: insufficient overlap in work hours`);
+          continue;
+        }
+        
+        let dayOffset = 0;
+        
+        while (dayOffset < effectiveDaysToCheck) {
+          const currentDay = new Date(fromDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+          const currentDateStr = formatDateInTimezone(currentDay, businessTimezone);
+          
+          // Skip if dayGrid mode and not the selected date
+          if (mode === 'dayGrid' && selectedDate) {
+            const selectedDateStr = selectedDate.split('T')[0];
+            if (currentDateStr !== selectedDateStr) {
+              dayOffset++;
+              continue;
+            }
+          }
+          
+          const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: businessTimezone,
+            weekday: 'short',
+          });
+          const weekdayStr = formatter.format(currentDay);
+          const weekdayMap: Record<string, number> = {
+            'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+          };
+          const dayOfWeek = weekdayMap[weekdayStr] ?? 1;
+          
+          if (!commonWorkDays.includes(dayOfWeek)) {
+            dayOffset++;
+            continue;
+          }
+          
+          const dayStart = createDateInTimezone(currentDay, pairStartHour, 0, businessTimezone);
+          const dayEnd = createDateInTimezone(currentDay, pairEndHour, 0, businessTimezone);
+          
+          if (dayEnd <= now) {
+            dayOffset++;
+            continue;
+          }
+          
+          // Get busy times for both techs on this day
+          const tech1DayBusy = tech1BusyTimes.filter(bt => bt.start >= dayStart && bt.start < dayEnd);
+          const tech2DayBusy = tech2BusyTimes.filter(bt => bt.start >= dayStart && bt.start < dayEnd);
+          
+          let effectiveStart = new Date(dayStart);
+          if (now > dayStart && now < dayEnd) {
+            effectiveStart = new Date(now);
+            const slotIncrement = SLOT_GENERATION_CONFIG.internalIncrementMinutes;
+            const currentMinutes = effectiveStart.getMinutes();
+            const roundedMinutes = Math.ceil(currentMinutes / slotIncrement) * slotIncrement;
+            if (roundedMinutes === 60) {
+              effectiveStart.setHours(effectiveStart.getHours() + 1, 0, 0, 0);
+            } else {
+              effectiveStart.setMinutes(roundedMinutes, 0, 0);
+            }
+          }
+          
+          let slotStart = new Date(effectiveStart);
+          const slotIncrementMs = SLOT_GENERATION_CONFIG.internalIncrementMinutes * 60 * 1000;
+          
+          while (slotStart.getTime() + teamDurationMinutes * 60 * 1000 <= dayEnd.getTime()) {
+            const slotEnd = new Date(slotStart.getTime() + teamDurationMinutes * 60 * 1000);
+            const slotEndWithBuffer = new Date(slotEnd.getTime() + SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000);
+            
+            const slotHour = getHourInTimezone(slotStart, businessTimezone);
+            
+            // Check if BOTH technicians are free
+            const tech1Conflict = tech1DayBusy.some(bt => 
+              slotStart.getTime() < bt.expandedEnd.getTime() && slotEndWithBuffer.getTime() > bt.expandedStart.getTime()
+            );
+            const tech2Conflict = tech2DayBusy.some(bt => 
+              slotStart.getTime() < bt.expandedEnd.getTime() && slotEndWithBuffer.getTime() > bt.expandedStart.getTime()
+            );
+            
+            // AM/PM filtering for team slots
+            const isAM = slotHour < 12;
+            const isPM = slotHour >= 12;
+            
+            if ((preference === 'AM' && !isAM) || (preference === 'PM' && !isPM)) {
+              slotStart = new Date(slotStart.getTime() + slotIncrementMs);
+              continue;
+            }
+            
+            // Only create slot if both techs are free
+            if (!tech1Conflict && !tech2Conflict) {
+              const displayTime = snapTo30Min(slotStart, businessTimezone);
+              
+              // Calculate combined skill score
+              const avgSkillScore = (tech1.skillScore + tech2.skillScore) / 2;
+              const combinedPrefBonus = (tech1.preferenceBonus + tech2.preferenceBonus) / 2;
+              const combinedDiscPenalty = (tech1.discouragedPenalty + tech2.discouragedPenalty) / 2;
+              const technicianScore = (avgSkillScore * 100) + combinedPrefBonus - combinedDiscPenalty;
+              
+              const teamSlot: TimeSlot = {
+                technicianId: tech1.id, // Primary tech for booking
+                technicianName: `${tech1.name} + ${tech2.name}`,
+                startTime: slotStart.toISOString(),
+                endTime: slotEnd.toISOString(),
+                displayTime,
+                durationMinutes: Math.round(teamDurationMinutes),
+                isFirstJob: true,
+                skillMultiplier: avgSkillScore,
+                preferenceBonus: combinedPrefBonus,
+                discouragedPenalty: combinedDiscPenalty,
+                technicianScore,
+                // Team booking fields
+                isTeamJob: true,
+                crewSize: 2,
+                teamTechnicianIds: [tech1.id, tech2.id],
+                teamTechnicianNames: [tech1.name, tech2.name],
+                estimatedTeamHours,
+                estimatedSoloHours,
+                teamTriggerReason: teamTriggerReason || undefined,
+                gapScore: 80, // Team jobs get a solid base score
+                gapEfficiencyLabel: 'Team booking',
+              };
+              
+              teamSlots.push(teamSlot);
+              
+              // Track for day metrics
+              if (!dayMetrics.has(currentDateStr)) {
+                dayMetrics.set(currentDateStr, {
+                  date: currentDay,
+                  dateStr: currentDateStr,
+                  totalSlots: 0,
+                  bookedJobs: 0,
+                  avgDriveEfficiency: 0,
+                  capacityUtilization: 0,
+                  jobAddresses: [],
+                  hasAnySlot: false,
+                });
+              }
+              const metrics = dayMetrics.get(currentDateStr)!;
+              metrics.totalSlots++;
+              metrics.hasAnySlot = true;
+            }
+            
+            slotStart = new Date(slotStart.getTime() + slotIncrementMs);
+          }
+          
+          dayOffset++;
+        }
+      }
+      
+      console.log(`[Team] Generated ${teamSlots.length} team slots`);
+      
+      // For big jobs that can be team-booked, REPLACE solo slots with team slots
+      // (Solo slots wouldn't fit in a workday anyway)
+      if (teamSlots.length > 0) {
+        allSlots.length = 0; // Clear solo slots
+        allSlots.push(...teamSlots);
+        console.log(`[Team] Replaced solo slots with ${teamSlots.length} team slots`);
       }
     }
 

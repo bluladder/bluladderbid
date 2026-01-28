@@ -1,7 +1,8 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Clock, Calendar, User, Sparkles, Check, Zap, Route } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Clock, Calendar, User, Users, Sparkles, Check, Zap, Route } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { RecommendedSlot } from '@/hooks/useSmartAvailability';
@@ -91,6 +92,7 @@ export function RecommendedSlots({
           const durationHrs = Math.round(slot.durationMinutes / 60 * 10) / 10;
           const isTopPick = index === 0;
           const isAlternative = slot.whyLabel === 'alternative';
+          const isTeamJob = slot.isTeamJob;
           
           // Get display date info - alternative MUST always be different day
           const firstSlotDate = displaySlots[0] ? parseISO(displaySlots[0].startTime) : null;
@@ -119,7 +121,7 @@ export function RecommendedSlots({
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  {/* Top pick / Alternative labels */}
+                  {/* Top pick / Alternative / Team labels */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={cn(
                       "font-semibold",
@@ -140,14 +142,33 @@ export function RecommendedSlots({
                         Different Day
                       </span>
                     )}
+                    {/* Team job indicator */}
+                    {isTeamJob && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 h-auto bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
+                        <Users className="w-3 h-3 mr-0.5" />
+                        Team Job
+                      </Badge>
+                    )}
                   </div>
                   
                   {/* Technician + duration + efficiency indicator */}
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                    <User className="w-3 h-3" />
+                    {isTeamJob ? (
+                      <Users className="w-3 h-3" />
+                    ) : (
+                      <User className="w-3 h-3" />
+                    )}
                     <span>{slot.technicianName}</span>
                     <span>•</span>
                     <span>{durationHrs}hr</span>
+                    {/* Show estimated team hours vs solo hours for team jobs */}
+                    {isTeamJob && slot.estimatedSoloHours && (
+                      <>
+                        <span className="text-[10px] text-blue-600 dark:text-blue-400">
+                          (was {slot.estimatedSoloHours.toFixed(1)}hr solo)
+                        </span>
+                      </>
+                    )}
                     {/* Gap efficiency label - primary indicator */}
                     {slot.gapEfficiencyLabel && (
                       <>

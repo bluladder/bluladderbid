@@ -42,6 +42,9 @@ interface BookingRequest {
   discountCode?: string;
   notes?: string;
   utmParams?: UtmParams;
+  // Team booking fields
+  isTeamJob?: boolean;
+  teamTechnicianIds?: string[];
 }
 
 // Simple address parser - extracts components from a single-line address
@@ -278,22 +281,37 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get technician's Jobber user ID
+    // Get technician's Jobber user ID (and team technicians if team booking)
     console.log("Looking up technician:", booking.technicianId);
-    const { data: technician, error: techError } = await supabase
+    
+    // For team bookings, get all team technician IDs
+    const technicianIdsToFetch = booking.isTeamJob && booking.teamTechnicianIds 
+      ? booking.teamTechnicianIds 
+      : [booking.technicianId];
+    
+    const { data: technicians, error: techError } = await supabase
       .from("technicians")
-      .select("jobber_user_id, name")
-      .eq("id", booking.technicianId)
-      .single();
+      .select("id, jobber_user_id, name")
+      .in("id", technicianIdsToFetch);
 
-    if (techError || !technician) {
+    if (techError || !technicians?.length) {
       console.error("Technician lookup failed:", techError);
       return new Response(
         JSON.stringify({ error: "Technician not found", details: techError?.message }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 }
       );
     }
-    console.log("Found technician:", technician.name, "Jobber ID:", technician.jobber_user_id);
+    
+    // Primary technician (first one for display)
+    const primaryTechnician = technicians[0];
+    
+    // All Jobber user IDs for assignment
+    const allJobberUserIds = technicians.map(t => t.jobber_user_id);
+    const technicianNames = technicians.map(t => t.name).join(" + ");
+    
+    console.log("Found technicians:", technicianNames);
+    console.log("Jobber IDs:", allJobberUserIds);
+    console.log("Is team job:", booking.isTeamJob || false);
 
     // Find or create customer in Supabase
     console.log("Looking up customer by email:", booking.customer.email.toLowerCase());
@@ -554,79 +572,82 @@ Deno.serve(async (req) => {
     console.log("Using property ID:", propertyId);
 
     // === CONFLICT DETECTION ===
-    // Step 1: Check local busy_blocks mirror first
+    // Step 1: Check local busy_blocks mirror first for ALL assigned technicians
     console.log("Checking for scheduling conflicts (local mirror first)...");
     
     const requestedStart = new Date(booking.scheduledStart);
     const requestedEnd = new Date(booking.scheduledEnd);
     
-    const localCheck = await checkLocalMirrorConflicts(
-      supabase,
-      technician.jobber_user_id,
-      requestedStart,
-      requestedEnd
-    );
-    
-    // If local mirror found a conflict, return immediately
-    if (localCheck.hasConflict && localCheck.conflictingBlock) {
-      const existingStartLocal = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Chicago',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      }).format(new Date(localCheck.conflictingBlock.start_at));
-      
-      return new Response(
-        JSON.stringify({ 
-          error: "Time slot conflict", 
-          details: `This time slot is no longer available. ${technician.name} has another appointment at ${existingStartLocal}. Please select a different time.`,
-          code: "CONFLICT",
-          conflictingVisit: localCheck.conflictingBlock,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
-      );
-    }
-    
-    // Step 2: Fallback to Jobber API only if mirror has no data or is stale
-    if (localCheck.noData || localCheck.mirrorStale) {
-      console.log(`Falling back to Jobber API for conflict check (noData: ${localCheck.noData}, stale: ${localCheck.mirrorStale})`);
-      
-      const jobberCheck = await checkJobberConflicts(
-        technician.jobber_user_id,
+    // Check conflicts for all assigned technicians
+    for (const tech of technicians) {
+      const localCheck = await checkLocalMirrorConflicts(
+        supabase,
+        tech.jobber_user_id,
         requestedStart,
-        requestedEnd,
-        technician.name
+        requestedEnd
       );
       
-      // Fail-soft: If Jobber is throttled, return 503 with friendly message
-      if (jobberCheck.throttled) {
-        return new Response(
-          JSON.stringify({
-            error: "Scheduling is busy",
-            details: "Our scheduling system is currently busy. Please try again in 1-2 minutes.",
-            code: "SCHEDULING_BUSY",
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-        );
-      }
-      
-      if (jobberCheck.hasConflict && jobberCheck.conflictingVisit) {
+      // If local mirror found a conflict, return immediately
+      if (localCheck.hasConflict && localCheck.conflictingBlock) {
         const existingStartLocal = new Intl.DateTimeFormat('en-US', {
           timeZone: 'America/Chicago',
           hour: 'numeric',
           minute: '2-digit',
           hour12: true,
-        }).format(new Date(jobberCheck.conflictingVisit.startAt));
+        }).format(new Date(localCheck.conflictingBlock.start_at));
         
         return new Response(
           JSON.stringify({ 
             error: "Time slot conflict", 
-            details: `This time slot is no longer available. ${technician.name} has another appointment at ${existingStartLocal}. Please select a different time.`,
+            details: `This time slot is no longer available. ${tech.name} has another appointment at ${existingStartLocal}. Please select a different time.`,
             code: "CONFLICT",
-            conflictingVisit: jobberCheck.conflictingVisit,
+            conflictingVisit: localCheck.conflictingBlock,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
         );
+      }
+      
+      // Step 2: Fallback to Jobber API only if mirror has no data or is stale
+      if (localCheck.noData || localCheck.mirrorStale) {
+        console.log(`Falling back to Jobber API for conflict check for ${tech.name} (noData: ${localCheck.noData}, stale: ${localCheck.mirrorStale})`);
+        
+        const jobberCheck = await checkJobberConflicts(
+          tech.jobber_user_id,
+          requestedStart,
+          requestedEnd,
+          tech.name
+        );
+        
+        // Fail-soft: If Jobber is throttled, return 503 with friendly message
+        if (jobberCheck.throttled) {
+          return new Response(
+            JSON.stringify({
+              error: "Scheduling is busy",
+              details: "Our scheduling system is currently busy. Please try again in 1-2 minutes.",
+              code: "SCHEDULING_BUSY",
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+          );
+        }
+        
+        if (jobberCheck.hasConflict && jobberCheck.conflictingVisit) {
+          const existingStartLocal = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Chicago',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          }).format(new Date(jobberCheck.conflictingVisit.startAt));
+          
+          return new Response(
+            JSON.stringify({ 
+              error: "Time slot conflict", 
+              details: `This time slot is no longer available. ${tech.name} has another appointment at ${existingStartLocal}. Please select a different time.`,
+              code: "CONFLICT",
+              conflictingVisit: jobberCheck.conflictingVisit,
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
+          );
+        }
       }
     }
     
@@ -687,7 +708,7 @@ Deno.serve(async (req) => {
       scheduling: {
         createVisits: false,
         notifyTeam: false,
-        assignedTo: [technician.jobber_user_id],
+        assignedTo: allJobberUserIds,
       },
     };
     
@@ -817,7 +838,7 @@ Deno.serve(async (req) => {
           schedule: {
             startAt: parseToLocalDateTime(booking.scheduledStart),
             endAt: parseToLocalDateTime(booking.scheduledEnd),
-            teamMemberIdsToAssign: [technician.jobber_user_id],
+            teamMemberIdsToAssign: allJobberUserIds,
           },
         }
       ]
@@ -889,8 +910,10 @@ Deno.serve(async (req) => {
         jobberJobId,
         scheduledStart: booking.scheduledStart,
         scheduledEnd: booking.scheduledEnd,
-        technicianName: technician.name,
+        technicianName: technicianNames,
         bookingId: bookingRecord?.id,
+        isTeamJob: booking.isTeamJob || false,
+        crewSize: technicians.length,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
