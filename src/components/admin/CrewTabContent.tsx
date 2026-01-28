@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Settings2, Car, Truck, Scale, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, Settings2, Car, Truck, Scale, ChevronDown, ChevronUp, CalendarOff, ShieldCheck } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -9,8 +9,12 @@ import { EligibilityRulesManager } from './EligibilityRulesManager';
 import { BigJobSettingsEditor } from './BigJobSettingsEditor';
 import { DriveTimeSettings } from './DriveTimeSettings';
 import { BookingSettings } from './BookingSettings';
+import { ScheduleBlocksManager } from './ScheduleBlocksManager';
+import { AdminRoleManager } from './AdminRoleManager';
+import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 
 export function CrewTabContent() {
+  const { canEditCrewRules, isReadOnly, level } = useAdminPermissions();
   const [activeSection, setActiveSection] = useState('technicians');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -44,6 +48,24 @@ export function CrewTabContent() {
               <Settings2 className="w-3.5 h-3.5 mr-1.5" />
               Scheduling
             </Badge>
+            <Badge
+              variant={activeSection === 'blocks' ? 'default' : 'outline'}
+              className="cursor-pointer px-3 py-1.5"
+              onClick={() => setActiveSection('blocks')}
+            >
+              <CalendarOff className="w-3.5 h-3.5 mr-1.5" />
+              Time Off
+            </Badge>
+            {(level === 'owner_admin' || level === 'admin') && (
+              <Badge
+                variant={activeSection === 'roles' ? 'default' : 'outline'}
+                className="cursor-pointer px-3 py-1.5"
+                onClick={() => setActiveSection('roles')}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+                Admin Roles
+              </Badge>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -101,6 +123,20 @@ export function CrewTabContent() {
               </div>
             </CollapsibleContent>
           </Collapsible>
+        </div>
+      )}
+
+      {/* Time Off / Schedule Blocks Section */}
+      {activeSection === 'blocks' && (
+        <div className="space-y-4">
+          <ScheduleBlocksManager />
+        </div>
+      )}
+
+      {/* Admin Roles Section (Owner only) */}
+      {activeSection === 'roles' && (level === 'owner_admin' || level === 'admin') && (
+        <div className="space-y-4">
+          <AdminRoleManager />
         </div>
       )}
     </div>
