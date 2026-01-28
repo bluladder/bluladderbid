@@ -10,9 +10,19 @@ interface PlanPaymentSummaryProps {
   isValid: boolean;
   isSaving?: boolean;
   onSubmit: () => void;
+  showSubmitButton?: boolean;
+  selectedTierName?: string;
 }
 
-export function PlanPaymentSummary({ payment, services, isValid, isSaving, onSubmit }: PlanPaymentSummaryProps) {
+export function PlanPaymentSummary({ 
+  payment, 
+  services, 
+  isValid, 
+  isSaving, 
+  onSubmit,
+  showSubmitButton = true,
+  selectedTierName,
+}: PlanPaymentSummaryProps) {
   const enabledServices = services.filter(s => s.enabled);
   
   if (enabledServices.length === 0) {
@@ -43,14 +53,23 @@ export function PlanPaymentSummary({ payment, services, isValid, isSaving, onSub
           <div className="section-icon">
             <DollarSign className="w-5 h-5 text-primary-foreground" />
           </div>
-          <CardTitle className="text-xl">Payment Summary</CardTitle>
+          <div>
+            <CardTitle className="text-xl">
+              {selectedTierName ? `${selectedTierName} Plan` : 'Payment Summary'}
+            </CardTitle>
+            {selectedTierName && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                12-month service agreement
+              </p>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Selected Services */}
         <div className="space-y-2">
           <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            Selected Services
+            Included Services
           </h4>
           <ul className="space-y-2">
             {enabledServices.map((service) => (
@@ -113,29 +132,33 @@ export function PlanPaymentSummary({ payment, services, isValid, isSaving, onSub
         
         <Separator />
         
-        {/* Submit Button */}
-        <Button 
-          className="w-full btn-primary h-12 text-base"
-          disabled={!isValid || isSaving}
-          onClick={onSubmit}
-        >
-          {isSaving ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Saving Quote...
-            </>
-          ) : (
-            <>
-              Save & Get Quote Link
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </>
-          )}
-        </Button>
-        
-        {!isValid && (
-          <p className="text-xs text-center text-muted-foreground">
-            Complete home details and customer info to continue
-          </p>
+        {/* Submit Button - only when visible */}
+        {showSubmitButton && (
+          <>
+            <Button 
+              className="w-full btn-primary h-12 text-base"
+              disabled={!isValid || isSaving}
+              onClick={onSubmit}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving Quote...
+                </>
+              ) : (
+                <>
+                  Save & Get Quote Link
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </>
+              )}
+            </Button>
+            
+            {!isValid && (
+              <p className="text-xs text-center text-muted-foreground">
+                Complete home details and customer info to continue
+              </p>
+            )}
+          </>
         )}
         
         <p className="text-xs text-center text-muted-foreground">
