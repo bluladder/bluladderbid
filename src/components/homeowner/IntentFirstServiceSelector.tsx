@@ -14,6 +14,9 @@ import { FLATWORK_DEFAULT_SQFT } from '@/types/homeowner';
 import { SqftCalculator } from './SqftCalculator';
 import { DrivewayPresetSelector } from './DrivewayPresetSelector';
 import { PressureWashingAreaCard } from './PressureWashingAreaCard';
+import { GutterAddonsCard } from './GutterAddonsCard';
+import { HouseWashDetailsCard } from './HouseWashDetailsCard';
+import { RoofPitchSelector } from './RoofPitchSelector';
 import { usePricingConfig, DEFAULT_PRICING } from '@/hooks/usePricingConfig';
 
 interface IntentFirstServiceSelectorProps {
@@ -700,12 +703,30 @@ export function IntentFirstServiceSelector({
       icon={Home}
       title="Gutter Cleaning"
       description="Full gutter and downspout cleaning"
-      price={servicePrices.gutterCleaning}
+      price={servicePrices.gutterCleaningTotal}
       estimatedPrice={estimatedPrices.gutterCleaning}
       isEnabled={services.gutterCleaning}
       onToggle={() => onChange({ gutterCleaning: !services.gutterCleaning })}
       isFeatured={isFeatured('gutterCleaning')}
-    />
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-muted-foreground">
+          Base gutter cleaning: {servicePrices.gutterCleaning > 0 ? `$${servicePrices.gutterCleaning}` : 'Included'}
+        </p>
+        
+        <GutterAddonsCard
+          addons={services.gutterAddons}
+          prices={{
+            drainCleaning: servicePrices.gutterDrainCleaning,
+            minorRepairs: servicePrices.gutterMinorRepairs,
+            gutterGuards: servicePrices.gutterGuards,
+          }}
+          onChange={(updates) => onChange({ 
+            gutterAddons: { ...services.gutterAddons, ...updates } 
+          })}
+        />
+      </div>
+    </ServiceCard>
   );
 
   const renderHouseWash = () => (
@@ -715,12 +736,20 @@ export function IntentFirstServiceSelector({
       icon={Warehouse}
       title="House Wash"
       description="Gentle exterior soft washing"
-      price={servicePrices.houseWash}
+      price={servicePrices.houseWashTotal}
       estimatedPrice={estimatedPrices.houseWash}
       isEnabled={services.houseWash}
       onToggle={() => onChange({ houseWash: !services.houseWash })}
       isFeatured={isFeatured('houseWash')}
-    />
+    >
+      <HouseWashDetailsCard
+        details={services.houseWashDetails}
+        rustSurcharge={servicePrices.houseWashRustSurcharge}
+        onChange={(updates) => onChange({ 
+          houseWashDetails: { ...services.houseWashDetails, ...updates } 
+        })}
+      />
+    </ServiceCard>
   );
 
   const renderRoofCleaning = () => (
@@ -736,41 +765,48 @@ export function IntentFirstServiceSelector({
       onToggle={() => onChange({ roofCleaning: !services.roofCleaning })}
       isFeatured={isFeatured('roofCleaning')}
     >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label className="text-sm">Roof Type</Label>
-          <Select
-            value={services.roofType}
-            onValueChange={(v) => onChange({ roofType: v as any })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="asphalt">Asphalt Shingles</SelectItem>
-              <SelectItem value="tile">Tile</SelectItem>
-              <SelectItem value="metal">Metal</SelectItem>
-              <SelectItem value="flat">Flat Roof</SelectItem>
-            </SelectContent>
-          </Select>
+      <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label className="text-sm">Roof Type</Label>
+            <Select
+              value={services.roofType}
+              onValueChange={(v) => onChange({ roofType: v as any })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asphalt">Asphalt Shingles</SelectItem>
+                <SelectItem value="tile">Tile</SelectItem>
+                <SelectItem value="metal">Metal</SelectItem>
+                <SelectItem value="flat">Flat Roof</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div className="space-y-2">
+            <Label className="text-sm">Condition</Label>
+            <Select
+              value={services.roofSeverity}
+              onValueChange={(v) => onChange({ roofSeverity: v as any })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Light (minimal buildup)</SelectItem>
+                <SelectItem value="moderate">Moderate (some staining)</SelectItem>
+                <SelectItem value="heavy">Heavy (significant buildup)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         
-        <div className="space-y-2">
-          <Label className="text-sm">Condition</Label>
-          <Select
-            value={services.roofSeverity}
-            onValueChange={(v) => onChange({ roofSeverity: v as any })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="light">Light (minimal buildup)</SelectItem>
-              <SelectItem value="moderate">Moderate (some staining)</SelectItem>
-              <SelectItem value="heavy">Heavy (significant buildup)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <RoofPitchSelector
+          pitch={services.roofPitch}
+          onChange={(pitch) => onChange({ roofPitch: pitch })}
+        />
       </div>
     </ServiceCard>
   );

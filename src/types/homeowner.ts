@@ -26,10 +26,11 @@ export interface DrivewayCleaningOptions {
   surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
 }
 
-// Flatwork area with sqft input
+// Flatwork area with sqft input and individual surface type
 export interface FlatworkArea {
   enabled: boolean;
   sqft: number;
+  surfaceType?: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
 }
 
 // Pressure Washing - for additional flatwork areas
@@ -51,15 +52,46 @@ export const FLATWORK_DEFAULT_SQFT = {
   walkways: 100,      // Average total walkway area
 } as const;
 
+// Underground Drain Cleaning options
+export type DrainCount = '1' | '2' | '3' | '4+';
+
+// Gutter Cleaning Add-ons
+export interface GutterCleaningAddons {
+  undergroundDrains: {
+    enabled: boolean;
+    count: DrainCount;
+  };
+  minorRepairs: boolean;
+  gutterGuards: {
+    enabled: boolean;
+    linearFeet: number;
+  };
+}
+
+// House Wash Details
+export type SidingMaterial = 'brick' | 'hardie' | 'vinyl' | 'stucco' | 'wood';
+export type StainType = 'organic' | 'rust';
+
+export interface HouseWashDetails {
+  sidingMaterial: SidingMaterial;
+  stainType: StainType;
+}
+
+// Roof pitch options (informational only)
+export type RoofPitch = 'walkable' | 'moderate' | 'steep';
+
 export interface AdditionalServices {
   windowCleaning: boolean;
   drivewayCleaning: DrivewayCleaningOptions;
   pressureWashing: PressureWashingOptions;
   gutterCleaning: boolean;
+  gutterAddons: GutterCleaningAddons;
   houseWash: boolean;
+  houseWashDetails: HouseWashDetails;
   roofCleaning: boolean;
   roofType: 'asphalt' | 'tile' | 'metal' | 'flat';
   roofSeverity: 'light' | 'moderate' | 'heavy';
+  roofPitch: RoofPitch;
 }
 
 // All calculated service prices - the single source of truth
@@ -86,9 +118,19 @@ export interface ServicePrices {
     walkways: number;
   };
   
-  // Other services
+  // Gutter cleaning with add-ons
   gutterCleaning: number;
+  gutterDrainCleaning: number;
+  gutterMinorRepairs: number;
+  gutterGuards: number;
+  gutterCleaningTotal: number;
+  
+  // House wash with stain surcharge
   houseWash: number;
+  houseWashRustSurcharge: number;
+  houseWashTotal: number;
+  
+  // Roof cleaning
   roofCleaning: number;
   
   // Totals
@@ -176,16 +218,26 @@ export const DEFAULT_ADDITIONAL_SERVICES: AdditionalServices = {
   pressureWashing: {
     enabled: false,
     surfaceType: 'concrete',
-    frontPorch: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.frontPorch },
-    backPatio: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.backPatio },
-    poolDeck: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.poolDeck },
-    walkways: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.walkways },
+    frontPorch: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.frontPorch, surfaceType: 'concrete' },
+    backPatio: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.backPatio, surfaceType: 'concrete' },
+    poolDeck: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.poolDeck, surfaceType: 'concrete' },
+    walkways: { enabled: false, sqft: FLATWORK_DEFAULT_SQFT.walkways, surfaceType: 'concrete' },
   },
   gutterCleaning: false,
+  gutterAddons: {
+    undergroundDrains: { enabled: false, count: '1' },
+    minorRepairs: false,
+    gutterGuards: { enabled: false, linearFeet: 150 },
+  },
   houseWash: false,
+  houseWashDetails: {
+    sidingMaterial: 'vinyl',
+    stainType: 'organic',
+  },
   roofCleaning: false,
   roofType: 'asphalt',
   roofSeverity: 'light',
+  roofPitch: 'walkable',
 };
 
 export const DEFAULT_SERVICE_PRICES: ServicePrices = {
@@ -206,7 +258,13 @@ export const DEFAULT_SERVICE_PRICES: ServicePrices = {
     walkways: 0,
   },
   gutterCleaning: 0,
+  gutterDrainCleaning: 0,
+  gutterMinorRepairs: 0,
+  gutterGuards: 0,
+  gutterCleaningTotal: 0,
   houseWash: 0,
+  houseWashRustSurcharge: 0,
+  houseWashTotal: 0,
   roofCleaning: 0,
   additionalServicesTotal: 0,
   grandTotal: 0,

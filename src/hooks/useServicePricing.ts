@@ -51,7 +51,13 @@ export function useServicePricing(
           walkways: 0,
         },
         gutterCleaning: 0,
+        gutterDrainCleaning: 0,
+        gutterMinorRepairs: 0,
+        gutterGuards: 0,
+        gutterCleaningTotal: 0,
         houseWash: 0,
+        houseWashRustSurcharge: 0,
+        houseWashTotal: 0,
         roofCleaning: 0,
         additionalServicesTotal: 0,
         grandTotal: 0,
@@ -139,9 +145,11 @@ export function useServicePricing(
     }
     
     // ==========================================
-    // HOUSE WASH (sq ft based + modifiers)
+    // HOUSE WASH (sq ft based + modifiers + rust surcharge)
     // ==========================================
     let houseWash = 0;
+    let houseWashRustSurcharge = 0;
+    let houseWashTotal = 0;
     if (additionalServices.houseWash) {
       const houseConfig = PRICING.house_wash;
       const baseHouseWash = squareFootage * houseConfig.perSqFt;
@@ -153,12 +161,24 @@ export function useServicePricing(
       const houseWashCalculated = applyModifiers(baseHouseWash, houseModifiers);
       const houseMinimum = houseConfig.minimumPrice ?? 0;
       houseWash = Math.max(houseWashCalculated, houseMinimum);
+      
+      // Apply rust stain surcharge if selected
+      if (additionalServices.houseWashDetails?.stainType === 'rust') {
+        const rustSurcharge = houseConfig.rustStainSurcharge ?? 15;
+        houseWashRustSurcharge = Math.round(houseWash * (rustSurcharge / 100));
+      }
+      
+      houseWashTotal = houseWash + houseWashRustSurcharge;
     }
     
     // ==========================================
-    // GUTTER CLEANING (sq ft based + modifiers)
+    // GUTTER CLEANING (sq ft based + modifiers + addons)
     // ==========================================
     let gutterCleaning = 0;
+    let gutterDrainCleaning = 0;
+    let gutterMinorRepairs = 0;
+    let gutterGuards = 0;
+    let gutterCleaningTotal = 0;
     if (additionalServices.gutterCleaning) {
       const gutterConfig = PRICING.gutter_cleaning;
       const baseGutter = squareFootage * gutterConfig.perSqFt;
@@ -170,6 +190,29 @@ export function useServicePricing(
       const gutterCalculated = applyModifiers(baseGutter, gutterModifiers);
       const gutterMinimum = gutterConfig.minimumPrice ?? 0;
       gutterCleaning = Math.max(gutterCalculated, gutterMinimum);
+      
+      // Calculate gutter add-ons
+      const addons = additionalServices.gutterAddons;
+      
+      // Underground drain cleaning
+      if (addons?.undergroundDrains?.enabled) {
+        const drainPricing = gutterConfig.undergroundDrainPricing ?? { "1": 75, "2": 125, "3": 175, "4+": 225 };
+        gutterDrainCleaning = drainPricing[addons.undergroundDrains.count] ?? 75;
+      }
+      
+      // Minor repairs
+      if (addons?.minorRepairs) {
+        gutterMinorRepairs = gutterConfig.minorRepairsPrice ?? 85;
+      }
+      
+      // Gutter guards (one-time installation)
+      if (addons?.gutterGuards?.enabled) {
+        const linearFeet = addons.gutterGuards.linearFeet ?? 150;
+        const pricePerFoot = gutterConfig.gutterGuardsPerLinearFoot ?? 8;
+        gutterGuards = linearFeet * pricePerFoot;
+      }
+      
+      gutterCleaningTotal = gutterCleaning + gutterDrainCleaning + gutterMinorRepairs + gutterGuards;
     }
     
     // ==========================================
@@ -260,7 +303,7 @@ export function useServicePricing(
     }
     
     const additionalServicesTotal = drivewayCleaning + pressureWashing + 
-      gutterCleaning + houseWash + roofCleaning;
+      gutterCleaningTotal + houseWashTotal + roofCleaning;
     
     return {
       exteriorWindows,
@@ -275,7 +318,13 @@ export function useServicePricing(
       pressureWashing,
       pressureWashingBreakdown,
       gutterCleaning,
+      gutterDrainCleaning,
+      gutterMinorRepairs,
+      gutterGuards,
+      gutterCleaningTotal,
       houseWash,
+      houseWashRustSurcharge,
+      houseWashTotal,
       roofCleaning,
       additionalServicesTotal,
       grandTotal: windowCleaningTotal + additionalServicesTotal,
