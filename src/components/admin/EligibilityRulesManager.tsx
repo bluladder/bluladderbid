@@ -578,14 +578,14 @@ export function EligibilityRulesManager() {
                         Only assign techs who have:
                       </Label>
                       <Select
-                        value={formData.require_capability}
-                        onValueChange={(v) => setFormData({ ...formData, require_capability: v })}
+                        value={formData.require_capability || '__none__'}
+                        onValueChange={(v) => setFormData({ ...formData, require_capability: v === '__none__' ? '' : v })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="No requirement" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">No requirement</SelectItem>
+                          <SelectItem value="__none__">No requirement</SelectItem>
                           {CAPABILITY_OPTIONS.map(cap => (
                             <SelectItem key={cap.value} value={cap.value}>
                               <div>
@@ -606,14 +606,14 @@ export function EligibilityRulesManager() {
                         Never assign techs who have:
                       </Label>
                       <Select
-                        value={formData.exclude_capability}
-                        onValueChange={(v) => setFormData({ ...formData, exclude_capability: v })}
+                        value={formData.exclude_capability || '__none__'}
+                        onValueChange={(v) => setFormData({ ...formData, exclude_capability: v === '__none__' ? '' : v })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="No exclusion" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">No exclusion</SelectItem>
+                          <SelectItem value="__none__">No exclusion</SelectItem>
                           {CAPABILITY_OPTIONS.map(cap => (
                             <SelectItem key={cap.value} value={cap.value}>
                               <div>
@@ -636,14 +636,14 @@ export function EligibilityRulesManager() {
                       Require crew size:
                     </Label>
                     <Select
-                      value={formData.require_crew_size?.toString() || ''}
-                      onValueChange={(v) => setFormData({ ...formData, require_crew_size: v ? parseInt(v) : null })}
+                      value={formData.require_crew_size?.toString() || '__none__'}
+                      onValueChange={(v) => setFormData({ ...formData, require_crew_size: v === '__none__' ? null : parseInt(v) })}
                     >
                       <SelectTrigger className="w-48">
                         <SelectValue placeholder="Default (1 tech)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Default (1 technician)</SelectItem>
+                        <SelectItem value="__none__">Default (1 technician)</SelectItem>
                         <SelectItem value="2">2 technicians (pair)</SelectItem>
                         <SelectItem value="3">3 technicians (crew)</SelectItem>
                       </SelectContent>
