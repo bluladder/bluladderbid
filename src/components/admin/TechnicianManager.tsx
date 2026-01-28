@@ -14,14 +14,35 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 
+// Skill level per service (1-5 scale)
+interface ServiceSkillLevels {
+  windows_exterior?: number;
+  windows_interior?: number;
+  gutters?: number;
+  house_wash?: number;
+  roof_wash?: number;
+  driveway?: number;
+  pressure_wash_addon?: number;
+}
+
 interface TechnicianCapabilities {
+  // Service abilities
   can_do_windows?: boolean;
   can_do_gutters?: boolean;
   can_do_pressure?: boolean;
+  // Equipment flags
   has_pressure_washer?: boolean;
+  has_ladder_2_story?: boolean;
+  is_roof_safe?: boolean;
+  // Behavior flags
   requires_bundle_for_windows?: boolean;
   eligible_for_big_job_pairing?: boolean;
-  [key: string]: boolean | undefined;
+  // Skill levels per service (1-5)
+  skill_levels?: ServiceSkillLevels;
+  // Soft preferences
+  preferred_services?: string[];
+  discouraged_services?: string[];
+  [key: string]: boolean | ServiceSkillLevels | string[] | undefined;
 }
 
 interface Technician {
@@ -42,10 +63,18 @@ interface Technician {
 }
 
 const CAPABILITY_OPTIONS = [
-  { key: 'can_do_windows', label: 'Can Do Windows' },
-  { key: 'can_do_gutters', label: 'Can Do Gutters' },
-  { key: 'can_do_pressure', label: 'Can Do Pressure Washing' },
-  { key: 'has_pressure_washer', label: 'Has Pressure Washer Equipment' },
+  { key: 'can_do_windows', label: 'Can Do Windows', category: 'service' },
+  { key: 'can_do_gutters', label: 'Can Do Gutters', category: 'service' },
+  { key: 'can_do_pressure', label: 'Can Do Pressure Washing', category: 'service' },
+];
+
+const EQUIPMENT_OPTIONS = [
+  { key: 'has_pressure_washer', label: 'Has Pressure Washer' },
+  { key: 'has_ladder_2_story', label: 'Has 2-Story Ladder' },
+  { key: 'is_roof_safe', label: 'Roof-Safe Certified' },
+];
+
+const BEHAVIOR_OPTIONS = [
   { key: 'requires_bundle_for_windows', label: 'Requires Bundle for Windows', hint: 'Exclude from windows-only bookings' },
   { key: 'eligible_for_big_job_pairing', label: 'Eligible for Big Job Pairing' },
 ];
@@ -104,8 +133,13 @@ export function TechnicianManager() {
       can_do_gutters: false,
       can_do_pressure: false,
       has_pressure_washer: false,
+      has_ladder_2_story: false,
+      is_roof_safe: false,
       requires_bundle_for_windows: false,
       eligible_for_big_job_pairing: false,
+      skill_levels: {},
+      preferred_services: [] as string[],
+      discouraged_services: [] as string[],
     } as TechnicianCapabilities,
   });
 
@@ -347,8 +381,13 @@ export function TechnicianManager() {
         can_do_gutters: false,
         can_do_pressure: false,
         has_pressure_washer: false,
+        has_ladder_2_story: false,
+        is_roof_safe: false,
         requires_bundle_for_windows: false,
         eligible_for_big_job_pairing: false,
+        skill_levels: {},
+        preferred_services: [],
+        discouraged_services: [],
       },
     });
     setEditingTech(null);
@@ -374,8 +413,13 @@ export function TechnicianManager() {
         can_do_gutters: false,
         can_do_pressure: false,
         has_pressure_washer: false,
+        has_ladder_2_story: false,
+        is_roof_safe: false,
         requires_bundle_for_windows: false,
         eligible_for_big_job_pairing: false,
+        skill_levels: {},
+        preferred_services: [],
+        discouraged_services: [],
       },
     });
     setIsDialogOpen(true);
@@ -639,7 +683,7 @@ export function TechnicianManager() {
                   {/* Service Capabilities */}
                   <div className="space-y-3">
                     <h4 className="font-medium flex items-center gap-2 text-sm">
-                      Service Capabilities & Booking Behavior
+                      Service Capabilities
                     </h4>
                     <div className="grid grid-cols-1 gap-2">
                       {CAPABILITY_OPTIONS.map((cap) => (
@@ -647,19 +691,187 @@ export function TechnicianManager() {
                           key={cap.key}
                           className="flex items-center justify-between p-2 rounded-md border bg-muted/30"
                         >
-                          <div>
-                            <Label htmlFor={cap.key} className="cursor-pointer">{cap.label}</Label>
-                            {'hint' in cap && cap.hint && (
-                              <p className="text-xs text-muted-foreground">{cap.hint}</p>
-                            )}
-                          </div>
+                          <Label htmlFor={cap.key} className="cursor-pointer">{cap.label}</Label>
                           <Checkbox
                             id={cap.key}
-                            checked={formData.capabilities[cap.key as keyof TechnicianCapabilities] ?? false}
+                            checked={Boolean(formData.capabilities[cap.key])}
                             onCheckedChange={() => toggleCapability(cap.key as keyof TechnicianCapabilities)}
                           />
                         </div>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* Equipment Flags */}
+                  <div className="space-y-3">
+                    <h4 className="font-medium flex items-center gap-2 text-sm">
+                      Equipment
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {EQUIPMENT_OPTIONS.map((eq) => (
+                        <div 
+                          key={eq.key}
+                          className="flex items-center justify-between p-2 rounded-md border bg-muted/30"
+                        >
+                          <Label htmlFor={eq.key} className="cursor-pointer">{eq.label}</Label>
+                          <Checkbox
+                            id={eq.key}
+                            checked={Boolean(formData.capabilities[eq.key])}
+                            onCheckedChange={() => toggleCapability(eq.key as keyof TechnicianCapabilities)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Behavior Flags */}
+                  <div className="space-y-3">
+                    <h4 className="font-medium flex items-center gap-2 text-sm">
+                      Booking Behavior
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {BEHAVIOR_OPTIONS.map((opt) => (
+                        <div 
+                          key={opt.key}
+                          className="flex items-center justify-between p-2 rounded-md border bg-muted/30"
+                        >
+                          <div>
+                            <Label htmlFor={opt.key} className="cursor-pointer">{opt.label}</Label>
+                            {opt.hint && (
+                              <p className="text-xs text-muted-foreground">{opt.hint}</p>
+                            )}
+                          </div>
+                          <Checkbox
+                            id={opt.key}
+                            checked={Boolean(formData.capabilities[opt.key])}
+                            onCheckedChange={() => toggleCapability(opt.key as keyof TechnicianCapabilities)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Skill Levels per Service */}
+                  <div className="space-y-3">
+                    <h4 className="font-medium flex items-center gap-2 text-sm">
+                      Skill Levels (1-5)
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      Higher skill = preferred for complex jobs. Leave blank for default (3).
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {SERVICE_TYPES.map((svc) => (
+                        <div key={svc.value} className="space-y-1">
+                          <Label className="text-xs">{svc.label}</Label>
+                          <Select
+                            value={String(formData.capabilities.skill_levels?.[svc.value as keyof ServiceSkillLevels] ?? '')}
+                            onValueChange={(v) => setFormData({
+                              ...formData,
+                              capabilities: {
+                                ...formData.capabilities,
+                                skill_levels: {
+                                  ...(formData.capabilities.skill_levels || {}),
+                                  [svc.value]: v === '' ? undefined : parseInt(v),
+                                },
+                              },
+                            })}
+                          >
+                            <SelectTrigger className="h-8">
+                              <SelectValue placeholder="Default" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Default (3)</SelectItem>
+                              <SelectItem value="1">1 - Basic</SelectItem>
+                              <SelectItem value="2">2 - Developing</SelectItem>
+                              <SelectItem value="3">3 - Competent</SelectItem>
+                              <SelectItem value="4">4 - Proficient</SelectItem>
+                              <SelectItem value="5">5 - Expert</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Preferred Services */}
+                  <div className="space-y-3">
+                    <h4 className="font-medium flex items-center gap-2 text-sm">
+                      Preferred Services (Soft Boost)
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      Technician will be prioritized for these services when multiple are eligible.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {SERVICE_TYPES.map((svc) => {
+                        const isPreferred = (formData.capabilities.preferred_services || []).includes(svc.value);
+                        return (
+                          <Badge
+                            key={svc.value}
+                            variant={isPreferred ? 'default' : 'outline'}
+                            className="cursor-pointer"
+                            onClick={() => {
+                              const current = formData.capabilities.preferred_services || [];
+                              const updated = isPreferred
+                                ? current.filter(s => s !== svc.value)
+                                : [...current, svc.value];
+                              setFormData({
+                                ...formData,
+                                capabilities: {
+                                  ...formData.capabilities,
+                                  preferred_services: updated,
+                                  // Remove from discouraged if adding to preferred
+                                  discouraged_services: isPreferred 
+                                    ? formData.capabilities.discouraged_services 
+                                    : (formData.capabilities.discouraged_services || []).filter(s => s !== svc.value),
+                                },
+                              });
+                            }}
+                          >
+                            {svc.label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Discouraged Services */}
+                  <div className="space-y-3">
+                    <h4 className="font-medium flex items-center gap-2 text-sm">
+                      Discouraged Services (Soft Penalty)
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      Technician will be deprioritized for these services but can still be assigned.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {SERVICE_TYPES.map((svc) => {
+                        const isDiscouraged = (formData.capabilities.discouraged_services || []).includes(svc.value);
+                        return (
+                          <Badge
+                            key={svc.value}
+                            variant={isDiscouraged ? 'destructive' : 'outline'}
+                            className="cursor-pointer"
+                            onClick={() => {
+                              const current = formData.capabilities.discouraged_services || [];
+                              const updated = isDiscouraged
+                                ? current.filter(s => s !== svc.value)
+                                : [...current, svc.value];
+                              setFormData({
+                                ...formData,
+                                capabilities: {
+                                  ...formData.capabilities,
+                                  discouraged_services: updated,
+                                  // Remove from preferred if adding to discouraged
+                                  preferred_services: isDiscouraged
+                                    ? formData.capabilities.preferred_services
+                                    : (formData.capabilities.preferred_services || []).filter(s => s !== svc.value),
+                                },
+                              });
+                            }}
+                          >
+                            {svc.label}
+                          </Badge>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
