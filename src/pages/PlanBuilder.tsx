@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PlanBuilderHeader } from '@/components/plan-builder/PlanBuilderHeader';
 import { PlanTierCards } from '@/components/plan-builder/PlanTierCards';
@@ -8,7 +8,9 @@ import { CompactHomeDetails } from '@/components/plan-builder/CompactHomeDetails
 import { PlanCustomerForm } from '@/components/plan-builder/PlanCustomerForm';
 import { PlanPaymentSummary } from '@/components/plan-builder/PlanPaymentSummary';
 import { QuoteSavedSuccess } from '@/components/plan-builder/QuoteSavedSuccess';
+import { PlanCompareSheet } from '@/components/plan-builder/PlanCompareSheet';
 import { useServicePlanBuilder } from '@/hooks/useServicePlanBuilder';
+import { usePlanBuilderSession } from '@/hooks/usePlanBuilderSession';
 import { toast } from 'sonner';
 import type { PlanBuilderServiceId } from '@/types/servicePlanBuilder';
 import type { PlanTier } from '@/components/plan-builder/TierSelector';
@@ -18,6 +20,9 @@ type BuilderStep = 'select' | 'customize' | 'customer';
 export default function PlanBuilder() {
   const [currentStep, setCurrentStep] = useState<BuilderStep>('select');
   const [showHomeDetailsForm, setShowHomeDetailsForm] = useState(true);
+  const [showCompareSheet, setShowCompareSheet] = useState(false);
+  
+  const { loadSession, saveSession, isInitialized, setIsInitialized } = usePlanBuilderSession();
   
   const {
     selectedTier,
@@ -40,6 +45,42 @@ export default function PlanBuilder() {
     hasSelectedServices,
     isLoading,
   } = useServicePlanBuilder();
+  
+  // Restore session on mount
+  useEffect(() => {
+    if (!isInitialized && !isLoading) {
+      const session = loadSession();
+      if (session) {
+        // Restore tier selection
+        if (session.selectedTier) {
+          selectTier(session.selectedTier);
+        }
+        // Restore home details
+        if (session.homeDetails && session.homeDetails.squareFootage > 0) {
+          Object.entries(session.homeDetails).forEach(([key, value]) => {
+            updateHomeDetails({ [key]: value });
+          });
+          setShowHomeDetailsForm(false);
+        }
+      }
+      setIsInitialized(true);
+    }
+  }, [isInitialized, isLoading, loadSession, selectTier, updateHomeDetails, setIsInitialized]);
+  
+  // Save session on changes
+  useEffect(() => {
+    if (isInitialized) {
+      saveSession({
+        selectedTier,
+        homeDetails: homeDetails.squareFootage > 0 ? homeDetails : null,
+        serviceSelections: services.map(s => ({
+          id: s.id,
+          enabled: s.enabled,
+          frequency: s.frequency,
+        })),
+      });
+    }
+  }, [isInitialized, selectedTier, homeDetails, services, saveSession]);
   
   const handleTierSelect = (tier: PlanTier) => {
     selectTier(tier);
@@ -64,7 +105,12 @@ export default function PlanBuilder() {
   };
 
   const handleCompare = () => {
-    setCurrentStep('select');
+    setShowCompareSheet(true);
+  };
+
+  const handleCompareSelect = (tier: PlanTier) => {
+    selectTier(tier);
+    setShowCompareSheet(false);
   };
 
   const handleBack = () => {
@@ -254,6 +300,15 @@ export default function PlanBuilder() {
           </div>
         )}
       </div>
+
+      {/* Plan Comparison Sheet */}
+      <PlanCompareSheet
+        open={showCompareSheet}
+        onOpenChange={setShowCompareSheet}
+        onSelectTier={handleCompareSelect}
+        tierPrices={tierPrices}
+        hasHomeDetails={homeDetails.squareFootage > 0}
+      />
     </div>
   );
 }
