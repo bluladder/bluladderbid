@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Calendar, Clock, AlertTriangle, Check, Users, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO, addMinutes } from 'date-fns';
+import { NotificationControls } from './NotificationControls';
 
 interface Technician {
   id: string;
@@ -58,6 +59,12 @@ export function AdminRescheduleDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+  
+  // Notification controls
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
+  const [requireConfirmation, setRequireConfirmation] = useState(false);
+  const [showPriceChange, setShowPriceChange] = useState(true);
+  const [adminNote, setAdminNote] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -70,6 +77,11 @@ export function AdminRescheduleDialog({
       }
       setForceOverride(false);
       setConflictWarning(null);
+      // Reset notification controls
+      setNotifyCustomer(true);
+      setRequireConfirmation(false);
+      setShowPriceChange(true);
+      setAdminNote('');
     }
   }, [open, appointment]);
 
@@ -162,6 +174,11 @@ export function AdminRescheduleDialog({
           },
           isAdminOverride: true,
           adminUserId,
+          // Notification settings
+          notifyCustomer,
+          requireConfirmation,
+          showPriceChange,
+          adminNote: adminNote || undefined,
         },
       });
 
@@ -171,7 +188,27 @@ export function AdminRescheduleDialog({
         throw new Error(data.details || data.error);
       }
 
-      toast.success('Appointment rescheduled successfully');
+      // Send notification if requested
+      if (notifyCustomer) {
+        await supabase.functions.invoke('send-notification', {
+          body: {
+            bookingId: appointment.id,
+            eventType: 'rescheduled',
+            triggeredBy: 'admin',
+            triggeredById: adminUserId,
+            notifyCustomer: true,
+            requireConfirmation,
+            showPriceChange,
+            adminNote: adminNote || undefined,
+            oldValues: { scheduled_start: appointment.scheduled_start },
+            newValues: { scheduled_start: startTime, scheduled_end: endTime },
+          },
+        });
+      }
+
+      toast.success(requireConfirmation 
+        ? 'Reschedule pending customer confirmation' 
+        : 'Appointment rescheduled successfully');
       onComplete();
     } catch (err) {
       console.error('Failed to reschedule:', err);
@@ -279,6 +316,19 @@ export function AdminRescheduleDialog({
                   </AlertDescription>
                 </Alert>
               )}
+
+              {/* Notification Controls */}
+              <NotificationControls
+                notifyCustomer={notifyCustomer}
+                onNotifyCustomerChange={setNotifyCustomer}
+                requireConfirmation={requireConfirmation}
+                onRequireConfirmationChange={setRequireConfirmation}
+                showPriceChange={showPriceChange}
+                onShowPriceChangeChange={setShowPriceChange}
+                adminNote={adminNote}
+                onAdminNoteChange={setAdminNote}
+                showPriceOption={false}
+              />
             </>
           )}
         </div>

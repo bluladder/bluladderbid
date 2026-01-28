@@ -32,3 +32,12 @@ verify_jwt = false
 
 [functions.verify-schedule-mirror]
 verify_jwt = false
+
+[functions.customer-appointment-actions]
+verify_jwt = false
+
+[functions.send-notification]
+verify_jwt = false
+
+[functions.handle-confirmation]
+verify_jwt = false

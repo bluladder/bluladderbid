@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Edit, Check, ShieldAlert, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
+import { NotificationControls } from './NotificationControls';
 
 interface AdminModifyServicesDialogProps {
   appointment: {
@@ -55,6 +56,12 @@ export function AdminModifyServicesDialog({
   const [newServiceName, setNewServiceName] = useState('');
   const [newServicePrice, setNewServicePrice] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Notification controls
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
+  const [requireConfirmation, setRequireConfirmation] = useState(false);
+  const [showPriceChange, setShowPriceChange] = useState(true);
+  const [adminNote, setAdminNote] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -62,6 +69,11 @@ export function AdminModifyServicesDialog({
       setServices(appointment.services_json.map(s => ({ ...s, enabled: true })));
       setNewServiceName('');
       setNewServicePrice('');
+      // Reset notification controls
+      setNotifyCustomer(true);
+      setRequireConfirmation(false);
+      setShowPriceChange(true);
+      setAdminNote('');
     }
   }, [open, appointment]);
 
@@ -131,10 +143,36 @@ export function AdminModifyServicesDialog({
         throw new Error(data.details || data.error);
       }
 
+      // Send notification if requested
+      if (notifyCustomer) {
+        await supabase.functions.invoke('send-notification', {
+          body: {
+            bookingId: appointment.id,
+            eventType: 'services_modified',
+            triggeredBy: 'admin',
+            triggeredById: adminUserId,
+            notifyCustomer: true,
+            requireConfirmation,
+            showPriceChange,
+            adminNote: adminNote || undefined,
+            oldValues: { 
+              services_json: appointment.services_json,
+              total: appointment.total,
+            },
+            newValues: { 
+              services_json: updatedServices,
+              total: newTotal,
+            },
+          },
+        });
+      }
+
       if (data?.requiresReschedule) {
         toast.warning(`Services updated but appointment may need rescheduling: ${data.reason}`);
       } else {
-        toast.success('Services updated successfully');
+        toast.success(requireConfirmation 
+          ? 'Changes pending customer confirmation' 
+          : 'Services updated successfully');
       }
       
       onComplete();
@@ -241,6 +279,18 @@ export function AdminModifyServicesDialog({
               </div>
             )}
           </div>
+
+          {/* Notification Controls */}
+          <NotificationControls
+            notifyCustomer={notifyCustomer}
+            onNotifyCustomerChange={setNotifyCustomer}
+            requireConfirmation={requireConfirmation}
+            onRequireConfirmationChange={setRequireConfirmation}
+            showPriceChange={showPriceChange}
+            onShowPriceChangeChange={setShowPriceChange}
+            adminNote={adminNote}
+            onAdminNoteChange={setAdminNote}
+          />
 
           <Alert>
             <Edit className="h-4 w-4" />

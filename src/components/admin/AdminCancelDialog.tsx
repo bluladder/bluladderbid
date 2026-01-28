@@ -13,7 +13,9 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Loader2, AlertTriangle, Calendar, Clock, DollarSign, ShieldAlert } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
+import { Loader2, AlertTriangle, Calendar, Clock, DollarSign, ShieldAlert, Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 
@@ -53,6 +55,7 @@ export function AdminCancelDialog({
 }: AdminCancelDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [reason, setReason] = useState('');
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
 
   const customerName = [appointment.customer?.first_name, appointment.customer?.last_name]
     .filter(Boolean).join(' ') || 'Customer';
@@ -75,6 +78,27 @@ export function AdminCancelDialog({
       
       if (data?.error) {
         throw new Error(data.details || data.error);
+      }
+
+      // Send notification if requested
+      if (notifyCustomer) {
+        await supabase.functions.invoke('send-notification', {
+          body: {
+            bookingId: appointment.id,
+            eventType: 'cancelled',
+            triggeredBy: 'admin',
+            triggeredById: adminUserId,
+            notifyCustomer: true,
+            requireConfirmation: false,
+            showPriceChange: true,
+            adminNote: reason || undefined,
+            oldValues: { 
+              scheduled_start: appointment.scheduled_start,
+              total: appointment.total,
+            },
+            newValues: { status: 'cancelled' },
+          },
+        });
       }
 
       toast.success('Appointment cancelled');
@@ -128,6 +152,21 @@ export function AdminCancelDialog({
                   placeholder="Enter reason for cancellation..."
                   rows={2}
                 />
+              </div>
+
+              <Separator />
+
+              {/* Notify Customer */}
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="notify-customer-cancel"
+                  checked={notifyCustomer}
+                  onCheckedChange={(checked) => setNotifyCustomer(checked === true)}
+                />
+                <Label htmlFor="notify-customer-cancel" className="text-sm font-normal cursor-pointer flex items-center gap-1">
+                  <Bell className="w-3 h-3" />
+                  Notify customer of cancellation
+                </Label>
               </div>
 
               <Alert variant="destructive">

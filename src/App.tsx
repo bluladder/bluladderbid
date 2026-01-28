@@ -10,6 +10,7 @@ import ServiceLanding from "./pages/ServiceLanding";
 import PlanBuilder from "./pages/PlanBuilder";
 import QuoteView from "./pages/QuoteView";
 import MyAppointments from "./pages/MyAppointments";
+import ConfirmChange from "./pages/ConfirmChange";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/plan-builder" element={<PlanBuilder />} />
           <Route path="/quote/:id" element={<QuoteView />} />
           <Route path="/my-appointments" element={<MyAppointments />} />
+          <Route path="/confirm-change" element={<ConfirmChange />} />
           {/* Service-specific landing pages */}
           <Route path="/window-cleaning" element={<ServiceLanding />} />
           <Route path="/gutter-cleaning" element={<ServiceLanding />} />
