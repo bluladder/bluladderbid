@@ -123,7 +123,7 @@ export function OneTimeSummary({
           </h4>
           
           <div className="space-y-2 text-sm">
-            {servicePrices.windowCleaningTotal > 0 && (
+            {additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0 && (
               <>
                 <div className="flex justify-between">
                   <span className="flex items-center gap-2">
