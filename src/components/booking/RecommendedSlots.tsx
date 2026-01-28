@@ -92,9 +92,14 @@ export function RecommendedSlots({
           const isTopPick = index === 0;
           const isAlternative = slot.whyLabel === 'alternative';
           
-          // Get display date info - alternative should always be different day
+          // Get display date info - alternative MUST always be different day
           const firstSlotDate = displaySlots[0] ? parseISO(displaySlots[0].startTime) : null;
           const isDifferentDay = firstSlotDate && format(slotDate, 'yyyy-MM-dd') !== format(firstSlotDate, 'yyyy-MM-dd');
+          
+          // Skip same-day alternatives - they should always be different days
+          if (isAlternative && !isDifferentDay) {
+            return null;
+          }
           
           return (
             <button

@@ -8,13 +8,17 @@ import type { FlatworkArea } from '@/types/homeowner';
 
 type SurfaceType = 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
 
+export interface PressureWashingAreaWithSurface extends FlatworkArea {
+  surfaceType?: SurfaceType;
+}
+
 interface PressureWashingAreaCardProps {
   label: string;
-  area: FlatworkArea & { surfaceType?: SurfaceType };
+  area: PressureWashingAreaWithSurface;
   price: number;
   defaultSqft: number;
   calculatorType: 'porch' | 'patio' | 'poolDeck' | 'walkways';
-  onChange: (area: FlatworkArea & { surfaceType?: SurfaceType }) => void;
+  onChange: (area: PressureWashingAreaWithSurface) => void;
   /** If true, show individual surface type selector for this area */
   showSurfaceType?: boolean;
 }

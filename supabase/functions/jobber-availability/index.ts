@@ -889,6 +889,22 @@ Deno.serve(async (req) => {
 
           let exclusionReason: ExclusionReason | null = null;
 
+          // Strict AM/PM filtering - hard filter based on preference
+          const isAM = slotHour < 12;
+          const isPM = slotHour >= 12;
+          
+          if (preference === 'AM' && !isAM) {
+            // Skip PM slots when AM is selected - hard filter
+            slotStart = new Date(slotStart.getTime() + slotIncrementMs);
+            continue;
+          }
+          
+          if (preference === 'PM' && !isPM) {
+            // Skip AM slots when PM is selected - hard filter
+            slotStart = new Date(slotStart.getTime() + slotIncrementMs);
+            continue;
+          }
+
           if (hasConflict) {
             exclusionReason = {
               code: 'OVERLAP',
@@ -1014,9 +1030,13 @@ Deno.serve(async (req) => {
     scoredSlots.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
     
     // Get top 3 with diversity (different days/techs if possible)
+    // IMPORTANT: Alternative MUST always be a different day
     const recommendations: TimeSlot[] = [];
     const usedDays = new Set<string>();
     const usedTechs = new Set<string>();
+    const firstSlotDay = scoredSlots.length > 0 
+      ? formatDateInTimezone(new Date(scoredSlots[0].startTime), businessTimezone)
+      : null;
     
     for (const slot of scoredSlots) {
       if (recommendations.length >= 3) break;
@@ -1045,22 +1065,32 @@ Deno.serve(async (req) => {
         }
       }
       
-      // Third pick: alternative
+      // Third pick: alternative - MUST be a different day than the first slot
       if (recommendations.length === 2) {
-        slot.whyLabel = 'alternative';
-        slot.isRecommended = true;
-        recommendations.push(slot);
-        break;
+        // Enforce different-day rule for alternatives
+        if (slotDateStr !== firstSlotDay) {
+          slot.whyLabel = 'alternative';
+          slot.isRecommended = true;
+          recommendations.push(slot);
+          break;
+        }
+        // Skip same-day slots for alternative position
+        continue;
       }
     }
     
-    // Fill remaining if needed
+    // Fill remaining if needed - but respect different-day rule for alternative
     for (const slot of scoredSlots) {
       if (recommendations.length >= 3) break;
       if (!recommendations.includes(slot)) {
-        slot.whyLabel = 'alternative';
-        slot.isRecommended = true;
-        recommendations.push(slot);
+        const slotDateStr = formatDateInTimezone(new Date(slot.startTime), businessTimezone);
+        
+        // Only add if we don't already have 2 recommendations OR it's a different day
+        if (recommendations.length < 2 || slotDateStr !== firstSlotDay) {
+          slot.whyLabel = 'alternative';
+          slot.isRecommended = true;
+          recommendations.push(slot);
+        }
       }
     }
     

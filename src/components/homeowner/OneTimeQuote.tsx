@@ -162,19 +162,20 @@ export function OneTimeQuote({
         </div>
         
         <Button
-          className="w-full btn-secondary"
-          variant="outline"
-          size="sm"
+          className="w-full h-14 text-lg font-bold shadow-lg"
           onClick={onSelect}
           disabled={!hasServices}
         >
           {isSelected ? (
             <>
-              <Check className="w-3.5 h-3.5 mr-1.5" />
-              Selected
+              <Check className="w-5 h-5 mr-2" />
+              Selected — Continue
             </>
           ) : (
-            'Book One-Time'
+            <>
+              <Calendar className="w-5 h-5 mr-2" />
+              Book One-Time Service
+            </>
           )}
         </Button>
       </CardContent>
