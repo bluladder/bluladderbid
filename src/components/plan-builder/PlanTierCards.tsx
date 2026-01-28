@@ -18,14 +18,14 @@ const TIER_DATA: TierCardData[] = [
   {
     id: 'good',
     name: 'Good',
-    tagline: 'Basic coverage',
+    tagline: 'Essential care',
     headline: 'Essential care for busy homeowners',
     benefits: ['Exterior Windows 2x/yr', 'Gutter Cleaning 1x/yr', 'Screen cleaning included'],
   },
   {
     id: 'better',
     name: 'Better',
-    tagline: 'Most homeowners choose this',
+    tagline: 'Best value — most popular',
     headline: 'Best value for year-round maintenance',
     benefits: ['Exterior Windows 3x/yr', 'Interior Windows 1x/yr', 'Gutter Cleaning 2x/yr', 'House Wash 1x/yr'],
     isPopular: true,
@@ -33,7 +33,7 @@ const TIER_DATA: TierCardData[] = [
   {
     id: 'best',
     name: 'Best',
-    tagline: 'Maximum protection & priority',
+    tagline: 'Complete protection',
     headline: 'Complete protection for your home',
     benefits: ['Exterior Windows 4x/yr', 'Interior Windows 2x/yr', 'Gutter + House + Roof'],
     isPremium: true,

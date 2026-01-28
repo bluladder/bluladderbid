@@ -121,7 +121,7 @@ export function RecommendedSlots({
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  {/* Top pick / Alternative / Team labels */}
+                  {/* Top pick / Alternative / Team labels - clearer labeling */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={cn(
                       "font-semibold",
@@ -133,13 +133,18 @@ export function RecommendedSlots({
                       {format(slotDate, 'EEE, MMM d')}
                     </span>
                     {isTopPick && !isSelected && (
-                      <span className="text-[10px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                        Top Pick
+                      <span className="text-[10px] font-medium text-primary-foreground bg-primary px-2 py-0.5 rounded-full">
+                        ⚡ Soonest Available
+                      </span>
+                    )}
+                    {!isTopPick && !isAlternative && index === 1 && !isSelected && (
+                      <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">
+                        🛣️ Best for Route
                       </span>
                     )}
                     {isAlternative && isDifferentDay && !isSelected && (
-                      <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
-                        Different Day
+                      <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-full">
+                        📅 Different Day
                       </span>
                     )}
                     {/* Team job indicator */}

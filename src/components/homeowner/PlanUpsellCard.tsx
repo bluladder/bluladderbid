@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard } from 'lucide-react';
+import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -163,14 +163,23 @@ export function PlanUpsellCard({
             )}
           </div>
           
-          {/* Book One-Time CTA - NOW PRIMARY */}
+          {/* Book One-Time CTA - PRIMARY with high contrast */}
           <Button 
-            className="w-full btn-primary h-14 text-lg font-semibold shadow-lg"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-16 text-lg font-bold shadow-xl group transition-all duration-200 active:scale-[0.98]"
             onClick={onBookOneTime}
           >
-            <Calendar className="w-5 h-5 mr-2" />
-            Book One-Time Service
+            <Calendar className="w-6 h-6 mr-3" />
+            <span>Book One-Time Service</span>
+            <span className="ml-3 font-mono bg-primary-foreground/20 px-3 py-1 rounded-lg">
+              {formatPrice(oneTimeTotal)}
+            </span>
+            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-0.5 transition-transform" />
           </Button>
+          
+          {/* Trust microcopy */}
+          <p className="text-center text-xs text-muted-foreground mt-2">
+            No payment due until service is complete
+          </p>
         </CardContent>
       </Card>
       

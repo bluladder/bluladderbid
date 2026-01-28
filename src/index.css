@@ -304,4 +304,23 @@
   .shadow-card-hover {
     box-shadow: var(--shadow-card-hover);
   }
+  
+  /* Subtle pulse animation for CTA buttons */
+  @keyframes pulse-subtle {
+    0%, 100% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 6px hsl(var(--primary) / 0);
+    }
+  }
+  
+  .animate-pulse-subtle {
+    animation: pulse-subtle 2s ease-in-out infinite;
+  }
+  
+  /* Better focus states for accessibility */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
 }
