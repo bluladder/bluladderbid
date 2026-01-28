@@ -1,4 +1,4 @@
-import { Sparkles, Check, Star, Percent, Calendar } from 'lucide-react';
+import { Sparkles, Check, Star, Percent, Calendar, Award } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,8 @@ import { OneTimeQuote } from './OneTimeQuote';
 import type { BundleTier, ServicePrices, AdditionalServices } from '@/types/homeowner';
 
 export type SelectionType = 'one-time' | 'good' | 'better' | 'best' | null;
+
+const RECOMMENDED_TIER = 'better'; // The tier marked as primary recommendation
 
 interface BundleBuilderProps {
   bundles: BundleTier[];
@@ -55,29 +57,32 @@ export function BundleBuilder({
         {/* Package Tiers */}
         {bundles.map((bundle) => {
           const isSelected = selectedOption === bundle.tier;
-          const isPopular = bundle.isPopular;
+          const isRecommended = bundle.tier === RECOMMENDED_TIER;
+          const isSecondary = !isRecommended && !isSelected;
           
           return (
             <Card
               key={bundle.tier}
-              className={`relative overflow-hidden transition-all duration-300 cursor-pointer ${
+              className={`relative overflow-hidden transition-all duration-200 cursor-pointer ${
                 isSelected
-                  ? 'ring-2 ring-primary shadow-lg scale-[1.02]'
-                  : 'hover:shadow-md hover:scale-[1.01]'
-              } ${isPopular ? 'lg:-mt-4 lg:mb-4' : ''}`}
+                  ? 'card-recommended scale-[1.02]'
+                  : isRecommended
+                    ? 'card-recommended hover:scale-[1.01]'
+                    : 'card-secondary-option hover:scale-[1.01]'
+              } ${isRecommended ? 'lg:-mt-4 lg:mb-4 lg:z-10' : ''}`}
               onClick={() => onSelectOption(bundle.tier)}
             >
-              {isPopular && (
-                <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-primary to-accent py-1.5 text-center">
-                  <span className="text-xs font-bold uppercase tracking-wide text-primary-foreground flex items-center justify-center gap-1">
-                    <Star className="w-3 h-3 fill-current" />
-                    Most Popular
-                    <Star className="w-3 h-3 fill-current" />
+              {/* Recommended Badge - Floating above card */}
+              {isRecommended && (
+                <div className="absolute -top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
+                  <span className="recommendation-badge">
+                    <Award className="w-3.5 h-3.5" />
+                    Recommended
                   </span>
                 </div>
               )}
               
-              <CardContent className={`p-5 ${isPopular ? 'pt-10' : ''}`}>
+              <CardContent className={`p-5 ${isRecommended ? 'pt-8' : ''}`}>
                 <div className="text-center mb-4">
                   <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide mb-2 ${
                     bundle.tier === 'good' 
@@ -88,11 +93,16 @@ export function BundleBuilder({
                   }`}>
                     {bundle.name}
                   </span>
-                  <h3 className="text-lg font-semibold text-foreground">{bundle.label}</h3>
+                  <h3 className={`font-semibold text-foreground ${isRecommended ? 'text-xl' : 'text-lg'}`}>
+                    {bundle.label}
+                  </h3>
+                  {isRecommended && (
+                    <p className="text-xs text-muted-foreground mt-1">Best value for most homes</p>
+                  )}
                 </div>
                 
                 <div className="text-center mb-4">
-                  <div className="price-display text-3xl text-foreground">
+                  <div className={`price-display text-foreground ${isRecommended ? 'text-4xl' : 'text-3xl'}`}>
                     {formatPrice(bundle.monthlyPayment)}
                     <span className="text-sm font-normal text-muted-foreground">/mo</span>
                   </div>
@@ -107,7 +117,7 @@ export function BundleBuilder({
                 </div>
                 
                 {/* Window Frequency Summary */}
-                <div className="p-2 rounded-md bg-muted/50 mb-3 text-xs">
+                <div className={`p-2 rounded-md mb-3 text-xs ${isRecommended ? 'bg-primary/10' : 'bg-muted/50'}`}>
                   <div className="flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-primary" />
                     <span className="font-medium">Windows</span>
@@ -123,16 +133,16 @@ export function BundleBuilder({
                 
                 {/* Addon Discount */}
                 {bundle.addonDiscountPercent > 0 && (
-                  <Badge variant="outline" className="w-full justify-center mb-3 text-xs py-1">
+                  <Badge variant="outline" className={`w-full justify-center mb-3 text-xs py-1 ${isRecommended ? 'border-primary/30' : ''}`}>
                     <Percent className="w-3 h-3 mr-1" />
                     {bundle.addonDiscountPercent}% off add-ons
                   </Badge>
                 )}
                 
                 <div className="space-y-2 mb-4">
-                  {bundle.features.slice(0, 3).map((feature, idx) => (
+                  {bundle.features.slice(0, isRecommended ? 4 : 3).map((feature, idx) => (
                     <div key={idx} className="flex items-start gap-2">
-                      <Check className="w-3 h-3 text-success mt-0.5 flex-shrink-0" />
+                      <Check className={`w-3 h-3 mt-0.5 flex-shrink-0 ${isRecommended ? 'text-primary' : 'text-success'}`} />
                       <span className="text-xs">{feature}</span>
                     </div>
                   ))}
@@ -145,11 +155,20 @@ export function BundleBuilder({
                 </div>
                 
                 <Button
-                  className={`w-full ${isSelected ? 'btn-primary' : 'btn-secondary'}`}
-                  variant={isSelected ? 'default' : 'outline'}
-                  size="sm"
+                  className={`w-full ${isSelected ? 'btn-primary' : isRecommended ? 'btn-primary' : 'btn-secondary'}`}
+                  variant={isSelected || isRecommended ? 'default' : 'outline'}
+                  size={isRecommended ? 'default' : 'sm'}
                 >
-                  {isSelected ? 'Selected' : 'Select Plan'}
+                  {isSelected ? (
+                    <>
+                      <Check className="w-4 h-4 mr-1" />
+                      Selected
+                    </>
+                  ) : isRecommended ? (
+                    'Choose This Plan'
+                  ) : (
+                    'Select Plan'
+                  )}
                 </Button>
               </CardContent>
             </Card>
