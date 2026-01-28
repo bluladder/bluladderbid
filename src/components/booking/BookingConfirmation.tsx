@@ -1,7 +1,8 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { CheckCircle, Calendar, Clock, User, MapPin, Download, Home, Phone, Mail } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { CheckCircle, Calendar, Clock, User, Users, MapPin, Download, Home, Phone, Mail } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import type { CustomerInfo } from './CustomerInfoForm';
 import type { TimeSlot } from './TimeSlotPicker';
@@ -26,6 +27,9 @@ interface BookingConfirmationProps {
   onDownloadPDF?: () => void;
   onBookAnother?: () => void;
   onGoHome?: () => void;
+  // Team job fields
+  isTeamJob?: boolean;
+  crewSize?: number;
 }
 
 function formatPrice(price: number) {
@@ -52,6 +56,8 @@ export function BookingConfirmation({
   onDownloadPDF,
   onBookAnother,
   onGoHome,
+  isTeamJob,
+  crewSize,
 }: BookingConfirmationProps) {
   const startDate = parseISO(scheduledStart);
   const endDate = parseISO(scheduledEnd);
@@ -117,11 +123,27 @@ export function BookingConfirmation({
             
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
-                <User className="w-5 h-5 text-primary" />
+                {isTeamJob ? (
+                  <Users className="w-5 h-5 text-primary" />
+                ) : (
+                  <User className="w-5 h-5 text-primary" />
+                )}
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Technician</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    {isTeamJob ? 'Crew' : 'Technician'}
+                  </p>
+                  {isTeamJob && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 h-auto bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                      Team Job
+                    </Badge>
+                  )}
+                </div>
                 <p className="font-semibold">{technicianName}</p>
+                {isTeamJob && crewSize && (
+                  <p className="text-xs text-muted-foreground">{crewSize} technicians assigned</p>
+                )}
               </div>
             </div>
             

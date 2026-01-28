@@ -19,6 +19,14 @@ export interface RecommendedSlot {
   gapEfficiencyLabel?: string;
   routeBonus?: number;
   whyLabel?: 'soonest_available' | 'minimizes_gaps' | 'alternative';
+  // Team booking fields
+  isTeamJob?: boolean;
+  crewSize?: number;
+  teamTechnicianIds?: string[];
+  teamTechnicianNames?: string[];
+  estimatedTeamHours?: number;
+  estimatedSoloHours?: number;
+  teamTriggerReason?: 'price' | 'hours' | 'fits_in_day';
 }
 
 export interface DayGridSlot {
@@ -33,6 +41,14 @@ export interface DayGridSlot {
   gapMinutes?: number;
   gapScore?: number;
   gapEfficiencyLabel?: string;
+  // Team booking fields
+  isTeamJob?: boolean;
+  crewSize?: number;
+  teamTechnicianIds?: string[];
+  teamTechnicianNames?: string[];
+  estimatedTeamHours?: number;
+  estimatedSoloHours?: number;
+  teamTriggerReason?: 'price' | 'hours' | 'fits_in_day';
 }
 
 interface ServiceForAvailability {
