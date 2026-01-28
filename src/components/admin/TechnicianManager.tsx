@@ -21,6 +21,7 @@ interface TechnicianCapabilities {
   has_pressure_washer?: boolean;
   requires_bundle_for_windows?: boolean;
   eligible_for_big_job_pairing?: boolean;
+  [key: string]: boolean | undefined;
 }
 
 interface Technician {
@@ -36,6 +37,7 @@ interface Technician {
   work_days: number[];
   buffer_minutes: number | null;
   max_drive_time_minutes: number | null;
+  max_stories: number | null;
   service_capabilities: TechnicianCapabilities | null;
 }
 
@@ -96,6 +98,7 @@ export function TechnicianManager() {
     work_days: [1, 2, 3, 4, 5] as number[],
     buffer_minutes: null as number | null,
     max_drive_time_minutes: null as number | null,
+    max_stories: null as number | null,
     capabilities: {
       can_do_windows: true,
       can_do_gutters: false,
@@ -119,6 +122,7 @@ export function TechnicianManager() {
         ...t,
         location_type: t.location_type as 'office' | 'home',
         work_days: (t.work_days as number[]) || [1, 2, 3, 4, 5],
+        max_stories: t.max_stories,
         service_capabilities: (t.service_capabilities as TechnicianCapabilities) || null,
       })));
     } catch (error) {
@@ -184,6 +188,7 @@ export function TechnicianManager() {
             work_days: formData.work_days,
             buffer_minutes: formData.buffer_minutes,
             max_drive_time_minutes: formData.max_drive_time_minutes,
+            max_stories: formData.max_stories,
             service_capabilities: JSON.parse(JSON.stringify(formData.capabilities)),
           })
           .eq('id', editingTech.id);
@@ -205,6 +210,7 @@ export function TechnicianManager() {
             work_days: formData.work_days,
             buffer_minutes: formData.buffer_minutes,
             max_drive_time_minutes: formData.max_drive_time_minutes,
+            max_stories: formData.max_stories,
             service_capabilities: JSON.parse(JSON.stringify(formData.capabilities)),
           }]);
 
@@ -335,6 +341,7 @@ export function TechnicianManager() {
       work_days: [1, 2, 3, 4, 5],
       buffer_minutes: null,
       max_drive_time_minutes: null,
+      max_stories: null,
       capabilities: {
         can_do_windows: true,
         can_do_gutters: false,
@@ -361,6 +368,7 @@ export function TechnicianManager() {
       work_days: tech.work_days ?? [1, 2, 3, 4, 5],
       buffer_minutes: tech.buffer_minutes,
       max_drive_time_minutes: tech.max_drive_time_minutes,
+      max_stories: tech.max_stories,
       capabilities: tech.service_capabilities || {
         can_do_windows: true,
         can_do_gutters: false,
@@ -573,9 +581,30 @@ export function TechnicianManager() {
                   
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">
-                      Override Global Drive Settings (optional)
+                      Constraints & Overrides
                     </Label>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="max_stories">Max Stories</Label>
+                        <Select
+                          value={formData.max_stories?.toString() ?? 'null'}
+                          onValueChange={(v) => setFormData({ 
+                            ...formData, 
+                            max_stories: v === 'null' ? null : parseInt(v) 
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="No limit" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="null">No limit</SelectItem>
+                            <SelectItem value="1">1 Story Only</SelectItem>
+                            <SelectItem value="2">Up to 2 Stories</SelectItem>
+                            <SelectItem value="3">Up to 3 Stories</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">Property height limit</p>
+                      </div>
                       <div className="space-y-2">
                         <Label htmlFor="buffer_minutes">Buffer (min)</Label>
                         <Input
@@ -701,6 +730,9 @@ export function TechnicianManager() {
                       )}
                       {tech.service_capabilities?.requires_bundle_for_windows && (
                         <Badge variant="destructive" className="text-xs">Bundle Req</Badge>
+                      )}
+                      {tech.max_stories && (
+                        <Badge variant="outline" className="text-xs">≤{tech.max_stories} Story</Badge>
                       )}
                     </div>
                   </TableCell>

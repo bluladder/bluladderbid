@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Users2, DollarSign, Gauge, Save, Loader2, AlertCircle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Users2, DollarSign, Gauge, Save, Loader2, AlertCircle, Clock, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -17,16 +18,37 @@ interface BigJobSettings {
   auto_assign_two_techs: boolean;
   crew_efficiency_factor: number;
   allowed_tech_pairs: string[][];
+  // Phase 2 additions
+  workday_start_time: string;
+  workday_end_time: string;
+  workday_length_hours: number;
+  min_buffer_minutes: number;
+  big_job_trigger_mode: 'PRICE_ONLY' | 'HOURS_ONLY' | 'PRICE_OR_HOURS' | 'FITS_IN_DAY';
+  pairing_mode: 'AUTO_PAIR' | 'RESTRICTED' | 'PREFER_LIST';
 }
 
 interface Technician {
   id: string;
   name: string;
+  max_stories: number | null;
   service_capabilities: {
     eligible_for_big_job_pairing?: boolean;
     [key: string]: boolean | undefined;
   } | null;
 }
+
+const TRIGGER_MODE_OPTIONS = [
+  { value: 'PRICE_ONLY', label: 'Price Only', description: 'Trigger when price exceeds threshold' },
+  { value: 'HOURS_ONLY', label: 'Hours Only', description: 'Trigger when estimated solo hours exceeds threshold' },
+  { value: 'PRICE_OR_HOURS', label: 'Price OR Hours', description: 'Trigger when either threshold is exceeded' },
+  { value: 'FITS_IN_DAY', label: 'Fits in Day (Recommended)', description: 'Trigger when job doesn\'t fit in one workday' },
+];
+
+const PAIRING_MODE_OPTIONS = [
+  { value: 'AUTO_PAIR', label: 'Auto Pair', description: 'Pair any two available technicians' },
+  { value: 'RESTRICTED', label: 'Restricted', description: 'Only pair eligible_for_big_job_pairing technicians' },
+  { value: 'PREFER_LIST', label: 'Prefer List', description: 'Prefer specific pairs (future)' },
+];
 
 export function BigJobSettingsEditor() {
   const [settings, setSettings] = useState<BigJobSettings>({
@@ -35,6 +57,12 @@ export function BigJobSettingsEditor() {
     auto_assign_two_techs: true,
     crew_efficiency_factor: 1.8,
     allowed_tech_pairs: [],
+    workday_start_time: '09:00',
+    workday_end_time: '17:00',
+    workday_length_hours: 8,
+    min_buffer_minutes: 30,
+    big_job_trigger_mode: 'FITS_IN_DAY',
+    pairing_mode: 'RESTRICTED',
   });
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [eligibleTechs, setEligibleTechs] = useState<Technician[]>([]);
@@ -46,7 +74,7 @@ export function BigJobSettingsEditor() {
     try {
       const [settingsRes, techsRes] = await Promise.all([
         supabase.from('big_job_settings').select('*').eq('id', 'default').single(),
-        supabase.from('technicians').select('id, name, service_capabilities').eq('is_active', true),
+        supabase.from('technicians').select('id, name, max_stories, service_capabilities').eq('is_active', true),
       ]);
 
       if (settingsRes.error && settingsRes.error.code !== 'PGRST116') {
@@ -55,12 +83,24 @@ export function BigJobSettingsEditor() {
       if (techsRes.error) throw techsRes.error;
 
       if (settingsRes.data) {
+        // Parse time values - they come as "HH:MM:SS" from DB
+        const parseTime = (t: string | null) => {
+          if (!t) return '09:00';
+          return t.substring(0, 5); // Take only HH:MM
+        };
+
         setSettings({
           big_job_value_threshold: settingsRes.data.big_job_value_threshold,
           big_job_solo_hours_threshold: settingsRes.data.big_job_solo_hours_threshold,
           auto_assign_two_techs: settingsRes.data.auto_assign_two_techs,
           crew_efficiency_factor: Number(settingsRes.data.crew_efficiency_factor),
           allowed_tech_pairs: (settingsRes.data.allowed_tech_pairs as string[][]) || [],
+          workday_start_time: parseTime(settingsRes.data.workday_start_time),
+          workday_end_time: parseTime(settingsRes.data.workday_end_time),
+          workday_length_hours: Number(settingsRes.data.workday_length_hours) || 8,
+          min_buffer_minutes: settingsRes.data.min_buffer_minutes || 30,
+          big_job_trigger_mode: (settingsRes.data.big_job_trigger_mode as BigJobSettings['big_job_trigger_mode']) || 'FITS_IN_DAY',
+          pairing_mode: (settingsRes.data.pairing_mode as BigJobSettings['pairing_mode']) || 'RESTRICTED',
         });
       }
 
@@ -99,6 +139,12 @@ export function BigJobSettingsEditor() {
           auto_assign_two_techs: settings.auto_assign_two_techs,
           crew_efficiency_factor: settings.crew_efficiency_factor,
           allowed_tech_pairs: settings.allowed_tech_pairs,
+          workday_start_time: settings.workday_start_time + ':00',
+          workday_end_time: settings.workday_end_time + ':00',
+          workday_length_hours: settings.workday_length_hours,
+          min_buffer_minutes: settings.min_buffer_minutes,
+          big_job_trigger_mode: settings.big_job_trigger_mode,
+          pairing_mode: settings.pairing_mode,
         });
 
       if (error) throw error;
@@ -110,6 +156,20 @@ export function BigJobSettingsEditor() {
       setIsSaving(false);
     }
   };
+
+  // Calculate workday length when times change
+  useEffect(() => {
+    if (settings.workday_start_time && settings.workday_end_time) {
+      const [startH, startM] = settings.workday_start_time.split(':').map(Number);
+      const [endH, endM] = settings.workday_end_time.split(':').map(Number);
+      const startMins = startH * 60 + startM;
+      const endMins = endH * 60 + endM;
+      const lengthHours = Math.max(0, (endMins - startMins) / 60);
+      if (lengthHours !== settings.workday_length_hours) {
+        setSettings(s => ({ ...s, workday_length_hours: lengthHours }));
+      }
+    }
+  }, [settings.workday_start_time, settings.workday_end_time]);
 
   if (isLoading) {
     return (
@@ -126,19 +186,91 @@ export function BigJobSettingsEditor() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users2 className="w-5 h-5" />
-          Big Job Settings
+          Big Job & Scheduling Settings
         </CardTitle>
         <CardDescription>
-          Configure automatic two-person crew assignment for large jobs
+          Configure automatic two-person crew assignment and workday constraints
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Workday Settings */}
+        <div className="space-y-4">
+          <h4 className="font-medium flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Workday Configuration
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="workday_start">Workday Start</Label>
+              <Input
+                id="workday_start"
+                type="time"
+                value={settings.workday_start_time}
+                onChange={(e) => setSettings({ ...settings, workday_start_time: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="workday_end">Workday End</Label>
+              <Input
+                id="workday_end"
+                type="time"
+                value={settings.workday_end_time}
+                onChange={(e) => setSettings({ ...settings, workday_end_time: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="min_buffer">Min Buffer (minutes)</Label>
+              <Input
+                id="min_buffer"
+                type="number"
+                value={settings.min_buffer_minutes}
+                onChange={(e) => setSettings({ ...settings, min_buffer_minutes: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Workday length: <strong>{settings.workday_length_hours.toFixed(1)} hours</strong>
+          </p>
+        </div>
+
+        <Separator />
+
+        {/* Big Job Trigger Mode */}
+        <div className="space-y-4">
+          <h4 className="font-medium flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            Big Job Detection
+          </h4>
+          
+          <div className="space-y-2">
+            <Label htmlFor="trigger_mode">Trigger Mode</Label>
+            <Select
+              value={settings.big_job_trigger_mode}
+              onValueChange={(v) => setSettings({ ...settings, big_job_trigger_mode: v as BigJobSettings['big_job_trigger_mode'] })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TRIGGER_MODE_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    <div>
+                      <span>{opt.label}</span>
+                      <span className="text-xs text-muted-foreground ml-2">— {opt.description}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         {/* Thresholds */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="value_threshold" className="flex items-center gap-2">
               <DollarSign className="h-4 w-4" />
-              Value Threshold ($)
+              Price Threshold ($)
             </Label>
             <Input
               id="value_threshold"
@@ -147,14 +279,14 @@ export function BigJobSettingsEditor() {
               onChange={(e) => setSettings({ ...settings, big_job_value_threshold: parseInt(e.target.value) || 0 })}
             />
             <p className="text-xs text-muted-foreground">
-              Jobs at or above this value trigger two-person crew
+              Jobs at or above this value may trigger two-person crew
             </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="hours_threshold" className="flex items-center gap-2">
               <Gauge className="h-4 w-4" />
-              Solo Hours Threshold (optional)
+              Solo Hours Threshold
             </Label>
             <Input
               id="hours_threshold"
@@ -164,13 +296,25 @@ export function BigJobSettingsEditor() {
                 ...settings, 
                 big_job_solo_hours_threshold: e.target.value ? parseFloat(e.target.value) : null 
               })}
-              placeholder="e.g., 6"
+              placeholder="e.g., 8"
             />
             <p className="text-xs text-muted-foreground">
-              Alternative trigger: solo duration exceeds this many hours
+              Solo duration exceeding this may trigger two-person crew
             </p>
           </div>
         </div>
+
+        {settings.big_job_trigger_mode === 'FITS_IN_DAY' && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Fits in Day mode:</strong> A job is "big" if estimated solo hours &gt; 
+              ({settings.workday_length_hours.toFixed(1)}h workday − {settings.min_buffer_minutes}min buffer) = {
+                ((settings.workday_length_hours * 60 - settings.min_buffer_minutes) / 60).toFixed(1)
+              }h available
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Separator />
 
@@ -186,6 +330,29 @@ export function BigJobSettingsEditor() {
             checked={settings.auto_assign_two_techs}
             onCheckedChange={(checked) => setSettings({ ...settings, auto_assign_two_techs: checked })}
           />
+        </div>
+
+        {/* Pairing Mode */}
+        <div className="space-y-2">
+          <Label htmlFor="pairing_mode">Pairing Mode</Label>
+          <Select
+            value={settings.pairing_mode}
+            onValueChange={(v) => setSettings({ ...settings, pairing_mode: v as BigJobSettings['pairing_mode'] })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAIRING_MODE_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  <div>
+                    <span>{opt.label}</span>
+                    <span className="text-xs text-muted-foreground ml-2">— {opt.description}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Efficiency factor */}
@@ -214,8 +381,7 @@ export function BigJobSettingsEditor() {
         <div className="space-y-3">
           <Label>Eligible for Big Job Pairing</Label>
           <p className="text-xs text-muted-foreground">
-            Only technicians with the "eligible_for_big_job_pairing" capability will be considered.
-            Edit this in the Technician settings.
+            Only technicians with "eligible_for_big_job_pairing" capability (in Restricted mode).
           </p>
           
           {eligibleTechs.length === 0 ? (
@@ -231,6 +397,11 @@ export function BigJobSettingsEditor() {
               {eligibleTechs.map(tech => (
                 <Badge key={tech.id} variant="secondary">
                   {tech.name}
+                  {tech.max_stories && (
+                    <span className="text-xs opacity-70 ml-1">
+                      (≤{tech.max_stories} story)
+                    </span>
+                  )}
                 </Badge>
               ))}
             </div>
