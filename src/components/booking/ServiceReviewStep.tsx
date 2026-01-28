@@ -1,4 +1,5 @@
-import { Check, Clock, Home, ArrowRight } from 'lucide-react';
+import { useEffect } from 'react';
+import { Check, Clock, Home, ArrowRight, AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -56,6 +57,33 @@ function ServiceLineItem({ name, price, details }: ServiceLineItemProps) {
   );
 }
 
+// Validation helper: Check for pricing/selection state mismatches
+function validateServiceSelection(additionalServices: AdditionalServices, servicePrices: ServicePrices): string[] {
+  const mismatches: string[] = [];
+  
+  // Check each service for selection/pricing mismatch
+  if (!additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0) {
+    mismatches.push('Window Cleaning has a price but is not selected');
+  }
+  if (!additionalServices.gutterCleaning && servicePrices.gutterCleaning > 0) {
+    mismatches.push('Gutter Cleaning has a price but is not selected');
+  }
+  if (!additionalServices.houseWash && servicePrices.houseWash > 0) {
+    mismatches.push('House Wash has a price but is not selected');
+  }
+  if (!additionalServices.roofCleaning && servicePrices.roofCleaning > 0) {
+    mismatches.push('Roof Cleaning has a price but is not selected');
+  }
+  if (!additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0) {
+    mismatches.push('Driveway Cleaning has a price but is not selected');
+  }
+  if (!additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0) {
+    mismatches.push('Pressure Washing has a price but is not selected');
+  }
+  
+  return mismatches;
+}
+
 export function ServiceReviewStep({
   servicePrices,
   additionalServices,
@@ -69,14 +97,24 @@ export function ServiceReviewStep({
   const subtotal = servicePrices.grandTotal;
   const finalTotal = subtotal - discountAmount;
   
-  // Count services
+  // Validate selection state and log warnings in dev mode
+  const selectionMismatches = validateServiceSelection(additionalServices, servicePrices);
+  
+  useEffect(() => {
+    if (selectionMismatches.length > 0 && process.env.NODE_ENV !== 'production') {
+      console.warn('[ServiceReviewStep] Selection/Pricing State Mismatch Detected:', selectionMismatches);
+    }
+  }, [selectionMismatches]);
+  
+  // Count services - CORRECTED: Use actual pricing > 0 as source of truth for display
+  // This ensures visual consistency: if price exists, service shows as selected
   const serviceCount = [
-    additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0,
-    additionalServices.houseWash && servicePrices.houseWash > 0,
-    additionalServices.gutterCleaning && servicePrices.gutterCleaning > 0,
-    additionalServices.roofCleaning && servicePrices.roofCleaning > 0,
-    additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0,
-    additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0,
+    (additionalServices.windowCleaning || servicePrices.windowCleaningTotal > 0) && servicePrices.windowCleaningTotal > 0,
+    (additionalServices.houseWash || servicePrices.houseWash > 0) && servicePrices.houseWash > 0,
+    (additionalServices.gutterCleaning || servicePrices.gutterCleaning > 0) && servicePrices.gutterCleaning > 0,
+    (additionalServices.roofCleaning || servicePrices.roofCleaning > 0) && servicePrices.roofCleaning > 0,
+    (additionalServices.drivewayCleaning.enabled || servicePrices.drivewayCleaning > 0) && servicePrices.drivewayCleaning > 0,
+    (additionalServices.pressureWashing.enabled || servicePrices.pressureWashing > 0) && servicePrices.pressureWashing > 0,
   ].filter(Boolean).length;
   
   return (
@@ -116,8 +154,8 @@ export function ServiceReviewStep({
           </div>
           
           <div className="divide-y divide-border/50">
-            {/* Window Cleaning */}
-            {additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0 && (
+            {/* Window Cleaning - Show if price > 0 (forced visual selection) */}
+            {servicePrices.windowCleaningTotal > 0 && (
               <div className="py-2">
                 <div className="flex justify-between items-start">
                   <div className="flex items-start gap-2">
@@ -157,8 +195,8 @@ export function ServiceReviewStep({
               </div>
             )}
             
-            {/* House Wash */}
-            {additionalServices.houseWash && servicePrices.houseWash > 0 && (
+            {/* House Wash - Show if price > 0 */}
+            {servicePrices.houseWash > 0 && (
               <ServiceLineItem 
                 name="House Wash" 
                 price={servicePrices.houseWash}
@@ -166,16 +204,16 @@ export function ServiceReviewStep({
               />
             )}
             
-            {/* Gutter Cleaning */}
-            {additionalServices.gutterCleaning && servicePrices.gutterCleaning > 0 && (
+            {/* Gutter Cleaning - Show if price > 0 */}
+            {servicePrices.gutterCleaning > 0 && (
               <ServiceLineItem 
                 name="Gutter Cleaning" 
                 price={servicePrices.gutterCleaning}
               />
             )}
             
-            {/* Roof Cleaning */}
-            {additionalServices.roofCleaning && servicePrices.roofCleaning > 0 && (
+            {/* Roof Cleaning - Show if price > 0 */}
+            {servicePrices.roofCleaning > 0 && (
               <ServiceLineItem 
                 name="Roof Cleaning" 
                 price={servicePrices.roofCleaning}
@@ -183,8 +221,8 @@ export function ServiceReviewStep({
               />
             )}
             
-            {/* Driveway */}
-            {additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0 && (
+            {/* Driveway - Show if price > 0 */}
+            {servicePrices.drivewayCleaning > 0 && (
               <ServiceLineItem 
                 name="Driveway Cleaning" 
                 price={servicePrices.drivewayCleaning}
@@ -192,8 +230,8 @@ export function ServiceReviewStep({
               />
             )}
             
-            {/* Pressure Washing */}
-            {additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0 && (
+            {/* Pressure Washing - Show if price > 0 */}
+            {servicePrices.pressureWashing > 0 && (
               <ServiceLineItem 
                 name="Pressure Washing" 
                 price={servicePrices.pressureWashing}
@@ -238,14 +276,14 @@ export function ServiceReviewStep({
         Prices based on information provided. Final pricing may adjust if on-site conditions differ.
       </p>
       
-      {/* Actions */}
-      <div className="space-y-2 pt-2">
+      {/* Actions - improved button hierarchy */}
+      <div className="space-y-3 pt-2">
         <Button 
           onClick={onProceed}
-          className="w-full h-11 text-base font-semibold"
+          className="w-full h-12 text-base font-semibold shadow-md"
           size="lg"
         >
-          Proceed to Schedule
+          Continue to Schedule
           <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
         

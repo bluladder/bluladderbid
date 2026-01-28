@@ -76,10 +76,10 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <User className="w-4 h-4" />
-          Your Information
+          Your Info
         </CardTitle>
         <CardDescription className="text-xs">
-          Contact details and service address
+          We'll use this to confirm your appointment
         </CardDescription>
       </CardHeader>
       <CardContent>
