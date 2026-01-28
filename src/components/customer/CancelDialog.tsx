@@ -26,6 +26,9 @@ interface CancelDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onComplete: () => void;
+  // Admin override props
+  isAdminOverride?: boolean;
+  adminUserId?: string;
 }
 
 function formatPrice(price: number) {
@@ -42,33 +45,42 @@ export function CancelDialog({
   open,
   onOpenChange,
   onComplete,
+  isAdminOverride,
+  adminUserId,
 }: CancelDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleConfirm = async () => {
     setIsSubmitting(true);
     try {
-      // Update booking status to cancelled (don't delete - preserve for records)
-      const { error } = await supabase
-        .from('bookings')
-        .update({
-          status: 'cancelled',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', appointment.id);
-
-      if (error) throw error;
-
-      // Log the cancellation for audit
-      console.log('Appointment cancelled by customer:', {
-        bookingId: appointment.id,
-        referenceNumber: appointment.reference_number,
-        scheduledTime: appointment.scheduled_start,
-        timestamp: new Date().toISOString(),
+      // Call edge function for cancel
+      const { data, error } = await supabase.functions.invoke('customer-appointment-actions', {
+        body: {
+          action: 'cancel',
+          bookingId: appointment.id,
+          isAdminOverride,
+          adminUserId,
+        },
       });
 
-      // TODO: Trigger Jobber sync to release the slot
-      // This would be done via an edge function call
+      if (error) throw error;
+      
+      if (data?.error) {
+        if (data.code === 'LOCKOUT') {
+          toast.error(data.details || 'Appointments cannot be cancelled within 48 hours');
+        } else {
+          throw new Error(data.details || data.error);
+        }
+        return;
+      }
+
+      // Log the cancellation
+      console.log('Appointment cancelled:', {
+        bookingId: appointment.id,
+        referenceNumber: appointment.reference_number,
+        jobberSynced: data?.jobberSynced,
+        timestamp: new Date().toISOString(),
+      });
 
       onComplete();
     } catch (err) {

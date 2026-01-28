@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,10 +38,18 @@ import {
   Trash2,
   EyeOff,
   Eye,
-  RotateCcw
+  RotateCcw,
+  CalendarClock,
+  Edit,
+  XCircle,
+  ShieldAlert,
+  Loader2
 } from 'lucide-react';
-import { format, parseISO, subDays, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
+import { format, parseISO, subDays, startOfDay, endOfDay, isWithinInterval, differenceInHours } from 'date-fns';
 import { toast } from 'sonner';
+import { RescheduleDialog } from '@/components/customer/RescheduleDialog';
+import { ModifyServicesDialog } from '@/components/customer/ModifyServicesDialog';
+import { CancelDialog } from '@/components/customer/CancelDialog';
 
 type DateRange = '7d' | '30d' | '90d' | 'all' | 'custom';
 
@@ -159,6 +169,10 @@ function BookingCard({
   onDelete,
   onHide,
   onRestore,
+  onReschedule,
+  onModify,
+  onCancel,
+  adminUserId,
 }: { 
   booking: Booking; 
   expanded: boolean; 
@@ -166,9 +180,21 @@ function BookingCard({
   onDelete: (id: string) => void;
   onHide: (id: string) => void;
   onRestore: (id: string) => void;
+  onReschedule: (booking: Booking) => void;
+  onModify: (booking: Booking) => void;
+  onCancel: (booking: Booking) => void;
+  adminUserId?: string;
 }) {
   const customerName = [booking.customer?.first_name, booking.customer?.last_name]
     .filter(Boolean).join(' ') || 'Unknown';
+  
+  // Check if within 48-hour lockout
+  const isWithinLockout = booking.scheduled_start 
+    ? differenceInHours(parseISO(booking.scheduled_start), new Date()) < 48
+    : false;
+  
+  // Check if booking can be modified (not completed or cancelled)
+  const canModify = !['completed', 'cancelled'].includes(booking.status);
 
   return (
     <Card className="overflow-hidden">
@@ -286,32 +312,50 @@ function BookingCard({
             </>
           )}
 
-          {/* Actions */}
+          {/* Admin Override Actions */}
+          {canModify && (
+            <>
+              <Separator />
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldAlert className="w-4 h-4 text-amber-600" />
+                  <span className="text-sm font-medium">Admin Actions</span>
+                  {isWithinLockout && (
+                    <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                      Within 48hr lockout
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onReschedule(booking); }}>
+                    <CalendarClock className="w-4 h-4 mr-1.5" />
+                    Reschedule
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onModify(booking); }}>
+                    <Edit className="w-4 h-4 mr-1.5" />
+                    Modify
+                  </Button>
+                  <Button variant="ghost" size="sm" className="text-destructive" onClick={(e) => { e.stopPropagation(); onCancel(booking); }}>
+                    <XCircle className="w-4 h-4 mr-1.5" />
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Visibility Actions */}
           <Separator />
           <div className="flex justify-end gap-2">
             {booking.is_hidden ? (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRestore(booking.id);
-                }}
-              >
+              <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onRestore(booking.id); }}>
                 <RotateCcw className="w-4 h-4 mr-2" />
-                Restore Booking
+                Restore
               </Button>
             ) : (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onHide(booking.id);
-                }}
-              >
+              <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onHide(booking.id); }}>
                 <EyeOff className="w-4 h-4 mr-2" />
-                Hide Booking
+                Hide
               </Button>
             )}
             
@@ -703,6 +747,9 @@ export function BookingsManager() {
                     onDelete={deleteBooking}
                     onHide={hideBooking}
                     onRestore={restoreBooking}
+                    onReschedule={() => {/* TODO: Add admin reschedule dialog */}}
+                    onModify={() => {/* TODO: Add admin modify dialog */}}
+                    onCancel={() => {/* TODO: Add admin cancel dialog */}}
                   />
                 ))}
               </div>
