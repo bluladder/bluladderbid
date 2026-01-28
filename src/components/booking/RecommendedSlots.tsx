@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Clock, Calendar, User, Sparkles, Check } from 'lucide-react';
+import { Clock, Calendar, User, Sparkles, Check, Zap, Route } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { RecommendedSlot } from '@/hooks/useSmartAvailability';
@@ -142,16 +142,30 @@ export function RecommendedSlots({
                     )}
                   </div>
                   
-                  {/* Technician + duration */}
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                  {/* Technician + duration + efficiency indicator */}
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5 flex-wrap">
                     <User className="w-3 h-3" />
                     <span>{slot.technicianName}</span>
                     <span>•</span>
                     <span>{durationHrs}hr</span>
-                    {slot.routeDensityLabel && (
+                    {/* Gap efficiency label - primary indicator */}
+                    {slot.gapEfficiencyLabel && (
                       <>
                         <span>•</span>
-                        <span className="text-primary">{slot.routeDensityLabel}</span>
+                        <span className="inline-flex items-center gap-0.5 text-primary font-medium">
+                          <Zap className="w-3 h-3" />
+                          {slot.gapEfficiencyLabel}
+                        </span>
+                      </>
+                    )}
+                    {/* Route density as fallback */}
+                    {!slot.gapEfficiencyLabel && slot.routeDensityLabel && (
+                      <>
+                        <span>•</span>
+                        <span className="inline-flex items-center gap-0.5 text-primary">
+                          <Route className="w-3 h-3" />
+                          {slot.routeDensityLabel}
+                        </span>
                       </>
                     )}
                   </div>

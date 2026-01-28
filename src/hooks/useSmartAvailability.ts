@@ -16,6 +16,8 @@ export interface RecommendedSlot {
   routeDensityLabel?: string;
   gapMinutes?: number;
   gapScore?: number;
+  gapEfficiencyLabel?: string;
+  routeBonus?: number;
   whyLabel?: 'soonest_available' | 'minimizes_gaps' | 'alternative';
 }
 
@@ -28,6 +30,9 @@ export interface DayGridSlot {
   durationMinutes: number;
   routeDensityScore?: number;
   routeDensityLabel?: string;
+  gapMinutes?: number;
+  gapScore?: number;
+  gapEfficiencyLabel?: string;
 }
 
 interface ServiceForAvailability {
