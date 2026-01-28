@@ -51,74 +51,81 @@ export function useServicePricing(
     
     // ==========================================
     // WINDOW CLEANING (sq ft based + modifiers)
+    // Only calculate if window cleaning is enabled
     // ==========================================
-    const windowConfig = PRICING.window_cleaning;
-    const windowModifiers = windowConfig.modifiers;
-    
-    // Base price from square footage
-    const baseExterior = squareFootage * windowConfig.exteriorPerSqFt;
-    const baseInterior = windowCleaningType === 'both' 
-      ? squareFootage * windowConfig.interiorPerSqFt
-      : 0;
-    const baseWindowPrice = baseExterior + baseInterior;
-    
-    // Collect all applicable modifiers
-    const windowModifierPercents: number[] = [];
-    
-    // Story modifier
-    const storyMod = windowModifiers.stories[stories.toString()] ?? 0;
-    windowModifierPercents.push(storyMod);
-    
-    // Condition modifier
-    const conditionMod = windowModifiers.condition?.[condition] ?? 0;
-    windowModifierPercents.push(conditionMod);
-    
-    // Apply modifiers to get adjusted base
-    const adjustedWindowBase = applyModifiers(baseWindowPrice, windowModifierPercents);
-    
-    // Calculate optional modifiers (only if advanced is shown)
+    let exteriorWindows = 0;
+    let interiorWindows = 0;
     let hardWaterAddon = 0;
     let frenchPanesAddon = 0;
     let solarScreensAddon = 0;
     let ladderWorkAddon = 0;
     let sunroomAddon = 0;
+    let windowCleaningTotal = 0;
     
-    if (homeDetails.showAdvanced) {
-      // Hard water stains - percentage of affected windows
-      if (homeDetails.hardWaterStains && windowModifiers.hardWater) {
-        const hardWaterPercent = windowModifiers.hardWater;
-        const affectedPercent = homeDetails.hardWaterPercent / 100;
-        hardWaterAddon = Math.round(adjustedWindowBase * (hardWaterPercent / 100) * affectedPercent);
+    if (additionalServices.windowCleaning) {
+      const windowConfig = PRICING.window_cleaning;
+      const windowModifiers = windowConfig.modifiers;
+      
+      // Base price from square footage
+      const baseExterior = squareFootage * windowConfig.exteriorPerSqFt;
+      const baseInterior = windowCleaningType === 'both' 
+        ? squareFootage * windowConfig.interiorPerSqFt
+        : 0;
+      
+      // Collect all applicable modifiers
+      const windowModifierPercents: number[] = [];
+      
+      // Story modifier
+      const storyMod = windowModifiers.stories[stories.toString()] ?? 0;
+      windowModifierPercents.push(storyMod);
+      
+      // Condition modifier
+      const conditionMod = windowModifiers.condition?.[condition] ?? 0;
+      windowModifierPercents.push(conditionMod);
+      
+      // Apply modifiers to get adjusted base
+      exteriorWindows = Math.round(baseExterior * (1 + storyMod / 100 + conditionMod / 100));
+      interiorWindows = Math.round(baseInterior * (1 + conditionMod / 100));
+      const adjustedWindowBase = exteriorWindows + interiorWindows;
+      
+      // Calculate optional modifiers (only if advanced is shown)
+      if (homeDetails.showAdvanced) {
+        // Hard water stains - percentage of affected windows
+        if (homeDetails.hardWaterStains && windowModifiers.hardWater) {
+          const hardWaterPercent = windowModifiers.hardWater;
+          const affectedPercent = homeDetails.hardWaterPercent / 100;
+          hardWaterAddon = Math.round(adjustedWindowBase * (hardWaterPercent / 100) * affectedPercent);
+        }
+        
+        // French panes - percentage of affected windows
+        if (homeDetails.frenchPanes && windowModifiers.frenchPanes) {
+          const frenchPercent = windowModifiers.frenchPanes;
+          const affectedPercent = homeDetails.frenchPanesPercent / 100;
+          frenchPanesAddon = Math.round(adjustedWindowBase * (frenchPercent / 100) * affectedPercent);
+        }
+        
+        // Solar screens - percentage of affected windows
+        if (homeDetails.solarScreens && windowModifiers.solarScreens) {
+          const solarPercent = windowModifiers.solarScreens;
+          const affectedPercent = homeDetails.solarScreensPercent / 100;
+          solarScreensAddon = Math.round(adjustedWindowBase * (solarPercent / 100) * affectedPercent);
+        }
+        
+        // Flat fee add-ons
+        if (homeDetails.ladderWork) {
+          ladderWorkAddon = PRICING.window_addons.ladderWork[homeDetails.ladderWorkCount] ?? 0;
+        }
+        
+        sunroomAddon = PRICING.window_addons.sunroom[homeDetails.sunroom] ?? 0;
       }
       
-      // French panes - percentage of affected windows
-      if (homeDetails.frenchPanes && windowModifiers.frenchPanes) {
-        const frenchPercent = windowModifiers.frenchPanes;
-        const affectedPercent = homeDetails.frenchPanesPercent / 100;
-        frenchPanesAddon = Math.round(adjustedWindowBase * (frenchPercent / 100) * affectedPercent);
-      }
+      const windowCleaningCalculated = adjustedWindowBase + hardWaterAddon + 
+        frenchPanesAddon + solarScreensAddon + ladderWorkAddon + sunroomAddon;
       
-      // Solar screens - percentage of affected windows
-      if (homeDetails.solarScreens && windowModifiers.solarScreens) {
-        const solarPercent = windowModifiers.solarScreens;
-        const affectedPercent = homeDetails.solarScreensPercent / 100;
-        solarScreensAddon = Math.round(adjustedWindowBase * (solarPercent / 100) * affectedPercent);
-      }
-      
-      // Flat fee add-ons
-      if (homeDetails.ladderWork) {
-        ladderWorkAddon = PRICING.window_addons.ladderWork[homeDetails.ladderWorkCount] ?? 0;
-      }
-      
-      sunroomAddon = PRICING.window_addons.sunroom[homeDetails.sunroom] ?? 0;
+      // Apply minimum price for window cleaning
+      const windowMinimum = windowConfig.minimumPrice ?? 0;
+      windowCleaningTotal = Math.max(windowCleaningCalculated, windowMinimum);
     }
-    
-    const windowCleaningCalculated = adjustedWindowBase + hardWaterAddon + 
-      frenchPanesAddon + solarScreensAddon + ladderWorkAddon + sunroomAddon;
-    
-    // Apply minimum price for window cleaning
-    const windowMinimum = windowConfig.minimumPrice ?? 0;
-    const windowCleaningTotal = Math.max(windowCleaningCalculated, windowMinimum);
     
     // ==========================================
     // HOUSE WASH (sq ft based + modifiers)
@@ -245,8 +252,8 @@ export function useServicePricing(
       gutterCleaning + houseWash + roofCleaning;
     
     return {
-      exteriorWindows: Math.round(baseExterior * (1 + storyMod / 100 + conditionMod / 100)),
-      interiorWindows: Math.round(baseInterior * (1 + conditionMod / 100)),
+      exteriorWindows,
+      interiorWindows,
       hardWaterAddon,
       frenchPanesAddon,
       solarScreensAddon,

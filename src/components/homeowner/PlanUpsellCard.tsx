@@ -46,12 +46,13 @@ export function PlanUpsellCard({
     ? bundles.find(b => b.tier === selectedTier) || recommendedBundle 
     : recommendedBundle;
   
-  // Count enabled services
+  // Count enabled services based on selection state
   const enabledServices = [
-    servicePrices.windowCleaningTotal > 0,
+    additionalServices.windowCleaning,
     additionalServices.houseWash,
     additionalServices.gutterCleaning,
     additionalServices.roofCleaning,
+    additionalServices.drivewayCleaning.enabled,
     additionalServices.pressureWashing.enabled,
   ].filter(Boolean).length;
   
@@ -99,7 +100,7 @@ export function PlanUpsellCard({
           
           {/* Service breakdown */}
           <div className="space-y-2 text-sm mb-4">
-            {servicePrices.windowCleaningTotal > 0 && (
+            {additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0 && (
               <div className="flex justify-between">
                 <span className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-success" />
