@@ -2,7 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { ArrowLeft, Check, Clock, MapPin } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { ArrowLeft, Check, Clock, MapPin, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
@@ -59,6 +61,7 @@ export function BookingFlow({
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
   const [usedSuggestedDay, setUsedSuggestedDay] = useState(false);
   const [usedRecommendedSlot, setUsedRecommendedSlot] = useState(false);
+  const [confirmationChecked, setConfirmationChecked] = useState(false);
 
   const { trackCalendarView, trackTimeSelection, trackInfoStep, trackConfirmation } = useBookingStepTracking();
 
@@ -461,9 +464,26 @@ export function BookingFlow({
                     <span className="font-medium">~{Math.round(selectedSlot.durationMinutes / 60 * 10) / 10} hrs</span>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2 text-center italic">
-                  This time works best with our current schedule.
-                </p>
+                
+                {/* Confirmation acknowledgement checkbox */}
+                <div className="mt-3 pt-3 border-t border-primary/10">
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <Checkbox
+                      checked={confirmationChecked}
+                      onCheckedChange={(checked) => setConfirmationChecked(!!checked)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">
+                        I confirm the details above are correct
+                      </span>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        Final pricing may adjust if on-site conditions differ
+                      </p>
+                    </div>
+                    <ShieldCheck className="w-4 h-4 text-success flex-shrink-0" />
+                  </label>
+                </div>
               </div>
             )}
             
@@ -479,8 +499,8 @@ export function BookingFlow({
               </Button>
               <Button 
                 onClick={handleConfirmBooking} 
-                disabled={!selectedSlot || isSubmitting}
-                className="flex-1 h-12 text-base font-semibold shadow-md"
+                disabled={!selectedSlot || isSubmitting || !confirmationChecked}
+                className="flex-1 h-14 text-base font-bold shadow-lg"
                 size="lg"
               >
                 {isSubmitting ? (
@@ -491,11 +511,16 @@ export function BookingFlow({
                 ) : (
                   <>
                     Confirm Booking • {formatPrice(finalTotal)}
-                    <Check className="w-4 h-4 ml-1.5" />
+                    <Check className="w-5 h-5 ml-2" />
                   </>
                 )}
               </Button>
             </div>
+            
+            {/* Trust microcopy */}
+            <p className="text-center text-[10px] text-muted-foreground mt-2">
+              No payment required until service is complete
+            </p>
           </div>
         </div>
       )}
