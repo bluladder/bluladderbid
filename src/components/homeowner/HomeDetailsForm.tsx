@@ -40,7 +40,7 @@ export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps)
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="sqft" className="text-sm font-medium">
-              Home Square Footage
+              Home Square Footage <span className="text-destructive">*</span>
             </Label>
             <Input
               id="sqft"
@@ -48,16 +48,22 @@ export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps)
               value={homeDetails.squareFootage === 0 ? '' : homeDetails.squareFootage}
               onChange={(e) => {
                 const value = e.target.value;
-                onChange({ squareFootage: value === '' ? 0 : parseInt(value, 10) });
+                onChange({ squareFootage: value === '' ? 0 : parseInt(value, 10) || 0 });
               }}
               onFocus={(e) => {
                 // Select all text on focus for easy replacement
-                e.target.select();
+                if (homeDetails.squareFootage > 0) {
+                  e.target.select();
+                }
               }}
-              className="input-field"
-              placeholder="e.g. 2,000 sq ft"
+              className="input-field text-lg h-12"
+              placeholder="Enter your home's sq ft (e.g. 2,500)"
               inputMode="numeric"
+              autoComplete="off"
             />
+            <p className="text-xs text-muted-foreground">
+              Find this on your property tax statement or home listing
+            </p>
           </div>
           
           <div className="space-y-2">

@@ -1,4 +1,4 @@
-import { Calendar, Shield } from 'lucide-react';
+import { Calendar, Shield, CreditCard, Percent } from 'lucide-react';
 
 export function PlanBuilderHeader() {
   return (
@@ -15,14 +15,19 @@ export function PlanBuilderHeader() {
         Select the services you need and choose how often you want them.
       </p>
       
-      <div className="mt-6 flex flex-wrap justify-center gap-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Shield className="w-4 h-4 text-primary" />
-          <span>20% down payment</span>
+      {/* Payment structure clarity */}
+      <div className="mt-6 flex flex-wrap justify-center gap-4 text-sm">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted text-muted-foreground">
+          <Percent className="w-4 h-4 text-primary" />
+          <span><strong className="text-foreground">20%</strong> deposit today</span>
         </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Calendar className="w-4 h-4 text-primary" />
-          <span>11 easy monthly payments</span>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted text-muted-foreground">
+          <CreditCard className="w-4 h-4 text-primary" />
+          <span><strong className="text-foreground">11</strong> monthly payments</span>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted text-muted-foreground">
+          <Shield className="w-4 h-4 text-primary" />
+          <span>Cancel anytime</span>
         </div>
       </div>
     </div>

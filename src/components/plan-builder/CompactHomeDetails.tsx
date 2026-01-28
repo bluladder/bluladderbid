@@ -81,14 +81,21 @@ export function CompactHomeDetails({
               value={homeDetails.squareFootage === 0 ? '' : homeDetails.squareFootage}
               onChange={(e) => {
                 const value = e.target.value;
-                onChange({ squareFootage: value === '' ? 0 : parseInt(value, 10) });
+                onChange({ squareFootage: value === '' ? 0 : parseInt(value, 10) || 0 });
               }}
-              placeholder="e.g. 2,500"
+              onFocus={(e) => {
+                if (homeDetails.squareFootage > 0) {
+                  e.target.select();
+                }
+              }}
+              placeholder="Enter your home's sq ft (e.g. 2,500)"
               className="text-lg h-12"
               autoFocus={!hasBasicDetails}
+              inputMode="numeric"
+              autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              You can find this on your property tax statement or home listing
+              Find this on your property tax statement or home listing
             </p>
           </div>
 

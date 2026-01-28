@@ -100,33 +100,38 @@ export function PlanPaymentSummary({
         
         <Separator />
         
-        {/* Payment Breakdown */}
+        {/* Payment Breakdown - Clearer labels */}
         <div className="space-y-3">
           <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-            12-Month Payment Plan
+            How It Works
           </h4>
           
           <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">
-                1
+            {/* Step 1 - Deposit */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
+                20%
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Due today (20%)</p>
+                <p className="text-sm text-muted-foreground">Deposit due today</p>
                 <p className="text-2xl font-bold text-primary">${payment.downPayment}</p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2 text-muted-foreground text-sm">
-              <ArrowRight className="w-4 h-4" />
-              <span>Then 11 monthly payments of</span>
-              <span className="font-semibold text-foreground">${payment.monthlyPayment}</span>
+            {/* Step 2 - Monthly */}
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-background/50">
+              <ArrowRight className="w-4 h-4 text-muted-foreground" />
+              <div className="text-sm">
+                <span className="text-muted-foreground">Then </span>
+                <span className="font-bold text-foreground">${payment.monthlyPayment}/mo</span>
+                <span className="text-muted-foreground"> × 11 months</span>
+              </div>
             </div>
           </div>
           
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <CreditCard className="w-4 h-4" />
-            <span>Automatic monthly billing</span>
+            <span>Automatic monthly billing • Cancel anytime</span>
           </div>
         </div>
         
