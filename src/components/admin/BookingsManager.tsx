@@ -51,6 +51,7 @@ import { AdminRescheduleDialog } from './AdminRescheduleDialog';
 import { AdminModifyServicesDialog } from './AdminModifyServicesDialog';
 import { AdminCancelDialog } from './AdminCancelDialog';
 import { BookingAuditLog } from './BookingAuditLog';
+import { NotificationHistoryDialog } from './NotificationHistoryDialog';
 
 type DateRange = '7d' | '30d' | '90d' | 'all' | 'custom';
 
@@ -343,7 +344,7 @@ function BookingCard({
                   </Button>
                   <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onViewHistory(booking); }}>
                     <Clock className="w-4 h-4 mr-1.5" />
-                    History
+                    Audit
                   </Button>
                 </div>
               </div>
