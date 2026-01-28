@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Settings2, Car, Truck, Scale, ChevronDown, ChevronUp, CalendarOff, ShieldCheck } from 'lucide-react';
+import { Users, Settings2, Car, Truck, Scale, ChevronDown, ChevronUp, CalendarOff, ShieldCheck, CalendarDays } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -11,6 +11,7 @@ import { DriveTimeSettings } from './DriveTimeSettings';
 import { BookingSettings } from './BookingSettings';
 import { ScheduleBlocksManager } from './ScheduleBlocksManager';
 import { AdminRoleManager } from './AdminRoleManager';
+import { AdminScheduleCalendar } from './AdminScheduleCalendar';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 
 export function CrewTabContent() {
@@ -47,6 +48,14 @@ export function CrewTabContent() {
             >
               <Settings2 className="w-3.5 h-3.5 mr-1.5" />
               Scheduling
+            </Badge>
+            <Badge
+              variant={activeSection === 'calendar' ? 'default' : 'outline'}
+              className="cursor-pointer px-3 py-1.5"
+              onClick={() => setActiveSection('calendar')}
+            >
+              <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
+              Schedule View
             </Badge>
             <Badge
               variant={activeSection === 'blocks' ? 'default' : 'outline'}
@@ -124,6 +133,11 @@ export function CrewTabContent() {
             </CollapsibleContent>
           </Collapsible>
         </div>
+      )}
+
+      {/* Schedule Calendar View */}
+      {activeSection === 'calendar' && (
+        <AdminScheduleCalendar />
       )}
 
       {/* Time Off / Schedule Blocks Section */}

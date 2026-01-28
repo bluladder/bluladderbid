@@ -643,24 +643,36 @@ Deno.serve(async (req) => {
 
     // Fetch busy blocks from local mirror
     const techJobberIds = eligibleTechs.map(t => t.jobberUserId);
+    const techIds = eligibleTechs.map(t => t.id);
     
-    const { data: busyBlocks, error: blocksError } = await supabase
-      .from("jobber_busy_blocks")
-      .select("*")
-      .in("crew_id", techJobberIds)
-      .lt("start_at", toDate.toISOString())
-      .gt("end_at", fromDate.toISOString())
-      .in("status", ["scheduled", "in_progress"]);
+    const [busyBlocksRes, scheduleBlocksRes] = await Promise.all([
+      supabase
+        .from("jobber_busy_blocks")
+        .select("*")
+        .in("crew_id", techJobberIds)
+        .lt("start_at", toDate.toISOString())
+        .gt("end_at", fromDate.toISOString())
+        .in("status", ["scheduled", "in_progress"]),
+      supabase
+        .from("schedule_blocks")
+        .select("*")
+        .in("technician_id", techIds)
+        .lt("start_at", toDate.toISOString())
+        .gt("end_at", fromDate.toISOString())
+    ]);
 
-    if (blocksError) {
-      console.error("[Availability] Failed to fetch busy blocks:", blocksError);
+    if (busyBlocksRes.error) {
+      console.error("[Availability] Failed to fetch busy blocks:", busyBlocksRes.error);
       return new Response(
         JSON.stringify({ error: "Failed to load schedule data", slots: [], recommendations: [] }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
       );
     }
 
-    console.log(`[Availability] Found ${busyBlocks?.length || 0} busy blocks`);
+    const busyBlocks = busyBlocksRes.data || [];
+    const scheduleBlocks = scheduleBlocksRes.data || [];
+
+    console.log(`[Availability] Found ${busyBlocks.length} busy blocks, ${scheduleBlocks.length} schedule blocks`);
 
     // Fetch cached drive times if customer address provided
     const driveCache = new Map<string, number>();
@@ -731,6 +743,35 @@ Deno.serve(async (req) => {
         expandedEnd,
         address: block.client_address,
       });
+    }
+
+    // Add admin schedule blocks (vacation, PTO, manual blocks) to busy times
+    // Map tech ID to jobber user ID for consistent lookup
+    const techIdToJobberId = new Map(eligibleTechs.map(t => [t.id, t.jobberUserId]));
+    
+    for (const block of scheduleBlocks) {
+      const jobberUserId = techIdToJobberId.get(block.technician_id);
+      if (!jobberUserId) continue;
+      
+      const visitDate = formatDateInTimezone(new Date(block.start_at), businessTimezone);
+      
+      if (!busyTimesByTech[jobberUserId]) {
+        busyTimesByTech[jobberUserId] = [];
+      }
+      
+      const blockStart = new Date(block.start_at);
+      const blockEnd = new Date(block.end_at);
+      
+      // Schedule blocks have higher priority - no buffer reduction
+      busyTimesByTech[jobberUserId].push({
+        start: blockStart,
+        end: blockEnd,
+        expandedStart: blockStart, // Full block, no buffer
+        expandedEnd: blockEnd,
+        address: null, // No address for admin blocks
+      });
+      
+      console.log(`[ScheduleBlock] Added ${block.block_category} block for tech ${block.technician_id}: ${block.start_at} - ${block.end_at}`);
     }
 
     // Track day metrics for fully-booked detection
