@@ -2,21 +2,12 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useIsAdmin, useAuth } from '@/hooks/useAuth';
 import { AdminLogin } from '@/components/admin/AdminLogin';
-import { PricingEditor } from '@/components/admin/PricingEditor';
-import { PricingPreview } from '@/components/admin/PricingPreview';
-import { ScenarioCompare } from '@/components/admin/ScenarioCompare';
-import { DiscountCodesManager } from '@/components/admin/DiscountCodesManager';
-import { JobberIntegration } from '@/components/admin/JobberIntegration';
-import { TechnicianManager } from '@/components/admin/TechnicianManager';
-import { EligibilityRulesManager } from '@/components/admin/EligibilityRulesManager';
-import { BigJobSettingsEditor } from '@/components/admin/BigJobSettingsEditor';
-import { DriveTimeSettings } from '@/components/admin/DriveTimeSettings';
-import { BookingSettings } from '@/components/admin/BookingSettings';
 import { BookingsManager } from '@/components/admin/BookingsManager';
-import { MarketingAnalytics } from '@/components/admin/MarketingAnalytics';
-import { CrewUtilizationAnalytics } from '@/components/admin/CrewUtilizationAnalytics';
-import { EmbedCodeManager } from '@/components/admin/EmbedCodeManager';
 import { SchedulingPortal } from '@/components/admin/SchedulingPortal';
+import { AnalyticsTabContent } from '@/components/admin/AnalyticsTabContent';
+import { CrewTabContent } from '@/components/admin/CrewTabContent';
+import { IntegrationsTabContent } from '@/components/admin/IntegrationsTabContent';
+import { PricingTabContent } from '@/components/admin/PricingTabContent';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -157,32 +148,23 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
             </TabsContent>
             
             {/* Analytics Tab - Trends, success rates, campaign performance */}
-            <TabsContent value="analytics" className="space-y-6">
-              <MarketingAnalytics />
-              <CrewUtilizationAnalytics />
+            <TabsContent value="analytics">
+              <AnalyticsTabContent />
             </TabsContent>
             
             {/* Crew Tab - Technician config, capabilities, eligibility rules, big job settings */}
-            <TabsContent value="crew" className="space-y-6">
-              <TechnicianManager />
-              <EligibilityRulesManager />
-              <BigJobSettingsEditor />
-              <DriveTimeSettings />
-              <BookingSettings />
+            <TabsContent value="crew">
+              <CrewTabContent />
             </TabsContent>
             
             {/* Integrations Tab - Jobber + Website embeds/links */}
-            <TabsContent value="integrations" className="space-y-6">
-              <JobberIntegration />
-              <EmbedCodeManager />
+            <TabsContent value="integrations">
+              <IntegrationsTabContent />
             </TabsContent>
             
             {/* Pricing Tab - Pricing config, scenarios, discounts */}
-            <TabsContent value="pricing" className="space-y-6">
-              <PricingEditor />
-              <PricingPreview />
-              <ScenarioCompare />
-              <DiscountCodesManager />
+            <TabsContent value="pricing">
+              <PricingTabContent />
             </TabsContent>
           </Tabs>
         </div>
