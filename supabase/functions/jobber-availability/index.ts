@@ -20,6 +20,7 @@ interface AvailabilityRequest {
   mode?: 'recommended' | 'dayGrid'; // New mode param
   preference?: 'AM' | 'PM' | 'none'; // Time preference
   selectedDate?: string; // For dayGrid mode
+  numStories?: number; // Property stories for technician filtering
 }
 
 interface BufferTier {
@@ -67,6 +68,11 @@ interface TimeSlot {
   gapScore?: number;
   gapEfficiencyLabel?: string; // "Optimal timing", "Efficient", "Close to prior job"
   routeBonus?: number;
+  // Technician preference scoring
+  skillMultiplier?: number;
+  preferenceBonus?: number;
+  discouragedPenalty?: number;
+  technicianScore?: number; // Combined tech preference score
   whyLabel?: string; // "soonest_available", "minimizes_gaps", "alternative"
 }
 
@@ -470,6 +476,7 @@ Deno.serve(async (req) => {
       mode = 'recommended',
       preference = 'none',
       selectedDate,
+      numStories,
     }: AvailabilityRequest = await req.json();
 
     const requestedDaysToCheck = Number.isFinite(daysToCheck) ? Math.floor(daysToCheck) : 14;
@@ -569,7 +576,7 @@ Deno.serve(async (req) => {
       "pressureWashing": "driveway",
     };
 
-    // Get all active technicians with their rates
+    // Get all active technicians with their rates and capabilities
     const { data: technicians, error: techError } = await supabase
       .from("technicians")
       .select(`
@@ -583,6 +590,8 @@ Deno.serve(async (req) => {
         work_days,
         buffer_minutes,
         max_drive_time_minutes,
+        max_stories,
+        service_capabilities,
         technician_service_rates (
           service_type,
           dollars_per_hour,
@@ -601,7 +610,22 @@ Deno.serve(async (req) => {
 
     console.log(`[Availability] Found ${technicians.length} technicians`);
 
-    // Calculate duration for each technician
+    // Technician capability types
+    interface ServiceCapabilities {
+      can_do_windows?: boolean;
+      can_do_gutters?: boolean;
+      can_do_pressure?: boolean;
+      has_pressure_washer?: boolean;
+      has_ladder_2_story?: boolean;
+      is_roof_safe?: boolean;
+      requires_bundle_for_windows?: boolean;
+      eligible_for_big_job_pairing?: boolean;
+      skill_levels?: Record<string, number>;
+      preferred_services?: string[];
+      discouraged_services?: string[];
+    }
+
+    // Calculate duration and skill score for each technician
     const eligibleTechs: Array<{
       id: string;
       jobberUserId: string;
@@ -614,7 +638,15 @@ Deno.serve(async (req) => {
       workDays: number[];
       bufferMinutes: number | null;
       maxDriveTimeMinutes: number | null;
+      maxStories: number | null;
+      capabilities: ServiceCapabilities | null;
+      skillScore: number;
+      preferenceBonus: number;
+      discouragedPenalty: number;
     }> = [];
+
+    // Extract unique service types for this booking
+    const requestedServiceTypes = services.map(s => serviceTypeMap[s.service] || s.service);
 
     for (const tech of technicians) {
       let totalDuration = 0;
@@ -636,11 +668,60 @@ Deno.serve(async (req) => {
       }
 
       if (canPerformAll && totalDuration > 0) {
+        const capabilities = tech.service_capabilities as ServiceCapabilities | null;
+        
+        // Story-based exclusion (hard rule)
+        const techMaxStories = tech.max_stories;
+        if (numStories && techMaxStories && numStories > techMaxStories) {
+          console.log(`[Tech] ${tech.name}: EXCLUDED - max_stories=${techMaxStories}, job requires ${numStories} stories`);
+          continue; // Skip this technician entirely
+        }
+        
+        // Equipment-based exclusion for pressure washing
+        const needsPressureWasher = requestedServiceTypes.some(s => 
+          ['driveway', 'pressure_wash_addon', 'house_wash'].includes(s)
+        );
+        if (needsPressureWasher && !capabilities?.has_pressure_washer) {
+          console.log(`[Tech] ${tech.name}: EXCLUDED - requires pressure washer, tech doesn't have one`);
+          continue;
+        }
+        
+        // Roof safety check
+        const needsRoofSafe = requestedServiceTypes.includes('roof_wash');
+        if (needsRoofSafe && !capabilities?.is_roof_safe) {
+          console.log(`[Tech] ${tech.name}: EXCLUDED - requires roof-safe certification`);
+          continue;
+        }
+        
         const startingAddress = tech.location_type === 'home' 
           ? tech.starting_address 
           : DRIVE_TIME_CONFIG.office_address;
         
         const workDays = (tech.work_days as number[]) || BUSINESS_HOURS.workDays;
+        
+        // Calculate skill score (average of requested service skill levels)
+        const skillLevels = capabilities?.skill_levels || {};
+        let totalSkill = 0;
+        let skillCount = 0;
+        for (const svcType of requestedServiceTypes) {
+          const level = skillLevels[svcType] ?? 3; // Default to 3 (competent)
+          totalSkill += level;
+          skillCount++;
+        }
+        const avgSkill = skillCount > 0 ? totalSkill / skillCount : 3;
+        // Skill multiplier: skill 5 = 1.15, skill 3 = 1.0, skill 1 = 0.85
+        const skillScore = 0.85 + (avgSkill - 1) * 0.075;
+        
+        // Calculate preference bonus/penalty
+        const preferred = capabilities?.preferred_services || [];
+        const discouraged = capabilities?.discouraged_services || [];
+        
+        let preferenceBonus = 0;
+        let discouragedPenalty = 0;
+        for (const svcType of requestedServiceTypes) {
+          if (preferred.includes(svcType)) preferenceBonus += 15;
+          if (discouraged.includes(svcType)) discouragedPenalty += 20;
+        }
           
         eligibleTechs.push({
           id: tech.id,
@@ -654,9 +735,14 @@ Deno.serve(async (req) => {
           workDays,
           bufferMinutes: tech.buffer_minutes,
           maxDriveTimeMinutes: tech.max_drive_time_minutes,
+          maxStories: tech.max_stories,
+          capabilities,
+          skillScore,
+          preferenceBonus,
+          discouragedPenalty,
         });
         
-        console.log(`[Tech] ${tech.name}: duration=${totalDuration}min, hours=${tech.schedule_start_hour || BUSINESS_HOURS.startHour}-${tech.schedule_end_hour || BUSINESS_HOURS.endHour}, days=${JSON.stringify(workDays)}`);
+        console.log(`[Tech] ${tech.name}: duration=${totalDuration}min, skill=${avgSkill.toFixed(1)}, prefBonus=${preferenceBonus}, discPenalty=${discouragedPenalty}`);
       }
     }
 
@@ -963,6 +1049,9 @@ Deno.serve(async (req) => {
             gapEfficiencyLabel = 'Close to prior job';
           }
           
+          // Calculate technician preference score
+          const technicianScore = (tech.skillScore * 100) + tech.preferenceBonus - tech.discouragedPenalty;
+          
           const slot: TimeSlot = {
             technicianId: tech.id,
             technicianName: tech.name,
@@ -979,6 +1068,10 @@ Deno.serve(async (req) => {
             gapScore,
             gapEfficiencyLabel,
             routeBonus,
+            skillMultiplier: tech.skillScore,
+            preferenceBonus: tech.preferenceBonus,
+            discouragedPenalty: tech.discouragedPenalty,
+            technicianScore,
           };
 
           let exclusionReason: ExclusionReason | null = null;
@@ -1106,17 +1199,20 @@ Deno.serve(async (req) => {
     }
 
     // Recommended mode: return top 3 candidates
-    // Score and sort all slots
+    // Score and sort all slots with technician preference weighting
     const scoredSlots = allSlots.map(slot => {
       const slotDate = new Date(slot.startTime);
       const daysSinceNow = (slotDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
       
-      // Combined score: gap minimization + recency + route density
+      // Component scores
       const recencyScore = Math.max(0, 100 - daysSinceNow * 5); // Prefer sooner
       const gapScore = slot.gapScore || 50;
       const routeScore = slot.routeDensityScore || 50;
+      const techScore = slot.technicianScore || 100; // Default to 100 (skill 3, no bonus/penalty)
       
-      const totalScore = (gapScore * 0.4) + (recencyScore * 0.35) + (routeScore * 0.25);
+      // Combined score with technician preference weighting
+      // Gap: 35%, Recency: 30%, Route: 15%, Tech Preference: 20%
+      const totalScore = (gapScore * 0.35) + (recencyScore * 0.30) + (routeScore * 0.15) + (techScore * 0.20);
       
       return { ...slot, totalScore };
     });
@@ -1204,6 +1300,10 @@ Deno.serve(async (req) => {
       console.log(`[ADMIN DEBUG]   └─ routeBonus: ${rec.routeBonus || 0}`);
       console.log(`[ADMIN DEBUG]   └─ gapEfficiencyLabel: ${rec.gapEfficiencyLabel || 'none'}`);
       console.log(`[ADMIN DEBUG]   └─ isFirstJob: ${rec.isFirstJob}`);
+      console.log(`[ADMIN DEBUG]   └─ skillMultiplier: ${rec.skillMultiplier?.toFixed(2) || 'N/A'}`);
+      console.log(`[ADMIN DEBUG]   └─ preferenceBonus: ${rec.preferenceBonus || 0}`);
+      console.log(`[ADMIN DEBUG]   └─ discouragedPenalty: ${rec.discouragedPenalty || 0}`);
+      console.log(`[ADMIN DEBUG]   └─ technicianScore: ${rec.technicianScore?.toFixed(1) || 'N/A'}`);
     }
     console.log(`[ADMIN DEBUG] ══════════════════════════════`);
 

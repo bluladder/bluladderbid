@@ -43,6 +43,7 @@ interface ServiceForAvailability {
 interface UseSmartAvailabilityOptions {
   services: ServiceForAvailability[];
   customerAddress?: string;
+  numStories?: number; // Property stories for technician filtering
 }
 
 interface UseSmartAvailabilityResult {
@@ -70,6 +71,7 @@ interface UseSmartAvailabilityResult {
 export function useSmartAvailability({
   services,
   customerAddress,
+  numStories,
 }: UseSmartAvailabilityOptions): UseSmartAvailabilityResult {
   const [recommendations, setRecommendations] = useState<RecommendedSlot[]>([]);
   const [daySlots, setDaySlots] = useState<DayGridSlot[]>([]);
@@ -91,6 +93,7 @@ export function useSmartAvailability({
         body: {
           services,
           customerAddress,
+          numStories,
           mode: 'recommended',
           preference,
           daysToCheck: 30, // Look ahead 30 days for recommendations
@@ -116,7 +119,7 @@ export function useSmartAvailability({
     } finally {
       setIsLoadingRecommendations(false);
     }
-  }, [services, customerAddress]);
+  }, [services, customerAddress, numStories]);
 
   const fetchDaySlots = useCallback(async (date: Date) => {
     if (services.length === 0) return;
@@ -131,6 +134,7 @@ export function useSmartAvailability({
         body: {
           services,
           customerAddress,
+          numStories,
           mode: 'dayGrid',
           selectedDate: dateStr,
           daysToCheck: 1,
@@ -159,7 +163,7 @@ export function useSmartAvailability({
     } finally {
       setIsLoadingDaySlots(false);
     }
-  }, [services, customerAddress]);
+  }, [services, customerAddress, numStories]);
 
   const clearSlots = useCallback(() => {
     setRecommendations([]);
