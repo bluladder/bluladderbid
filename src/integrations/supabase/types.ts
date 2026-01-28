@@ -729,6 +729,118 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_events: {
+        Row: {
+          booking_id: string | null
+          channel: string
+          created_at: string
+          customer_action: string | null
+          customer_action_at: string | null
+          event_type: string
+          id: string
+          notification_content: Json | null
+          sent_at: string | null
+          suppressed: boolean
+          suppressed_reason: string | null
+          triggered_by: string
+          triggered_by_id: string | null
+        }
+        Insert: {
+          booking_id?: string | null
+          channel?: string
+          created_at?: string
+          customer_action?: string | null
+          customer_action_at?: string | null
+          event_type: string
+          id?: string
+          notification_content?: Json | null
+          sent_at?: string | null
+          suppressed?: boolean
+          suppressed_reason?: string | null
+          triggered_by?: string
+          triggered_by_id?: string | null
+        }
+        Update: {
+          booking_id?: string | null
+          channel?: string
+          created_at?: string
+          customer_action?: string | null
+          customer_action_at?: string | null
+          event_type?: string
+          id?: string
+          notification_content?: Json | null
+          sent_at?: string | null
+          suppressed?: boolean
+          suppressed_reason?: string | null
+          triggered_by?: string
+          triggered_by_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pending_confirmations: {
+        Row: {
+          admin_note: string | null
+          booking_id: string
+          change_type: string
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          id: string
+          new_values: Json
+          old_values: Json
+          responded_at: string | null
+          show_price_change: boolean
+          status: string
+          token: string
+        }
+        Insert: {
+          admin_note?: string | null
+          booking_id: string
+          change_type: string
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          id?: string
+          new_values: Json
+          old_values: Json
+          responded_at?: string | null
+          show_price_change?: boolean
+          status?: string
+          token: string
+        }
+        Update: {
+          admin_note?: string | null
+          booking_id?: string
+          change_type?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          id?: string
+          new_values?: Json
+          old_values?: Json
+          responded_at?: string | null
+          show_price_change?: boolean
+          status?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_confirmations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pricing_config: {
         Row: {
           config_key: string
@@ -1142,6 +1254,7 @@ export type Database = {
         | "in_progress"
         | "completed"
         | "cancelled"
+        | "pending_confirmation"
       quote_status: "pending" | "viewed" | "converted" | "expired" | "declined"
       service_type:
         | "windows_exterior"
@@ -1292,6 +1405,7 @@ export const Constants = {
         "in_progress",
         "completed",
         "cancelled",
+        "pending_confirmation",
       ],
       quote_status: ["pending", "viewed", "converted", "expired", "declined"],
       service_type: [
