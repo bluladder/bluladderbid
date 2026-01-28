@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Minus, Check, Info } from 'lucide-react';
+import { ChevronDown, ChevronUp, Check, Sliders } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import type { PlanTier, TierConfig } from './TierSelector';
+import type { TierConfig } from './TierSelector';
 import type { ServicePlanService } from '@/types/servicePlanBuilder';
 
 interface TierCustomizerProps {
@@ -36,11 +35,12 @@ interface ServiceRowProps {
   service: ServicePlanService;
   isIncludedInTier: boolean;
   addonDiscount: number;
+  showFrequencyControls: boolean;
   onToggle: () => void;
   onFrequencyChange: (freq: 1 | 2 | 3 | 4) => void;
 }
 
-function ServiceRow({ service, isIncludedInTier, addonDiscount, onToggle, onFrequencyChange }: ServiceRowProps) {
+function ServiceRow({ service, isIncludedInTier, addonDiscount, showFrequencyControls, onToggle, onFrequencyChange }: ServiceRowProps) {
   const displayPrice = service.enabled && !isIncludedInTier && addonDiscount > 0
     ? Math.round(service.calculatedPrice * (1 - addonDiscount / 100))
     : service.calculatedPrice;
@@ -100,8 +100,8 @@ function ServiceRow({ service, isIncludedInTier, addonDiscount, onToggle, onFreq
         </div>
       </div>
       
-      {/* Frequency selector - only when enabled */}
-      {service.enabled && (
+      {/* Frequency selector - only when enabled AND controls are shown */}
+      {service.enabled && showFrequencyControls && (
         <div className="mt-2 pl-7">
           <div className="flex items-center gap-1">
             <span className="text-xs text-muted-foreground mr-2">Frequency:</span>
@@ -121,6 +121,13 @@ function ServiceRow({ service, isIncludedInTier, addonDiscount, onToggle, onFreq
           </div>
         </div>
       )}
+      
+      {/* Show current frequency when controls hidden */}
+      {service.enabled && !showFrequencyControls && (
+        <div className="mt-1 pl-7">
+          <span className="text-xs text-muted-foreground">{service.frequency}x per year</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -133,6 +140,7 @@ export function TierCustomizer({
   addonDiscount,
 }: TierCustomizerProps) {
   const [isAddonsOpen, setIsAddonsOpen] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   
   // Split services into core (included in tier) and add-ons
   const coreServiceIds = tier.includedServices.map(s => {
@@ -186,7 +194,7 @@ export function TierCustomizer({
       </CardHeader>
       
       <CardContent className="space-y-4">
-        {/* Core Services */}
+        {/* Core Services - Simple list view */}
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
             Included in {tier.name}
@@ -198,12 +206,33 @@ export function TierCustomizer({
                 service={service}
                 isIncludedInTier={true}
                 addonDiscount={0}
+                showFrequencyControls={isAdvancedOpen}
                 onToggle={() => onToggleService(service.id)}
                 onFrequencyChange={(freq) => onChangeFrequency(service.id, freq)}
               />
             ))}
           </div>
         </div>
+        
+        {/* Advanced Options - Collapsed by default */}
+        <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen}>
+          <CollapsibleTrigger asChild>
+            <button className="flex items-center gap-2 py-2 text-sm text-primary hover:text-primary/80 transition-colors">
+              <Sliders className="w-4 h-4" />
+              {isAdvancedOpen ? 'Hide' : 'Show'} frequency controls
+              {isAdvancedOpen ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <p className="text-xs text-muted-foreground pb-2">
+              Adjust how often each service is performed per year.
+            </p>
+          </CollapsibleContent>
+        </Collapsible>
         
         <Separator />
         
@@ -242,6 +271,7 @@ export function TierCustomizer({
                   service={service}
                   isIncludedInTier={false}
                   addonDiscount={addonDiscount}
+                  showFrequencyControls={isAdvancedOpen}
                   onToggle={() => onToggleService(service.id)}
                   onFrequencyChange={(freq) => onChangeFrequency(service.id, freq)}
                 />

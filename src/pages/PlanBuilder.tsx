@@ -12,10 +12,10 @@ import { useServicePlanBuilder } from '@/hooks/useServicePlanBuilder';
 import { toast } from 'sonner';
 import type { PlanBuilderServiceId } from '@/types/servicePlanBuilder';
 
-type BuilderStep = 'home' | 'tier' | 'customize' | 'customer';
+type BuilderStep = 'tier' | 'details' | 'customer';
 
 export default function PlanBuilder() {
-  const [currentStep, setCurrentStep] = useState<BuilderStep>('home');
+  const [currentStep, setCurrentStep] = useState<BuilderStep>('tier');
   
   const {
     selectedTier,
@@ -56,32 +56,25 @@ export default function PlanBuilder() {
     }
   };
   
-  const handleHomeDetailsComplete = () => {
+  const handleTierSelected = () => {
+    setCurrentStep('details');
+  };
+  
+  const handleDetailsComplete = () => {
     if (homeDetails.squareFootage === 0) {
       toast.error('Please enter your home\'s square footage');
       return;
     }
-    setCurrentStep('tier');
-  };
-  
-  const handleTierSelected = () => {
-    setCurrentStep('customize');
-  };
-  
-  const handleCustomizeComplete = () => {
     setCurrentStep('customer');
   };
   
   const handleBack = () => {
     switch (currentStep) {
-      case 'tier':
-        setCurrentStep('home');
-        break;
-      case 'customize':
+      case 'details':
         setCurrentStep('tier');
         break;
       case 'customer':
-        setCurrentStep('customize');
+        setCurrentStep('details');
         break;
     }
   };
@@ -111,9 +104,8 @@ export default function PlanBuilder() {
   
   // Step indicator
   const steps = [
-    { id: 'home', label: 'Home Details' },
     { id: 'tier', label: 'Choose Plan' },
-    { id: 'customize', label: 'Customize' },
+    { id: 'details', label: 'Customize' },
     { id: 'customer', label: 'Your Info' },
   ];
   const currentStepIndex = steps.findIndex(s => s.id === currentStep);
@@ -155,7 +147,7 @@ export default function PlanBuilder() {
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
             {/* Back Button */}
-            {currentStep !== 'home' && (
+            {currentStep !== 'tier' && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -167,27 +159,7 @@ export default function PlanBuilder() {
               </Button>
             )}
             
-            {/* Step 1: Home Details */}
-            {currentStep === 'home' && (
-              <div className="space-y-6">
-                <PlanHomeDetailsForm
-                  homeDetails={homeDetails}
-                  onChange={updateHomeDetails}
-                  enabledServices={enabledServiceIds}
-                />
-                
-                <Button
-                  onClick={handleHomeDetailsComplete}
-                  disabled={homeDetails.squareFootage === 0}
-                  className="w-full md:w-auto btn-primary"
-                  size="lg"
-                >
-                  Continue to Plans
-                </Button>
-              </div>
-            )}
-            
-            {/* Step 2: Tier Selection */}
+            {/* Step 1: Tier Selection */}
             {currentStep === 'tier' && (
               <div className="space-y-6">
                 <TierSelector
@@ -202,20 +174,30 @@ export default function PlanBuilder() {
               </div>
             )}
             
-            {/* Step 3: Customize */}
-            {currentStep === 'customize' && currentTierConfig && (
+            {/* Step 2: Home Details + Customize */}
+            {currentStep === 'details' && currentTierConfig && (
               <div className="space-y-6">
-                <TierCustomizer
-                  tier={currentTierConfig}
-                  services={services}
-                  onToggleService={(id) => toggleService(id as PlanBuilderServiceId)}
-                  onChangeFrequency={(id, freq) => updateFrequency(id as PlanBuilderServiceId, freq)}
-                  addonDiscount={currentTierConfig.addonDiscount}
+                {/* Home Details - Required first */}
+                <PlanHomeDetailsForm
+                  homeDetails={homeDetails}
+                  onChange={updateHomeDetails}
+                  enabledServices={enabledServiceIds}
                 />
                 
+                {/* Customization - Only visible after home details */}
+                {homeDetails.squareFootage > 0 && (
+                  <TierCustomizer
+                    tier={currentTierConfig}
+                    services={services}
+                    onToggleService={(id) => toggleService(id as PlanBuilderServiceId)}
+                    onChangeFrequency={(id, freq) => updateFrequency(id as PlanBuilderServiceId, freq)}
+                    addonDiscount={currentTierConfig.addonDiscount}
+                  />
+                )}
+                
                 <Button
-                  onClick={handleCustomizeComplete}
-                  disabled={!hasSelectedServices}
+                  onClick={handleDetailsComplete}
+                  disabled={!hasSelectedServices || homeDetails.squareFootage === 0}
                   className="w-full md:w-auto btn-primary"
                   size="lg"
                 >
