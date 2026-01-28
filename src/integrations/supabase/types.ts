@@ -831,33 +831,42 @@ export type Database = {
       }
       schedule_blocks: {
         Row: {
+          block_category: string | null
           block_type: string
           created_at: string
           created_by: string | null
           end_at: string
           id: string
+          is_all_day: boolean | null
+          notes: string | null
           reason: string | null
           start_at: string
           technician_id: string
           updated_at: string
         }
         Insert: {
+          block_category?: string | null
           block_type?: string
           created_at?: string
           created_by?: string | null
           end_at: string
           id?: string
+          is_all_day?: boolean | null
+          notes?: string | null
           reason?: string | null
           start_at: string
           technician_id: string
           updated_at?: string
         }
         Update: {
+          block_category?: string | null
           block_type?: string
           created_at?: string
           created_by?: string | null
           end_at?: string
           id?: string
+          is_all_day?: boolean | null
+          notes?: string | null
           reason?: string | null
           start_at?: string
           technician_id?: string
@@ -1052,7 +1061,14 @@ export type Database = {
         Args: { p_holder_id: string; p_lock_ttl_minutes?: number }
         Returns: boolean
       }
+      can_edit_crew_rules: { Args: never; Returns: boolean }
+      can_manage_schedule_blocks: { Args: never; Returns: boolean }
+      can_override_bookings: { Args: never; Returns: boolean }
       generate_booking_reference: { Args: never; Returns: string }
+      has_admin_level: {
+        Args: { _min_level: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1061,6 +1077,7 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      is_read_only_admin: { Args: never; Returns: boolean }
       release_autosync_lock: {
         Args: { p_error?: string; p_holder_id: string; p_status?: string }
         Returns: boolean
@@ -1068,7 +1085,12 @@ export type Database = {
       update_autosync_coverage: { Args: never; Returns: undefined }
     }
     Enums: {
-      app_role: "admin" | "user"
+      app_role:
+        | "admin"
+        | "user"
+        | "owner_admin"
+        | "operations_admin"
+        | "read_only_admin"
       booking_status:
         | "pending"
         | "confirmed"
@@ -1212,7 +1234,13 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "user"],
+      app_role: [
+        "admin",
+        "user",
+        "owner_admin",
+        "operations_admin",
+        "read_only_admin",
+      ],
       booking_status: [
         "pending",
         "confirmed",
