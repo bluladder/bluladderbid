@@ -1,21 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { ArrowLeft, Check, Clock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, parseISO } from 'date-fns';
 import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
 import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
-import { CompactQuoteSummary } from './CompactQuoteSummary';
+import { ServiceReviewStep } from './ServiceReviewStep';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
 import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 
-type BookingStep = 'info' | 'time' | 'confirmation';
+type BookingStep = 'review' | 'info' | 'time' | 'confirmation';
 
 interface BookingFlowProps {
   servicePrices: ServicePrices;
@@ -53,7 +51,7 @@ export function BookingFlow({
   onCancel,
   prefillCustomerInfo,
 }: BookingFlowProps) {
-  const [step, setStep] = useState<BookingStep>('info');
+  const [step, setStep] = useState<BookingStep>('review');
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(prefillCustomerInfo || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,11 +60,6 @@ export function BookingFlow({
   const [usedRecommendedSlot, setUsedRecommendedSlot] = useState(false);
 
   const { trackCalendarView, trackTimeSelection, trackInfoStep, trackConfirmation } = useBookingStepTracking();
-
-  // Track info step on mount (first step now)
-  useEffect(() => {
-    trackInfoStep();
-  }, []);
 
   // Build services array for availability check and booking
   // CRITICAL: Service inclusion is driven ONLY by additionalServices selection state (single source of truth)
@@ -203,6 +196,24 @@ export function BookingFlow({
   const services = buildServicesArray();
   const subtotal = servicePrices.grandTotal;
   const finalTotal = subtotal - discountAmount;
+  
+  // Calculate estimated duration based on services
+  const estimatedDuration = useMemo(() => {
+    let minutes = 0;
+    if (additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0) minutes += 90;
+    if (additionalServices.houseWash && servicePrices.houseWash > 0) minutes += 60;
+    if (additionalServices.gutterCleaning && servicePrices.gutterCleaning > 0) minutes += 45;
+    if (additionalServices.roofCleaning && servicePrices.roofCleaning > 0) minutes += 90;
+    if (additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0) minutes += 60;
+    if (additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0) minutes += 45;
+    return Math.max(60, minutes); // Minimum 1 hour
+  }, [additionalServices, servicePrices]);
+
+  // Handle proceeding from review step
+  const handleProceedFromReview = () => {
+    trackInfoStep();
+    setStep('info');
+  };
 
   const handleSelectSlot = (slot: TimeSlot, fromSuggestedDay?: boolean) => {
     setSelectedSlot(slot);
@@ -210,7 +221,7 @@ export function BookingFlow({
     if (slot.isRecommended) setUsedRecommendedSlot(true);
   };
 
-  // Called when customer info form is submitted (first step)
+  // Called when customer info form is submitted
   const handleCustomerInfoSubmit = (info: CustomerInfo) => {
     setCustomerInfo(info);
     // Track calendar view now that we're proceeding to time selection
@@ -320,7 +331,7 @@ export function BookingFlow({
     window.location.href = '/';
   };
 
-  const stepProgress = step === 'info' ? 33 : step === 'time' ? 66 : 100;
+  const stepProgress = step === 'review' ? 25 : step === 'info' ? 50 : step === 'time' ? 75 : 100;
 
   // Confirmation step
   if (step === 'confirmation' && bookingResult && customerInfo) {
@@ -345,33 +356,40 @@ export function BookingFlow({
   }
 
   return (
-    <div className="space-y-3">
-      {/* Compact Progress Header */}
-      <div className="space-y-2">
-        <div className="flex justify-between text-xs font-medium">
-          <span className={step === 'info' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
-            1. Your Info
-          </span>
-          <span className={step === 'time' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
-            2. Pick Time
-          </span>
-          <span className={step === 'confirmation' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
-            3. Confirmed
-          </span>
+    <div className="space-y-4">
+      {/* Progress Header - shown after review step */}
+      {step !== 'review' && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-xs font-medium">
+            <span className={step === 'info' ? 'text-primary font-semibold' : step === 'time' ? 'text-success' : 'text-muted-foreground'}>
+              1. Your Info
+            </span>
+            <span className={step === 'time' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
+              2. Pick Time
+            </span>
+            <span className="text-muted-foreground">
+              3. Confirmed
+            </span>
+          </div>
+          <Progress value={stepProgress} className="h-1" />
         </div>
-        <Progress value={stepProgress} className="h-1" />
-      </div>
+      )}
 
-      {/* Compact Quote Summary - collapsible after step 1 */}
-      <CompactQuoteSummary
-        servicePrices={servicePrices}
-        additionalServices={additionalServices}
-        appliedDiscount={appliedDiscount}
-        discountAmount={discountAmount}
-        minimal={step === 'time'}
-      />
+      {/* Step: Review Services */}
+      {step === 'review' && (
+        <ServiceReviewStep
+          servicePrices={servicePrices}
+          additionalServices={additionalServices}
+          homeDetails={homeDetails}
+          appliedDiscount={appliedDiscount}
+          discountAmount={discountAmount}
+          estimatedDuration={estimatedDuration}
+          onProceed={handleProceedFromReview}
+          onBack={onCancel}
+        />
+      )}
 
-      {/* Step Content */}
+      {/* Step: Customer Info */}
       {step === 'info' && (
         <div className="space-y-3">
           <CustomerInfoForm
@@ -383,15 +401,16 @@ export function BookingFlow({
           
           <Button 
             variant="ghost" 
-            onClick={onCancel} 
+            onClick={() => setStep('review')} 
             className="w-full text-muted-foreground h-9 text-sm"
           >
             <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-            Back to Quote
+            Back to Review
           </Button>
         </div>
       )}
 
+      {/* Step: Time Selection */}
       {step === 'time' && customerInfo && (
         <div className="space-y-3">
           {/* Address confirmation - compact */}
