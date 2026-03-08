@@ -298,14 +298,14 @@ export default function MyAppointments() {
               <CardContent className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <Phone className="w-4 h-4 text-muted-foreground" />
-                  <a href="tel:+15551234567" className="text-primary hover:underline">
-                    (555) 123-4567
+                  <a href="tel:+15127174452" className="text-primary hover:underline">
+                    (512) 717-4452
                   </a>
                 </div>
                 <div className="flex items-center gap-2">
                   <Mail className="w-4 h-4 text-muted-foreground" />
-                  <a href="mailto:support@bluladder.com" className="text-primary hover:underline">
-                    support@bluladder.com
+                  <a href="mailto:info@bluladder.com" className="text-primary hover:underline">
+                    info@bluladder.com
                   </a>
                 </div>
               </CardContent>
