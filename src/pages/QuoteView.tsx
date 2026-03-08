@@ -290,8 +290,8 @@ export default function QuoteView() {
                 {/* Actions */}
                 <div className="space-y-2">
                   {!isExpired && (
-                    <Button className="w-full btn-primary" size="lg">
-                      Accept & Start Service
+                    <Button className="w-full btn-primary" size="lg" asChild>
+                      <Link to="/plan-builder">Accept & Start Service</Link>
                     </Button>
                   )}
                   

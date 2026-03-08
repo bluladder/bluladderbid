@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
 import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
@@ -258,16 +258,24 @@ const Index = () => {
         <header className="border-b border-border bg-card sticky top-0 z-50">
           <div className="container py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-xl font-display font-bold text-primary">
+              <Link to="/" className="hover:opacity-80 transition-opacity">
+                <span className="text-xl font-display font-bold text-primary">
                   BluLadder
-                </h1>
+                </span>
                 <p className="text-xs text-muted-foreground">Next Level Clean</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-medium text-foreground">Get Your Quote</p>
-                <p className="text-xs text-muted-foreground">Instant pricing</p>
-              </div>
+              </Link>
+              <nav className="flex items-center gap-4">
+                <Link to="/services" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
+                  Services
+                </Link>
+                <Link to="/plan-builder" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
+                  Plans
+                </Link>
+                <Link to="/my-appointments" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
+                  My Appointments
+                </Link>
+                <span className="text-sm font-medium text-primary">Get Your Quote</span>
+              </nav>
             </div>
           </div>
         </header>
@@ -285,6 +293,8 @@ const Index = () => {
               cleaning services will cost — no surprises.
             </p>
           </div>
+
+          
 
           {/* Progress Stepper (shown after customer lookup) */}
           {!showCustomerLookup && !showPastBookingsView && (
