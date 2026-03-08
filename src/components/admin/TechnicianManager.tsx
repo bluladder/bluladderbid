@@ -46,6 +46,8 @@ interface TechnicianCapabilities {
   // Soft preferences
   preferred_services?: string[];
   discouraged_services?: string[];
+  // Hard exclusion: tech will never be matched to these service types
+  excluded_service_types?: string[];
   // Custom tags for special designations (e.g., "No Pressure Washing", "VIP Only")
   custom_tags?: string[];
   [key: string]: boolean | ServiceSkillLevels | string[] | undefined;
@@ -147,6 +149,7 @@ export function TechnicianManager() {
       skill_levels: {},
       preferred_services: [] as string[],
       discouraged_services: [] as string[],
+      excluded_service_types: [] as string[],
       custom_tags: [] as string[],
     } as TechnicianCapabilities,
   });
@@ -396,6 +399,7 @@ export function TechnicianManager() {
         skill_levels: {},
         preferred_services: [],
         discouraged_services: [],
+        excluded_service_types: [],
         custom_tags: [],
       },
     });
@@ -429,6 +433,7 @@ export function TechnicianManager() {
         skill_levels: {},
         preferred_services: [],
         discouraged_services: [],
+        excluded_service_types: [],
         custom_tags: [],
       },
     });
@@ -1013,6 +1018,41 @@ export function TechnicianManager() {
                             }}
                           >
                             {svc.label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Excluded Service Types (hard filter) */}
+                  <div>
+                    <Label className="text-sm font-medium text-destructive">Excluded Service Types (hard block)</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Tech will <strong>never</strong> be scheduled for these services, regardless of rates or other settings.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {SERVICE_TYPES.map((svc) => {
+                        const isExcluded = (formData.capabilities.excluded_service_types || []).includes(svc.value);
+                        return (
+                          <Badge
+                            key={svc.value}
+                            variant={isExcluded ? 'destructive' : 'outline'}
+                            className="cursor-pointer"
+                            onClick={() => {
+                              const current = formData.capabilities.excluded_service_types || [];
+                              const updated = isExcluded
+                                ? current.filter(s => s !== svc.value)
+                                : [...current, svc.value];
+                              setFormData({
+                                ...formData,
+                                capabilities: {
+                                  ...formData.capabilities,
+                                  excluded_service_types: updated,
+                                },
+                              });
+                            }}
+                          >
+                            {isExcluded ? '🚫 ' : ''}{svc.label}
                           </Badge>
                         );
                       })}

@@ -684,6 +684,7 @@ Deno.serve(async (req) => {
       skill_levels?: Record<string, number>;
       preferred_services?: string[];
       discouraged_services?: string[];
+      excluded_service_types?: string[]; // Generic tag-based exclusion list
     }
 
     // Calculate duration and skill score for each technician
@@ -752,6 +753,16 @@ Deno.serve(async (req) => {
         if (needsRoofSafe && !capabilities?.is_roof_safe) {
           console.log(`[Tech] ${tech.name}: EXCLUDED - requires roof-safe certification`);
           continue;
+        }
+        
+        // Generic capability tag exclusion (e.g., excluded_service_types: ["driveway", "house_wash"])
+        const excludedTypes = capabilities?.excluded_service_types || [];
+        if (excludedTypes.length > 0) {
+          const blockedService = requestedServiceTypes.find(s => excludedTypes.includes(s));
+          if (blockedService) {
+            console.log(`[Tech] ${tech.name}: EXCLUDED - capability tag excludes service type '${blockedService}'`);
+            continue;
+          }
         }
         
         const startingAddress = tech.location_type === 'home' 
