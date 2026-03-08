@@ -478,6 +478,10 @@ export function TechnicianManager() {
             </CardDescription>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setIsBulkEditOpen(true)} disabled={technicians.length === 0}>
+              <Zap className="w-4 h-4 mr-2" />
+              Bulk Edit
+            </Button>
             <Button variant="outline" onClick={handleSyncFromJobber} disabled={isSyncing}>
               <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
               {isSyncing ? 'Syncing...' : 'Sync from Jobber'}
