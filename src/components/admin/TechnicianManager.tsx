@@ -8,10 +8,11 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin, Clock, Calendar, AlertTriangle, PlusCircle, XCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Save, X, RefreshCw, MapPin, Clock, Calendar, AlertTriangle, PlusCircle, XCircle, Zap } from 'lucide-react';
 import { TechnicianRulesSummary } from './TechnicianRulesSummary';
 import { BookingImpactWarning } from './BookingImpactWarning';
 import { SkillLevelLegend } from './SkillLevelLegend';
+import { BulkCapabilityEditor } from './BulkCapabilityEditor';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -123,6 +124,7 @@ export function TechnicianManager() {
   const [selectedTechRates, setSelectedTechRates] = useState<ServiceRate[]>([]);
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
   const [newCustomTag, setNewCustomTag] = useState('');
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -476,6 +478,10 @@ export function TechnicianManager() {
             </CardDescription>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setIsBulkEditOpen(true)} disabled={technicians.length === 0}>
+              <Zap className="w-4 h-4 mr-2" />
+              Bulk Edit
+            </Button>
             <Button variant="outline" onClick={handleSyncFromJobber} disabled={isSyncing}>
               <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
               {isSyncing ? 'Syncing...' : 'Sync from Jobber'}
@@ -1234,6 +1240,12 @@ export function TechnicianManager() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <BulkCapabilityEditor
+          technicians={technicians}
+          open={isBulkEditOpen}
+          onOpenChange={setIsBulkEditOpen}
+          onSaved={fetchTechnicians}
+        />
       </CardContent>
     </Card>
   );
