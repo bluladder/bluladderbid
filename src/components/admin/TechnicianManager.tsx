@@ -149,6 +149,7 @@ export function TechnicianManager() {
       skill_levels: {},
       preferred_services: [] as string[],
       discouraged_services: [] as string[],
+      excluded_service_types: [] as string[],
       custom_tags: [] as string[],
     } as TechnicianCapabilities,
   });
