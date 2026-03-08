@@ -755,6 +755,16 @@ Deno.serve(async (req) => {
           continue;
         }
         
+        // Generic capability tag exclusion (e.g., excluded_service_types: ["driveway", "house_wash"])
+        const excludedTypes = capabilities?.excluded_service_types || [];
+        if (excludedTypes.length > 0) {
+          const blockedService = requestedServiceTypes.find(s => excludedTypes.includes(s));
+          if (blockedService) {
+            console.log(`[Tech] ${tech.name}: EXCLUDED - capability tag excludes service type '${blockedService}'`);
+            continue;
+          }
+        }
+        
         const startingAddress = tech.location_type === 'home' 
           ? tech.starting_address 
           : DRIVE_TIME_CONFIG.office_address;
