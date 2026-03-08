@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
 import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
