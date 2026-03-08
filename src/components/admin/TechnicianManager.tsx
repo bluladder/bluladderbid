@@ -433,6 +433,7 @@ export function TechnicianManager() {
         skill_levels: {},
         preferred_services: [],
         discouraged_services: [],
+        excluded_service_types: [],
         custom_tags: [],
       },
     });
