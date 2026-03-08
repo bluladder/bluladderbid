@@ -1240,6 +1240,12 @@ export function TechnicianManager() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <BulkCapabilityEditor
+          technicians={technicians}
+          open={isBulkEditOpen}
+          onOpenChange={setIsBulkEditOpen}
+          onSaved={fetchTechnicians}
+        />
       </CardContent>
     </Card>
   );
