@@ -294,6 +294,8 @@ const Index = () => {
             </p>
           </div>
 
+          <title>BluLadder — Professional Window & Exterior Cleaning</title>
+
           {/* Progress Stepper (shown after customer lookup) */}
           {!showCustomerLookup && !showPastBookingsView && (
             <div className="animate-fade-in">
