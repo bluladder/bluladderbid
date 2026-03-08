@@ -124,6 +124,7 @@ export function TechnicianManager() {
   const [selectedTechRates, setSelectedTechRates] = useState<ServiceRate[]>([]);
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
   const [newCustomTag, setNewCustomTag] = useState('');
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
