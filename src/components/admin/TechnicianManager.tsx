@@ -1023,6 +1023,41 @@ export function TechnicianManager() {
                       })}
                     </div>
                   </div>
+
+                  {/* Excluded Service Types (hard filter) */}
+                  <div>
+                    <Label className="text-sm font-medium text-destructive">Excluded Service Types (hard block)</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Tech will <strong>never</strong> be scheduled for these services, regardless of rates or other settings.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {SERVICE_TYPES.map((svc) => {
+                        const isExcluded = (formData.capabilities.excluded_service_types || []).includes(svc.value);
+                        return (
+                          <Badge
+                            key={svc.value}
+                            variant={isExcluded ? 'destructive' : 'outline'}
+                            className="cursor-pointer"
+                            onClick={() => {
+                              const current = formData.capabilities.excluded_service_types || [];
+                              const updated = isExcluded
+                                ? current.filter(s => s !== svc.value)
+                                : [...current, svc.value];
+                              setFormData({
+                                ...formData,
+                                capabilities: {
+                                  ...formData.capabilities,
+                                  excluded_service_types: updated,
+                                },
+                              });
+                            }}
+                          >
+                            {isExcluded ? '🚫 ' : ''}{svc.label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
               <DialogFooter>
