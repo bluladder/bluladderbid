@@ -684,6 +684,7 @@ Deno.serve(async (req) => {
       skill_levels?: Record<string, number>;
       preferred_services?: string[];
       discouraged_services?: string[];
+      excluded_service_types?: string[]; // Generic tag-based exclusion list
     }
 
     // Calculate duration and skill score for each technician
