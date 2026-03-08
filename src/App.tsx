@@ -12,6 +12,7 @@ import QuoteView from "./pages/QuoteView";
 import MyAppointments from "./pages/MyAppointments";
 import ConfirmChange from "./pages/ConfirmChange";
 import NotFound from "./pages/NotFound";
+import ChatWidget from "./components/chat/ChatWidget";
 
 const queryClient = new QueryClient();
 
