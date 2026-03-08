@@ -256,48 +256,82 @@ export function BookingFlow({
     setIsSubmitting(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('jobber-create-booking', {
-        body: {
-          customer: {
-            email: customerInfo.email,
-            firstName: customerInfo.firstName,
-            lastName: customerInfo.lastName,
-            phone: customerInfo.phone,
-            address: customerInfo.address,
-          },
-          technicianId: selectedSlot.technicianId,
-          scheduledStart: selectedSlot.startTime,
-          scheduledEnd: selectedSlot.endTime,
-          durationMinutes: selectedSlot.durationMinutes,
-          services: services.map(s => ({ 
-            name: s.name, 
-            price: s.price,
-            description: s.description,
-          })),
-          homeDetails,
-          subtotal,
-          discountAmount,
-          total: finalTotal,
-          discountCode: appliedDiscount?.code,
-          notes: customerInfo.notes,
-          utmParams: getStoredUtmParams(),
+      // Build the booking request body
+      const bookingBody: Record<string, unknown> = {
+        customer: {
+          email: customerInfo.email,
+          firstName: customerInfo.firstName,
+          lastName: customerInfo.lastName,
+          phone: customerInfo.phone,
+          address: customerInfo.address,
         },
-      });
+        technicianId: selectedSlot.technicianId,
+        scheduledStart: selectedSlot.startTime,
+        scheduledEnd: selectedSlot.endTime,
+        durationMinutes: selectedSlot.durationMinutes,
+        services: services.map(s => ({ 
+          name: s.name, 
+          price: s.price,
+          description: s.description,
+        })),
+        homeDetails,
+        subtotal,
+        discountAmount,
+        total: finalTotal,
+        discountCode: appliedDiscount?.code,
+        notes: customerInfo.notes,
+        utmParams: getStoredUtmParams(),
+      };
 
-      if (error) throw error;
-
-      // Handle conflict response (409)
-      if (data.code === 'CONFLICT' || data.error?.includes('conflict')) {
-        toast.error(data.details || 'This time slot is no longer available. Please select a different time.', {
-          duration: 6000,
-        });
-        // Go back to time selection to pick a new slot
-        setSelectedSlot(null);
-        setStep('time');
-        return;
+      // Pass team booking data if the selected slot is a team job
+      if ((selectedSlot as any).isTeamJob) {
+        bookingBody.isTeamJob = true;
+        bookingBody.teamTechnicianIds = (selectedSlot as any).teamTechnicianIds;
       }
 
-      if (data.error) {
+      const { data, error } = await supabase.functions.invoke('jobber-create-booking', {
+        body: bookingBody,
+      });
+
+      // supabase.functions.invoke treats non-2xx as error, but conflict (409) and 
+      // scheduling busy (503) responses contain important JSON bodies.
+      // Extract the response body from the error context to handle them properly.
+      if (error) {
+        let errorBody: any = null;
+        try {
+          // FunctionsHttpError stores the response in error.context
+          if (error.context && typeof error.context.json === 'function') {
+            errorBody = await error.context.json();
+          }
+        } catch {
+          // Couldn't parse error body
+        }
+
+        if (errorBody?.code === 'CONFLICT') {
+          toast.error(errorBody.details || 'This time slot is no longer available. Please select a different time.', {
+            duration: 6000,
+          });
+          setSelectedSlot(null);
+          setStep('time');
+          return;
+        }
+
+        if (errorBody?.code === 'SCHEDULING_BUSY') {
+          toast.error(errorBody.details || 'Our scheduling system is busy. Please try again in 1-2 minutes.', {
+            duration: 6000,
+          });
+          return;
+        }
+
+        // For other errors with a body message, use it
+        if (errorBody?.details || errorBody?.error) {
+          throw new Error(errorBody.details || errorBody.error);
+        }
+
+        throw error;
+      }
+
+      if (data?.error) {
         throw new Error(data.details || data.error);
       }
 
@@ -317,12 +351,13 @@ export function BookingFlow({
     } catch (err: any) {
       console.error('Booking failed:', err);
       
-      // Check if error message indicates a conflict
       const errorMessage = err?.message || String(err);
       if (errorMessage.toLowerCase().includes('conflict') || errorMessage.toLowerCase().includes('no longer available')) {
         toast.error(errorMessage, { duration: 6000 });
         setSelectedSlot(null);
         setStep('time');
+      } else if (errorMessage.toLowerCase().includes('busy') || errorMessage.toLowerCase().includes('try again')) {
+        toast.error(errorMessage, { duration: 6000 });
       } else {
         toast.error('Failed to create booking. Please try again.');
       }
