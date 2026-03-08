@@ -46,6 +46,8 @@ interface TechnicianCapabilities {
   // Soft preferences
   preferred_services?: string[];
   discouraged_services?: string[];
+  // Hard exclusion: tech will never be matched to these service types
+  excluded_service_types?: string[];
   // Custom tags for special designations (e.g., "No Pressure Washing", "VIP Only")
   custom_tags?: string[];
   [key: string]: boolean | ServiceSkillLevels | string[] | undefined;
