@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.handle-confirmation]
 verify_jwt = false
+
+[functions.chat-quote]
+verify_jwt = false

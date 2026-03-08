@@ -12,6 +12,7 @@ import QuoteView from "./pages/QuoteView";
 import MyAppointments from "./pages/MyAppointments";
 import ConfirmChange from "./pages/ConfirmChange";
 import NotFound from "./pages/NotFound";
+import ChatWidget from "./components/chat/ChatWidget";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,7 @@ const App = () => (
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
+      <ChatWidget />
     </TooltipProvider>
   </QueryClientProvider>
 );
