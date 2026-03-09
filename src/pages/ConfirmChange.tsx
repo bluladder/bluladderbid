@@ -12,7 +12,6 @@ import { format, parseISO } from 'date-fns';
 interface PendingConfirmation {
   id: string;
   booking_id: string;
-  token: string;
   change_type: string;
   old_values: Record<string, unknown>;
   new_values: Record<string, unknown>;
@@ -61,31 +60,36 @@ export default function ConfirmChange() {
 
   const loadConfirmation = async () => {
     try {
-      const { data, error: fetchError } = await supabase
-        .from('pending_confirmations')
-        .select(`
-          *,
-          booking:bookings(reference_number, scheduled_start, services_json, total)
-        `)
-        .eq('token', token)
-        .single();
+      // Fetch confirmation data via edge function (token acts as secret key)
+      const { data, error: fetchError } = await supabase.functions.invoke('handle-confirmation', {
+        body: { token, action: 'fetch' },
+      });
 
-      if (fetchError || !data) {
-        setError('This confirmation link is invalid or has already been used.');
+      if (fetchError) {
+        throw new Error(fetchError.message || 'Failed to load confirmation');
+      }
+
+      if (data?.error) {
+        setError(data.error);
         return;
       }
 
-      if (data.status !== 'pending') {
+      if (data?.alreadyProcessed) {
         setError(`This change has already been ${data.status}.`);
         return;
       }
 
-      if (new Date(data.expires_at) < new Date()) {
+      if (data?.expired) {
         setError('This confirmation link has expired. Please contact us for assistance.');
         return;
       }
 
-      setConfirmation(data as unknown as PendingConfirmation);
+      if (!data?.confirmation) {
+        setError('This confirmation link is invalid or has already been used.');
+        return;
+      }
+
+      setConfirmation(data.confirmation as PendingConfirmation);
     } catch (err) {
       console.error('Failed to load confirmation:', err);
       setError('Failed to load confirmation details.');

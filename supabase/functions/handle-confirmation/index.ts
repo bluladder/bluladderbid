@@ -8,7 +8,7 @@ const corsHeaders = {
 
 interface ConfirmationRequest {
   token: string;
-  action: 'accept' | 'decline';
+  action?: 'accept' | 'decline' | 'fetch'; // 'fetch' returns data without modifying
 }
 
 serve(async (req) => {
@@ -21,17 +21,30 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { token, action }: ConfirmationRequest = await req.json();
+    const { token, action = 'fetch' }: ConfirmationRequest = await req.json();
 
-    if (!token || !action) {
-      throw new Error("Missing token or action");
+    if (!token) {
+      throw new Error("Missing token");
     }
 
-    // Fetch pending confirmation
+    // Validate token format (basic sanitization)
+    if (typeof token !== 'string' || token.length < 10 || token.length > 200) {
+      throw new Error("Invalid token format");
+    }
+
+    // Fetch pending confirmation using the token as a secret lookup key
     const { data: confirmation, error: fetchError } = await supabase
       .from('pending_confirmations')
       .select(`
-        *,
+        id,
+        booking_id,
+        change_type,
+        old_values,
+        new_values,
+        admin_note,
+        show_price_change,
+        expires_at,
+        status,
         booking:bookings(
           id, 
           reference_number, 
@@ -43,11 +56,23 @@ serve(async (req) => {
         )
       `)
       .eq('token', token)
-      .eq('status', 'pending')
       .single();
 
     if (fetchError || !confirmation) {
-      throw new Error("Confirmation not found or already processed");
+      console.error("Confirmation lookup failed:", fetchError);
+      throw new Error("Confirmation not found or invalid token");
+    }
+
+    // Check if already processed
+    if (confirmation.status !== 'pending') {
+      return new Response(JSON.stringify({
+        error: `This change has already been ${confirmation.status}.`,
+        alreadyProcessed: true,
+        status: confirmation.status,
+      }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
 
     // Check expiry
@@ -56,7 +81,42 @@ serve(async (req) => {
         .from('pending_confirmations')
         .update({ status: 'expired' })
         .eq('id', confirmation.id);
-      throw new Error("This confirmation link has expired");
+      
+      return new Response(JSON.stringify({
+        error: "This confirmation link has expired. Please contact us for assistance.",
+        expired: true,
+      }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    // If action is 'fetch', just return the confirmation data (for display)
+    if (action === 'fetch') {
+      // Return data WITHOUT the token (never expose it back)
+      return new Response(JSON.stringify({
+        success: true,
+        confirmation: {
+          id: confirmation.id,
+          booking_id: confirmation.booking_id,
+          change_type: confirmation.change_type,
+          old_values: confirmation.old_values,
+          new_values: confirmation.new_values,
+          admin_note: confirmation.admin_note,
+          show_price_change: confirmation.show_price_change,
+          expires_at: confirmation.expires_at,
+          status: confirmation.status,
+          booking: confirmation.booking,
+        },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    // Process accept/decline action
+    if (action !== 'accept' && action !== 'decline') {
+      throw new Error("Invalid action. Must be 'accept', 'decline', or 'fetch'.");
     }
 
     const bookingId = confirmation.booking_id;
