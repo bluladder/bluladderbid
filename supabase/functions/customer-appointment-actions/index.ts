@@ -3,7 +3,7 @@ import { jobberGraphQL } from "../_shared/jobberClient.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 interface ActionRequest {
@@ -21,9 +21,6 @@ interface ActionRequest {
   newSubtotal?: number;
   newTotal?: number;
   newDurationMinutes?: number;
-  // Admin override
-  isAdminOverride?: boolean;
-  adminUserId?: string;
 }
 
 interface BookingRecord {
@@ -42,6 +39,7 @@ interface BookingRecord {
   jobber_visit_id: string | null;
   jobber_job_id: string | null;
   customer_id: string;
+  customer?: { email: string };
 }
 
 const LOCKOUT_HOURS = 48;
@@ -109,6 +107,23 @@ function parseToLocalDateTime(isoString: string): {
 // deno-lint-ignore no-explicit-any
 type AnySupabaseClient = SupabaseClient<any, any, any>;
 
+// Verify admin role server-side
+async function verifyAdminRole(supabase: AnySupabaseClient, userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .in("role", ["admin", "owner_admin", "operations_admin"])
+    .maybeSingle();
+  
+  if (error) {
+    console.error("Error checking admin role:", error);
+    return false;
+  }
+  
+  return !!data;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -116,16 +131,56 @@ Deno.serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase: AnySupabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+    
+    // Service client for database operations
+    const serviceClient: AnySupabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Parse the request body
     const body: ActionRequest = await req.json();
-    const { action, bookingId, isAdminOverride, adminUserId } = body;
+    const { action, bookingId } = body;
 
-    console.log(`[CustomerAction] Action: ${action}, BookingId: ${bookingId}, AdminOverride: ${isAdminOverride || false}`);
+    // Validate required fields
+    if (!action || !bookingId) {
+      return new Response(
+        JSON.stringify({ error: "Missing required fields", details: "action and bookingId are required" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      );
+    }
 
-    // Fetch the booking
-    const { data: booking, error: bookingError } = await supabase
+    // =====================================================
+    // AUTHENTICATION: Verify the caller's identity
+    // =====================================================
+    const authHeader = req.headers.get("Authorization");
+    let callerEmail: string | null = null;
+    let callerUserId: string | null = null;
+    let isVerifiedAdmin = false;
+
+    if (authHeader?.startsWith("Bearer ")) {
+      // Create a client with the user's auth context
+      const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader } }
+      });
+
+      const token = authHeader.replace("Bearer ", "");
+      const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
+
+      if (!claimsError && claimsData?.claims) {
+        callerEmail = claimsData.claims.email as string || null;
+        callerUserId = claimsData.claims.sub as string || null;
+
+        // Check if user has admin privileges (server-side verification)
+        if (callerUserId) {
+          isVerifiedAdmin = await verifyAdminRole(serviceClient, callerUserId);
+        }
+      }
+    }
+
+    console.log(`[CustomerAction] Action: ${action}, BookingId: ${bookingId}, CallerEmail: ${callerEmail || 'anonymous'}, IsAdmin: ${isVerifiedAdmin}`);
+
+    // Fetch the booking with customer email
+    const { data: booking, error: bookingError } = await serviceClient
       .from("bookings")
       .select(`
         id,
@@ -142,7 +197,8 @@ Deno.serve(async (req) => {
         technician_id,
         jobber_visit_id,
         jobber_job_id,
-        customer_id
+        customer_id,
+        customer:customers(email)
       `)
       .eq("id", bookingId)
       .single();
@@ -155,10 +211,29 @@ Deno.serve(async (req) => {
       );
     }
 
-    const typedBooking = booking as BookingRecord;
+    const typedBooking = booking as unknown as BookingRecord;
+    const bookingCustomerEmail = typedBooking.customer?.email?.toLowerCase();
 
-    // Check 48-hour lockout (unless admin override)
-    if (!isAdminOverride && isWithinLockout(typedBooking.scheduled_start)) {
+    // =====================================================
+    // AUTHORIZATION: Verify caller has permission
+    // =====================================================
+    // Either: 1) Verified admin, or 2) Authenticated user whose email matches booking customer
+    const callerOwnsBooking = callerEmail && bookingCustomerEmail && 
+                              callerEmail.toLowerCase() === bookingCustomerEmail;
+
+    if (!isVerifiedAdmin && !callerOwnsBooking) {
+      console.warn(`[CustomerAction] Unauthorized: callerEmail=${callerEmail}, bookingEmail=${bookingCustomerEmail}, isAdmin=${isVerifiedAdmin}`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Unauthorized",
+          details: "You must be logged in with the email associated with this booking, or be an admin."
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
+      );
+    }
+
+    // Check 48-hour lockout (admins can bypass)
+    if (!isVerifiedAdmin && isWithinLockout(typedBooking.scheduled_start)) {
       return new Response(
         JSON.stringify({ 
           error: "Lockout period",
@@ -170,21 +245,21 @@ Deno.serve(async (req) => {
     }
 
     // Log admin override actions
-    if (isAdminOverride && adminUserId) {
-      console.log(`[AdminOverride] Admin ${adminUserId} is overriding lockout for booking ${bookingId}`);
+    if (isVerifiedAdmin && isWithinLockout(typedBooking.scheduled_start)) {
+      console.log(`[AdminOverride] Admin ${callerUserId} is overriding lockout for booking ${bookingId}`);
     }
 
     let result: Record<string, unknown> = {};
 
     switch (action) {
       case 'reschedule':
-        result = await handleReschedule(supabase, typedBooking, body);
+        result = await handleReschedule(serviceClient, typedBooking, body);
         break;
       case 'modify_services':
-        result = await handleModifyServices(supabase, typedBooking, body);
+        result = await handleModifyServices(serviceClient, typedBooking, body);
         break;
       case 'cancel':
-        result = await handleCancel(supabase, typedBooking, body);
+        result = await handleCancel(serviceClient, typedBooking);
         break;
       default:
         return new Response(
@@ -193,9 +268,9 @@ Deno.serve(async (req) => {
         );
     }
 
-    // Add audit log entry (best effort - don't fail if table doesn't exist)
+    // Add audit log entry
     try {
-      await supabase
+      await serviceClient
         .from("booking_audit_log")
         .insert({
           booking_id: bookingId,
@@ -208,12 +283,12 @@ Deno.serve(async (req) => {
             total: typedBooking.total,
           },
           new_values: result,
-          changed_by: isAdminOverride ? 'admin' : 'customer',
-          changed_by_id: adminUserId || null,
-          is_admin_override: isAdminOverride || false,
+          changed_by: isVerifiedAdmin ? 'admin' : 'customer',
+          changed_by_id: callerUserId || null,
+          is_admin_override: isVerifiedAdmin && isWithinLockout(typedBooking.scheduled_start),
         });
     } catch (auditErr) {
-      console.warn("Failed to log audit entry (table may not exist):", auditErr);
+      console.warn("Failed to log audit entry:", auditErr);
     }
 
     return new Response(
@@ -405,8 +480,7 @@ async function handleModifyServices(
 // === CANCEL HANDLER ===
 async function handleCancel(
   supabase: AnySupabaseClient,
-  booking: BookingRecord,
-  _body: ActionRequest
+  booking: BookingRecord
 ): Promise<Record<string, unknown>> {
   console.log(`[Cancel] Cancelling booking ${booking.reference_number}`);
 
