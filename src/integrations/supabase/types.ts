@@ -326,6 +326,13 @@ export type Database = {
             referencedRelation: "technicians"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "bookings_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       customers: {
@@ -536,6 +543,13 @@ export type Database = {
             columns: ["default_tech_id"]
             isOneToOne: false
             referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "eligibility_rules_default_tech_id_fkey"
+            columns: ["default_tech_id"]
+            isOneToOne: false
+            referencedRelation: "technicians_public"
             referencedColumns: ["id"]
           },
         ]
@@ -1036,6 +1050,13 @@ export type Database = {
             referencedRelation: "technicians"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "schedule_blocks_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       schedule_sync_runs: {
@@ -1125,6 +1146,13 @@ export type Database = {
             referencedRelation: "technicians"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "technician_service_rates_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       technicians: {
@@ -1210,7 +1238,60 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      technicians_public: {
+        Row: {
+          buffer_minutes: number | null
+          created_at: string | null
+          id: string | null
+          is_active: boolean | null
+          jobber_user_id: string | null
+          location_type: string | null
+          max_drive_time_minutes: number | null
+          max_stories: number | null
+          name: string | null
+          schedule_end_hour: number | null
+          schedule_start_hour: number | null
+          service_capabilities: Json | null
+          skill_level: string | null
+          updated_at: string | null
+          work_days: Json | null
+        }
+        Insert: {
+          buffer_minutes?: number | null
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          jobber_user_id?: string | null
+          location_type?: string | null
+          max_drive_time_minutes?: number | null
+          max_stories?: number | null
+          name?: string | null
+          schedule_end_hour?: number | null
+          schedule_start_hour?: number | null
+          service_capabilities?: Json | null
+          skill_level?: string | null
+          updated_at?: string | null
+          work_days?: Json | null
+        }
+        Update: {
+          buffer_minutes?: number | null
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          jobber_user_id?: string | null
+          location_type?: string | null
+          max_drive_time_minutes?: number | null
+          max_stories?: number | null
+          name?: string | null
+          schedule_end_hour?: number | null
+          schedule_start_hour?: number | null
+          service_capabilities?: Json | null
+          skill_level?: string | null
+          updated_at?: string | null
+          work_days?: Json | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       acquire_autosync_lock: {
