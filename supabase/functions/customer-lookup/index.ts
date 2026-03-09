@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { email } = await req.json();
+    const { email, mode = "basic" } = await req.json();
 
     if (!email || typeof email !== "string") {
       return new Response(JSON.stringify({ error: "Email is required" }), {
@@ -23,7 +23,6 @@ serve(async (req) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Basic email format validation
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return new Response(JSON.stringify({ error: "Invalid email format" }), {
         status: 400,
@@ -52,13 +51,48 @@ serve(async (req) => {
     }
 
     if (!customer) {
-      return new Response(JSON.stringify({ customer: null, bookings: [] }), {
+      return new Response(JSON.stringify({ customer: null, bookings: [], appointments: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
 
-    // Fetch past bookings for this customer
+    // Mode: "basic" returns past bookings for the customer lookup flow
+    // Mode: "appointments" returns upcoming appointments for the my-appointments page
+    if (mode === "appointments") {
+      const { data: appointments } = await supabase
+        .from("bookings")
+        .select(`
+          id,
+          reference_number,
+          status,
+          scheduled_start,
+          scheduled_end,
+          duration_minutes,
+          total,
+          subtotal,
+          discount_amount,
+          discount_code,
+          services_json,
+          home_details_json,
+          technician:technicians(name)
+        `)
+        .eq("customer_id", customer.id)
+        .in("status", ["scheduled", "confirmed", "pending"])
+        .not("scheduled_start", "is", null)
+        .gte("scheduled_start", new Date().toISOString())
+        .order("scheduled_start", { ascending: true });
+
+      return new Response(JSON.stringify({
+        customer: { id: customer.id },
+        appointments: appointments || [],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    // Default: basic mode - past bookings for customer lookup
     const { data: bookings } = await supabase
       .from("bookings")
       .select("id, reference_number, scheduled_start, status, total, home_details_json, services_json")

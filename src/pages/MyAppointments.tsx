@@ -78,16 +78,14 @@ export default function MyAppointments() {
 
     setLookupLoading(true);
     try {
-      // Find customer by email
-      const { data: customer, error: customerError } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('email', searchEmail.toLowerCase().trim())
-        .maybeSingle();
+      // Use edge function proxy for secure customer lookup
+      const { data: responseData, error: invokeError } = await supabase.functions.invoke('customer-lookup', {
+        body: { email: searchEmail.toLowerCase().trim(), mode: 'appointments' },
+      });
 
-      if (customerError) throw customerError;
+      if (invokeError) throw invokeError;
 
-      if (!customer) {
+      if (!responseData?.customer) {
         toast.error('No appointments found for this email');
         setAppointments([]);
         setCustomerId(null);
@@ -95,35 +93,8 @@ export default function MyAppointments() {
         return;
       }
 
-      setCustomerId(customer.id);
-
-      // Fetch upcoming appointments
-      const { data: bookings, error: bookingsError } = await supabase
-        .from('bookings')
-        .select(`
-          id,
-          reference_number,
-          status,
-          scheduled_start,
-          scheduled_end,
-          duration_minutes,
-          total,
-          subtotal,
-          discount_amount,
-          discount_code,
-          services_json,
-          home_details_json,
-          technician:technicians(name)
-        `)
-        .eq('customer_id', customer.id)
-        .in('status', ['scheduled', 'confirmed', 'pending'])
-        .not('scheduled_start', 'is', null)
-        .gte('scheduled_start', new Date().toISOString())
-        .order('scheduled_start', { ascending: true });
-
-      if (bookingsError) throw bookingsError;
-
-      setAppointments((bookings || []) as unknown as CustomerAppointment[]);
+      setCustomerId(responseData.customer.id);
+      setAppointments((responseData.appointments || []) as unknown as CustomerAppointment[]);
       setHasLookedUp(true);
     } catch (err) {
       console.error('Failed to lookup appointments:', err);
