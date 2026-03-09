@@ -38,32 +38,21 @@ export function useCustomerLookup() {
     setError(null);
 
     try {
-      // Look up customer by email
-      const { data: customer, error: customerError } = await supabase
-        .from('customers')
-        .select('id, email, first_name, last_name, phone, address')
-        .eq('email', email.toLowerCase().trim())
-        .maybeSingle();
+      // Use edge function proxy to avoid exposing customer PII via direct table access
+      const { data: responseData, error: invokeError } = await supabase.functions.invoke('customer-lookup', {
+        body: { email: email.toLowerCase().trim() },
+      });
 
-      if (customerError) {
+      if (invokeError) {
         throw new Error('Failed to look up customer');
       }
+
+      const customer = responseData?.customer;
+      const bookings = responseData?.bookings || [];
 
       if (!customer) {
         setResult(null);
         return null;
-      }
-
-      // Fetch past bookings for this customer
-      const { data: bookings, error: bookingsError } = await supabase
-        .from('bookings')
-        .select('id, reference_number, scheduled_start, status, total, home_details_json, services_json')
-        .eq('customer_id', customer.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      if (bookingsError) {
-        throw new Error('Failed to fetch bookings');
       }
 
       const parsedBookings: PastBooking[] = (bookings || []).map(b => {
