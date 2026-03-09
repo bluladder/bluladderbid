@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Anyone can view pending confirmation by token" ON public.pending_confirmations;
