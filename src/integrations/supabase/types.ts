@@ -1110,6 +1110,163 @@ export type Database = {
         }
         Relationships: []
       }
+      sms_campaign_steps: {
+        Row: {
+          active: boolean
+          body_template: string
+          campaign_id: string
+          created_at: string
+          delay_hours: number
+          id: string
+          step_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          body_template: string
+          campaign_id: string
+          created_at?: string
+          delay_hours?: number
+          id?: string
+          step_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          body_template?: string
+          campaign_id?: string
+          created_at?: string
+          delay_hours?: number
+          id?: string
+          step_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_campaign_steps_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "sms_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_campaigns: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          trigger_event: Database["public"]["Enums"]["sms_trigger_event"]
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          trigger_event: Database["public"]["Enums"]["sms_trigger_event"]
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          trigger_event?: Database["public"]["Enums"]["sms_trigger_event"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sms_messages: {
+        Row: {
+          attempts: number
+          body: string
+          booking_id: string | null
+          callrail_message_id: string | null
+          campaign_id: string | null
+          campaign_step_id: string | null
+          created_at: string
+          error: string | null
+          id: string
+          message_kind: string
+          quote_id: string | null
+          send_at: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["sms_status"]
+          to_number: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          body: string
+          booking_id?: string | null
+          callrail_message_id?: string | null
+          campaign_id?: string | null
+          campaign_step_id?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          message_kind?: string
+          quote_id?: string | null
+          send_at?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["sms_status"]
+          to_number: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          body?: string
+          booking_id?: string | null
+          callrail_message_id?: string | null
+          campaign_id?: string | null
+          campaign_step_id?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          message_kind?: string
+          quote_id?: string | null
+          send_at?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["sms_status"]
+          to_number?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_messages_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "sms_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_campaign_step_id_fkey"
+            columns: ["campaign_step_id"]
+            isOneToOne: false
+            referencedRelation: "sms_campaign_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       technician_service_rates: {
         Row: {
           buffer_minutes: number
@@ -1345,6 +1502,14 @@ export type Database = {
         | "roof_wash"
         | "driveway"
         | "pressure_wash_addon"
+      sms_status: "pending" | "sent" | "failed" | "cancelled"
+      sms_trigger_event:
+        | "quote_created"
+        | "appointment_scheduled"
+        | "appointment_rescheduled"
+        | "appointment_cancelled"
+        | "appointment_completed"
+        | "manual"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1497,6 +1662,15 @@ export const Constants = {
         "roof_wash",
         "driveway",
         "pressure_wash_addon",
+      ],
+      sms_status: ["pending", "sent", "failed", "cancelled"],
+      sms_trigger_event: [
+        "quote_created",
+        "appointment_scheduled",
+        "appointment_rescheduled",
+        "appointment_cancelled",
+        "appointment_completed",
+        "manual",
       ],
     },
   },
