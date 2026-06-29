@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { Link2, Code, RefreshCw, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { Link2, Code, RefreshCw, ChevronDown, ChevronUp, ExternalLink, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { JobberIntegration } from './JobberIntegration';
 import { EmbedCodeManager } from './EmbedCodeManager';
+import { SmsCampaignManager } from './sms/SmsCampaignManager';
+import { SmsMessageLog } from './sms/SmsMessageLog';
 
 export function IntegrationsTabContent() {
   const [activeSection, setActiveSection] = useState('jobber');
@@ -30,6 +33,14 @@ export function IntegrationsTabContent() {
             >
               <Code className="w-3.5 h-3.5 mr-1.5" />
               Website Embed
+            </Badge>
+            <Badge
+              variant={activeSection === 'sms' ? 'default' : 'outline'}
+              className="cursor-pointer px-3 py-1.5"
+              onClick={() => setActiveSection('sms')}
+            >
+              <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+              Text Messaging
             </Badge>
           </div>
         </CardContent>
