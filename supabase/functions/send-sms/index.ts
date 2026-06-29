@@ -83,8 +83,6 @@ serve(async (req) => {
 
     // ---- Direct / manual send ----
     if (body.to && body.body) {
-    // ---- Direct / manual send ----
-    if (body.to && body.body) {
       // Manual arbitrary sends must come from an authenticated admin (prevents open SMS relay).
       const authHeader = req.headers.get("Authorization");
       const token = authHeader?.replace("Bearer ", "");
