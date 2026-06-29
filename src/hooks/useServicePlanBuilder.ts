@@ -354,6 +354,12 @@ export function useServicePlanBuilder() {
       if (error) throw error;
       
       setSavedQuoteId(data.id);
+
+      // Fire-and-forget: text the customer their quote link.
+      supabase.functions.invoke('send-sms', {
+        body: { eventType: 'quote_created', quoteId: data.id },
+      }).catch((e) => console.warn('Quote SMS dispatch failed:', e));
+
       return data.id;
     } catch (error) {
       console.error('Error saving quote:', error);
