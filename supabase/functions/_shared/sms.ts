@@ -1,0 +1,103 @@
+// Shared SMS helpers: CallRail sending, phone normalization, template rendering.
+
+const CALLRAIL_API_BASE = "https://api.callrail.com/v3";
+
+/** Normalize a US/Canada phone number to E.164 (+1XXXXXXXXXX). Returns null if invalid. */
+export function normalizePhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  // Already E.164
+  if (/^\+\d{10,15}$/.test(trimmed)) return trimmed;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
+
+export interface CallRailConfig {
+  apiKey: string;
+  accountId: string;
+  companyId: string;
+  senderNumber: string;
+}
+
+export function getCallRailConfig(): CallRailConfig | null {
+  const apiKey = Deno.env.get("CALLRAIL_API_KEY");
+  const accountId = Deno.env.get("CALLRAIL_ACCOUNT_ID");
+  const companyId = Deno.env.get("CALLRAIL_COMPANY_ID");
+  const senderNumber = Deno.env.get("CALLRAIL_SENDER_NUMBER");
+  if (!apiKey || !accountId || !companyId || !senderNumber) return null;
+  return { apiKey, accountId, companyId, senderNumber };
+}
+
+export interface SendResult {
+  ok: boolean;
+  messageId?: string;
+  error?: string;
+}
+
+/** Send a single SMS through CallRail's Send-a-Text-Message endpoint. */
+export async function sendCallRailSms(
+  config: CallRailConfig,
+  toNumber: string,
+  content: string,
+): Promise<SendResult> {
+  const normalized = normalizePhone(toNumber);
+  if (!normalized) {
+    return { ok: false, error: `Invalid recipient phone number: ${toNumber}` };
+  }
+
+  const url = `${CALLRAIL_API_BASE}/a/${config.accountId}/text-messages.json`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Token token="${config.apiKey}"`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        company_id: config.companyId,
+        customer_phone_number: normalized,
+        tracking_number: config.senderNumber,
+        content,
+      }),
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      return { ok: false, error: `CallRail ${res.status}: ${text}` };
+    }
+
+    let messageId: string | undefined;
+    try {
+      const json = JSON.parse(text);
+      messageId = json?.id ?? json?.message_id ?? undefined;
+    } catch {
+      // non-JSON success response; ignore
+    }
+    return { ok: true, messageId };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Render {{variable}} placeholders in a template against a value map. Missing vars become empty strings. */
+export function renderTemplate(template: string, vars: Record<string, string | number | null | undefined>): string {
+  return template.replace(/\{\{\s*([\w]+)\s*\}\}/g, (_m, key: string) => {
+    const v = vars[key];
+    return v === null || v === undefined ? "" : String(v);
+  });
+}
+
+/** Format an ISO datetime into a friendly date + arrival time for SMS. */
+export function formatApptDate(iso: string | null | undefined): { date: string; time: string } {
+  if (!iso) return { date: "", time: "" };
+  const d = new Date(iso);
+  const date = d.toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric", timeZone: "America/Chicago",
+  });
+  const time = d.toLocaleTimeString("en-US", {
+    hour: "numeric", minute: "2-digit", timeZone: "America/Chicago",
+  });
+  return { date, time };
+}

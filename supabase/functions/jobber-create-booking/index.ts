@@ -916,6 +916,22 @@ Deno.serve(async (req) => {
       console.log("Created booking record:", bookingRecord.id);
     }
 
+    // Fire-and-forget appointment-confirmation SMS + campaign enrollment.
+    if (bookingRecord?.id) {
+      try {
+        fetch(`${supabaseUrl}/functions/v1/send-sms`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({ eventType: "appointment_scheduled", bookingId: bookingRecord.id }),
+        }).catch((e) => console.warn("Appointment SMS dispatch failed:", e));
+      } catch (smsErr) {
+        console.warn("Appointment SMS dispatch error:", smsErr);
+      }
+    }
+
     console.log("=== Booking creation completed successfully ===");
 
     return new Response(

@@ -291,6 +291,25 @@ Deno.serve(async (req) => {
       console.warn("Failed to log audit entry:", auditErr);
     }
 
+    // Fire-and-forget transactional SMS + campaign enrollment for relevant actions.
+    const smsEvent =
+      action === 'reschedule' ? 'appointment_rescheduled' :
+      action === 'cancel' ? 'appointment_cancelled' : null;
+    if (smsEvent) {
+      try {
+        fetch(`${supabaseUrl}/functions/v1/send-sms`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({ eventType: smsEvent, bookingId }),
+        }).catch((e) => console.warn("[CustomerAction] SMS dispatch failed:", e));
+      } catch (smsErr) {
+        console.warn("[CustomerAction] SMS dispatch error:", smsErr);
+      }
+    }
+
     return new Response(
       JSON.stringify({ success: true, ...result }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
