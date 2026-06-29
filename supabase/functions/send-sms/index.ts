@@ -81,6 +81,26 @@ serve(async (req) => {
     const config = getCallRailConfig();
     const body: SendSmsRequest = await req.json();
 
+    // ---- Temporary diagnostic: list accounts/companies the API key can access ----
+    if ((body as { diagnose?: boolean }).diagnose) {
+      const apiKey = Deno.env.get("CALLRAIL_API_KEY") || "";
+      const accountId = Deno.env.get("CALLRAIL_ACCOUNT_ID") || "";
+      const h = { "Authorization": `Token token="${apiKey}"`, "Content-Type": "application/json" };
+      const accRes = await fetch("https://api.callrail.com/v3/a.json", { headers: h });
+      const accText = await accRes.text();
+      let companies = "skipped";
+      if (accountId) {
+        const cRes = await fetch(`https://api.callrail.com/v3/a/${accountId}/companies.json`, { headers: h });
+        companies = `[${cRes.status}] ${await cRes.text()}`;
+      }
+      return new Response(JSON.stringify({
+        accountsStatus: accRes.status,
+        accounts: accText,
+        companies,
+        configuredAccountIdLength: accountId.length,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // ---- Direct / manual send ----
     if (body.to && body.body) {
       // Manual arbitrary sends must come from an authenticated admin (prevents open SMS relay).
