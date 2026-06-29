@@ -47,3 +47,9 @@ verify_jwt = false
 
 [functions.customer-lookup]
 verify_jwt = false
+
+[functions.send-sms]
+verify_jwt = false
+
+[functions.process-sms-queue]
+verify_jwt = false
