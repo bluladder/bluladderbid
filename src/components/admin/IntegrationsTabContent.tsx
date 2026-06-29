@@ -103,6 +103,45 @@ export function IntegrationsTabContent() {
           </Card>
         </div>
       )}
+
+      {/* Text Messaging (CallRail SMS) */}
+      {activeSection === 'sms' && (
+        <div className="space-y-4">
+          <Card className="bg-blue-50/50 border-blue-200/50 dark:bg-blue-950/20 dark:border-blue-800/30">
+            <CardContent className="py-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/50">
+                  <MessageSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    CallRail texting is connected
+                  </h4>
+                  <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1 list-disc list-inside">
+                    <li>Transactional texts (quote ready, appointment scheduled, rescheduled, cancelled) send automatically.</li>
+                    <li>Follow-up campaigns enroll customers when their trigger event fires and send on a delay.</li>
+                    <li>Queued campaign messages are processed every 15 minutes.</li>
+                    <li>Opt-out (STOP) instructions are appended automatically on first contact.</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Tabs defaultValue="campaigns">
+            <TabsList>
+              <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
+              <TabsTrigger value="log">Message Log</TabsTrigger>
+            </TabsList>
+            <TabsContent value="campaigns" className="mt-4">
+              <SmsCampaignManager />
+            </TabsContent>
+            <TabsContent value="log" className="mt-4">
+              <SmsMessageLog />
+            </TabsContent>
+          </Tabs>
+        </div>
+      )}
     </div>
   );
 }
