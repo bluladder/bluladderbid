@@ -83,6 +83,30 @@ serve(async (req) => {
 
     // ---- Direct / manual send ----
     if (body.to && body.body) {
+    // ---- Direct / manual send ----
+    if (body.to && body.body) {
+      // Manual arbitrary sends must come from an authenticated admin (prevents open SMS relay).
+      const authHeader = req.headers.get("Authorization");
+      const token = authHeader?.replace("Bearer ", "");
+      if (!token) {
+        return new Response(JSON.stringify({ error: "Authentication required" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: userData } = await supabase.auth.getUser(token);
+      const uid = userData?.user?.id;
+      if (!uid) {
+        return new Response(JSON.stringify({ error: "Invalid session" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: isAdmin } = await supabase.rpc("has_admin_level", { _user_id: uid, _min_level: "operations_admin" });
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Admin access required" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       const toNorm = normalizePhone(body.to);
       const { data: row } = await supabase
         .from("sms_messages")
