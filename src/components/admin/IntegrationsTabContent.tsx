@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { Link2, Code, RefreshCw, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { Link2, Code, RefreshCw, ChevronDown, ChevronUp, ExternalLink, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { JobberIntegration } from './JobberIntegration';
 import { EmbedCodeManager } from './EmbedCodeManager';
+import { SmsCampaignManager } from './sms/SmsCampaignManager';
+import { SmsMessageLog } from './sms/SmsMessageLog';
 
 export function IntegrationsTabContent() {
   const [activeSection, setActiveSection] = useState('jobber');
@@ -30,6 +33,14 @@ export function IntegrationsTabContent() {
             >
               <Code className="w-3.5 h-3.5 mr-1.5" />
               Website Embed
+            </Badge>
+            <Badge
+              variant={activeSection === 'sms' ? 'default' : 'outline'}
+              className="cursor-pointer px-3 py-1.5"
+              onClick={() => setActiveSection('sms')}
+            >
+              <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
+              Text Messaging
             </Badge>
           </div>
         </CardContent>
@@ -90,6 +101,45 @@ export function IntegrationsTabContent() {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Text Messaging (CallRail SMS) */}
+      {activeSection === 'sms' && (
+        <div className="space-y-4">
+          <Card className="bg-blue-50/50 border-blue-200/50 dark:bg-blue-950/20 dark:border-blue-800/30">
+            <CardContent className="py-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/50">
+                  <MessageSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    CallRail texting is connected
+                  </h4>
+                  <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1 list-disc list-inside">
+                    <li>Transactional texts (quote ready, appointment scheduled, rescheduled, cancelled) send automatically.</li>
+                    <li>Follow-up campaigns enroll customers when their trigger event fires and send on a delay.</li>
+                    <li>Queued campaign messages are processed every 15 minutes.</li>
+                    <li>Opt-out (STOP) instructions are appended automatically on first contact.</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Tabs defaultValue="campaigns">
+            <TabsList>
+              <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
+              <TabsTrigger value="log">Message Log</TabsTrigger>
+            </TabsList>
+            <TabsContent value="campaigns" className="mt-4">
+              <SmsCampaignManager />
+            </TabsContent>
+            <TabsContent value="log" className="mt-4">
+              <SmsMessageLog />
+            </TabsContent>
+          </Tabs>
         </div>
       )}
     </div>
