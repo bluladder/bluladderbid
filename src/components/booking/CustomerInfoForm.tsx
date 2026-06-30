@@ -24,8 +24,13 @@ const customerSchema = z.object({
 });
 
 // Combine structured parts into the single string downstream systems expect.
-const composeAddress = (p: { street: string; city: string; state: string; zip: string }) =>
-  `${p.street.trim()}, ${p.city.trim()}, ${p.state.trim().toUpperCase()} ${p.zip.trim()}`;
+// Empty segments (e.g., a blank Unit/Suite) are dropped so we never emit
+// stray commas or double spaces.
+const composeAddress = (p: { street: string; unit?: string; city: string; state: string; zip: string }) => {
+  const streetLine = [p.street.trim(), (p.unit ?? '').trim()].filter(Boolean).join(' ');
+  const stateZip = [p.state.trim().toUpperCase(), p.zip.trim()].filter(Boolean).join(' ');
+  return [streetLine, p.city.trim(), stateZip].filter(Boolean).join(', ');
+};
 
 // Best-effort parse of an existing combined address back into parts.
 const parseAddress = (address?: string) => {
@@ -68,6 +73,7 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
     email: initialData?.email || '',
     phone: initialData?.phone || '',
     street: parsedInitial.street,
+    unit: '',
     city: parsedInitial.city,
     state: parsedInitial.state,
     zip: parsedInitial.zip,
@@ -217,6 +223,18 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
             {errors.street && (
               <p className="text-xs text-destructive">{errors.street}</p>
             )}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="unit" className="text-xs text-muted-foreground">Unit / Suite (Optional)</Label>
+            <Input
+              id="unit"
+              value={formData.unit}
+              onChange={(e) => handleChange('unit', e.target.value)}
+              placeholder="Apt 4B, Suite 200..."
+              autoComplete="address-line2"
+              className="h-9 text-sm"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
