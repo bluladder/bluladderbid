@@ -12,7 +12,7 @@ import {
 import {
   Sparkles, Zap, Check, User, Users, Clock, Calendar as CalendarIcon,
   Route, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, Star,
-  Sun, Moon,
+  Sun, Moon, Hand, X,
 } from 'lucide-react';
 import { format, parseISO, addDays, isSameDay } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -102,6 +102,24 @@ export function SmartScheduler({
   const [calendarView, setCalendarView] = useState<CalendarViewMode>('week');
   const [browseDate, setBrowseDate] = useState<Date | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [showSwipeTutorial, setShowSwipeTutorial] = useState(false);
+
+  // Show the swipe tutorial once when the customer first opens the browse calendar on mobile.
+  useEffect(() => {
+    if (!browseOpen) return;
+    if (typeof window === 'undefined') return;
+    const seen = window.localStorage.getItem('smartScheduler.swipeTutorialSeen');
+    if (!seen) setShowSwipeTutorial(true);
+  }, [browseOpen]);
+
+  const dismissSwipeTutorial = () => {
+    setShowSwipeTutorial(false);
+    try {
+      window.localStorage.setItem('smartScheduler.swipeTutorialSeen', '1');
+    } catch {
+      /* ignore storage errors */
+    }
+  };
 
   // Auto-fetch on mount / when the service set or address changes.
   useEffect(() => {
@@ -296,6 +314,9 @@ export function SmartScheduler({
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="space-y-4 pt-0">
+              {showSwipeTutorial && (
+                <SwipeTutorialOverlay onDismiss={dismissSwipeTutorial} />
+              )}
               {/* Day / Week / Month toggle */}
               <div className="flex gap-1 bg-muted p-1 rounded-lg w-fit">
                 {(['day', 'week', 'month'] as BrowseMode[]).map((mode) => (
@@ -405,6 +426,48 @@ export function SmartScheduler({
 }
 
 /* ------------------------- Sticky filter chips ------------------------- */
+
+/* ------------------------- Swipe tutorial overlay ------------------------- */
+
+function SwipeTutorialOverlay({ onDismiss }: { onDismiss: () => void }) {
+  const tips: Array<{ icon: typeof Hand; title: string; desc: string }> = [
+    { icon: Sun, title: 'Days', desc: 'Swipe left or right in Day view to jump to the next or previous day.' },
+    { icon: CalendarIcon, title: 'Weeks', desc: 'In Week view, swipe across the calendar to move week by week.' },
+    { icon: CalendarIcon, title: 'Months', desc: 'Switch to Month view and swipe to browse month by month.' },
+  ];
+  return (
+    <div className="sm:hidden relative rounded-xl border border-primary/30 bg-primary/5 p-4">
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss swipe tip"
+        className="absolute top-2 right-2 inline-flex items-center justify-center h-8 w-8 rounded-full text-muted-foreground hover:bg-accent touch-manipulation"
+      >
+        <X className="h-4 w-4" />
+      </button>
+      <div className="flex items-center gap-2 pr-8">
+        <Hand className="h-5 w-5 text-primary shrink-0" />
+        <p className="text-sm font-semibold">Quick tip: swipe to browse</p>
+      </div>
+      <ul className="mt-3 space-y-2">
+        {tips.map(({ icon: Icon, title, desc }) => (
+          <li key={title} className="flex items-start gap-2.5">
+            <span className="mt-0.5 inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/10 text-primary shrink-0">
+              <Icon className="h-3.5 w-3.5" />
+            </span>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground">{title}: </span>
+              {desc}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <Button size="sm" className="mt-3 w-full h-9 touch-manipulation" onClick={onDismiss}>
+        Got it
+      </Button>
+    </div>
+  );
+}
 
 const TIME_CHIPS: Array<{ value: TimePreference; label: string; icon: typeof Sun }> = [
   { value: 'none', label: 'Any time', icon: Clock },
