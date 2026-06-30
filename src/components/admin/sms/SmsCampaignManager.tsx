@@ -328,7 +328,7 @@ export function SmsCampaignManager() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-xs text-muted-foreground rounded-md bg-muted/50 p-3">
-            Template variables: {TEMPLATE_VARS.map((v) => <code key={v} className="mx-1 px-1 rounded bg-background">{v}</code>)}
+            Template variables: {VAR_TOKENS.map((v) => <code key={v} className="mx-1 px-1 rounded bg-background">{v}</code>)}
           </div>
           {loading && campaigns.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>
