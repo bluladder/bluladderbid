@@ -470,6 +470,7 @@ export function BookingFlow({
             onSelectSlot={handleSelectSlot}
             selectedSlot={selectedSlot}
             customerAddress={customerInfo.address}
+            customerName={[customerInfo.firstName, customerInfo.lastName].filter(Boolean).join(' ').trim() || undefined}
           />
           
           {/* Fixed CTA area with appointment summary */}
