@@ -195,18 +195,21 @@ function StepEditor({
 export function SmsCampaignManager() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: c }, { data: s }] = await Promise.all([
+    const [{ data: c }, { data: s }, { data: t }] = await Promise.all([
       supabase.from('sms_campaigns').select('*').order('created_at', { ascending: true }),
       supabase.from('sms_campaign_steps').select('*').order('step_order', { ascending: true }),
+      supabase.from('message_templates').select('id,name,channel,category,subject,body,active').order('name'),
     ]);
     setCampaigns((c as Campaign[]) ?? []);
     setSteps((s as Step[]) ?? []);
+    setTemplates((t as Template[]) ?? []);
     setLoading(false);
   }, []);
 
