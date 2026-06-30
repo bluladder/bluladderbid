@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, Download, Check, Sparkles, ArrowLeft } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,8 @@ interface OneTimeSummaryProps {
   onDownloadPDF: () => void;
   onGetStarted: () => void;
   prefillCustomerInfo?: CustomerInfo | null;
+  /** Notifies the page when the full booking flow opens/closes so it can widen the layout. */
+  onBookingActiveChange?: (active: boolean) => void;
 }
 
 function formatPrice(price: number) {
@@ -34,9 +36,16 @@ export function OneTimeSummary({
   onDownloadPDF,
   onGetStarted,
   prefillCustomerInfo,
+  onBookingActiveChange,
 }: OneTimeSummaryProps) {
   const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
   const [showBookingFlow, setShowBookingFlow] = useState(false);
+
+  // Let the page know whether the booking flow is taking over the view.
+  useEffect(() => {
+    onBookingActiveChange?.(showBookingFlow);
+    return () => onBookingActiveChange?.(false);
+  }, [showBookingFlow, onBookingActiveChange]);
   
   // Calculate discounted total
   const subtotal = servicePrices.grandTotal;
