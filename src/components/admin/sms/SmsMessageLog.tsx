@@ -59,7 +59,7 @@ export function SmsMessageLog() {
     setLoading(true);
     let query = supabase
       .from('sms_messages')
-      .select('id,to_number,to_email,channel,subject,body,status,message_kind,send_at,sent_at,error,attempts,max_attempts,next_retry_at,created_at')
+      .select('id,to_number,to_email,channel,subject,body,status,message_kind,send_at,sent_at,error,attempts,max_attempts,next_retry_at,callrail_message_id,updated_at,created_at')
       .order('created_at', { ascending: false })
       .limit(100);
     // "retrying" is a derived state of pending messages, so query pending at the
