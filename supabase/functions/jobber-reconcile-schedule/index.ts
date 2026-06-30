@@ -263,8 +263,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // orphan (stale): in mirror, not in authoritative Jobber set
-    for (const [key, mb] of mirrorMap.entries()) {
+    // orphan (stale): in mirror, not in authoritative Jobber set.
+    // Only trustworthy when the full Jobber pull completed — a throttled/partial
+    // pull would flag every un-fetched block as a false-positive orphan.
+    if (!throttled) {
+      for (const [key, mb] of mirrorMap.entries()) {
       if (!visitMap.has(key)) {
         const [visitId, crewId] = key.split(":");
         discrepancies.push({
@@ -279,6 +282,7 @@ Deno.serve(async (req) => {
           mirrorBlockId: mb.id,
         });
         pruneIds.push(mb.id);
+      }
       }
     }
 
