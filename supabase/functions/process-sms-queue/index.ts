@@ -9,6 +9,36 @@ const corsHeaders = {
 
 const FROM_EMAIL = "BluLadder <noreply@bluladder.com>";
 
+// Exponential-ish backoff (in minutes) applied before each retry, indexed by
+// the attempt number that just failed (1st failure -> 5 min, 2nd -> 30 min, ...).
+const RETRY_BACKOFF_MINUTES = [5, 30, 120];
+
+function nextRetryIso(attempts: number): string {
+  const idx = Math.min(attempts - 1, RETRY_BACKOFF_MINUTES.length - 1);
+  const minutes = RETRY_BACKOFF_MINUTES[Math.max(0, idx)];
+  return new Date(Date.now() + minutes * 60 * 1000).toISOString();
+}
+
+/**
+ * Build the update payload for a failed send. Permanent failures (bad
+ * recipient / misconfiguration) are never retried; transient failures are
+ * rescheduled with backoff until max_attempts is reached.
+ */
+function failureUpdate(
+  prevAttempts: number,
+  maxAttempts: number,
+  errorMsg: string,
+  permanent = false,
+): Record<string, unknown> {
+  const attempts = (prevAttempts ?? 0) + 1;
+  const limit = maxAttempts && maxAttempts > 0 ? maxAttempts : 3;
+  if (permanent || attempts >= limit) {
+    return { status: "failed", error: errorMsg, attempts, next_retry_at: null };
+  }
+  const retryAt = nextRetryIso(attempts);
+  return { status: "pending", error: errorMsg, attempts, send_at: retryAt, next_retry_at: retryAt };
+}
+
 /** Send an email through Resend. Returns a SendResult-like object. */
 async function sendEmail(
   apiKey: string,
@@ -54,7 +84,7 @@ serve(async (req) => {
 
   const { data: due, error } = await supabase
     .from("sms_messages")
-    .select("id, to_number, to_email, channel, subject, body, attempts, customer_id")
+    .select("id, to_number, to_email, channel, subject, body, attempts, max_attempts, customer_id")
     .eq("status", "pending")
     .lte("send_at", nowIso)
     .order("send_at", { ascending: true })
@@ -73,9 +103,9 @@ serve(async (req) => {
     // ---- Email channel ----
     if (msg.channel === "email") {
       if (!msg.to_email) {
-        await supabase.from("sms_messages").update({
-          status: "failed", error: "No recipient email", attempts: (msg.attempts ?? 0) + 1,
-        }).eq("id", msg.id);
+        await supabase.from("sms_messages").update(
+          failureUpdate(msg.attempts, msg.max_attempts, "No recipient email", true),
+        ).eq("id", msg.id);
         failed++;
         continue;
       }
@@ -83,14 +113,14 @@ serve(async (req) => {
       const pauseEmail = await getCustomerPause(supabase, { id: msg.customer_id, email: msg.to_email });
       if (pauseEmail.email_paused) {
         await supabase.from("sms_messages").update({
-          status: "cancelled", error: "Email paused for this lead",
+          status: "cancelled", error: "Email paused for this lead", next_retry_at: null,
         }).eq("id", msg.id);
         continue;
       }
       if (!resendKey) {
-        await supabase.from("sms_messages").update({
-          status: "failed", error: "Email sending not configured", attempts: (msg.attempts ?? 0) + 1,
-        }).eq("id", msg.id);
+        await supabase.from("sms_messages").update(
+          failureUpdate(msg.attempts, msg.max_attempts, "Email sending not configured", true),
+        ).eq("id", msg.id);
         failed++;
         continue;
       }
@@ -98,14 +128,13 @@ serve(async (req) => {
       if (er.ok) {
         await supabase.from("sms_messages").update({
           status: "sent", sent_at: new Date().toISOString(),
-          callrail_message_id: er.messageId ?? null, attempts: (msg.attempts ?? 0) + 1, error: null,
+          callrail_message_id: er.messageId ?? null, attempts: (msg.attempts ?? 0) + 1, error: null, next_retry_at: null,
         }).eq("id", msg.id);
         sent++;
       } else {
-        const attempts = (msg.attempts ?? 0) + 1;
-        await supabase.from("sms_messages").update({
-          status: attempts >= 3 ? "failed" : "pending", error: er.error ?? "send failed", attempts,
-        }).eq("id", msg.id);
+        await supabase.from("sms_messages").update(
+          failureUpdate(msg.attempts, msg.max_attempts, er.error ?? "send failed"),
+        ).eq("id", msg.id);
         failed++;
       }
       continue;
@@ -114,7 +143,7 @@ serve(async (req) => {
     // Skip recipients who have opted out since the message was queued.
     if (await isPhoneOptedOut(supabase, msg.to_number as string)) {
       await supabase.from("sms_messages").update({
-        status: "cancelled", error: "Recipient has opted out of texts",
+        status: "cancelled", error: "Recipient has opted out of texts", next_retry_at: null,
       }).eq("id", msg.id);
       continue;
     }
@@ -122,14 +151,14 @@ serve(async (req) => {
     const pauseSms = await getCustomerPause(supabase, { id: msg.customer_id, phone: msg.to_number });
     if (pauseSms.sms_paused) {
       await supabase.from("sms_messages").update({
-        status: "cancelled", error: "Texting paused for this lead",
+        status: "cancelled", error: "Texting paused for this lead", next_retry_at: null,
       }).eq("id", msg.id);
       continue;
     }
     if (!config) {
-      await supabase.from("sms_messages").update({
-        status: "failed", error: "CallRail not configured", attempts: (msg.attempts ?? 0) + 1,
-      }).eq("id", msg.id);
+      await supabase.from("sms_messages").update(
+        failureUpdate(msg.attempts, msg.max_attempts, "CallRail not configured", true),
+      ).eq("id", msg.id);
       failed++;
       continue;
     }
@@ -137,15 +166,14 @@ serve(async (req) => {
     if (result.ok) {
       await supabase.from("sms_messages").update({
         status: "sent", sent_at: new Date().toISOString(),
-        callrail_message_id: result.messageId ?? null, attempts: (msg.attempts ?? 0) + 1, error: null,
+        callrail_message_id: result.messageId ?? null, attempts: (msg.attempts ?? 0) + 1, error: null, next_retry_at: null,
       }).eq("id", msg.id);
       sent++;
     } else {
-      const attempts = (msg.attempts ?? 0) + 1;
-      // Give up after 3 attempts; otherwise leave pending for the next run.
-      await supabase.from("sms_messages").update({
-        status: attempts >= 3 ? "failed" : "pending", error: result.error ?? "send failed", attempts,
-      }).eq("id", msg.id);
+      // Give up after max_attempts; otherwise reschedule with backoff.
+      await supabase.from("sms_messages").update(
+        failureUpdate(msg.attempts, msg.max_attempts, result.error ?? "send failed"),
+      ).eq("id", msg.id);
       failed++;
     }
   }
