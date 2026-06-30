@@ -335,6 +335,71 @@ export type Database = {
           },
         ]
       }
+      campaign_audit_log: {
+        Row: {
+          actor_id: string | null
+          campaigns_enrolled: Json
+          created_at: string
+          customer_id: string | null
+          details: Json
+          event_type: string
+          id: string
+          messages_cancelled: number
+          messages_started: number
+          new_status:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          old_status:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          source: string
+        }
+        Insert: {
+          actor_id?: string | null
+          campaigns_enrolled?: Json
+          created_at?: string
+          customer_id?: string | null
+          details?: Json
+          event_type?: string
+          id?: string
+          messages_cancelled?: number
+          messages_started?: number
+          new_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          old_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          source?: string
+        }
+        Update: {
+          actor_id?: string | null
+          campaigns_enrolled?: Json
+          created_at?: string
+          customer_id?: string | null
+          details?: Json
+          event_type?: string
+          id?: string
+          messages_cancelled?: number
+          messages_started?: number
+          new_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          old_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_audit_log_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_enrollments: {
         Row: {
           campaign_id: string
