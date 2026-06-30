@@ -18,7 +18,7 @@ export interface RecommendedSlot {
   gapScore?: number;
   gapEfficiencyLabel?: string;
   routeBonus?: number;
-  whyLabel?: 'soonest_available' | 'minimizes_gaps' | 'alternative';
+  whyLabel?: 'soonest_available' | 'minimizes_gaps' | 'alternative' | 'best_recommended';
   // Team booking fields
   isTeamJob?: boolean;
   crewSize?: number;
