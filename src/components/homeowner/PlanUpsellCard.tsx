@@ -165,15 +165,15 @@ export function PlanUpsellCard({
           
           {/* Book One-Time CTA - PRIMARY with high contrast */}
           <Button 
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-16 text-lg font-bold shadow-xl group transition-all duration-200 active:scale-[0.98]"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-auto min-h-16 py-3 text-base sm:text-lg font-bold shadow-xl group transition-all duration-200 active:scale-[0.98] whitespace-normal flex-wrap"
             onClick={onBookOneTime}
           >
-            <Calendar className="w-6 h-6 mr-3" />
+            <Calendar className="w-5 h-5 sm:w-6 sm:h-6 mr-2 shrink-0" />
             <span>Book One-Time Service</span>
-            <span className="ml-3 font-mono bg-primary-foreground/20 px-3 py-1 rounded-lg">
+            <span className="font-mono bg-primary-foreground/20 px-3 py-1 rounded-lg shrink-0">
               {formatPrice(oneTimeTotal)}
             </span>
-            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-0.5 transition-transform" />
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform shrink-0" />
           </Button>
           
           {/* Trust microcopy */}
