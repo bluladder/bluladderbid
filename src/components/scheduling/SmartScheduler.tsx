@@ -314,6 +314,9 @@ export function SmartScheduler({
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="space-y-4 pt-0">
+              {showSwipeTutorial && (
+                <SwipeTutorialOverlay onDismiss={dismissSwipeTutorial} />
+              )}
               {/* Day / Week / Month toggle */}
               <div className="flex gap-1 bg-muted p-1 rounded-lg w-fit">
                 {(['day', 'week', 'month'] as BrowseMode[]).map((mode) => (
