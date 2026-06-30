@@ -1,5 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { Sparkles, Droplets, Home, TreeDeciduous, Sun, ArrowRight } from 'lucide-react';
+import { CustomerHeader } from '@/components/CustomerHeader';
+import { CustomerFooter } from '@/components/CustomerFooter';
 
 const SERVICES = [
   {
@@ -64,27 +66,7 @@ const Services = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header - hidden in embed mode */}
-      {!isEmbedMode && (
-        <header className="border-b border-border bg-card sticky top-0 z-50">
-          <div className="container py-4">
-            <div className="flex items-center justify-between">
-              <Link to="/" className="hover:opacity-80 transition-opacity">
-                <h1 className="text-xl font-display font-bold text-primary">
-                  BluLadder
-                </h1>
-                <p className="text-xs text-muted-foreground">Next Level Clean</p>
-              </Link>
-              <Link 
-                to="/" 
-                className="text-sm font-medium text-primary hover:text-primary/80 transition-colors"
-              >
-                Get a Quote →
-              </Link>
-            </div>
-          </div>
-        </header>
-      )}
+      <CustomerHeader embed={isEmbedMode} />
 
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-primary/10 via-background to-primary/5 py-16">
@@ -161,14 +143,7 @@ const Services = () => {
         </div>
       </main>
 
-      {/* Footer - hidden in embed mode */}
-      {!isEmbedMode && (
-        <footer className="border-t border-border mt-8">
-          <div className="container py-6 text-center text-sm text-muted-foreground">
-            © {new Date().getFullYear()} BluLadder • Next Level Clean
-          </div>
-        </footer>
-      )}
+      <CustomerFooter embed={isEmbedMode} />
     </div>
   );
 };
