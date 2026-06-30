@@ -19,12 +19,10 @@ import {
   CalendarDays,
   Edit,
   X,
-  RefreshCw,
-  Home as HomeIcon
+  RefreshCw
 } from 'lucide-react';
 import { format, parseISO, differenceInHours, isBefore } from 'date-fns';
 import { toast } from 'sonner';
-import { Link } from 'react-router-dom';
 import { AppointmentCard } from '@/components/customer/AppointmentCard';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { RescheduleDialog } from '@/components/customer/RescheduleDialog';
