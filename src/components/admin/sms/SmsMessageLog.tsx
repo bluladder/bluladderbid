@@ -24,6 +24,7 @@ const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | '
   pending: 'secondary',
   failed: 'destructive',
   cancelled: 'outline',
+  inbound: 'secondary',
 };
 
 export function SmsMessageLog() {
