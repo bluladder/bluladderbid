@@ -214,6 +214,7 @@ export function SmartScheduler({
         preference={preference}
         onPreferenceChange={handlePreference}
         services={services}
+        rankedSlots={rankedSlots}
         isLoading={isLoadingRecommendations}
       />
 
@@ -475,15 +476,25 @@ const TIME_CHIPS: Array<{ value: TimePreference; label: string; icon: typeof Sun
   { value: 'PM', label: 'Afternoon', icon: Moon },
 ];
 
+function countByPreference(slots: RecommendedSlot[], pref: TimePreference) {
+  if (pref === 'none') return slots.length;
+  return slots.filter((s) => {
+    const h = parseISO(s.startTime).getHours();
+    return pref === 'AM' ? h < 12 : h >= 12;
+  }).length;
+}
+
 function SchedulerFilterChips({
   preference,
   onPreferenceChange,
   services,
+  rankedSlots,
   isLoading,
 }: {
   preference: TimePreference;
   onPreferenceChange: (p: TimePreference) => void;
   services: ServiceForAvailability[];
+  rankedSlots: RecommendedSlot[];
   isLoading?: boolean;
 }) {
   const serviceNames = services.map((s) => s.service).filter(Boolean);
@@ -494,6 +505,7 @@ function SchedulerFilterChips({
         <span className="text-[11px] font-medium text-muted-foreground shrink-0">Time</span>
         {TIME_CHIPS.map(({ value, label, icon: Icon }) => {
           const active = preference === value;
+          const count = countByPreference(rankedSlots, value);
           return (
             <button
               key={value}
@@ -510,6 +522,18 @@ function SchedulerFilterChips({
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
+              {count > 0 && !isLoading && (
+                <span
+                  className={cn(
+                    'ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded-full text-[10px] tabular-nums',
+                    active
+                      ? 'bg-primary-foreground/20 text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                  )}
+                >
+                  {count}
+                </span>
+              )}
             </button>
           );
         })}
