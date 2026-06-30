@@ -1,70 +1,60 @@
-# Multi-Channel Lifecycle Campaigns
+# Unified Smart Scheduling — Admin Portal + Customer Booking
 
-Turn the current text-only campaign system into a unified **text + email** campaign engine driven by a per-customer lifecycle status, with automatic and manual switching, and full admin editing of every message.
+## Goal
+Present available appointments the same way in the **Admin Scheduling Portal** and the **customer booking flow**, with a clear, labeled hierarchy:
 
-## Lifecycle statuses (per customer)
+1. **Best Recommended** — the single highest-value slot (optimizes location/route + fills schedule gaps, e.g. a 2‑hr job dropped into a 3–5pm gap instead of a lone 9am).
+2. **Next Available** — the soonest slot that is large enough to fit the selected service.
+3. **5 More Options** — the next best-ranked appointments.
+4. **Browse All** — day / week / month calendar showing every available appointment.
 
-A single status lives on each customer and drives which lifecycle campaign(s) they're enrolled in:
+The scoring engine that decides "best" already exists in the `jobber-availability` function (gap 35% / recency 30% / route 15% / technician 20%). This work surfaces more of that ranking and reuses it on both ends so the experience is identical.
 
-```text
-Open      -> requested a bid, no package/service chosen yet
-Pending   -> chose a package/service/subscription, not yet scheduled or approved
-Approved  -> subscription quote approved
-Booked    -> booked bid or booked appointment
-Declined  -> rejected / declined
-```
+## What already exists (reused, not rebuilt)
+- `jobber-availability` edge function with `recommended` mode (scores + sorts all valid slots) and `dayGrid` mode (all slots for one day).
+- `useSmartAvailability` hook (recommendations + day slots + fully-booked days).
+- `DateFirstCalendar` (day/week/month browsing) and `TimeSlotList`.
+- Engine already guarantees every returned slot fits the service duration.
 
-- **Auto-switch:** when quotes/bookings change, the customer's status is recomputed automatically.
-- **Manual switch:** an admin can override status on any customer at any time.
-- **Cancel old, start new:** on any switch, still-unsent campaign messages from the old status are cancelled and the new status's sequences begin.
-- **Multiple campaigns allowed:** more than one active campaign can target the same status; the customer enrolls in all of them. Manual/transactional one-off messages still send independently.
+## Changes
 
-## What the admin can do
+### 1. Edge function `jobber-availability` (small, additive)
+In `recommended` mode, in addition to the current `recommendations` (kept for backward compatibility), return:
+- `bestRecommended`: the top-scored slot (highest combined score).
+- `nextAvailable`: the earliest slot by start time (soonest that fits).
+- `rankedSlots`: a de-duplicated, score-ordered list (~12) so the UI can show "5 more" without extra round-trips.
 
-In Admin -> Integrations -> Text Messaging (renamed to **Campaigns & Messaging**):
+No scoring logic changes — purely exposing the already-computed `scoredSlots`.
 
-1. **Campaign list** grouped by trigger: lifecycle-status campaigns (Open/Pending/Approved/Booked/Declined) and the existing event campaigns (quote created, appointment scheduled, etc.).
-2. **Build new custom campaigns** keyed to a status or an event.
-3. **Per-step control inside a campaign:** each step is either a **Text** or an **Email**; add, remove, reorder, edit, and **pause/resume** individual steps. Email steps get a subject line; both support `{{name}} {{service}} {{date}} {{time}} {{link}} {{total}}` variables.
-4. **Lead board:** a customers/leads view showing each person's current status with a dropdown to manually move them to another status (which re-enrolls them).
+### 2. Hook `useSmartAvailability`
+Expose the new fields: `bestRecommended`, `nextAvailable`, `rankedSlots` (typed). Keep existing return values intact.
 
-## How auto-switching maps
+### 3. New shared component `src/components/scheduling/SmartScheduler.tsx`
+A presentation component driven by the hook. Sections, clearly labeled with helper text:
+- **Best Recommended** card — prominent, with a plain-English reason ("Fills a gap in the route — keeps the day efficient"). Star/“Top Pick” treatment.
+- **Next Available** card — "Soonest opening that fits your service" with date/time/tech/duration.
+- **5 More Options** — compact selectable list (dedupes the best/next already shown).
+- **Browse the calendar** — collapsible region using `DateFirstCalendar` (day/week/month toggle) → on date select, loads that day's slots via `dayGrid` and lists them with `TimeSlotList`.
+- Selection state is lifted via `selectedSlot` / `onSelectSlot` props so both hosts control booking.
 
-```text
-quote created (no real services)      -> Open
-quote with package/subscription saved -> Pending
-subscription quote approved           -> Approved
-booking created / appointment booked  -> Booked
-quote declined / booking cancelled    -> Declined
-```
+Props: `services`, `customerAddress`, `numStories`, `selectedSlot`, `onSelectSlot`, `horizonDays`, and an optional `compact` flag for the narrower customer column.
 
-Five starter campaigns (one per status) are seeded with sensible default text + email steps that you can fully edit afterward.
+### 4. Wire into Admin Scheduling Portal (`SchedulingPortal.tsx`)
+Replace the current "View Slots → AdminAvailabilityViewer" booking selection with `SmartScheduler` (Best / Next / 5 more / calendar). The existing **Availability Inspector** (excluded-slot debugging + override mode) stays available as a separate advanced view so admins keep the override capability.
 
----
+### 5. Wire into Customer Booking (`TimeSlotPicker.tsx`)
+Render `SmartScheduler` in place of the current recommendations + day-picker steps so the customer sees the same Best / Next / 5 more / calendar layout. Keep the AM/PM preference filter and all existing booking handlers and analytics tracking.
 
-## Technical details
+## Clarity / labeling
+- Every section has a one-line plain-English helper.
+- Reason badges: “⚡ Soonest”, “🛣️ Best for route”, “📅 Gap filler”, “Fits your service”.
+- Duration shown on every slot so it's obvious it fits.
 
-### Database
-- New enum `lead_lifecycle_status` (open, pending, approved, booked, declined).
-- `customers`: add `lifecycle_status` (nullable), `lifecycle_changed_at`, `lifecycle_source` ('auto' | 'admin').
-- `sms_campaigns`: add `campaign_kind` ('event' | 'lifecycle') and `lifecycle_status` (nullable enum). Existing rows default to 'event'.
-- `sms_campaign_steps`: add `channel` ('sms' | 'email', default 'sms') and `subject` (text, email only).
-- `sms_messages`: add `channel` ('sms' | 'email', default 'sms'), `to_email`, `subject` so the queue can carry both channels.
-- New `campaign_enrollments` (customer_id, campaign_id, status active/superseded/completed) for switch bookkeeping.
-- GRANTs + RLS: admin-managed tables stay admin-only; service_role full access for edge functions.
-- DB trigger on `quotes` and `bookings` (insert/update) recomputes the customer's `lifecycle_status` and, on change, calls the enrollment edge function via `net.http_post` (pg_net already enabled).
+## Technical notes
+- Engine response stays backward compatible (additive fields); existing `RecommendedSlots` consumers keep working during/after the change.
+- `rankedSlots` de-duped by display time + technician + day to avoid near-identical entries.
+- No database/schema changes. No pricing/booking-creation logic changes — booking still flows through `jobber-create-booking` unchanged.
 
-### Edge functions
-- **`manage-lifecycle`** (new): given `customerId` + `newStatus` + `source`, cancels unsent lifecycle campaign messages for that customer, updates the status, finds active lifecycle campaigns for the new status, and schedules their steps into `sms_messages` (text and email). Used by the DB trigger (auto) and the admin UI (manual).
-- **`process-sms-queue`** (extend): when a queued row has `channel = 'email'`, send via the existing Resend integration (wrapping the rendered template in the branded BluLadder email shell); text rows keep using CallRail. Opt-out suppression still applies to text.
-- **`send-sms`** (extend): event-campaign enrollment now also schedules email steps.
-- Reuse existing `RESEND_API_KEY` and `noreply@bluladder.com` sender; no new secrets.
-
-### Admin UI
-- Rework `SmsCampaignManager.tsx` into a channel-aware campaign editor (per-step channel toggle, subject field for email, pause switch, reorder, delete; campaign keyed to status or event).
-- New `LeadStatusBoard.tsx`: list customers with current status + manual switch control (calls `manage-lifecycle`).
-- Update `SmsMessageLog.tsx` to show channel (Text/Email) and recipient.
-
-### Notes / limits
-- Email uses your current Resend sender, so deliverability matches today's appointment emails.
-- Status is per customer; a customer with multiple bids shows a single status (latest action wins).
+## Out of scope
+- No changes to scoring weights, drive-time math, or team-job thresholds.
+- No new booking statuses or notifications.
