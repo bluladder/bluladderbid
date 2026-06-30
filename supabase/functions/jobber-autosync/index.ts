@@ -299,7 +299,7 @@ async function syncChunk(
             source: 'jobber',
             updated_at: new Date().toISOString(),
           },
-          { onConflict: 'jobber_visit_id' }
+          { onConflict: 'jobber_visit_id,crew_id' }
         );
 
       if (!error) blocksInserted++;
