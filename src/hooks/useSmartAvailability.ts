@@ -18,7 +18,7 @@ export interface RecommendedSlot {
   gapScore?: number;
   gapEfficiencyLabel?: string;
   routeBonus?: number;
-  whyLabel?: 'soonest_available' | 'minimizes_gaps' | 'alternative';
+  whyLabel?: 'soonest_available' | 'minimizes_gaps' | 'alternative' | 'best_recommended';
   // Team booking fields
   isTeamJob?: boolean;
   crewSize?: number;
@@ -65,6 +65,10 @@ interface UseSmartAvailabilityOptions {
 interface UseSmartAvailabilityResult {
   // Recommended mode
   recommendations: RecommendedSlot[];
+  // Unified scheduler surfaces (subset/relabel of the same ranked slots)
+  bestRecommended: RecommendedSlot | null;
+  nextAvailable: RecommendedSlot | null;
+  rankedSlots: RecommendedSlot[];
   isLoadingRecommendations: boolean;
   fetchRecommendations: (preference: TimePreference) => Promise<void>;
   
@@ -90,6 +94,9 @@ export function useSmartAvailability({
   numStories,
 }: UseSmartAvailabilityOptions): UseSmartAvailabilityResult {
   const [recommendations, setRecommendations] = useState<RecommendedSlot[]>([]);
+  const [bestRecommended, setBestRecommended] = useState<RecommendedSlot | null>(null);
+  const [nextAvailable, setNextAvailable] = useState<RecommendedSlot | null>(null);
+  const [rankedSlots, setRankedSlots] = useState<RecommendedSlot[]>([]);
   const [daySlots, setDaySlots] = useState<DayGridSlot[]>([]);
   const [fullyBookedDays, setFullyBookedDays] = useState<string[]>([]);
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
@@ -124,10 +131,16 @@ export function useSmartAvailability({
           setRequiresAdminAction(true);
         }
         setRecommendations([]);
+        setBestRecommended(null);
+        setNextAvailable(null);
+        setRankedSlots([]);
         return;
       }
 
       setRecommendations(data.recommendations || []);
+      setBestRecommended(data.bestRecommended ?? null);
+      setNextAvailable(data.nextAvailable ?? null);
+      setRankedSlots(data.rankedSlots || []);
       setFullyBookedDays(data.fullyBookedDays || []);
     } catch (err) {
       console.error('Failed to fetch recommendations:', err);
@@ -183,12 +196,18 @@ export function useSmartAvailability({
 
   const clearSlots = useCallback(() => {
     setRecommendations([]);
+    setBestRecommended(null);
+    setNextAvailable(null);
+    setRankedSlots([]);
     setDaySlots([]);
     setError(null);
   }, []);
 
   return {
     recommendations,
+    bestRecommended,
+    nextAvailable,
+    rankedSlots,
     isLoadingRecommendations,
     fetchRecommendations,
     daySlots,

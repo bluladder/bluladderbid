@@ -30,6 +30,9 @@ import { usePricingConfig } from '@/hooks/usePricingConfig';
 import type { HomeDetails, AdditionalServices } from '@/types/homeowner';
 import { DEFAULT_HOME_DETAILS, DEFAULT_ADDITIONAL_SERVICES } from '@/types/homeowner';
 import { AdminAvailabilityViewer, type TimeSlot } from './AdminAvailabilityViewer';
+import { SmartScheduler, type SchedulerSlot } from '@/components/scheduling/SmartScheduler';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDown } from 'lucide-react';
 
 // Simple pricing calculation (mirrors useServicePricing)
 function calculateServicePrices(
@@ -109,8 +112,8 @@ export function SchedulingPortal() {
   });
 
   // Slot selection state
-  const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
-  const [showAvailability, setShowAvailability] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<(TimeSlot & Partial<SchedulerSlot>) | null>(null);
+  const [showInspector, setShowInspector] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
 
   // Calculate prices
@@ -124,7 +127,7 @@ export function SchedulingPortal() {
     return priceData.services.map(s => ({ service: s.service, price: s.price }));
   }, [priceData.services]);
 
-  const handleSlotSelect = (slot: TimeSlot) => {
+  const handleSlotSelect = (slot: TimeSlot & Partial<SchedulerSlot>) => {
     setSelectedSlot(slot);
   };
 
@@ -141,31 +144,39 @@ export function SchedulingPortal() {
 
     setIsBooking(true);
     try {
-      const { data, error } = await supabase.functions.invoke('jobber-create-booking', {
-        body: {
-          customer: {
-            email: customerInfo.email,
-            firstName: customerInfo.firstName,
-            lastName: customerInfo.lastName,
-            phone: customerInfo.phone,
-            address: customerInfo.address,
-          },
-          technicianId: selectedSlot.technicianId,
-          scheduledStart: selectedSlot.startTime,
-          scheduledEnd: selectedSlot.endTime,
-          durationMinutes: selectedSlot.durationMinutes,
-          services: priceData.services.map(s => ({
-            name: s.name,
-            price: s.price,
-            description: `${homeDetails.squareFootage} sq ft, ${homeDetails.stories} story`,
-          })),
-          homeDetails,
-          subtotal: priceData.total,
-          discountAmount: 0,
-          total: priceData.total,
-          notes: `Admin booking via Scheduling Portal`,
-          utmParams: { preset: 'admin-portal' },
+      const bookingBody: Record<string, unknown> = {
+        customer: {
+          email: customerInfo.email,
+          firstName: customerInfo.firstName,
+          lastName: customerInfo.lastName,
+          phone: customerInfo.phone,
+          address: customerInfo.address,
         },
+        technicianId: selectedSlot.technicianId,
+        scheduledStart: selectedSlot.startTime,
+        scheduledEnd: selectedSlot.endTime,
+        durationMinutes: selectedSlot.durationMinutes,
+        services: priceData.services.map(s => ({
+          name: s.name,
+          price: s.price,
+          description: `${homeDetails.squareFootage} sq ft, ${homeDetails.stories} story`,
+        })),
+        homeDetails,
+        subtotal: priceData.total,
+        discountAmount: 0,
+        total: priceData.total,
+        notes: `Admin booking via Scheduling Portal`,
+        utmParams: { preset: 'admin-portal' },
+      };
+
+      // Pass team booking data through if the selected slot is a team job.
+      if (selectedSlot.isTeamJob) {
+        bookingBody.isTeamJob = true;
+        bookingBody.teamTechnicianIds = selectedSlot.teamTechnicianIds;
+      }
+
+      const { data, error } = await supabase.functions.invoke('jobber-create-booking', {
+        body: bookingBody,
       });
 
       if (error) throw error;
@@ -175,7 +186,7 @@ export function SchedulingPortal() {
       
       // Reset form
       setSelectedSlot(null);
-      setShowAvailability(false);
+      setShowInspector(false);
       setCustomerInfo({ firstName: '', lastName: '', email: '', phone: '', address: '' });
     } catch (err) {
       console.error('Booking failed:', err);
@@ -370,45 +381,67 @@ export function SchedulingPortal() {
 
         {/* Right Column: Availability & Booking */}
         <div className="space-y-6">
-          {/* Toggle Availability */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-medium">Check Availability</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {showAvailability ? 'Viewing available slots' : 'Show calendar to pick a time'}
-                  </p>
-                </div>
-                <Button
-                  variant={showAvailability ? 'secondary' : 'default'}
-                  onClick={() => setShowAvailability(!showAvailability)}
-                  disabled={servicesForAvailability.length === 0}
-                >
-                  {showAvailability ? (
-                    <>
-                      <EyeOff className="w-4 h-4 mr-2" />
-                      Hide
-                    </>
-                  ) : (
-                    <>
-                      <Calendar className="w-4 h-4 mr-2" />
-                      View Slots
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Smart Scheduler — same Best / Next / 5 more / calendar as customers see */}
+          {servicesForAvailability.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                <Calendar className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                Enter home details and select services to see available appointments.
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Calendar className="h-4 w-4" />
+                  Available Appointments
+                </CardTitle>
+                <CardDescription>
+                  Best recommended, next available, and the full calendar — the same view customers get.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SmartScheduler
+                  services={servicesForAvailability}
+                  customerAddress={customerInfo.address || undefined}
+                  numStories={homeDetails.stories}
+                  selectedSlot={selectedSlot}
+                  onSelectSlot={(slot) => handleSlotSelect(slot as TimeSlot & Partial<SchedulerSlot>)}
+                />
+              </CardContent>
+            </Card>
+          )}
 
-          {/* Availability Viewer */}
-          {showAvailability && servicesForAvailability.length > 0 && (
-            <AdminAvailabilityViewer
-              services={servicesForAvailability}
-              customerAddress={customerInfo.address || undefined}
-              onSelectSlot={handleSlotSelect}
-              selectedSlot={selectedSlot}
-            />
+          {/* Advanced: Availability Inspector (excluded slots + overrides) */}
+          {servicesForAvailability.length > 0 && (
+            <Collapsible open={showInspector} onOpenChange={setShowInspector}>
+              <Card>
+                <CollapsibleTrigger asChild>
+                  <button className="w-full flex items-center justify-between p-4 text-left hover:bg-accent/40 rounded-lg transition-colors">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-semibold">Advanced: Availability Inspector</p>
+                        <p className="text-xs text-muted-foreground">
+                          Show excluded slots and override hidden times.
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showInspector ? 'rotate-180' : ''}`} />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <AdminAvailabilityViewer
+                      services={servicesForAvailability}
+                      customerAddress={customerInfo.address || undefined}
+                      onSelectSlot={handleSlotSelect}
+                      selectedSlot={selectedSlot}
+                    />
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
           )}
 
           {/* Selected Slot & Book */}

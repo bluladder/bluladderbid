@@ -1555,6 +1555,38 @@ Deno.serve(async (req) => {
     });
     
     scoredSlots.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
+
+    // ---- Surface a richer ranked view for the unified scheduler UI ----
+    // De-duplicate near-identical entries (same display time + tech + day) so the
+    // "best / next / more options" lists don't repeat themselves.
+    const dedupedRanked: typeof scoredSlots = [];
+    const seenRankKeys = new Set<string>();
+    for (const slot of scoredSlots) {
+      const dayStr = formatDateInTimezone(new Date(slot.startTime), businessTimezone);
+      const key = `${slot.displayTime || slot.startTime}|${slot.technicianId}|${dayStr}`;
+      if (seenRankKeys.has(key)) continue;
+      seenRankKeys.add(key);
+      dedupedRanked.push(slot);
+    }
+
+    // Best = highest combined score (gap/route/recency/tech weighted).
+    const bestRecommended = dedupedRanked.length > 0
+      ? { ...dedupedRanked[0], whyLabel: 'best_recommended', isRecommended: true }
+      : null;
+
+    // Next available = soonest slot by start time that still fits the service
+    // (all generated slots already fit the required duration).
+    const nextAvailable = dedupedRanked.length > 0
+      ? (() => {
+          const earliest = [...dedupedRanked].sort(
+            (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+          )[0];
+          return { ...earliest, whyLabel: 'soonest_available', isRecommended: true };
+        })()
+      : null;
+
+    // Top ranked list (for "5 more options" without extra round-trips).
+    const rankedSlots = dedupedRanked.slice(0, 12);
     
     // Get top 3 with diversity (different days/techs if possible)
     // IMPORTANT: Alternative MUST always be a different day
@@ -1648,6 +1680,9 @@ Deno.serve(async (req) => {
       JSON.stringify({
         mode: 'recommended',
         recommendations,
+        bestRecommended,
+        nextAvailable,
+        rankedSlots,
         fullyBookedDays,
         totalAvailable: allSlots.length,
         eligibleTechnicians: eligibleTechs.map(t => ({ 
