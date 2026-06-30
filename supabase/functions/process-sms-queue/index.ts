@@ -80,15 +80,12 @@ serve(async (req) => {
 
   const config = getCallRailConfig();
   const resendKey = Deno.env.get("RESEND_API_KEY");
-  const nowIso = new Date().toISOString();
 
-  const { data: due, error } = await supabase
-    .from("sms_messages")
-    .select("id, to_number, to_email, channel, subject, body, attempts, max_attempts, customer_id")
-    .eq("status", "pending")
-    .lte("send_at", nowIso)
-    .order("send_at", { ascending: true })
-    .limit(50);
+  // Atomically claim a batch of due messages. The RPC marks each row as
+  // 'processing' under a row lock (SKIP LOCKED) so overlapping runs — now that
+  // the queue fires every minute — can never grab or send the same message
+  // twice. It also recovers rows stuck in 'processing' from a crashed run.
+  const { data: due, error } = await supabase.rpc("claim_due_sms", { p_limit: 50 });
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), {

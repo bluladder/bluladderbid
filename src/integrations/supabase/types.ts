@@ -1734,6 +1734,40 @@ export type Database = {
       can_edit_crew_rules: { Args: never; Returns: boolean }
       can_manage_schedule_blocks: { Args: never; Returns: boolean }
       can_override_bookings: { Args: never; Returns: boolean }
+      claim_due_sms: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts: number
+          body: string
+          booking_id: string | null
+          callrail_message_id: string | null
+          campaign_id: string | null
+          campaign_step_id: string | null
+          channel: string
+          created_at: string
+          customer_id: string | null
+          enrollment_id: string | null
+          error: string | null
+          id: string
+          max_attempts: number
+          message_kind: string
+          next_retry_at: string | null
+          quote_id: string | null
+          send_at: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["sms_status"]
+          subject: string | null
+          to_email: string | null
+          to_number: string | null
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "sms_messages"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       compute_customer_lifecycle: {
         Args: { p_customer_id: string }
         Returns: Database["public"]["Enums"]["lead_lifecycle_status"]
@@ -1794,7 +1828,13 @@ export type Database = {
         | "roof_wash"
         | "driveway"
         | "pressure_wash_addon"
-      sms_status: "pending" | "sent" | "failed" | "cancelled" | "inbound"
+      sms_status:
+        | "pending"
+        | "sent"
+        | "failed"
+        | "cancelled"
+        | "inbound"
+        | "processing"
       sms_trigger_event:
         | "quote_created"
         | "appointment_scheduled"
@@ -1962,7 +2002,14 @@ export const Constants = {
         "driveway",
         "pressure_wash_addon",
       ],
-      sms_status: ["pending", "sent", "failed", "cancelled", "inbound"],
+      sms_status: [
+        "pending",
+        "sent",
+        "failed",
+        "cancelled",
+        "inbound",
+        "processing",
+      ],
       sms_trigger_event: [
         "quote_created",
         "appointment_scheduled",
