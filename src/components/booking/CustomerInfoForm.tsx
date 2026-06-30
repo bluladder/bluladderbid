@@ -73,6 +73,7 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
     email: initialData?.email || '',
     phone: initialData?.phone || '',
     street: parsedInitial.street,
+    unit: '',
     city: parsedInitial.city,
     state: parsedInitial.state,
     zip: parsedInitial.zip,
