@@ -102,6 +102,24 @@ export function SmartScheduler({
   const [calendarView, setCalendarView] = useState<CalendarViewMode>('week');
   const [browseDate, setBrowseDate] = useState<Date | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [showSwipeTutorial, setShowSwipeTutorial] = useState(false);
+
+  // Show the swipe tutorial once when the customer first opens the browse calendar on mobile.
+  useEffect(() => {
+    if (!browseOpen) return;
+    if (typeof window === 'undefined') return;
+    const seen = window.localStorage.getItem('smartScheduler.swipeTutorialSeen');
+    if (!seen) setShowSwipeTutorial(true);
+  }, [browseOpen]);
+
+  const dismissSwipeTutorial = () => {
+    setShowSwipeTutorial(false);
+    try {
+      window.localStorage.setItem('smartScheduler.swipeTutorialSeen', '1');
+    } catch {
+      /* ignore storage errors */
+    }
+  };
 
   // Auto-fetch on mount / when the service set or address changes.
   useEffect(() => {
