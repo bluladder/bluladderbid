@@ -1396,7 +1396,9 @@ export type Database = {
           enrollment_id: string | null
           error: string | null
           id: string
+          max_attempts: number
           message_kind: string
+          next_retry_at: string | null
           quote_id: string | null
           send_at: string
           sent_at: string | null
@@ -1419,7 +1421,9 @@ export type Database = {
           enrollment_id?: string | null
           error?: string | null
           id?: string
+          max_attempts?: number
           message_kind?: string
+          next_retry_at?: string | null
           quote_id?: string | null
           send_at?: string
           sent_at?: string | null
@@ -1442,7 +1446,9 @@ export type Database = {
           enrollment_id?: string | null
           error?: string | null
           id?: string
+          max_attempts?: number
           message_kind?: string
+          next_retry_at?: string | null
           quote_id?: string | null
           send_at?: string
           sent_at?: string | null
