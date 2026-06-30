@@ -12,6 +12,7 @@ import {
 import {
   Sparkles, Zap, Check, User, Users, Clock, Calendar as CalendarIcon,
   Route, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, Star,
+  Sun, Moon,
 } from 'lucide-react';
 import { format, parseISO, addDays, isSameDay } from 'date-fns';
 import { cn } from '@/lib/utils';
