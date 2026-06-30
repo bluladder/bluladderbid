@@ -30,6 +30,9 @@ import { usePricingConfig } from '@/hooks/usePricingConfig';
 import type { HomeDetails, AdditionalServices } from '@/types/homeowner';
 import { DEFAULT_HOME_DETAILS, DEFAULT_ADDITIONAL_SERVICES } from '@/types/homeowner';
 import { AdminAvailabilityViewer, type TimeSlot } from './AdminAvailabilityViewer';
+import { SmartScheduler, type SchedulerSlot } from '@/components/scheduling/SmartScheduler';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDown } from 'lucide-react';
 
 // Simple pricing calculation (mirrors useServicePricing)
 function calculateServicePrices(
@@ -109,8 +112,8 @@ export function SchedulingPortal() {
   });
 
   // Slot selection state
-  const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
-  const [showAvailability, setShowAvailability] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<(TimeSlot & Partial<SchedulerSlot>) | null>(null);
+  const [showInspector, setShowInspector] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
 
   // Calculate prices
@@ -124,7 +127,7 @@ export function SchedulingPortal() {
     return priceData.services.map(s => ({ service: s.service, price: s.price }));
   }, [priceData.services]);
 
-  const handleSlotSelect = (slot: TimeSlot) => {
+  const handleSlotSelect = (slot: TimeSlot & Partial<SchedulerSlot>) => {
     setSelectedSlot(slot);
   };
 
@@ -141,31 +144,39 @@ export function SchedulingPortal() {
 
     setIsBooking(true);
     try {
-      const { data, error } = await supabase.functions.invoke('jobber-create-booking', {
-        body: {
-          customer: {
-            email: customerInfo.email,
-            firstName: customerInfo.firstName,
-            lastName: customerInfo.lastName,
-            phone: customerInfo.phone,
-            address: customerInfo.address,
-          },
-          technicianId: selectedSlot.technicianId,
-          scheduledStart: selectedSlot.startTime,
-          scheduledEnd: selectedSlot.endTime,
-          durationMinutes: selectedSlot.durationMinutes,
-          services: priceData.services.map(s => ({
-            name: s.name,
-            price: s.price,
-            description: `${homeDetails.squareFootage} sq ft, ${homeDetails.stories} story`,
-          })),
-          homeDetails,
-          subtotal: priceData.total,
-          discountAmount: 0,
-          total: priceData.total,
-          notes: `Admin booking via Scheduling Portal`,
-          utmParams: { preset: 'admin-portal' },
+      const bookingBody: Record<string, unknown> = {
+        customer: {
+          email: customerInfo.email,
+          firstName: customerInfo.firstName,
+          lastName: customerInfo.lastName,
+          phone: customerInfo.phone,
+          address: customerInfo.address,
         },
+        technicianId: selectedSlot.technicianId,
+        scheduledStart: selectedSlot.startTime,
+        scheduledEnd: selectedSlot.endTime,
+        durationMinutes: selectedSlot.durationMinutes,
+        services: priceData.services.map(s => ({
+          name: s.name,
+          price: s.price,
+          description: `${homeDetails.squareFootage} sq ft, ${homeDetails.stories} story`,
+        })),
+        homeDetails,
+        subtotal: priceData.total,
+        discountAmount: 0,
+        total: priceData.total,
+        notes: `Admin booking via Scheduling Portal`,
+        utmParams: { preset: 'admin-portal' },
+      };
+
+      // Pass team booking data through if the selected slot is a team job.
+      if (selectedSlot.isTeamJob) {
+        bookingBody.isTeamJob = true;
+        bookingBody.teamTechnicianIds = selectedSlot.teamTechnicianIds;
+      }
+
+      const { data, error } = await supabase.functions.invoke('jobber-create-booking', {
+        body: bookingBody,
       });
 
       if (error) throw error;
@@ -175,7 +186,7 @@ export function SchedulingPortal() {
       
       // Reset form
       setSelectedSlot(null);
-      setShowAvailability(false);
+      setShowInspector(false);
       setCustomerInfo({ firstName: '', lastName: '', email: '', phone: '', address: '' });
     } catch (err) {
       console.error('Booking failed:', err);
