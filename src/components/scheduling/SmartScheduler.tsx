@@ -25,6 +25,7 @@ import { DateFirstCalendar, type CalendarViewMode } from '@/components/booking/D
 import { TimeSlotList } from '@/components/booking/TimeSlotList';
 import type { TimeSlot } from '@/components/booking/TimeSlotPicker';
 import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
+import { useSwipe } from '@/hooks/useSwipe';
 
 interface ServiceForAvailability {
   service: string;
@@ -295,7 +296,7 @@ export function SmartScheduler({
                     key={mode}
                     variant={browseMode === mode ? 'default' : 'ghost'}
                     size="sm"
-                    className="capitalize"
+                    className="capitalize h-9 px-4 touch-manipulation"
                     onClick={() => handleBrowseModeChange(mode)}
                   >
                     {mode}
@@ -304,18 +305,39 @@ export function SmartScheduler({
               </div>
 
               {browseMode === 'day' ? (
-                <div className="space-y-3">
+                <div
+                  className="space-y-3"
+                  {...useSwipe({
+                    onSwipeLeft: () => navigateDay('next'),
+                    onSwipeRight: () => navigateDay('prev'),
+                  })}
+                >
                   <div className="flex items-center justify-between">
-                    <Button variant="outline" size="icon" onClick={() => navigateDay('prev')}>
-                      <ChevronLeft className="h-4 w-4" />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-11 w-11 sm:h-10 sm:w-10 touch-manipulation"
+                      aria-label="Previous day"
+                      onClick={() => navigateDay('prev')}
+                    >
+                      <ChevronLeft className="h-5 w-5 sm:h-4 sm:w-4" />
                     </Button>
-                    <p className="font-semibold">
+                    <p className="font-semibold text-sm sm:text-base text-center">
                       {format(browseDate ?? new Date(), 'EEEE, MMMM d')}
                     </p>
-                    <Button variant="outline" size="icon" onClick={() => navigateDay('next')}>
-                      <ChevronRight className="h-4 w-4" />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-11 w-11 sm:h-10 sm:w-10 touch-manipulation"
+                      aria-label="Next day"
+                      onClick={() => navigateDay('next')}
+                    >
+                      <ChevronRight className="h-5 w-5 sm:h-4 sm:w-4" />
                     </Button>
                   </div>
+                  <p className="text-[11px] text-muted-foreground text-center sm:hidden">
+                    Swipe left or right to change days
+                  </p>
                   {isLoadingDaySlots ? (
                     <Skeleton className="h-32 w-full" />
                   ) : (
