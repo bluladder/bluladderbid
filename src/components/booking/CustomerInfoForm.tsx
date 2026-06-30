@@ -24,8 +24,13 @@ const customerSchema = z.object({
 });
 
 // Combine structured parts into the single string downstream systems expect.
-const composeAddress = (p: { street: string; city: string; state: string; zip: string }) =>
-  `${p.street.trim()}, ${p.city.trim()}, ${p.state.trim().toUpperCase()} ${p.zip.trim()}`;
+// Empty segments (e.g., a blank Unit/Suite) are dropped so we never emit
+// stray commas or double spaces.
+const composeAddress = (p: { street: string; unit?: string; city: string; state: string; zip: string }) => {
+  const streetLine = [p.street.trim(), (p.unit ?? '').trim()].filter(Boolean).join(' ');
+  const stateZip = [p.state.trim().toUpperCase(), p.zip.trim()].filter(Boolean).join(' ');
+  return [streetLine, p.city.trim(), stateZip].filter(Boolean).join(', ');
+};
 
 // Best-effort parse of an existing combined address back into parts.
 const parseAddress = (address?: string) => {
