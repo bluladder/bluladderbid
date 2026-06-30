@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { blockOverlapsDay, slotHasConflict } from "./availability-core.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1123,7 +1124,7 @@ Deno.serve(async (req) => {
         // start within it. Blocks beginning before the work-day start hour
         // (e.g. all-day "Day off" or early-morning jobs) must still block slots.
         const todayBusyTimes = techBusyTimes.filter(
-          bt => bt.start < dayEnd && bt.end > dayStart
+          bt => blockOverlapsDay(bt.start, bt.end, dayStart, dayEnd)
         );
         
         const dayJobAddresses = jobsByDate[currentDateStr] || [];
@@ -1138,9 +1139,16 @@ Deno.serve(async (req) => {
           
           const slotHour = getHourInTimezone(slotStart, businessTimezone);
           
-          // Check overlap
-          const hasConflict = todayBusyTimes.some(bt => 
-            (slotStart.getTime() < bt.expandedEnd.getTime() && slotEndWithBuffer.getTime() > bt.expandedStart.getTime())
+          // Check overlap (buffered slot window vs buffered busy window)
+          const hasConflict = slotHasConflict(
+            slotStart,
+            slotEndWithBuffer,
+            todayBusyTimes.map(bt => ({
+              start: bt.start.getTime(),
+              end: bt.end.getTime(),
+              expandedStart: bt.expandedStart.getTime(),
+              expandedEnd: bt.expandedEnd.getTime(),
+            })),
           );
 
           const isFirstJob = !hasEarlierJobToday && 
