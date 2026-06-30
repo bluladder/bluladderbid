@@ -502,24 +502,12 @@ export function BookingFlow({
                   </div>
                 </div>
                 
-                {/* Confirmation acknowledgement checkbox */}
+                {/* Terms acknowledgement (required before booking) */}
                 <div className="mt-3 pt-3 border-t border-primary/10">
-                  <label className="flex items-start gap-3 cursor-pointer group">
-                    <Checkbox
-                      checked={confirmationChecked}
-                      onCheckedChange={(checked) => setConfirmationChecked(!!checked)}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1">
-                      <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">
-                        I confirm the details above are correct
-                      </span>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        Final pricing may adjust if on-site conditions differ
-                      </p>
-                    </div>
-                    <ShieldCheck className="w-4 h-4 text-success flex-shrink-0" />
-                  </label>
+                  <BookingTermsAck
+                    accepted={confirmationChecked}
+                    onAcceptedChange={setConfirmationChecked}
+                  />
                 </div>
               </div>
             )}
