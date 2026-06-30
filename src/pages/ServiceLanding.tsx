@@ -300,6 +300,7 @@ const ServiceLanding = () => {
         onSelectTier={handleTierSelect}
         onBookOneTime={handleBookOneTime}
         onUpgradeAndBook={handleUpgradeAndBook}
+        homeSquareFootage={homeDetails.squareFootage}
       />
     );
   };
