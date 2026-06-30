@@ -101,3 +101,53 @@ export function formatApptDate(iso: string | null | undefined): { date: string; 
   });
   return { date, time };
 }
+
+// ---- Opt-out (STOP) handling ----
+
+const STOP_KEYWORDS = new Set([
+  "stop", "stopall", "unsubscribe", "cancel", "end", "quit", "optout", "opt-out",
+]);
+const START_KEYWORDS = new Set([
+  "start", "unstop", "yes", "subscribe", "optin", "opt-in",
+]);
+
+/** Returns "stop", "start", or null based on the first word of an inbound message body. */
+export function classifyInbound(body: string | null | undefined): "stop" | "start" | null {
+  if (!body) return null;
+  const first = String(body).trim().toLowerCase().split(/\s+/)[0]?.replace(/[^a-z-]/g, "");
+  if (!first) return null;
+  if (STOP_KEYWORDS.has(first)) return "stop";
+  if (START_KEYWORDS.has(first)) return "start";
+  return null;
+}
+
+// Minimal shape of the Supabase client we rely on (avoids importing types here).
+interface MinimalSupabase {
+  from: (table: string) => {
+    select: (cols: string) => {
+      eq: (col: string, val: unknown) => {
+        eq: (col: string, val: unknown) => { maybeSingle: () => Promise<{ data: unknown }> };
+        maybeSingle: () => Promise<{ data: unknown }>;
+      };
+    };
+  };
+}
+
+/** Returns true if the given phone number has opted out of texts. Fails open (false) on error. */
+export async function isPhoneOptedOut(
+  supabase: MinimalSupabase,
+  phone: string | null | undefined,
+): Promise<boolean> {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return false;
+  try {
+    const { data } = await supabase
+      .from("sms_opt_outs")
+      .select("opted_out")
+      .eq("phone", normalized)
+      .maybeSingle();
+    return !!(data as { opted_out?: boolean } | null)?.opted_out;
+  } catch {
+    return false;
+  }
+}
