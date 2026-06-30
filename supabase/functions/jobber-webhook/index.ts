@@ -249,7 +249,7 @@ async function upsertBusyBlock(
 
     const { error } = await supabase
       .from("jobber_busy_blocks")
-      .upsert(blockData, { onConflict: 'jobber_visit_id' });
+      .upsert(blockData, { onConflict: 'jobber_visit_id,crew_id' });
 
     if (error) {
       console.error(`[Webhook] ❌ Upsert failed for ${assignee.id}:`, error.message);
