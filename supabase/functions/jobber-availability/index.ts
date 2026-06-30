@@ -1119,8 +1119,11 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Include any block that OVERLAPS the work day, not only those that
+        // start within it. Blocks beginning before the work-day start hour
+        // (e.g. all-day "Day off" or early-morning jobs) must still block slots.
         const todayBusyTimes = techBusyTimes.filter(
-          bt => bt.start >= dayStart && bt.start < dayEnd
+          bt => bt.start < dayEnd && bt.end > dayStart
         );
         
         const dayJobAddresses = jobsByDate[currentDateStr] || [];
@@ -1380,9 +1383,10 @@ Deno.serve(async (req) => {
             continue;
           }
           
-          // Get busy times for both techs on this day
-          const tech1DayBusy = tech1BusyTimes.filter(bt => bt.start >= dayStart && bt.start < dayEnd);
-          const tech2DayBusy = tech2BusyTimes.filter(bt => bt.start >= dayStart && bt.start < dayEnd);
+          // Get busy times for both techs on this day (overlap-based so blocks
+          // starting before the work-day start hour are still counted).
+          const tech1DayBusy = tech1BusyTimes.filter(bt => bt.start < dayEnd && bt.end > dayStart);
+          const tech2DayBusy = tech2BusyTimes.filter(bt => bt.start < dayEnd && bt.end > dayStart);
           
           let effectiveStart = new Date(dayStart);
           if (now > dayStart && now < dayEnd) {
