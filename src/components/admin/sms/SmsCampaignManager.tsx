@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, Trash2, Pencil, Clock, Megaphone } from 'lucide-react';
+import { Plus, Trash2, Pencil, Clock, Megaphone, Mail, MessageSquare, ArrowUp, ArrowDown, Users, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
 type TriggerEvent =
@@ -20,6 +20,10 @@ type TriggerEvent =
   | 'appointment_completed'
   | 'manual';
 
+type LifecycleStatus = 'open' | 'pending' | 'approved' | 'booked' | 'declined';
+type CampaignKind = 'lifecycle' | 'event';
+type Channel = 'sms' | 'email';
+
 const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   quote_created: 'Quote / bid created',
   appointment_scheduled: 'Appointment scheduled',
@@ -29,13 +33,23 @@ const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   manual: 'Manual enrollment',
 };
 
-const TEMPLATE_VARS = ['{{name}}', '{{service}}', '{{date}}', '{{time}}', '{{link}}'];
+const LIFECYCLE_LABELS: Record<LifecycleStatus, string> = {
+  open: 'Open — bid requested, no package chosen',
+  pending: 'Pending — package selected, not approved/scheduled',
+  approved: 'Approved — subscription approved',
+  booked: 'Booked — appointment/bid booked',
+  declined: 'Declined / Lost',
+};
+
+const TEMPLATE_VARS = ['{{first_name}}', '{{name}}', '{{service}}', '{{date}}', '{{time}}', '{{link}}', '{{total}}'];
 
 interface Campaign {
   id: string;
   name: string;
   description: string | null;
-  trigger_event: TriggerEvent;
+  campaign_kind: CampaignKind;
+  lifecycle_status: LifecycleStatus | null;
+  trigger_event: TriggerEvent | null;
   active: boolean;
 }
 
@@ -44,6 +58,8 @@ interface Step {
   campaign_id: string;
   step_order: number;
   delay_hours: number;
+  channel: Channel;
+  subject: string | null;
   body_template: string;
   active: boolean;
 }
@@ -69,17 +85,22 @@ export function SmsCampaignManager() {
   useEffect(() => { load(); }, [load]);
 
   const openNew = () => {
-    setEditing({ id: '', name: '', description: '', trigger_event: 'quote_created', active: true });
+    setEditing({ id: '', name: '', description: '', campaign_kind: 'lifecycle', lifecycle_status: 'open', trigger_event: null, active: true });
     setDialogOpen(true);
   };
 
   const saveCampaign = async () => {
     if (!editing) return;
     if (!editing.name.trim()) { toast.error('Campaign name is required'); return; }
+    const isLifecycle = editing.campaign_kind === 'lifecycle';
+    if (isLifecycle && !editing.lifecycle_status) { toast.error('Pick a customer status'); return; }
+    if (!isLifecycle && !editing.trigger_event) { toast.error('Pick a trigger event'); return; }
     const payload = {
       name: editing.name.trim(),
       description: editing.description?.trim() || null,
-      trigger_event: editing.trigger_event,
+      campaign_kind: editing.campaign_kind,
+      lifecycle_status: isLifecycle ? editing.lifecycle_status : null,
+      trigger_event: isLifecycle ? null : editing.trigger_event,
       active: editing.active,
     };
     const { error } = editing.id
@@ -111,7 +132,24 @@ export function SmsCampaignManager() {
       campaign_id: campaignId,
       step_order: nextOrder,
       delay_hours: existing.length ? 24 : 0,
+      channel: 'sms',
       body_template: 'Hi {{name}}, this is BluLadder following up. {{link}} Reply STOP to opt out.',
+      active: true,
+    });
+    if (error) { toast.error(error.message); return; }
+    load();
+  };
+
+  const addEmailStep = async (campaignId: string) => {
+    const existing = steps.filter((s) => s.campaign_id === campaignId);
+    const nextOrder = existing.length ? Math.max(...existing.map((s) => s.step_order)) + 1 : 1;
+    const { error } = await supabase.from('sms_campaign_steps').insert({
+      campaign_id: campaignId,
+      step_order: nextOrder,
+      delay_hours: existing.length ? 24 : 0,
+      channel: 'email',
+      subject: 'A note from BluLadder',
+      body_template: 'Hi {{first_name}},\n\nThis is BluLadder following up.\n\n{{link}}\n\n- The BluLadder Team',
       active: true,
     });
     if (error) { toast.error(error.message); return; }
@@ -121,10 +159,24 @@ export function SmsCampaignManager() {
   const updateStep = async (id: string, patch: Partial<Step>) => {
     const { error } = await supabase.from('sms_campaign_steps').update(patch).eq('id', id);
     if (error) toast.error(error.message);
+    else load();
   };
 
   const deleteStep = async (id: string) => {
     await supabase.from('sms_campaign_steps').delete().eq('id', id);
+    load();
+  };
+
+  const moveStep = async (campaignId: string, index: number, dir: -1 | 1) => {
+    const cSteps = steps.filter((s) => s.campaign_id === campaignId).sort((a, b) => a.step_order - b.step_order);
+    const target = index + dir;
+    if (target < 0 || target >= cSteps.length) return;
+    const a = cSteps[index];
+    const b = cSteps[target];
+    await Promise.all([
+      supabase.from('sms_campaign_steps').update({ step_order: b.step_order }).eq('id', a.id),
+      supabase.from('sms_campaign_steps').update({ step_order: a.step_order }).eq('id', b.id),
+    ]);
     load();
   };
 
