@@ -24,6 +24,7 @@ import { TimePreferenceSelector } from '@/components/booking/TimePreferenceSelec
 import { DateFirstCalendar, type CalendarViewMode } from '@/components/booking/DateFirstCalendar';
 import { TimeSlotList } from '@/components/booking/TimeSlotList';
 import type { TimeSlot } from '@/components/booking/TimeSlotPicker';
+import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
 
 interface ServiceForAvailability {
   service: string;
@@ -41,6 +42,14 @@ interface SmartSchedulerProps {
   horizonDays?: number;
   /** Narrower single-column layout for the customer booking column. */
   compact?: boolean;
+  /** When set, shows a customer-facing "having trouble booking?" help block. */
+  showHelpContact?: boolean;
+  /** Link to the customer's approved bid, included in help messages. */
+  bidLink?: string;
+  /** Reference number included in help messages. */
+  bidReference?: string;
+  /** Customer name used to personalize help messages. */
+  customerName?: string;
 }
 
 type BrowseMode = 'day' | 'week' | 'month';
@@ -67,6 +76,10 @@ export function SmartScheduler({
   onSelectSlot,
   horizonDays = 365,
   compact = false,
+  showHelpContact = false,
+  bidLink,
+  bidReference,
+  customerName,
 }: SmartSchedulerProps) {
   const {
     bestRecommended,
@@ -349,6 +362,15 @@ export function SmartScheduler({
           </CollapsibleContent>
         </Card>
       </Collapsible>
+
+      {showHelpContact && (
+        <BookingHelpContact
+          bidLink={bidLink}
+          bidReference={bidReference}
+          customerName={customerName}
+          variant="scheduling"
+        />
+      )}
     </div>
   );
 }
