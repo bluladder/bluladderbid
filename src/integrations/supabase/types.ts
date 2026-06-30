@@ -1794,7 +1794,13 @@ export type Database = {
         | "roof_wash"
         | "driveway"
         | "pressure_wash_addon"
-      sms_status: "pending" | "sent" | "failed" | "cancelled" | "inbound"
+      sms_status:
+        | "pending"
+        | "sent"
+        | "failed"
+        | "cancelled"
+        | "inbound"
+        | "processing"
       sms_trigger_event:
         | "quote_created"
         | "appointment_scheduled"
@@ -1962,7 +1968,14 @@ export const Constants = {
         "driveway",
         "pressure_wash_addon",
       ],
-      sms_status: ["pending", "sent", "failed", "cancelled", "inbound"],
+      sms_status: [
+        "pending",
+        "sent",
+        "failed",
+        "cancelled",
+        "inbound",
+        "processing",
+      ],
       sms_trigger_event: [
         "quote_created",
         "appointment_scheduled",
