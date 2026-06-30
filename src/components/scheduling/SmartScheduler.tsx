@@ -64,6 +64,56 @@ function durationLabel(minutes: number) {
   return `${hrs} hr${hrs === 1 ? '' : 's'}`;
 }
 
+const MIN_SAME_DAY_GAP_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+/**
+ * Spread a ranked list of slots so the customer sees genuinely different
+ * choices instead of a wall of 15-minute increments on a single day.
+ *
+ * Two passes over the ranked list (rank order is preserved within each day):
+ *   1. Take the best-ranked slot for each distinct day → maximizes day variety.
+ *   2. Backfill remaining capacity with additional same-day slots, but only if
+ *      they sit at least 2 hours away from every slot already kept that day.
+ */
+function diversifySlots(slots: RecommendedSlot[], limit: number): RecommendedSlot[] {
+  const dayKey = (s: RecommendedSlot) => format(parseISO(s.startTime), 'yyyy-MM-dd');
+  const kept: RecommendedSlot[] = [];
+  const keptTimesByDay = new Map<string, number[]>();
+  const usedKeys = new Set<string>();
+
+  const tryKeep = (s: RecommendedSlot): boolean => {
+    const key = slotKey(s);
+    if (usedKeys.has(key)) return false;
+    const day = dayKey(s);
+    const t = parseISO(s.startTime).getTime();
+    const times = keptTimesByDay.get(day) ?? [];
+    const tooClose = times.some((x) => Math.abs(x - t) < MIN_SAME_DAY_GAP_MS);
+    if (tooClose) return false;
+    kept.push(s);
+    usedKeys.add(key);
+    keptTimesByDay.set(day, [...times, t]);
+    return true;
+  };
+
+  // Pass 1 — one slot per distinct day, in rank order.
+  const seenDays = new Set<string>();
+  for (const s of slots) {
+    if (kept.length >= limit) break;
+    const day = dayKey(s);
+    if (seenDays.has(day)) continue;
+    seenDays.add(day);
+    tryKeep(s);
+  }
+
+  // Pass 2 — backfill with additional same-day options spaced ≥ 2 hours apart.
+  for (const s of slots) {
+    if (kept.length >= limit) break;
+    tryKeep(s);
+  }
+
+  return kept;
+}
+
 /**
  * Unified availability presenter used by BOTH the admin scheduling portal and
  * the customer booking flow. Surfaces the same labeled hierarchy everywhere:
@@ -134,12 +184,17 @@ export function SmartScheduler({
     fetchRecommendations(pref);
   };
 
-  // "5 more" = ranked slots minus whatever is already shown as best/next.
+  // "5 more" = ranked slots minus whatever is already shown as best/next,
+  // then spread out so customers see meaningfully different options instead of
+  // a cluster of near-identical 15-minute increments. Rules:
+  //   • Prefer variety across DAYS (one option per day first).
+  //   • Never show two options on the same day closer than 2 hours apart.
   const moreOptions = useMemo(() => {
     const shown = new Set<string>();
     if (bestRecommended) shown.add(slotKey(bestRecommended));
     if (nextAvailable) shown.add(slotKey(nextAvailable));
-    return rankedSlots.filter((s) => !shown.has(slotKey(s))).slice(0, 5);
+    const candidates = rankedSlots.filter((s) => !shown.has(slotKey(s)));
+    return diversifySlots(candidates, 5);
   }, [rankedSlots, bestRecommended, nextAvailable]);
 
   const bestAndNextSame =

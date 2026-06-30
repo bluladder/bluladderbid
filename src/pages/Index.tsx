@@ -41,6 +41,9 @@ const Index = () => {
   type FlowState = 'selecting' | 'one-time-booking' | 'plan-selected' | 'plan-expanded';
   const [flowState, setFlowState] = useState<FlowState>('selecting');
   const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>('better');
+  // True once the customer opens the full booking flow (info → time → confirm),
+  // so the layout can widen and center it instead of cramming it in the sidebar.
+  const [bookingActive, setBookingActive] = useState(false);
   
   // Customer lookup state
   const [showCustomerLookup, setShowCustomerLookup] = useState(true);
@@ -217,6 +220,7 @@ const Index = () => {
           onDownloadPDF={handleDownloadPDF}
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={prefillCustomerInfo}
+          onBookingActiveChange={setBookingActive}
         />
       );
     }
@@ -335,7 +339,14 @@ const Index = () => {
               />
               
 
-              {/* Intent-First Flow: Services + Upsell */}
+              {/* When the full booking flow is open, give it a prominent, centered,
+                  wide layout instead of squeezing it into the sidebar column. */}
+              {bookingActive ? (
+                <div className="max-w-2xl mx-auto w-full">
+                  {renderRightColumn()}
+                </div>
+              ) : (
+              /* Intent-First Flow: Services + Upsell */
               <div className="grid gap-8 lg:grid-cols-3">
                 {/* Left Column - Service Selection */}
                 <div className="lg:col-span-2 space-y-6">
@@ -393,6 +404,7 @@ const Index = () => {
                   {renderRightColumn()}
                 </div>
               </div>
+              )}
             </>
           )}
         </div>
