@@ -33,6 +33,8 @@ interface SmsMessage {
   attempts: number | null;
   max_attempts: number | null;
   next_retry_at: string | null;
+  callrail_message_id: string | null;
+  updated_at: string | null;
   created_at: string;
 }
 
