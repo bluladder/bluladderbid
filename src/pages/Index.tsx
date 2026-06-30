@@ -330,7 +330,7 @@ const Index = () => {
               >
                 {/* Left Column - Service Selection (hidden once booking is active) */}
                 {!bookingActive && (
-                <div key="services-column" className="lg:col-span-2 space-y-6">
+                <div key="services-column" className="lg:col-span-2 space-y-6 min-w-0">
                   {/* Back button when in booking/plan flows */}
                   {flowState !== 'selecting' && (
                     <button
@@ -388,8 +388,8 @@ const Index = () => {
                   key="booking-content"
                   className={
                     bookingActive
-                      ? 'w-full max-w-2xl mx-auto'
-                      : 'lg:sticky lg:top-24 lg:self-start'
+                      ? 'w-full max-w-2xl mx-auto min-w-0'
+                      : 'lg:sticky lg:top-24 lg:self-start min-w-0'
                   }
                 >
                   {renderRightColumn()}
