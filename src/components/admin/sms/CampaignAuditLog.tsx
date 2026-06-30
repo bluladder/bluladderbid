@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RefreshCw, History, Search, ArrowRight, Bot, UserCog } from 'lucide-react';
+import { RefreshCw, History, Search, ArrowRight, Bot, UserCog, Download } from 'lucide-react';
 import { toast } from 'sonner';
 
 type LifecycleStatus = 'open' | 'pending' | 'approved' | 'booked' | 'declined';
@@ -39,6 +39,7 @@ interface AuditRow {
 export function CampaignAuditLog() {
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
 
@@ -72,6 +73,77 @@ export function CampaignAuditLog() {
     );
   });
 
+  const csvCell = (v: unknown) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const matchesSearch = (r: AuditRow) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const d = r.details ?? {};
+    return (
+      (d.customer_name ?? '').toLowerCase().includes(q) ||
+      (d.customer_email ?? '').toLowerCase().includes(q) ||
+      (d.customer_phone ?? '').toLowerCase().includes(q)
+    );
+  };
+
+  const exportCsv = useCallback(async () => {
+    setExporting(true);
+    try {
+      // Fetch the complete timeline (not the capped 300 shown in the table),
+      // honoring the active trigger filter so the export matches the view.
+      let query = supabase
+        .from('campaign_audit_log')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (sourceFilter !== 'all') query = query.eq('source', sourceFilter);
+      const { data, error } = await query;
+      if (error) { toast.error(error.message); return; }
+
+      const all = ((data as unknown as AuditRow[]) ?? []).filter(matchesSearch);
+      if (all.length === 0) { toast.info('No entries to export.'); return; }
+
+      const headers = [
+        'Timestamp (ISO)', 'Customer name', 'Customer email', 'Customer phone',
+        'Trigger', 'Event type', 'From status', 'To status',
+        'Campaigns started', 'Messages started', 'Messages cancelled',
+      ];
+      const lines = all.map((r) => {
+        const d = r.details ?? {};
+        const camps = (r.campaigns_enrolled ?? []).map((c) => c.name).join('; ');
+        return [
+          r.created_at,
+          d.customer_name ?? '',
+          d.customer_email ?? '',
+          d.customer_phone ?? '',
+          r.source === 'admin' ? 'Manual (admin)' : 'Automatic',
+          r.event_type,
+          r.old_status ? STATUS_LABELS[r.old_status] : '',
+          r.new_status ? STATUS_LABELS[r.new_status] : '',
+          camps,
+          r.messages_started,
+          r.messages_cancelled,
+        ].map(csvCell).join(',');
+      });
+      const csv = [headers.map(csvCell).join(','), ...lines].join('\r\n');
+
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `campaign-audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${all.length} ${all.length === 1 ? 'entry' : 'entries'}.`);
+    } finally {
+      setExporting(false);
+    }
+  }, [sourceFilter, search]);
+
   return (
     <Card>
       <CardHeader>
@@ -95,6 +167,9 @@ export function CampaignAuditLog() {
             </Select>
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting} className="gap-2">
+              <Download className={`w-4 h-4 ${exporting ? 'animate-pulse' : ''}`} /> Export CSV
             </Button>
           </div>
         </div>
