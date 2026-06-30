@@ -445,6 +445,7 @@ Deno.serve(async (req) => {
         let totalVisits = 0;
         let totalBlocks = 0;
         let throttled = false;
+        const seenKeys = new Set<string>();
         
         // Sync in 1-day chunks
         let currentStart = new Date(now);
@@ -455,11 +456,52 @@ Deno.serve(async (req) => {
           totalVisits += chunkResult.visits;
           totalBlocks += chunkResult.blocks;
           throttled = chunkResult.throttled;
+          for (const k of chunkResult.seenKeys) seenKeys.add(k);
           
           currentStart = currentEnd;
         }
         
         overallThrottled = throttled;
+
+        // ===== Auto-fix: prune stale blocks =====
+        // Only when the full window completed without throttling, otherwise we'd
+        // have incomplete data and could wrongly cancel valid blocks.
+        let blocksPruned = 0;
+        if (!throttled) {
+          const { data: futureBlocks } = await supabase
+            .from("jobber_busy_blocks")
+            .select("id, jobber_visit_id, crew_id")
+            .gte("start_at", now.toISOString())
+            .lt("start_at", nearTermEnd.toISOString())
+            .in("status", ["scheduled", "in_progress"]);
+
+          const staleIds = (futureBlocks || [])
+            .filter((b) => !seenKeys.has(`${b.jobber_visit_id}:${b.crew_id}`))
+            .map((b) => b.id);
+
+          if (staleIds.length > 0) {
+            const { error: pruneErr } = await supabase
+              .from("jobber_busy_blocks")
+              .update({ status: "cancelled", updated_at: new Date().toISOString() })
+              .in("id", staleIds);
+            if (!pruneErr) blocksPruned = staleIds.length;
+          }
+
+          // Log this sweep as a reconciliation run for admin visibility
+          await supabase.from("schedule_reconciliation_runs").insert({
+            started_at: now.toISOString(),
+            completed_at: new Date().toISOString(),
+            mode: "fix",
+            trigger: "auto",
+            horizon_days: nearTermDays,
+            status: "completed",
+            jobber_visits: seenKeys.size,
+            mirror_blocks: (futureBlocks || []).length,
+            orphan_count: blocksPruned,
+            blocks_pruned: blocksPruned,
+            report: { source: "autosync-near-term", blocksPruned },
+          });
+        }
         
         // Update last sync time
         await supabase
@@ -474,10 +516,11 @@ Deno.serve(async (req) => {
           syncedDays: nearTermDays,
           totalVisits,
           totalBlocks,
+          blocksPruned,
           throttled,
         };
         
-        console.log(`[Autosync] Near-term complete: ${totalVisits} visits, ${totalBlocks} blocks`);
+        console.log(`[Autosync] Near-term complete: ${totalVisits} visits, ${totalBlocks} blocks, ${blocksPruned} pruned`);
       }
 
       // ============= Far-Term Sync (only if near-term wasn't throttled) =============
