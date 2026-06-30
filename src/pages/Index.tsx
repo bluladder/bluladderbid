@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
+import { CustomerHeader } from '@/components/CustomerHeader';
+import { CustomerFooter } from '@/components/CustomerFooter';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
 import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
@@ -251,50 +253,26 @@ const Index = () => {
         onSelectTier={handleTierSelect}
         onBookOneTime={handleBookOneTime}
         onUpgradeAndBook={handleUpgradeAndBook}
+        homeSquareFootage={homeDetails.squareFootage}
       />
     );
   };
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header - hidden in embed mode */}
-      {!isEmbedMode && (
-        <header className="border-b border-border bg-card sticky top-0 z-50">
-          <div className="container py-4">
-            <div className="flex items-center justify-between">
-              <Link to="/" className="hover:opacity-80 transition-opacity">
-                <span className="text-xl font-display font-bold text-primary">
-                  BluLadder
-                </span>
-                <p className="text-xs text-muted-foreground">Next Level Clean</p>
-              </Link>
-              <nav className="flex items-center gap-4">
-                <Link to="/services" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
-                  Services
-                </Link>
-                <Link to="/plan-builder" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
-                  Plans
-                </Link>
-                <Link to="/my-appointments" className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:inline">
-                  My Appointments
-                </Link>
-                <span className="text-sm font-medium text-primary">Get Your Quote</span>
-              </nav>
-            </div>
-          </div>
-        </header>
-      )}
+      <CustomerHeader embed={isEmbedMode} />
 
       <main className="container py-8">
         <div className="max-w-6xl mx-auto space-y-8">
           {/* Hero Section */}
           <div className="text-center space-y-4 py-6">
-            <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground">
-              Crystal Clear Windows, <span className="text-primary">Hassle-Free</span>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-display font-bold text-foreground text-balance">
+              A Cleaner Home, <span className="text-primary">Hassle-Free</span>
             </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Tell us about your home and we'll show you exactly what professional 
-              cleaning services will cost — no surprises.
+            <p className="text-base sm:text-lg text-muted-foreground max-w-2xl mx-auto text-balance">
+              Windows, gutters, house washing, roofs, and more. Tell us about your
+              home and we'll show you exactly what professional cleaning will cost —
+              no surprises.
             </p>
           </div>
 
@@ -353,7 +331,7 @@ const Index = () => {
               >
                 {/* Left Column - Service Selection (hidden once booking is active) */}
                 {!bookingActive && (
-                <div key="services-column" className="lg:col-span-2 space-y-6">
+                <div key="services-column" className="lg:col-span-2 space-y-6 min-w-0">
                   {/* Back button when in booking/plan flows */}
                   {flowState !== 'selecting' && (
                     <button
@@ -411,8 +389,8 @@ const Index = () => {
                   key="booking-content"
                   className={
                     bookingActive
-                      ? 'w-full max-w-2xl mx-auto'
-                      : 'lg:sticky lg:top-24 lg:self-start'
+                      ? 'w-full max-w-2xl mx-auto min-w-0'
+                      : 'lg:sticky lg:top-24 lg:self-start min-w-0'
                   }
                 >
                   {renderRightColumn()}
@@ -423,14 +401,7 @@ const Index = () => {
         </div>
       </main>
 
-      {/* Footer - hidden in embed mode */}
-      {!isEmbedMode && (
-        <footer className="border-t border-border mt-16">
-          <div className="container py-6 text-center text-sm text-muted-foreground">
-            © {new Date().getFullYear()} BluLadder • Next Level Clean
-          </div>
-        </footer>
-      )}
+      <CustomerFooter embed={isEmbedMode} />
     </div>
   );
 };

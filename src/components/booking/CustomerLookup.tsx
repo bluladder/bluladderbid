@@ -81,7 +81,7 @@ export function CustomerLookup({ onCustomerFound, onNewCustomer }: CustomerLooku
               ) : (
                 <Search className="w-4 h-4" />
               )}
-              <span className="ml-2 hidden sm:inline">Look Up</span>
+              <span className="ml-2">Look Up</span>
             </Button>
           </div>
           {emailError && (

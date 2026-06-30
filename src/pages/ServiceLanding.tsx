@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { CustomerHeader } from '@/components/CustomerHeader';
+import { CustomerFooter } from '@/components/CustomerFooter';
 import { HomeDetailsForm } from '@/components/homeowner/HomeDetailsForm';
 import { IntentFirstServiceSelector } from '@/components/homeowner/IntentFirstServiceSelector';
 import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
@@ -298,34 +300,14 @@ const ServiceLanding = () => {
         onSelectTier={handleTierSelect}
         onBookOneTime={handleBookOneTime}
         onUpgradeAndBook={handleUpgradeAndBook}
+        homeSquareFootage={homeDetails.squareFootage}
       />
     );
   };
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header - hidden in embed mode */}
-      {!isEmbedMode && (
-        <header className="border-b border-border bg-card sticky top-0 z-50">
-          <div className="container py-4">
-            <div className="flex items-center justify-between">
-              <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-                <h1 className="text-xl font-display font-bold text-primary">
-                  BluLadder
-                </h1>
-                <span className="text-xs text-muted-foreground">Next Level Clean</span>
-              </Link>
-              <Link 
-                to="/" 
-                className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                All Services
-              </Link>
-            </div>
-          </div>
-        </header>
-      )}
+      <CustomerHeader embed={isEmbedMode} />
 
       {/* Service-Specific Hero */}
       <div className={`bg-gradient-to-r ${config.heroColor} text-white py-12`}>
@@ -334,11 +316,11 @@ const ServiceLanding = () => {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm mb-4">
               <Icon className="w-8 h-8" />
             </div>
-            <h1 className="text-3xl md:text-4xl font-display font-bold">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-display font-bold text-balance">
               {config.title}
             </h1>
-            <p className="text-xl opacity-90">{config.subtitle}</p>
-            <p className="text-white/80 max-w-xl mx-auto">
+            <p className="text-lg sm:text-xl opacity-90 text-balance">{config.subtitle}</p>
+            <p className="text-white/80 max-w-xl mx-auto text-balance">
               {config.description}
             </p>
           </div>
@@ -360,7 +342,7 @@ const ServiceLanding = () => {
 
           {/* Main Content */}
           <div className="grid gap-8 lg:grid-cols-3">
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-2 space-y-6 min-w-0">
               {flowState !== 'selecting' && (
                 <button
                   onClick={handleBackToSelection}
@@ -406,21 +388,14 @@ const ServiceLanding = () => {
               )}
             </div>
             
-            <div className="lg:sticky lg:top-24 lg:self-start">
+            <div className="lg:sticky lg:top-24 lg:self-start min-w-0">
               {renderRightColumn()}
             </div>
           </div>
         </div>
       </main>
 
-      {/* Footer - hidden in embed mode */}
-      {!isEmbedMode && (
-        <footer className="border-t border-border mt-16">
-          <div className="container py-6 text-center text-sm text-muted-foreground">
-            © {new Date().getFullYear()} BluLadder • Next Level Clean
-          </div>
-        </footer>
-      )}
+      <CustomerFooter embed={isEmbedMode} />
     </div>
   );
 };

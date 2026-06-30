@@ -338,7 +338,7 @@ export function IntentFirstServiceSelector({
               <div className="flex items-start gap-2 p-2.5 rounded-md bg-success/10 border border-success/20">
                 <ShieldCheck className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
                 <div className="text-xs">
-                  <p className="font-medium text-success-foreground">
+                  <p className="font-semibold text-success">
                     {homeDetails.windowCleaningType === 'both' 
                       ? 'Complimentary screen & track cleaning included'
                       : 'Complimentary screen cleaning included'

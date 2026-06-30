@@ -89,7 +89,7 @@ export function PlanTierCards({
               >
                 {/* Recommended Badge for Better */}
                 {tier.isPopular && (
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10">
                     <Badge className="bg-primary text-primary-foreground shadow-lg px-4 py-1.5">
                       <Star className="w-3.5 h-3.5 mr-1.5 fill-current" />
                       Recommended
@@ -99,7 +99,7 @@ export function PlanTierCards({
 
                 {/* Premium Badge */}
                 {tier.isPremium && (
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10">
                     <Badge variant="outline" className="bg-background border-amber-500 text-amber-600 shadow-md px-3 py-1">
                       <Crown className="w-3 h-3 mr-1" />
                       Premium

@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Home as HomeIcon, BellRing, Search } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { BellRing, Search } from 'lucide-react';
+import { CustomerHeader } from '@/components/CustomerHeader';
 import { MessagePreferencesCard } from '@/components/customer/MessagePreferencesCard';
 
 export default function MessagePreferences() {
@@ -28,24 +28,17 @@ export default function MessagePreferences() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="container py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-display font-bold text-primary">Notification Preferences</h1>
-              <p className="text-xs text-muted-foreground">Manage your texts and emails from BluLadder</p>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/">
-                <HomeIcon className="w-4 h-4 mr-2" />
-                Home
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </header>
+      <CustomerHeader />
 
       <main className="container py-8 max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">
+            Notification Preferences
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Manage your texts and emails from BluLadder
+          </p>
+        </div>
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
