@@ -6,7 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { RefreshCw, MessageSquare, Mail, AlertTriangle, Clock, Search, X } from 'lucide-react';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
+  RefreshCw, MessageSquare, Mail, AlertTriangle, Clock, Search, X,
+  CheckCircle2, XCircle, Send, RotateCw, CircleDashed, Ban, Inbox,
+} from 'lucide-react';
 
 interface SmsMessage {
   id: string;
@@ -23,6 +33,8 @@ interface SmsMessage {
   attempts: number | null;
   max_attempts: number | null;
   next_retry_at: string | null;
+  callrail_message_id: string | null;
+  updated_at: string | null;
   created_at: string;
 }
 
@@ -41,12 +53,13 @@ export function SmsMessageLog() {
   const [attemptsFilter, setAttemptsFilter] = useState<string>('all');
   const [retryWindow, setRetryWindow] = useState<string>('all');
   const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<SmsMessage | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     let query = supabase
       .from('sms_messages')
-      .select('id,to_number,to_email,channel,subject,body,status,message_kind,send_at,sent_at,error,attempts,max_attempts,next_retry_at,created_at')
+      .select('id,to_number,to_email,channel,subject,body,status,message_kind,send_at,sent_at,error,attempts,max_attempts,next_retry_at,callrail_message_id,updated_at,created_at')
       .order('created_at', { ascending: false })
       .limit(100);
     // "retrying" is a derived state of pending messages, so query pending at the
@@ -102,6 +115,56 @@ export function SmsMessageLog() {
   const filtered = messages.filter((m) => {
     if (statusFilter === 'retrying' && !isRetrying(m)) return false;
     return matchesAttempts(m) && matchesRetryWindow(m) && matchesSearch(m);
+  });
+
+  // Build a best-effort attempt timeline from the columns we persist. We do not
+  // store a row per attempt, so this reconstructs the lifecycle from timestamps,
+  // the attempt counter and the latest provider outcome.
+  const buildTimeline = (m: SmsMessage) => {
+    const events: { icon: typeof Clock; label: string; detail?: string; at: string | null; tone: string }[] = [];
+    events.push({ icon: CircleDashed, label: 'Queued', detail: `Message created (${m.channel === 'email' ? 'email' : 'text'})`, at: m.created_at, tone: 'text-muted-foreground' });
+    if (m.send_at) events.push({ icon: Clock, label: 'Scheduled to send', at: m.send_at, tone: 'text-muted-foreground' });
+    const attempts = m.attempts ?? 0;
+    if (attempts > 0) {
+      for (let i = 1; i <= attempts; i++) {
+        const isLast = i === attempts;
+        if (isLast && m.status === 'sent') {
+          events.push({ icon: CheckCircle2, label: `Attempt ${i}: delivered`, detail: m.callrail_message_id ? `Provider ID ${m.callrail_message_id}` : undefined, at: m.sent_at, tone: 'text-green-600 dark:text-green-400' });
+        } else if (isLast && m.status === 'failed') {
+          events.push({ icon: XCircle, label: `Attempt ${i}: failed`, detail: m.error ?? undefined, at: m.updated_at, tone: 'text-destructive' });
+        } else {
+          events.push({ icon: XCircle, label: `Attempt ${i}: failed`, detail: m.error ?? 'Send error', at: null, tone: 'text-amber-600 dark:text-amber-400' });
+        }
+      }
+    } else if (m.status === 'sent') {
+      events.push({ icon: CheckCircle2, label: 'Delivered', detail: m.callrail_message_id ? `Provider ID ${m.callrail_message_id}` : undefined, at: m.sent_at, tone: 'text-green-600 dark:text-green-400' });
+    }
+    if (isRetrying(m) && m.next_retry_at) {
+      events.push({ icon: RotateCw, label: `Retry scheduled (attempt ${attempts + 1}/${m.max_attempts ?? 3})`, at: m.next_retry_at, tone: 'text-amber-600 dark:text-amber-400' });
+    }
+    if (m.status === 'cancelled') {
+      events.push({ icon: Ban, label: 'Cancelled', detail: m.error ?? undefined, at: m.updated_at, tone: 'text-muted-foreground' });
+    }
+    if (m.status === 'inbound') {
+      events.push({ icon: Inbox, label: 'Inbound message received', at: m.created_at, tone: 'text-blue-600 dark:text-blue-400' });
+    }
+    return events;
+  };
+
+  // Reconstruct the outbound payload as sent to the provider.
+  const sendPayload = (m: SmsMessage) =>
+    m.channel === 'email'
+      ? { channel: 'email', to: m.to_email, subject: m.subject, body: m.body, message_kind: m.message_kind, scheduled_for: m.send_at }
+      : { channel: 'sms', to: m.to_number, body: m.body, message_kind: m.message_kind, scheduled_for: m.send_at };
+
+  const providerResponse = (m: SmsMessage) => ({
+    status: m.status,
+    provider_message_id: m.callrail_message_id,
+    sent_at: m.sent_at,
+    error: m.error,
+    attempts: m.attempts ?? 0,
+    max_attempts: m.max_attempts ?? 3,
+    next_retry_at: m.next_retry_at,
   });
 
   const hasActiveFilters =
@@ -202,7 +265,7 @@ export function SmsMessageLog() {
               </TableHeader>
               <TableBody>
                 {filtered.map((m) => (
-                  <TableRow key={m.id}>
+                  <TableRow key={m.id} className="cursor-pointer" onClick={() => setSelected(m)}>
                     <TableCell>
                       <Badge variant={isRetrying(m) ? 'secondary' : (STATUS_VARIANT[m.status] ?? 'outline')}>
                         {isRetrying(m) ? 'retrying' : m.status}
@@ -254,6 +317,84 @@ export function SmsMessageLog() {
           </div>
         )}
       </CardContent>
+
+      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
+          {selected && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  {selected.channel === 'email' ? <Mail className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
+                  Message details
+                </SheetTitle>
+                <SheetDescription>
+                  {selected.message_kind ?? 'message'} · queued {fmt(selected.created_at)}
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="mt-6 space-y-6">
+                <section>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant={isRetrying(selected) ? 'secondary' : (STATUS_VARIANT[selected.status] ?? 'outline')}>
+                      {isRetrying(selected) ? 'retrying' : selected.status}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {(selected.attempts ?? 0)} / {selected.max_attempts ?? 3} attempts
+                    </span>
+                  </div>
+                </section>
+
+                <section>
+                  <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                    <Send className="w-3.5 h-3.5" /> Send payload
+                  </h4>
+                  <pre className="text-xs bg-muted rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-words">
+                    {JSON.stringify(sendPayload(selected), null, 2)}
+                  </pre>
+                </section>
+
+                <section>
+                  <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                    <Inbox className="w-3.5 h-3.5" /> Provider response
+                  </h4>
+                  <pre className="text-xs bg-muted rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-words">
+                    {JSON.stringify(providerResponse(selected), null, 2)}
+                  </pre>
+                  {selected.error && (
+                    <p className="text-xs text-destructive mt-2 flex items-start gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {selected.error}
+                    </p>
+                  )}
+                </section>
+
+                <section>
+                  <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-3">
+                    <Clock className="w-3.5 h-3.5" /> Attempt timeline
+                  </h4>
+                  <ol className="space-y-3">
+                    {buildTimeline(selected).map((e, i) => {
+                      const Icon = e.icon;
+                      return (
+                        <li key={i} className="flex gap-3">
+                          <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${e.tone}`} />
+                          <div className="min-w-0">
+                            <p className="text-sm leading-tight">{e.label}</p>
+                            {e.detail && <p className="text-xs text-muted-foreground break-words">{e.detail}</p>}
+                            <p className="text-[11px] text-muted-foreground mt-0.5">{e.at ? fmt(e.at) : 'time not recorded'}</p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  <p className="text-[11px] text-muted-foreground mt-3">
+                    Per-attempt timestamps are reconstructed from stored counters; only the latest provider outcome is retained.
+                  </p>
+                </section>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </Card>
   );
 }
