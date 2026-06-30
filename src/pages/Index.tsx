@@ -339,7 +339,14 @@ const Index = () => {
               />
               
 
-              {/* Intent-First Flow: Services + Upsell */}
+              {/* When the full booking flow is open, give it a prominent, centered,
+                  wide layout instead of squeezing it into the sidebar column. */}
+              {bookingActive ? (
+                <div className="max-w-2xl mx-auto w-full">
+                  {renderRightColumn()}
+                </div>
+              ) : (
+              /* Intent-First Flow: Services + Upsell */
               <div className="grid gap-8 lg:grid-cols-3">
                 {/* Left Column - Service Selection */}
                 <div className="lg:col-span-2 space-y-6">
@@ -397,6 +404,7 @@ const Index = () => {
                   {renderRightColumn()}
                 </div>
               </div>
+              )}
             </>
           )}
         </div>
