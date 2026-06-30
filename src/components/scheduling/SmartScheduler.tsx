@@ -191,10 +191,11 @@ export function SmartScheduler({
 
   return (
     <div className="space-y-4">
-      {/* AM/PM preference filter */}
-      <TimePreferenceSelector
-        value={preference}
-        onChange={handlePreference}
+      {/* Sticky filter chips — narrow time slots while scrolling on mobile */}
+      <SchedulerFilterChips
+        preference={preference}
+        onPreferenceChange={handlePreference}
+        services={services}
         isLoading={isLoadingRecommendations}
       />
 
