@@ -4,33 +4,44 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { User, Mail, Phone, MapPin, MessageSquare, AlertCircle } from 'lucide-react';
+import { User, Mail, Phone, MapPin, MessageSquare } from 'lucide-react';
 import { z } from 'zod';
 
-// Enhanced address validation to require city + state + zip
-// Pattern: "123 Main St, Austin, TX 78701" or similar
-const addressRegex = /^.+,\s*.+,\s*[A-Z]{2}\s*\d{5}(-\d{4})?$/i;
-
-// Looser check for minimum structure (has at least 2 commas for street, city, state zip)
-const hasProperStructure = (val: string) => {
-  const commaCount = (val.match(/,/g) || []).length;
-  return commaCount >= 2 || addressRegex.test(val);
-};
+const US_STATE_REGEX = /^[A-Za-z]{2}$/;
+const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
 
 const customerSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(50),
   lastName: z.string().min(1, 'Last name is required').max(50),
   email: z.string().email('Please enter a valid email'),
   phone: z.string().min(10, 'Please enter a valid phone number').max(20),
-  address: z.string()
-    .min(10, 'Please enter your complete service address')
-    .max(200)
-    .refine(
-      hasProperStructure,
-      'Please include: Street Address, City, State, ZIP'
-    ),
+  street: z.string().min(3, 'Please enter your street address').max(120),
+  city: z.string().min(2, 'Please enter your city').max(80),
+  state: z.string().regex(US_STATE_REGEX, 'Use 2-letter state (e.g., TX)'),
+  zip: z.string().regex(ZIP_REGEX, 'Enter a valid ZIP code'),
   notes: z.string().max(500).optional(),
 });
+
+// Combine structured parts into the single string downstream systems expect.
+const composeAddress = (p: { street: string; city: string; state: string; zip: string }) =>
+  `${p.street.trim()}, ${p.city.trim()}, ${p.state.trim().toUpperCase()} ${p.zip.trim()}`;
+
+// Best-effort parse of an existing combined address back into parts.
+const parseAddress = (address?: string) => {
+  const result = { street: '', city: '', state: '', zip: '' };
+  if (!address) return result;
+  const parts = address.split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 3) {
+    result.street = parts.slice(0, parts.length - 2).join(', ');
+    result.city = parts[parts.length - 2];
+    const stateZip = parts[parts.length - 1].split(/\s+/);
+    result.state = stateZip[0] || '';
+    result.zip = stateZip.slice(1).join(' ') || '';
+  } else {
+    result.street = address;
+  }
+  return result;
+};
 
 export interface CustomerInfo {
   firstName: string;
@@ -49,37 +60,34 @@ interface CustomerInfoFormProps {
 }
 
 export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitButtonText = 'Confirm Booking' }: CustomerInfoFormProps) {
-  const [formData, setFormData] = useState<CustomerInfo>({
+  const parsedInitial = parseAddress(initialData?.address);
+  const [formData, setFormData] = useState({
     firstName: initialData?.firstName || '',
     lastName: initialData?.lastName || '',
     email: initialData?.email || '',
     phone: initialData?.phone || '',
-    address: initialData?.address || '',
+    street: parsedInitial.street,
+    city: parsedInitial.city,
+    state: parsedInitial.state,
+    zip: parsedInitial.zip,
     notes: initialData?.notes || '',
   });
-  
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [addressWarning, setAddressWarning] = useState(false);
 
-  const handleChange = (field: keyof CustomerInfo, value: string) => {
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const handleChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     // Clear error when user types
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
-    
-    // Check address format on change
-    if (field === 'address') {
-      const hasComma = value.includes(',');
-      setAddressWarning(value.length > 5 && !hasComma);
-    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const result = customerSchema.safeParse(formData);
-    
+
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
       result.error.errors.forEach(err => {
@@ -90,8 +98,15 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
       setErrors(fieldErrors);
       return;
     }
-    
-    onSubmit(formData);
+
+    onSubmit({
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      email: formData.email,
+      phone: formData.phone,
+      address: composeAddress(formData),
+      notes: formData.notes,
+    });
   };
 
   return (
@@ -177,33 +192,70 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
           </div>
           
           <div className="space-y-1">
-            <Label htmlFor="address" className="text-xs">Service Address *</Label>
+            <Label htmlFor="street" className="text-xs">Service Address *</Label>
             <div className="relative">
-              <MapPin className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
-              <Textarea
-                id="address"
-                value={formData.address}
-                onChange={(e) => handleChange('address', e.target.value)}
-                placeholder="123 Main Street, City, TX 78701"
-                className={`pl-8 min-h-[60px] text-sm ${errors.address ? 'border-destructive' : ''}`}
+              <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                id="street"
+                value={formData.street}
+                onChange={(e) => handleChange('street', e.target.value)}
+                placeholder="Street address (e.g., 720 Parkland Dr)"
+                autoComplete="address-line1"
+                className={`pl-8 h-9 text-sm ${errors.street ? 'border-destructive' : ''}`}
               />
             </div>
-            {/* Structured hint always visible when empty */}
-            {formData.address.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                Format: Street Address, City, State, ZIP
-              </p>
+            {errors.street && (
+              <p className="text-xs text-destructive">{errors.street}</p>
             )}
-            {/* Address format warning */}
-            {addressWarning && !errors.address && (
-              <div className="flex items-start gap-1.5 text-xs text-amber-600">
-                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                <span>Include City, State, and ZIP for accurate scheduling</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="city" className="text-xs">City *</Label>
+              <Input
+                id="city"
+                value={formData.city}
+                onChange={(e) => handleChange('city', e.target.value)}
+                placeholder="Aubrey"
+                autoComplete="address-level2"
+                className={`h-9 text-sm ${errors.city ? 'border-destructive' : ''}`}
+              />
+              {errors.city && (
+                <p className="text-xs text-destructive">{errors.city}</p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="state" className="text-xs">State *</Label>
+                <Input
+                  id="state"
+                  value={formData.state}
+                  onChange={(e) => handleChange('state', e.target.value.toUpperCase().slice(0, 2))}
+                  placeholder="TX"
+                  maxLength={2}
+                  autoComplete="address-level1"
+                  className={`h-9 text-sm uppercase ${errors.state ? 'border-destructive' : ''}`}
+                />
+                {errors.state && (
+                  <p className="text-xs text-destructive">{errors.state}</p>
+                )}
               </div>
-            )}
-            {errors.address && (
-              <p className="text-xs text-destructive">{errors.address}</p>
-            )}
+              <div className="space-y-1">
+                <Label htmlFor="zip" className="text-xs">ZIP *</Label>
+                <Input
+                  id="zip"
+                  value={formData.zip}
+                  onChange={(e) => handleChange('zip', e.target.value)}
+                  placeholder="76227"
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  className={`h-9 text-sm ${errors.zip ? 'border-destructive' : ''}`}
+                />
+                {errors.zip && (
+                  <p className="text-xs text-destructive">{errors.zip}</p>
+                )}
+              </div>
+            </div>
           </div>
           
           <div className="space-y-1">
