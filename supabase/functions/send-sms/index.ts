@@ -152,6 +152,7 @@ serve(async (req) => {
 
     // ---- Build variable context ----
     let phone: string | null = null;
+    let email: string | null = null;
     let firstName = "there";
     let lastName = "";
     const vars: Record<string, string | number> = {};
@@ -159,12 +160,13 @@ serve(async (req) => {
     if (bookingId) {
       const { data: bk } = await supabase
         .from("bookings")
-        .select("reference_number, scheduled_start, total, services_json, customer:customers(first_name, last_name, phone)")
+        .select("reference_number, scheduled_start, total, services_json, customer:customers(first_name, last_name, phone, email)")
         .eq("id", bookingId)
         .single();
       if (bk) {
-        const cust = bk.customer as { first_name?: string; last_name?: string; phone?: string } | null;
+        const cust = bk.customer as { first_name?: string; last_name?: string; phone?: string; email?: string } | null;
         phone = cust?.phone ?? null;
+        email = cust?.email ?? null;
         firstName = cust?.first_name || firstName;
         lastName = cust?.last_name || "";
         const { date, time } = formatApptDate(bk.scheduled_start as string);
@@ -174,19 +176,22 @@ serve(async (req) => {
         vars.time = time;
         vars.total = formatPrice(bk.total);
         vars.appointment_link = `${APP_URL}/my-appointments`;
+        vars.link = `${APP_URL}/my-appointments`;
       }
     } else if (quoteId) {
       const { data: q } = await supabase
         .from("quotes")
-        .select("customer_name, customer_phone, total, services_json")
+        .select("customer_name, customer_phone, customer_email, total, services_json")
         .eq("id", quoteId)
         .single();
       if (q) {
         phone = q.customer_phone as string ?? null;
+        email = (q.customer_email as string) ?? null;
         firstName = ((q.customer_name as string) || "").trim().split(/\s+/)[0] || firstName;
         vars.service = serviceNames(q.services_json);
         vars.total = formatPrice(q.total);
         vars.quote_link = `${APP_URL}/quote/${quoteId}`;
+        vars.link = `${APP_URL}/quote/${quoteId}`;
       }
     }
 
@@ -256,27 +261,47 @@ serve(async (req) => {
     let scheduledCount = 0;
     const { data: campaigns } = await supabase
       .from("sms_campaigns")
-      .select("id, sms_campaign_steps(id, step_order, delay_hours, body_template, active)")
+      .select("id, sms_campaign_steps(id, step_order, delay_hours, body_template, subject, channel, active)")
       .eq("trigger_event", eventType)
       .eq("active", true);
 
-    if (campaigns && toNorm) {
+    if (campaigns) {
       const now = Date.now();
       const rows: Record<string, unknown>[] = [];
-      for (const c of campaigns as Array<{ id: string; sms_campaign_steps: Array<{ id: string; delay_hours: number; body_template: string; active: boolean }> }>) {
+      for (const c of campaigns as Array<{ id: string; sms_campaign_steps: Array<{ id: string; delay_hours: number; body_template: string; subject: string | null; channel: string; active: boolean }> }>) {
         for (const step of c.sms_campaign_steps || []) {
           if (!step.active) continue;
-          rows.push({
-            to_number: toNorm,
-            body: renderTemplate(step.body_template, vars),
-            message_kind: "campaign",
-            status: "pending",
-            booking_id: bookingId ?? null,
-            quote_id: quoteId ?? null,
-            campaign_id: c.id,
-            campaign_step_id: step.id,
-            send_at: new Date(now + Number(step.delay_hours) * 3600 * 1000).toISOString(),
-          });
+          const sendAt = new Date(now + Number(step.delay_hours) * 3600 * 1000).toISOString();
+          if (step.channel === "email") {
+            if (!email) continue;
+            rows.push({
+              to_email: email,
+              channel: "email",
+              subject: renderTemplate(step.subject ?? "", vars),
+              body: renderTemplate(step.body_template, vars),
+              message_kind: "campaign",
+              status: "pending",
+              booking_id: bookingId ?? null,
+              quote_id: quoteId ?? null,
+              campaign_id: c.id,
+              campaign_step_id: step.id,
+              send_at: sendAt,
+            });
+          } else {
+            if (!toNorm) continue;
+            rows.push({
+              to_number: toNorm,
+              channel: "sms",
+              body: renderTemplate(step.body_template, vars),
+              message_kind: "campaign",
+              status: "pending",
+              booking_id: bookingId ?? null,
+              quote_id: quoteId ?? null,
+              campaign_id: c.id,
+              campaign_step_id: step.id,
+              send_at: sendAt,
+            });
+          }
         }
       }
       if (rows.length) {
