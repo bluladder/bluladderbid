@@ -189,7 +189,6 @@ Deno.serve(async (req) => {
       mirrorBlockId?: string;
     }
     const discrepancies: Discrepancy[] = [];
-    const toUpsert: typeof visitMap extends Map<string, infer V> ? V[] : never = [] as never;
     const upserts: Array<{
       jobber_visit_id: string;
       crew_id: string;
