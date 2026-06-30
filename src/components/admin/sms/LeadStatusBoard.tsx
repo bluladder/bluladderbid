@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RefreshCw, Users, Search } from 'lucide-react';
+import { RefreshCw, Users, Search, MessageSquare, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
 type LifecycleStatus = 'open' | 'pending' | 'approved' | 'booked' | 'declined';
@@ -36,6 +36,8 @@ interface Customer {
   lifecycle_status: LifecycleStatus | null;
   lifecycle_changed_at: string | null;
   lifecycle_source: string | null;
+  sms_paused: boolean | null;
+  email_paused: boolean | null;
 }
 
 export function LeadStatusBoard() {
@@ -49,7 +51,7 @@ export function LeadStatusBoard() {
     setLoading(true);
     let query = supabase
       .from('customers')
-      .select('id,first_name,last_name,email,phone,lifecycle_status,lifecycle_changed_at,lifecycle_source')
+      .select('id,first_name,last_name,email,phone,lifecycle_status,lifecycle_changed_at,lifecycle_source,sms_paused,email_paused')
       .order('lifecycle_changed_at', { ascending: false, nullsFirst: false })
       .limit(200);
     if (statusFilter !== 'all') query = query.eq('lifecycle_status', statusFilter as LifecycleStatus);
@@ -68,6 +70,22 @@ export function LeadStatusBoard() {
     if (error) { toast.error(error.message); return; }
     toast.success(`Moved to ${STATUS_LABELS[status]} — campaign re-enrolled`);
     load();
+  };
+
+  const togglePause = async (c: Customer, channel: 'sms' | 'email') => {
+    const col = channel === 'sms' ? 'sms_paused' : 'email_paused';
+    const next = !(channel === 'sms' ? c.sms_paused : c.email_paused);
+    const updates: Record<string, boolean> = { [col]: next };
+    // Optimistic update
+    setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, [col]: next } : r)));
+    const { error } = await supabase.from('customers').update(updates).eq('id', c.id);
+    if (error) {
+      toast.error(error.message);
+      setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, [col]: !next } : r)));
+      return;
+    }
+    const label = channel === 'sms' ? 'Texting' : 'Email';
+    toast.success(next ? `${label} paused for this lead` : `${label} resumed for this lead`);
   };
 
   const fmt = (iso: string | null) =>
@@ -125,6 +143,7 @@ export function LeadStatusBoard() {
                   <TableHead>Customer</TableHead>
                   <TableHead>Contact</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Messaging</TableHead>
                   <TableHead>Updated</TableHead>
                   <TableHead>Move to</TableHead>
                 </TableRow>
@@ -145,6 +164,30 @@ export function LeadStatusBoard() {
                       ) : (
                         <Badge variant="outline">None</Badge>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant={c.sms_paused ? 'destructive' : 'outline'}
+                          size="sm"
+                          className="h-7 px-2"
+                          title={c.sms_paused ? 'Texting paused — click to resume' : 'Texting active — click to pause'}
+                          onClick={() => togglePause(c, 'sms')}
+                        >
+                          <MessageSquare className="w-3.5 h-3.5 mr-1" />
+                          {c.sms_paused ? 'Paused' : 'On'}
+                        </Button>
+                        <Button
+                          variant={c.email_paused ? 'destructive' : 'outline'}
+                          size="sm"
+                          className="h-7 px-2"
+                          title={c.email_paused ? 'Email paused — click to resume' : 'Email active — click to pause'}
+                          onClick={() => togglePause(c, 'email')}
+                        >
+                          <Mail className="w-3.5 h-3.5 mr-1" />
+                          {c.email_paused ? 'Paused' : 'On'}
+                        </Button>
+                      </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {fmt(c.lifecycle_changed_at)}
