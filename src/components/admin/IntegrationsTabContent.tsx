@@ -10,6 +10,7 @@ import { SmsCampaignManager } from './sms/SmsCampaignManager';
 import { SmsMessageLog } from './sms/SmsMessageLog';
 import { SmsOptOutManager } from './sms/SmsOptOutManager';
 import { LeadStatusBoard } from './sms/LeadStatusBoard';
+import { MessageTemplateManager } from './sms/MessageTemplateManager';
 
 export function IntegrationsTabContent() {
   const [activeSection, setActiveSection] = useState('jobber');
@@ -134,12 +135,16 @@ export function IntegrationsTabContent() {
           <Tabs defaultValue="campaigns">
             <TabsList>
               <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
+              <TabsTrigger value="templates">Templates</TabsTrigger>
               <TabsTrigger value="leads">Lead Board</TabsTrigger>
               <TabsTrigger value="log">Message Log</TabsTrigger>
               <TabsTrigger value="optouts">Opt-Outs</TabsTrigger>
             </TabsList>
             <TabsContent value="campaigns" className="mt-4">
               <SmsCampaignManager />
+            </TabsContent>
+            <TabsContent value="templates" className="mt-4">
+              <MessageTemplateManager />
             </TabsContent>
             <TabsContent value="leads" className="mt-4">
               <LeadStatusBoard />
