@@ -233,7 +233,7 @@ async function syncChunk(
   supabase: SupabaseClient<any>,
   startDate: Date,
   endDate: Date
-): Promise<{ visits: number; blocks: number; throttled: boolean }> {
+): Promise<{ visits: number; blocks: number; throttled: boolean; seenKeys: string[] }> {
   const allVisits: Visit[] = [];
   let hasNextPage = true;
   let cursor: string | null = null;
@@ -252,7 +252,7 @@ async function syncChunk(
       e.message.includes("Throttled") || e.message.includes("Rate limit")
     )) {
       console.log(`[Chunk] Throttled after ${allVisits.length} visits`);
-      return { visits: allVisits.length, blocks: 0, throttled: true };
+      return { visits: allVisits.length, blocks: 0, throttled: true, seenKeys: [] };
     }
 
     if (graphResult.errors) {
@@ -275,10 +275,12 @@ async function syncChunk(
 
   // Upsert visits to busy blocks
   let blocksInserted = 0;
+  const seenKeys: string[] = [];
   for (const visit of allVisits) {
     const assignees = visit.assignedUsers?.nodes || [];
     
     for (const assignee of assignees) {
+      seenKeys.push(`${visit.id}:${assignee.id}`);
       const address = visit.job?.property?.address;
       const fullAddress = address 
         ? `${address.street}, ${address.city}, ${address.province} ${address.postalCode}`
@@ -307,7 +309,7 @@ async function syncChunk(
   }
 
   console.log(`[Chunk] Synced ${allVisits.length} visits, ${blocksInserted} blocks`);
-  return { visits: allVisits.length, blocks: blocksInserted, throttled: false };
+  return { visits: allVisits.length, blocks: blocksInserted, throttled: false, seenKeys };
 }
 
 // ============= Lock Management =============
