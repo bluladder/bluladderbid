@@ -196,6 +196,25 @@ serve(async (req) => {
 
     const toNorm = normalizePhone(phone);
 
+    // Suppress everything if this recipient has opted out.
+    const optedOut = await isPhoneOptedOut(supabase, toNorm);
+    if (optedOut) {
+      await supabase.from("sms_messages").insert({
+        to_number: toNorm || phone || "unknown",
+        body: renderTemplate(DEFAULT_TEMPLATES[eventType], vars),
+        message_kind: "transactional",
+        status: "cancelled",
+        error: "Recipient has opted out of texts",
+        booking_id: bookingId ?? null,
+        quote_id: quoteId ?? null,
+      });
+      return new Response(JSON.stringify({
+        success: true, transactionalSent: false,
+        transactionalError: "Recipient has opted out of texts",
+        scheduledFollowUps: 0,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     // ---- 1) Immediate transactional message ----
     const immediateBody = renderTemplate(DEFAULT_TEMPLATES[eventType], vars);
     let transactionalSent = false;
