@@ -1238,6 +1238,69 @@ export type Database = {
           },
         ]
       }
+      schedule_reconciliation_runs: {
+        Row: {
+          blocks_added: number
+          blocks_corrected: number
+          blocks_pruned: number
+          completed_at: string | null
+          created_by: string | null
+          error: string | null
+          horizon_days: number
+          id: string
+          jobber_visits: number
+          mirror_blocks: number
+          mismatch_count: number
+          missing_count: number
+          mode: string
+          orphan_count: number
+          report: Json | null
+          started_at: string
+          status: string
+          trigger: string
+        }
+        Insert: {
+          blocks_added?: number
+          blocks_corrected?: number
+          blocks_pruned?: number
+          completed_at?: string | null
+          created_by?: string | null
+          error?: string | null
+          horizon_days?: number
+          id?: string
+          jobber_visits?: number
+          mirror_blocks?: number
+          mismatch_count?: number
+          missing_count?: number
+          mode?: string
+          orphan_count?: number
+          report?: Json | null
+          started_at?: string
+          status?: string
+          trigger?: string
+        }
+        Update: {
+          blocks_added?: number
+          blocks_corrected?: number
+          blocks_pruned?: number
+          completed_at?: string | null
+          created_by?: string | null
+          error?: string | null
+          horizon_days?: number
+          id?: string
+          jobber_visits?: number
+          mirror_blocks?: number
+          mismatch_count?: number
+          missing_count?: number
+          mode?: string
+          orphan_count?: number
+          report?: Json | null
+          started_at?: string
+          status?: string
+          trigger?: string
+        }
+        Relationships: []
+      }
       schedule_sync_runs: {
         Row: {
           blocks_inserted: number
