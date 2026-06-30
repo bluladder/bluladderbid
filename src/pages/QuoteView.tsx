@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
 
 interface QuoteService {
   id: string;
