@@ -7,6 +7,7 @@ import {
   formatApptDate,
   normalizePhone,
   isPhoneOptedOut,
+  getCustomerPause,
 } from "../_shared/sms.ts";
 
 const corsHeaders = {
@@ -201,21 +202,24 @@ serve(async (req) => {
 
     const toNorm = normalizePhone(phone);
 
+    // Per-lead channel pause switches (admin / customer self-service).
+    const pause = await getCustomerPause(supabase, { email });
+
     // Suppress everything if this recipient has opted out.
     const optedOut = await isPhoneOptedOut(supabase, toNorm);
-    if (optedOut) {
+    if (optedOut || pause.sms_paused) {
       await supabase.from("sms_messages").insert({
         to_number: toNorm || phone || "unknown",
         body: renderTemplate(DEFAULT_TEMPLATES[eventType], vars),
         message_kind: "transactional",
         status: "cancelled",
-        error: "Recipient has opted out of texts",
+        error: optedOut ? "Recipient has opted out of texts" : "Texting paused for this lead",
         booking_id: bookingId ?? null,
         quote_id: quoteId ?? null,
       });
       return new Response(JSON.stringify({
         success: true, transactionalSent: false,
-        transactionalError: "Recipient has opted out of texts",
+        transactionalError: optedOut ? "Recipient has opted out of texts" : "Texting paused for this lead",
         scheduledFollowUps: 0,
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -273,7 +277,7 @@ serve(async (req) => {
           if (!step.active) continue;
           const sendAt = new Date(now + Number(step.delay_hours) * 3600 * 1000).toISOString();
           if (step.channel === "email") {
-            if (!email) continue;
+            if (!email || pause.email_paused) continue;
             rows.push({
               to_email: email,
               channel: "email",
