@@ -25,9 +25,12 @@ interface TimeSlotPickerProps {
   onSelectSlot: (slot: TimeSlot) => void;
   selectedSlot: TimeSlot | null;
   customerAddress?: string;
+  bidLink?: string;
+  bidReference?: string;
+  customerName?: string;
 }
 
-export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerAddress }: TimeSlotPickerProps) {
+export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerAddress, bidLink, bidReference, customerName }: TimeSlotPickerProps) {
   const { data: bookingSettings } = useBookingSettings();
   const horizonDays = bookingSettings?.bookingHorizonDays || 365;
 
@@ -39,6 +42,10 @@ export function TimeSlotPicker({ services, onSelectSlot, selectedSlot, customerA
       onSelectSlot={(slot: SchedulerSlot) => onSelectSlot(slot as unknown as TimeSlot)}
       horizonDays={horizonDays}
       compact
+      showHelpContact
+      bidLink={bidLink}
+      bidReference={bidReference}
+      customerName={customerName}
     />
   );
 }
