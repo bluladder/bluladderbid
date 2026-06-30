@@ -18,6 +18,12 @@ const corsHeaders = {
 
 const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
 
+// First retry happens ~5 min after a transient failure; the queue processor
+// applies the full backoff schedule on subsequent attempts.
+function firstRetryIso(): string {
+  return new Date(Date.now() + 5 * 60 * 1000).toISOString();
+}
+
 type EventType =
   | "quote_created"
   | "appointment_scheduled"
