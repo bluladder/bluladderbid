@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getJobberAccessToken } from "../_shared/jobberClient.ts";
+import { requireAdminOrService } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -351,6 +352,15 @@ async function updateCoverageStats(supabase: SupabaseClient<any>): Promise<void>
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Only admins or internal/cron (service-role) callers may trigger a sync.
+  const auth = await requireAdminOrService(req);
+  if (!auth.ok) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
