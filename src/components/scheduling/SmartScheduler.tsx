@@ -20,7 +20,6 @@ import {
   type TimePreference,
   type RecommendedSlot,
 } from '@/hooks/useSmartAvailability';
-import { TimePreferenceSelector } from '@/components/booking/TimePreferenceSelector';
 import { DateFirstCalendar, type CalendarViewMode } from '@/components/booking/DateFirstCalendar';
 import { TimeSlotList } from '@/components/booking/TimeSlotList';
 import type { TimeSlot } from '@/components/booking/TimeSlotPicker';
