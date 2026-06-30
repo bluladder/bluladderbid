@@ -11,6 +11,7 @@ import PlanBuilder from "./pages/PlanBuilder";
 import QuoteView from "./pages/QuoteView";
 import MyAppointments from "./pages/MyAppointments";
 import ConfirmChange from "./pages/ConfirmChange";
+import MessagePreferences from "./pages/MessagePreferences";
 import NotFound from "./pages/NotFound";
 import ChatWidget from "./components/chat/ChatWidget";
 
@@ -31,6 +32,7 @@ const App = () => (
           <Route path="/quote/:id" element={<QuoteView />} />
           <Route path="/my-appointments" element={<MyAppointments />} />
           <Route path="/confirm-change" element={<ConfirmChange />} />
+          <Route path="/preferences" element={<MessagePreferences />} />
           {/* Service-specific landing pages */}
           <Route path="/window-cleaning" element={<ServiceLanding />} />
           <Route path="/gutter-cleaning" element={<ServiceLanding />} />
