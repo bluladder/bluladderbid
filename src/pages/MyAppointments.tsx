@@ -253,6 +253,9 @@ export default function MyAppointments() {
               </div>
             )}
 
+            {/* Saved quotes for future reference */}
+            <SavedQuotesCard quotes={quotes} />
+
             {/* Contact Info for locked appointments */}
             <Card className="mt-6">
               <CardHeader>
