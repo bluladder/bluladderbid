@@ -220,6 +220,7 @@ const Index = () => {
           onDownloadPDF={handleDownloadPDF}
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={prefillCustomerInfo}
+          onBookingActiveChange={setBookingActive}
         />
       );
     }
