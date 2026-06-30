@@ -404,6 +404,73 @@ export function SmartScheduler({
   );
 }
 
+/* ------------------------- Sticky filter chips ------------------------- */
+
+const TIME_CHIPS: Array<{ value: TimePreference; label: string; icon: typeof Sun }> = [
+  { value: 'none', label: 'Any time', icon: Clock },
+  { value: 'AM', label: 'Morning', icon: Sun },
+  { value: 'PM', label: 'Afternoon', icon: Moon },
+];
+
+function SchedulerFilterChips({
+  preference,
+  onPreferenceChange,
+  services,
+  isLoading,
+}: {
+  preference: TimePreference;
+  onPreferenceChange: (p: TimePreference) => void;
+  services: ServiceForAvailability[];
+  isLoading?: boolean;
+}) {
+  const serviceNames = services.map((s) => s.service).filter(Boolean);
+  return (
+    <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border/50">
+      {/* Time of day */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
+        <span className="text-[11px] font-medium text-muted-foreground shrink-0">Time</span>
+        {TIME_CHIPS.map(({ value, label, icon: Icon }) => {
+          const active = preference === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              disabled={isLoading}
+              onClick={() => onPreferenceChange(value)}
+              className={cn(
+                'shrink-0 inline-flex items-center gap-1.5 rounded-full border px-3.5 h-9 text-xs font-medium touch-manipulation active:scale-[0.97] transition-colors disabled:opacity-50',
+                active
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background text-foreground border-border hover:bg-accent/50'
+              )}
+              aria-pressed={active}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Service type context — what these openings are for */}
+      {serviceNames.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 mt-2">
+          <span className="text-[11px] font-medium text-muted-foreground shrink-0">For</span>
+          {serviceNames.map((name) => (
+            <Badge
+              key={name}
+              variant="secondary"
+              className="shrink-0 h-7 px-2.5 text-[11px] font-medium whitespace-nowrap"
+            >
+              {name}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ----------------------------- Slot card ----------------------------- */
 
 function reasonBadge(slot: RecommendedSlot, variant: 'best' | 'next' | 'more') {
