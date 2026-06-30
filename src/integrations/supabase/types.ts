@@ -812,6 +812,45 @@ export type Database = {
         }
         Relationships: []
       }
+      message_templates: {
+        Row: {
+          active: boolean
+          body: string
+          category: string
+          channel: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          body?: string
+          category?: string
+          channel?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          body?: string
+          category?: string
+          channel?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       notification_events: {
         Row: {
           booking_id: string | null
