@@ -214,6 +214,7 @@ export function SmartScheduler({
         preference={preference}
         onPreferenceChange={handlePreference}
         services={services}
+        rankedSlots={rankedSlots}
         isLoading={isLoadingRecommendations}
       />
 
