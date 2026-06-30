@@ -137,13 +137,25 @@ serve(async (req) => {
         });
       }
       const result = await sendCallRailSms(config, body.to, body.body);
-      await supabase.from("sms_messages").update({
-        status: result.ok ? "sent" : "failed",
-        sent_at: result.ok ? new Date().toISOString() : null,
-        callrail_message_id: result.messageId ?? null,
-        error: result.error ?? null,
-        attempts: 1,
-      }).eq("id", row?.id);
+      await supabase.from("sms_messages").update(
+        result.ok
+          ? {
+              status: "sent",
+              sent_at: new Date().toISOString(),
+              callrail_message_id: result.messageId ?? null,
+              error: null,
+              attempts: 1,
+              next_retry_at: null,
+            }
+          : {
+              // Transient send failure: requeue so the cron processor retries with backoff.
+              status: "pending",
+              error: result.error ?? "send failed",
+              attempts: 1,
+              send_at: firstRetryIso(),
+              next_retry_at: firstRetryIso(),
+            },
+      ).eq("id", row?.id);
 
       return new Response(JSON.stringify({ success: result.ok, error: result.error }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -255,13 +267,25 @@ serve(async (req) => {
         const result = await sendCallRailSms(config, toNorm, immediateBody);
         transactionalSent = result.ok;
         transactionalError = result.error;
-        await supabase.from("sms_messages").update({
-          status: result.ok ? "sent" : "failed",
-          sent_at: result.ok ? new Date().toISOString() : null,
-          callrail_message_id: result.messageId ?? null,
-          error: result.error ?? null,
-          attempts: 1,
-        }).eq("id", txRow?.id);
+        await supabase.from("sms_messages").update(
+          result.ok
+            ? {
+                status: "sent",
+                sent_at: new Date().toISOString(),
+                callrail_message_id: result.messageId ?? null,
+                error: null,
+                attempts: 1,
+                next_retry_at: null,
+              }
+            : {
+                // Transient send failure: requeue for automatic retry with backoff.
+                status: "pending",
+                error: result.error ?? "send failed",
+                attempts: 1,
+                send_at: firstRetryIso(),
+                next_retry_at: firstRetryIso(),
+              },
+        ).eq("id", txRow?.id);
       }
     }
 
