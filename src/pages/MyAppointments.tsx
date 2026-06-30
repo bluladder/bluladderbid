@@ -26,6 +26,7 @@ import { format, parseISO, differenceInHours, isBefore } from 'date-fns';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { AppointmentCard } from '@/components/customer/AppointmentCard';
+import { CustomerHeader } from '@/components/CustomerHeader';
 import { RescheduleDialog } from '@/components/customer/RescheduleDialog';
 import { ModifyServicesDialog } from '@/components/customer/ModifyServicesDialog';
 import { CancelDialog } from '@/components/customer/CancelDialog';
