@@ -454,7 +454,18 @@ Deno.serve(async (req) => {
     }
     console.log(`[Webhook] ✅ HMAC verified`);
   } else if (!skipHmac && webhookSecret && !providedHmac) {
-    console.log(`[Webhook] ⚠️ HMAC header missing but secret configured - continuing anyway`);
+    // A secret is configured but the request carries no signature header.
+    // Reject it — otherwise the signature check is trivially bypassable by
+    // simply omitting the header.
+    console.log(`[Webhook] ❌ HMAC header missing while secret configured - rejecting`);
+    await supabase
+      .from("jobber_webhook_events")
+      .update({ processing_error: "Missing HMAC signature header" })
+      .eq("event_id", eventId);
+    return new Response(
+      JSON.stringify({ error: "Unauthorized - missing signature" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+    );
   } else if (skipHmac) {
     console.log(`[Webhook] ⚠️ HMAC verification skipped (JOBBER_SKIP_HMAC=true)`);
   } else {

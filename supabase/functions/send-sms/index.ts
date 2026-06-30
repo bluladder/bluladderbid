@@ -9,6 +9,8 @@ import {
   isPhoneOptedOut,
   getCustomerPause,
 } from "../_shared/sms.ts";
+import { rateLimit } from "../_shared/rateLimit.ts";
+import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -167,6 +169,18 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "eventType or (to + body) required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // The event-driven path is reachable by the public quote flow, so it cannot
+    // require auth. Internal service-role callers (booking/cancel workflows) are
+    // exempt; everyone else is throttled per-IP to prevent SMS-trigger abuse.
+    if (!isServiceRoleToken(getBearer(req))) {
+      const rl = rateLimit(req, { limit: 5, windowMs: 60_000 });
+      if (!rl.allowed) {
+        return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" },
+        });
+      }
     }
 
     // ---- Build variable context ----

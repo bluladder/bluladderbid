@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jobberGraphQL } from "../_shared/jobberClient.ts";
+import { rateLimit } from "../_shared/rateLimit.ts";
+import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -261,6 +263,20 @@ async function checkJobberConflicts(
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Booking is a public (unauthenticated) flow, but creating real Jobber jobs
+  // is expensive and notifies customers. Throttle per-IP to prevent automated
+  // fraudulent/bulk booking creation. Internal service-role calls are exempt.
+  const callerToken = getBearer(req);
+  if (!isServiceRoleToken(callerToken)) {
+    const rl = rateLimit(req, { limit: 6, windowMs: 60_000 });
+    if (!rl.allowed) {
+      return new Response(
+        JSON.stringify({ error: "Too many booking attempts. Please try again shortly." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" } },
+      );
+    }
   }
 
   try {

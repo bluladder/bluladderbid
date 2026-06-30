@@ -14,6 +14,25 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Verify the request actually came from CallRail. We require a shared secret
+  // token (configured in the CallRail webhook URL as `?token=...` or sent as the
+  // `x-webhook-token` header). Without this, anyone could forge STOP/START
+  // payloads to silently opt any phone number out of notifications.
+  const expectedToken = Deno.env.get("CALLRAIL_WEBHOOK_SECRET");
+  if (expectedToken) {
+    const url = new URL(req.url);
+    const providedToken =
+      req.headers.get("x-webhook-token") ||
+      url.searchParams.get("token") ||
+      "";
+    if (providedToken !== expectedToken) {
+      console.warn("callrail-inbound-sms: rejected request with missing/invalid token");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,

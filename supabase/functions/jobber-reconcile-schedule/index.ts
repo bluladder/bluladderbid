@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jobberGraphQL, JobberGraphQLResult } from "../_shared/jobberClient.ts";
+import { requireAdminOrService } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -64,6 +65,16 @@ function dayKey(iso: string): string {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Reconciliation (especially mode=fix) edits the busy-blocks mirror, so it is
+  // restricted to admins or internal/cron (service-role) callers.
+  const auth = await requireAdminOrService(req);
+  if (!auth.ok) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
