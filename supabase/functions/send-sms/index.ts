@@ -107,6 +107,16 @@ serve(async (req) => {
       }
 
       const toNorm = normalizePhone(body.to);
+      // Respect opt-outs even for manual admin sends.
+      if (await isPhoneOptedOut(supabase, toNorm)) {
+        await supabase.from("sms_messages").insert({
+          to_number: toNorm || body.to, body: body.body, message_kind: "manual",
+          status: "cancelled", error: "Recipient has opted out of texts",
+        });
+        return new Response(JSON.stringify({ success: false, error: "Recipient has opted out of texts" }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { data: row } = await supabase
         .from("sms_messages")
         .insert({ to_number: toNorm || body.to, body: body.body, message_kind: "manual", status: "pending" })
