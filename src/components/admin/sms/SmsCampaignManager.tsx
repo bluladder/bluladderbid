@@ -186,9 +186,10 @@ export function SmsCampaignManager() {
         <CardHeader>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <CardTitle className="flex items-center gap-2"><Megaphone className="w-5 h-5" /> Follow-up Campaigns</CardTitle>
+              <CardTitle className="flex items-center gap-2"><Megaphone className="w-5 h-5" /> Campaigns</CardTitle>
               <CardDescription>
-                Build multi-step text sequences that fire automatically after an event. Delays are counted from the trigger.
+                Build multi-step text &amp; email sequences. Lifecycle campaigns enroll customers based on their status; event
+                campaigns fire after a one-time event. Delays count from when the customer enters the campaign.
               </CardDescription>
             </div>
             <Button onClick={openNew} size="sm"><Plus className="w-4 h-4 mr-1" /> New Campaign</Button>
@@ -210,10 +211,15 @@ export function SmsCampaignManager() {
                   <CardHeader className="py-3">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{c.name}</span>
                           <Badge variant={c.active ? 'default' : 'outline'}>{c.active ? 'Active' : 'Paused'}</Badge>
-                          <Badge variant="secondary">{TRIGGER_LABELS[c.trigger_event]}</Badge>
+                          {c.campaign_kind === 'lifecycle' ? (
+                            <Badge variant="secondary" className="gap-1"><Users className="w-3 h-3" />{c.lifecycle_status ? LIFECYCLE_LABELS[c.lifecycle_status].split(' — ')[0] : 'Lifecycle'}</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="gap-1"><Zap className="w-3 h-3" />{c.trigger_event ? TRIGGER_LABELS[c.trigger_event] : 'Event'}</Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">{cSteps.length} step{cSteps.length === 1 ? '' : 's'}</span>
                         </div>
                         {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
                       </div>
@@ -230,35 +236,67 @@ export function SmsCampaignManager() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {cSteps.map((s, i) => (
-                      <div key={s.id} className="rounded-md border p-3 space-y-2 bg-muted/20">
+                      <div key={s.id} className={`rounded-md border p-3 space-y-2 ${s.active ? 'bg-muted/20' : 'bg-muted/40 opacity-70'}`}>
                         <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <Badge variant="outline">Step {i + 1}</Badge>
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                            <Label className="text-xs">Delay (hours)</Label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline">Step {i + 1}</Badge>
+                            <Select value={s.channel} onValueChange={(v) => updateStep(s.id, { channel: v as Channel })}>
+                              <SelectTrigger className="h-8 w-[110px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sms"><span className="flex items-center gap-1"><MessageSquare className="w-3 h-3" /> Text</span></SelectItem>
+                                <SelectItem value="email"><span className="flex items-center gap-1"><Mail className="w-3 h-3" /> Email</span></SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Clock className="w-3.5 h-3.5 text-muted-foreground ml-1" />
+                            <Label className="text-xs">Delay (hrs)</Label>
                             <Input
                               type="number"
                               min={0}
                               defaultValue={s.delay_hours}
-                              className="h-8 w-24"
+                              className="h-8 w-20"
                               onBlur={(e) => updateStep(s.id, { delay_hours: Number(e.target.value) })}
                             />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 mr-1">
+                              <Switch checked={s.active} onCheckedChange={(v) => updateStep(s.id, { active: v })} />
+                              <Label className="text-xs text-muted-foreground">{s.active ? 'On' : 'Paused'}</Label>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === 0} onClick={() => moveStep(c.id, i, -1)}>
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === cSteps.length - 1} onClick={() => moveStep(c.id, i, 1)}>
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </Button>
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteStep(s.id)}>
                               <Trash2 className="w-3.5 h-3.5 text-destructive" />
                             </Button>
                           </div>
                         </div>
+                        {s.channel === 'email' && (
+                          <Input
+                            defaultValue={s.subject ?? ''}
+                            placeholder="Email subject line"
+                            className="h-8 text-sm"
+                            onBlur={(e) => updateStep(s.id, { subject: e.target.value })}
+                          />
+                        )}
                         <Textarea
                           defaultValue={s.body_template}
-                          rows={2}
+                          rows={s.channel === 'email' ? 5 : 2}
                           className="text-sm"
                           onBlur={(e) => updateStep(s.id, { body_template: e.target.value })}
                         />
                       </div>
                     ))}
-                    <Button variant="outline" size="sm" onClick={() => addStep(c.id)}>
-                      <Plus className="w-4 h-4 mr-1" /> Add Step
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => addStep(c.id)}>
+                        <MessageSquare className="w-4 h-4 mr-1" /> Add Text
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => addEmailStep(c.id)}>
+                        <Mail className="w-4 h-4 mr-1" /> Add Email
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -271,7 +309,7 @@ export function SmsCampaignManager() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing?.id ? 'Edit Campaign' : 'New Campaign'}</DialogTitle>
-            <DialogDescription>Name the sequence and pick what event starts it.</DialogDescription>
+            <DialogDescription>Name the sequence and choose what enrolls customers into it.</DialogDescription>
           </DialogHeader>
           {editing && (
             <div className="space-y-4">
@@ -284,16 +322,40 @@ export function SmsCampaignManager() {
                 <Input value={editing.description ?? ''} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label>Trigger event</Label>
-                <Select value={editing.trigger_event} onValueChange={(v) => setEditing({ ...editing, trigger_event: v as TriggerEvent })}>
+                <Label>Campaign type</Label>
+                <Select value={editing.campaign_kind} onValueChange={(v) => setEditing({ ...editing, campaign_kind: v as CampaignKind })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {(Object.keys(TRIGGER_LABELS) as TriggerEvent[]).map((k) => (
-                      <SelectItem key={k} value={k}>{TRIGGER_LABELS[k]}</SelectItem>
-                    ))}
+                    <SelectItem value="lifecycle">Lifecycle status (auto-enroll by customer status)</SelectItem>
+                    <SelectItem value="event">Event (one-time trigger)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {editing.campaign_kind === 'lifecycle' ? (
+                <div className="space-y-2">
+                  <Label>Customer status</Label>
+                  <Select value={editing.lifecycle_status ?? undefined} onValueChange={(v) => setEditing({ ...editing, lifecycle_status: v as LifecycleStatus })}>
+                    <SelectTrigger><SelectValue placeholder="Choose a status" /></SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(LIFECYCLE_LABELS) as LifecycleStatus[]).map((k) => (
+                        <SelectItem key={k} value={k}>{LIFECYCLE_LABELS[k]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Trigger event</Label>
+                  <Select value={editing.trigger_event ?? undefined} onValueChange={(v) => setEditing({ ...editing, trigger_event: v as TriggerEvent })}>
+                    <SelectTrigger><SelectValue placeholder="Choose an event" /></SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(TRIGGER_LABELS) as TriggerEvent[]).map((k) => (
+                        <SelectItem key={k} value={k}>{TRIGGER_LABELS[k]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Switch checked={editing.active} onCheckedChange={(v) => setEditing({ ...editing, active: v })} />
                 <Label>Active</Label>
