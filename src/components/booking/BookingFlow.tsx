@@ -523,11 +523,11 @@ export function BookingFlow({
               </div>
             )}
             
-            <div className="flex gap-3">
+            <div className="flex flex-col-reverse sm:flex-row gap-3">
               <Button 
                 variant="ghost" 
                 onClick={() => setStep('info')} 
-                className="text-muted-foreground"
+                className="text-muted-foreground shrink-0"
                 size="sm"
               >
                 <ArrowLeft className="w-3.5 h-3.5 mr-1" />
@@ -536,7 +536,7 @@ export function BookingFlow({
               <Button 
                 onClick={handleConfirmBooking} 
                 disabled={!selectedSlot || isSubmitting || !confirmationChecked}
-                className="flex-1 h-14 text-base font-bold shadow-lg"
+                className="flex-1 min-w-0 h-14 text-sm sm:text-base font-bold shadow-lg"
                 size="lg"
               >
                 {isSubmitting ? (

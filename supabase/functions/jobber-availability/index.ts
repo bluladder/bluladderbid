@@ -897,15 +897,21 @@ Deno.serve(async (req) => {
 
     // Calculate date range
     const now = new Date();
-    const fromDate = startDate ? new Date(startDate) : now;
-    const toDate = new Date(fromDate.getTime() + effectiveDaysToCheck * 24 * 60 * 60 * 1000);
+    let fromDate = startDate ? new Date(startDate) : now;
 
-    // For dayGrid mode with specific date, narrow the range
+    // In dayGrid mode the client sends only `selectedDate` (no `startDate`).
+    // Anchor the scan window to that day; otherwise fromDate defaults to `now`
+    // and a 1-day window only ever covers today, so any future day is skipped
+    // and returns zero slots. Noon UTC keeps the calendar date stable for the
+    // America/Chicago business timezone.
     let filterToDate: Date | null = null;
     if (mode === 'dayGrid' && selectedDate) {
-      const selDate = new Date(selectedDate);
-      filterToDate = new Date(selDate.getTime() + 24 * 60 * 60 * 1000);
+      const selectedDateStr = selectedDate.split('T')[0];
+      fromDate = new Date(`${selectedDateStr}T12:00:00.000Z`);
+      filterToDate = new Date(fromDate.getTime() + 24 * 60 * 60 * 1000);
     }
+
+    const toDate = new Date(fromDate.getTime() + effectiveDaysToCheck * 24 * 60 * 60 * 1000);
 
     console.log(`[Availability] Date range: ${fromDate.toISOString()} to ${toDate.toISOString()}`);
 
