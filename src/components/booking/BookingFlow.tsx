@@ -11,6 +11,7 @@ import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
 import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
 import { ServiceReviewStep } from './ServiceReviewStep';
+import { BookingTermsAck } from './BookingTermsAck';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
 import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
