@@ -134,12 +134,17 @@ export function SmartScheduler({
     fetchRecommendations(pref);
   };
 
-  // "5 more" = ranked slots minus whatever is already shown as best/next.
+  // "5 more" = ranked slots minus whatever is already shown as best/next,
+  // then spread out so customers see meaningfully different options instead of
+  // a cluster of near-identical 15-minute increments. Rules:
+  //   • Prefer variety across DAYS (one option per day first).
+  //   • Never show two options on the same day closer than 2 hours apart.
   const moreOptions = useMemo(() => {
     const shown = new Set<string>();
     if (bestRecommended) shown.add(slotKey(bestRecommended));
     if (nextAvailable) shown.add(slotKey(nextAvailable));
-    return rankedSlots.filter((s) => !shown.has(slotKey(s))).slice(0, 5);
+    const candidates = rankedSlots.filter((s) => !shown.has(slotKey(s)));
+    return diversifySlots(candidates, 5);
   }, [rankedSlots, bestRecommended, nextAvailable]);
 
   const bestAndNextSame =
