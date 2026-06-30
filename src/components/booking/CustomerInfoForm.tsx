@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { User, Mail, Phone, MapPin, MessageSquare } from 'lucide-react';
 import { z } from 'zod';
+import { AddressAutocomplete } from './AddressAutocomplete';
 
 const US_STATE_REGEX = /^[A-Za-z]{2}$/;
 const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
@@ -81,6 +82,18 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
+  };
+
+  // Fill all structured fields when a Places suggestion is selected.
+  const handleAddressSelect = (parts: { street: string; city: string; state: string; zip: string }) => {
+    setFormData(prev => ({
+      ...prev,
+      street: parts.street || prev.street,
+      city: parts.city || prev.city,
+      state: (parts.state || prev.state).toUpperCase().slice(0, 2),
+      zip: parts.zip || prev.zip,
+    }));
+    setErrors(prev => ({ ...prev, street: '', city: '', state: '', zip: '' }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -193,17 +206,14 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
           
           <div className="space-y-1">
             <Label htmlFor="street" className="text-xs">Service Address *</Label>
-            <div className="relative">
-              <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                id="street"
-                value={formData.street}
-                onChange={(e) => handleChange('street', e.target.value)}
-                placeholder="Street address (e.g., 720 Parkland Dr)"
-                autoComplete="address-line1"
-                className={`pl-8 h-9 text-sm ${errors.street ? 'border-destructive' : ''}`}
-              />
-            </div>
+            <AddressAutocomplete
+              id="street"
+              value={formData.street}
+              onChange={(v) => handleChange('street', v)}
+              onSelect={handleAddressSelect}
+              placeholder="Start typing your address..."
+              className={`pl-8 h-9 text-sm ${errors.street ? 'border-destructive' : ''}`}
+            />
             {errors.street && (
               <p className="text-xs text-destructive">{errors.street}</p>
             )}
