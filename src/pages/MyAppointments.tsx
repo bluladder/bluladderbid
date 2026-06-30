@@ -29,7 +29,7 @@ import { AppointmentCard } from '@/components/customer/AppointmentCard';
 import { RescheduleDialog } from '@/components/customer/RescheduleDialog';
 import { ModifyServicesDialog } from '@/components/customer/ModifyServicesDialog';
 import { CancelDialog } from '@/components/customer/CancelDialog';
-import { SmsPreferenceCard } from '@/components/customer/SmsPreferenceCard';
+import { MessagePreferencesCard } from '@/components/customer/MessagePreferencesCard';
 
 interface CustomerAppointment {
   id: string;
@@ -283,8 +283,8 @@ export default function MyAppointments() {
               </CardContent>
             </Card>
 
-            {/* SMS notification preference */}
-            {email && <SmsPreferenceCard email={email} />}
+            {/* Notification preferences (texts + emails) */}
+            {email && <MessagePreferencesCard email={email} />}
           </>
         )}
       </main>
