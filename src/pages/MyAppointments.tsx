@@ -145,25 +145,15 @@ export default function MyAppointments() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="container py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-display font-bold text-primary">
-                My Appointments
-              </h1>
-              <p className="text-xs text-muted-foreground">Manage your upcoming services</p>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/">
-                <HomeIcon className="w-4 h-4 mr-2" />
-                Home
-              </Link>
-            </Button>
-          </div>
+      <CustomerHeader />
+      <div className="container pt-8">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">
+            My Appointments
+          </h1>
+          <p className="text-muted-foreground mt-1">Manage your upcoming services</p>
         </div>
-      </header>
+      </div>
 
       <main className="container py-8 max-w-2xl mx-auto">
         {/* Email Lookup Form */}
