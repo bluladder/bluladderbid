@@ -8,6 +8,7 @@ import { JobberIntegration } from './JobberIntegration';
 import { EmbedCodeManager } from './EmbedCodeManager';
 import { SmsCampaignManager } from './sms/SmsCampaignManager';
 import { SmsMessageLog } from './sms/SmsMessageLog';
+import { SmsOptOutManager } from './sms/SmsOptOutManager';
 
 export function IntegrationsTabContent() {
   const [activeSection, setActiveSection] = useState('jobber');
@@ -121,7 +122,7 @@ export function IntegrationsTabContent() {
                     <li>Transactional texts (quote ready, appointment scheduled, rescheduled, cancelled) send automatically.</li>
                     <li>Follow-up campaigns enroll customers when their trigger event fires and send on a delay.</li>
                     <li>Queued campaign messages are processed every 15 minutes.</li>
-                    <li>Opt-out (STOP) instructions are appended automatically on first contact.</li>
+                    <li>When a customer replies STOP, they're suppressed automatically and shown under Opt-Outs.</li>
                   </ul>
                 </div>
               </div>
@@ -132,12 +133,16 @@ export function IntegrationsTabContent() {
             <TabsList>
               <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
               <TabsTrigger value="log">Message Log</TabsTrigger>
+              <TabsTrigger value="optouts">Opt-Outs</TabsTrigger>
             </TabsList>
             <TabsContent value="campaigns" className="mt-4">
               <SmsCampaignManager />
             </TabsContent>
             <TabsContent value="log" className="mt-4">
               <SmsMessageLog />
+            </TabsContent>
+            <TabsContent value="optouts" className="mt-4">
+              <SmsOptOutManager />
             </TabsContent>
           </Tabs>
         </div>
