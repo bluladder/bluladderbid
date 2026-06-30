@@ -83,9 +83,20 @@ serve(async (req) => {
         .gte("scheduled_start", new Date().toISOString())
         .order("scheduled_start", { ascending: true });
 
+      // Also return saved quotes so customers can revisit them for future reference.
+      const { data: quotes } = await supabase
+        .from("quotes")
+        .select(
+          "id, status, total, services_json, home_details_json, created_at, expires_at"
+        )
+        .or(`customer_id.eq.${customer.id},customer_email.eq.${normalizedEmail}`)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
       return new Response(JSON.stringify({
         customer: { id: customer.id },
         appointments: appointments || [],
+        quotes: quotes || [],
       }), {
         status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders },
