@@ -238,6 +238,14 @@ export default function QuoteView() {
                 </ul>
               </CardContent>
             </Card>
+
+            <div className="mt-4">
+              <BookingHelpContact
+                variant="quote"
+                bidLink={typeof window !== 'undefined' ? window.location.href : undefined}
+                customerName={quote.customer_name || undefined}
+              />
+            </div>
           </div>
           
           {/* Sidebar - Payment */}
