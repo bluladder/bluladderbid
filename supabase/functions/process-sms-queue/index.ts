@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut } from "../_shared/sms.ts";
+import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut, getCustomerPause } from "../_shared/sms.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,7 +54,7 @@ serve(async (req) => {
 
   const { data: due, error } = await supabase
     .from("sms_messages")
-    .select("id, to_number, to_email, channel, subject, body, attempts")
+    .select("id, to_number, to_email, channel, subject, body, attempts, customer_id")
     .eq("status", "pending")
     .lte("send_at", nowIso)
     .order("send_at", { ascending: true })
@@ -77,6 +77,14 @@ serve(async (req) => {
           status: "failed", error: "No recipient email", attempts: (msg.attempts ?? 0) + 1,
         }).eq("id", msg.id);
         failed++;
+        continue;
+      }
+      // Skip leads whose email channel was paused after the message was queued.
+      const pauseEmail = await getCustomerPause(supabase, { id: msg.customer_id, email: msg.to_email });
+      if (pauseEmail.email_paused) {
+        await supabase.from("sms_messages").update({
+          status: "cancelled", error: "Email paused for this lead",
+        }).eq("id", msg.id);
         continue;
       }
       if (!resendKey) {
@@ -107,6 +115,14 @@ serve(async (req) => {
     if (await isPhoneOptedOut(supabase, msg.to_number as string)) {
       await supabase.from("sms_messages").update({
         status: "cancelled", error: "Recipient has opted out of texts",
+      }).eq("id", msg.id);
+      continue;
+    }
+    // Skip leads whose text channel was paused after the message was queued.
+    const pauseSms = await getCustomerPause(supabase, { id: msg.customer_id, phone: msg.to_number });
+    if (pauseSms.sms_paused) {
+      await supabase.from("sms_messages").update({
+        status: "cancelled", error: "Texting paused for this lead",
       }).eq("id", msg.id);
       continue;
     }
