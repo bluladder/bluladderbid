@@ -5,11 +5,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { RefreshCw, MessageSquare } from 'lucide-react';
+import { RefreshCw, MessageSquare, Mail } from 'lucide-react';
 
 interface SmsMessage {
   id: string;
   to_number: string;
+  to_email: string | null;
+  channel: 'sms' | 'email' | null;
+  subject: string | null;
   body: string;
   status: 'pending' | 'sent' | 'failed' | 'cancelled' | 'inbound';
   message_kind: string | null;
@@ -36,7 +39,7 @@ export function SmsMessageLog() {
     setLoading(true);
     let query = supabase
       .from('sms_messages')
-      .select('id,to_number,body,status,message_kind,send_at,sent_at,error,created_at')
+      .select('id,to_number,to_email,channel,subject,body,status,message_kind,send_at,sent_at,error,created_at')
       .order('created_at', { ascending: false })
       .limit(100);
     if (statusFilter !== 'all') query = query.eq('status', statusFilter as SmsMessage['status']);
@@ -60,7 +63,7 @@ export function SmsMessageLog() {
             <CardTitle className="flex items-center gap-2">
               <MessageSquare className="w-5 h-5" /> Text Message Log
             </CardTitle>
-            <CardDescription>Every text sent or queued through CallRail.</CardDescription>
+            <CardDescription>Every text and email sent or queued by your campaigns.</CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -89,6 +92,7 @@ export function SmsMessageLog() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Status</TableHead>
+                  <TableHead>Channel</TableHead>
                   <TableHead>To</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead className="min-w-[260px]">Message</TableHead>
@@ -103,9 +107,19 @@ export function SmsMessageLog() {
                       <Badge variant={STATUS_VARIANT[m.status] ?? 'outline'}>{m.status}</Badge>
                       {m.error && <p className="text-xs text-destructive mt-1 max-w-[160px] truncate" title={m.error}>{m.error}</p>}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-xs">{m.to_number}</TableCell>
+                    <TableCell>
+                      {m.channel === 'email' ? (
+                        <span className="flex items-center gap-1 text-xs"><Mail className="w-3.5 h-3.5" /> Email</span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs"><MessageSquare className="w-3.5 h-3.5" /> Text</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-xs">{m.channel === 'email' ? m.to_email : m.to_number}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{m.message_kind ?? '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[360px]">{m.body}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[360px]">
+                      {m.channel === 'email' && m.subject && <div className="font-medium text-foreground text-xs mb-0.5">{m.subject}</div>}
+                      <div className="line-clamp-2">{m.body}</div>
+                    </TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{fmt(m.send_at)}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{fmt(m.sent_at)}</TableCell>
                   </TableRow>

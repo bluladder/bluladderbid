@@ -9,6 +9,7 @@ import { EmbedCodeManager } from './EmbedCodeManager';
 import { SmsCampaignManager } from './sms/SmsCampaignManager';
 import { SmsMessageLog } from './sms/SmsMessageLog';
 import { SmsOptOutManager } from './sms/SmsOptOutManager';
+import { LeadStatusBoard } from './sms/LeadStatusBoard';
 
 export function IntegrationsTabContent() {
   const [activeSection, setActiveSection] = useState('jobber');
@@ -41,7 +42,7 @@ export function IntegrationsTabContent() {
               onClick={() => setActiveSection('sms')}
             >
               <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-              Text Messaging
+              Campaigns &amp; Messaging
             </Badge>
           </div>
         </CardContent>
@@ -116,13 +117,14 @@ export function IntegrationsTabContent() {
                 </div>
                 <div className="space-y-1">
                   <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                    CallRail texting is connected
+                    Campaigns &amp; messaging are connected
                   </h4>
                   <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1 list-disc list-inside">
-                    <li>Transactional texts (quote ready, appointment scheduled, rescheduled, cancelled) send automatically.</li>
-                    <li>Follow-up campaigns enroll customers when their trigger event fires and send on a delay.</li>
-                    <li>Queued campaign messages are processed every 15 minutes.</li>
-                    <li>When a customer replies STOP, they're suppressed automatically and shown under Opt-Outs.</li>
+                    <li>Lifecycle campaigns auto-enroll customers based on their status (Open, Pending, Approved, Booked, Declined).</li>
+                    <li>Each campaign can mix texts and emails; add, reorder, pause, or remove individual messages.</li>
+                    <li>Status switches automatically when bids/bookings change — or move a customer manually on the Lead Board.</li>
+                    <li>Queued messages are processed every 15 minutes. Texts send via CallRail, emails via your email sender.</li>
+                    <li>When a customer replies STOP, they're suppressed from texts automatically and shown under Opt-Outs.</li>
                   </ul>
                 </div>
               </div>
@@ -132,11 +134,15 @@ export function IntegrationsTabContent() {
           <Tabs defaultValue="campaigns">
             <TabsList>
               <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
+              <TabsTrigger value="leads">Lead Board</TabsTrigger>
               <TabsTrigger value="log">Message Log</TabsTrigger>
               <TabsTrigger value="optouts">Opt-Outs</TabsTrigger>
             </TabsList>
             <TabsContent value="campaigns" className="mt-4">
               <SmsCampaignManager />
+            </TabsContent>
+            <TabsContent value="leads" className="mt-4">
+              <LeadStatusBoard />
             </TabsContent>
             <TabsContent value="log" className="mt-4">
               <SmsMessageLog />

@@ -7,6 +7,36 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const FROM_EMAIL = "BluLadder <noreply@bluladder.com>";
+
+/** Send an email through Resend. Returns a SendResult-like object. */
+async function sendEmail(
+  apiKey: string,
+  to: string,
+  subject: string,
+  text: string,
+): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  try {
+    const safeHtml = text
+      .split("\n")
+      .map((line) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
+      .join("<br />");
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1f2937;">${safeHtml}</div>`;
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject: subject || "BluLadder", html }),
+    });
+    const body = await res.text();
+    if (!res.ok) return { ok: false, error: `Resend ${res.status}: ${body}` };
+    let messageId: string | undefined;
+    try { messageId = JSON.parse(body)?.id; } catch { /* ignore */ }
+    return { ok: true, messageId };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // Processes due, pending SMS (campaign follow-ups + any retries). Invoked by cron.
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -19,11 +49,12 @@ serve(async (req) => {
   );
 
   const config = getCallRailConfig();
+  const resendKey = Deno.env.get("RESEND_API_KEY");
   const nowIso = new Date().toISOString();
 
   const { data: due, error } = await supabase
     .from("sms_messages")
-    .select("id, to_number, body, attempts")
+    .select("id, to_number, to_email, channel, subject, body, attempts")
     .eq("status", "pending")
     .lte("send_at", nowIso)
     .order("send_at", { ascending: true })
@@ -39,6 +70,39 @@ serve(async (req) => {
   let failed = 0;
 
   for (const msg of due || []) {
+    // ---- Email channel ----
+    if (msg.channel === "email") {
+      if (!msg.to_email) {
+        await supabase.from("sms_messages").update({
+          status: "failed", error: "No recipient email", attempts: (msg.attempts ?? 0) + 1,
+        }).eq("id", msg.id);
+        failed++;
+        continue;
+      }
+      if (!resendKey) {
+        await supabase.from("sms_messages").update({
+          status: "failed", error: "Email sending not configured", attempts: (msg.attempts ?? 0) + 1,
+        }).eq("id", msg.id);
+        failed++;
+        continue;
+      }
+      const er = await sendEmail(resendKey, msg.to_email as string, msg.subject as string, msg.body as string);
+      if (er.ok) {
+        await supabase.from("sms_messages").update({
+          status: "sent", sent_at: new Date().toISOString(),
+          callrail_message_id: er.messageId ?? null, attempts: (msg.attempts ?? 0) + 1, error: null,
+        }).eq("id", msg.id);
+        sent++;
+      } else {
+        const attempts = (msg.attempts ?? 0) + 1;
+        await supabase.from("sms_messages").update({
+          status: attempts >= 3 ? "failed" : "pending", error: er.error ?? "send failed", attempts,
+        }).eq("id", msg.id);
+        failed++;
+      }
+      continue;
+    }
+
     // Skip recipients who have opted out since the message was queued.
     if (await isPhoneOptedOut(supabase, msg.to_number as string)) {
       await supabase.from("sms_messages").update({

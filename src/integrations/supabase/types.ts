@@ -335,6 +335,60 @@ export type Database = {
           },
         ]
       }
+      campaign_enrollments: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          customer_id: string
+          enrolled_at: string
+          id: string
+          lifecycle_status:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          customer_id: string
+          enrolled_at?: string
+          id?: string
+          lifecycle_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          customer_id?: string
+          enrolled_at?: string
+          id?: string
+          lifecycle_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_enrollments_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "sms_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_enrollments_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           address: string | null
@@ -345,6 +399,11 @@ export type Database = {
           id: string
           jobber_client_id: string | null
           last_name: string | null
+          lifecycle_changed_at: string | null
+          lifecycle_source: string | null
+          lifecycle_status:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
           phone: string | null
           updated_at: string
         }
@@ -357,6 +416,11 @@ export type Database = {
           id?: string
           jobber_client_id?: string | null
           last_name?: string | null
+          lifecycle_changed_at?: string | null
+          lifecycle_source?: string | null
+          lifecycle_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
           phone?: string | null
           updated_at?: string
         }
@@ -369,6 +433,11 @@ export type Database = {
           id?: string
           jobber_client_id?: string | null
           last_name?: string | null
+          lifecycle_changed_at?: string | null
+          lifecycle_source?: string | null
+          lifecycle_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
           phone?: string | null
           updated_at?: string
         }
@@ -1115,30 +1184,36 @@ export type Database = {
           active: boolean
           body_template: string
           campaign_id: string
+          channel: string
           created_at: string
           delay_hours: number
           id: string
           step_order: number
+          subject: string | null
           updated_at: string
         }
         Insert: {
           active?: boolean
           body_template: string
           campaign_id: string
+          channel?: string
           created_at?: string
           delay_hours?: number
           id?: string
           step_order?: number
+          subject?: string | null
           updated_at?: string
         }
         Update: {
           active?: boolean
           body_template?: string
           campaign_id?: string
+          channel?: string
           created_at?: string
           delay_hours?: number
           id?: string
           step_order?: number
+          subject?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1154,29 +1229,45 @@ export type Database = {
       sms_campaigns: {
         Row: {
           active: boolean
+          campaign_kind: string
           created_at: string
           description: string | null
           id: string
+          lifecycle_status:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
           name: string
-          trigger_event: Database["public"]["Enums"]["sms_trigger_event"]
+          trigger_event: Database["public"]["Enums"]["sms_trigger_event"] | null
           updated_at: string
         }
         Insert: {
           active?: boolean
+          campaign_kind?: string
           created_at?: string
           description?: string | null
           id?: string
+          lifecycle_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
           name: string
-          trigger_event: Database["public"]["Enums"]["sms_trigger_event"]
+          trigger_event?:
+            | Database["public"]["Enums"]["sms_trigger_event"]
+            | null
           updated_at?: string
         }
         Update: {
           active?: boolean
+          campaign_kind?: string
           created_at?: string
           description?: string | null
           id?: string
+          lifecycle_status?:
+            | Database["public"]["Enums"]["lead_lifecycle_status"]
+            | null
           name?: string
-          trigger_event?: Database["public"]["Enums"]["sms_trigger_event"]
+          trigger_event?:
+            | Database["public"]["Enums"]["sms_trigger_event"]
+            | null
           updated_at?: string
         }
         Relationships: []
@@ -1189,7 +1280,10 @@ export type Database = {
           callrail_message_id: string | null
           campaign_id: string | null
           campaign_step_id: string | null
+          channel: string
           created_at: string
+          customer_id: string | null
+          enrollment_id: string | null
           error: string | null
           id: string
           message_kind: string
@@ -1197,7 +1291,9 @@ export type Database = {
           send_at: string
           sent_at: string | null
           status: Database["public"]["Enums"]["sms_status"]
-          to_number: string
+          subject: string | null
+          to_email: string | null
+          to_number: string | null
           updated_at: string
         }
         Insert: {
@@ -1207,7 +1303,10 @@ export type Database = {
           callrail_message_id?: string | null
           campaign_id?: string | null
           campaign_step_id?: string | null
+          channel?: string
           created_at?: string
+          customer_id?: string | null
+          enrollment_id?: string | null
           error?: string | null
           id?: string
           message_kind?: string
@@ -1215,7 +1314,9 @@ export type Database = {
           send_at?: string
           sent_at?: string | null
           status?: Database["public"]["Enums"]["sms_status"]
-          to_number: string
+          subject?: string | null
+          to_email?: string | null
+          to_number?: string | null
           updated_at?: string
         }
         Update: {
@@ -1225,7 +1326,10 @@ export type Database = {
           callrail_message_id?: string | null
           campaign_id?: string | null
           campaign_step_id?: string | null
+          channel?: string
           created_at?: string
+          customer_id?: string | null
+          enrollment_id?: string | null
           error?: string | null
           id?: string
           message_kind?: string
@@ -1233,7 +1337,9 @@ export type Database = {
           send_at?: string
           sent_at?: string | null
           status?: Database["public"]["Enums"]["sms_status"]
-          to_number?: string
+          subject?: string | null
+          to_email?: string | null
+          to_number?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1494,9 +1600,28 @@ export type Database = {
         Args: { p_holder_id: string; p_lock_ttl_minutes?: number }
         Returns: boolean
       }
+      admin_set_lifecycle: {
+        Args: {
+          p_customer_id: string
+          p_status: Database["public"]["Enums"]["lead_lifecycle_status"]
+        }
+        Returns: undefined
+      }
+      apply_lifecycle_status: {
+        Args: {
+          p_customer_id: string
+          p_source?: string
+          p_status: Database["public"]["Enums"]["lead_lifecycle_status"]
+        }
+        Returns: undefined
+      }
       can_edit_crew_rules: { Args: never; Returns: boolean }
       can_manage_schedule_blocks: { Args: never; Returns: boolean }
       can_override_bookings: { Args: never; Returns: boolean }
+      compute_customer_lifecycle: {
+        Args: { p_customer_id: string }
+        Returns: Database["public"]["Enums"]["lead_lifecycle_status"]
+      }
       generate_booking_reference: { Args: never; Returns: string }
       has_admin_level: {
         Args: { _min_level: string; _user_id: string }
@@ -1511,10 +1636,16 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_read_only_admin: { Args: never; Returns: boolean }
+      quote_has_real_services: { Args: { p: Json }; Returns: boolean }
       release_autosync_lock: {
         Args: { p_error?: string; p_holder_id: string; p_status?: string }
         Returns: boolean
       }
+      render_msg_template: {
+        Args: { tmpl: string; vars: Json }
+        Returns: string
+      }
+      services_label: { Args: { p: Json }; Returns: string }
       update_autosync_coverage: { Args: never; Returns: undefined }
     }
     Enums: {
@@ -1532,6 +1663,12 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "pending_confirmation"
+      lead_lifecycle_status:
+        | "open"
+        | "pending"
+        | "approved"
+        | "booked"
+        | "declined"
       quote_status: "pending" | "viewed" | "converted" | "expired" | "declined"
       service_type:
         | "windows_exterior"
@@ -1691,6 +1828,13 @@ export const Constants = {
         "completed",
         "cancelled",
         "pending_confirmation",
+      ],
+      lead_lifecycle_status: [
+        "open",
+        "pending",
+        "approved",
+        "booked",
+        "declined",
       ],
       quote_status: ["pending", "viewed", "converted", "expired", "declined"],
       service_type: [
