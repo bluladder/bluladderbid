@@ -290,7 +290,7 @@ serve(async (req) => {
               send_at: sendAt,
             });
           } else {
-            if (!toNorm) continue;
+            if (!toNorm || smsSuppressed) continue;
             rows.push({
               to_number: toNorm,
               channel: "sms",
