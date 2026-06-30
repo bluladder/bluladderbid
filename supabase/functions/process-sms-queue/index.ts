@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { getCallRailConfig, sendCallRailSms } from "../_shared/sms.ts";
+import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut } from "../_shared/sms.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,6 +39,13 @@ serve(async (req) => {
   let failed = 0;
 
   for (const msg of due || []) {
+    // Skip recipients who have opted out since the message was queued.
+    if (await isPhoneOptedOut(supabase, msg.to_number as string)) {
+      await supabase.from("sms_messages").update({
+        status: "cancelled", error: "Recipient has opted out of texts",
+      }).eq("id", msg.id);
+      continue;
+    }
     if (!config) {
       await supabase.from("sms_messages").update({
         status: "failed", error: "CallRail not configured", attempts: (msg.attempts ?? 0) + 1,
