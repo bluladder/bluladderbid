@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, Trash2, Pencil, Clock, Megaphone, Mail, MessageSquare, ArrowUp, ArrowDown, Users, Zap } from 'lucide-react';
 import { toast } from 'sonner';
+import { VariableMenu } from './VariableMenu';
+import { TEMPLATE_VARS } from './messageTemplateVars';
 
 type TriggerEvent =
   | 'quote_created'
@@ -23,6 +25,16 @@ type TriggerEvent =
 type LifecycleStatus = 'open' | 'pending' | 'approved' | 'booked' | 'declined';
 type CampaignKind = 'lifecycle' | 'event';
 type Channel = 'sms' | 'email';
+
+interface Template {
+  id: string;
+  name: string;
+  channel: 'sms' | 'email' | 'both';
+  category: string;
+  subject: string | null;
+  body: string;
+  active: boolean;
+}
 
 const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   quote_created: 'Quote / bid created',
@@ -41,7 +53,7 @@ const LIFECYCLE_LABELS: Record<LifecycleStatus, string> = {
   declined: 'Declined / Lost',
 };
 
-const TEMPLATE_VARS = ['{{first_name}}', '{{name}}', '{{service}}', '{{date}}', '{{time}}', '{{link}}', '{{total}}'];
+const VAR_TOKENS = TEMPLATE_VARS.map((v) => v.token);
 
 interface Campaign {
   id: string;
@@ -62,6 +74,122 @@ interface Step {
   subject: string | null;
   body_template: string;
   active: boolean;
+}
+
+function StepEditor({
+  step, index, total, templates, onUpdate, onDelete, onMove,
+}: {
+  step: Step;
+  index: number;
+  total: number;
+  templates: Template[];
+  onUpdate: (id: string, patch: Partial<Step>) => void;
+  onDelete: (id: string) => void;
+  onMove: (index: number, dir: -1 | 1) => void;
+}) {
+  const [subject, setSubject] = useState(step.subject ?? '');
+  const [body, setBody] = useState(step.body_template);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { setSubject(step.subject ?? ''); }, [step.subject]);
+  useEffect(() => { setBody(step.body_template); }, [step.body_template]);
+
+  const insertVar = (token: string) => {
+    const el = bodyRef.current;
+    const start = el?.selectionStart ?? body.length;
+    const end = el?.selectionEnd ?? body.length;
+    const next = body.slice(0, start) + token + body.slice(end);
+    setBody(next);
+    onUpdate(step.id, { body_template: next });
+    requestAnimationFrame(() => { el?.focus(); const p = start + token.length; el?.setSelectionRange(p, p); });
+  };
+
+  const applyTemplate = (tplId: string) => {
+    const tpl = templates.find((t) => t.id === tplId);
+    if (!tpl) return;
+    const patch: Partial<Step> = { body_template: tpl.body };
+    setBody(tpl.body);
+    if (step.channel === 'email' && tpl.subject) { setSubject(tpl.subject); patch.subject = tpl.subject; }
+    onUpdate(step.id, patch);
+    toast.success(`Applied "${tpl.name}"`);
+  };
+
+  const matchingTemplates = templates.filter(
+    (t) => t.active && (t.channel === 'both' || t.channel === step.channel)
+  );
+
+  return (
+    <div className={`rounded-md border p-3 space-y-2 ${step.active ? 'bg-muted/20' : 'bg-muted/40 opacity-70'}`}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline">Step {index + 1}</Badge>
+          <Select value={step.channel} onValueChange={(v) => onUpdate(step.id, { channel: v as Channel })}>
+            <SelectTrigger className="h-8 w-[110px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sms"><span className="flex items-center gap-1"><MessageSquare className="w-3 h-3" /> Text</span></SelectItem>
+              <SelectItem value="email"><span className="flex items-center gap-1"><Mail className="w-3 h-3" /> Email</span></SelectItem>
+            </SelectContent>
+          </Select>
+          <Clock className="w-3.5 h-3.5 text-muted-foreground ml-1" />
+          <Label className="text-xs">Delay (hrs)</Label>
+          <Input
+            type="number"
+            min={0}
+            defaultValue={step.delay_hours}
+            className="h-8 w-20"
+            onBlur={(e) => onUpdate(step.id, { delay_hours: Number(e.target.value) })}
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 mr-1">
+            <Switch checked={step.active} onCheckedChange={(v) => onUpdate(step.id, { active: v })} />
+            <Label className="text-xs text-muted-foreground">{step.active ? 'On' : 'Paused'}</Label>
+          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8" disabled={index === 0} onClick={() => onMove(index, -1)}>
+            <ArrowUp className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" disabled={index === total - 1} onClick={() => onMove(index, 1)}>
+            <ArrowDown className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onDelete(step.id)}>
+            <Trash2 className="w-3.5 h-3.5 text-destructive" />
+          </Button>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <VariableMenu onInsert={insertVar} />
+        {matchingTemplates.length > 0 && (
+          <Select value="" onValueChange={applyTemplate}>
+            <SelectTrigger className="h-8 w-[180px]">
+              <SelectValue placeholder="Apply template…" />
+            </SelectTrigger>
+            <SelectContent>
+              {matchingTemplates.map((t) => (
+                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+      {step.channel === 'email' && (
+        <Input
+          value={subject}
+          placeholder="Email subject line"
+          className="h-8 text-sm"
+          onChange={(e) => setSubject(e.target.value)}
+          onBlur={(e) => onUpdate(step.id, { subject: e.target.value })}
+        />
+      )}
+      <Textarea
+        ref={bodyRef}
+        value={body}
+        rows={step.channel === 'email' ? 5 : 2}
+        className="text-sm"
+        onChange={(e) => setBody(e.target.value)}
+        onBlur={(e) => onUpdate(step.id, { body_template: e.target.value })}
+      />
+    </div>
+  );
 }
 
 export function SmsCampaignManager() {
