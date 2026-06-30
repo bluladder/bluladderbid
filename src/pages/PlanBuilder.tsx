@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CustomerHeader } from '@/components/CustomerHeader';
+import { CustomerFooter } from '@/components/CustomerFooter';
 import { PlanBuilderHeader } from '@/components/plan-builder/PlanBuilderHeader';
 import { PlanTierCards } from '@/components/plan-builder/PlanTierCards';
 import { PlanCustomizationPanel } from '@/components/plan-builder/PlanCustomizationPanel';
@@ -21,6 +24,8 @@ export default function PlanBuilder() {
   const [currentStep, setCurrentStep] = useState<BuilderStep>('select');
   const [showHomeDetailsForm, setShowHomeDetailsForm] = useState(true);
   const [showCompareSheet, setShowCompareSheet] = useState(false);
+  const [searchParams] = useSearchParams();
+  const isEmbedMode = searchParams.get('embed') === 'true';
   
   const { loadSession, saveSession, isInitialized, setIsInitialized } = usePlanBuilderSession();
   
@@ -154,6 +159,7 @@ export default function PlanBuilder() {
   if (savedQuoteId) {
     return (
       <div className="min-h-screen bg-background">
+        <CustomerHeader embed={isEmbedMode} />
         <div className="max-w-2xl mx-auto px-4 py-8 md:py-16">
           <PlanBuilderHeader />
           <QuoteSavedSuccess 
@@ -161,6 +167,7 @@ export default function PlanBuilder() {
             onCreateNew={resetQuote} 
           />
         </div>
+        <CustomerFooter embed={isEmbedMode} />
       </div>
     );
   }
@@ -175,6 +182,7 @@ export default function PlanBuilder() {
   
   return (
     <div className="min-h-screen bg-background">
+      <CustomerHeader embed={isEmbedMode} />
       <div className="max-w-6xl mx-auto px-4 py-6 md:py-10">
         <PlanBuilderHeader />
         
@@ -309,6 +317,7 @@ export default function PlanBuilder() {
         tierPrices={tierPrices}
         hasHomeDetails={homeDetails.squareFootage > 0}
       />
+      <CustomerFooter embed={isEmbedMode} />
     </div>
   );
 }
