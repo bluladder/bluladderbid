@@ -167,7 +167,7 @@ export interface ChannelPause {
 // deno-lint-ignore no-explicit-any
 export async function getCustomerPause(
   supabase: any,
-  by: { id?: string | null; email?: string | null },
+  by: { id?: string | null; email?: string | null; phone?: string | null },
 ): Promise<ChannelPause> {
   const fallback: ChannelPause = { sms_paused: false, email_paused: false };
   try {
@@ -176,6 +176,10 @@ export async function getCustomerPause(
       q = supabase.from("customers").select("sms_paused,email_paused").eq("id", by.id);
     } else if (by.email) {
       q = supabase.from("customers").select("sms_paused,email_paused").eq("email", String(by.email).toLowerCase().trim());
+    } else if (by.phone) {
+      const np = normalizePhone(by.phone);
+      if (!np) return fallback;
+      q = supabase.from("customers").select("sms_paused,email_paused").eq("phone", np);
     } else {
       return fallback;
     }
