@@ -340,16 +340,20 @@ const Index = () => {
               
 
               {/* When the full booking flow is open, give it a prominent, centered,
-                  wide layout instead of squeezing it into the sidebar column. */}
-              {bookingActive ? (
-                <div className="max-w-2xl mx-auto w-full">
-                  {renderRightColumn()}
-                </div>
-              ) : (
-              /* Intent-First Flow: Services + Upsell */
-              <div className="grid gap-8 lg:grid-cols-3">
-                {/* Left Column - Service Selection */}
-                <div className="lg:col-span-2 space-y-6">
+                  wide layout instead of squeezing it into the sidebar column.
+                  The booking content is rendered ONCE in a stably-keyed wrapper so
+                  that toggling the layout never remounts it (which would reset the
+                  in-progress booking flow state). */}
+              <div
+                className={
+                  bookingActive
+                    ? 'flex justify-center'
+                    : 'grid gap-8 lg:grid-cols-3'
+                }
+              >
+                {/* Left Column - Service Selection (hidden once booking is active) */}
+                {!bookingActive && (
+                <div key="services-column" className="lg:col-span-2 space-y-6">
                   {/* Back button when in booking/plan flows */}
                   {flowState !== 'selecting' && (
                     <button
@@ -398,13 +402,22 @@ const Index = () => {
                     />
                   )}
                 </div>
-                
-                {/* Right Column - Summary (sticky on desktop) */}
-                <div className="lg:sticky lg:top-24 lg:self-start">
+                )}
+
+                {/* Booking / summary content — rendered once, keyed so it persists
+                    across the layout switch. Centered & full-width when booking is
+                    active (consistent on mobile and desktop); sticky sidebar otherwise. */}
+                <div
+                  key="booking-content"
+                  className={
+                    bookingActive
+                      ? 'w-full max-w-2xl mx-auto'
+                      : 'lg:sticky lg:top-24 lg:self-start'
+                  }
+                >
                   {renderRightColumn()}
                 </div>
               </div>
-              )}
             </>
           )}
         </div>
