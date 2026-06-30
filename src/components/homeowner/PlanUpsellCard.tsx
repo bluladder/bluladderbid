@@ -16,6 +16,8 @@ interface PlanUpsellCardProps {
   onSelectTier: (tier: 'good' | 'better' | 'best') => void;
   onBookOneTime: () => void;
   onUpgradeAndBook: () => void;
+  /** Used to show whether the displayed price is a starting estimate. */
+  homeSquareFootage?: number;
 }
 
 function formatPrice(price: number) {
@@ -36,9 +38,13 @@ export function PlanUpsellCard({
   onSelectTier,
   onBookOneTime,
   onUpgradeAndBook,
+  homeSquareFootage,
 }: PlanUpsellCardProps) {
   const [showAllPlans, setShowAllPlans] = useState(false);
   const hasServices = oneTimeTotal > 0;
+  // When square footage hasn't been entered yet, the price is just a starting
+  // minimum, so we label it clearly to avoid it reading as a final quote.
+  const isEstimate = !homeSquareFootage || homeSquareFootage <= 0;
   
   // Default to "better" tier as recommended
   const recommendedBundle = bundles.find(b => b.tier === 'better') || bundles[1];
@@ -90,17 +96,27 @@ export function PlanUpsellCard({
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-accent" />
-            <CardTitle className="text-lg">One-Time Service Price</CardTitle>
+            <CardTitle className="text-lg">
+              {isEstimate ? 'Estimated One-Time Price' : 'One-Time Service Price'}
+            </CardTitle>
           </div>
         </CardHeader>
         <CardContent className="pt-0 pb-6">
           <div className="text-center mb-4">
+            {isEstimate && (
+              <span className="text-sm font-medium text-muted-foreground">Starting at</span>
+            )}
             <div className="text-4xl font-bold price-display text-foreground">
               {formatPrice(oneTimeTotal)}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               {enabledServices} service{enabledServices !== 1 ? 's' : ''} • Single visit
             </p>
+            {isEstimate && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Enter your home's square footage above for exact pricing.
+              </p>
+            )}
           </div>
           
           {/* Service breakdown */}
