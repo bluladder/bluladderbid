@@ -225,6 +225,18 @@ export function CustomerInfoForm({ onSubmit, initialData, isSubmitting, submitBu
             )}
           </div>
 
+          <div className="space-y-1">
+            <Label htmlFor="unit" className="text-xs text-muted-foreground">Unit / Suite (Optional)</Label>
+            <Input
+              id="unit"
+              value={formData.unit}
+              onChange={(e) => handleChange('unit', e.target.value)}
+              placeholder="Apt 4B, Suite 200..."
+              autoComplete="address-line2"
+              className="h-9 text-sm"
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="city" className="text-xs">City *</Label>
