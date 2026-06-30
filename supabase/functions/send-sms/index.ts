@@ -6,6 +6,7 @@ import {
   renderTemplate,
   formatApptDate,
   normalizePhone,
+  isPhoneOptedOut,
 } from "../_shared/sms.ts";
 
 const corsHeaders = {
@@ -106,6 +107,16 @@ serve(async (req) => {
       }
 
       const toNorm = normalizePhone(body.to);
+      // Respect opt-outs even for manual admin sends.
+      if (await isPhoneOptedOut(supabase, toNorm)) {
+        await supabase.from("sms_messages").insert({
+          to_number: toNorm || body.to, body: body.body, message_kind: "manual",
+          status: "cancelled", error: "Recipient has opted out of texts",
+        });
+        return new Response(JSON.stringify({ success: false, error: "Recipient has opted out of texts" }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { data: row } = await supabase
         .from("sms_messages")
         .insert({ to_number: toNorm || body.to, body: body.body, message_kind: "manual", status: "pending" })
@@ -184,6 +195,25 @@ serve(async (req) => {
     vars.full_name = `${firstName} ${lastName}`.trim();
 
     const toNorm = normalizePhone(phone);
+
+    // Suppress everything if this recipient has opted out.
+    const optedOut = await isPhoneOptedOut(supabase, toNorm);
+    if (optedOut) {
+      await supabase.from("sms_messages").insert({
+        to_number: toNorm || phone || "unknown",
+        body: renderTemplate(DEFAULT_TEMPLATES[eventType], vars),
+        message_kind: "transactional",
+        status: "cancelled",
+        error: "Recipient has opted out of texts",
+        booking_id: bookingId ?? null,
+        quote_id: quoteId ?? null,
+      });
+      return new Response(JSON.stringify({
+        success: true, transactionalSent: false,
+        transactionalError: "Recipient has opted out of texts",
+        scheduledFollowUps: 0,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // ---- 1) Immediate transactional message ----
     const immediateBody = renderTemplate(DEFAULT_TEMPLATES[eventType], vars);

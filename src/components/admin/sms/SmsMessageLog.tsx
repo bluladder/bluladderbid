@@ -11,7 +11,7 @@ interface SmsMessage {
   id: string;
   to_number: string;
   body: string;
-  status: 'pending' | 'sent' | 'failed' | 'cancelled';
+  status: 'pending' | 'sent' | 'failed' | 'cancelled' | 'inbound';
   message_kind: string | null;
   send_at: string | null;
   sent_at: string | null;
@@ -24,6 +24,7 @@ const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | '
   pending: 'secondary',
   failed: 'destructive',
   cancelled: 'outline',
+  inbound: 'secondary',
 };
 
 export function SmsMessageLog() {
@@ -70,6 +71,7 @@ export function SmsMessageLog() {
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
+                <SelectItem value="inbound">Inbound</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>

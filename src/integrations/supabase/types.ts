@@ -1267,6 +1267,45 @@ export type Database = {
           },
         ]
       }
+      sms_opt_outs: {
+        Row: {
+          created_at: string
+          id: string
+          last_inbound_body: string | null
+          opted_in_at: string | null
+          opted_out: boolean
+          opted_out_at: string | null
+          phone: string
+          reason: string | null
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_inbound_body?: string | null
+          opted_in_at?: string | null
+          opted_out?: boolean
+          opted_out_at?: string | null
+          phone: string
+          reason?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_inbound_body?: string | null
+          opted_in_at?: string | null
+          opted_out?: boolean
+          opted_out_at?: string | null
+          phone?: string
+          reason?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       technician_service_rates: {
         Row: {
           buffer_minutes: number
@@ -1502,7 +1541,7 @@ export type Database = {
         | "roof_wash"
         | "driveway"
         | "pressure_wash_addon"
-      sms_status: "pending" | "sent" | "failed" | "cancelled"
+      sms_status: "pending" | "sent" | "failed" | "cancelled" | "inbound"
       sms_trigger_event:
         | "quote_created"
         | "appointment_scheduled"
@@ -1663,7 +1702,7 @@ export const Constants = {
         "driveway",
         "pressure_wash_addon",
       ],
-      sms_status: ["pending", "sent", "failed", "cancelled"],
+      sms_status: ["pending", "sent", "failed", "cancelled", "inbound"],
       sms_trigger_event: [
         "quote_created",
         "appointment_scheduled",
