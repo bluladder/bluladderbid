@@ -6,6 +6,7 @@ import {
   renderTemplate,
   formatApptDate,
   normalizePhone,
+  isPhoneOptedOut,
 } from "../_shared/sms.ts";
 
 const corsHeaders = {
