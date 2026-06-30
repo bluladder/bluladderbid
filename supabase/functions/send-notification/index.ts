@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { requireAdminOrService } from "../_shared/auth.ts";
 
 // Use fetch-based Resend API call instead of npm package
 async function sendEmail(apiKey: string, options: { from: string; to: string[]; subject: string; html: string }) {
@@ -201,6 +202,15 @@ serve(async (req) => {
   }
 
   try {
+    // Sending real customer emails and flipping booking status is an
+    // admin-only / internal action. Reject unauthenticated callers.
+    const auth = await requireAdminOrService(req);
+    if (!auth.ok) {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     if (!resendApiKey) {
       console.warn("RESEND_API_KEY not configured - notifications will be logged only");
