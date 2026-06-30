@@ -30,6 +30,7 @@ import { RescheduleDialog } from '@/components/customer/RescheduleDialog';
 import { ModifyServicesDialog } from '@/components/customer/ModifyServicesDialog';
 import { CancelDialog } from '@/components/customer/CancelDialog';
 import { MessagePreferencesCard } from '@/components/customer/MessagePreferencesCard';
+import { SavedQuotesCard, type SavedQuote } from '@/components/customer/SavedQuotesCard';
 
 interface CustomerAppointment {
   id: string;
@@ -54,6 +55,7 @@ export default function MyAppointments() {
   const [email, setEmail] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [appointments, setAppointments] = useState<CustomerAppointment[]>([]);
+  const [quotes, setQuotes] = useState<SavedQuote[]>([]);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [hasLookedUp, setHasLookedUp] = useState(false);
   
@@ -89,6 +91,7 @@ export default function MyAppointments() {
       if (!responseData?.customer) {
         toast.error('No appointments found for this email');
         setAppointments([]);
+        setQuotes([]);
         setCustomerId(null);
         setHasLookedUp(true);
         return;
@@ -96,6 +99,7 @@ export default function MyAppointments() {
 
       setCustomerId(responseData.customer.id);
       setAppointments((responseData.appointments || []) as unknown as CustomerAppointment[]);
+      setQuotes((responseData.quotes || []) as unknown as SavedQuote[]);
       setHasLookedUp(true);
     } catch (err) {
       console.error('Failed to lookup appointments:', err);
@@ -248,6 +252,9 @@ export default function MyAppointments() {
                 ))}
               </div>
             )}
+
+            {/* Saved quotes for future reference */}
+            <SavedQuotesCard quotes={quotes} />
 
             {/* Contact Info for locked appointments */}
             <Card className="mt-6">
