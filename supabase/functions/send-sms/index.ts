@@ -205,60 +205,58 @@ serve(async (req) => {
     // Per-lead channel pause switches (admin / customer self-service).
     const pause = await getCustomerPause(supabase, { email });
 
-    // Suppress everything if this recipient has opted out.
+    // The immediate transactional message is an SMS. Suppress it (but still allow
+    // email follow-ups) when the lead opted out of texts or texting is paused.
     const optedOut = await isPhoneOptedOut(supabase, toNorm);
-    if (optedOut || pause.sms_paused) {
-      await supabase.from("sms_messages").insert({
-        to_number: toNorm || phone || "unknown",
-        body: renderTemplate(DEFAULT_TEMPLATES[eventType], vars),
-        message_kind: "transactional",
-        status: "cancelled",
-        error: optedOut ? "Recipient has opted out of texts" : "Texting paused for this lead",
-        booking_id: bookingId ?? null,
-        quote_id: quoteId ?? null,
-      });
-      return new Response(JSON.stringify({
-        success: true, transactionalSent: false,
-        transactionalError: optedOut ? "Recipient has opted out of texts" : "Texting paused for this lead",
-        scheduledFollowUps: 0,
-      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    // ---- 1) Immediate transactional message ----
+    const smsSuppressed = optedOut || pause.sms_paused;
     const immediateBody = renderTemplate(DEFAULT_TEMPLATES[eventType], vars);
     let transactionalSent = false;
     let transactionalError: string | undefined;
 
-    const { data: txRow } = await supabase
-      .from("sms_messages")
-      .insert({
+    // ---- 1) Immediate transactional message ----
+    if (smsSuppressed) {
+      transactionalError = optedOut ? "Recipient has opted out of texts" : "Texting paused for this lead";
+      await supabase.from("sms_messages").insert({
         to_number: toNorm || phone || "unknown",
         body: immediateBody,
         message_kind: "transactional",
-        status: "pending",
+        status: "cancelled",
+        error: transactionalError,
         booking_id: bookingId ?? null,
         quote_id: quoteId ?? null,
-      })
-      .select("id")
-      .single();
-
-    if (!toNorm) {
-      await supabase.from("sms_messages").update({ status: "failed", error: "No valid phone number" }).eq("id", txRow?.id);
-      transactionalError = "No valid phone number on record";
-    } else if (!config) {
-      await supabase.from("sms_messages").update({ status: "failed", error: "CallRail not configured" }).eq("id", txRow?.id);
-      transactionalError = "CallRail not configured";
+      });
     } else {
-      const result = await sendCallRailSms(config, toNorm, immediateBody);
-      transactionalSent = result.ok;
-      transactionalError = result.error;
-      await supabase.from("sms_messages").update({
-        status: result.ok ? "sent" : "failed",
-        sent_at: result.ok ? new Date().toISOString() : null,
-        callrail_message_id: result.messageId ?? null,
-        error: result.error ?? null,
-        attempts: 1,
-      }).eq("id", txRow?.id);
+      const { data: txRow } = await supabase
+        .from("sms_messages")
+        .insert({
+          to_number: toNorm || phone || "unknown",
+          body: immediateBody,
+          message_kind: "transactional",
+          status: "pending",
+          booking_id: bookingId ?? null,
+          quote_id: quoteId ?? null,
+        })
+        .select("id")
+        .single();
+
+      if (!toNorm) {
+        await supabase.from("sms_messages").update({ status: "failed", error: "No valid phone number" }).eq("id", txRow?.id);
+        transactionalError = "No valid phone number on record";
+      } else if (!config) {
+        await supabase.from("sms_messages").update({ status: "failed", error: "CallRail not configured" }).eq("id", txRow?.id);
+        transactionalError = "CallRail not configured";
+      } else {
+        const result = await sendCallRailSms(config, toNorm, immediateBody);
+        transactionalSent = result.ok;
+        transactionalError = result.error;
+        await supabase.from("sms_messages").update({
+          status: result.ok ? "sent" : "failed",
+          sent_at: result.ok ? new Date().toISOString() : null,
+          callrail_message_id: result.messageId ?? null,
+          error: result.error ?? null,
+          attempts: 1,
+        }).eq("id", txRow?.id);
+      }
     }
 
     // ---- 2) Enroll active follow-up campaigns for this event ----
