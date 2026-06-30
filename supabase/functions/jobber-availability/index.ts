@@ -1383,9 +1383,10 @@ Deno.serve(async (req) => {
             continue;
           }
           
-          // Get busy times for both techs on this day
-          const tech1DayBusy = tech1BusyTimes.filter(bt => bt.start >= dayStart && bt.start < dayEnd);
-          const tech2DayBusy = tech2BusyTimes.filter(bt => bt.start >= dayStart && bt.start < dayEnd);
+          // Get busy times for both techs on this day (overlap-based so blocks
+          // starting before the work-day start hour are still counted).
+          const tech1DayBusy = tech1BusyTimes.filter(bt => bt.start < dayEnd && bt.end > dayStart);
+          const tech2DayBusy = tech2BusyTimes.filter(bt => bt.start < dayEnd && bt.end > dayStart);
           
           let effectiveStart = new Date(dayStart);
           if (now > dayStart && now < dayEnd) {
