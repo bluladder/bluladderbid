@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CheckCircle, XCircle, RefreshCw, Link as LinkIcon, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { AutosyncStatus } from './AutosyncStatus';
+import { ScheduleReconciliation } from './ScheduleReconciliation';
 
 export function JobberIntegration() {
   const [isConnected, setIsConnected] = useState(false);
@@ -126,6 +127,9 @@ export function JobberIntegration() {
 
       {/* Autopilot Sync Status - only show when connected */}
       {isConnected && <AutosyncStatus />}
+
+      {/* Schedule Reconciliation - only show when connected */}
+      {isConnected && <ScheduleReconciliation />}
     </div>
   );
 }
