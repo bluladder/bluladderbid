@@ -103,21 +103,15 @@ async function checkLocalMirrorConflicts(
   requestedEnd: Date
 ): Promise<{ hasConflict: boolean; conflictingBlock?: { start_at: string; end_at: string }; mirrorStale: boolean; noData: boolean }> {
   
-  // Query local busy_blocks for the technician on the requested date
-  // IMPORTANT: Match the same status filter as availability engine to ensure consistency
-  const dayStart = new Date(requestedStart);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(requestedStart);
-  dayEnd.setHours(23, 59, 59, 999);
-  
-  // Get ACTIVE blocks for this technician on this day (same filter as availability engine)
-  // Status must be 'scheduled' or 'in_progress' - cancelled blocks don't count
+  // Get ACTIVE blocks that overlap the requested appointment window.
+  // This must be overlap-based instead of filtering by start date, otherwise a
+  // block that starts before the day/window but runs into it could be missed.
   const { data: blocks, error } = await supabase
     .from("jobber_busy_blocks")
     .select("start_at, end_at, updated_at, crew_id, status")
     .eq("crew_id", jobberUserId)
-    .gte("start_at", dayStart.toISOString())
-    .lte("start_at", dayEnd.toISOString())
+    .lt("start_at", requestedEnd.toISOString())
+    .gt("end_at", requestedStart.toISOString())
     .in("status", ["scheduled", "in_progress"]);
   
   if (error) {
@@ -128,7 +122,7 @@ async function checkLocalMirrorConflicts(
   // Cast blocks to proper type
   const typedBlocks = (blocks || []) as BusyBlock[];
   
-  console.log(`[LocalConflictCheck] Found ${typedBlocks.length} active blocks for tech ${jobberUserId} on ${dayStart.toISOString().split('T')[0]}`);
+  console.log(`[LocalConflictCheck] Found ${typedBlocks.length} active overlapping blocks for tech ${jobberUserId} during ${requestedStart.toISOString()} - ${requestedEnd.toISOString()}`);
   
   // Check autosync coverage to determine if mirror is populated for this date
   const { data: autosyncConfig } = await supabase
@@ -204,7 +198,7 @@ async function checkJobberConflicts(
           id
           startAt
           endAt
-          assignedUsers {
+          assignedUsers(first: 10) {
             nodes { id }
           }
         }

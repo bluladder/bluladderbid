@@ -39,7 +39,7 @@ const VISITS_QUERY = `
         id
         startAt
         endAt
-        assignedUsers { nodes { id name { full } } }
+        assignedUsers(first: 10) { nodes { id name { full } } }
         job {
           id
           property { address { street city province postalCode } }

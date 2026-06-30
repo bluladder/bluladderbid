@@ -216,7 +216,7 @@ const VISITS_QUERY = `
         title
         startAt
         endAt
-        assignedUsers {
+        assignedUsers(first: 10) {
           nodes {
             id
             name {

@@ -406,19 +406,15 @@ function calculateRouteDensityScore(
   return { score, label, nearbyJobCount: nearbyJobs.length };
 }
 
-// Snap time to 30-min display increments
+// Format the exact appointment start time shown to customers/admins.
+// Do not round this value: the selected slot's ISO start time is what gets
+// booked in Jobber, so displaying a rounded label (for example showing 9:30
+// for a real 9:15 slot) is misleading and can look like a scheduling bug.
 function snapTo30Min(date: Date, timezone: string): string {
   const hour = getHourInTimezone(date, timezone);
   const minutes = getMinutesInTimezone(date, timezone);
-  const snappedMinutes = Math.round(minutes / 30) * 30;
-  
-  let displayHour = hour;
-  let displayMin = snappedMinutes;
-  
-  if (snappedMinutes >= 60) {
-    displayHour = hour + 1;
-    displayMin = 0;
-  }
+  const displayHour = hour;
+  const displayMin = minutes;
   
   const ampm = displayHour >= 12 ? 'PM' : 'AM';
   const displayHour12 = displayHour > 12 ? displayHour - 12 : (displayHour === 0 ? 12 : displayHour);
