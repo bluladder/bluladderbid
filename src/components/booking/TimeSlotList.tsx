@@ -66,7 +66,7 @@ export function TimeSlotList({
           </div>
           
           {/* 30-min grid display */}
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
             {techSlots.map((slot, idx) => {
               const isSelected = 
                 selectedSlot?.startTime === slot.startTime &&
@@ -83,7 +83,7 @@ export function TimeSlotList({
                   variant={isSelected ? 'default' : 'outline'}
                   size="sm"
                   className={cn(
-                    'relative flex flex-col items-center py-3 h-auto min-w-[80px]',
+                    'relative flex flex-col items-center justify-center py-3.5 h-auto min-h-[56px] min-w-[80px] touch-manipulation active:scale-[0.97]',
                     hasLabel && !isSelected && 'border-primary/50',
                     isTopSlot && !isSelected && 'ring-1 ring-primary/30'
                   )}

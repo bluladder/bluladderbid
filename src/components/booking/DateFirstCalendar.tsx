@@ -20,6 +20,7 @@ import {
   getDay
 } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { useSwipe } from '@/hooks/useSwipe';
 
 export type CalendarViewMode = 'week' | 'month';
 
@@ -144,7 +145,7 @@ export function DateFirstCalendar({
               : format(date, 'EEEE, MMMM d')
         }
         className={cn(
-          'relative p-2 min-h-[60px] flex flex-col items-center justify-center rounded-lg transition-all',
+          'relative p-2 min-h-[58px] sm:min-h-[60px] flex flex-col items-center justify-center rounded-lg transition-all touch-manipulation select-none active:scale-[0.97]',
           viewMode === 'week' ? 'flex-1' : 'w-full aspect-square',
           
           // Base state - available
@@ -228,25 +229,29 @@ export function DateFirstCalendar({
   return (
     <div className="space-y-4">
       {/* Header with navigation and view toggle */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <Button 
             variant="outline" 
-            size="icon" 
+            size="icon"
+            className="h-11 w-11 sm:h-10 sm:w-10 touch-manipulation"
             onClick={navigatePrevious}
             disabled={!canNavigatePrevious()}
+            aria-label="Previous"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-5 w-5 sm:h-4 sm:w-4" />
           </Button>
           <Button 
             variant="outline" 
-            size="icon" 
+            size="icon"
+            className="h-11 w-11 sm:h-10 sm:w-10 touch-manipulation"
             onClick={navigateNext}
             disabled={!canNavigateNext()}
+            aria-label="Next"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-5 w-5 sm:h-4 sm:w-4" />
           </Button>
-          <h3 className="font-semibold text-lg ml-2">
+          <h3 className="font-semibold text-base sm:text-lg ml-1 sm:ml-2">
             {viewMode === 'month' 
               ? format(currentDate, 'MMMM yyyy')
               : `Week of ${format(startOfWeek(currentDate), 'MMM d')}`
@@ -258,6 +263,7 @@ export function DateFirstCalendar({
           <Button
             variant={viewMode === 'week' ? 'default' : 'ghost'}
             size="sm"
+            className="h-9 px-4 touch-manipulation"
             onClick={() => onViewModeChange('week')}
           >
             Week
@@ -265,6 +271,7 @@ export function DateFirstCalendar({
           <Button
             variant={viewMode === 'month' ? 'default' : 'ghost'}
             size="sm"
+            className="h-9 px-4 touch-manipulation"
             onClick={() => onViewModeChange('month')}
           >
             Month
@@ -273,7 +280,13 @@ export function DateFirstCalendar({
       </div>
 
       {/* Calendar grid */}
-      <div className="grid grid-cols-7 gap-1">
+      <div
+        className="grid grid-cols-7 gap-1"
+        {...useSwipe({
+          onSwipeLeft: () => canNavigateNext() && navigateNext(),
+          onSwipeRight: () => canNavigatePrevious() && navigatePrevious(),
+        })}
+      >
         {/* Day headers */}
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
           <div
@@ -287,6 +300,11 @@ export function DateFirstCalendar({
         {/* Days */}
         {days.map(renderDay)}
       </div>
+
+      {/* Swipe hint (mobile only) */}
+      <p className="text-[11px] text-muted-foreground text-center sm:hidden -mt-1">
+        Swipe left or right to change {viewMode === 'month' ? 'months' : 'weeks'}
+      </p>
 
       {/* Legend - updated with fully booked indicator */}
       <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t flex-wrap">
