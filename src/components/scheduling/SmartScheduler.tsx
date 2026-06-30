@@ -116,6 +116,14 @@ export function SmartScheduler({
     fetchRecommendations(pref);
   };
 
+  // Client-side time-of-day matcher so the sticky chips narrow the browse
+  // (day-grid) slots instantly, without waiting on a re-fetch.
+  const matchesTimeOfDay = (startTime: string) => {
+    if (preference === 'none') return true;
+    const h = parseISO(startTime).getHours();
+    return preference === 'AM' ? h < 12 : h >= 12;
+  };
+
   // "5 more" = ranked slots minus whatever is already shown as best/next.
   const moreOptions = useMemo(() => {
     const shown = new Set<string>();
@@ -155,7 +163,13 @@ export function SmartScheduler({
 
   const formattedDaySlots: TimeSlot[] = useMemo(
     () =>
-      daySlots.map((s) => ({
+      daySlots
+        .filter((s) => {
+          if (preference === 'none') return true;
+          const h = parseISO(s.startTime).getHours();
+          return preference === 'AM' ? h < 12 : h >= 12;
+        })
+        .map((s) => ({
         technicianId: s.technicianId,
         technicianName: s.technicianName,
         startTime: s.startTime,
@@ -165,7 +179,7 @@ export function SmartScheduler({
         routeDensityScore: s.routeDensityScore,
         routeDensityLabel: s.routeDensityLabel,
       })),
-    [daySlots]
+    [daySlots, preference]
   );
 
   // ---- Error state ----
