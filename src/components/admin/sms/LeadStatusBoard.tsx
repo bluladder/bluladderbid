@@ -109,7 +109,8 @@ export function LeadStatusBoard() {
             <CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" /> Lead Status Board</CardTitle>
             <CardDescription>
               Each customer's status drives which lifecycle campaigns they receive. Status updates automatically as bids
-              and bookings change — or move someone manually here to re-enroll them.
+              and bookings change — or move someone manually here to re-enroll them. Use the Messaging toggles to pause
+              texts or emails for one lead without affecting your campaigns.
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
