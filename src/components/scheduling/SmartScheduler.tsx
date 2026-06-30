@@ -362,6 +362,15 @@ export function SmartScheduler({
           </CollapsibleContent>
         </Card>
       </Collapsible>
+
+      {showHelpContact && (
+        <BookingHelpContact
+          bidLink={bidLink}
+          bidReference={bidReference}
+          customerName={customerName}
+          variant="scheduling"
+        />
+      )}
     </div>
   );
 }
