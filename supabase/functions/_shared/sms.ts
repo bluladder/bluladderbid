@@ -151,3 +151,42 @@ export async function isPhoneOptedOut(
     return false;
   }
 }
+
+// ---- Per-lead channel pause (admin / customer self-service) ----
+
+export interface ChannelPause {
+  sms_paused: boolean;
+  email_paused: boolean;
+}
+
+/**
+ * Look up the per-lead messaging pause switches on a customer record.
+ * Pausing a channel suppresses messages to that single lead without touching
+ * the campaigns themselves. Fails open (nothing paused) on error.
+ */
+// deno-lint-ignore no-explicit-any
+export async function getCustomerPause(
+  supabase: any,
+  by: { id?: string | null; email?: string | null; phone?: string | null },
+): Promise<ChannelPause> {
+  const fallback: ChannelPause = { sms_paused: false, email_paused: false };
+  try {
+    let q;
+    if (by.id) {
+      q = supabase.from("customers").select("sms_paused,email_paused").eq("id", by.id);
+    } else if (by.email) {
+      q = supabase.from("customers").select("sms_paused,email_paused").eq("email", String(by.email).toLowerCase().trim());
+    } else if (by.phone) {
+      const np = normalizePhone(by.phone);
+      if (!np) return fallback;
+      q = supabase.from("customers").select("sms_paused,email_paused").eq("phone", np);
+    } else {
+      return fallback;
+    }
+    const { data } = await q.maybeSingle();
+    if (!data) return fallback;
+    return { sms_paused: !!data.sms_paused, email_paused: !!data.email_paused };
+  } catch {
+    return fallback;
+  }
+}

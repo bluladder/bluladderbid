@@ -395,6 +395,7 @@ export type Database = {
           auth_user_id: string | null
           created_at: string
           email: string
+          email_paused: boolean
           first_name: string | null
           id: string
           jobber_client_id: string | null
@@ -405,6 +406,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           phone: string | null
+          sms_paused: boolean
           updated_at: string
         }
         Insert: {
@@ -412,6 +414,7 @@ export type Database = {
           auth_user_id?: string | null
           created_at?: string
           email: string
+          email_paused?: boolean
           first_name?: string | null
           id?: string
           jobber_client_id?: string | null
@@ -422,6 +425,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           phone?: string | null
+          sms_paused?: boolean
           updated_at?: string
         }
         Update: {
@@ -429,6 +433,7 @@ export type Database = {
           auth_user_id?: string | null
           created_at?: string
           email?: string
+          email_paused?: boolean
           first_name?: string | null
           id?: string
           jobber_client_id?: string | null
@@ -439,6 +444,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           phone?: string | null
+          sms_paused?: boolean
           updated_at?: string
         }
         Relationships: []
