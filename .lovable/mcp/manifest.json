@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "sdk_version": "0.20.0",
+  "path": "/functions/v1/mcp",
+  "auth": {
+    "type": "none"
+  },
+  "mcp": {
+    "server": {
+      "name": "bluladder-mcp",
+      "version": "0.1.0",
+      "title": "BluLadder"
+    },
+    "tools": [
+      {
+        "name": "list_services",
+        "title": "List services",
+        "description": "List the home exterior cleaning services BluLadder offers, with a short description of each.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_pricing_info",
+        "title": "Get pricing info",
+        "description": "Return BluLadder's public pricing configuration (base rates, multipliers, minimums, and add-ons). Optionally filter by a config key such as 'window_base_rates' or 'story_multipliers'.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "config_key": {
+              "type": "string",
+              "description": "Optional exact config key to return a single configuration entry."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_booking_link",
+        "title": "Get booking link",
+        "description": "Build a link to BluLadder's online booking / quote flow. Optionally pre-select a service and attach UTM attribution parameters.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "service": {
+              "type": "string",
+              "description": "Optional service key to pre-select, e.g. window_cleaning, gutter_cleaning, roof_cleaning, house_wash, driveway_cleaning, pressure_washing."
+            },
+            "utm_source": {
+              "type": "string",
+              "description": "Optional UTM source for attribution."
+            },
+            "utm_medium": {
+              "type": "string",
+              "description": "Optional UTM medium for attribution."
+            },
+            "utm_campaign": {
+              "type": "string",
+              "description": "Optional UTM campaign for attribution."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
