@@ -70,9 +70,15 @@ async function geocode(address: string): Promise<Geo | null | "unavailable"> {
   } catch {
     return "unavailable";
   }
-  if (!resp.ok) return "unavailable";
+  if (!resp.ok) {
+    console.error("[serviceArea] geocode http status", resp.status);
+    return "unavailable";
+  }
   const data = await resp.json().catch(() => null);
   if (!data) return "unavailable";
+  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+    console.error("[serviceArea] geocode api status", data.status, data.error_message || "");
+  }
   if (data.status === "ZERO_RESULTS") return null; // no match → incomplete/unknown
   if (data.status !== "OK" || !Array.isArray(data.results) || data.results.length === 0) {
     // OVER_QUERY_LIMIT / REQUEST_DENIED / INVALID_REQUEST etc.
