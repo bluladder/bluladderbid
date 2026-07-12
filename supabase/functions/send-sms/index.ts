@@ -11,6 +11,7 @@ import {
 } from "../_shared/sms.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
+import { checkSuppression } from "../_shared/suppression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,6 +117,18 @@ serve(async (req) => {
       }
 
       const toNorm = normalizePhone(body.to);
+      // System-test suppression: never deliver to an approved test identity.
+      const manualSuppression = await checkSuppression(supabase, { phone: toNorm || body.to });
+      if (manualSuppression.suppressed) {
+        await supabase.from("sms_messages").insert({
+          to_number: toNorm || body.to, body: body.body, message_kind: "manual",
+          status: "cancelled", suppressed: true, suppressed_reason: manualSuppression.reason,
+          error: `Suppressed (${manualSuppression.reason})`,
+        });
+        return new Response(JSON.stringify({ success: false, suppressed: true, reason: manualSuppression.reason }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       // Respect opt-outs even for manual admin sends.
       if (await isPhoneOptedOut(supabase, toNorm)) {
         await supabase.from("sms_messages").insert({
