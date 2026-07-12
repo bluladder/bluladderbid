@@ -550,6 +550,11 @@ export function calculateQuote(
         minimumApplied: houseWash > calculated,
         amount,
         jobberLineItem: { name: "House Wash", unitPrice: amount },
+        components: {
+          houseWash,
+          houseWashRustSurcharge: rustSurcharge,
+          houseWashTotal: amount,
+        },
       });
       trace.push(`house_wash: base=${roundDollars(base)} storyMod=${storyMod}% rust=${rustSurcharge} -> ${amount} (min ${minimum})`);
     }
