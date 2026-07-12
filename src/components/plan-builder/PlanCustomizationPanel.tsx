@@ -19,6 +19,9 @@ interface PlanCustomizationPanelProps {
   onChangeFrequency: (serviceId: string, frequency: 1 | 2 | 3 | 4) => void;
   onContinue: () => void;
   onCompare: () => void;
+  pricingReady?: boolean;
+  pricingLoading?: boolean;
+  pricingUnavailable?: boolean;
 }
 
 const SERVICE_ICONS: Record<string, React.FC<{ className?: string }>> = {
@@ -47,8 +50,13 @@ export function PlanCustomizationPanel({
   onChangeFrequency,
   onContinue,
   onCompare,
+  pricingReady = true,
+  pricingLoading,
+  pricingUnavailable,
 }: PlanCustomizationPanelProps) {
   const [showFrequencyControls, setShowFrequencyControls] = useState(false);
+  // A dollar figure is shown ONLY when it is a current, firm server price.
+  const money = (v: number) => (pricingReady ? formatPrice(v) : '—');
   
   // Determine which services are included in the tier
   const includedServiceIds = new Set<string>();
