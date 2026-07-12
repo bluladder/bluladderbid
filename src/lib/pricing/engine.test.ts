@@ -186,9 +186,9 @@ describe("pricing engine — safe failure modes", () => {
     expect(r.firm).toBe(false);
   });
   it("missing pricing config -> manual_review_required, no guessed price", () => {
-    const partial = { ...LIVE_CONFIG, house_wash: undefined as any };
+    const partial = { ...LIVE_CONFIG, house_wash: undefined } as unknown as PricingConfig;
     const r = calculateQuote(
-      { homeDetails: baseHome(), additionalServices: { ...noServices(), houseWash: true } } as QuoteInput,
+      { homeDetails: baseHome(), additionalServices: { ...noServices(), houseWash: true } },
       partial,
       1,
     );
@@ -201,7 +201,7 @@ describe("pricing engine — integrity guarantees", () => {
   it("engine never accepts a client-submitted total (not in input type)", () => {
     const r = calc({
       homeDetails: baseHome(),
-      additionalServices: { ...noServices(), houseWash: true, total: 1 },
+      additionalServices: { ...noServices(), houseWash: true, total: 1 } as unknown as EngineAdditionalServices,
     });
     expect(r.total).toBe(500);
   });
