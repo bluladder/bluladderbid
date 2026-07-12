@@ -373,10 +373,12 @@ export type Database = {
           category: string
           content: string
           created_at: string
+          effective_date: string
           id: string
           is_active: boolean
           knowledge_key: string
           requires_admin_input: boolean
+          revision: number
           sort_order: number
           title: string
           updated_at: string
@@ -385,10 +387,12 @@ export type Database = {
           category: string
           content: string
           created_at?: string
+          effective_date?: string
           id?: string
           is_active?: boolean
           knowledge_key: string
           requires_admin_input?: boolean
+          revision?: number
           sort_order?: number
           title: string
           updated_at?: string
@@ -397,13 +401,57 @@ export type Database = {
           category?: string
           content?: string
           created_at?: string
+          effective_date?: string
           id?: string
           is_active?: boolean
           knowledge_key?: string
           requires_admin_input?: boolean
+          revision?: number
           sort_order?: number
           title?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      business_knowledge_revisions: {
+        Row: {
+          category: string
+          changed_at: string
+          changed_by: string | null
+          content: string
+          effective_date: string
+          id: string
+          is_active: boolean
+          knowledge_id: string
+          knowledge_key: string
+          revision: number
+          title: string
+        }
+        Insert: {
+          category: string
+          changed_at?: string
+          changed_by?: string | null
+          content: string
+          effective_date: string
+          id?: string
+          is_active: boolean
+          knowledge_id: string
+          knowledge_key: string
+          revision: number
+          title: string
+        }
+        Update: {
+          category?: string
+          changed_at?: string
+          changed_by?: string | null
+          content?: string
+          effective_date?: string
+          id?: string
+          is_active?: boolean
+          knowledge_id?: string
+          knowledge_key?: string
+          revision?: number
+          title?: string
         }
         Relationships: []
       }
@@ -1602,9 +1650,11 @@ export type Database = {
           created_at: string
           id: string
           is_configured: boolean
+          manual_review_counties: Json
           out_of_area_message: string
           radius_miles: number | null
           singleton: boolean
+          state_code: string
           updated_at: string
         }
         Insert: {
@@ -1614,9 +1664,11 @@ export type Database = {
           created_at?: string
           id?: string
           is_configured?: boolean
+          manual_review_counties?: Json
           out_of_area_message?: string
           radius_miles?: number | null
           singleton?: boolean
+          state_code?: string
           updated_at?: string
         }
         Update: {
@@ -1626,9 +1678,11 @@ export type Database = {
           created_at?: string
           id?: string
           is_configured?: boolean
+          manual_review_counties?: Json
           out_of_area_message?: string
           radius_miles?: number | null
           singleton?: boolean
+          state_code?: string
           updated_at?: string
         }
         Relationships: []
