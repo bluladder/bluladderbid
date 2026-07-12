@@ -73,6 +73,27 @@ export interface PricingConfig {
   };
   /** Optional administrator-controlled $99 window promotion. */
   window_promo_99?: PromotionConfig;
+  /**
+   * Optional administrator-controlled recurring/bundle configuration, keyed by
+   * bundle identifier (e.g. "good" | "better" | "best"). Discounts are fractions
+   * in the range 0..1 (e.g. 0.05 === 5%). This lives in the pricing_config table
+   * so bundle/recurring rules are administrator-controlled, never client-supplied.
+   */
+  bundle_config?: Record<string, BundleConfigEntry>;
+}
+
+export interface BundleConfigEntry {
+  name?: string;
+  label?: string;
+  description?: string;
+  /** Overall bundle discount applied to the annual subtotal (fraction 0..1). */
+  bundleDiscount?: number;
+  /** Discount applied to customer-added services (fraction 0..1). */
+  addonDiscount?: number;
+  exteriorWindowFrequency?: number;
+  interiorWindowFrequency?: number;
+  additionalServicesFrequency?: number;
+  includedServices?: string[];
 }
 
 /**
@@ -912,4 +933,224 @@ function calculatePromotion(
     },
     ruleVersion,
   );
+}
+// ===========================================================================
+// PLAN OPTIONS ENGINE — recurring & bundle pricing (single source of truth)
+// ===========================================================================
+// The plan builder needs several priced scenarios at once (one-time, quarterly,
+// semiannual, annual, bundles, add-ons). This computes each option from the SAME
+// canonical `calculateQuote` per-service math, then applies recurring frequency
+// and administrator-controlled bundle rules. There is NO second pricing engine
+// and NO client-supplied price/discount — every dollar originates here.
+//
+// The 12-month installment structure (20% down, 11 monthly payments) reflects
+// current production behavior; it is expressed as named constants below.
+export const PLAN_DOWN_PAYMENT_PERCENT = 20;
+export const PLAN_MONTHLY_INSTALLMENTS = 11;
+
+export type PlanBillingCadence = "one_time" | "monthly" | "annual";
+
+export interface PlanScenario {
+  /** Stable option identifier chosen by the caller (echoed back). */
+  id: string;
+  label?: string;
+  billingCadence?: PlanBillingCadence;
+  /** The services selected for this option (same shape as a one-time quote). */
+  additionalServices: EngineAdditionalServices;
+  /** Visits/year keyed by canonical line-item key (window_cleaning, house_wash…). Default 1. */
+  serviceFrequencies?: Record<string, number>;
+  /** Optional bundle key referencing pricing.bundle_config for bundle discounts. */
+  bundleKey?: string;
+  discount?: EngineDiscount | null;
+  promotion?: PromotionRequest | null;
+}
+
+export interface PlanOptionLineItem {
+  key: string;
+  label: string;
+  perVisitAmount: number;
+  frequency: number;
+  annualAmount: number;
+  jobberLineItem?: { name: string; description?: string; unitPrice: number };
+}
+
+export interface PlanOptionResult {
+  optionId: string;
+  status: QuoteStatus;
+  engineVersion: string;
+  ruleVersion: number | null;
+  billingCadence: PlanBillingCadence | null;
+  frequency: number | null;
+  lineItems: PlanOptionLineItem[];
+  frequencyAdjustment: number;
+  bundleAdjustment: number;
+  perVisitTotal: number | null;
+  annualTotal: number | null;
+  recurringAmount: number | null;
+  downPayment: number | null;
+  estimatedDurationMinutes: number | null;
+  missing: string[];
+  manualReviewReasons: string[];
+  prepInstructions: string | null;
+  promotion: QuoteResult["promotion"];
+}
+
+export interface PlanOptionsInput {
+  homeDetails: EngineHomeDetails;
+  scenarios: PlanScenario[];
+}
+
+export interface PlanOptionsResult {
+  engineVersion: string;
+  ruleVersion: number | null;
+  options: PlanOptionResult[];
+}
+
+export function calculatePlanOptions(
+  input: PlanOptionsInput,
+  pricing: PricingConfig,
+  ruleVersion: number | null = null,
+): PlanOptionsResult {
+  const scenarios = Array.isArray(input?.scenarios) ? input.scenarios : [];
+  const options = scenarios.map((s) =>
+    // Each option is computed independently: a manual-review or missing-info
+    // option NEVER corrupts a sibling firm option.
+    calculateSinglePlanOption(input.homeDetails, s, pricing, ruleVersion),
+  );
+  return { engineVersion: PRICING_ENGINE_VERSION, ruleVersion, options };
+}
+
+function calculateSinglePlanOption(
+  home: EngineHomeDetails,
+  scenario: PlanScenario,
+  pricing: PricingConfig,
+  ruleVersion: number | null,
+): PlanOptionResult {
+  const cadence: PlanBillingCadence = scenario.billingCadence ?? "monthly";
+  const q = calculateQuote(
+    {
+      homeDetails: home,
+      additionalServices: scenario.additionalServices,
+      discount: scenario.discount ?? null,
+      promotion: scenario.promotion ?? null,
+    },
+    pricing,
+    ruleVersion,
+  );
+
+  if (q.status !== "firm") {
+    return {
+      optionId: scenario.id,
+      status: q.status,
+      engineVersion: PRICING_ENGINE_VERSION,
+      ruleVersion,
+      billingCadence: cadence,
+      frequency: null,
+      lineItems: [],
+      frequencyAdjustment: 0,
+      bundleAdjustment: 0,
+      perVisitTotal: null,
+      annualTotal: null,
+      recurringAmount: null,
+      downPayment: null,
+      estimatedDurationMinutes: q.estimatedDurationMinutes,
+      missing: q.missing,
+      manualReviewReasons: q.manualReviewReasons,
+      prepInstructions: null,
+      promotion: q.promotion,
+    };
+  }
+
+  // Promotion option: a flat, one-time, all-in price. Never multiplied by a
+  // frequency and never bundle-discounted.
+  if (q.promotion) {
+    const lineItems: PlanOptionLineItem[] = q.lineItems.map((li) => ({
+      key: li.key,
+      label: li.label,
+      perVisitAmount: li.amount,
+      frequency: 1,
+      annualAmount: li.amount,
+      jobberLineItem: li.jobberLineItem,
+    }));
+    return {
+      optionId: scenario.id,
+      status: "firm",
+      engineVersion: PRICING_ENGINE_VERSION,
+      ruleVersion,
+      billingCadence: "one_time",
+      frequency: 1,
+      lineItems,
+      frequencyAdjustment: 0,
+      bundleAdjustment: 0,
+      perVisitTotal: q.total,
+      annualTotal: q.total,
+      recurringAmount: null,
+      downPayment: null,
+      estimatedDurationMinutes: q.estimatedDurationMinutes,
+      missing: [],
+      manualReviewReasons: [],
+      prepInstructions: q.promotion.prepInstructions || null,
+      promotion: q.promotion,
+    };
+  }
+
+  const freqs = scenario.serviceFrequencies ?? {};
+  const lineItems: PlanOptionLineItem[] = q.lineItems.map((li) => {
+    const raw = freqs[li.key];
+    const f = isValidNumber(raw) && raw > 0 ? Math.floor(raw) : 1;
+    return {
+      key: li.key,
+      label: li.label,
+      perVisitAmount: li.amount,
+      frequency: f,
+      annualAmount: li.amount * f,
+      jobberLineItem: li.jobberLineItem,
+    };
+  });
+
+  const perVisitTotal = lineItems.reduce((s, li) => s + li.perVisitAmount, 0);
+  const annualSubtotal = lineItems.reduce((s, li) => s + li.annualAmount, 0);
+  const frequency = lineItems.reduce((m, li) => Math.max(m, li.frequency), 0) || 1;
+
+  // Bundle adjustment comes ONLY from the administrator-controlled bundle_config.
+  let bundleAdjustment = 0;
+  if (scenario.bundleKey && pricing.bundle_config?.[scenario.bundleKey]) {
+    const b = pricing.bundle_config[scenario.bundleKey];
+    const frac = isValidNumber(b.bundleDiscount) ? b.bundleDiscount : 0;
+    if (frac > 0 && frac < 1) {
+      bundleAdjustment = roundDollars(annualSubtotal * frac);
+    }
+  }
+
+  const annualTotal = Math.max(0, annualSubtotal - bundleAdjustment);
+
+  let recurringAmount: number | null = null;
+  let downPayment: number | null = null;
+  if (cadence === "monthly") {
+    downPayment = roundDollars(annualTotal * (PLAN_DOWN_PAYMENT_PERCENT / 100));
+    recurringAmount = roundDollars((annualTotal - downPayment) / PLAN_MONTHLY_INSTALLMENTS);
+  } else if (cadence === "annual") {
+    recurringAmount = annualTotal;
+  }
+
+  return {
+    optionId: scenario.id,
+    status: "firm",
+    engineVersion: PRICING_ENGINE_VERSION,
+    ruleVersion,
+    billingCadence: cadence,
+    frequency,
+    lineItems,
+    frequencyAdjustment: 0,
+    bundleAdjustment,
+    perVisitTotal,
+    annualTotal,
+    recurringAmount,
+    downPayment,
+    estimatedDurationMinutes: q.estimatedDurationMinutes,
+    missing: [],
+    manualReviewReasons: [],
+    prepInstructions: null,
+    promotion: null,
+  };
 }
