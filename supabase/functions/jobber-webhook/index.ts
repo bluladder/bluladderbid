@@ -417,29 +417,7 @@ Deno.serve(async (req) => {
     console.log(`[Webhook] ✅ Event stored: ${eventId}`);
   }
 
-  // ======== DEBUG MODE: Return 200 immediately, skip verification ========
-  if (DEBUG_MODE) {
-    console.log(`[Webhook] 🧪 DEBUG MODE ACTIVE - skipping verification, returning 200`);
-    
-    // Log summary for easy grep
-    console.log(`[Webhook] 📝 SUMMARY: topic=${normalizedTopic} | itemId=${parsedEvent.itemId} | stored=${!insertError}`);
-    console.log(`[Webhook] ═══════════════════════════════════════\n`);
-    
-    return new Response(
-      JSON.stringify({ 
-        ok: true, 
-        debug: true,
-        requestId,
-        topic: normalizedTopic,
-        itemId: parsedEvent.itemId,
-        receivedAt,
-        stored: !insertError,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
-    );
-  }
-
-  // ======== PRODUCTION MODE: HMAC verification + processing ========
+  // ======== HMAC verification + processing (always enforced) ========
   
   if (req.method !== "POST") {
     console.log(`[Webhook] ❌ Method not allowed: ${req.method}`);
