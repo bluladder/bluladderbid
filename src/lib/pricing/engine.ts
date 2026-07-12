@@ -606,6 +606,13 @@ export function calculateQuote(
         minimumApplied: gutterCleaning > calculated,
         amount,
         jobberLineItem: { name: "Gutter Cleaning", unitPrice: amount },
+        components: {
+          gutterCleaning,
+          gutterDrainCleaning: drain,
+          gutterMinorRepairs: repairs,
+          gutterGuards: guards,
+          gutterCleaningTotal: amount,
+        },
       });
       trace.push(`gutter: base=${roundDollars(base)} storyMod=${storyMod}% addons=${drain + repairs + guards} -> ${amount} (min ${minimum})`);
     }
