@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { usePricingConfigRows, useUpdatePricingConfig, DEFAULT_PRICING, type PricingConfigRow } from '@/hooks/usePricingConfig';
+import { usePricingConfigRows, useUpdatePricingConfig, PRICING_CONFIG_KEYS, type PricingConfigRow } from '@/hooks/usePricingConfig';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Save, RefreshCw, Percent, DollarSign, Home, Droplets, Wind, Sun, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -731,14 +731,13 @@ export function PricingEditor() {
   };
 
   const handleInitializeDefaults = async () => {
-    // Initialize all default pricing configs if they don't exist
-    const configKeys = Object.keys(DEFAULT_PRICING);
-    
-    for (const key of configKeys) {
+    // Report which canonical configuration sections are missing. We NEVER seed
+    // fake/default prices here — missing sections must be populated with real,
+    // owner-approved values via the editor.
+    for (const key of PRICING_CONFIG_KEYS) {
       const exists = rows?.find((r) => r.config_key === key);
       if (!exists) {
-        toast.info(`Initializing ${key}...`);
-        // This would need an insert mutation, which we'd need to add
+        toast.warning(`Missing pricing section: ${key}. Add approved values before use.`);
       }
     }
   };

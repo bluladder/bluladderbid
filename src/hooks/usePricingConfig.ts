@@ -94,121 +94,19 @@ export interface PricingData {
   }>;
 }
 
-// Default pricing for fallback
-// Estimate-only safety net. The AUTHORITATIVE prices live in the pricing_config
-// table and are recalculated server-side (calculate-quote / jobber-create-booking).
-// These values are kept in sync with the live production config so that, in the
-// rare case the DB read fails, the instant on-screen ESTIMATE is never wrong.
-// They are NEVER used to charge a customer — the server always recomputes.
-export const DEFAULT_PRICING: PricingData = {
-  window_cleaning: {
-    exteriorPerSqFt: 0.08,
-    interiorPerSqFt: 0.075,
-    minimumPrice: 185,
-    modifiers: {
-      stories: { "1": 0, "2": 12, "3": 18 },
-      condition: { maintenance: 0, heavy: 15 },
-      hardWater: 10,
-      frenchPanes: 40,
-      solarScreens: 20,
-    },
-  },
-  house_wash: {
-    perSqFt: 0.25,
-    minimumPrice: 396,
-    modifiers: {
-      stories: { "1": 0, "2": 10, "3": 15 },
-    },
-    rustStainSurcharge: 15,
-  },
-  gutter_cleaning: {
-    perSqFt: 0.08,
-    minimumPrice: 200,
-    modifiers: {
-      stories: { "1": 0, "2": 10, "3": 12 },
-    },
-    undergroundDrainPricing: {
-      "1": 75,
-      "2": 125,
-      "3": 175,
-      "4+": 225,
-    },
-    minorRepairsPrice: 85,
-    gutterGuardsPerLinearFoot: 8,
-  },
-  roof_cleaning: {
-    perSqFt: 0.30,
-    minimumPrice: 500,
-    modifiers: {
-      stories: { "1": 0, "2": 10, "3": 15 },
-      roofType: { asphalt: 0, tile: 10, metal: 0, flat: 0 },
-      severity: { light: 0, moderate: 5, heavy: 10 },
-    },
-  },
-  window_addons: {
-    ladderWork: { "1-3": 25, "4-8": 50, "9+": 75 },
-    sunroom: { none: 0, small: 125, medium: 175, large: 225 },
-  },
-  driveway_cleaning: {
-    perSqFt: 0.20,
-    minimumPrice: 200,
-    surfaceMultipliers: {
-      concrete: 1,
-      stamped: 1,
-      pavers: 1.25,
-      brick: 1,
-      stone: 1,
-      tile: 1,
-    },
-  },
-  pressure_washing: {
-    perSqFt: 0.25,
-    minimumPrice: 75,
-    surfaceMultipliers: {
-      concrete: 1,
-      stamped: 1.15,
-      pavers: 1.25,
-      brick: 1.20,
-      stone: 1.30,
-      tile: 1.35,
-    },
-  },
-  bundle_config: {
-    good: {
-      name: "Good",
-      label: "Core Exterior Care",
-      description: "Essential exterior window cleaning to keep your home looking great",
-      exteriorWindowFrequency: 4,      // Quarterly exterior
-      interiorWindowFrequency: 0,      // No interior
-      additionalServicesFrequency: 1,
-      bundleDiscount: 0,
-      addonDiscount: 0.05,             // 5% off added services
-      includedServices: [],            // Base package - no extras
-    },
-    better: {
-      name: "Better",
-      label: "Consistent Window Care",
-      description: "Complete window care with interior cleaning included",
-      exteriorWindowFrequency: 4,      // Quarterly exterior
-      interiorWindowFrequency: 1,      // 1x interior per year
-      additionalServicesFrequency: 1,
-      bundleDiscount: 0.05,
-      addonDiscount: 0.10,             // 10% off added services
-      includedServices: ['gutter_cleaning'],
-    },
-    best: {
-      name: "Best",
-      label: "Total Window & Home Care",
-      description: "Maximum coverage with frequent interior cleaning and premium perks",
-      exteriorWindowFrequency: 4,      // Quarterly exterior
-      interiorWindowFrequency: 2,      // 2x interior per year
-      additionalServicesFrequency: 2,
-      bundleDiscount: 0.10,
-      addonDiscount: 0.15,             // 15% off added services
-      includedServices: ['gutter_cleaning', 'house_wash'],
-    },
-  },
-};
+// Canonical config keys expected in the pricing_config table. This is a
+// NON-PRICED schema — it lists only which configuration sections must exist.
+// It contains no dollar values, rates, discounts or minimums.
+export const PRICING_CONFIG_KEYS = [
+  'window_cleaning',
+  'house_wash',
+  'gutter_cleaning',
+  'roof_cleaning',
+  'window_addons',
+  'driveway_cleaning',
+  'pressure_washing',
+  'bundle_config',
+] as const;
 
 export function usePricingConfig() {
   return useQuery({
@@ -217,31 +115,35 @@ export function usePricingConfig() {
       const { data, error } = await supabase
         .from('pricing_config')
         .select('config_key, config_value');
-      
+
+      // FAIL-CLOSED: a configuration-load failure must surface an error state.
+      // We NEVER fall back to hard-coded prices — the authoritative values live
+      // only in the pricing_config table (and published pricing versions).
       if (error) {
         console.error('Error fetching pricing config:', error);
-        return DEFAULT_PRICING;
+        throw new Error('Failed to load pricing configuration');
       }
-      
       if (!data || data.length === 0) {
-        return DEFAULT_PRICING;
+        throw new Error('Pricing configuration is unavailable');
       }
-      
-      // Transform array to object - use explicit typing to avoid complex inference
-      const result = { ...DEFAULT_PRICING };
-      
+
+      const result: Record<string, unknown> = {};
       for (const row of data) {
-        const key = row.config_key;
-        const value = row.config_value;
-        if (key in result && value !== null) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (result as any)[key] = value;
+        if (row.config_value !== null) result[row.config_key] = row.config_value;
+      }
+
+      // Every canonical section must be present, or we fail closed rather than
+      // rendering a partially-populated (and therefore unsafe) configuration.
+      for (const key of PRICING_CONFIG_KEYS) {
+        if (!(key in result)) {
+          throw new Error(`Pricing configuration is incomplete (missing ${key})`);
         }
       }
-      
-      return result;
+
+      return result as unknown as PricingData;
     },
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+    retry: false,
   });
 }
 
