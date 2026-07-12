@@ -49,6 +49,7 @@ export default function PlanBuilder() {
     isValid,
     hasSelectedServices,
     isLoading,
+    pricingReady,
     pricingLoading,
     pricingUnavailable,
   } = useServicePlanBuilder();
