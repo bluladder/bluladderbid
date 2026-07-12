@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { ArrowLeft, Check, Clock, MapPin } from 'lucide-react';
+import { ArrowLeft, Check, Clock, MapPin, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
@@ -61,6 +61,31 @@ export function BookingFlow({
   const [usedSuggestedDay, setUsedSuggestedDay] = useState(false);
   const [usedRecommendedSlot, setUsedRecommendedSlot] = useState(false);
   const [confirmationChecked, setConfirmationChecked] = useState(false);
+  // Set when the backend accepted the request (202) but could not fully confirm
+  // the appointment on the calendar. The slot is held and staff will finish it —
+  // this is NOT a failure and must NOT be shown as a confirmed booking.
+  const [pendingManual, setPendingManual] = useState<{ referenceNumber?: string } | null>(null);
+
+  // One idempotency key per booking attempt, reused across retries of the SAME
+  // slot so a duplicate submission (double click, network retry) can never
+  // create two Jobber jobs. Regenerated only when the selected slot changes.
+  const idempotencyRef = useRef<{ signature: string; key: string } | null>(null);
+  const sessionIdRef = useRef<string>(
+    (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+      ? crypto.randomUUID()
+      : `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+
+  const getIdempotencyKey = (signature: string): string => {
+    if (idempotencyRef.current?.signature === signature) {
+      return idempotencyRef.current.key;
+    }
+    const key = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+      ? crypto.randomUUID()
+      : `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    idempotencyRef.current = { signature, key };
+    return key;
+  };
 
   const { trackCalendarView, trackTimeSelection, trackInfoStep, trackConfirmation } = useBookingStepTracking();
 
@@ -255,6 +280,9 @@ export function BookingFlow({
     setIsSubmitting(true);
 
     try {
+      const slotSignature = `${selectedSlot.startTime}|${selectedSlot.technicianId}|${customerInfo.email.toLowerCase()}`;
+      const idempotencyKey = getIdempotencyKey(slotSignature);
+
       // Build the booking request body
       const bookingBody: Record<string, unknown> = {
         customer: {
@@ -280,6 +308,8 @@ export function BookingFlow({
         discountCode: appliedDiscount?.code,
         notes: customerInfo.notes,
         utmParams: getStoredUtmParams(),
+        idempotencyKey,
+        sessionId: sessionIdRef.current,
       };
 
       // Pass team booking data if the selected slot is a team job
@@ -306,6 +336,14 @@ export function BookingFlow({
           // Couldn't parse error body
         }
 
+        // Accepted-but-not-confirmed (defensive: in case invoke surfaces 202 as
+        // an error on some clients). Treat as pending manual confirmation.
+        if (errorBody?.pendingManualConfirmation || errorBody?.code === 'VISIT_CREATION_FAILED') {
+          setPendingManual({ referenceNumber: errorBody.referenceNumber });
+          trackConfirmation();
+          return;
+        }
+
         if (errorBody?.code === 'CONFLICT') {
           toast.error(errorBody.details || 'This time slot is no longer available. Please select a different time.', {
             duration: 6000,
@@ -330,8 +368,24 @@ export function BookingFlow({
         throw error;
       }
 
+      // Accepted (HTTP 202): the request is safely recorded and the slot is held,
+      // but the appointment still needs a person to finalize it. Never present
+      // this as a confirmed booking.
+      if (data?.pendingManualConfirmation || data?.code === 'VISIT_CREATION_FAILED' || data?.success === false) {
+        setPendingManual({ referenceNumber: data?.referenceNumber });
+        trackConfirmation();
+        return;
+      }
+
       if (data?.error) {
         throw new Error(data.details || data.error);
+      }
+
+      // A real confirmation requires a Jobber visit id to exist.
+      if (!data?.jobberVisitId) {
+        setPendingManual({ referenceNumber: data?.referenceNumber });
+        trackConfirmation();
+        return;
       }
 
       setBookingResult({
