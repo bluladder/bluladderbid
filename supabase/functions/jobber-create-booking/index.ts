@@ -319,6 +319,110 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // ========================================================================
+    // AUTHORITATIVE SERVER-SIDE PRICING (never trust the client total).
+    // When the structured selection is provided, recompute the whole quote with
+    // the canonical engine, re-validate the discount, and reconcile against the
+    // client-submitted total. On mismatch the SERVER values win.
+    // ========================================================================
+    let pricingSnapshot: {
+      engineVersion: string | null;
+      ruleVersion: number | null;
+      inputSnapshot: unknown;
+      lineItemSnapshot: unknown;
+      discountSnapshot: unknown;
+    } = {
+      engineVersion: null,
+      ruleVersion: null,
+      inputSnapshot: booking.additionalServices
+        ? { homeDetails: booking.homeDetails, additionalServices: booking.additionalServices }
+        : null,
+      lineItemSnapshot: booking.services,
+      discountSnapshot: booking.discountCode
+        ? { code: booking.discountCode, amount: booking.discountAmount || 0 }
+        : null,
+    };
+
+    if (booking.additionalServices) {
+      try {
+        // Re-validate discount server-side (active / not expired / under max uses).
+        let serverDiscount: QuoteInput["discount"] = null;
+        if (booking.discountCode) {
+          const code = String(booking.discountCode).toUpperCase().trim();
+          if (/^[A-Z0-9]{3,20}$/.test(code)) {
+            const { data: dc } = await supabase
+              .from("discount_codes")
+              .select("code, discount_type, discount_value, is_active, expires_at, usage_count, max_uses")
+              .eq("code", code)
+              .maybeSingle();
+            const valid = dc && dc.is_active &&
+              (!dc.expires_at || new Date(dc.expires_at) >= new Date()) &&
+              (dc.max_uses === null || (dc.usage_count ?? 0) < dc.max_uses);
+            if (valid) {
+              serverDiscount = {
+                type: dc.discount_type === "percentage" ? "percentage" : "fixed",
+                value: Number(dc.discount_value),
+                code: dc.code,
+              };
+            }
+          }
+        }
+
+        const loaded = await loadPricing(supabase);
+        if (loaded.ok && loaded.pricing) {
+          const engineResult = calculateQuote(
+            {
+              homeDetails: booking.homeDetails as QuoteInput["homeDetails"],
+              additionalServices: booking.additionalServices as QuoteInput["additionalServices"],
+              discount: serverDiscount,
+            },
+            loaded.pricing,
+            loaded.ruleVersion,
+          );
+
+          pricingSnapshot = {
+            engineVersion: engineResult.engineVersion,
+            ruleVersion: engineResult.ruleVersion,
+            inputSnapshot: { homeDetails: booking.homeDetails, additionalServices: booking.additionalServices },
+            lineItemSnapshot: engineResult.lineItems,
+            discountSnapshot: engineResult.discount,
+          };
+
+          if (engineResult.firm) {
+            const serverTotal = engineResult.total;
+            const clientTotal = Number(booking.total);
+            if (Math.abs(serverTotal - clientTotal) > 1) {
+              // Client total was tampered with or stale — trust the server.
+              console.warn(
+                `Pricing mismatch: client total ${clientTotal} vs server ${serverTotal}. Using server values.`,
+              );
+              booking.subtotal = engineResult.subtotal;
+              booking.discountAmount = engineResult.discount?.amount ?? 0;
+              booking.total = engineResult.total;
+              // Rebuild Jobber line items from the authoritative engine result.
+              booking.services = engineResult.lineItems.map((li) => ({
+                name: li.label,
+                price: li.amount,
+                description:
+                  li.adjustments.length > 0
+                    ? li.adjustments.map((a) => a.label).join(", ")
+                    : undefined,
+              }));
+            }
+          } else {
+            // Engine could not produce a firm price for these inputs.
+            console.warn(
+              `Engine returned non-firm status "${engineResult.status}" for booking; keeping client line items but flagging.`,
+            );
+          }
+        } else {
+          console.error("Booking recompute skipped — pricing unavailable:", loaded.error);
+        }
+      } catch (e) {
+        console.error("Server-side pricing reconciliation failed (non-fatal):", e);
+      }
+    }
+
     // Get technician's Jobber user ID (and team technicians if team booking)
     console.log("Looking up technician:", booking.technicianId);
     
