@@ -427,38 +427,30 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Verify Jobber HMAC signature (x-jobber-hmac-sha256)
+  // Verify Jobber HMAC signature (x-jobber-hmac-sha256). Always enforced.
   const webhookSecret = Deno.env.get("JOBBER_WEBHOOK_SECRET");
   const providedHmac = req.headers.get("x-jobber-hmac-sha256");
-  const skipHmac = SKIP_HMAC_GLOBAL;
-  
+
   console.log(`[Webhook] 🔐 HMAC verification:`);
   console.log(`[Webhook]    Secret configured: ${!!webhookSecret}`);
   console.log(`[Webhook]    HMAC header present: ${!!providedHmac}`);
-  console.log(`[Webhook]    Skip HMAC: ${skipHmac}`);
-  
-  if (!skipHmac && webhookSecret && providedHmac) {
-    const isValid = await verifyJobberHmac(rawBody, providedHmac, webhookSecret);
-    if (!isValid) {
-      console.log(`[Webhook] ❌ HMAC verification failed - rejecting`);
-      
-      // Update event with processing error
-      await supabase
-        .from("jobber_webhook_events")
-        .update({ processing_error: "HMAC verification failed" })
-        .eq("event_id", eventId);
-      
-      return new Response(
-        JSON.stringify({ error: "Unauthorized - invalid signature" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
-      );
-    }
-    console.log(`[Webhook] ✅ HMAC verified`);
-  } else if (!skipHmac && webhookSecret && !providedHmac) {
-    // A secret is configured but the request carries no signature header.
-    // Reject it — otherwise the signature check is trivially bypassable by
-    // simply omitting the header.
-    console.log(`[Webhook] ❌ HMAC header missing while secret configured - rejecting`);
+
+  // Fail closed: without a configured secret we cannot verify authenticity.
+  if (!webhookSecret) {
+    console.error(`[Webhook] ❌ JOBBER_WEBHOOK_SECRET not configured - rejecting`);
+    await supabase
+      .from("jobber_webhook_events")
+      .update({ processing_error: "Webhook secret not configured" })
+      .eq("event_id", eventId);
+    return new Response(
+      JSON.stringify({ error: "Server configuration error" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+    );
+  }
+
+  // A signature header is mandatory. Omitting it must never bypass the check.
+  if (!providedHmac) {
+    console.log(`[Webhook] ❌ HMAC header missing - rejecting`);
     await supabase
       .from("jobber_webhook_events")
       .update({ processing_error: "Missing HMAC signature header" })
@@ -467,11 +459,21 @@ Deno.serve(async (req) => {
       JSON.stringify({ error: "Unauthorized - missing signature" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
     );
-  } else if (skipHmac) {
-    console.log(`[Webhook] ⚠️ HMAC verification skipped (JOBBER_SKIP_HMAC=true)`);
-  } else {
-    console.log(`[Webhook] ⚠️ No secret configured - accepting all requests`);
   }
+
+  const isValid = await verifyJobberHmac(rawBody, providedHmac, webhookSecret);
+  if (!isValid) {
+    console.log(`[Webhook] ❌ HMAC verification failed - rejecting`);
+    await supabase
+      .from("jobber_webhook_events")
+      .update({ processing_error: "HMAC verification failed" })
+      .eq("event_id", eventId);
+    return new Response(
+      JSON.stringify({ error: "Unauthorized - invalid signature" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+    );
+  }
+  console.log(`[Webhook] ✅ HMAC verified`);
 
   // Validate we have the required fields
   if (!parsedEvent.topic || !parsedEvent.itemId) {
