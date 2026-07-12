@@ -25,7 +25,7 @@ interface CancelDialogProps {
   };
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onComplete: () => void;
+  onComplete: (outcome?: 'cancelled' | 'needs_attention') => void;
   // Admin override props
   isAdminOverride?: boolean;
   adminUserId?: string;
@@ -64,7 +64,8 @@ export function CancelDialog({
       });
 
       if (error) throw error;
-      
+
+      // Lockout / hard error paths (surface a friendly message, never a Jobber id).
       if (data?.error) {
         if (data.code === 'LOCKOUT') {
           toast.error(data.details || 'Appointments cannot be cancelled within 48 hours');
@@ -74,15 +75,24 @@ export function CancelDialog({
         return;
       }
 
-      // Log the cancellation
-      console.log('Appointment cancelled:', {
-        bookingId: appointment.id,
-        referenceNumber: appointment.reference_number,
-        jobberSynced: data?.jobberSynced,
-        timestamp: new Date().toISOString(),
-      });
+      // Fail-closed: cancellation could not be confirmed with the scheduling
+      // system. Show a pending message — NOT a success — and refresh.
+      if (data?.needsAttention || data?.status === 'needs_attention') {
+        toast.message(
+          data?.message ||
+            "We received your cancellation request, but it still needs to be confirmed by our team. We'll contact you shortly.",
+        );
+        onComplete('needs_attention');
+        return;
+      }
 
-      onComplete();
+      // Confirmed cancellation (or idempotent replay of an already-cancelled one).
+      toast.success(
+        data?.status === 'already_cancelled'
+          ? 'This appointment is already cancelled.'
+          : 'Appointment cancelled.',
+      );
+      onComplete('cancelled');
     } catch (err) {
       console.error('Failed to cancel appointment:', err);
       toast.error('Failed to cancel appointment. Please try again or contact support.');
