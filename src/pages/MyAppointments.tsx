@@ -267,8 +267,8 @@ export default function MyAppointments() {
               <CardContent className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <Phone className="w-4 h-4 text-muted-foreground" />
-                  <a href="tel:+15127174452" className="text-primary hover:underline">
-                    (512) 717-4452
+                  <a href="tel:+14697472877" className="text-primary hover:underline">
+                    (469) 747-2877
                   </a>
                 </div>
                 <div className="flex items-center gap-2">

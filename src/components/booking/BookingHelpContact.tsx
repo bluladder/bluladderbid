@@ -2,8 +2,8 @@ import { MessageSquareText, Mail, LifeBuoy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 /** Business contact endpoints (kept in one place for easy updates). */
-const SUPPORT_PHONE = '+15127174452';
-const SUPPORT_PHONE_DISPLAY = '(512) 717-4452';
+const SUPPORT_PHONE = '+14697472877';
+const SUPPORT_PHONE_DISPLAY = '(469) 747-2877';
 const SUPPORT_EMAIL = 'info@bluladder.com';
 
 interface BookingHelpContactProps {
