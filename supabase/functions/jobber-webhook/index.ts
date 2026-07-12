@@ -387,8 +387,8 @@ Deno.serve(async (req) => {
   if (!supabaseUrl || !supabaseServiceKey) {
     console.error(`[Webhook] ❌ Missing Supabase credentials`);
     return new Response(
-      JSON.stringify({ ok: DEBUG_MODE, error: "Server configuration error" }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: DEBUG_MODE ? 200 : 500 }
+      JSON.stringify({ error: "Server configuration error" }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
     );
   }
   
