@@ -73,6 +73,51 @@ export const LIVE_CONFIG: PricingConfig = {
     serviceLabel: "$99 Exterior Window Cleaning (up to 10 windows)",
     terms: "Residential exterior window cleaning only. Covers up to 10 standard exterior windows.",
   },
+  bundle_config: {
+    good: {
+      name: "Good",
+      label: "Core Exterior Care",
+      description:
+        "Essential exterior window cleaning to keep your home looking great",
+      addonDiscount: 0.05,
+      bundleDiscount: 0,
+      includedServices: [],
+      exteriorWindowFrequency: 4,
+      interiorWindowFrequency: 0,
+      additionalServicesFrequency: 1,
+    },
+    better: {
+      name: "Better",
+      label: "Consistent Window Care",
+      description: "Complete window care with interior cleaning included",
+      addonDiscount: 0.1,
+      bundleDiscount: 0.05,
+      includedServices: ["gutter_cleaning"],
+      exteriorWindowFrequency: 4,
+      interiorWindowFrequency: 1,
+      additionalServicesFrequency: 1,
+    },
+    best: {
+      name: "Best",
+      label: "Total Window & Home Care",
+      description:
+        "Maximum coverage with frequent interior cleaning and premium perks",
+      addonDiscount: 0.15,
+      bundleDiscount: 0.1,
+      includedServices: ["gutter_cleaning", "house_wash"],
+      exteriorWindowFrequency: 4,
+      interiorWindowFrequency: 2,
+      additionalServicesFrequency: 2,
+    },
+  },
+  bundle_rules: {
+    minimumTierBuffer: 25,
+    tierOrder: ["good", "better", "best"],
+    planDownPaymentPercent: 20,
+    planMonthlyInstallments: 11,
+    roofBaseIncludedTiers: ["best"],
+    alwaysAddonServices: ["driveway_cleaning", "pressure_washing"],
+  },
 };
 
 export function baseHome(overrides: Partial<EngineHomeDetails> = {}): EngineHomeDetails {

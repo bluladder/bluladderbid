@@ -10,6 +10,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   calculatePlanOptions,
+  computeBundleTiers,
   type EngineAdditionalServices,
   type EngineHomeDetails,
   type PlanScenario,
@@ -101,6 +102,77 @@ Deno.serve(async (req) => {
     const homeDetails = (body as Record<string, unknown>).homeDetails as EngineHomeDetails | undefined;
     if (!homeDetails || typeof homeDetails !== "object") {
       return json({ status: "missing_information", error: "homeDetails is required" }, 400);
+    }
+
+    const mode = (body as Record<string, unknown>).mode;
+
+    // -----------------------------------------------------------------------
+    // BUNDLE TIERS MODE — good/better/best plan tiers for the website. Uses the
+    // canonical `computeBundleTiers` (the former frontend `useServicePricing`
+    // math, now server-authoritative). Prices come only from the engine.
+    // -----------------------------------------------------------------------
+    if (mode === "bundle_tiers") {
+      const additionalServices = (body as Record<string, unknown>).additionalServices;
+      if (!additionalServices || typeof additionalServices !== "object") {
+        return json({ status: "missing_information", error: "additionalServices is required" }, 400);
+      }
+
+      // Optional per-tier customizations (window cadence + service swaps/adds).
+      // Only structural fields are forwarded; the engine re-prices everything.
+      let customizations: Record<string, unknown> | undefined;
+      const rawCustom = (body as Record<string, unknown>).customizations;
+      if (rawCustom && typeof rawCustom === "object") {
+        customizations = {};
+        for (const [tier, c] of Object.entries(rawCustom as Record<string, unknown>)) {
+          if (!c || typeof c !== "object") continue;
+          const co = c as Record<string, unknown>;
+          const out: Record<string, unknown> = {};
+          if (co.windowFrequency && typeof co.windowFrequency === "object") {
+            const wf = co.windowFrequency as Record<string, unknown>;
+            const ext = Number(wf.exteriorFrequency);
+            const int = Number(wf.interiorFrequency);
+            if (Number.isFinite(ext) && Number.isFinite(int) && ext >= 0 && ext <= 12 && int >= 0 && int <= 12) {
+              out.windowFrequency = { exteriorFrequency: Math.floor(ext), interiorFrequency: Math.floor(int) };
+            }
+          }
+          if (Array.isArray(co.serviceSwaps)) {
+            out.serviceSwaps = (co.serviceSwaps as unknown[])
+              .filter((s) => s && typeof s === "object" && typeof (s as Record<string, unknown>).from === "string" && typeof (s as Record<string, unknown>).to === "string")
+              .slice(0, 12)
+              .map((s) => ({ from: String((s as Record<string, unknown>).from).slice(0, 40), to: String((s as Record<string, unknown>).to).slice(0, 40) }));
+          }
+          if (Array.isArray(co.addedServices)) {
+            out.addedServices = (co.addedServices as unknown[])
+              .filter((x) => typeof x === "string")
+              .slice(0, 12)
+              .map((x) => String(x).slice(0, 40));
+          }
+          customizations[tier.slice(0, 20)] = out;
+        }
+      }
+
+      const supabaseBundle = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const loadedBundle = await loadPricing(supabaseBundle);
+      if (!loadedBundle.ok || !loadedBundle.pricing) {
+        console.error("calculate-plan-options(bundle_tiers): pricing unavailable", loadedBundle.error);
+        return json(
+          { status: "pricing_unavailable", error: "Pricing is temporarily unavailable. Please try again shortly." },
+          503,
+        );
+      }
+      const tiersResult = computeBundleTiers(
+        {
+          homeDetails,
+          additionalServices: additionalServices as EngineAdditionalServices,
+          customizations: customizations as Record<string, never> | undefined,
+        },
+        loadedBundle.pricing,
+        loadedBundle.ruleVersion,
+      );
+      return json({ status: "ok", mode: "bundle_tiers", ...tiersResult }, 200);
     }
 
     const rawScenarios = (body as Record<string, unknown>).scenarios;
