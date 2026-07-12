@@ -144,6 +144,7 @@ export function SmartScheduler({
     fullyBookedDays,
     error,
     requiresAdminAction,
+    availabilityUnavailable,
   } = useSmartAvailability({ services, customerAddress, numStories });
 
   const [preference, setPreference] = useState<TimePreference>('none');
@@ -249,6 +250,39 @@ export function SmartScheduler({
 
   // ---- Error state ----
   const isAdminAction = requiresAdminAction || error?.includes('admin') || error?.includes('reconnect');
+  // Controlled "availability temporarily unavailable" state (stale mirror, sync
+  // in progress, or never-synced). This is NOT a technical failure: show a
+  // reassuring message plus a callback option, never an empty screen or stale
+  // slots. Fails safe toward "can't verify" rather than showing wrong times.
+  if (availabilityUnavailable) {
+    return (
+      <div className="space-y-4">
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {error ||
+              "We're temporarily unable to verify online appointment times. Please try again shortly or request that our team contact you."}
+          </AlertDescription>
+        </Alert>
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchRecommendations(preference)}
+            disabled={isLoadingRecommendations}
+          >
+            {isLoadingRecommendations ? 'Checking…' : 'Try again'}
+          </Button>
+        </div>
+        <BookingHelpContact
+          bidLink={bidLink}
+          bidReference={bidReference}
+          customerName={customerName}
+          variant="scheduling"
+        />
+      </div>
+    );
+  }
   if (error) {
     return (
       <Alert variant="destructive">
