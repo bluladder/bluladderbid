@@ -151,6 +151,14 @@ export interface EngineAreaSelection {
 
 export interface EngineAdditionalServices {
   windowCleaning?: boolean;
+  /**
+   * Interior-only window cleaning as a STANDALONE line item (used by the plan
+   * builder, where interior windows have their own frequency). This is priced
+   * with the same interior rule the plan builder historically used locally:
+   * sqft × interiorPerSqFt with story+condition modifiers and a 0.6× minimum.
+   * The one-time flow does NOT use this (it uses windowCleaningType='both').
+   */
+  interiorWindows?: boolean;
   houseWash?: boolean;
   houseWashDetails?: { stainType?: string };
   gutterCleaning?: boolean;
@@ -298,6 +306,7 @@ export function calculateQuote(
 
   const anyServiceSelected =
     !!svc.windowCleaning ||
+    !!svc.interiorWindows ||
     !!svc.houseWash ||
     !!svc.gutterCleaning ||
     !!svc.roofCleaning ||
@@ -312,6 +321,7 @@ export function calculateQuote(
   const squareFootage = home.squareFootage;
   const needsSqft =
     !!svc.windowCleaning ||
+    !!svc.interiorWindows ||
     !!svc.houseWash ||
     !!svc.gutterCleaning ||
     !!svc.roofCleaning;
@@ -435,6 +445,37 @@ export function calculateQuote(
       trace.push(
         `window: ext=${exteriorWindows} int=${interiorWindows} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`,
       );
+    }
+  }
+
+  // =========================================================================
+  // INTERIOR WINDOWS (standalone) — plan-builder rule promoted unchanged.
+  // sqft × interiorPerSqFt with story+condition modifiers and a 0.6× minimum.
+  // =========================================================================
+  if (svc.interiorWindows) {
+    const cfg = pricing.window_cleaning;
+    if (!cfg) {
+      manualReviewReasons.push("window_cleaning pricing not configured");
+    } else {
+      const mods = cfg.modifiers;
+      const base = sqft * cfg.interiorPerSqFt;
+      const storyMod = mods.stories[stories.toString()] ?? 0;
+      const conditionMod = mods.condition?.[home.condition ?? ""] ?? 0;
+      const calculated = applyModifiers(base, [storyMod, conditionMod]);
+      const minimum = roundDollars((cfg.minimumPrice ?? 0) * 0.6);
+      const amount = Math.max(calculated, minimum);
+      lineItems.push({
+        key: "interior_windows",
+        label: "Interior Window Cleaning",
+        quantity: sqft,
+        unit: "sqft",
+        baseAmount: amount,
+        adjustments: [],
+        minimumApplied: amount > calculated,
+        amount,
+        jobberLineItem: { name: "Interior Window Cleaning", unitPrice: amount },
+      });
+      trace.push(`interior_windows: base=${roundDollars(base)} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`);
     }
   }
 
