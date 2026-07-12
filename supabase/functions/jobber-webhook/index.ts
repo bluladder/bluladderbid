@@ -3,7 +3,7 @@ import { jobberGraphQL } from "../_shared/jobberClient.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-webhook-secret, x-debug-webhook, x-jobber-hmac-sha256",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-jobber-hmac-sha256",
 };
 
 // deno-lint-ignore no-explicit-any
