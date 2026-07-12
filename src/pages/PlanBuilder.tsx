@@ -49,6 +49,8 @@ export default function PlanBuilder() {
     isValid,
     hasSelectedServices,
     isLoading,
+    pricingLoading,
+    pricingUnavailable,
   } = useServicePlanBuilder();
   
   // Restore session on mount
@@ -253,6 +255,8 @@ export default function PlanBuilder() {
               onSelectTier={handleTierSelect}
               tierPrices={tierPrices}
               hasHomeDetails={homeDetails.squareFootage > 0}
+              pricingLoading={pricingLoading}
+              pricingUnavailable={pricingUnavailable}
             />
           </div>
         )}
