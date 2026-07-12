@@ -608,6 +608,28 @@ Deno.serve(async (req) => {
           });
       }
 
+      // Authoritative freshness marker for the availability engine.
+      // Only stamp it when the near-term window (the bookable horizon) was
+      // fully swept AND reconciled without throttling or errors. A partial,
+      // throttled, or failed run must NOT be advertised as a complete sync,
+      // otherwise availability could be served from incomplete data.
+      const nearTermClean =
+        !!results.nearTerm && !overallThrottled && !overallError;
+      if (nearTermClean) {
+        await supabase
+          .from("autosync_config")
+          .update({
+            last_full_sync_completed_at: now.toISOString(),
+            updated_at: now.toISOString(),
+          })
+          .eq("id", "default");
+        console.log("[Autosync] Stamped last_full_sync_completed_at (clean near-term sweep)");
+      } else if (results.nearTerm) {
+        console.log(
+          `[Autosync] NOT stamping full-sync marker (throttled=${overallThrottled}, error=${!!overallError})`,
+        );
+      }
+
       // Update coverage statistics
       await updateCoverageStats(supabase);
 

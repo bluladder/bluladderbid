@@ -124,10 +124,12 @@ async function verifyJobberHmac(rawBody: string, providedHmac: string, secret: s
   }
 }
 
-// Generate a unique event ID from the parsed event
-function generateEventId(topic: string, itemId: string | null): string {
-  const timestamp = Date.now();
-  return `${topic}-${itemId || 'no-item'}-${timestamp}`;
+// Generate a STABLE event ID so redelivered webhooks dedupe against the unique
+// event_id constraint. Prefer Jobber's occurredAt; only fall back to a
+// timestamp when it is absent (keeps older behaviour for malformed payloads).
+function generateEventId(topic: string, itemId: string | null, occurredAt: string | null): string {
+  const stamp = occurredAt ? occurredAt : `t${Date.now()}`;
+  return `${topic}-${itemId || 'no-item'}-${stamp}`;
 }
 
 // Fetch visit details from Jobber to get full schedule data
@@ -219,10 +221,12 @@ async function upsertBusyBlock(
       client?: { name: string };
     };
   }
-): Promise<{ inserted: number; errors: number }> {
+): Promise<{ inserted: number; errors: number; ghostsCancelled: number }> {
   const assignees = visit.assignedUsers?.nodes || [];
   let inserted = 0;
   let errors = 0;
+  let ghostsCancelled = 0;
+  const currentCrewIds = assignees.map((a) => a.id);
   
   console.log(`[Webhook] 💾 Upserting busy blocks for ${assignees.length} assignee(s)`);
   
@@ -260,7 +264,39 @@ async function upsertBusyBlock(
     }
   }
 
-  return { inserted, errors };
+  // ===== Ghost-appointment removal =====
+  // Cancel any existing active blocks for THIS visit that belong to technicians
+  // who are no longer assigned (reassignment) — otherwise the old crew keeps a
+  // phantom calendar block. If the visit has no assignees at all, every block
+  // for the visit is cancelled.
+  {
+    const { data: existing, error: fetchErr } = await supabase
+      .from("jobber_busy_blocks")
+      .select("id, crew_id")
+      .eq("jobber_visit_id", visit.id)
+      .in("status", ["scheduled", "in_progress"]);
+    if (fetchErr) {
+      console.error(`[Webhook] ❌ Ghost cleanup fetch failed:`, fetchErr.message);
+    } else {
+      const staleIds = (existing || [])
+        .filter((b: { crew_id: string }) => !currentCrewIds.includes(b.crew_id))
+        .map((b: { id: string }) => b.id);
+      if (staleIds.length > 0) {
+        const { error: cancelErr } = await supabase
+          .from("jobber_busy_blocks")
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .in("id", staleIds);
+        if (cancelErr) {
+          console.error(`[Webhook] ❌ Ghost cleanup update failed:`, cancelErr.message);
+        } else {
+          ghostsCancelled = staleIds.length;
+          console.log(`[Webhook] 👻 Cancelled ${staleIds.length} ghost assignment(s) for reassigned/updated visit ${visit.id}`);
+        }
+      }
+    }
+  }
+
+  return { inserted, errors, ghostsCancelled };
 }
 
 // Delete/cancel a busy block
@@ -372,7 +408,7 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   // ========== ALWAYS STORE EVENT FIRST (debug or production) ==========
-  const eventId = generateEventId(normalizedTopic, parsedEvent.itemId);
+  const eventId = generateEventId(normalizedTopic, parsedEvent.itemId, parsedEvent.occurredAt);
   console.log(`[Webhook] 🆔 Generated event ID: ${eventId}`);
   
   const { error: insertError } = await supabase
@@ -492,7 +528,7 @@ Deno.serve(async (req) => {
   console.log(`[Webhook]    Item ID: ${parsedEvent.itemId}`);
 
   let processingError: string | null = null;
-  let result: { action: string; inserted?: number; errors?: number } = { action: 'none' };
+  let result: { action: string; inserted?: number; errors?: number; ghostsCancelled?: number } = { action: 'none' };
 
   try {
     console.log(`[Webhook] 🔄 Processing: ${normalizedTopic}`);
