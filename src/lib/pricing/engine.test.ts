@@ -1,8 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { calculateQuote, PRICING_ENGINE_VERSION, type QuoteInput } from "./engine";
+import {
+  calculateQuote,
+  PRICING_ENGINE_VERSION,
+  type QuoteInput,
+  type EngineHomeDetails,
+  type EngineAdditionalServices,
+  type EngineDiscount,
+  type PricingConfig,
+} from "./engine";
 import { LIVE_CONFIG, baseHome, noServices } from "./__fixtures__/liveConfig";
 
-function calc(input: Partial<QuoteInput> & { homeDetails: any; additionalServices: any }) {
+function calc(input: {
+  homeDetails: EngineHomeDetails;
+  additionalServices: EngineAdditionalServices;
+  discount?: EngineDiscount | null;
+}) {
   return calculateQuote(input as QuoteInput, LIVE_CONFIG, 1);
 }
 
