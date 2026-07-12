@@ -413,29 +413,43 @@ export function PlanCustomizeDrawer({
               <div className="text-sm font-medium text-muted-foreground">
                 Updated Pricing
               </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className="text-3xl font-bold text-foreground">
-                    {formatPrice(newMonthlyPayment)}
-                    <span className="text-base font-normal text-muted-foreground">
-                      /mo
-                    </span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {formatPrice(newAnnualTotal)} per year
-                  </div>
+              {previewLoading ? (
+                <div className="flex items-center gap-2 py-2 text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm">Updating price…</span>
                 </div>
-                {hasChanges && (
-                  <div
-                    className={`text-sm font-medium ${
-                      totalPriceImpact > 0 ? 'text-amber-600' : totalPriceImpact < 0 ? 'text-green-600' : ''
-                    }`}
-                  >
-                    {totalPriceImpact > 0 ? '+' : ''}
-                    {totalPriceImpact !== 0 && formatPrice(totalPriceImpact) + '/yr'}
+              ) : previewState.isUnavailable || newMonthlyPayment == null || newAnnualTotal == null ? (
+                <div className="flex items-start gap-2 py-2 text-muted-foreground">
+                  <Info className="w-4 h-4 mt-0.5 text-primary" />
+                  <span className="text-sm">
+                    We're temporarily unable to price this configuration. Your changes will still be saved.
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-end justify-between">
+                  <div>
+                    <div className="text-3xl font-bold text-foreground">
+                      {formatPrice(newMonthlyPayment)}
+                      <span className="text-base font-normal text-muted-foreground">
+                        /mo
+                      </span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {formatPrice(newAnnualTotal)} per year
+                    </div>
                   </div>
-                )}
-              </div>
+                  {hasChanges && totalPriceImpact !== 0 && (
+                    <div
+                      className={`text-sm font-medium ${
+                        totalPriceImpact > 0 ? 'text-amber-600' : 'text-green-600'
+                      }`}
+                    >
+                      {totalPriceImpact > 0 ? '+' : ''}
+                      {formatPrice(totalPriceImpact) + '/yr'}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Summary of Changes */}
