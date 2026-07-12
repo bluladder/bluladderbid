@@ -368,6 +368,45 @@ export type Database = {
           },
         ]
       }
+      business_knowledge: {
+        Row: {
+          category: string
+          content: string
+          created_at: string
+          id: string
+          is_active: boolean
+          knowledge_key: string
+          requires_admin_input: boolean
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          content: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          knowledge_key: string
+          requires_admin_input?: boolean
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          content?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          knowledge_key?: string
+          requires_admin_input?: boolean
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       campaign_audit_log: {
         Row: {
           actor_id: string | null
@@ -483,6 +522,131 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_conversations: {
+        Row: {
+          assigned_admin: string | null
+          best_time_to_contact: string | null
+          booking_status: string
+          callback_requested: boolean
+          campaign_status: string | null
+          channel: string
+          contact_method: string | null
+          created_at: string
+          id: string
+          internal_notes: string | null
+          last_activity_at: string
+          last_error: string | null
+          manual_review_reason: string | null
+          marketing_consent: boolean
+          needs_attention: boolean
+          pricing_version: number | null
+          prospect_email: string | null
+          prospect_name: string | null
+          prospect_phone: string | null
+          quote_result: Json | null
+          resolved: boolean
+          services_discussed: Json
+          session_token: string
+          status: string
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          assigned_admin?: string | null
+          best_time_to_contact?: string | null
+          booking_status?: string
+          callback_requested?: boolean
+          campaign_status?: string | null
+          channel?: string
+          contact_method?: string | null
+          created_at?: string
+          id?: string
+          internal_notes?: string | null
+          last_activity_at?: string
+          last_error?: string | null
+          manual_review_reason?: string | null
+          marketing_consent?: boolean
+          needs_attention?: boolean
+          pricing_version?: number | null
+          prospect_email?: string | null
+          prospect_name?: string | null
+          prospect_phone?: string | null
+          quote_result?: Json | null
+          resolved?: boolean
+          services_discussed?: Json
+          session_token: string
+          status?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assigned_admin?: string | null
+          best_time_to_contact?: string | null
+          booking_status?: string
+          callback_requested?: boolean
+          campaign_status?: string | null
+          channel?: string
+          contact_method?: string | null
+          created_at?: string
+          id?: string
+          internal_notes?: string | null
+          last_activity_at?: string
+          last_error?: string | null
+          manual_review_reason?: string | null
+          marketing_consent?: boolean
+          needs_attention?: boolean
+          pricing_version?: number | null
+          prospect_email?: string | null
+          prospect_name?: string | null
+          prospect_phone?: string | null
+          quote_result?: Json | null
+          resolved?: boolean
+          services_discussed?: Json
+          session_token?: string
+          status?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          content: string | null
+          conversation_id: string
+          created_at: string
+          id: string
+          role: string
+          tool_name: string | null
+          tool_result: Json | null
+        }
+        Insert: {
+          content?: string | null
+          conversation_id: string
+          created_at?: string
+          id?: string
+          role: string
+          tool_name?: string | null
+          tool_result?: Json | null
+        }
+        Update: {
+          content?: string | null
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+          tool_name?: string | null
+          tool_result?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
             referencedColumns: ["id"]
           },
         ]
@@ -1427,6 +1591,45 @@ export type Database = {
           total_chunks?: number
           updated_at?: string
           visits_synced?: number
+        }
+        Relationships: []
+      }
+      service_area_config: {
+        Row: {
+          allowed_cities: Json
+          allowed_postal_codes: Json
+          center_address: string | null
+          created_at: string
+          id: string
+          is_configured: boolean
+          out_of_area_message: string
+          radius_miles: number | null
+          singleton: boolean
+          updated_at: string
+        }
+        Insert: {
+          allowed_cities?: Json
+          allowed_postal_codes?: Json
+          center_address?: string | null
+          created_at?: string
+          id?: string
+          is_configured?: boolean
+          out_of_area_message?: string
+          radius_miles?: number | null
+          singleton?: boolean
+          updated_at?: string
+        }
+        Update: {
+          allowed_cities?: Json
+          allowed_postal_codes?: Json
+          center_address?: string | null
+          created_at?: string
+          id?: string
+          is_configured?: boolean
+          out_of_area_message?: string
+          radius_miles?: number | null
+          singleton?: boolean
+          updated_at?: string
         }
         Relationships: []
       }

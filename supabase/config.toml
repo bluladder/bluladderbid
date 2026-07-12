@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.mcp]
 verify_jwt = false
+
+[functions.ai-chat]
+verify_jwt = false

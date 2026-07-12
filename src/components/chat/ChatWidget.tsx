@@ -6,80 +6,58 @@ import ReactMarkdown from 'react-markdown';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-quote`;
+// The browser talks ONLY to the server-side ai-chat orchestrator. All pricing,
+// availability and booking logic lives behind allowlisted server tools.
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
 
-async function streamChat({
-  messages,
-  onDelta,
-  onDone,
-}: {
-  messages: Msg[];
-  onDelta: (text: string) => void;
-  onDone: () => void;
-}) {
+const SESSION_KEY = 'bluladder_chat_session';
+const MESSAGES_KEY = 'bluladder_chat_messages';
+
+function getSessionToken(): string {
+  try {
+    let token = localStorage.getItem(SESSION_KEY);
+    if (!token || !/^[A-Za-z0-9_-]{8,100}$/.test(token)) {
+      token = (crypto.randomUUID?.() ?? `s${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, '');
+      localStorage.setItem(SESSION_KEY, token);
+    }
+    return token;
+  } catch {
+    return `s${Date.now()}${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function loadStoredMessages(): Msg[] {
+  try {
+    const raw = localStorage.getItem(MESSAGES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(-100) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function sendChat(sessionToken: string, message: string): Promise<string> {
   const resp = await fetch(CHAT_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ sessionToken, message }),
   });
-
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: 'Connection failed' }));
-    throw new Error(err.error || `Error ${resp.status}`);
-  }
-
-  const contentType = resp.headers.get('content-type') || '';
-
-  // Non-streaming JSON response (fallback from tool call)
-  if (contentType.includes('application/json')) {
-    const data = await resp.json();
-    if (data.content) onDelta(data.content);
-    onDone();
-    return;
-  }
-
-  // SSE streaming
-  if (!resp.body) throw new Error('No response body');
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let textBuffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    textBuffer += decoder.decode(value, { stream: true });
-
-    let nlIdx: number;
-    while ((nlIdx = textBuffer.indexOf('\n')) !== -1) {
-      let line = textBuffer.slice(0, nlIdx);
-      textBuffer = textBuffer.slice(nlIdx + 1);
-      if (line.endsWith('\r')) line = line.slice(0, -1);
-      if (line.startsWith(':') || line.trim() === '') continue;
-      if (!line.startsWith('data: ')) continue;
-      const jsonStr = line.slice(6).trim();
-      if (jsonStr === '[DONE]') break;
-      try {
-        const parsed = JSON.parse(jsonStr);
-        const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-        if (content) onDelta(content);
-      } catch {
-        textBuffer = line + '\n' + textBuffer;
-        break;
-      }
-    }
-  }
-  onDone();
+  const data = await resp.json().catch(() => ({ error: 'Connection failed' }));
+  if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+  return data.reply as string;
 }
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [messages, setMessages] = useState<Msg[]>(() => loadStoredMessages());
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
+  const sessionRef = useRef<string>(getSessionToken());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -87,30 +65,25 @@ export default function ChatWidget() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
+  // Preserve the conversation across minimize / page changes.
+  useEffect(() => {
+    try { localStorage.setItem(MESSAGES_KEY, JSON.stringify(messages.slice(-100))); } catch { /* ignore */ }
+  }, [messages]);
+
+  // Keep the composer focused for accessibility when the widget opens.
+  useEffect(() => {
+    if (isOpen) inputRef.current?.focus();
+  }, [isOpen]);
+
+  // Show a static local greeting (no server call needed) the first time the
+  // widget opens with an empty transcript.
   useEffect(() => {
     if (isOpen && !hasGreeted && messages.length === 0) {
       setHasGreeted(true);
-      // Trigger initial greeting
-      setIsLoading(true);
-      let assistantSoFar = '';
-      const upsert = (chunk: string) => {
-        assistantSoFar += chunk;
-        setMessages(prev => {
-          const last = prev[prev.length - 1];
-          if (last?.role === 'assistant') {
-            return prev.map((m, i) => (i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
-          }
-          return [...prev, { role: 'assistant', content: assistantSoFar }];
-        });
-      };
-      streamChat({
-        messages: [{ role: 'user', content: 'Hi, I need a quote for cleaning services.' }],
-        onDelta: upsert,
-        onDone: () => setIsLoading(false),
-      }).catch(() => {
-        setMessages([{ role: 'assistant', content: "Hi! 👋 I'm BluLadder's quote assistant. Tell me about your home and what services you're interested in, and I'll get you a price right away!" }]);
-        setIsLoading(false);
-      });
+      setMessages([{
+        role: 'assistant',
+        content: "Hi! 👋 I'm BluLadder's assistant. I can answer questions, give you a real quote for window cleaning, gutters, roof, house wash, or pressure washing, and even find an appointment time. What can I help you with?",
+      }]);
     }
   }, [isOpen, hasGreeted, messages.length]);
 
@@ -122,27 +95,16 @@ export default function ChatWidget() {
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
-    let assistantSoFar = '';
-    const allMessages = [...messages, userMsg];
-
-    const upsert = (chunk: string) => {
-      assistantSoFar += chunk;
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.role === 'assistant') {
-          return prev.map((m, i) => (i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
-        }
-        return [...prev, { role: 'assistant', content: assistantSoFar }];
-      });
-    };
-
     try {
-      await streamChat({ messages: allMessages, onDelta: upsert, onDone: () => setIsLoading(false) });
+      const reply = await sendChat(sessionRef.current, text);
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: any) {
       setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, something went wrong: ${e.message}` }]);
+    } finally {
       setIsLoading(false);
+      inputRef.current?.focus();
     }
-  }, [input, isLoading, messages]);
+  }, [input, isLoading]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
