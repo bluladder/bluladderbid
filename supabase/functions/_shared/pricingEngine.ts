@@ -1221,3 +1221,471 @@ function calculateSinglePlanOption(
     promotion: null,
   };
 }
+
+// ===========================================================================
+// GOOD / BETTER / BEST BUNDLE TIERS — canonical, server-authoritative pricing
+// ===========================================================================
+// Reproduces the EXACT good/better/best tier math that previously lived in the
+// frontend `useServicePricing` hook. Every dollar originates here from the SAME
+// per-service base math used by `calculateQuote`, plus administrator-controlled
+// `bundle_config` (per-tier frequencies, included services, bundle & add-on
+// discounts) and `bundle_rules` (tier ordering + minimum tier buffer). No price
+// is hard-coded and no client-supplied discount is honored.
+
+export interface BundleTiersInput {
+  homeDetails: EngineHomeDetails;
+  additionalServices: EngineAdditionalServices;
+}
+
+export interface BundleTierServiceBases {
+  exteriorWindows: number;
+  interiorWindows: number;
+  gutterCleaning: number;
+  houseWash: number;
+  roofCleaning: number;
+  drivewayCleaning: number;
+  pressureWashing: number;
+}
+
+export interface BundleTierOption {
+  tier: string;
+  name: string;
+  label: string;
+  description: string;
+  features: string[];
+  windowFrequency: number;
+  windowFrequencyConfig: { exteriorFrequency: number; interiorFrequency: number };
+  additionalServicesIncluded: string[];
+  baseServices: string[];
+  availableAddons: string[];
+  annualTotal: number;
+  monthlyPayment: number;
+  downPayment: number;
+  recurringMonthly: number;
+  savings: number;
+  savingsPercent: number;
+  addonDiscountPercent: number;
+  addonSavings: number;
+  windowCost: number;
+  additionalServicesCost: number;
+  addonsCost: number;
+  bundleDiscount: number;
+  /** Amount added to this tier by the minimum-tier-buffer guardrail (admin-visible). */
+  tierBufferAdjustment: number;
+  isPopular: boolean;
+  trace: string[];
+}
+
+export interface BundleTiersResult {
+  engineVersion: string;
+  ruleVersion: number | null;
+  status: QuoteStatus;
+  minimumTierBuffer: number;
+  tierOrder: string[];
+  serviceBases: BundleTierServiceBases;
+  tiers: BundleTierOption[];
+  missing: string[];
+  manualReviewReasons: string[];
+}
+
+function computeBundleServiceBases(
+  home: EngineHomeDetails,
+  svc: EngineAdditionalServices,
+  pricing: PricingConfig,
+): BundleTierServiceBases {
+  const sqft = home.squareFootage;
+  const stories = home.stories;
+
+  let exteriorWindows = 0;
+  let interiorWindows = 0;
+  if (svc.windowCleaning && pricing.window_cleaning) {
+    const cfg = pricing.window_cleaning;
+    const baseExterior = sqft * cfg.exteriorPerSqFt;
+    const baseInterior =
+      home.windowCleaningType === "both" ? sqft * cfg.interiorPerSqFt : 0;
+    const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
+    const conditionMod = cfg.modifiers.condition?.[home.condition ?? ""] ?? 0;
+    exteriorWindows = roundDollars(
+      baseExterior * (1 + storyMod / 100 + conditionMod / 100),
+    );
+    interiorWindows = roundDollars(baseInterior * (1 + conditionMod / 100));
+  }
+
+  let gutterCleaning = 0;
+  if (svc.gutterCleaning && pricing.gutter_cleaning) {
+    const cfg = pricing.gutter_cleaning;
+    const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
+    gutterCleaning = Math.max(
+      applyModifiers(sqft * cfg.perSqFt, [storyMod]),
+      cfg.minimumPrice ?? 0,
+    );
+  }
+
+  let houseWash = 0;
+  if (svc.houseWash && pricing.house_wash) {
+    const cfg = pricing.house_wash;
+    const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
+    houseWash = Math.max(
+      applyModifiers(sqft * cfg.perSqFt, [storyMod]),
+      cfg.minimumPrice ?? 0,
+    );
+  }
+
+  let roofCleaning = 0;
+  if (svc.roofCleaning && pricing.roof_cleaning) {
+    const cfg = pricing.roof_cleaning;
+    const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
+    const typeMod = cfg.modifiers.roofType?.[svc.roofType ?? ""] ?? 0;
+    const severityMod = cfg.modifiers.severity?.[svc.roofSeverity ?? ""] ?? 0;
+    roofCleaning = Math.max(
+      applyModifiers(sqft * cfg.perSqFt, [storyMod, typeMod, severityMod]),
+      cfg.minimumPrice ?? 0,
+    );
+  }
+
+  let drivewayCleaning = 0;
+  if (svc.drivewayCleaning?.enabled && pricing.driveway_cleaning) {
+    const cfg = pricing.driveway_cleaning;
+    const { sqft: dSqft, surfaceType } = svc.drivewayCleaning;
+    const mult = cfg.surfaceMultipliers[surfaceType] ?? 1;
+    drivewayCleaning = Math.max(
+      roundDollars(dSqft * cfg.perSqFt * mult),
+      cfg.minimumPrice ?? 0,
+    );
+  }
+
+  let pressureWashing = 0;
+  if (svc.pressureWashing?.enabled && pricing.pressure_washing) {
+    const cfg = pricing.pressure_washing;
+    const pw = svc.pressureWashing;
+    const mult = cfg.surfaceMultipliers[pw.surfaceType] ?? 1;
+    let sum = 0;
+    for (const area of [pw.frontPorch, pw.backPatio, pw.poolDeck, pw.walkways]) {
+      if (area?.enabled) sum += roundDollars(area.sqft * cfg.perSqFt * mult);
+    }
+    if (sum > 0) pressureWashing = Math.max(sum, cfg.minimumPrice ?? 0);
+  }
+
+  return {
+    exteriorWindows,
+    interiorWindows,
+    gutterCleaning,
+    houseWash,
+    roofCleaning,
+    drivewayCleaning,
+    pressureWashing,
+  };
+}
+
+export function computeBundleTiers(
+  input: BundleTiersInput,
+  pricing: PricingConfig,
+  ruleVersion: number | null = null,
+): BundleTiersResult {
+  const home = input.homeDetails ?? ({} as EngineHomeDetails);
+  const svc = input.additionalServices ?? ({} as EngineAdditionalServices);
+
+  const rules = pricing.bundle_rules ?? {};
+  const minimumTierBuffer = isValidNumber(rules.minimumTierBuffer)
+    ? rules.minimumTierBuffer
+    : 25;
+  const tierOrder =
+    Array.isArray(rules.tierOrder) && rules.tierOrder.length
+      ? rules.tierOrder
+      : ["good", "better", "best"];
+  const downPct = isValidNumber(rules.planDownPaymentPercent)
+    ? rules.planDownPaymentPercent
+    : PLAN_DOWN_PAYMENT_PERCENT;
+  const installments =
+    isValidNumber(rules.planMonthlyInstallments) &&
+    rules.planMonthlyInstallments > 0
+      ? rules.planMonthlyInstallments
+      : PLAN_MONTHLY_INSTALLMENTS;
+  const roofBaseTiers = Array.isArray(rules.roofBaseIncludedTiers)
+    ? rules.roofBaseIncludedTiers
+    : ["best"];
+
+  const empty: BundleTierServiceBases = {
+    exteriorWindows: 0,
+    interiorWindows: 0,
+    gutterCleaning: 0,
+    houseWash: 0,
+    roofCleaning: 0,
+    drivewayCleaning: 0,
+    pressureWashing: 0,
+  };
+
+  // Validate the same inputs the one-time engine requires for sqft-based
+  // services. Missing/invalid inputs yield NO tier prices (never a fallback).
+  const missing: string[] = [];
+  const manualReviewReasons: string[] = [];
+  const anyServiceSelected =
+    !!svc.windowCleaning ||
+    !!svc.houseWash ||
+    !!svc.gutterCleaning ||
+    !!svc.roofCleaning ||
+    !!svc.drivewayCleaning?.enabled ||
+    !!svc.pressureWashing?.enabled;
+  if (!anyServiceSelected) missing.push("services");
+  const needsSqft =
+    !!svc.windowCleaning ||
+    !!svc.houseWash ||
+    !!svc.gutterCleaning ||
+    !!svc.roofCleaning;
+  if (needsSqft) {
+    if (!isValidNumber(home.squareFootage) || home.squareFootage <= 0) {
+      missing.push("squareFootage");
+    } else if (home.squareFootage > MAX_SQFT) {
+      manualReviewReasons.push(
+        `Square footage ${home.squareFootage} exceeds automated range; manual review required`,
+      );
+    }
+    if (!VALID_STORIES.includes(home.stories)) missing.push("stories");
+  }
+  if (!pricing.bundle_config) {
+    manualReviewReasons.push("bundle_config not configured");
+  }
+
+  if (missing.length > 0 || manualReviewReasons.length > 0) {
+    return {
+      engineVersion: PRICING_ENGINE_VERSION,
+      ruleVersion,
+      status: missing.length > 0 ? "missing_information" : "manual_review_required",
+      minimumTierBuffer,
+      tierOrder,
+      serviceBases: empty,
+      tiers: [],
+      missing,
+      manualReviewReasons,
+    };
+  }
+
+  const bases = computeBundleServiceBases(home, svc, pricing);
+  const BUNDLE_CONFIG = pricing.bundle_config as Record<string, BundleConfigEntry>;
+
+  interface RawTier {
+    tier: string;
+    config: BundleConfigEntry;
+    annualTotal: number;
+    monthlyPayment: number;
+    savings: number;
+    savingsPercent: number;
+    addonSavings: number;
+    includedServices: string[];
+    baseServices: string[];
+    availableAddons: string[];
+    totalWindowFrequency: number;
+    exteriorFreq: number;
+    interiorFreq: number;
+    windowCost: number;
+    baseServicesCost: number;
+    addonsCost: number;
+    bundleDiscount: number;
+    tierBufferAdjustment: number;
+  }
+
+  const rawTiers: RawTier[] = [];
+  for (const tier of tierOrder) {
+    const config = BUNDLE_CONFIG[tier];
+    if (!config) continue;
+
+    const exteriorFreq = config.exteriorWindowFrequency ?? 0;
+    const interiorFreq = config.interiorWindowFrequency ?? 0;
+    const addFreq = config.additionalServicesFrequency ?? 1;
+    const addonDiscount = config.addonDiscount ?? 0;
+    const bundleDiscountFrac = config.bundleDiscount ?? 0;
+    const included = config.includedServices ?? [];
+
+    const exteriorCost = bases.exteriorWindows * exteriorFreq;
+    const interiorCost = bases.interiorWindows * interiorFreq;
+    const windowCost = exteriorCost + interiorCost;
+    const totalWindowFrequency =
+      exteriorFreq + (interiorFreq > 0 ? interiorFreq : 0);
+
+    let baseServicesCost = 0;
+    const includedServices: string[] = [];
+    const baseServices: string[] = [];
+
+    if (included.includes("gutter_cleaning") && svc.gutterCleaning) {
+      baseServicesCost += bases.gutterCleaning * addFreq;
+      includedServices.push(`Gutter Cleaning (${addFreq}x/year)`);
+      baseServices.push("gutter_cleaning");
+    }
+    if (included.includes("house_wash") && svc.houseWash) {
+      baseServicesCost += bases.houseWash;
+      includedServices.push("House Wash");
+      baseServices.push("house_wash");
+    }
+    if (roofBaseTiers.includes(tier) && svc.roofCleaning) {
+      baseServicesCost += bases.roofCleaning;
+      includedServices.push("Roof Cleaning");
+      baseServices.push("roof_cleaning");
+    }
+
+    let addonsCost = 0;
+    const addonsList: string[] = [];
+
+    if (svc.drivewayCleaning?.enabled) {
+      addonsCost += bases.drivewayCleaning * (1 - addonDiscount);
+      addonsList.push("Driveway Cleaning");
+    }
+    if (svc.pressureWashing?.enabled) {
+      addonsCost += bases.pressureWashing * (1 - addonDiscount);
+      addonsList.push("Pressure Washing");
+    }
+    if (!included.includes("gutter_cleaning") && svc.gutterCleaning) {
+      addonsCost += bases.gutterCleaning * addFreq * (1 - addonDiscount);
+      addonsList.push(`Gutter Cleaning (${addFreq}x/year)`);
+    }
+    if (!included.includes("house_wash") && svc.houseWash) {
+      addonsCost += bases.houseWash * (1 - addonDiscount);
+      addonsList.push("House Wash");
+    }
+    if (!roofBaseTiers.includes(tier) && svc.roofCleaning) {
+      addonsCost += bases.roofCleaning * (1 - addonDiscount);
+      addonsList.push("Roof Cleaning");
+    }
+
+    const subtotal = windowCost + baseServicesCost + addonsCost;
+    const bundleDiscountAmt = subtotal * bundleDiscountFrac;
+    const annualTotal = Math.round(subtotal - bundleDiscountAmt);
+    const monthlyPayment = Math.round(annualTotal / 12);
+
+    const fullPriceAddons =
+      (svc.drivewayCleaning?.enabled ? bases.drivewayCleaning : 0) +
+      (svc.pressureWashing?.enabled ? bases.pressureWashing : 0) +
+      (!included.includes("gutter_cleaning") && svc.gutterCleaning
+        ? bases.gutterCleaning * addFreq
+        : 0) +
+      (!included.includes("house_wash") && svc.houseWash ? bases.houseWash : 0) +
+      (!roofBaseTiers.includes(tier) && svc.roofCleaning
+        ? bases.roofCleaning
+        : 0);
+    const addonSavings = Math.round(fullPriceAddons - addonsCost);
+
+    const individualTotal = windowCost + baseServicesCost + fullPriceAddons;
+    const savings = Math.round(individualTotal - annualTotal);
+    const savingsPercent =
+      individualTotal > 0 ? Math.round((savings / individualTotal) * 100) : 0;
+
+    const availableAddons = [
+      "driveway_cleaning",
+      "pressure_washing",
+      ...(!included.includes("gutter_cleaning") ? ["gutter_cleaning"] : []),
+      ...(!included.includes("house_wash") ? ["house_wash"] : []),
+      ...(!roofBaseTiers.includes(tier) ? ["roof_cleaning"] : []),
+    ];
+
+    rawTiers.push({
+      tier,
+      config,
+      annualTotal,
+      monthlyPayment,
+      savings,
+      savingsPercent,
+      addonSavings,
+      includedServices: [...includedServices, ...addonsList],
+      baseServices,
+      availableAddons,
+      totalWindowFrequency,
+      exteriorFreq,
+      interiorFreq,
+      windowCost: Math.round(windowCost),
+      baseServicesCost: Math.round(baseServicesCost),
+      addonsCost: Math.round(addonsCost),
+      bundleDiscount: Math.round(bundleDiscountAmt),
+      tierBufferAdjustment: 0,
+    });
+  }
+
+  // Tier guardrail: ensure each tier is strictly greater than the one below it.
+  // Mirrors the legacy `<=` comparison and the sequential adjustment exactly.
+  for (let i = 1; i < rawTiers.length; i++) {
+    const prev = rawTiers[i - 1];
+    const cur = rawTiers[i];
+    if (cur.annualTotal <= prev.annualTotal) {
+      const before = cur.annualTotal;
+      cur.annualTotal = prev.annualTotal + minimumTierBuffer;
+      cur.monthlyPayment = Math.round(cur.annualTotal / 12);
+      cur.tierBufferAdjustment = cur.annualTotal - before;
+    }
+  }
+
+  const tiers: BundleTierOption[] = rawTiers.map((t) => {
+    const config = t.config;
+    const bundleDiscountFrac = config.bundleDiscount ?? 0;
+    const addonDiscount = config.addonDiscount ?? 0;
+
+    const features: string[] = [];
+    if (t.interiorFreq > 0) {
+      features.push(`Exterior windows ${t.exteriorFreq}x/year`);
+      features.push(`Interior windows ${t.interiorFreq}x/year`);
+    } else {
+      features.push(`Exterior window cleaning ${t.exteriorFreq}x/year`);
+    }
+    if (t.tier === "better" || t.tier === "best") {
+      features.push("Priority scheduling");
+    }
+    if (t.tier === "best") {
+      features.push("Free touch-ups between visits");
+    }
+    if (bundleDiscountFrac > 0) {
+      features.push(`${Math.round(bundleDiscountFrac * 100)}% bundle discount`);
+    }
+    if (addonDiscount > 0) {
+      features.push(`${Math.round(addonDiscount * 100)}% off additional services`);
+    }
+
+    const downPayment = roundDollars(t.annualTotal * (downPct / 100));
+    const recurringMonthly = roundDollars(
+      (t.annualTotal - downPayment) / installments,
+    );
+
+    const trace: string[] = [
+      `tier=${t.tier} windowCost=${t.windowCost} baseServices=${t.baseServicesCost} addons=${t.addonsCost} bundleDiscount=${t.bundleDiscount} annualTotal=${t.annualTotal}${t.tierBufferAdjustment ? ` (buffer +${t.tierBufferAdjustment})` : ""}`,
+    ];
+
+    return {
+      tier: t.tier,
+      name: config.name ?? t.tier.charAt(0).toUpperCase() + t.tier.slice(1),
+      label: config.label ?? "",
+      description: config.description ?? "",
+      features,
+      windowFrequency: t.totalWindowFrequency,
+      windowFrequencyConfig: {
+        exteriorFrequency: t.exteriorFreq,
+        interiorFrequency: t.interiorFreq,
+      },
+      additionalServicesIncluded: t.includedServices,
+      baseServices: t.baseServices,
+      availableAddons: t.availableAddons,
+      annualTotal: t.annualTotal,
+      monthlyPayment: t.monthlyPayment,
+      downPayment,
+      recurringMonthly,
+      savings: t.savings,
+      savingsPercent: t.savingsPercent,
+      addonDiscountPercent: Math.round(addonDiscount * 100),
+      addonSavings: t.addonSavings,
+      windowCost: t.windowCost,
+      additionalServicesCost: t.baseServicesCost,
+      addonsCost: t.addonsCost,
+      bundleDiscount: t.bundleDiscount,
+      tierBufferAdjustment: t.tierBufferAdjustment,
+      isPopular: t.tier === "better",
+      trace,
+    };
+  });
+
+  return {
+    engineVersion: PRICING_ENGINE_VERSION,
+    ruleVersion,
+    status: "firm",
+    minimumTierBuffer,
+    tierOrder,
+    serviceBases: bases,
+    tiers,
+    missing: [],
+    manualReviewReasons: [],
+  };
+}
