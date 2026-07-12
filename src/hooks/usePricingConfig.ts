@@ -95,32 +95,37 @@ export interface PricingData {
 }
 
 // Default pricing for fallback
+// Estimate-only safety net. The AUTHORITATIVE prices live in the pricing_config
+// table and are recalculated server-side (calculate-quote / jobber-create-booking).
+// These values are kept in sync with the live production config so that, in the
+// rare case the DB read fails, the instant on-screen ESTIMATE is never wrong.
+// They are NEVER used to charge a customer — the server always recomputes.
 export const DEFAULT_PRICING: PricingData = {
   window_cleaning: {
-    exteriorPerSqFt: 0.045,
-    interiorPerSqFt: 0.035,
-    minimumPrice: 150,
+    exteriorPerSqFt: 0.08,
+    interiorPerSqFt: 0.075,
+    minimumPrice: 185,
     modifiers: {
-      stories: { "1": 0, "2": 25, "3": 50 },
-      condition: { maintenance: 0, heavy: 40 },
-      hardWater: 25,      // +25% when hard water stains present
-      frenchPanes: 30,    // +30% when french panes present
-      solarScreens: 20,   // +20% when solar screens present
+      stories: { "1": 0, "2": 12, "3": 18 },
+      condition: { maintenance: 0, heavy: 15 },
+      hardWater: 10,
+      frenchPanes: 40,
+      solarScreens: 20,
     },
   },
   house_wash: {
-    perSqFt: 0.12,
-    minimumPrice: 200,
+    perSqFt: 0.25,
+    minimumPrice: 396,
     modifiers: {
-      stories: { "1": 0, "2": 30, "3": 60 },
+      stories: { "1": 0, "2": 10, "3": 15 },
     },
-    rustStainSurcharge: 15, // +15% for rust/irrigation stains
+    rustStainSurcharge: 15,
   },
   gutter_cleaning: {
-    perSqFt: 0.06,
-    minimumPrice: 100,
+    perSqFt: 0.08,
+    minimumPrice: 200,
     modifiers: {
-      stories: { "1": 0, "2": 25, "3": 50 },
+      stories: { "1": 0, "2": 10, "3": 12 },
     },
     undergroundDrainPricing: {
       "1": 75,
@@ -129,35 +134,35 @@ export const DEFAULT_PRICING: PricingData = {
       "4+": 225,
     },
     minorRepairsPrice: 85,
-    gutterGuardsPerLinearFoot: 8, // $8 per linear foot
+    gutterGuardsPerLinearFoot: 8,
   },
   roof_cleaning: {
-    perSqFt: 0.10,
-    minimumPrice: 250,
+    perSqFt: 0.30,
+    minimumPrice: 500,
     modifiers: {
-      stories: { "1": 0, "2": 20, "3": 40 },
-      roofType: { asphalt: 0, tile: 25, metal: -10, flat: -15 },
-      severity: { light: 0, moderate: 25, heavy: 50 },
+      stories: { "1": 0, "2": 10, "3": 15 },
+      roofType: { asphalt: 0, tile: 10, metal: 0, flat: 0 },
+      severity: { light: 0, moderate: 5, heavy: 10 },
     },
   },
   window_addons: {
-    ladderWork: { "1-3": 45, "4-8": 85, "9+": 135 },
-    sunroom: { none: 0, small: 75, medium: 125, large: 200 },
+    ladderWork: { "1-3": 25, "4-8": 50, "9+": 75 },
+    sunroom: { none: 0, small: 125, medium: 175, large: 225 },
   },
   driveway_cleaning: {
-    perSqFt: 0.50,      // $0.50 per sqft for driveways
-    minimumPrice: 150,
+    perSqFt: 0.20,
+    minimumPrice: 200,
     surfaceMultipliers: {
       concrete: 1,
-      stamped: 1.15,
+      stamped: 1,
       pavers: 1.25,
-      brick: 1.20,
-      stone: 1.30,
-      tile: 1.35,
+      brick: 1,
+      stone: 1,
+      tile: 1,
     },
   },
   pressure_washing: {
-    perSqFt: 0.40,      // $0.40 per sqft for flatwork
+    perSqFt: 0.25,
     minimumPrice: 75,
     surfaceMultipliers: {
       concrete: 1,
