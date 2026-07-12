@@ -252,6 +252,8 @@ export interface QuoteLineItem {
   minimumApplied: boolean;
   amount: number;
   jobberLineItem?: { name: string; description?: string; unitPrice: number };
+  /** Optional structured sub-components (e.g. window exterior/interior split). */
+  components?: Record<string, number>;
 }
 
 export interface QuoteResult {
@@ -467,6 +469,7 @@ export function calculateQuote(
         minimumApplied: amount > calculated,
         amount,
         jobberLineItem: { name: "Window Cleaning", unitPrice: amount },
+        components: { exteriorWindows, interiorWindows },
       });
       trace.push(
         `window: ext=${exteriorWindows} int=${interiorWindows} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`,
