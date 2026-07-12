@@ -345,6 +345,46 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
 // ---------------------------------------------------------------------------
 // TOOL: request_manual_quote — unconfigured / unusual work. No firm price.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// TOOL: validate_service_area — geocode-based eligibility. Never rejects/books.
+// ---------------------------------------------------------------------------
+async function validateServiceAreaTool(ctx: ToolContext, args: Record<string, unknown>) {
+  const address = String(args.address || "").trim();
+  if (!address) {
+    return {
+      status: "address_incomplete",
+      customerMessage: "What's the full service address (street, city, ZIP)?",
+    };
+  }
+  const result = await validateServiceArea(ctx.supabase, address);
+
+  await ctx.supabase
+    .from("chat_conversations")
+    .update({
+      service_address: result.formattedAddress || address,
+      service_area_status: result.status,
+      service_area_result: result,
+      manual_review_reason:
+        result.status === "manual_review_required" ? result.reason ?? "Outside primary service area" : undefined,
+      needs_attention: result.status === "manual_review_required" ? true : undefined,
+      last_activity_at: new Date().toISOString(),
+    })
+    .eq("id", ctx.conversationId);
+
+  return {
+    status: result.status,
+    city: result.city,
+    county: result.county,
+    state: result.state,
+    formattedAddress: result.formattedAddress,
+    reason: result.reason,
+    customerMessage: result.customerMessage,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// TOOL: request_manual_quote — unconfigured / unusual work. No firm price.
+// ---------------------------------------------------------------------------
 async function manualQuoteTool(ctx: ToolContext, args: Record<string, unknown>) {
   await ctx.supabase.from("chat_conversations").update({
     prospect_name: (args.name as string) || undefined,
