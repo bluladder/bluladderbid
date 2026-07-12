@@ -83,10 +83,55 @@ interface UseSmartAvailabilityResult {
   // Error state
   error: string | null;
   requiresAdminAction: boolean;
+  // True when the backend deliberately withheld availability (stale mirror,
+  // sync in progress, never-synced). This is a controlled, safe-to-retry state
+  // — NOT a technical error — and the UI must show a reassuring message plus a
+  // callback option instead of appointment choices.
+  availabilityUnavailable: boolean;
   
   // Clear state
   clearSlots: () => void;
 }
+
+type AvailabilityErrorPayload = {
+  error?: string;
+  message?: string;
+  availability_unavailable?: boolean;
+  requiresAdminAction?: boolean;
+  reason?: string;
+};
+
+// supabase.functions.invoke surfaces non-2xx responses as an error whose
+// `context` is the raw Response. Pull the JSON body out so the controlled 503
+// "availability temporarily unavailable" payload can drive a friendly message
+// instead of a generic failure.
+async function extractAvailabilityErrorPayload(err: unknown): Promise<AvailabilityErrorPayload | null> {
+  const anyErr = err as { context?: Response; message?: string };
+  const context = anyErr?.context;
+  if (context && typeof context.clone === 'function') {
+    try {
+      const text = await context.clone().text();
+      const parsed = JSON.parse(text) as AvailabilityErrorPayload;
+      if (parsed && (parsed.error || parsed.message || parsed.availability_unavailable)) return parsed;
+    } catch {
+      // fall through
+    }
+  }
+  const msg = anyErr?.message ? String(anyErr.message) : String(err);
+  const jsonMatch = msg.match(/(\{[\s\S]*\})\s*$/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]) as AvailabilityErrorPayload;
+      if (parsed && (parsed.error || parsed.message || parsed.availability_unavailable)) return parsed;
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+const AVAILABILITY_UNAVAILABLE_MESSAGE =
+  "We're temporarily unable to verify online appointment times. Please try again shortly or request that our team contact you.";
 
 export function useSmartAvailability({
   services,
@@ -103,6 +148,7 @@ export function useSmartAvailability({
   const [isLoadingDaySlots, setIsLoadingDaySlots] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [requiresAdminAction, setRequiresAdminAction] = useState(false);
+  const [availabilityUnavailable, setAvailabilityUnavailable] = useState(false);
 
   const fetchRecommendations = useCallback(async (preference: TimePreference) => {
     if (services.length === 0) return;
@@ -110,6 +156,7 @@ export function useSmartAvailability({
     setIsLoadingRecommendations(true);
     setError(null);
     setRequiresAdminAction(false);
+    setAvailabilityUnavailable(false);
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke('jobber-availability', {
@@ -123,9 +170,39 @@ export function useSmartAvailability({
         },
       });
 
-      if (fnError) throw fnError;
+      if (fnError) {
+        const payload = await extractAvailabilityErrorPayload(fnError);
+        if (payload?.availability_unavailable) {
+          setAvailabilityUnavailable(true);
+          setError(payload.message || payload.error || AVAILABILITY_UNAVAILABLE_MESSAGE);
+          setRecommendations([]);
+          setBestRecommended(null);
+          setNextAvailable(null);
+          setRankedSlots([]);
+          return;
+        }
+        if (payload?.requiresAdminAction) setRequiresAdminAction(true);
+        if (payload?.error || payload?.message) {
+          setError(payload.message || payload.error || null);
+          setRecommendations([]);
+          setBestRecommended(null);
+          setNextAvailable(null);
+          setRankedSlots([]);
+          return;
+        }
+        throw fnError;
+      }
 
       if (data?.error) {
+        if (data.availability_unavailable) {
+          setAvailabilityUnavailable(true);
+          setError(data.message || data.error || AVAILABILITY_UNAVAILABLE_MESSAGE);
+          setRecommendations([]);
+          setBestRecommended(null);
+          setNextAvailable(null);
+          setRankedSlots([]);
+          return;
+        }
         setError(data.error);
         if (data.requiresAdminAction) {
           setRequiresAdminAction(true);
@@ -155,6 +232,7 @@ export function useSmartAvailability({
 
     setIsLoadingDaySlots(true);
     setError(null);
+    setAvailabilityUnavailable(false);
 
     try {
       const dateStr = date.toISOString().split('T')[0];
@@ -170,9 +248,29 @@ export function useSmartAvailability({
         },
       });
 
-      if (fnError) throw fnError;
+      if (fnError) {
+        const payload = await extractAvailabilityErrorPayload(fnError);
+        if (payload?.availability_unavailable) {
+          setAvailabilityUnavailable(true);
+          setError(payload.message || payload.error || AVAILABILITY_UNAVAILABLE_MESSAGE);
+          setDaySlots([]);
+          return;
+        }
+        if (payload?.error || payload?.message) {
+          setError(payload.message || payload.error || null);
+          setDaySlots([]);
+          return;
+        }
+        throw fnError;
+      }
 
       if (data?.error) {
+        if (data.availability_unavailable) {
+          setAvailabilityUnavailable(true);
+          setError(data.message || data.error || AVAILABILITY_UNAVAILABLE_MESSAGE);
+          setDaySlots([]);
+          return;
+        }
         setError(data.error);
         setDaySlots([]);
         return;
@@ -201,6 +299,7 @@ export function useSmartAvailability({
     setRankedSlots([]);
     setDaySlots([]);
     setError(null);
+    setAvailabilityUnavailable(false);
   }, []);
 
   return {
@@ -216,6 +315,7 @@ export function useSmartAvailability({
     fullyBookedDays,
     error,
     requiresAdminAction,
+    availabilityUnavailable,
     clearSlots,
   };
 }
