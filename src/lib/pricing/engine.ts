@@ -306,6 +306,7 @@ export function calculateQuote(
 
   const anyServiceSelected =
     !!svc.windowCleaning ||
+    !!svc.interiorWindows ||
     !!svc.houseWash ||
     !!svc.gutterCleaning ||
     !!svc.roofCleaning ||
@@ -320,6 +321,7 @@ export function calculateQuote(
   const squareFootage = home.squareFootage;
   const needsSqft =
     !!svc.windowCleaning ||
+    !!svc.interiorWindows ||
     !!svc.houseWash ||
     !!svc.gutterCleaning ||
     !!svc.roofCleaning;
