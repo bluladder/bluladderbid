@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireAdminOrService } from "../_shared/auth.ts";
+import { checkSuppression } from "../_shared/suppression.ts";
 
 // Use fetch-based Resend API call instead of npm package
 async function sendEmail(apiKey: string, options: { from: string; to: string[]; subject: string; html: string }) {
@@ -303,8 +304,11 @@ serve(async (req) => {
     let emailSent = false;
     let emailError: string | undefined;
 
-    // Send email if notifying customer and Resend is configured
-    if (notifyCustomer && resendApiKey) {
+    // System-test suppression, checked immediately before delivery.
+    const notifySuppression = await checkSuppression(supabase, { email: customerEmail });
+
+    // Send email if notifying customer, Resend is configured, and not suppressed
+    if (notifyCustomer && resendApiKey && !notifySuppression.suppressed) {
       try {
         const emailResponse = await sendEmail(resendApiKey, {
           from: FROM_EMAIL,
@@ -330,8 +334,12 @@ serve(async (req) => {
         triggered_by_id: triggeredById,
         channel: 'email',
         sent_at: emailSent ? new Date().toISOString() : null,
-        suppressed: !notifyCustomer,
-        suppressed_reason: !notifyCustomer ? 'Admin chose not to notify' : null,
+        suppressed: !notifyCustomer || notifySuppression.suppressed,
+        suppressed_reason: notifySuppression.suppressed
+          ? `Suppressed (${notifySuppression.reason})`
+          : !notifyCustomer
+            ? 'Admin chose not to notify'
+            : null,
         notification_content: {
           subject,
           recipient: customerEmail,
