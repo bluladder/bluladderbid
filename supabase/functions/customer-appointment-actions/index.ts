@@ -1,5 +1,10 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jobberGraphQL } from "../_shared/jobberClient.ts";
+import {
+  DELETE_VISIT_MUTATION,
+  interpretVisitDelete,
+  type VisitDeleteResult,
+} from "../_shared/jobberCancellation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -71,17 +76,10 @@ const UPDATE_VISIT_MUTATION = `
 `;
 
 // GraphQL mutation to cancel/delete a visit in Jobber
-const DELETE_VISIT_MUTATION = `
-  mutation DeleteVisit($visitId: EncodedId!) {
-    visitDelete(visitId: $visitId) {
-      deletedVisitId
-      userErrors {
-        message
-        path
-      }
-    }
-  }
-`;
+// NOTE: The mutation itself lives in ../_shared/jobberCancellation.ts so the
+// exact schema (plural `visitIds`, `VisitDeletePayload`) stays in one place and
+// is covered by unit tests. The old singular `visitDelete(visitId:)` form with a
+// `deletedVisitId` field was removed from Jobber and must never be reintroduced.
 
 // Convert ISO timestamp to Jobber's LocalDateTime format
 function parseToLocalDateTime(isoString: string): {
