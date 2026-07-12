@@ -134,9 +134,10 @@ export default function MyAppointments() {
   };
 
   const handleCancelComplete = () => {
+    // The CancelDialog owns the user-facing toast because the outcome may be a
+    // confirmed cancellation OR a fail-closed "needs confirmation" state.
     setCancelAppointment(null);
     refreshAppointments();
-    toast.success('Appointment cancelled');
   };
 
   if (authLoading) {
