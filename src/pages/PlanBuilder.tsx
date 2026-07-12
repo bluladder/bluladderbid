@@ -49,6 +49,9 @@ export default function PlanBuilder() {
     isValid,
     hasSelectedServices,
     isLoading,
+    pricingReady,
+    pricingLoading,
+    pricingUnavailable,
   } = useServicePlanBuilder();
   
   // Restore session on mount
@@ -253,6 +256,8 @@ export default function PlanBuilder() {
               onSelectTier={handleTierSelect}
               tierPrices={tierPrices}
               hasHomeDetails={homeDetails.squareFootage > 0}
+              pricingLoading={pricingLoading}
+              pricingUnavailable={pricingUnavailable}
             />
           </div>
         )}
@@ -278,6 +283,9 @@ export default function PlanBuilder() {
               onChangeFrequency={(id, freq) => updateFrequency(id as PlanBuilderServiceId, freq)}
               onContinue={handleContinueToCustomer}
               onCompare={handleCompare}
+              pricingReady={pricingReady}
+              pricingLoading={pricingLoading}
+              pricingUnavailable={pricingUnavailable}
             />
           </div>
         )}
@@ -302,6 +310,9 @@ export default function PlanBuilder() {
                   onSubmit={handleSubmit}
                   showSubmitButton={true}
                   selectedTierName={currentTierConfig?.name || 'Better'}
+                  pricingReady={pricingReady}
+                  pricingLoading={pricingLoading}
+                  pricingUnavailable={pricingUnavailable}
                 />
               </div>
             </div>

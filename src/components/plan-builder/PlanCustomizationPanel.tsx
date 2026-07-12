@@ -19,6 +19,9 @@ interface PlanCustomizationPanelProps {
   onChangeFrequency: (serviceId: string, frequency: 1 | 2 | 3 | 4) => void;
   onContinue: () => void;
   onCompare: () => void;
+  pricingReady?: boolean;
+  pricingLoading?: boolean;
+  pricingUnavailable?: boolean;
 }
 
 const SERVICE_ICONS: Record<string, React.FC<{ className?: string }>> = {
@@ -47,8 +50,13 @@ export function PlanCustomizationPanel({
   onChangeFrequency,
   onContinue,
   onCompare,
+  pricingReady = true,
+  pricingLoading,
+  pricingUnavailable,
 }: PlanCustomizationPanelProps) {
   const [showFrequencyControls, setShowFrequencyControls] = useState(false);
+  // A dollar figure is shown ONLY when it is a current, firm server price.
+  const money = (v: number) => (pricingReady ? formatPrice(v) : '—');
   
   // Determine which services are included in the tier
   const includedServiceIds = new Set<string>();
@@ -156,7 +164,7 @@ export function PlanCustomizationPanel({
                             <div className="mt-2 flex items-center justify-between">
                               <div className="flex items-baseline gap-1">
                                 <span className="font-semibold text-foreground">
-                                  {formatPrice(service.annualTotal)}
+                                  {money(service.annualTotal)}
                                 </span>
                                 <span className="text-xs text-muted-foreground">/yr</span>
                               </div>
@@ -193,7 +201,7 @@ export function PlanCustomizationPanel({
                           {!isEnabled && hasValidPricing && (
                             <div className="mt-1.5">
                               <span className="text-xs text-muted-foreground">
-                                Add for {formatPrice(service.calculatedPrice)}/visit
+                                Add for {money(service.calculatedPrice)}/visit
                               </span>
                             </div>
                           )}
@@ -240,7 +248,7 @@ export function PlanCustomizationPanel({
                   {/* Monthly Price with Tooltip */}
                   <div className="text-center">
                     <div className="text-3xl font-bold text-primary transition-all duration-300">
-                      {formatPrice(payment.monthlyPayment)}
+                      {money(payment.monthlyPayment)}
                       <span className="text-base font-normal text-muted-foreground">/mo</span>
                     </div>
                     <div className="flex items-center justify-center gap-1 mt-1">
@@ -269,15 +277,15 @@ export function PlanCustomizationPanel({
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Annual value</span>
-                      <span className="font-medium">{formatPrice(payment.annualTotal)}</span>
+                      <span className="font-medium">{money(payment.annualTotal)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Today's deposit (20%)</span>
-                      <span className="font-medium">{formatPrice(payment.downPayment)}</span>
+                      <span className="font-medium">{money(payment.downPayment)}</span>
                     </div>
                     <div className="flex justify-between text-primary font-semibold border-t pt-2">
                       <span>Then 11 payments of</span>
-                      <span>{formatPrice(payment.monthlyPayment)}</span>
+                      <span>{money(payment.monthlyPayment)}</span>
                     </div>
                   </div>
 
