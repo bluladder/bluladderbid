@@ -1,4 +1,8 @@
-import type { PricingConfig } from "../engine";
+import type {
+  PricingConfig,
+  EngineHomeDetails,
+  EngineAdditionalServices,
+} from "../engine";
 
 /**
  * Snapshot of the LIVE production pricing_config values at the time of
@@ -57,7 +61,7 @@ export const LIVE_CONFIG: PricingConfig = {
   },
 };
 
-export function baseHome(overrides: Record<string, unknown> = {}) {
+export function baseHome(overrides: Partial<EngineHomeDetails> = {}): EngineHomeDetails {
   return {
     squareFootage: 2000,
     stories: 1,
@@ -68,7 +72,7 @@ export function baseHome(overrides: Record<string, unknown> = {}) {
   };
 }
 
-export function noServices() {
+export function noServices(): EngineAdditionalServices {
   return {
     windowCleaning: false,
     houseWash: false,
