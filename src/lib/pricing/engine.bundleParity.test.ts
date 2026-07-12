@@ -190,3 +190,55 @@ describe("computeBundleTiers guardrail + fail-closed behavior", () => {
     expect(r.tiers[2].tierBufferAdjustment).toBe(0);
   });
 });
+
+describe("computeBundleTiers customization parity (legacy delta math)", () => {
+  function legacyCustomize(
+    baseAnnual: number,
+    baseFreq: { exteriorFrequency: number; interiorFrequency: number },
+    bases: { exteriorWindows: number; interiorWindows: number; gutterCleaning: number; houseWash: number; roofCleaning: number },
+    custom: { windowFrequency: { exteriorFrequency: number; interiorFrequency: number }; serviceSwaps: { from: string; to: string }[]; addedServices: string[] },
+  ) {
+    const originalFreqCost = bases.exteriorWindows * baseFreq.exteriorFrequency + bases.interiorWindows * baseFreq.interiorFrequency;
+    const newFreqCost = bases.exteriorWindows * custom.windowFrequency.exteriorFrequency + bases.interiorWindows * custom.windowFrequency.interiorFrequency;
+    const freqDiff = newFreqCost - originalFreqCost;
+    const getPrice = (k: string) => (k === "gutter_cleaning" ? bases.gutterCleaning : k === "house_wash" ? bases.houseWash : k === "roof_cleaning" ? bases.roofCleaning : 0);
+    let serviceDiff = 0;
+    for (const s of custom.serviceSwaps) serviceDiff += getPrice(s.to) - getPrice(s.from);
+    for (const a of custom.addedServices) if (!custom.serviceSwaps.some((s) => s.to === a)) serviceDiff += getPrice(a);
+    return Math.round(baseAnnual + freqDiff + serviceDiff);
+  }
+
+  it("applies window-cadence customization exactly like the former frontend", () => {
+    const home = baseHome({ squareFootage: 2500, stories: 2, windowCleaningType: "both" });
+    const services = svc({ windowCleaning: true, gutterCleaning: true });
+    const custom = { windowFrequency: { exteriorFrequency: 2, interiorFrequency: 2 }, serviceSwaps: [], addedServices: [] };
+
+    const base = computeBundleTiers({ homeDetails: home, additionalServices: services }, LIVE_CONFIG);
+    const customized = computeBundleTiers({ homeDetails: home, additionalServices: services, customizations: { better: custom } }, LIVE_CONFIG);
+
+    const betterBase = base.tiers.find((t) => t.tier === "better")!;
+    const betterCust = customized.tiers.find((t) => t.tier === "better")!;
+    const expected = legacyCustomize(betterBase.annualTotal, betterBase.windowFrequencyConfig, base.serviceBases, custom);
+
+    expect(betterCust.isCustomized).toBe(true);
+    expect(betterCust.annualTotal).toBe(expected);
+    expect(betterCust.monthlyPayment).toBe(Math.round(expected / 12));
+    // other tiers untouched
+    expect(customized.tiers.find((t) => t.tier === "good")!.annualTotal).toBe(base.tiers.find((t) => t.tier === "good")!.annualTotal);
+    expect(customized.tiers.find((t) => t.tier === "good")!.isCustomized).toBe(false);
+  });
+
+  it("applies added-service customization exactly like the former frontend", () => {
+    const home = baseHome({ squareFootage: 3000, stories: 1, windowCleaningType: "both" });
+    const services = svc({ windowCleaning: true, gutterCleaning: true, roofCleaning: true, roofType: "asphalt", roofSeverity: "light" });
+    const custom = { windowFrequency: { exteriorFrequency: 4, interiorFrequency: 1 }, serviceSwaps: [], addedServices: ["house_wash"] };
+
+    const base = computeBundleTiers({ homeDetails: home, additionalServices: services }, LIVE_CONFIG);
+    const customized = computeBundleTiers({ homeDetails: home, additionalServices: services, customizations: { best: custom } }, LIVE_CONFIG);
+
+    const bestBase = base.tiers.find((t) => t.tier === "best")!;
+    const bestCust = customized.tiers.find((t) => t.tier === "best")!;
+    const expected = legacyCustomize(bestBase.annualTotal, bestBase.windowFrequencyConfig, base.serviceBases, custom);
+    expect(bestCust.annualTotal).toBe(expected);
+  });
+});
