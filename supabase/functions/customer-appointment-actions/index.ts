@@ -257,7 +257,12 @@ Deno.serve(async (req) => {
         result = await handleModifyServices(serviceClient, typedBooking, body);
         break;
       case 'cancel':
-        result = await handleCancel(serviceClient, typedBooking);
+        result = await handleCancel(
+          serviceClient,
+          typedBooking,
+          isVerifiedAdmin ? 'admin' : 'customer',
+          callerUserId,
+        );
         break;
       default:
         return new Response(
@@ -290,9 +295,15 @@ Deno.serve(async (req) => {
     }
 
     // Fire-and-forget transactional SMS + campaign enrollment for relevant actions.
+    // For cancellations we ONLY notify when Jobber genuinely confirmed the
+    // removal AND it was not an idempotent replay of an already-cancelled
+    // booking. A fail-closed "needs_attention" outcome must never send a
+    // "your appointment is cancelled" message.
+    const cancelFreshlyConfirmed =
+      action === 'cancel' && result.status === 'cancelled';
     const smsEvent =
       action === 'reschedule' ? 'appointment_rescheduled' :
-      action === 'cancel' ? 'appointment_cancelled' : null;
+      cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
     if (smsEvent) {
       try {
         fetch(`${supabaseUrl}/functions/v1/send-sms`, {
@@ -306,6 +317,23 @@ Deno.serve(async (req) => {
       } catch (smsErr) {
         console.warn("[CustomerAction] SMS dispatch error:", smsErr);
       }
+    }
+
+    // A cancellation that could not be verified with Jobber is returned as a
+    // recoverable, non-error state so the UI can show a "we'll confirm shortly"
+    // message instead of a false success or a scary failure.
+    if (action === 'cancel' && result.status === 'needs_attention') {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          needsAttention: true,
+          status: 'needs_attention',
+          message:
+            "We received your cancellation request, but it still needs to be confirmed by our team. We'll contact you shortly.",
+          ...result,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 202 }
+      );
     }
 
     return new Response(
