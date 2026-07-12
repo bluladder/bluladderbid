@@ -529,6 +529,21 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "validate_service_area",
+      description: "Check whether a service address is in BluLadder's area. Call this before offering appointment times. Returns eligible, manual_review_required, address_incomplete, or validation_unavailable. Eligibility is geocoded server-side — never decide it yourself from the typed city. Do NOT proceed to booking unless status is 'eligible'.",
+      parameters: {
+        type: "object",
+        properties: {
+          address: { type: "string", description: "Full street address including city, state and ZIP." },
+        },
+        required: ["address"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "request_human_callback",
       description: "Use when the customer asks for a person, or when you cannot safely answer. Saves their contact and preferences for follow-up.",
       parameters: {
