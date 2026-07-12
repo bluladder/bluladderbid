@@ -71,6 +71,36 @@ export interface PricingConfig {
     minimumPrice: number;
     surfaceMultipliers: Record<string, number>;
   };
+  /** Optional administrator-controlled $99 window promotion. */
+  window_promo_99?: PromotionConfig;
+}
+
+/**
+ * Administrator-controlled promotional offer configuration. Stored under the
+ * `window_promo_99` key in pricing_config. This is OPTIONAL — its absence simply
+ * means no promotion is available (never a fallback price). Every field is
+ * administrator-controlled; the engine never invents dates, limits or prices.
+ */
+export interface PromotionConfig {
+  active: boolean;
+  promoId: string;
+  version: number;
+  flatPrice: number;
+  maxWindows: number;
+  /** ISO date (yyyy-mm-dd) or null for no start bound. Administrator-controlled. */
+  effectiveStart?: string | null;
+  /** ISO date (yyyy-mm-dd) or null for no end bound. Administrator-controlled. */
+  effectiveEnd?: string | null;
+  /** Preparation requirement preserved into the quote snapshot and Jobber notes. */
+  prepInstructions: string;
+  /**
+   * Stacking policy is administrator-configurable. Until an administrator
+   * intentionally selects a policy other than "none", promotions never stack
+   * with discount codes or other promotions.
+   */
+  stackingPolicy?: "none" | "allow_discount_codes";
+  serviceLabel?: string;
+  terms?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,10 +158,24 @@ export interface EngineDiscount {
   code?: string;
 }
 
+/**
+ * An explicit promotion selection. A promotion NEVER applies automatically —
+ * the customer must explicitly select it (or supply its approved identifier),
+ * so this field must be present and populated by the caller.
+ */
+export interface PromotionRequest {
+  /** Approved promotional identifier (must match the configured promoId). */
+  id: string;
+  /** Number of standard exterior windows the customer wants cleaned. */
+  windowCount: number;
+}
+
 export interface QuoteInput {
   homeDetails: EngineHomeDetails;
   additionalServices: EngineAdditionalServices;
   discount?: EngineDiscount | null;
+  /** Present ONLY when the customer explicitly selects a promotion. */
+  promotion?: PromotionRequest | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +214,20 @@ export interface QuoteResult {
   explanation: string;
   trace: string[];
   jobberLineItems: { name: string; description?: string; unitPrice: number }[];
+  /**
+   * Applied promotion snapshot. Preserved into the quote snapshot and booking
+   * notes so promo ID, version and terms travel with the record. Null when no
+   * promotion was applied.
+   */
+  promotion: {
+    id: string;
+    version: number;
+    flatPrice: number;
+    maxWindows: number;
+    windowCount: number;
+    prepInstructions: string;
+    terms?: string;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +265,15 @@ export function calculateQuote(
 
   const home = input.homeDetails ?? ({} as EngineHomeDetails);
   const svc = input.additionalServices ?? ({} as EngineAdditionalServices);
+
+  // =========================================================================
+  // PROMOTION BRANCH — only when the customer EXPLICITLY selected a promotion.
+  // A promotion never applies automatically and never silently replaces the
+  // normal window-cleaning price. It is handled in isolation and returns early.
+  // =========================================================================
+  if (input.promotion && input.promotion.id) {
+    return calculatePromotion(input.promotion, pricing, ruleVersion, trace);
+  }
 
   const anyServiceSelected =
     !!svc.windowCleaning ||
@@ -599,6 +666,7 @@ function finalize(
     trace: string[];
     missing: string[];
     manualReviewReasons: string[];
+    promotion?: QuoteResult["promotion"];
   },
   ruleVersion: number | null,
 ): QuoteResult {
@@ -633,5 +701,215 @@ function finalize(
     jobberLineItems: partial.lineItems
       .map((li) => li.jobberLineItem)
       .filter((x): x is NonNullable<typeof x> => !!x),
+    promotion: partial.promotion ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// PROMOTION ENGINE — $99 exterior-window offer (administrator-controlled)
+// ---------------------------------------------------------------------------
+// A promotion is applied ONLY when explicitly requested. It never stacks with
+// other discounts unless an administrator sets an explicit stacking policy, and
+// it never silently covers more than the configured number of windows.
+function calculatePromotion(
+  req: PromotionRequest,
+  pricing: PricingConfig,
+  ruleVersion: number | null,
+  trace: string[],
+): QuoteResult {
+  const promo = pricing.window_promo_99;
+
+  // Reject unknown / unconfigured promotions — never invent a price.
+  if (!promo || typeof promo !== "object") {
+    return finalize(
+      {
+        status: "manual_review_required",
+        lineItems: [],
+        subtotal: 0,
+        discount: null,
+        total: 0,
+        trace,
+        missing: [],
+        manualReviewReasons: ["Requested promotion is not available"],
+      },
+      ruleVersion,
+    );
+  }
+
+  // The supplied identifier must match the configured, approved promotion id.
+  if (promo.promoId !== req.id) {
+    return finalize(
+      {
+        status: "manual_review_required",
+        lineItems: [],
+        subtotal: 0,
+        discount: null,
+        total: 0,
+        trace,
+        missing: [],
+        manualReviewReasons: ["Requested promotion identifier is not recognized"],
+      },
+      ruleVersion,
+    );
+  }
+
+  // Reject inactive / unpublished promotions.
+  if (!promo.active) {
+    return finalize(
+      {
+        status: "manual_review_required",
+        lineItems: [],
+        subtotal: 0,
+        discount: null,
+        total: 0,
+        trace,
+        missing: [],
+        manualReviewReasons: ["This promotion is not currently active"],
+      },
+      ruleVersion,
+    );
+  }
+
+  // Administrator-controlled effective-date gating (both bounds optional).
+  const now = new Date();
+  if (promo.effectiveStart) {
+    const start = new Date(promo.effectiveStart);
+    if (Number.isFinite(start.getTime()) && now < start) {
+      return finalize(
+        {
+          status: "manual_review_required",
+          lineItems: [],
+          subtotal: 0,
+          discount: null,
+          total: 0,
+          trace,
+          missing: [],
+          manualReviewReasons: ["This promotion has not started yet"],
+        },
+        ruleVersion,
+      );
+    }
+  }
+  if (promo.effectiveEnd) {
+    const end = new Date(promo.effectiveEnd);
+    if (Number.isFinite(end.getTime()) && now > end) {
+      return finalize(
+        {
+          status: "manual_review_required",
+          lineItems: [],
+          subtotal: 0,
+          discount: null,
+          total: 0,
+          trace,
+          missing: [],
+          manualReviewReasons: ["This promotion has ended"],
+        },
+        ruleVersion,
+      );
+    }
+  }
+
+  // Window count is required to validate the offer's window cap.
+  const count = req.windowCount;
+  if (!isValidNumber(count) || count <= 0) {
+    return finalize(
+      {
+        status: "missing_information",
+        lineItems: [],
+        subtotal: 0,
+        discount: null,
+        total: 0,
+        trace,
+        missing: ["windowCount"],
+        manualReviewReasons: [],
+      },
+      ruleVersion,
+    );
+  }
+
+  const maxWindows = isValidNumber(promo.maxWindows) ? promo.maxWindows : 10;
+  // More than the cap must NOT silently remain $99 — send to a standard quote.
+  if (count > maxWindows) {
+    return finalize(
+      {
+        status: "manual_review_required",
+        lineItems: [],
+        subtotal: 0,
+        discount: null,
+        total: 0,
+        trace,
+        missing: [],
+        manualReviewReasons: [
+          `The ${promo.promoId} promotion covers up to ${maxWindows} exterior windows; ${count} windows require a standard quote`,
+        ],
+      },
+      ruleVersion,
+    );
+  }
+
+  if (!isValidNumber(promo.flatPrice) || promo.flatPrice <= 0) {
+    return finalize(
+      {
+        status: "manual_review_required",
+        lineItems: [],
+        subtotal: 0,
+        discount: null,
+        total: 0,
+        trace,
+        missing: [],
+        manualReviewReasons: ["Promotion price is not configured"],
+      },
+      ruleVersion,
+    );
+  }
+
+  const amount = roundCents(promo.flatPrice);
+  const prep = promo.prepInstructions ?? "";
+  const label =
+    promo.serviceLabel ?? `Exterior Window Cleaning Promotion (up to ${maxWindows} windows)`;
+  const jobberDescription = prep
+    ? `${count} exterior windows. PREP REQUIRED: ${prep}`
+    : `${count} exterior windows`;
+
+  trace.push(`promo: ${promo.promoId} v${promo.version} count=${count}/${maxWindows} -> $${amount}`);
+
+  return finalize(
+    {
+      status: "firm",
+      lineItems: [
+        {
+          key: "window_promo_99",
+          label,
+          quantity: count,
+          unit: "each",
+          baseAmount: amount,
+          adjustments: [],
+          minimumApplied: false,
+          amount,
+          jobberLineItem: {
+            name: label,
+            description: jobberDescription,
+            unitPrice: amount,
+          },
+        },
+      ],
+      subtotal: amount,
+      // Stacking is disabled by default; the promotion is a flat, all-in price.
+      discount: null,
+      total: amount,
+      trace,
+      missing: [],
+      manualReviewReasons: [],
+      promotion: {
+        id: promo.promoId,
+        version: promo.version,
+        flatPrice: amount,
+        maxWindows,
+        windowCount: count,
+        prepInstructions: prep,
+        terms: promo.terms,
+      },
+    },
+    ruleVersion,
+  );
 }

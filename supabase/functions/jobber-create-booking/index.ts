@@ -42,6 +42,8 @@ interface BookingRequest {
   }>;
   homeDetails: Record<string, unknown>;
   additionalServices?: Record<string, unknown>;
+  /** Explicit promotion selection (e.g. the $99 window offer). */
+  promotion?: { id: string; windowCount: number } | null;
   subtotal: number;
   discountAmount?: number;
   total: number;
@@ -343,7 +345,9 @@ Deno.serve(async (req) => {
         : null,
     };
 
-    if (booking.additionalServices) {
+    // Track promotion prep instructions so we can append them to Jobber notes.
+    let promoPrepInstructions = "";
+    if (booking.additionalServices || booking.promotion) {
       try {
         // Re-validate discount server-side (active / not expired / under max uses).
         let serverDiscount: QuoteInput["discount"] = null;
@@ -375,6 +379,10 @@ Deno.serve(async (req) => {
               homeDetails: booking.homeDetails as QuoteInput["homeDetails"],
               additionalServices: booking.additionalServices as QuoteInput["additionalServices"],
               discount: serverDiscount,
+              promotion:
+                booking.promotion && typeof booking.promotion.id === "string"
+                  ? { id: booking.promotion.id, windowCount: Number(booking.promotion.windowCount) }
+                  : null,
             },
             loaded.pricing,
             loaded.ruleVersion,
@@ -386,12 +394,22 @@ Deno.serve(async (req) => {
             inputSnapshot: { homeDetails: booking.homeDetails, additionalServices: booking.additionalServices },
             lineItemSnapshot: engineResult.lineItems,
             discountSnapshot: engineResult.discount,
+            // Preserve promotion id/version/terms in the booking snapshot.
+            promotionSnapshot: engineResult.promotion,
           };
 
           if (engineResult.firm) {
+            // Preserve the promotion's preparation requirement for the crew.
+            if (engineResult.promotion?.prepInstructions) {
+              promoPrepInstructions = engineResult.promotion.prepInstructions;
+            }
             const serverTotal = engineResult.total;
             const clientTotal = Number(booking.total);
-            if (Math.abs(serverTotal - clientTotal) > 1) {
+            // For promotions the Jobber line items MUST reconcile exactly with the
+            // server result, so always rebuild from the engine when a promotion is
+            // applied (in addition to the normal tamper/stale guard).
+            const promoApplied = !!engineResult.promotion;
+            if (promoApplied || Math.abs(serverTotal - clientTotal) > 1) {
               // Client total was tampered with or stale — trust the server.
               console.warn(
                 `Pricing mismatch: client total ${clientTotal} vs server ${serverTotal}. Using server values.`,
@@ -404,9 +422,10 @@ Deno.serve(async (req) => {
                 name: li.label,
                 price: li.amount,
                 description:
-                  li.adjustments.length > 0
+                  li.jobberLineItem?.description ??
+                  (li.adjustments.length > 0
                     ? li.adjustments.map((a) => a.label).join(", ")
-                    : undefined,
+                    : undefined),
               }));
             }
           } else {
@@ -908,7 +927,14 @@ Deno.serve(async (req) => {
     // Build notes for the job
     // Only include customer's special instructions in Jobber job notes
     // The detailed home info, services, and pricing are tracked in our local booking record
-    const jobInstructions = booking.notes?.trim() || "";
+    // Promotion preparation requirements (e.g. "remove screens before arrival")
+    // must travel with the job so the crew and customer both see them.
+    const jobInstructions = [
+      promoPrepInstructions ? `PREP REQUIRED: ${promoPrepInstructions}` : "",
+      booking.notes?.trim() || "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
     // Create job in Jobber using JobCreateAttributes
     console.log("Creating job in Jobber");
