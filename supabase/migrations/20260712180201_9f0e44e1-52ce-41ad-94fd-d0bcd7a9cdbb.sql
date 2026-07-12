@@ -1,0 +1,1 @@
+DELETE FROM public.slot_reservations WHERE session_id LIKE 'test-validation%';
