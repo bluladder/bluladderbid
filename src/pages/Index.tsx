@@ -12,7 +12,10 @@ import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
 import { CustomerLookup } from '@/components/booking/CustomerLookup';
 import { PastBookings } from '@/components/booking/PastBookings';
 import { ProgressStepper, type FlowStep } from '@/components/homeowner/ProgressStepper';
-import { useServicePricing } from '@/hooks/useServicePricing';
+import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
+import { useServerBundleTiers } from '@/hooks/useServerBundleTiers';
+import { fromQuoteResult } from '@/lib/pricing/fromQuoteResult';
+import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
 import { 
@@ -53,14 +56,30 @@ const Index = () => {
   const [pastBookings, setPastBookings] = useState<PastBooking[]>([]);
   const [prefillCustomerInfo, setPrefillCustomerInfo] = useState<CustomerInfo | null>(null);
 
-  const { servicePrices, bundles } = useServicePricing(homeDetails, additionalServices);
-  
   // Persist plan customizations across page refreshes
   const { 
     customizations, 
     setTierCustomization, 
     hasCustomization 
   } = usePlanCustomizations();
+
+  // AUTHORITATIVE pricing — one-time totals AND the Good/Better/Best tiers come
+  // ONLY from the deployed pricing Edge Functions (calculate-quote /
+  // calculate-plan-options bundle_tiers). No local pricing math, no fallback.
+  const hasServices = hasAnyServiceSelected(additionalServices);
+  const oneTimeQuote = useServerQuoteCalculation(
+    hasServices ? toQuoteInput(homeDetails, additionalServices) : null,
+    { enabled: hasServices },
+  );
+  const servicePrices = useMemo(
+    () => fromQuoteResult(oneTimeQuote.quote),
+    [oneTimeQuote.quote],
+  );
+  const bundleState = useServerBundleTiers(
+    hasServices ? { homeDetails, additionalServices, customizations } : null,
+    { enabled: hasServices },
+  );
+  const bundles = bundleState.bundles;
 
   const handleHomeDetailsChange = (updates: Partial<HomeDetails>) => {
     setHomeDetails(prev => ({ ...prev, ...updates }));
@@ -70,51 +89,10 @@ const Index = () => {
     setAdditionalServices(prev => ({ ...prev, ...updates }));
   };
 
-  // Apply customizations to bundles for display
-  const customizedBundles = useMemo(() => {
-    return bundles.map(bundle => {
-      const customization = customizations[bundle.tier];
-      if (!customization) return bundle;
-      
-      // Calculate price adjustments from customization
-      const freqConfig = customization.windowFrequency;
-      const originalFreqCost = 
-        servicePrices.exteriorWindows * bundle.windowFrequencyConfig.exteriorFrequency +
-        servicePrices.interiorWindows * bundle.windowFrequencyConfig.interiorFrequency;
-      const newFreqCost = 
-        servicePrices.exteriorWindows * freqConfig.exteriorFrequency +
-        servicePrices.interiorWindows * freqConfig.interiorFrequency;
-      const freqDiff = newFreqCost - originalFreqCost;
-      
-      // Calculate service swap price impact
-      const getServicePrice = (svc: string) => {
-        if (svc === 'gutter_cleaning') return servicePrices.gutterCleaning;
-        if (svc === 'house_wash') return servicePrices.houseWash;
-        if (svc === 'roof_cleaning') return servicePrices.roofCleaning;
-        return 0;
-      };
-      
-      let serviceDiff = 0;
-      for (const swap of customization.serviceSwaps) {
-        serviceDiff += getServicePrice(swap.to) - getServicePrice(swap.from);
-      }
-      for (const added of customization.addedServices) {
-        if (!customization.serviceSwaps.some(s => s.to === added)) {
-          serviceDiff += getServicePrice(added);
-        }
-      }
-      
-      const newAnnualTotal = bundle.annualTotal + freqDiff + serviceDiff;
-      
-      return {
-        ...bundle,
-        windowFrequencyConfig: freqConfig,
-        annualTotal: Math.round(newAnnualTotal),
-        monthlyPayment: Math.round(newAnnualTotal / 12),
-        isCustomized: true,
-      };
-    });
-  }, [bundles, customizations, servicePrices]);
+  // Tier customizations are applied SERVER-SIDE (sent to calculate-plan-options
+  // via useServerBundleTiers), so the returned tiers are already customized.
+  // No local customization delta math.
+  const customizedBundles = bundles;
 
   // Get selected bundle for recurring plans
   const selectedBundle = selectedTier 
