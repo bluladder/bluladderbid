@@ -107,6 +107,7 @@ function getStatusColor(status: string) {
     case 'confirmed': return 'bg-blue-100 text-blue-800';
     case 'in_progress': return 'bg-yellow-100 text-yellow-800';
     case 'cancelled': return 'bg-red-100 text-red-800';
+    case 'needs_attention': return 'bg-amber-100 text-amber-900';
     default: return 'bg-gray-100 text-gray-800';
   }
 }
@@ -545,6 +546,7 @@ export function BookingsManager() {
   }, [bookings, dateRange, customStartDate, customEndDate, showHidden]);
 
   const hiddenCount = bookings.filter(b => b.is_hidden).length;
+  const needsAttentionBookings = bookings.filter(b => b.status === 'needs_attention' && !b.is_hidden);
 
   // Attribution stats (using filtered bookings)
   const attributionStats = filteredBookings.reduce((acc, b) => {
@@ -560,6 +562,35 @@ export function BookingsManager() {
 
   return (
     <div className="space-y-6">
+      {/* Needs-attention alert — bookings that were accepted but not fully
+          confirmed on the calendar. These must never be overlooked. */}
+      {needsAttentionBookings.length > 0 && (
+        <Alert className="border-amber-300 bg-amber-50 text-amber-900">
+          <ShieldAlert className="h-4 w-4 !text-amber-600" />
+          <AlertDescription className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">
+              {needsAttentionBookings.length} booking{needsAttentionBookings.length !== 1 ? 's' : ''} need
+              {needsAttentionBookings.length === 1 ? 's' : ''} manual confirmation.
+            </span>
+            <span className="text-amber-800">
+              These customers were told we&apos;ll contact them — confirm their appointment in Jobber.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto border-amber-400 text-amber-900 hover:bg-amber-100"
+              onClick={() => {
+                setDateRange('all');
+                const first = needsAttentionBookings[0];
+                if (first) setExpandedId(first.id);
+              }}
+            >
+              Review
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Date Range Filter */}
       <Card>
         <CardContent className="pt-4">
