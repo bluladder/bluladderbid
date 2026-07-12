@@ -1,60 +1,70 @@
-# Unified Smart Scheduling — Admin Portal + Customer Booking
+# BluLadder Pricing Centralization — Audit + Build Plan
 
-## Goal
-Present available appointments the same way in the **Admin Scheduling Portal** and the **customer booking flow**, with a clear, labeled hierarchy:
+## Phase 1–2 findings (completed now, evidence-based)
 
-1. **Best Recommended** — the single highest-value slot (optimizes location/route + fills schedule gaps, e.g. a 2‑hr job dropped into a 3–5pm gap instead of a lone 9am).
-2. **Next Available** — the soonest slot that is large enough to fit the selected service.
-3. **5 More Options** — the next best-ranked appointments.
-4. **Browse All** — day / week / month calendar showing every available appointment.
+**Current authoritative path:** Customer input → `useServicePricing.ts` (a **frontend React hook**, ~556 lines) computes every price → the booking flow sends `subtotal`, `total`, per-service `price`, and `discountAmount` to `jobber-create-booking`, which **trusts them verbatim** (`unitPrice: svc.price`; stores `booking.total` as-is). There is **no server-side recalculation**. This is the core defect.
 
-The scoring engine that decides "best" already exists in the `jobber-availability` function (gap 35% / recency 30% / route 15% / technician 20%). This work surfaces more of that ranking and reuses it on both ends so the experience is identical.
+### Every pricing source discovered
+| Source | Controls | In prod? | Hard-coded fallback? | Admin-editable? | Safe? |
+|---|---|---|---|---|---|
+| `pricing_config` table (11 keys) | All service rates/mods/minimums, bundles | ✅ authoritative | n/a | ✅ (Admin Pricing tab) | ✅ |
+| `useServicePricing.ts` (frontend) | The real quote math | ✅ | uses hook below | no | ⚠️ frontend-authoritative |
+| `usePricingConfig.DEFAULT_PRICING` | Fallback if DB read fails | ✅ | ✅ **wrong values** | no | ❌ |
+| `chat-quote` edge fn `DEFAULT_PRICING` + `calculateQuote` | AI chat quotes | ✅ | ✅ **wrong values** + simplified math | no | ❌ |
+| `validate-discount-code` edge fn | Discount lookup only (no total calc) | ✅ | no | codes are admin-editable | ✅ |
+| `jobber-create-booking` | Persists total + Jobber line items | ✅ | trusts frontend total | no | ❌ trusts client |
+| MCP `get_pricing_info` | Read-only config exposure | ✅ | no | no | ✅ read-only |
 
-## What already exists (reused, not rebuilt)
-- `jobber-availability` edge function with `recommended` mode (scores + sorts all valid slots) and `dayGrid` mode (all slots for one day).
-- `useSmartAvailability` hook (recommendations + day slots + fully-booked days).
-- `DateFirstCalendar` (day/week/month browsing) and `TimeSlotList`.
-- Engine already guarantees every returned slot fits the service duration.
+### CONFLICTS REQUIRING YOUR APPROVAL (values differ; I will NOT change silently)
+The two fallback blocks disagree badly with the live DB. If the DB read ever fails, customers get quoted these **wrong** numbers:
 
-## Changes
+| Item | DB (LIVE/authoritative) | Fallback (wrong) |
+|---|---|---|
+| Window exterior $/sqft | **0.08** | 0.045 |
+| Window interior $/sqft | **0.075** | 0.035 |
+| Window minimum | **185** | 150 |
+| Window story 2/3 mod | **12% / 18%** | 25% / 50% |
+| Window heavy condition | **15%** | 40% |
+| House wash $/sqft / min | **0.25 / 396** | 0.12 / 200 |
+| Gutter $/sqft / min | **0.08 / 200** | 0.06 / 100 |
+| Roof $/sqft / min | **0.30 / 500** | 0.10 / 250 |
+| Driveway $/sqft / min | **0.20 / 200** | 0.50 / 150 |
+| Pressure wash $/sqft | **0.25** | 0.40 |
 
-### 1. Edge function `jobber-availability` (small, additive)
-In `recommended` mode, in addition to the current `recommendations` (kept for backward compatibility), return:
-- `bestRecommended`: the top-scored slot (highest combined score).
-- `nextAvailable`: the earliest slot by start time (soonest that fits).
-- `rankedSlots`: a de-duplicated, score-ordered list (~12) so the UI can show "5 more" without extra round-trips.
+**Recommendation (needs your OK):** the DB values are authoritative — replace both fallbacks with **no fallback**: on DB failure return `pricing_unavailable` / `manual_review_required` instead of guessing. I will preserve every live DB value exactly.
 
-No scoring logic changes — purely exposing the already-computed `scoredSlots`.
+**Services with no configured price** (currently manual/quote-only, not in engine): screens, tracks/sills, hard-water restoration line item, solar-panel cleaning, mobile screen repair, commercial. These stay `manual_review` unless you provide rates.
 
-### 2. Hook `useSmartAvailability`
-Expose the new fields: `bestRecommended`, `nextAvailable`, `rankedSlots` (typed). Keep existing return values intact.
+## Proposed implementation
 
-### 3. New shared component `src/components/scheduling/SmartScheduler.tsx`
-A presentation component driven by the hook. Sections, clearly labeled with helper text:
-- **Best Recommended** card — prominent, with a plain-English reason ("Fills a gap in the route — keeps the day efficient"). Star/“Top Pick” treatment.
-- **Next Available** card — "Soonest opening that fits your service" with date/time/tech/duration.
-- **5 More Options** — compact selectable list (dedupes the best/next already shown).
-- **Browse the calendar** — collapsible region using `DateFirstCalendar` (day/week/month toggle) → on date select, loads that day's slots via `dayGrid` and lists them with `TimeSlotList`.
-- Selection state is lifted via `selectedSlot` / `onSelectSlot` props so both hosts control booking.
+### Phase 3 — Canonical model
+Keep the existing `pricing_config` JSON schema (it already models sqft/per-unit/min/modifiers/surface-mult/bundles and is admin-editable — no need to rebuild). Add a **version stamp**: new `pricing_versions` table (immutable snapshots of the full config each time it's published) + `pricing_config.version` counter.
 
-Props: `services`, `customerAddress`, `numStories`, `selectedSlot`, `onSelectSlot`, `horizonDays`, and an optional `compact` flag for the narrower customer column.
+### Phase 4 — One deterministic server engine
+- `supabase/functions/_shared/pricingEngine.ts`: a single pure module that ports the **exact** current `useServicePricing` math (decimal-safe integer-cent arithmetic, rounding only at defined points), returns structured output (version, line items, adjustments, discounts, minimum adjustments, subtotal, total, duration, `firm | estimated | manual_review_required | missing_information`, trace, Jobber line-item mapping). Rejects negative/malformed/extreme quantities; never assumes 2000 sqft/1 story.
+- `calculate-quote` edge function wrapping it (rate-limited, input-validated with Zod).
 
-### 4. Wire into Admin Scheduling Portal (`SchedulingPortal.tsx`)
-Replace the current "View Slots → AdminAvailabilityViewer" booking selection with `SmartScheduler` (Best / Next / 5 more / calendar). The existing **Availability Inspector** (excluded-slot debugging + override mode) stays available as a separate advanced view so admins keep the override capability.
+### Phase 5 — De-duplicate
+- `chat-quote` → calls the shared engine; delete its `DEFAULT_PRICING` + `calculateQuote`.
+- `jobber-create-booking` → **recompute** server-side and reconcile against submitted total; reject mismatches.
+- Frontend `useServicePricing` → thin client that calls `calculate-quote` for the authoritative total (keeps instant local estimate for UX, clearly labeled "estimate" until server confirms).
+- Remove `usePricingConfig.DEFAULT_PRICING` fallback path.
 
-### 5. Wire into Customer Booking (`TimeSlotPicker.tsx`)
-Render `SmartScheduler` in place of the current recommendations + day-picker steps so the customer sees the same Best / Next / 5 more / calendar layout. Keep the AM/PM preference filter and all existing booking handlers and analytics tracking.
+### Phase 6 — Snapshots
+Add to `quotes`/`bookings`: `pricing_engine_version`, `pricing_rule_version`, `input_snapshot`, `line_item_snapshot`, `discount_snapshot`. Never retroactively recompute historical rows.
 
-## Clarity / labeling
-- Every section has a one-line plain-English helper.
-- Reason badges: “⚡ Soonest”, “🛣️ Best for route”, “📅 Gap filler”, “Fits your service”.
-- Duration shown on every slot so it's obvious it fits.
+### Phase 7 — Admin controls
+Audit existing `PricingEditor`/`PricingTabContent`. Add explicit **Publish** action that writes a `pricing_versions` snapshot + audit row, validation before publish, version history, and a preview that calls `calculate-quote`. Repair, not rebuild.
 
-## Technical notes
-- Engine response stays backward compatible (additive fields); existing `RecommendedSlots` consumers keep working during/after the change.
-- `rankedSlots` de-duped by display time + technician + day to avoid near-identical entries.
-- No database/schema changes. No pricing/booking-creation logic changes — booking still flows through `jobber-create-booking` unchanged.
+### Phase 8 — AI contract (contract only, no chat build)
+Define `calculate_bluLadder_quote` tool spec pointing at `calculate-quote`; AI may only pass structured inputs and read results, never do arithmetic or use prompt prices. Rate limiting added.
 
-## Out of scope
-- No changes to scoring weights, drive-time math, or team-job thresholds.
-- No new booking statuses or notifications.
+### Phase 9–10 — Tests + controlled verification
+Vitest + Deno test matrix (minimums, tiers, story mods, add-ons, exclusivity, bundles, frequency discounts, invalid/missing inputs, ignored client totals, snapshot immutability, override-audit, unauthorized-edit, DB-failure-safe, admin==customer parity, determinism, Jobber reconciliation). Then run tsgo, eslint, build, all tests. Controlled quote-only verification with the approved test identity — **no** Jobber records, SMS, or email.
+
+## Decisions I need from you before I touch live paths
+1. Approve treating the **DB values as canonical** and **removing the divergent fallbacks** (no guessed prices on failure).
+2. Confirm screens/tracks/solar/screen-repair/commercial stay **manual-review** (or supply rates).
+3. OK to add the snapshot/version columns and `pricing_versions` table.
+
+On approval I'll implement Phases 3–10 exactly as above, preserving every current production price.
