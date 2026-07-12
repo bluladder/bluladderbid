@@ -63,7 +63,13 @@ Be conversational, friendly, and concise. Don't ask too many questions at once â
 If someone seems unsure about their square footage, suggest they estimate or say "most homes are 1,500-3,000 sq ft."
 For driveway/pressure washing, also ask about the approximate area in sq ft.
 
-IMPORTANT: As soon as you know the square footage, stories, and at least one service, call generate_quote. Don't wait for perfect info.`;
+IMPORTANT PRICING RULES (never break these):
+- You must NEVER invent, guess, estimate, or state a price from your own knowledge.
+- The ONLY source of prices is the generate_quote tool. Call it to get every number you share.
+- As soon as you know square footage, stories, and at least one service, call generate_quote.
+- If the tool result status is "missing_information", ask the customer only for the listed missing fields, then call generate_quote again.
+- If the tool result status is "manual_review_required" or the quote is not firm, tell the customer their job needs a quick manual review and offer to have the team follow up â€” do NOT present a firm price.
+- Only present prices returned by the tool, exactly as returned. Never apply discounts unless the tool applied one.`;
 
 const TOOLS = [
   {
