@@ -350,12 +350,6 @@ Deno.serve(async (req) => {
     console.log(`[Webhook] 📦 Raw body preview: ${truncate(rawBody, 500)}`);
   } catch (e) {
     console.error(`[Webhook] ❌ Failed to read body:`, e);
-    if (DEBUG_MODE) {
-      return new Response(
-        JSON.stringify({ ok: true, debug: true, error: "Failed to read body" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
-      );
-    }
     return new Response(
       JSON.stringify({ error: "Failed to read body" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
