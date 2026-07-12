@@ -45,6 +45,8 @@ interface PlanTierCardsProps {
   onSelectTier: (tier: PlanTier) => void;
   tierPrices: Record<PlanTier, { monthly: number; annual: number; savings: number }>;
   hasHomeDetails: boolean;
+  pricingLoading?: boolean;
+  pricingUnavailable?: boolean;
 }
 
 function formatPrice(price: number) {
@@ -61,6 +63,8 @@ export function PlanTierCards({
   onSelectTier,
   tierPrices,
   hasHomeDetails,
+  pricingLoading,
+  pricingUnavailable,
 }: PlanTierCardsProps) {
   return (
     <TooltipProvider>
@@ -126,7 +130,7 @@ export function PlanTierCards({
 
                   {/* Pricing */}
                   <div className="text-center mb-4">
-                    {hasHomeDetails ? (
+                    {hasHomeDetails && prices.monthly > 0 ? (
                       <>
                         <div className={`font-bold transition-all duration-300 ${
                           tier.isPopular ? 'text-4xl text-primary' : 'text-3xl text-foreground'
@@ -156,7 +160,13 @@ export function PlanTierCards({
                     ) : (
                       <div className="py-3">
                         <p className="text-sm text-muted-foreground italic">
-                          Enter home size for pricing
+                          {!hasHomeDetails
+                            ? 'Enter home size for pricing'
+                            : pricingLoading
+                              ? 'Calculating your price…'
+                              : pricingUnavailable
+                                ? 'Pricing temporarily unavailable — request a quote'
+                                : 'Get instant pricing'}
                         </p>
                       </div>
                     )}
