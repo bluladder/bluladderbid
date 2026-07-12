@@ -250,14 +250,21 @@ export type Database = {
           customer_id: string
           discount_amount: number | null
           discount_code: string | null
+          discount_snapshot: Json | null
           duration_minutes: number
           home_details_json: Json
           id: string
+          input_snapshot: Json | null
           is_hidden: boolean
           jobber_job_id: string | null
           jobber_quote_id: string | null
           jobber_visit_id: string | null
+          line_item_snapshot: Json | null
           notes: string | null
+          pricing_engine_version: string | null
+          pricing_override_by: string | null
+          pricing_override_reason: string | null
+          pricing_rule_version: number | null
           reference_number: string
           scheduled_end: string | null
           scheduled_start: string | null
@@ -277,14 +284,21 @@ export type Database = {
           customer_id: string
           discount_amount?: number | null
           discount_code?: string | null
+          discount_snapshot?: Json | null
           duration_minutes: number
           home_details_json: Json
           id?: string
+          input_snapshot?: Json | null
           is_hidden?: boolean
           jobber_job_id?: string | null
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
+          line_item_snapshot?: Json | null
           notes?: string | null
+          pricing_engine_version?: string | null
+          pricing_override_by?: string | null
+          pricing_override_reason?: string | null
+          pricing_rule_version?: number | null
           reference_number: string
           scheduled_end?: string | null
           scheduled_start?: string | null
@@ -304,14 +318,21 @@ export type Database = {
           customer_id?: string
           discount_amount?: number | null
           discount_code?: string | null
+          discount_snapshot?: Json | null
           duration_minutes?: number
           home_details_json?: Json
           id?: string
+          input_snapshot?: Json | null
           is_hidden?: boolean
           jobber_job_id?: string | null
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
+          line_item_snapshot?: Json | null
           notes?: string | null
+          pricing_engine_version?: string | null
+          pricing_override_by?: string | null
+          pricing_override_reason?: string | null
+          pricing_rule_version?: number | null
           reference_number?: string
           scheduled_end?: string | null
           scheduled_start?: string | null
@@ -1073,6 +1094,36 @@ export type Database = {
         }
         Relationships: []
       }
+      pricing_versions: {
+        Row: {
+          config_snapshot: Json
+          created_at: string
+          id: string
+          note: string | null
+          published_at: string
+          published_by: string | null
+          version: number
+        }
+        Insert: {
+          config_snapshot: Json
+          created_at?: string
+          id?: string
+          note?: string | null
+          published_at?: string
+          published_by?: string | null
+          version: number
+        }
+        Update: {
+          config_snapshot?: Json
+          created_at?: string
+          id?: string
+          note?: string | null
+          published_at?: string
+          published_by?: string | null
+          version?: number
+        }
+        Relationships: []
+      }
       quotes: {
         Row: {
           converted_at: string | null
@@ -1084,9 +1135,14 @@ export type Database = {
           customer_phone: string | null
           discount_amount: number | null
           discount_code: string | null
+          discount_snapshot: Json | null
           expires_at: string | null
           home_details_json: Json
           id: string
+          input_snapshot: Json | null
+          line_item_snapshot: Json | null
+          pricing_engine_version: string | null
+          pricing_rule_version: number | null
           services_json: Json
           session_id: string | null
           status: Database["public"]["Enums"]["quote_status"]
@@ -1106,9 +1162,14 @@ export type Database = {
           customer_phone?: string | null
           discount_amount?: number | null
           discount_code?: string | null
+          discount_snapshot?: Json | null
           expires_at?: string | null
           home_details_json: Json
           id?: string
+          input_snapshot?: Json | null
+          line_item_snapshot?: Json | null
+          pricing_engine_version?: string | null
+          pricing_rule_version?: number | null
           services_json: Json
           session_id?: string | null
           status?: Database["public"]["Enums"]["quote_status"]
@@ -1128,9 +1189,14 @@ export type Database = {
           customer_phone?: string | null
           discount_amount?: number | null
           discount_code?: string | null
+          discount_snapshot?: Json | null
           expires_at?: string | null
           home_details_json?: Json
           id?: string
+          input_snapshot?: Json | null
+          line_item_snapshot?: Json | null
+          pricing_engine_version?: string | null
+          pricing_rule_version?: number | null
           services_json?: Json
           session_id?: string | null
           status?: Database["public"]["Enums"]["quote_status"]
@@ -1911,6 +1977,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      current_pricing_version: { Args: never; Returns: number }
       expire_stale_reservations: { Args: never; Returns: number }
       generate_booking_reference: { Args: never; Returns: string }
       has_admin_level: {
@@ -1926,6 +1993,7 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_read_only_admin: { Args: never; Returns: boolean }
+      publish_pricing_version: { Args: { p_note?: string }; Returns: number }
       quote_has_real_services: { Args: { p: Json }; Returns: boolean }
       release_autosync_lock: {
         Args: { p_error?: string; p_holder_id: string; p_status?: string }
