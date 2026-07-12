@@ -199,12 +199,9 @@ serve(async (req) => {
       try {
         quoteArgs = JSON.parse(toolCalls[0].function.arguments);
       } catch {
-        quoteArgs = { squareFootage: 2000, stories: 1, services: ["window_cleaning"] };
+        quoteArgs = {};
       }
 
-      const quoteResult = calculateQuote(quoteArgs, pricing);
-
-      // Save quote to DB
       const serviceLabels: Record<string, string> = {
         window_cleaning: "Window Cleaning",
         house_wash: "House Wash",
@@ -214,20 +211,57 @@ serve(async (req) => {
         pressure_washing: "Pressure Washing",
       };
 
-      try {
-        await supabase.from("quotes").insert({
-          home_details_json: { squareFootage: quoteArgs.squareFootage, stories: quoteArgs.stories },
-          services_json: quoteArgs.services.map((s: string) => ({
-            service: s,
-            label: serviceLabels[s] || s,
-            price: quoteResult.breakdown[s] || 0,
-          })),
-          subtotal: quoteResult.total,
-          total: quoteResult.total,
-          session_id: `chat-${Date.now()}`,
-        });
-      } catch (e) {
-        console.error("Failed to save quote:", e);
+      // Authoritative calculation via the canonical engine. If pricing could not
+      // be loaded, return a safe manual-review result — never a guessed price.
+      const engineResult = !loaded.ok || !loaded.pricing
+        ? {
+            engineVersion: "unavailable",
+            status: "manual_review_required" as const,
+            firm: false,
+            lineItems: [] as any[],
+            subtotal: 0,
+            discount: null,
+            total: 0,
+            missing: [] as string[],
+            manualReviewReasons: ["Pricing is temporarily unavailable"],
+            explanation: "Pricing is temporarily unavailable, so this needs a manual review.",
+          }
+        : calculateQuote(toEngineInput(quoteArgs), loaded.pricing, loaded.ruleVersion);
+
+      // Compact result the AI can explain (prices come only from the engine).
+      const breakdown: Record<string, number> = {};
+      for (const li of engineResult.lineItems) breakdown[li.key] = li.amount;
+      const quoteResult = {
+        status: engineResult.status,
+        firm: engineResult.firm,
+        breakdown,
+        total: engineResult.total,
+        missing: engineResult.missing,
+        manualReviewReasons: engineResult.manualReviewReasons,
+        explanation: engineResult.explanation,
+      };
+
+      // Only persist a quote snapshot when we produced a firm price.
+      if (engineResult.firm && engineResult.total > 0) {
+        try {
+          await supabase.from("quotes").insert({
+            home_details_json: { squareFootage: quoteArgs.squareFootage, stories: quoteArgs.stories },
+            services_json: engineResult.lineItems.map((li: any) => ({
+              service: li.key,
+              label: serviceLabels[li.key] || li.label,
+              price: li.amount,
+            })),
+            subtotal: engineResult.subtotal,
+            total: engineResult.total,
+            session_id: `chat-${Date.now()}`,
+            pricing_engine_version: engineResult.engineVersion,
+            pricing_rule_version: engineResult.ruleVersion ?? null,
+            input_snapshot: toEngineInput(quoteArgs),
+            line_item_snapshot: engineResult.lineItems,
+          });
+        } catch (e) {
+          console.error("Failed to save quote:", e);
+        }
       }
 
       // Second AI call with tool result
@@ -253,10 +287,17 @@ serve(async (req) => {
 
       if (!followUp.ok) {
         // Return a non-streamed fallback
-        const breakdownText = Object.entries(quoteResult.breakdown)
-          .map(([k, v]) => `- **${serviceLabels[k] || k}**: $${v}`)
-          .join("\n");
-        const fallback = `Here's your quote!\n\n${breakdownText}\n\n**Total: $${quoteResult.total}**\n\nWould you like to book an appointment?`;
+        let fallback: string;
+        if (quoteResult.firm) {
+          const breakdownText = Object.entries(quoteResult.breakdown)
+            .map(([k, v]) => `- **${serviceLabels[k] || k}**: $${v}`)
+            .join("\n");
+          fallback = `Here's your quote!\n\n${breakdownText}\n\n**Total: $${quoteResult.total}**\n\nWould you like to book an appointment?`;
+        } else if (quoteResult.status === "missing_information") {
+          fallback = `I just need a little more info to price this: ${quoteResult.missing.join(", ")}. Could you share that?`;
+        } else {
+          fallback = `This job needs a quick manual review from our team, so I can't give a firm price here. Would you like us to follow up with a custom quote?`;
+        }
         return new Response(JSON.stringify({ content: fallback, quoteData: quoteResult }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
