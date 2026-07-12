@@ -91,8 +91,19 @@ export function interpretVisitDelete(result: VisitDeleteResult | null | undefine
   }
 
   // Top-level transport / GraphQL errors.
+  //
+  // Live Jobber (2025-04-16) reports a deletion of an already-removed visit as a
+  // TOP-LEVEL error ("Visit does not exist") with `data: null`, NOT as a
+  // `userError`. Deleting a visit that is already gone is a safe, idempotent
+  // success, so treat top-level "already gone" errors the same way we treat the
+  // equivalent userError. Everything else still fails CLOSED.
   if (result.errors && result.errors.length > 0) {
-    return { outcome: "failed", reason: result.errors.map((e) => e.message).join("; ") };
+    const combined = result.errors.map((e) => e.message).filter(Boolean).join("; ");
+    const allGone = result.errors.every((e) => isAlreadyGoneMessage(e.message || ""));
+    if (allGone) {
+      return { outcome: "already_gone", reason: combined || "Visit already removed in Jobber" };
+    }
+    return { outcome: "failed", reason: combined || "Jobber returned errors" };
   }
 
   const payload = result.data?.visitDelete;
