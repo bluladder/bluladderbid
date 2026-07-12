@@ -117,6 +117,40 @@ Deno.serve(async (req) => {
         return json({ status: "missing_information", error: "additionalServices is required" }, 400);
       }
 
+      // Optional per-tier customizations (window cadence + service swaps/adds).
+      // Only structural fields are forwarded; the engine re-prices everything.
+      let customizations: Record<string, unknown> | undefined;
+      const rawCustom = (body as Record<string, unknown>).customizations;
+      if (rawCustom && typeof rawCustom === "object") {
+        customizations = {};
+        for (const [tier, c] of Object.entries(rawCustom as Record<string, unknown>)) {
+          if (!c || typeof c !== "object") continue;
+          const co = c as Record<string, unknown>;
+          const out: Record<string, unknown> = {};
+          if (co.windowFrequency && typeof co.windowFrequency === "object") {
+            const wf = co.windowFrequency as Record<string, unknown>;
+            const ext = Number(wf.exteriorFrequency);
+            const int = Number(wf.interiorFrequency);
+            if (Number.isFinite(ext) && Number.isFinite(int) && ext >= 0 && ext <= 12 && int >= 0 && int <= 12) {
+              out.windowFrequency = { exteriorFrequency: Math.floor(ext), interiorFrequency: Math.floor(int) };
+            }
+          }
+          if (Array.isArray(co.serviceSwaps)) {
+            out.serviceSwaps = (co.serviceSwaps as unknown[])
+              .filter((s) => s && typeof s === "object" && typeof (s as Record<string, unknown>).from === "string" && typeof (s as Record<string, unknown>).to === "string")
+              .slice(0, 12)
+              .map((s) => ({ from: String((s as Record<string, unknown>).from).slice(0, 40), to: String((s as Record<string, unknown>).to).slice(0, 40) }));
+          }
+          if (Array.isArray(co.addedServices)) {
+            out.addedServices = (co.addedServices as unknown[])
+              .filter((x) => typeof x === "string")
+              .slice(0, 12)
+              .map((x) => String(x).slice(0, 40));
+          }
+          customizations[tier.slice(0, 20)] = out;
+        }
+      }
+
       const supabaseBundle = createClient(
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -130,7 +164,11 @@ Deno.serve(async (req) => {
         );
       }
       const tiersResult = computeBundleTiers(
-        { homeDetails, additionalServices: additionalServices as EngineAdditionalServices },
+        {
+          homeDetails,
+          additionalServices: additionalServices as EngineAdditionalServices,
+          customizations: customizations as Record<string, never> | undefined,
+        },
         loadedBundle.pricing,
         loadedBundle.ruleVersion,
       );
