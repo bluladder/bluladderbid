@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DollarSign, Calculator, Tags, BarChart3, ChevronDown, ChevronUp, Settings2 } from 'lucide-react';
+import { DollarSign, Calculator, Tags, BarChart3, ChevronDown, ChevronUp, Settings2, History } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -7,6 +7,7 @@ import { PricingEditor } from './PricingEditor';
 import { PricingPreview } from './PricingPreview';
 import { ScenarioCompare } from './ScenarioCompare';
 import { DiscountCodesManager } from './DiscountCodesManager';
+import { PricingVersionManager } from './PricingVersionManager';
 
 export function PricingTabContent() {
   const [activeSection, setActiveSection] = useState('editor');
@@ -41,6 +42,14 @@ export function PricingTabContent() {
             >
               <Tags className="w-3.5 h-3.5 mr-1.5" />
               Discount Codes
+            </Badge>
+            <Badge
+              variant={activeSection === 'history' ? 'default' : 'outline'}
+              className="cursor-pointer px-3 py-1.5"
+              onClick={() => setActiveSection('history')}
+            >
+              <History className="w-3.5 h-3.5 mr-1.5" />
+              History &amp; Publish
             </Badge>
           </div>
         </CardContent>
@@ -81,6 +90,11 @@ export function PricingTabContent() {
       {/* Discount Codes */}
       {activeSection === 'discounts' && (
         <DiscountCodesManager />
+      )}
+
+      {/* Version History & Publish */}
+      {activeSection === 'history' && (
+        <PricingVersionManager />
       )}
     </div>
   );

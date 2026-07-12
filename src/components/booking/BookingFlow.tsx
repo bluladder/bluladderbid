@@ -302,6 +302,9 @@ export function BookingFlow({
           description: s.description,
         })),
         homeDetails,
+        // Structured selection so the server can authoritatively recompute the
+        // quote and reject any client-side tampering (source of truth = server).
+        additionalServices,
         subtotal,
         discountAmount,
         total: finalTotal,

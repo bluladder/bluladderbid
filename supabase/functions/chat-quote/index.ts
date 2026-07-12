@@ -1,74 +1,51 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { calculateQuote, type QuoteInput } from "../_shared/pricingEngine.ts";
+import { loadPricing } from "../_shared/loadPricing.ts";
+import { rateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Default pricing fallback (matches usePricingConfig defaults)
-const DEFAULT_PRICING = {
-  window_cleaning: { exteriorPerSqFt: 0.045, interiorPerSqFt: 0.035, minimumPrice: 150, modifiers: { stories: { "1": 0, "2": 25, "3": 50 }, condition: { maintenance: 0, heavy: 40 } } },
-  house_wash: { perSqFt: 0.12, minimumPrice: 200, modifiers: { stories: { "1": 0, "2": 30, "3": 60 } }, rustStainSurcharge: 15 },
-  gutter_cleaning: { perSqFt: 0.06, minimumPrice: 100, modifiers: { stories: { "1": 0, "2": 25, "3": 50 } } },
-  roof_cleaning: { perSqFt: 0.10, minimumPrice: 250, modifiers: { stories: { "1": 0, "2": 20, "3": 40 }, roofType: { asphalt: 0, tile: 25, metal: -10, flat: -15 }, severity: { light: 0, moderate: 25, heavy: 50 } } },
-  driveway_cleaning: { perSqFt: 0.50, minimumPrice: 150, surfaceMultipliers: { concrete: 1, stamped: 1.15, pavers: 1.25, brick: 1.20, stone: 1.30, tile: 1.35 } },
-  pressure_washing: { perSqFt: 0.40, minimumPrice: 75, surfaceMultipliers: { concrete: 1, stamped: 1.15, pavers: 1.25, brick: 1.20, stone: 1.30, tile: 1.35 } },
-};
-
-function applyModifiers(basePrice: number, modifierPercents: number[]): number {
-  const totalPercent = modifierPercents.reduce((sum, pct) => sum + pct, 0);
-  return Math.round(basePrice * (1 + totalPercent / 100));
-}
-
-function calculateQuote(details: any, pricing: any) {
-  const sqft = details.squareFootage || 2000;
-  const stories = details.stories || 1;
-  const services = details.services || [];
-  const results: Record<string, number> = {};
-  let total = 0;
-
-  for (const svc of services) {
-    let price = 0;
-    if (svc === "window_cleaning") {
-      const cfg = pricing.window_cleaning;
-      const base = sqft * cfg.exteriorPerSqFt;
-      const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
-      price = Math.max(Math.round(base * (1 + storyMod / 100)), cfg.minimumPrice);
-    } else if (svc === "house_wash") {
-      const cfg = pricing.house_wash;
-      const base = sqft * cfg.perSqFt;
-      const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
-      price = Math.max(applyModifiers(base, [storyMod]), cfg.minimumPrice);
-    } else if (svc === "gutter_cleaning") {
-      const cfg = pricing.gutter_cleaning;
-      const base = sqft * cfg.perSqFt;
-      const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
-      price = Math.max(applyModifiers(base, [storyMod]), cfg.minimumPrice);
-    } else if (svc === "roof_cleaning") {
-      const cfg = pricing.roof_cleaning;
-      const base = sqft * cfg.perSqFt;
-      const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
-      const typeMod = cfg.modifiers.roofType?.[details.roofType || "asphalt"] ?? 0;
-      price = Math.max(applyModifiers(base, [storyMod, typeMod]), cfg.minimumPrice);
-    } else if (svc === "driveway_cleaning") {
-      const cfg = pricing.driveway_cleaning;
-      const dSqft = details.drivewaySqft || 400;
-      const surface = details.drivewaySurface || "concrete";
-      const mult = cfg.surfaceMultipliers[surface] ?? 1;
-      price = Math.max(Math.round(dSqft * cfg.perSqFt * mult), cfg.minimumPrice);
-    } else if (svc === "pressure_washing") {
-      const cfg = pricing.pressure_washing;
-      const pwSqft = details.pressureWashSqft || 200;
-      const surface = details.pressureWashSurface || "concrete";
-      const mult = cfg.surfaceMultipliers[surface] ?? 1;
-      price = Math.max(Math.round(pwSqft * cfg.perSqFt * mult), cfg.minimumPrice);
-    }
-    results[svc] = price;
-    total += price;
-  }
-
-  return { breakdown: results, total };
+// Maps the AI tool arguments into the canonical engine input shape. The AI
+// NEVER computes prices — it only gathers structured inputs and calls the
+// deterministic engine below.
+function toEngineInput(details: any): QuoteInput {
+  const services: string[] = Array.isArray(details.services) ? details.services : [];
+  const has = (s: string) => services.includes(s);
+  return {
+    homeDetails: {
+      squareFootage: Number(details.squareFootage),
+      stories: Number(details.stories),
+      windowCleaningType: "exterior",
+      condition: "maintenance",
+      showAdvanced: false,
+    },
+    additionalServices: {
+      windowCleaning: has("window_cleaning"),
+      houseWash: has("house_wash"),
+      gutterCleaning: has("gutter_cleaning"),
+      roofCleaning: has("roof_cleaning"),
+      roofType: details.roofType || "asphalt",
+      roofSeverity: "light",
+      drivewayCleaning: {
+        enabled: has("driveway_cleaning"),
+        sqft: Number(details.drivewaySqft),
+        surfaceType: details.drivewaySurface || "concrete",
+      },
+      pressureWashing: {
+        enabled: has("pressure_washing"),
+        surfaceType: details.pressureWashSurface || "concrete",
+        frontPorch: { enabled: has("pressure_washing"), sqft: Number(details.pressureWashSqft) },
+        backPatio: { enabled: false, sqft: 0 },
+        poolDeck: { enabled: false, sqft: 0 },
+        walkways: { enabled: false, sqft: 0 },
+      },
+    },
+    discount: null,
+  };
 }
 
 const SYSTEM_PROMPT = `You are BluLadder's friendly quote assistant. You help homeowners get instant price estimates for exterior cleaning services.
@@ -86,7 +63,13 @@ Be conversational, friendly, and concise. Don't ask too many questions at once �
 If someone seems unsure about their square footage, suggest they estimate or say "most homes are 1,500-3,000 sq ft."
 For driveway/pressure washing, also ask about the approximate area in sq ft.
 
-IMPORTANT: As soon as you know the square footage, stories, and at least one service, call generate_quote. Don't wait for perfect info.`;
+IMPORTANT PRICING RULES (never break these):
+- You must NEVER invent, guess, estimate, or state a price from your own knowledge.
+- The ONLY source of prices is the generate_quote tool. Call it to get every number you share.
+- As soon as you know square footage, stories, and at least one service, call generate_quote.
+- If the tool result status is "missing_information", ask the customer only for the listed missing fields, then call generate_quote again.
+- If the tool result status is "manual_review_required" or the quote is not firm, tell the customer their job needs a quick manual review and offer to have the team follow up — do NOT present a firm price.
+- Only present prices returned by the tool, exactly as returned. Never apply discounts unless the tool applied one.`;
 
 const TOOLS = [
   {
@@ -121,28 +104,23 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // Abuse protection for the public chat endpoint.
+    const rl = rateLimit(req, { limit: 30, windowMs: 60000 });
+    if (!rl.allowed) {
+      return new Response(JSON.stringify({ error: "Too many requests, please slow down." }), {
+        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { messages } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    // Fetch pricing config from DB
+    // Fetch pricing config from DB (single source of truth — no fallback prices)
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    let pricing = { ...DEFAULT_PRICING };
-    try {
-      const { data } = await supabase.from("pricing_config").select("config_key, config_value");
-      if (data) {
-        for (const row of data) {
-          if (row.config_key in pricing) {
-            (pricing as any)[row.config_key] = row.config_value;
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Failed to fetch pricing, using defaults:", e);
-    }
+    const loaded = await loadPricing(supabase);
 
     // First AI call
     let response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -221,12 +199,9 @@ serve(async (req) => {
       try {
         quoteArgs = JSON.parse(toolCalls[0].function.arguments);
       } catch {
-        quoteArgs = { squareFootage: 2000, stories: 1, services: ["window_cleaning"] };
+        quoteArgs = {};
       }
 
-      const quoteResult = calculateQuote(quoteArgs, pricing);
-
-      // Save quote to DB
       const serviceLabels: Record<string, string> = {
         window_cleaning: "Window Cleaning",
         house_wash: "House Wash",
@@ -236,20 +211,57 @@ serve(async (req) => {
         pressure_washing: "Pressure Washing",
       };
 
-      try {
-        await supabase.from("quotes").insert({
-          home_details_json: { squareFootage: quoteArgs.squareFootage, stories: quoteArgs.stories },
-          services_json: quoteArgs.services.map((s: string) => ({
-            service: s,
-            label: serviceLabels[s] || s,
-            price: quoteResult.breakdown[s] || 0,
-          })),
-          subtotal: quoteResult.total,
-          total: quoteResult.total,
-          session_id: `chat-${Date.now()}`,
-        });
-      } catch (e) {
-        console.error("Failed to save quote:", e);
+      // Authoritative calculation via the canonical engine. If pricing could not
+      // be loaded, return a safe manual-review result — never a guessed price.
+      const engineResult = !loaded.ok || !loaded.pricing
+        ? {
+            engineVersion: "unavailable",
+            status: "manual_review_required" as const,
+            firm: false,
+            lineItems: [] as any[],
+            subtotal: 0,
+            discount: null,
+            total: 0,
+            missing: [] as string[],
+            manualReviewReasons: ["Pricing is temporarily unavailable"],
+            explanation: "Pricing is temporarily unavailable, so this needs a manual review.",
+          }
+        : calculateQuote(toEngineInput(quoteArgs), loaded.pricing, loaded.ruleVersion);
+
+      // Compact result the AI can explain (prices come only from the engine).
+      const breakdown: Record<string, number> = {};
+      for (const li of engineResult.lineItems) breakdown[li.key] = li.amount;
+      const quoteResult = {
+        status: engineResult.status,
+        firm: engineResult.firm,
+        breakdown,
+        total: engineResult.total,
+        missing: engineResult.missing,
+        manualReviewReasons: engineResult.manualReviewReasons,
+        explanation: engineResult.explanation,
+      };
+
+      // Only persist a quote snapshot when we produced a firm price.
+      if (engineResult.firm && engineResult.total > 0) {
+        try {
+          await supabase.from("quotes").insert({
+            home_details_json: { squareFootage: quoteArgs.squareFootage, stories: quoteArgs.stories },
+            services_json: engineResult.lineItems.map((li: any) => ({
+              service: li.key,
+              label: serviceLabels[li.key] || li.label,
+              price: li.amount,
+            })),
+            subtotal: engineResult.subtotal,
+            total: engineResult.total,
+            session_id: `chat-${Date.now()}`,
+            pricing_engine_version: engineResult.engineVersion,
+            pricing_rule_version: engineResult.ruleVersion ?? null,
+            input_snapshot: toEngineInput(quoteArgs),
+            line_item_snapshot: engineResult.lineItems,
+          });
+        } catch (e) {
+          console.error("Failed to save quote:", e);
+        }
       }
 
       // Second AI call with tool result
@@ -275,10 +287,17 @@ serve(async (req) => {
 
       if (!followUp.ok) {
         // Return a non-streamed fallback
-        const breakdownText = Object.entries(quoteResult.breakdown)
-          .map(([k, v]) => `- **${serviceLabels[k] || k}**: $${v}`)
-          .join("\n");
-        const fallback = `Here's your quote!\n\n${breakdownText}\n\n**Total: $${quoteResult.total}**\n\nWould you like to book an appointment?`;
+        let fallback: string;
+        if (quoteResult.firm) {
+          const breakdownText = Object.entries(quoteResult.breakdown)
+            .map(([k, v]) => `- **${serviceLabels[k] || k}**: $${v}`)
+            .join("\n");
+          fallback = `Here's your quote!\n\n${breakdownText}\n\n**Total: $${quoteResult.total}**\n\nWould you like to book an appointment?`;
+        } else if (quoteResult.status === "missing_information") {
+          fallback = `I just need a little more info to price this: ${quoteResult.missing.join(", ")}. Could you share that?`;
+        } else {
+          fallback = `This job needs a quick manual review from our team, so I can't give a firm price here. Would you like us to follow up with a custom quote?`;
+        }
         return new Response(JSON.stringify({ content: fallback, quoteData: quoteResult }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
