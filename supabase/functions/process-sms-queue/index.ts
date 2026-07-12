@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut, getCustomerPause } from "../_shared/sms.ts";
+import { requireAdminOrService } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -71,6 +72,16 @@ async function sendEmail(
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Cron/service-to-service or admin only. Prevents anonymous callers from
+  // flushing the SMS/email queue (sending queued messages early / at cost).
+  const authz = await requireAdminOrService(req);
+  if (!authz.ok) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
   const supabase = createClient(
