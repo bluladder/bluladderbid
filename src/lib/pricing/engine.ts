@@ -151,6 +151,14 @@ export interface EngineAreaSelection {
 
 export interface EngineAdditionalServices {
   windowCleaning?: boolean;
+  /**
+   * Interior-only window cleaning as a STANDALONE line item (used by the plan
+   * builder, where interior windows have their own frequency). This is priced
+   * with the same interior rule the plan builder historically used locally:
+   * sqft × interiorPerSqFt with story+condition modifiers and a 0.6× minimum.
+   * The one-time flow does NOT use this (it uses windowCleaningType='both').
+   */
+  interiorWindows?: boolean;
   houseWash?: boolean;
   houseWashDetails?: { stainType?: string };
   gutterCleaning?: boolean;
