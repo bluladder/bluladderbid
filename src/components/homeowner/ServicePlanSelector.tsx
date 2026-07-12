@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PlanCustomizeDrawer, type PlanCustomization } from './PlanCustomizeDrawer';
-import type { BundleTier } from '@/types/homeowner';
+import type { BundleTier, HomeDetails, AdditionalServices } from '@/types/homeowner';
 
 interface ServicePlanSelectorProps {
   bundles: BundleTier[];
@@ -17,6 +17,9 @@ interface ServicePlanSelectorProps {
     houseWash: number;
     roofCleaning: number;
   };
+  /** Passed through to the customize drawer so its live preview is server-priced. */
+  homeDetails: HomeDetails;
+  additionalServices: AdditionalServices;
   onCustomizePlan?: (tier: 'good' | 'better' | 'best', customization: PlanCustomization) => void;
 }
 
@@ -37,6 +40,8 @@ export function ServicePlanSelector({
   baseExteriorPrice,
   baseInteriorPrice,
   servicePrices,
+  homeDetails,
+  additionalServices,
   onCustomizePlan,
 }: ServicePlanSelectorProps) {
   return (
@@ -146,6 +151,8 @@ export function ServicePlanSelector({
                     baseExteriorPrice={baseExteriorPrice}
                     baseInteriorPrice={baseInteriorPrice}
                     servicePrices={servicePrices}
+                    homeDetails={homeDetails}
+                    additionalServices={additionalServices}
                     onCustomize={(customization) => onCustomizePlan(bundle.tier, customization)}
                   >
                     <Button
