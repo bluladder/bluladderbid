@@ -1152,6 +1152,11 @@ Deno.serve(async (req) => {
           discount_code: booking.discountCode,
           notes: booking.notes,
           utm_params_json: booking.utmParams && Object.keys(booking.utmParams).length > 0 ? booking.utmParams : null,
+          pricing_engine_version: pricingSnapshot.engineVersion,
+          pricing_rule_version: pricingSnapshot.ruleVersion,
+          input_snapshot: pricingSnapshot.inputSnapshot,
+          line_item_snapshot: pricingSnapshot.lineItemSnapshot,
+          discount_snapshot: pricingSnapshot.discountSnapshot,
         })
         .select()
         .maybeSingle();
@@ -1194,6 +1199,11 @@ Deno.serve(async (req) => {
         discount_code: booking.discountCode,
         notes: booking.notes,
         utm_params_json: booking.utmParams && Object.keys(booking.utmParams).length > 0 ? booking.utmParams : null,
+        pricing_engine_version: pricingSnapshot.engineVersion,
+        pricing_rule_version: pricingSnapshot.ruleVersion,
+        input_snapshot: pricingSnapshot.inputSnapshot,
+        line_item_snapshot: pricingSnapshot.lineItemSnapshot,
+        discount_snapshot: pricingSnapshot.discountSnapshot,
       })
       .select()
       .single();
