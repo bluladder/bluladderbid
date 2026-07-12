@@ -97,6 +97,27 @@ export interface BundleConfigEntry {
 }
 
 /**
+ * Administrator-controlled guardrail/structure rules for the good/better/best
+ * plan tiers. Stored under the `bundle_rules` key in pricing_config so the
+ * values are versioned with the rest of pricing and never hard-coded in the
+ * frontend. All values preserve the prior production behavior exactly.
+ */
+export interface BundleRulesConfig {
+  /** Minimum dollar gap enforced between adjacent tiers (good<better<best). */
+  minimumTierBuffer?: number;
+  /** Ordered tier keys, lowest → highest. */
+  tierOrder?: string[];
+  /** Plan deposit percent (of annual total) taken up front. */
+  planDownPaymentPercent?: number;
+  /** Number of monthly installments the remaining balance is split into. */
+  planMonthlyInstallments?: number;
+  /** Tiers where roof cleaning is a base (full-price, included) service. */
+  roofBaseIncludedTiers?: string[];
+  /** Services that are ALWAYS customer add-ons (never base) in every tier. */
+  alwaysAddonServices?: string[];
+}
+
+/**
  * Administrator-controlled promotional offer configuration. Stored under the
  * `window_promo_99` key in pricing_config. This is OPTIONAL — its absence simply
  * means no promotion is available (never a fallback price). Every field is
