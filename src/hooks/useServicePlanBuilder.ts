@@ -358,8 +358,10 @@ export function useServicePlanBuilder() {
     resetQuote,
     isValid,
     hasSelectedServices,
-    // Pricing status surfaced for UI guards (no local fallback anywhere).
-    isLoading: planQuotes.loading,
+    // `isLoading` is only the initial gate (there is no blocking global config
+    // load anymore); inline pricing state is exposed separately.
+    isLoading: false,
+    pricingLoading: planQuotes.loading,
     pricingReady,
     pricingUnavailable: planQuotes.unavailable,
   };
