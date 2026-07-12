@@ -113,7 +113,7 @@ export function PlanCompareSheet({
                   }`}>
                     {tier}
                   </span>
-                  {hasHomeDetails && (
+                  {hasHomeDetails && tierPrices[tier].monthly > 0 && (
                     <span className={`text-lg font-bold ${
                       tier === 'better' ? 'text-primary' : 'text-foreground'
                     }`}>
