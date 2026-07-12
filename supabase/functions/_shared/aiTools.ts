@@ -10,6 +10,7 @@
 // Every tool validates its own inputs and returns a compact JSON result.
 // ============================================================================
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validateServiceArea } from "./serviceArea.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -186,9 +187,16 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
   // Require a prior firm/estimated quote so duration/price feed scheduling.
   const { data: convo } = await ctx.supabase
     .from("chat_conversations")
-    .select("quote_result")
+    .select("quote_result, service_area_status")
     .eq("id", ctx.conversationId)
     .maybeSingle();
+  // Never offer bookable times for an address that isn't confirmed eligible.
+  if (convo?.service_area_status !== "eligible") {
+    return {
+      status: "need_service_area",
+      message: "Confirm the service address is in our area before offering times. Use validate_service_area first.",
+    };
+  }
   const quote = convo?.quote_result as any;
   if (!quote || !Array.isArray(quote.lineItems) || quote.lineItems.length === 0) {
     return { status: "need_quote_first", message: "Get a quote before checking availability." };
@@ -337,6 +345,46 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
 // ---------------------------------------------------------------------------
 // TOOL: request_manual_quote — unconfigured / unusual work. No firm price.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// TOOL: validate_service_area — geocode-based eligibility. Never rejects/books.
+// ---------------------------------------------------------------------------
+async function validateServiceAreaTool(ctx: ToolContext, args: Record<string, unknown>) {
+  const address = String(args.address || "").trim();
+  if (!address) {
+    return {
+      status: "address_incomplete",
+      customerMessage: "What's the full service address (street, city, ZIP)?",
+    };
+  }
+  const result = await validateServiceArea(ctx.supabase, address);
+
+  await ctx.supabase
+    .from("chat_conversations")
+    .update({
+      service_address: result.formattedAddress || address,
+      service_area_status: result.status,
+      service_area_result: result,
+      manual_review_reason:
+        result.status === "manual_review_required" ? result.reason ?? "Outside primary service area" : undefined,
+      needs_attention: result.status === "manual_review_required" ? true : undefined,
+      last_activity_at: new Date().toISOString(),
+    })
+    .eq("id", ctx.conversationId);
+
+  return {
+    status: result.status,
+    city: result.city,
+    county: result.county,
+    state: result.state,
+    formattedAddress: result.formattedAddress,
+    reason: result.reason,
+    customerMessage: result.customerMessage,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// TOOL: request_manual_quote — unconfigured / unusual work. No firm price.
+// ---------------------------------------------------------------------------
 async function manualQuoteTool(ctx: ToolContext, args: Record<string, unknown>) {
   await ctx.supabase.from("chat_conversations").update({
     prospect_name: (args.name as string) || undefined,
@@ -379,6 +427,7 @@ export type ToolName =
   | "calculate_bluladder_quote"
   | "get_bluladder_availability"
   | "create_bluladder_booking"
+  | "validate_service_area"
   | "request_manual_quote"
   | "request_human_callback";
 
@@ -387,6 +436,7 @@ export async function runTool(name: string, ctx: ToolContext, args: Record<strin
     case "calculate_bluladder_quote": return await calculateQuoteTool(ctx, args);
     case "get_bluladder_availability": return await availabilityTool(ctx, args);
     case "create_bluladder_booking": return await createBookingTool(ctx, args);
+    case "validate_service_area": return await validateServiceAreaTool(ctx, args);
     case "request_manual_quote": return await manualQuoteTool(ctx, args);
     case "request_human_callback": return await humanCallbackTool(ctx, args);
     default:
@@ -472,6 +522,21 @@ export const TOOL_DEFINITIONS = [
           services: { type: "array", items: { type: "string" } },
           reason: { type: "string" }, summary: { type: "string" },
         },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "validate_service_area",
+      description: "Check whether a service address is in BluLadder's area. Call this before offering appointment times. Returns eligible, manual_review_required, address_incomplete, or validation_unavailable. Eligibility is geocoded server-side — never decide it yourself from the typed city. Do NOT proceed to booking unless status is 'eligible'.",
+      parameters: {
+        type: "object",
+        properties: {
+          address: { type: "string", description: "Full street address including city, state and ZIP." },
+        },
+        required: ["address"],
         additionalProperties: false,
       },
     },
