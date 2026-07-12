@@ -104,28 +104,23 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    // Abuse protection for the public chat endpoint.
+    const rl = rateLimit(req, { limit: 30, windowMs: 60000 });
+    if (!rl.allowed) {
+      return new Response(JSON.stringify({ error: "Too many requests, please slow down." }), {
+        status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { messages } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    // Fetch pricing config from DB
+    // Fetch pricing config from DB (single source of truth — no fallback prices)
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    let pricing = { ...DEFAULT_PRICING };
-    try {
-      const { data } = await supabase.from("pricing_config").select("config_key, config_value");
-      if (data) {
-        for (const row of data) {
-          if (row.config_key in pricing) {
-            (pricing as any)[row.config_key] = row.config_value;
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Failed to fetch pricing, using defaults:", e);
-    }
+    const loaded = await loadPricing(supabase);
 
     // First AI call
     let response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
