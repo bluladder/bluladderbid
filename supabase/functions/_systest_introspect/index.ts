@@ -23,8 +23,8 @@ query($n: String!) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
-  const secret = req.headers.get("x-systest-secret");
-  if (secret !== Deno.env.get("SYSTEST_SECRET")) {
+  const secret = req.headers.get("x-cron-secret");
+  if (secret !== Deno.env.get("CRON_SECRET")) {
     return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: cors });
   }
   const url = new URL(req.url);
