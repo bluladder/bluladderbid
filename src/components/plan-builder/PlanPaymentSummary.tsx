@@ -12,6 +12,9 @@ interface PlanPaymentSummaryProps {
   onSubmit: () => void;
   showSubmitButton?: boolean;
   selectedTierName?: string;
+  pricingReady?: boolean;
+  pricingLoading?: boolean;
+  pricingUnavailable?: boolean;
 }
 
 export function PlanPaymentSummary({ 
@@ -22,8 +25,13 @@ export function PlanPaymentSummary({
   onSubmit,
   showSubmitButton = true,
   selectedTierName,
+  pricingReady = true,
+  pricingLoading,
+  pricingUnavailable,
 }: PlanPaymentSummaryProps) {
   const enabledServices = services.filter(s => s.enabled);
+  // Never show a dollar amount that isn't a current, firm server price.
+  const money = (v: number) => (pricingReady ? `$${v}` : '—');
   
   if (enabledServices.length === 0) {
     return (
@@ -81,12 +89,22 @@ export function PlanPaymentSummary({
                   </span>
                 </span>
                 <span className="font-medium text-foreground">
-                  ${service.annualTotal}
+                  {money(service.annualTotal)}
                 </span>
               </li>
             ))}
           </ul>
         </div>
+
+        {!pricingReady && (
+          <p className="text-xs text-center text-muted-foreground">
+            {pricingLoading
+              ? 'Calculating your plan price…'
+              : pricingUnavailable
+                ? 'Pricing is temporarily unavailable. You can request a quote and our team will follow up.'
+                : 'Enter your home details to see your plan price.'}
+          </p>
+        )}
         
         <Separator />
         
@@ -94,7 +112,7 @@ export function PlanPaymentSummary({
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">Annual Total</span>
           <span className="text-lg font-semibold text-foreground">
-            ${payment.annualTotal}
+            {money(payment.annualTotal)}
           </span>
         </div>
         
@@ -114,7 +132,7 @@ export function PlanPaymentSummary({
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Deposit due today</p>
-                <p className="text-2xl font-bold text-primary">${payment.downPayment}</p>
+                <p className="text-2xl font-bold text-primary">{money(payment.downPayment)}</p>
               </div>
             </div>
             
@@ -123,7 +141,7 @@ export function PlanPaymentSummary({
               <ArrowRight className="w-4 h-4 text-muted-foreground" />
               <div className="text-sm">
                 <span className="text-muted-foreground">Then </span>
-                <span className="font-bold text-foreground">${payment.monthlyPayment}/mo</span>
+                <span className="font-bold text-foreground">{money(payment.monthlyPayment)}/mo</span>
                 <span className="text-muted-foreground"> × 11 months</span>
               </div>
             </div>
