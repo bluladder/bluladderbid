@@ -73,6 +73,27 @@ export interface PricingConfig {
   };
   /** Optional administrator-controlled $99 window promotion. */
   window_promo_99?: PromotionConfig;
+  /**
+   * Optional administrator-controlled recurring/bundle configuration, keyed by
+   * bundle identifier (e.g. "good" | "better" | "best"). Discounts are fractions
+   * in the range 0..1 (e.g. 0.05 === 5%). This lives in the pricing_config table
+   * so bundle/recurring rules are administrator-controlled, never client-supplied.
+   */
+  bundle_config?: Record<string, BundleConfigEntry>;
+}
+
+export interface BundleConfigEntry {
+  name?: string;
+  label?: string;
+  description?: string;
+  /** Overall bundle discount applied to the annual subtotal (fraction 0..1). */
+  bundleDiscount?: number;
+  /** Discount applied to customer-added services (fraction 0..1). */
+  addonDiscount?: number;
+  exteriorWindowFrequency?: number;
+  interiorWindowFrequency?: number;
+  additionalServicesFrequency?: number;
+  includedServices?: string[];
 }
 
 /**
