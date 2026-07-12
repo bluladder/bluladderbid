@@ -201,7 +201,6 @@ describe("pricing engine — integrity guarantees", () => {
   it("engine never accepts a client-submitted total (not in input type)", () => {
     const r = calc({
       homeDetails: baseHome(),
-      // @ts-expect-error total is not part of the engine input
       additionalServices: { ...noServices(), houseWash: true, total: 1 },
     });
     expect(r.total).toBe(500);
