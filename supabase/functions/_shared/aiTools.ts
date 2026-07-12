@@ -427,6 +427,7 @@ export type ToolName =
   | "calculate_bluladder_quote"
   | "get_bluladder_availability"
   | "create_bluladder_booking"
+  | "validate_service_area"
   | "request_manual_quote"
   | "request_human_callback";
 
@@ -435,6 +436,7 @@ export async function runTool(name: string, ctx: ToolContext, args: Record<strin
     case "calculate_bluladder_quote": return await calculateQuoteTool(ctx, args);
     case "get_bluladder_availability": return await availabilityTool(ctx, args);
     case "create_bluladder_booking": return await createBookingTool(ctx, args);
+    case "validate_service_area": return await validateServiceAreaTool(ctx, args);
     case "request_manual_quote": return await manualQuoteTool(ctx, args);
     case "request_human_callback": return await humanCallbackTool(ctx, args);
     default:
