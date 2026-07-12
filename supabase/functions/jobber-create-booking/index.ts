@@ -410,9 +410,21 @@ Deno.serve(async (req) => {
               }));
             }
           } else {
-            // Engine could not produce a firm price for these inputs.
+            // Engine is reachable but could NOT produce a firm price for these
+            // inputs (missing info / manual review). A booking must never be
+            // silently confirmed at a client-supplied total in this case —
+            // reject so a customer cannot craft inputs to lock in a wrong price.
             console.warn(
-              `Engine returned non-firm status "${engineResult.status}" for booking; keeping client line items but flagging.`,
+              `Engine returned non-firm status "${engineResult.status}" for booking; rejecting.`,
+            );
+            return new Response(
+              JSON.stringify({
+                error:
+                  "This selection needs a customized quote. Our team will follow up to confirm pricing.",
+                status: engineResult.status,
+                missing: engineResult.missing,
+              }),
+              { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
             );
           }
         } else {

@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Download, Check, Sparkles, ArrowLeft } from 'lucide-react';
+import { Calendar, Download, Check, Sparkles, Loader2, Info, HelpCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { DiscountCodeInput } from './DiscountCodeInput';
 import { BookingFlow } from '@/components/booking/BookingFlow';
+import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
+import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
+import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
@@ -29,6 +32,13 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
+/** Human-readable prompts for the fields the pricing engine says are missing. */
+const MISSING_LABELS: Record<string, string> = {
+  squareFootage: 'Enter your home square footage',
+  stories: 'Tell us how many stories your home has',
+  services: 'Select at least one service',
+};
+
 export function OneTimeSummary({ 
   servicePrices, 
   additionalServices,
@@ -46,21 +56,20 @@ export function OneTimeSummary({
     onBookingActiveChange?.(showBookingFlow);
     return () => onBookingActiveChange?.(false);
   }, [showBookingFlow, onBookingActiveChange]);
-  
-  // Calculate discounted total
-  const subtotal = servicePrices.grandTotal;
-  let discountAmount = 0;
-  if (appliedDiscount) {
-    if (appliedDiscount.type === 'percentage') {
-      discountAmount = subtotal * (appliedDiscount.value / 100);
-    } else {
-      discountAmount = Math.min(appliedDiscount.value, subtotal);
-    }
-  }
-  const finalTotal = subtotal - discountAmount;
-  const hasServices = servicePrices.grandTotal > 0;
 
-  // Show booking flow
+  // AUTHORITATIVE pricing — every dollar shown here comes from the deployed
+  // calculate-quote Edge Function. No local pricing math or fallback estimate.
+  const hasServices = hasAnyServiceSelected(additionalServices);
+  const quoteState = useServerQuoteCalculation(
+    hasServices ? toQuoteInput(homeDetails, additionalServices, appliedDiscount) : null,
+    { enabled: hasServices },
+  );
+  const { quote, total, isFirm, loading, isMissingInfo, isManualReview, isUnavailable } = quoteState;
+
+  const serverDiscountAmount = quote?.discount?.amount ?? 0;
+  const canBook = isFirm && typeof total === 'number';
+
+  // Show booking flow — only reachable with a current, firm server quote.
   if (showBookingFlow) {
     return (
       <BookingFlow
@@ -68,7 +77,7 @@ export function OneTimeSummary({
         additionalServices={additionalServices}
         homeDetails={homeDetails}
         appliedDiscount={appliedDiscount}
-        discountAmount={discountAmount}
+        discountAmount={serverDiscountAmount}
         onCancel={() => setShowBookingFlow(false)}
         prefillCustomerInfo={prefillCustomerInfo}
       />
@@ -91,229 +100,195 @@ export function OneTimeSummary({
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Total Price */}
-        <div className="p-4 rounded-lg bg-accent/10 border border-accent/30">
-          <div className="flex items-center justify-between mb-2">
-            <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide bg-accent/20 text-accent-foreground">
-              One-Time
-            </span>
-            <span className="text-sm font-medium text-accent">Single Appointment</span>
+        {/* ---------------------------------------------------------------- */}
+        {/* No services selected */}
+        {/* ---------------------------------------------------------------- */}
+        {!hasServices && (
+          <div className="text-center py-8 text-muted-foreground">
+            <Sparkles className="w-10 h-10 mx-auto mb-3 opacity-50" />
+            <p className="text-sm">Select a service to see your price.</p>
           </div>
-          <div className="text-3xl price-display text-foreground">
-            {appliedDiscount ? (
-              <>
-                <span className="line-through text-muted-foreground text-xl mr-2">
-                  {formatPrice(subtotal)}
-                </span>
-                {formatPrice(finalTotal)}
-              </>
-            ) : (
-              formatPrice(subtotal)
-            )}
-            <span className="text-base font-normal text-muted-foreground"> total</span>
+        )}
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Loading — never flash an old or fallback price */}
+        {/* ---------------------------------------------------------------- */}
+        {hasServices && loading && (
+          <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin mb-3 text-primary" />
+            <p className="text-sm">Calculating your price…</p>
           </div>
-          {appliedDiscount && (
-            <p className="text-sm text-green-600 mt-1">
-              You save {formatPrice(discountAmount)}!
-            </p>
-          )}
-        </div>
-        
-        {/* Discount Code */}
-        <DiscountCodeInput 
-          onApply={setAppliedDiscount}
-          appliedDiscount={appliedDiscount}
-        />
-        
-        {/* Service Breakdown */}
-        <div className="space-y-3">
-          <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-            Services Included
-          </h4>
-          
-          <div className="space-y-2 text-sm">
-            {additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0 && (
-              <>
-                <div className="flex justify-between">
-                  <span className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-success" />
-                    Window Cleaning
-                  </span>
-                  <span className="font-medium">{formatPrice(servicePrices.windowCleaningTotal)}</span>
-                </div>
-                
-                {servicePrices.exteriorWindows > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6">
-                    <span>• Exterior windows</span>
-                    <span>{formatPrice(servicePrices.exteriorWindows)}</span>
-                  </div>
-                )}
-                
-                {servicePrices.interiorWindows > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6">
-                    <span>• Interior windows</span>
-                    <span>{formatPrice(servicePrices.interiorWindows)}</span>
-                  </div>
-                )}
-                
-                {servicePrices.hardWaterAddon > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6">
-                    <span>• Hard water treatment</span>
-                    <span>+{formatPrice(servicePrices.hardWaterAddon)}</span>
-                  </div>
-                )}
-                
-                {servicePrices.frenchPanesAddon > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6">
-                    <span>• French panes</span>
-                    <span>+{formatPrice(servicePrices.frenchPanesAddon)}</span>
-                  </div>
-                )}
-                
-                {servicePrices.solarScreensAddon > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6">
-                    <span>• Solar screen removal</span>
-                    <span>+{formatPrice(servicePrices.solarScreensAddon)}</span>
-                  </div>
-                )}
-              </>
-            )}
-            
-            {additionalServices.houseWash && servicePrices.houseWash > 0 && (
-              <div className="flex justify-between">
-                <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  House Wash
-                </span>
-                <span className="font-medium">{formatPrice(servicePrices.houseWash)}</span>
-              </div>
-            )}
-            
-            {additionalServices.gutterCleaning && servicePrices.gutterCleaning > 0 && (
-              <div className="flex justify-between">
-                <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  Gutter Cleaning
-                </span>
-                <span className="font-medium">{formatPrice(servicePrices.gutterCleaning)}</span>
-              </div>
-            )}
-            
-            {additionalServices.roofCleaning && servicePrices.roofCleaning > 0 && (
-              <div className="flex justify-between">
-                <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  Roof Cleaning
-                </span>
-                <span className="font-medium">{formatPrice(servicePrices.roofCleaning)}</span>
-              </div>
-            )}
-            
-            {additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0 && (
-              <>
-                <div className="flex justify-between">
-                  <span className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-success" />
-                    Driveway Cleaning
-                  </span>
-                  <span className="font-medium">{formatPrice(servicePrices.drivewayCleaning)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground pl-6 text-xs">
-                  <span>• {additionalServices.drivewayCleaning.sqft.toLocaleString()} sqft × {additionalServices.drivewayCleaning.surfaceType}</span>
-                </div>
-              </>
-            )}
-            
-            {additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0 && (
-              <>
-                <div className="flex justify-between">
-                  <span className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-success" />
-                    Pressure Washing
-                  </span>
-                  <span className="font-medium">{formatPrice(servicePrices.pressureWashing)}</span>
-                </div>
-                {servicePrices.pressureWashingBreakdown.frontPorch > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6 text-xs">
-                    <span>• Front Porch ({additionalServices.pressureWashing.frontPorch.sqft} sqft)</span>
-                    <span>{formatPrice(servicePrices.pressureWashingBreakdown.frontPorch)}</span>
-                  </div>
-                )}
-                {servicePrices.pressureWashingBreakdown.backPatio > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6 text-xs">
-                    <span>• Back Patio ({additionalServices.pressureWashing.backPatio.sqft} sqft)</span>
-                    <span>{formatPrice(servicePrices.pressureWashingBreakdown.backPatio)}</span>
-                  </div>
-                )}
-                {servicePrices.pressureWashingBreakdown.poolDeck > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6 text-xs">
-                    <span>• Pool Deck ({additionalServices.pressureWashing.poolDeck.sqft} sqft)</span>
-                    <span>{formatPrice(servicePrices.pressureWashingBreakdown.poolDeck)}</span>
-                  </div>
-                )}
-                {servicePrices.pressureWashingBreakdown.walkways > 0 && (
-                  <div className="flex justify-between text-muted-foreground pl-6 text-xs">
-                    <span>• Walkways ({additionalServices.pressureWashing.walkways.sqft} sqft)</span>
-                    <span>{formatPrice(servicePrices.pressureWashingBreakdown.walkways)}</span>
-                  </div>
-                )}
-              </>
-            )}
+        )}
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Missing information — ask the specific questions, no total */}
+        {/* ---------------------------------------------------------------- */}
+        {hasServices && isMissingInfo && (
+          <div className="p-4 rounded-lg bg-muted/50 border border-border space-y-2">
+            <div className="flex items-center gap-2 text-foreground font-medium text-sm">
+              <Info className="w-4 h-4 text-primary" />
+              A little more information is needed
+            </div>
+            <ul className="text-sm text-muted-foreground list-disc pl-8 space-y-1">
+              {quoteState.missing.map((m) => (
+                <li key={m}>{MISSING_LABELS[m] ?? m}</li>
+              ))}
+            </ul>
           </div>
-        </div>
-        
-        <Separator />
-        
-        {/* Summary */}
-        <div className="space-y-3">
-          {appliedDiscount && (
-            <>
-              <div className="flex justify-between text-sm text-muted-foreground">
-                <span>Subtotal</span>
-                <span>{formatPrice(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm text-green-600">
-                <span>Discount ({appliedDiscount.code})</span>
-                <span>-{formatPrice(discountAmount)}</span>
-              </div>
-            </>
-          )}
-          <div className="flex justify-between text-lg font-semibold">
-            <span>Total Due</span>
-            <span className="price-display text-accent">
-              {formatPrice(finalTotal)}
-            </span>
+        )}
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Manual review required */}
+        {/* ---------------------------------------------------------------- */}
+        {hasServices && isManualReview && (
+          <div className="space-y-3">
+            <div className="p-4 rounded-lg bg-muted/50 border border-border flex items-start gap-2">
+              <HelpCircle className="w-4 h-4 text-primary mt-0.5" />
+              <p className="text-sm text-muted-foreground">
+                This service needs a customized quote. Share your details and our team will follow up.
+              </p>
+            </div>
+            <BookingHelpContact variant="quote" />
           </div>
-          
-          <p className="text-xs text-muted-foreground">
-            All services completed in a single appointment
-          </p>
-        </div>
-        
-        {/* Disclaimer */}
-        <div className="p-3 rounded-lg bg-muted/50 border border-border">
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            Prices are based on the information provided and represent our best estimate. 
-            Final pricing may adjust if on-site conditions differ.
-          </p>
-        </div>
-        
+        )}
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Pricing temporarily unavailable — no error details, no estimate */}
+        {/* ---------------------------------------------------------------- */}
+        {hasServices && isUnavailable && (
+          <div className="space-y-3">
+            <div className="p-4 rounded-lg bg-muted/50 border border-border flex items-start gap-2">
+              <Info className="w-4 h-4 text-primary mt-0.5" />
+              <p className="text-sm text-muted-foreground">
+                We're temporarily unable to calculate this price. You can request a quote and our team will follow up.
+              </p>
+            </div>
+            <BookingHelpContact variant="quote" />
+            <Button variant="outline" className="w-full" onClick={quoteState.refetch}>
+              Try again
+            </Button>
+          </div>
+        )}
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Firm quote */}
+        {/* ---------------------------------------------------------------- */}
+        {hasServices && isFirm && quote && (
+          <>
+            {/* Total Price */}
+            <div className="p-4 rounded-lg bg-accent/10 border border-accent/30">
+              <div className="flex items-center justify-between mb-2">
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide bg-accent/20 text-accent-foreground">
+                  One-Time
+                </span>
+                <span className="text-sm font-medium text-accent">Single Appointment</span>
+              </div>
+              <div className="text-3xl price-display text-foreground">
+                {serverDiscountAmount > 0 ? (
+                  <>
+                    <span className="line-through text-muted-foreground text-xl mr-2">
+                      {formatPrice(quote.subtotal)}
+                    </span>
+                    {formatPrice(quote.total)}
+                  </>
+                ) : (
+                  formatPrice(quote.total)
+                )}
+                <span className="text-base font-normal text-muted-foreground"> total</span>
+              </div>
+              {serverDiscountAmount > 0 && (
+                <p className="text-sm text-green-600 mt-1">
+                  You save {formatPrice(serverDiscountAmount)}!
+                </p>
+              )}
+            </div>
+
+            {/* Discount Code */}
+            <DiscountCodeInput onApply={setAppliedDiscount} appliedDiscount={appliedDiscount} />
+
+            {/* Service Breakdown — rendered from the AUTHORITATIVE server line items */}
+            <div className="space-y-3">
+              <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                Services Included
+              </h4>
+              <div className="space-y-2 text-sm">
+                {quote.lineItems.map((li) => (
+                  <div key={li.key} className="space-y-1">
+                    <div className="flex justify-between">
+                      <span className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-success" />
+                        {li.label}
+                      </span>
+                      <span className="font-medium">{formatPrice(li.amount)}</span>
+                    </div>
+                    {li.adjustments.map((adj, i) => (
+                      <div key={i} className="flex justify-between text-muted-foreground pl-6 text-xs">
+                        <span>• {adj.label}</span>
+                        {adj.amount > 0 && <span>+{formatPrice(adj.amount)}</span>}
+                      </div>
+                    ))}
+                    {li.minimumApplied && (
+                      <div className="text-muted-foreground pl-6 text-xs">• Service minimum applied</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Summary */}
+            <div className="space-y-3">
+              {serverDiscountAmount > 0 && (
+                <>
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span>{formatPrice(quote.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>Discount{quote.discount?.code ? ` (${quote.discount.code})` : ''}</span>
+                    <span>-{formatPrice(serverDiscountAmount)}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between text-lg font-semibold">
+                <span>Total Due</span>
+                <span className="price-display text-accent">{formatPrice(quote.total)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                All services completed in a single appointment
+              </p>
+            </div>
+
+            {/* Disclaimer */}
+            <div className="p-3 rounded-lg bg-muted/50 border border-border">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Firm quote based on the information provided. Final pricing may adjust only if
+                on-site conditions differ from what was entered.
+                {quote.ruleVersion != null && (
+                  <span className="block mt-1 opacity-70">Pricing version {quote.ruleVersion}</span>
+                )}
+              </p>
+            </div>
+          </>
+        )}
+
         {/* Actions */}
         <div className="space-y-3 pt-2">
-          <Button 
+          <Button
             className="w-full btn-primary h-12 text-base"
             onClick={() => setShowBookingFlow(true)}
-            disabled={!hasServices}
+            disabled={!canBook}
           >
             <Calendar className="w-5 h-5 mr-2" />
             Book Now
           </Button>
-          
-          <Button 
-            variant="outline" 
+
+          <Button
+            variant="outline"
             className="w-full btn-secondary"
             onClick={onDownloadPDF}
-            disabled={!hasServices}
+            disabled={!canBook}
           >
             <Download className="w-4 h-4 mr-2" />
             Download Quote PDF
