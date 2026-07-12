@@ -8,7 +8,6 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 import { supabase } from '@/integrations/supabase/client';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const invoke = supabase.functions.invoke as unknown as ReturnType<typeof vi.fn>;
 
 const firm = (total: number) => ({
