@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { usePricingConfigRows, useUpdatePricingConfig, DEFAULT_PRICING, type PricingConfigRow } from '@/hooks/usePricingConfig';
+import { usePricingConfigRows, useUpdatePricingConfig, PRICING_CONFIG_KEYS, type PricingConfigRow } from '@/hooks/usePricingConfig';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Save, RefreshCw, Percent, DollarSign, Home, Droplets, Wind, Sun, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
