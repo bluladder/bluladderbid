@@ -449,6 +449,37 @@ export function calculateQuote(
   }
 
   // =========================================================================
+  // INTERIOR WINDOWS (standalone) — plan-builder rule promoted unchanged.
+  // sqft × interiorPerSqFt with story+condition modifiers and a 0.6× minimum.
+  // =========================================================================
+  if (svc.interiorWindows) {
+    const cfg = pricing.window_cleaning;
+    if (!cfg) {
+      manualReviewReasons.push("window_cleaning pricing not configured");
+    } else {
+      const mods = cfg.modifiers;
+      const base = sqft * cfg.interiorPerSqFt;
+      const storyMod = mods.stories[stories.toString()] ?? 0;
+      const conditionMod = mods.condition?.[home.condition ?? ""] ?? 0;
+      const calculated = applyModifiers(base, [storyMod, conditionMod]);
+      const minimum = roundDollars((cfg.minimumPrice ?? 0) * 0.6);
+      const amount = Math.max(calculated, minimum);
+      lineItems.push({
+        key: "interior_windows",
+        label: "Interior Window Cleaning",
+        quantity: sqft,
+        unit: "sqft",
+        baseAmount: amount,
+        adjustments: [],
+        minimumApplied: amount > calculated,
+        amount,
+        jobberLineItem: { name: "Interior Window Cleaning", unitPrice: amount },
+      });
+      trace.push(`interior_windows: base=${roundDollars(base)} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`);
+    }
+  }
+
+  // =========================================================================
   // HOUSE WASH
   // =========================================================================
   if (svc.houseWash) {
