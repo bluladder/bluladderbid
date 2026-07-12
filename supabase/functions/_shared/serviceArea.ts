@@ -60,31 +60,43 @@ interface Geo {
 
 // Returns null on a hard API failure (validation_unavailable), a Geo otherwise.
 async function geocode(address: string): Promise<Geo | null | "unavailable"> {
-  const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
-  if (!key) return "unavailable";
-  let resp: Response;
-  try {
-    resp = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=us&key=${key}`,
-    );
-  } catch {
-    return "unavailable";
+  // Some deployments only enable Geocoding on one of the connector keys, so try
+  // the server key first, then the browser key.
+  const keys = [
+    Deno.env.get("GOOGLE_MAPS_API_KEY"),
+    Deno.env.get("GOOGLE_MAPS_BROWSER_KEY"),
+  ].filter((k): k is string => !!k);
+  if (keys.length === 0) return "unavailable";
+
+  let data: any = null;
+  let denied = false;
+  for (const key of keys) {
+    let resp: Response;
+    try {
+      resp = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=us&key=${key}`,
+      );
+    } catch {
+      continue;
+    }
+    if (!resp.ok) continue;
+    const body = await resp.json().catch(() => null);
+    if (!body) continue;
+    if (body.status === "OK" || body.status === "ZERO_RESULTS" || body.status === "INVALID_REQUEST") {
+      data = body;
+      break;
+    }
+    if (body.status === "REQUEST_DENIED") {
+      denied = true;
+      console.error("[serviceArea] geocode REQUEST_DENIED", body.error_message || "");
+      continue; // try next key
+    }
+    // OVER_QUERY_LIMIT / UNKNOWN_ERROR → treat as temporary
+    console.error("[serviceArea] geocode api status", body.status, body.error_message || "");
   }
-  if (!resp.ok) {
-    console.error("[serviceArea] geocode http status", resp.status);
-    return "unavailable";
-  }
-  const data = await resp.json().catch(() => null);
-  if (!data) return "unavailable";
-  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-    console.error("[serviceArea] geocode api status", data.status, data.error_message || "");
-  }
-  if (data.status === "ZERO_RESULTS") return null; // no match → incomplete/unknown
-  if (data.status !== "OK" || !Array.isArray(data.results) || data.results.length === 0) {
-    // OVER_QUERY_LIMIT / REQUEST_DENIED / INVALID_REQUEST etc.
-    if (data.status === "INVALID_REQUEST") return null;
-    return "unavailable";
-  }
+  if (!data) return denied ? "unavailable" : "unavailable";
+  if (data.status === "ZERO_RESULTS" || data.status === "INVALID_REQUEST") return null;
+  if (data.status !== "OK" || !Array.isArray(data.results) || data.results.length === 0) return "unavailable";
   const r = data.results[0];
   const comps: any[] = r.address_components || [];
   const get = (type: string) =>
