@@ -309,14 +309,16 @@ async function fetchVisitsForChunk(
 async function upsertVisits(
   supabase: SupabaseClient<any>,
   visits: Visit[]
-): Promise<{ inserted: number; errors: number }> {
+): Promise<{ inserted: number; errors: number; seenKeys: string[] }> {
   let insertedCount = 0;
   let errorCount = 0;
+  const seenKeys: string[] = [];
 
   for (const visit of visits) {
     const assignees = visit.assignedUsers?.nodes || [];
     
     for (const assignee of assignees) {
+      seenKeys.push(`${visit.id}:${assignee.id}`);
       const address = visit.job?.property?.address;
       const fullAddress = address 
         ? `${address.street}, ${address.city}, ${address.province} ${address.postalCode}`
@@ -349,7 +351,7 @@ async function upsertVisits(
     }
   }
 
-  return { inserted: insertedCount, errors: errorCount };
+  return { inserted: insertedCount, errors: errorCount, seenKeys };
 }
 
 function generateChunks(
@@ -561,6 +563,12 @@ Deno.serve(async (req) => {
     let lastSuccessfulDate = startFrom;
     let throttled = false;
     let lastError: string | null = null;
+    // Track every visit/crew pair returned by Jobber during THIS invocation so
+    // we can reconcile (cancel) obsolete mirror blocks after a clean sweep.
+    const seenKeys = new Set<string>();
+    // We may only safely prune when this invocation processed the whole window
+    // from the very beginning (a resumed run would be missing earlier keys).
+    const startedFresh = (syncRun.chunks_completed || 0) === 0 && !syncRun.current_cursor_date;
 
     // Process chunks sequentially with delays
     for (let i = 0; i < chunks.length; i++) {
@@ -583,10 +591,11 @@ Deno.serve(async (req) => {
       // Upsert whatever we got
       let insertedThisChunk = 0;
       if (visits.length > 0) {
-        const { inserted, errors: upsertErrors } = await upsertVisits(supabase, visits);
+        const { inserted, errors: upsertErrors, seenKeys: chunkKeys } = await upsertVisits(supabase, visits);
         totalVisits += visits.length;
         totalBlocks += inserted;
         insertedThisChunk = inserted;
+        for (const k of chunkKeys) seenKeys.add(k);
         
         if (upsertErrors > 0) {
           console.log(`[Sync] ⚠️ ${upsertErrors} upsert errors in chunk ${i + 1}`);
@@ -629,6 +638,52 @@ Deno.serve(async (req) => {
     const allComplete = chunksCompleted >= chunks.length + syncRun.chunks_completed;
     const finalStatus = allComplete ? "completed" : throttled ? "partial" : lastError ? "failed" : "completed";
 
+    // ===== Authoritative reconciliation (prune obsolete blocks) =====
+    // Only when the ENTIRE window was swept cleanly in this invocation:
+    //   - all chunks done, no throttle, no error, and started from scratch.
+    // Never prune after a partial/throttled/failed/resumed run — incomplete
+    // data would wrongly cancel valid appointments.
+    let blocksPruned = 0;
+    const canReconcile = finalStatus === "completed" && !throttled && !lastError && startedFresh;
+    if (canReconcile) {
+      const windowStart = new Date(syncRun.from_date);
+      const windowEnd = new Date(syncRun.to_date);
+      const { data: existingBlocks, error: fetchErr } = await supabase
+        .from("jobber_busy_blocks")
+        .select("id, jobber_visit_id, crew_id")
+        .gte("start_at", windowStart.toISOString())
+        .lt("start_at", windowEnd.toISOString())
+        .in("status", ["scheduled", "in_progress"]);
+
+      if (!fetchErr) {
+        const staleIds = (existingBlocks || [])
+          .filter((b) => !seenKeys.has(`${b.jobber_visit_id}:${b.crew_id}`))
+          .map((b) => b.id);
+        if (staleIds.length > 0) {
+          const { error: pruneErr } = await supabase
+            .from("jobber_busy_blocks")
+            .update({ status: "cancelled", updated_at: new Date().toISOString() })
+            .in("id", staleIds);
+          if (!pruneErr) blocksPruned = staleIds.length;
+        }
+        // Record the reconciliation sweep for admin visibility.
+        await supabase.from("schedule_reconciliation_runs").insert({
+          started_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          mode: "fix",
+          trigger: "manual",
+          horizon_days: horizonDays,
+          status: "completed",
+          jobber_visits: seenKeys.size,
+          mirror_blocks: (existingBlocks || []).length,
+          orphan_count: blocksPruned,
+          blocks_pruned: blocksPruned,
+          report: { source: "manual-sync-reconcile", blocksPruned },
+        });
+        console.log(`[Sync] 🧹 Reconciled: cancelled ${blocksPruned} obsolete block(s)`);
+      }
+    }
+
     // Update final state
     await supabase
       .from("schedule_sync_runs")
@@ -642,6 +697,19 @@ Deno.serve(async (req) => {
         completed_at: finalStatus === "completed" ? new Date().toISOString() : null,
       })
       .eq("id", syncRun.id);
+
+    // Stamp the authoritative freshness marker ONLY on a clean, complete sweep.
+    // This is what the availability engine reads to decide the mirror is safe.
+    if (finalStatus === "completed" && !throttled && !lastError) {
+      await supabase
+        .from("autosync_config")
+        .update({
+          last_full_sync_completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", "default");
+      console.log("[Sync] Stamped last_full_sync_completed_at (clean full sweep)");
+    }
 
     // Also update legacy sync state for backwards compatibility
     await supabase
@@ -659,6 +727,7 @@ Deno.serve(async (req) => {
       totalChunks: chunks.length + (syncRun.chunks_completed || 0),
       visitsProcessed: totalVisits,
       blocksInserted: totalBlocks,
+      blocksPruned,
       syncedThrough: lastSuccessfulDate.toISOString().split('T')[0],
       dateRange: {
         start: syncRun.from_date,

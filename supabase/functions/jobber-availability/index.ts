@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { blockOverlapsDay, slotHasConflict } from "./availability-core.ts";
+import { getMirrorFreshness, unavailableCustomerMessage } from "../_shared/scheduleFreshness.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -545,6 +546,32 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ===== STALE / IN-PROGRESS GUARD =====
+    // Never serve availability from a schedule mirror that is stale, currently
+    // syncing, or has never completed a clean full sweep. Failing closed here
+    // prevents showing appointment times that may not actually be available.
+    const freshness = await getMirrorFreshness(supabase);
+    if (!freshness.ok) {
+      console.warn(
+        `[Availability] Withholding slots — mirror not usable. reason=${freshness.reason} ` +
+          `ageMinutes=${freshness.ageMinutes === null ? "n/a" : Math.round(freshness.ageMinutes)} ` +
+          `syncInProgress=${freshness.syncInProgress} lastComplete=${freshness.lastCompleteSyncAt ?? "never"}`,
+      );
+      return new Response(
+        JSON.stringify({
+          availability_unavailable: true,
+          reason: freshness.reason,
+          error: unavailableCustomerMessage(),
+          message: unavailableCustomerMessage(),
+          slots: [],
+          recommendations: [],
+          rankedSlots: [],
+          fullyBookedDays: [],
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 },
+      );
+    }
+
     // Fetch business hours
     let BUSINESS_HOURS: BusinessHoursConfig = DEFAULT_BUSINESS_HOURS;
     
@@ -935,6 +962,25 @@ Deno.serve(async (req) => {
         .gt("end_at", fromDate.toISOString())
     ]);
 
+    // Active (unexpired) slot reservations temporarily hold a crew's time while
+    // another customer completes checkout. Treat them as busy so two customers
+    // can't be shown/booked into the same slot. Expired holds are excluded.
+    const nowIso = new Date().toISOString();
+    const reservationsRes = await supabase
+      .from("slot_reservations")
+      .select("crew_id, start_at, end_at, status, expires_at")
+      .in("crew_id", techJobberIds)
+      .lt("start_at", toDate.toISOString())
+      .gt("end_at", fromDate.toISOString())
+      .in("status", ["held", "confirmed"])
+      .gt("expires_at", nowIso);
+    const activeReservations = reservationsRes.data || [];
+    if (reservationsRes.error) {
+      console.warn("[Availability] Failed to load slot reservations:", reservationsRes.error.message);
+    } else if (activeReservations.length > 0) {
+      console.log(`[Availability] ${activeReservations.length} active slot reservation(s) treated as busy`);
+    }
+
     if (busyBlocksRes.error) {
       console.error("[Availability] Failed to fetch busy blocks:", busyBlocksRes.error);
       return new Response(
@@ -1046,6 +1092,24 @@ Deno.serve(async (req) => {
       });
       
       console.log(`[ScheduleBlock] Added ${block.block_category} block for tech ${block.technician_id}: ${block.start_at} - ${block.end_at}`);
+    }
+
+    // Merge active slot reservations (crew_id === jobber user id) as busy time.
+    for (const resv of activeReservations as Array<{ crew_id: string; start_at: string; end_at: string }>) {
+      if (!busyTimesByTech[resv.crew_id]) {
+        busyTimesByTech[resv.crew_id] = [];
+      }
+      const blockStart = new Date(resv.start_at);
+      const blockEnd = new Date(resv.end_at);
+      const expandedStart = new Date(blockStart.getTime() - SLOT_GENERATION_CONFIG.bufferBeforeMinutes * 60 * 1000);
+      const expandedEnd = new Date(blockEnd.getTime() + SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000);
+      busyTimesByTech[resv.crew_id].push({
+        start: blockStart,
+        end: blockEnd,
+        expandedStart,
+        expandedEnd,
+        address: null,
+      });
     }
 
     // Track day metrics for fully-booked detection

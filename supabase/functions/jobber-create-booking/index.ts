@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jobberGraphQL } from "../_shared/jobberClient.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
+import { getMirrorFreshness } from "../_shared/scheduleFreshness.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,6 +48,9 @@ interface BookingRequest {
   // Team booking fields
   isTeamJob?: boolean;
   teamTechnicianIds?: string[];
+  // Concurrency / retry safety
+  idempotencyKey?: string;
+  sessionId?: string;
 }
 
 // Simple address parser - extracts components from a single-line address
@@ -144,16 +148,13 @@ async function checkLocalMirrorConflicts(
     return { hasConflict: false, mirrorStale: true, noData: true };
   }
   
-  // Check if autosync ran recently (within 30 minutes)
-  const now = Date.now();
-  const autosyncAge = autosyncConfig?.updated_at 
-    ? (now - new Date(autosyncConfig.updated_at).getTime()) / (1000 * 60)
-    : 999;
-  
-  const mirrorStale = autosyncAge > MIRROR_STALE_THRESHOLD_MINUTES;
-  
+  // Authoritative freshness: only trust the mirror when the last FULL sweep
+  // completed cleanly and no sync is currently running. Otherwise force the
+  // Jobber fallback (which fails closed on error).
+  const freshness = await getMirrorFreshness(supabase, MIRROR_STALE_THRESHOLD_MINUTES);
+  const mirrorStale = !freshness.ok;
   if (mirrorStale) {
-    console.log(`[LocalConflictCheck] Autosync is stale (${Math.round(autosyncAge)} min old > ${MIRROR_STALE_THRESHOLD_MINUTES} min threshold)`);
+    console.log(`[LocalConflictCheck] Mirror not fresh (reason=${freshness.reason}) — will fall back to Jobber`);
   }
   
   // Check for overlaps: (newStart < existingEnd) AND (newEnd > existingStart)
@@ -186,7 +187,7 @@ async function checkJobberConflicts(
   requestedStart: Date,
   requestedEnd: Date,
   technicianName: string
-): Promise<{ hasConflict: boolean; conflictingVisit?: { startAt: string; endAt: string }; throttled: boolean }> {
+): Promise<{ hasConflict: boolean; conflictingVisit?: { startAt: string; endAt: string }; throttled: boolean; error: boolean }> {
   
   // Narrow window: ±6 hours around requested time
   const rangeAfter = new Date(requestedStart.getTime() - 6 * 60 * 60 * 1000);
@@ -227,16 +228,23 @@ async function checkJobberConflicts(
   // Check if throttled
   if (conflictResult.throttled) {
     console.error("Jobber conflict check was throttled");
-    return { hasConflict: false, throttled: true };
+    return { hasConflict: false, throttled: true, error: false };
   }
   
   if (conflictResult.errors?.length) {
     console.error("Conflict validation failed (Jobber errors):", conflictResult.errors);
-    // Fail closed - treat errors as potential conflict to prevent double-booking
-    return { hasConflict: false, throttled: false };
+    // FAIL CLOSED: a failed conflict query must NOT be interpreted as
+    // "no conflict". Signal an error so the caller stops the booking (503).
+    return { hasConflict: false, throttled: false, error: true };
   }
-  
-  if (conflictResult.data?.visits?.nodes) {
+
+  // Malformed / unexpected shape: we cannot positively verify availability.
+  if (!conflictResult.data?.visits?.nodes) {
+    console.error("Conflict validation returned malformed/incomplete data");
+    return { hasConflict: false, throttled: false, error: true };
+  }
+
+  {
     const existingVisits = conflictResult.data.visits.nodes
       .filter(v => (v.assignedUsers?.nodes ?? []).some(u => u.id === jobberUserId));
     
@@ -252,12 +260,13 @@ async function checkJobberConflicts(
           hasConflict: true,
           conflictingVisit: { startAt: visit.startAt, endAt: visit.endAt },
           throttled: false,
+          error: false,
         };
       }
     }
   }
   
-  return { hasConflict: false, throttled: false };
+  return { hasConflict: false, throttled: false, error: false };
 }
 
 Deno.serve(async (req) => {
@@ -339,6 +348,91 @@ Deno.serve(async (req) => {
     console.log("Jobber IDs:", allJobberUserIds);
     console.log("Is team job:", booking.isTeamJob || false);
 
+    // === SLOT RESERVATION & IDEMPOTENCY (before any Jobber writes) ===
+    // Atomically hold this crew's time so two customers can't race into the
+    // same slot, and so retries with the same key don't create duplicate jobs.
+    const requestedStart = new Date(booking.scheduledStart);
+    const requestedEnd = new Date(booking.scheduledEnd);
+
+    const idempotencyKey =
+      (booking.idempotencyKey && String(booking.idempotencyKey).trim()) ||
+      `${booking.customer.email.toLowerCase()}|${booking.scheduledStart}|${[...allJobberUserIds].sort().join(",")}`;
+
+    let reservationGroupId: string | null = null;
+    const releaseReservation = async () => {
+      if (!reservationGroupId) return;
+      try {
+        await supabase.rpc("release_booking_slot", { p_group_id: reservationGroupId });
+        console.log("Released slot reservation", reservationGroupId);
+      } catch (e) {
+        console.warn("Failed to release reservation:", e);
+      }
+    };
+
+    const { data: reserveRes, error: reserveErr } = await supabase.rpc("reserve_booking_slot", {
+      p_crew_ids: allJobberUserIds,
+      p_start: requestedStart.toISOString(),
+      p_end: requestedEnd.toISOString(),
+      p_session: booking.sessionId || null,
+      p_idempotency_key: idempotencyKey,
+      p_ttl_minutes: 8,
+    });
+
+    if (reserveErr) {
+      console.error("Reservation RPC failed:", reserveErr);
+      return new Response(
+        JSON.stringify({
+          error: "Scheduling is busy",
+          details: "We're unable to verify this appointment time right now. Please try again shortly.",
+          code: "SCHEDULING_BUSY",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 },
+      );
+    }
+
+    // Idempotent replay: a prior identical request already fully succeeded.
+    if (reserveRes?.idempotent && reserveRes?.result) {
+      console.log("Idempotent replay — returning original booking result");
+      return new Response(JSON.stringify(reserveRes.result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Slot already actively held/booked by someone else → conflict.
+    if (reserveRes?.ok === false) {
+      return new Response(
+        JSON.stringify({
+          error: "Time slot conflict",
+          details:
+            "This time slot was just reserved by another customer. Please select a different time.",
+          code: "CONFLICT",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 },
+      );
+    }
+
+    reservationGroupId = reserveRes?.group_id ?? null;
+
+    // If a previous attempt (same key) already created a Jobber job, reuse it so
+    // retries never create a duplicate job.
+    let existingJobId: string | null = null;
+    if (reservationGroupId) {
+      const { data: grp } = await supabase
+        .from("slot_reservations")
+        .select("jobber_job_id")
+        .eq("group_id", reservationGroupId)
+        .not("jobber_job_id", "is", null)
+        .limit(1)
+        .maybeSingle();
+      existingJobId = grp?.jobber_job_id ?? null;
+      if (existingJobId) console.log("Reusing existing Jobber job from prior attempt:", existingJobId);
+    }
+
+    // From here on the slot is held. Any failure/return must release the hold
+    // (unless we deliberately keep it), so wrap the rest in try/finally.
+    let reservationSettled = false;
+    try {
     // Find or create customer in Supabase
     console.log("Looking up customer by email:", booking.customer.email.toLowerCase());
     let { data: customer } = await supabase
@@ -600,10 +694,8 @@ Deno.serve(async (req) => {
     // === CONFLICT DETECTION ===
     // Step 1: Check local busy_blocks mirror first for ALL assigned technicians
     console.log("Checking for scheduling conflicts (local mirror first)...");
-    
-    const requestedStart = new Date(booking.scheduledStart);
-    const requestedEnd = new Date(booking.scheduledEnd);
-    
+    // (requestedStart / requestedEnd were computed earlier for the slot hold.)
+
     // Check conflicts for all assigned technicians
     for (const tech of technicians) {
       const localCheck = await checkLocalMirrorConflicts(
@@ -655,7 +747,22 @@ Deno.serve(async (req) => {
             { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
           );
         }
-        
+
+        // FAIL CLOSED: if the conflict query errored or returned malformed data
+        // we cannot positively verify the slot is free — stop the booking.
+        if (jobberCheck.error) {
+          console.error(`Conflict verification failed for ${tech.name} — refusing to book (fail closed)`);
+          return new Response(
+            JSON.stringify({
+              error: "Unable to verify availability",
+              details:
+                "We're unable to verify this appointment time right now. Please select another time later or request that our team contact you.",
+              code: "VERIFY_UNAVAILABLE",
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
+          );
+        }
+
         if (jobberCheck.hasConflict && jobberCheck.conflictingVisit) {
           const existingStartLocal = new Intl.DateTimeFormat('en-US', {
             timeZone: 'America/Chicago',
@@ -745,43 +852,62 @@ Deno.serve(async (req) => {
       invoicing: jobInput.invoicing,
     }));
 
-    const jobResult = await jobberGraphQL<{
-      jobCreate: {
-        job: { id: string; jobNumber: number } | null;
-        userErrors: Array<{ message: string; path?: string[] }>;
-      };
-    }>(createJobMutation, { input: jobInput });
+    let jobberJobId: string | null = existingJobId;
+    let jobNumber: number | null = null;
 
-    console.log("Job creation result:", JSON.stringify(jobResult));
+    if (existingJobId) {
+      // Idempotent retry: the job was created on a previous attempt. Skip job
+      // creation and go straight to (re)creating the visit.
+      console.log("Skipping job creation — reusing job from prior attempt:", existingJobId);
+    } else {
+      const jobResult = await jobberGraphQL<{
+        jobCreate: {
+          job: { id: string; jobNumber: number } | null;
+          userErrors: Array<{ message: string; path?: string[] }>;
+        };
+      }>(createJobMutation, { input: jobInput });
 
-    if (jobResult.errors?.length) {
-      console.error("Jobber job GraphQL errors:", jobResult.errors);
-      return new Response(
-        JSON.stringify({ error: "Failed to create job in Jobber", details: jobResult.errors.map(e => e.message).join(", ") }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-      );
+      console.log("Job creation result:", JSON.stringify(jobResult));
+
+      if (jobResult.errors?.length) {
+        console.error("Jobber job GraphQL errors:", jobResult.errors);
+        return new Response(
+          JSON.stringify({ error: "Failed to create job in Jobber", details: jobResult.errors.map(e => e.message).join(", ") }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+        );
+      }
+
+      if (jobResult.data?.jobCreate?.userErrors?.length) {
+        console.error("Jobber job creation errors:", jobResult.data.jobCreate.userErrors);
+        return new Response(
+          JSON.stringify({ error: "Failed to create job in Jobber", details: jobResult.data.jobCreate.userErrors.map(e => e.message).join(", ") }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+        );
+      }
+
+      jobberJobId = jobResult.data?.jobCreate?.job?.id ?? null;
+      jobNumber = jobResult.data?.jobCreate?.job?.jobNumber ?? null;
+
+      if (!jobberJobId) {
+        console.error("No job ID returned from Jobber");
+        return new Response(
+          JSON.stringify({ error: "Failed to get job ID from Jobber" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+        );
+      }
+
+      // Persist the job id against the reservation so a later retry reuses it
+      // instead of creating a duplicate Jobber job.
+      if (reservationGroupId) {
+        try {
+          await supabase.rpc("set_reservation_job", { p_group_id: reservationGroupId, p_job_id: jobberJobId });
+        } catch (e) {
+          console.warn("Failed to persist job id to reservation:", e);
+        }
+      }
+
+      console.log("Created job:", jobberJobId, "Job number:", jobNumber);
     }
-
-    if (jobResult.data?.jobCreate?.userErrors?.length) {
-      console.error("Jobber job creation errors:", jobResult.data.jobCreate.userErrors);
-      return new Response(
-        JSON.stringify({ error: "Failed to create job in Jobber", details: jobResult.data.jobCreate.userErrors.map(e => e.message).join(", ") }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-      );
-    }
-
-    const jobberJobId = jobResult.data?.jobCreate?.job?.id;
-    const jobNumber = jobResult.data?.jobCreate?.job?.jobNumber;
-
-    if (!jobberJobId) {
-      console.error("No job ID returned from Jobber");
-      return new Response(
-        JSON.stringify({ error: "Failed to get job ID from Jobber" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-      );
-    }
-
-    console.log("Created job:", jobberJobId, "Job number:", jobNumber);
 
     // Schedule a visit for the job using VisitCreateInput
     // VisitCreateInput requires a 'visits' array, and response has 'createdVisits'
@@ -885,7 +1011,6 @@ Deno.serve(async (req) => {
 
     if (visitResult.data?.visitCreate?.userErrors?.length) {
       console.error("Jobber visit creation errors:", visitResult.data.visitCreate.userErrors);
-      // Don't fail the booking, job was created successfully
     }
 
     // Generate reference number
@@ -893,7 +1018,54 @@ Deno.serve(async (req) => {
     const referenceNumber = refData || `BL-${Date.now()}`;
     console.log("Generated reference:", referenceNumber);
 
-    // Create booking record in Supabase
+    // ===== FAIL SAFE: never confirm a booking without a Jobber visit =====
+    // If the job was created but the visit was NOT, the appointment does not
+    // actually exist on the calendar. Record it for manual recovery instead of
+    // reporting success. The reservation is intentionally kept (not released) so
+    // the slot stays protected while staff finish the visit.
+    if (!jobberVisitId) {
+      console.error("Visit creation failed — recording booking as needs_attention for recovery");
+      const { data: naBooking } = await supabase
+        .from("bookings")
+        .insert({
+          customer_id: customer.id,
+          technician_id: booking.technicianId,
+          jobber_job_id: jobberJobId,
+          jobber_visit_id: null,
+          reference_number: referenceNumber,
+          status: "needs_attention",
+          scheduled_start: booking.scheduledStart,
+          scheduled_end: booking.scheduledEnd,
+          duration_minutes: booking.durationMinutes,
+          services_json: booking.services,
+          home_details_json: booking.homeDetails,
+          subtotal: booking.subtotal,
+          discount_amount: booking.discountAmount || 0,
+          total: booking.total,
+          discount_code: booking.discountCode,
+          notes: booking.notes,
+          utm_params_json: booking.utmParams && Object.keys(booking.utmParams).length > 0 ? booking.utmParams : null,
+        })
+        .select()
+        .maybeSingle();
+
+      // Keep the reservation hold so the slot can't be double-booked during recovery.
+      reservationSettled = true;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          pendingManualConfirmation: true,
+          code: "VISIT_CREATION_FAILED",
+          referenceNumber,
+          bookingId: naBooking?.id ?? null,
+          error:
+            "We couldn't fully confirm this appointment automatically. Our team has been notified and will confirm your time shortly — you don't need to rebook.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 202 },
+      );
+    }
+
+    // Create booking record in Supabase (confirmed — visit exists)
     console.log("Creating booking record in Supabase");
     const { data: bookingRecord, error: bookingError } = await supabase
       .from("bookings")
@@ -921,10 +1093,41 @@ Deno.serve(async (req) => {
 
     if (bookingError) {
       console.error("Failed to create booking record:", bookingError);
-      // Job was created in Jobber but we failed to record it - log for manual reconciliation
+      // Job + visit exist in Jobber but local record failed - log for reconciliation
     } else {
       console.log("Created booking record:", bookingRecord.id);
     }
+
+    const successPayload = {
+      success: true,
+      referenceNumber,
+      jobNumber,
+      jobberJobId,
+      jobberVisitId,
+      scheduledStart: booking.scheduledStart,
+      scheduledEnd: booking.scheduledEnd,
+      technicianName: technicianNames,
+      bookingId: bookingRecord?.id,
+      isTeamJob: booking.isTeamJob || false,
+      crewSize: technicians.length,
+    };
+
+    // Convert the temporary hold into a confirmed reservation and store the
+    // result so any idempotent retry returns this exact outcome.
+    if (reservationGroupId) {
+      try {
+        await supabase.rpc("confirm_booking_slot", {
+          p_group_id: reservationGroupId,
+          p_booking_id: bookingRecord?.id ?? null,
+          p_job_id: jobberJobId,
+          p_visit_id: jobberVisitId,
+          p_result: successPayload,
+        });
+      } catch (e) {
+        console.warn("Failed to confirm reservation:", e);
+      }
+    }
+    reservationSettled = true;
 
     // Fire-and-forget appointment-confirmation SMS + campaign enrollment.
     if (bookingRecord?.id) {
@@ -945,20 +1148,16 @@ Deno.serve(async (req) => {
     console.log("=== Booking creation completed successfully ===");
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        referenceNumber,
-        jobNumber,
-        jobberJobId,
-        scheduledStart: booking.scheduledStart,
-        scheduledEnd: booking.scheduledEnd,
-        technicianName: technicianNames,
-        bookingId: bookingRecord?.id,
-        isTeamJob: booking.isTeamJob || false,
-        crewSize: technicians.length,
-      }),
+      JSON.stringify(successPayload),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+
+    } finally {
+      // Release the hold on any failure path that didn't settle it.
+      if (!reservationSettled) {
+        await releaseReservation();
+      }
+    }
 
   } catch (error) {
     console.error("Booking creation error:", error);

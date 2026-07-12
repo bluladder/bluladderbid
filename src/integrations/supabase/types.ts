@@ -24,6 +24,7 @@ export type Database = {
           far_term_max_horizon_days: number
           id: string
           last_far_term_sync: string | null
+          last_full_sync_completed_at: string | null
           last_near_term_sync: string | null
           last_run_error: string | null
           last_run_status: string | null
@@ -44,6 +45,7 @@ export type Database = {
           far_term_max_horizon_days?: number
           id?: string
           last_far_term_sync?: string | null
+          last_full_sync_completed_at?: string | null
           last_near_term_sync?: string | null
           last_run_error?: string | null
           last_run_status?: string | null
@@ -64,6 +66,7 @@ export type Database = {
           far_term_max_horizon_days?: number
           id?: string
           last_far_term_sync?: string | null
+          last_full_sync_completed_at?: string | null
           last_near_term_sync?: string | null
           last_run_error?: string | null
           last_run_status?: string | null
@@ -1352,6 +1355,60 @@ export type Database = {
         }
         Relationships: []
       }
+      slot_reservations: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          crew_id: string
+          end_at: string
+          expires_at: string
+          group_id: string
+          id: string
+          idempotency_key: string | null
+          jobber_job_id: string | null
+          jobber_visit_id: string | null
+          result_json: Json | null
+          session_id: string | null
+          start_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          crew_id: string
+          end_at: string
+          expires_at?: string
+          group_id: string
+          id?: string
+          idempotency_key?: string | null
+          jobber_job_id?: string | null
+          jobber_visit_id?: string | null
+          result_json?: Json | null
+          session_id?: string | null
+          start_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          crew_id?: string
+          end_at?: string
+          expires_at?: string
+          group_id?: string
+          id?: string
+          idempotency_key?: string | null
+          jobber_job_id?: string | null
+          jobber_visit_id?: string | null
+          result_json?: Json | null
+          session_id?: string | null
+          start_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sms_campaign_steps: {
         Row: {
           active: boolean
@@ -1835,6 +1892,17 @@ export type Database = {
         Args: { p_customer_id: string }
         Returns: Database["public"]["Enums"]["lead_lifecycle_status"]
       }
+      confirm_booking_slot: {
+        Args: {
+          p_booking_id: string
+          p_group_id: string
+          p_job_id: string
+          p_result: Json
+          p_visit_id: string
+        }
+        Returns: undefined
+      }
+      expire_stale_reservations: { Args: never; Returns: number }
       generate_booking_reference: { Args: never; Returns: string }
       has_admin_level: {
         Args: { _min_level: string; _user_id: string }
@@ -1854,11 +1922,27 @@ export type Database = {
         Args: { p_error?: string; p_holder_id: string; p_status?: string }
         Returns: boolean
       }
+      release_booking_slot: { Args: { p_group_id: string }; Returns: undefined }
       render_msg_template: {
         Args: { tmpl: string; vars: Json }
         Returns: string
       }
+      reserve_booking_slot: {
+        Args: {
+          p_crew_ids: string[]
+          p_end: string
+          p_idempotency_key?: string
+          p_session?: string
+          p_start: string
+          p_ttl_minutes?: number
+        }
+        Returns: Json
+      }
       services_label: { Args: { p: Json }; Returns: string }
+      set_reservation_job: {
+        Args: { p_group_id: string; p_job_id: string }
+        Returns: undefined
+      }
       update_autosync_coverage: { Args: never; Returns: undefined }
     }
     Enums: {
@@ -1876,6 +1960,7 @@ export type Database = {
         | "completed"
         | "cancelled"
         | "pending_confirmation"
+        | "needs_attention"
       lead_lifecycle_status:
         | "open"
         | "pending"
@@ -2047,6 +2132,7 @@ export const Constants = {
         "completed",
         "cancelled",
         "pending_confirmation",
+        "needs_attention",
       ],
       lead_lifecycle_status: [
         "open",
