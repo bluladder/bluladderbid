@@ -48,6 +48,9 @@ verify_jwt = false
 [functions.calculate-quote]
 verify_jwt = false
 
+[functions.calculate-plan-options]
+verify_jwt = false
+
 [functions.customer-lookup]
 verify_jwt = false
 
