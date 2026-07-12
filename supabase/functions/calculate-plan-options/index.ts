@@ -10,6 +10,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   calculatePlanOptions,
+  computeBundleTiers,
   type EngineAdditionalServices,
   type EngineHomeDetails,
   type PlanScenario,
@@ -101,6 +102,39 @@ Deno.serve(async (req) => {
     const homeDetails = (body as Record<string, unknown>).homeDetails as EngineHomeDetails | undefined;
     if (!homeDetails || typeof homeDetails !== "object") {
       return json({ status: "missing_information", error: "homeDetails is required" }, 400);
+    }
+
+    const mode = (body as Record<string, unknown>).mode;
+
+    // -----------------------------------------------------------------------
+    // BUNDLE TIERS MODE — good/better/best plan tiers for the website. Uses the
+    // canonical `computeBundleTiers` (the former frontend `useServicePricing`
+    // math, now server-authoritative). Prices come only from the engine.
+    // -----------------------------------------------------------------------
+    if (mode === "bundle_tiers") {
+      const additionalServices = (body as Record<string, unknown>).additionalServices;
+      if (!additionalServices || typeof additionalServices !== "object") {
+        return json({ status: "missing_information", error: "additionalServices is required" }, 400);
+      }
+
+      const supabaseBundle = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const loadedBundle = await loadPricing(supabaseBundle);
+      if (!loadedBundle.ok || !loadedBundle.pricing) {
+        console.error("calculate-plan-options(bundle_tiers): pricing unavailable", loadedBundle.error);
+        return json(
+          { status: "pricing_unavailable", error: "Pricing is temporarily unavailable. Please try again shortly." },
+          503,
+        );
+      }
+      const tiersResult = computeBundleTiers(
+        { homeDetails, additionalServices: additionalServices as EngineAdditionalServices },
+        loadedBundle.pricing,
+        loadedBundle.ruleVersion,
+      );
+      return json({ status: "ok", mode: "bundle_tiers", ...tiersResult }, 200);
     }
 
     const rawScenarios = (body as Record<string, unknown>).scenarios;
