@@ -332,18 +332,33 @@ export function SchedulingPortal() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {priceData.services.map((svc, idx) => (
-                  <div key={idx} className="flex justify-between text-sm">
-                    <span>{svc.name}</span>
-                    <span className="font-mono">{formatPrice(svc.price)}</span>
-                  </div>
-                ))}
-                {priceData.services.length === 0 && (
-                  <p className="text-sm text-muted-foreground">Enter home details to see pricing</p>
-                )}
-              </div>
-              {priceData.total > 0 && (
+              {quoteLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Calculating price…
+                </div>
+              ) : isUnavailable ? (
+                <p className="text-sm text-muted-foreground">
+                  Pricing is temporarily unavailable. Please try again shortly.
+                </p>
+              ) : isMissingInfo ? (
+                <p className="text-sm text-muted-foreground">
+                  Enter home details to see pricing.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {priceData.services.map((svc, idx) => (
+                    <div key={idx} className="flex justify-between text-sm">
+                      <span>{svc.name}</span>
+                      <span className="font-mono">{formatPrice(svc.price)}</span>
+                    </div>
+                  ))}
+                  {priceData.services.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Enter home details to see pricing</p>
+                  )}
+                </div>
+              )}
+              {isFirm && priceData.total > 0 && (
                 <>
                   <Separator className="my-3" />
                   <div className="flex justify-between items-center">
@@ -352,6 +367,16 @@ export function SchedulingPortal() {
                       {formatPrice(priceData.total)}
                     </Badge>
                   </div>
+                  {estimatedDurationMinutes != null && (
+                    <div className="flex justify-between items-center mt-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> Est. duration
+                      </span>
+                      <span className="font-mono">
+                        {Math.round((estimatedDurationMinutes / 60) * 10) / 10} hrs
+                      </span>
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>
