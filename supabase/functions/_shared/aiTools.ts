@@ -405,9 +405,9 @@ export const TOOL_DEFINITIONS = [
       parameters: {
         type: "object",
         properties: {
-          services: { type: "array", items: { type: "string", enum: [...ALLOWED_SERVICES] } },
+          services: { type: "array", items: { type: "string" }, description: "Service keys: window_cleaning, house_wash, gutter_cleaning, roof_cleaning, driveway_cleaning, pressure_washing." },
           squareFootage: { type: "number" },
-          stories: { type: "number", enum: [1, 2, 3] },
+          stories: { type: "number", description: "1, 2, or 3" },
           windowCleaningType: { type: "string", enum: ["exterior", "both"] },
           condition: { type: "string", enum: ["maintenance", "heavy"] },
           roofType: { type: "string", enum: ["asphalt", "tile", "metal", "flat"] },
