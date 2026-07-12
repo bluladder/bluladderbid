@@ -469,7 +469,16 @@ export function calculateQuote(
         minimumApplied: amount > calculated,
         amount,
         jobberLineItem: { name: "Window Cleaning", unitPrice: amount },
-        components: { exteriorWindows, interiorWindows },
+        components: {
+          exteriorWindows,
+          interiorWindows,
+          hardWaterAddon,
+          frenchPanesAddon,
+          solarScreensAddon,
+          ladderWorkAddon,
+          sunroomAddon,
+          windowCleaningTotal: amount,
+        },
       });
       trace.push(
         `window: ext=${exteriorWindows} int=${interiorWindows} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`,
