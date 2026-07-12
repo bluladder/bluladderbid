@@ -143,6 +143,8 @@ export function SchedulingPortal() {
         scheduledStart: selectedSlot.startTime,
         scheduledEnd: selectedSlot.endTime,
         durationMinutes: selectedSlot.durationMinutes,
+        // Server-authoritative operational duration estimate for the job.
+        estimatedDurationMinutes,
         services: priceData.services.map(s => ({
           name: s.name,
           price: s.price,
