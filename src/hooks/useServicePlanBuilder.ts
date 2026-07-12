@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import type { Json } from '@/integrations/supabase/types';
 import type {
   ServicePlanHomeDetails,
   ServicePlanService,
@@ -297,8 +298,8 @@ export function useServicePlanBuilder() {
           customer_name: `${customer.firstName} ${customer.lastName}`.trim(),
           customer_email: customer.email,
           customer_phone: customer.phone,
-          services_json: servicesJson,
-          home_details_json: homeDetailsJson,
+          services_json: servicesJson as unknown as Json,
+          home_details_json: homeDetailsJson as unknown as Json,
           subtotal: payment.annualTotal,
           total: payment.annualTotal,
           status: 'pending',
