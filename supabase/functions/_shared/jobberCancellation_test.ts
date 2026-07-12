@@ -44,6 +44,26 @@ Deno.test("top-level errors => failed", () => {
   assertEquals(interpretVisitDelete(r).outcome, "failed");
 });
 
+// Live Jobber (2025-04-16) returns "Visit does not exist" as a TOP-LEVEL error
+// (not a userError) when the visit was already removed. This must be idempotent
+// success, otherwise a retry / already-cancelled-in-Jobber case falsely flags
+// the booking as needs_attention.
+Deno.test("top-level 'Visit does not exist' error => already_gone", () => {
+  const r: VisitDeleteResult = {
+    data: null,
+    errors: [{ message: "Visit does not exist" }],
+  };
+  assertEquals(interpretVisitDelete(r).outcome, "already_gone");
+});
+
+Deno.test("mixed top-level errors (one real) => failed (not all gone)", () => {
+  const r: VisitDeleteResult = {
+    data: null,
+    errors: [{ message: "Visit does not exist" }, { message: "Internal server error" }],
+  };
+  assertEquals(interpretVisitDelete(r).outcome, "failed");
+});
+
 Deno.test("throttled => failed", () => {
   const r: VisitDeleteResult = { throttled: true, errors: [{ message: "rate limited" }] };
   assertEquals(interpretVisitDelete(r).outcome, "failed");
