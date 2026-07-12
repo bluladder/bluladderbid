@@ -243,6 +243,9 @@ export type Database = {
       }
       bookings: {
         Row: {
+          cancellation_needs_attention_reason: string | null
+          cancellation_source: string | null
+          cancelled_at: string | null
           created_at: string
           customer_id: string
           discount_amount: number | null
@@ -267,6 +270,9 @@ export type Database = {
           utm_params_json: Json | null
         }
         Insert: {
+          cancellation_needs_attention_reason?: string | null
+          cancellation_source?: string | null
+          cancelled_at?: string | null
           created_at?: string
           customer_id: string
           discount_amount?: number | null
@@ -291,6 +297,9 @@ export type Database = {
           utm_params_json?: Json | null
         }
         Update: {
+          cancellation_needs_attention_reason?: string | null
+          cancellation_source?: string | null
+          cancelled_at?: string | null
           created_at?: string
           customer_id?: string
           discount_amount?: number | null
