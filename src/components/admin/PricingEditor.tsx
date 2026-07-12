@@ -731,14 +731,13 @@ export function PricingEditor() {
   };
 
   const handleInitializeDefaults = async () => {
-    // Initialize all default pricing configs if they don't exist
-    const configKeys = Object.keys(DEFAULT_PRICING);
-    
-    for (const key of configKeys) {
+    // Report which canonical configuration sections are missing. We NEVER seed
+    // fake/default prices here — missing sections must be populated with real,
+    // owner-approved values via the editor.
+    for (const key of PRICING_CONFIG_KEYS) {
       const exists = rows?.find((r) => r.config_key === key);
       if (!exists) {
-        toast.info(`Initializing ${key}...`);
-        // This would need an insert mutation, which we'd need to add
+        toast.warning(`Missing pricing section: ${key}. Add approved values before use.`);
       }
     }
   };
