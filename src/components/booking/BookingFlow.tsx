@@ -425,6 +425,30 @@ export function BookingFlow({
 
   const stepProgress = step === 'review' ? 25 : step === 'info' ? 50 : step === 'time' ? 75 : 100;
 
+  // Pending manual confirmation screen (backend returned 202 / needs_attention).
+  if (pendingManual) {
+    return (
+      <div className="space-y-6 text-center py-8">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+          <Info className="h-7 w-7 text-primary" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold">We received your request</h2>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Your appointment still needs to be confirmed by our team. We&apos;ll contact you
+            shortly to lock in your time — you don&apos;t need to rebook.
+          </p>
+          {pendingManual.referenceNumber && (
+            <p className="text-sm font-mono pt-1">
+              Reference: <span className="font-semibold">{pendingManual.referenceNumber}</span>
+            </p>
+          )}
+        </div>
+        <Button onClick={handleGoHome} size="lg">Back to Home</Button>
+      </div>
+    );
+  }
+
   // Confirmation step
   if (step === 'confirmation' && bookingResult && customerInfo) {
     return (
