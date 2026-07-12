@@ -253,19 +253,28 @@ serve(async (req) => {
     // The immediate transactional message is an SMS. Suppress it (but still allow
     // email follow-ups) when the lead opted out of texts or texting is paused.
     const optedOut = await isPhoneOptedOut(supabase, toNorm);
-    const smsSuppressed = optedOut || pause.sms_paused;
+    // System-test suppression is checked immediately before delivery and takes
+    // priority — an approved test identity must never receive a real message.
+    const testSuppression = await checkSuppression(supabase, { phone: toNorm || phone, email });
+    const smsSuppressed = optedOut || pause.sms_paused || testSuppression.suppressed;
     const immediateBody = renderTemplate(DEFAULT_TEMPLATES[eventType], vars);
     let transactionalSent = false;
     let transactionalError: string | undefined;
 
     // ---- 1) Immediate transactional message ----
     if (smsSuppressed) {
-      transactionalError = optedOut ? "Recipient has opted out of texts" : "Texting paused for this lead";
+      transactionalError = testSuppression.suppressed
+        ? `Suppressed (${testSuppression.reason})`
+        : optedOut
+          ? "Recipient has opted out of texts"
+          : "Texting paused for this lead";
       await supabase.from("sms_messages").insert({
         to_number: toNorm || phone || "unknown",
         body: immediateBody,
         message_kind: "transactional",
         status: "cancelled",
+        suppressed: testSuppression.suppressed,
+        suppressed_reason: testSuppression.suppressed ? testSuppression.reason : null,
         error: transactionalError,
         booking_id: bookingId ?? null,
         quote_id: quoteId ?? null,
