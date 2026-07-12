@@ -11,6 +11,7 @@ import {
 } from "../_shared/sms.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
+import { checkSuppression } from "../_shared/suppression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,6 +117,18 @@ serve(async (req) => {
       }
 
       const toNorm = normalizePhone(body.to);
+      // System-test suppression: never deliver to an approved test identity.
+      const manualSuppression = await checkSuppression(supabase, { phone: toNorm || body.to });
+      if (manualSuppression.suppressed) {
+        await supabase.from("sms_messages").insert({
+          to_number: toNorm || body.to, body: body.body, message_kind: "manual",
+          status: "cancelled", suppressed: true, suppressed_reason: manualSuppression.reason,
+          error: `Suppressed (${manualSuppression.reason})`,
+        });
+        return new Response(JSON.stringify({ success: false, suppressed: true, reason: manualSuppression.reason }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       // Respect opt-outs even for manual admin sends.
       if (await isPhoneOptedOut(supabase, toNorm)) {
         await supabase.from("sms_messages").insert({
@@ -240,19 +253,28 @@ serve(async (req) => {
     // The immediate transactional message is an SMS. Suppress it (but still allow
     // email follow-ups) when the lead opted out of texts or texting is paused.
     const optedOut = await isPhoneOptedOut(supabase, toNorm);
-    const smsSuppressed = optedOut || pause.sms_paused;
+    // System-test suppression is checked immediately before delivery and takes
+    // priority — an approved test identity must never receive a real message.
+    const testSuppression = await checkSuppression(supabase, { phone: toNorm || phone, email });
+    const smsSuppressed = optedOut || pause.sms_paused || testSuppression.suppressed;
     const immediateBody = renderTemplate(DEFAULT_TEMPLATES[eventType], vars);
     let transactionalSent = false;
     let transactionalError: string | undefined;
 
     // ---- 1) Immediate transactional message ----
     if (smsSuppressed) {
-      transactionalError = optedOut ? "Recipient has opted out of texts" : "Texting paused for this lead";
+      transactionalError = testSuppression.suppressed
+        ? `Suppressed (${testSuppression.reason})`
+        : optedOut
+          ? "Recipient has opted out of texts"
+          : "Texting paused for this lead";
       await supabase.from("sms_messages").insert({
         to_number: toNorm || phone || "unknown",
         body: immediateBody,
         message_kind: "transactional",
         status: "cancelled",
+        suppressed: testSuppression.suppressed,
+        suppressed_reason: testSuppression.suppressed ? testSuppression.reason : null,
         error: transactionalError,
         booking_id: bookingId ?? null,
         quote_id: quoteId ?? null,

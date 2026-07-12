@@ -59,6 +59,20 @@ export const LIVE_CONFIG: PricingConfig = {
     minimumPrice: 75,
     surfaceMultipliers: { concrete: 1, stamped: 1.15, pavers: 1.25, brick: 1.2, stone: 1.3, tile: 1.35 },
   },
+  window_promo_99: {
+    active: true,
+    promoId: "PROMO_99_WINDOWS",
+    version: 1,
+    flatPrice: 99,
+    maxWindows: 10,
+    effectiveStart: null,
+    effectiveEnd: null,
+    prepInstructions:
+      "Customer must remove all window screens before BluLadder arrives. Screen removal and screen cleaning are not included. Interior window cleaning is not included. Tracks and sills are not included.",
+    stackingPolicy: "none",
+    serviceLabel: "$99 Exterior Window Cleaning (up to 10 windows)",
+    terms: "Residential exterior window cleaning only. Covers up to 10 standard exterior windows.",
+  },
 };
 
 export function baseHome(overrides: Partial<EngineHomeDetails> = {}): EngineHomeDetails {

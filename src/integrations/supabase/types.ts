@@ -1865,6 +1865,8 @@ export type Database = {
           sent_at: string | null
           status: Database["public"]["Enums"]["sms_status"]
           subject: string | null
+          suppressed: boolean
+          suppressed_reason: string | null
           to_email: string | null
           to_number: string | null
           updated_at: string
@@ -1890,6 +1892,8 @@ export type Database = {
           sent_at?: string | null
           status?: Database["public"]["Enums"]["sms_status"]
           subject?: string | null
+          suppressed?: boolean
+          suppressed_reason?: string | null
           to_email?: string | null
           to_number?: string | null
           updated_at?: string
@@ -1915,6 +1919,8 @@ export type Database = {
           sent_at?: string | null
           status?: Database["public"]["Enums"]["sms_status"]
           subject?: string | null
+          suppressed?: boolean
+          suppressed_reason?: string | null
           to_email?: string | null
           to_number?: string | null
           updated_at?: string
@@ -1985,6 +1991,27 @@ export type Database = {
           phone?: string
           reason?: string | null
           source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      system_test_config: {
+        Row: {
+          id: string
+          suppress_all: boolean
+          suppress_reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          suppress_all?: boolean
+          suppress_reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          suppress_all?: boolean
+          suppress_reason?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -2091,6 +2118,39 @@ export type Database = {
           starting_address?: string | null
           updated_at?: string
           work_days?: Json | null
+        }
+        Relationships: []
+      }
+      test_identities: {
+        Row: {
+          active: boolean
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          note: string | null
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          note?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          note?: string | null
+          phone?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -2218,6 +2278,8 @@ export type Database = {
           sent_at: string | null
           status: Database["public"]["Enums"]["sms_status"]
           subject: string | null
+          suppressed: boolean
+          suppressed_reason: string | null
           to_email: string | null
           to_number: string | null
           updated_at: string

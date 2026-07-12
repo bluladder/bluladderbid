@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut, getCustomerPause } from "../_shared/sms.ts";
 import { requireAdminOrService } from "../_shared/auth.ts";
+import { checkSuppression } from "../_shared/suppression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,6 +109,23 @@ serve(async (req) => {
   let failed = 0;
 
   for (const msg of due || []) {
+    // ===== SYSTEM-TEST SUPPRESSION (checked immediately before delivery) =====
+    // Never send to an approved test identity or while suppression is enabled.
+    const suppression = await checkSuppression(supabase, {
+      phone: (msg.to_number as string) ?? null,
+      email: (msg.to_email as string) ?? null,
+    });
+    if (suppression.suppressed) {
+      await supabase.from("sms_messages").update({
+        status: "cancelled",
+        suppressed: true,
+        suppressed_reason: suppression.reason,
+        error: `Suppressed (${suppression.reason})`,
+        next_retry_at: null,
+      }).eq("id", msg.id);
+      continue;
+    }
+
     // ---- Email channel ----
     if (msg.channel === "email") {
       if (!msg.to_email) {

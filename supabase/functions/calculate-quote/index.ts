@@ -92,6 +92,25 @@ Deno.serve(async (req) => {
       discount,
     };
 
+    // Explicit promotion selection (never auto-applied). We only accept a
+    // structurally valid request; the engine re-validates it against the live,
+    // administrator-controlled promotion config.
+    const rawPromo = (body as Record<string, unknown>).promotion as
+      | { id?: unknown; windowCount?: unknown }
+      | undefined;
+    if (rawPromo && typeof rawPromo === "object" && typeof rawPromo.id === "string") {
+      const id = rawPromo.id.slice(0, 60);
+      const windowCount = Number(rawPromo.windowCount);
+      input.promotion = { id, windowCount: Number.isFinite(windowCount) ? windowCount : NaN };
+    }
+
+    // A promotion request is self-contained and does not require property
+    // details, so default those to empty objects when a promotion is selected.
+    if (input.promotion) {
+      input.homeDetails = input.homeDetails ?? ({} as QuoteInput["homeDetails"]);
+      input.additionalServices =
+        input.additionalServices ?? ({} as QuoteInput["additionalServices"]);
+    }
     if (!input.homeDetails || !input.additionalServices) {
       return json({ status: "missing_information", error: "homeDetails and additionalServices are required" }, 400);
     }
