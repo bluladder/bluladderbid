@@ -81,8 +81,7 @@ export interface PricingConfig {
    */
   bundle_config?: Record<string, BundleConfigEntry>;
 }
-
-// (BundleRulesConfig declared below BundleConfigEntry)
+*** placeholder ***
 
 export interface BundleConfigEntry {
   name?: string;
