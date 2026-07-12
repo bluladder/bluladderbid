@@ -597,6 +597,9 @@ export type Database = {
           prospect_phone: string | null
           quote_result: Json | null
           resolved: boolean
+          service_address: string | null
+          service_area_result: Json | null
+          service_area_status: string | null
           services_discussed: Json
           session_token: string
           status: string
@@ -625,6 +628,9 @@ export type Database = {
           prospect_phone?: string | null
           quote_result?: Json | null
           resolved?: boolean
+          service_address?: string | null
+          service_area_result?: Json | null
+          service_area_status?: string | null
           services_discussed?: Json
           session_token: string
           status?: string
@@ -653,6 +659,9 @@ export type Database = {
           prospect_phone?: string | null
           quote_result?: Json | null
           resolved?: boolean
+          service_address?: string | null
+          service_area_result?: Json | null
+          service_area_status?: string | null
           services_discussed?: Json
           session_token?: string
           status?: string
