@@ -3,6 +3,8 @@ import { jobberGraphQL } from "../_shared/jobberClient.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
 import { getMirrorFreshness } from "../_shared/scheduleFreshness.ts";
+import { calculateQuote, type QuoteInput } from "../_shared/pricingEngine.ts";
+import { loadPricing } from "../_shared/loadPricing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,6 +41,7 @@ interface BookingRequest {
     description?: string;
   }>;
   homeDetails: Record<string, unknown>;
+  additionalServices?: Record<string, unknown>;
   subtotal: number;
   discountAmount?: number;
   total: number;
