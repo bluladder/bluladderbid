@@ -80,8 +80,12 @@ export interface PricingConfig {
    * so bundle/recurring rules are administrator-controlled, never client-supplied.
    */
   bundle_config?: Record<string, BundleConfigEntry>;
+  /**
+   * Administrator-controlled tier guardrail / structure rules (see
+   * BundleRulesConfig). Stored under the `bundle_rules` key in pricing_config.
+   */
+  bundle_rules?: BundleRulesConfig;
 }
-*** placeholder ***
 
 export interface BundleConfigEntry {
   name?: string;
