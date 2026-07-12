@@ -699,6 +699,18 @@ export function calculateQuote(
       const adjustments: { label: string; amount: number }[] = [];
       let sum = 0;
       let invalid = false;
+      const areaKeyByLabel: Record<string, string> = {
+        "Front porch": "frontPorch",
+        "Back patio": "backPatio",
+        "Pool deck": "poolDeck",
+        "Walkways": "walkways",
+      };
+      const breakdown: Record<string, number> = {
+        frontPorch: 0,
+        backPatio: 0,
+        poolDeck: 0,
+        walkways: 0,
+      };
       for (const [label, area] of areas) {
         if (area?.enabled) {
           if (!isValidNumber(area.sqft) || area.sqft < 0 || area.sqft > MAX_SQFT) {
@@ -707,6 +719,7 @@ export function calculateQuote(
           }
           const areaPrice = roundDollars(area.sqft * cfg.perSqFt * mult);
           adjustments.push({ label, amount: areaPrice });
+          breakdown[areaKeyByLabel[label]] = areaPrice;
           sum += areaPrice;
         }
       }
@@ -725,6 +738,13 @@ export function calculateQuote(
           minimumApplied: amount > sum,
           amount,
           jobberLineItem: { name: "Pressure Washing", unitPrice: amount },
+          components: {
+            frontPorch: breakdown.frontPorch,
+            backPatio: breakdown.backPatio,
+            poolDeck: breakdown.poolDeck,
+            walkways: breakdown.walkways,
+            pressureWashingTotal: amount,
+          },
         });
         trace.push(`pressure: areas=${sum} x${mult} -> ${amount} (min ${minimum})`);
       }
