@@ -1,74 +1,51 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { calculateQuote, type QuoteInput } from "../_shared/pricingEngine.ts";
+import { loadPricing } from "../_shared/loadPricing.ts";
+import { rateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Default pricing fallback (matches usePricingConfig defaults)
-const DEFAULT_PRICING = {
-  window_cleaning: { exteriorPerSqFt: 0.045, interiorPerSqFt: 0.035, minimumPrice: 150, modifiers: { stories: { "1": 0, "2": 25, "3": 50 }, condition: { maintenance: 0, heavy: 40 } } },
-  house_wash: { perSqFt: 0.12, minimumPrice: 200, modifiers: { stories: { "1": 0, "2": 30, "3": 60 } }, rustStainSurcharge: 15 },
-  gutter_cleaning: { perSqFt: 0.06, minimumPrice: 100, modifiers: { stories: { "1": 0, "2": 25, "3": 50 } } },
-  roof_cleaning: { perSqFt: 0.10, minimumPrice: 250, modifiers: { stories: { "1": 0, "2": 20, "3": 40 }, roofType: { asphalt: 0, tile: 25, metal: -10, flat: -15 }, severity: { light: 0, moderate: 25, heavy: 50 } } },
-  driveway_cleaning: { perSqFt: 0.50, minimumPrice: 150, surfaceMultipliers: { concrete: 1, stamped: 1.15, pavers: 1.25, brick: 1.20, stone: 1.30, tile: 1.35 } },
-  pressure_washing: { perSqFt: 0.40, minimumPrice: 75, surfaceMultipliers: { concrete: 1, stamped: 1.15, pavers: 1.25, brick: 1.20, stone: 1.30, tile: 1.35 } },
-};
-
-function applyModifiers(basePrice: number, modifierPercents: number[]): number {
-  const totalPercent = modifierPercents.reduce((sum, pct) => sum + pct, 0);
-  return Math.round(basePrice * (1 + totalPercent / 100));
-}
-
-function calculateQuote(details: any, pricing: any) {
-  const sqft = details.squareFootage || 2000;
-  const stories = details.stories || 1;
-  const services = details.services || [];
-  const results: Record<string, number> = {};
-  let total = 0;
-
-  for (const svc of services) {
-    let price = 0;
-    if (svc === "window_cleaning") {
-      const cfg = pricing.window_cleaning;
-      const base = sqft * cfg.exteriorPerSqFt;
-      const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
-      price = Math.max(Math.round(base * (1 + storyMod / 100)), cfg.minimumPrice);
-    } else if (svc === "house_wash") {
-      const cfg = pricing.house_wash;
-      const base = sqft * cfg.perSqFt;
-      const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
-      price = Math.max(applyModifiers(base, [storyMod]), cfg.minimumPrice);
-    } else if (svc === "gutter_cleaning") {
-      const cfg = pricing.gutter_cleaning;
-      const base = sqft * cfg.perSqFt;
-      const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
-      price = Math.max(applyModifiers(base, [storyMod]), cfg.minimumPrice);
-    } else if (svc === "roof_cleaning") {
-      const cfg = pricing.roof_cleaning;
-      const base = sqft * cfg.perSqFt;
-      const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
-      const typeMod = cfg.modifiers.roofType?.[details.roofType || "asphalt"] ?? 0;
-      price = Math.max(applyModifiers(base, [storyMod, typeMod]), cfg.minimumPrice);
-    } else if (svc === "driveway_cleaning") {
-      const cfg = pricing.driveway_cleaning;
-      const dSqft = details.drivewaySqft || 400;
-      const surface = details.drivewaySurface || "concrete";
-      const mult = cfg.surfaceMultipliers[surface] ?? 1;
-      price = Math.max(Math.round(dSqft * cfg.perSqFt * mult), cfg.minimumPrice);
-    } else if (svc === "pressure_washing") {
-      const cfg = pricing.pressure_washing;
-      const pwSqft = details.pressureWashSqft || 200;
-      const surface = details.pressureWashSurface || "concrete";
-      const mult = cfg.surfaceMultipliers[surface] ?? 1;
-      price = Math.max(Math.round(pwSqft * cfg.perSqFt * mult), cfg.minimumPrice);
-    }
-    results[svc] = price;
-    total += price;
-  }
-
-  return { breakdown: results, total };
+// Maps the AI tool arguments into the canonical engine input shape. The AI
+// NEVER computes prices — it only gathers structured inputs and calls the
+// deterministic engine below.
+function toEngineInput(details: any): QuoteInput {
+  const services: string[] = Array.isArray(details.services) ? details.services : [];
+  const has = (s: string) => services.includes(s);
+  return {
+    homeDetails: {
+      squareFootage: Number(details.squareFootage),
+      stories: Number(details.stories),
+      windowCleaningType: "exterior",
+      condition: "maintenance",
+      showAdvanced: false,
+    },
+    additionalServices: {
+      windowCleaning: has("window_cleaning"),
+      houseWash: has("house_wash"),
+      gutterCleaning: has("gutter_cleaning"),
+      roofCleaning: has("roof_cleaning"),
+      roofType: details.roofType || "asphalt",
+      roofSeverity: "light",
+      drivewayCleaning: {
+        enabled: has("driveway_cleaning"),
+        sqft: Number(details.drivewaySqft),
+        surfaceType: details.drivewaySurface || "concrete",
+      },
+      pressureWashing: {
+        enabled: has("pressure_washing"),
+        surfaceType: details.pressureWashSurface || "concrete",
+        frontPorch: { enabled: has("pressure_washing"), sqft: Number(details.pressureWashSqft) },
+        backPatio: { enabled: false, sqft: 0 },
+        poolDeck: { enabled: false, sqft: 0 },
+        walkways: { enabled: false, sqft: 0 },
+      },
+    },
+    discount: null,
+  };
 }
 
 const SYSTEM_PROMPT = `You are BluLadder's friendly quote assistant. You help homeowners get instant price estimates for exterior cleaning services.
