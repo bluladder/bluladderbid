@@ -75,13 +75,23 @@ export function AdminCancelDialog({
       });
 
       if (error) throw error;
-      
+
       if (data?.error) {
         throw new Error(data.details || data.error);
       }
 
-      // Send notification if requested
-      if (notifyCustomer) {
+      // Fail-closed: Jobber did not confirm the cancellation. Do NOT tell the
+      // customer it was cancelled and do NOT send a cancellation notification.
+      if (data?.needsAttention || data?.status === 'needs_attention') {
+        toast.message(
+          "Cancellation could not be confirmed with the scheduling system. This booking is flagged for manual review — please confirm it in Jobber.",
+        );
+        onComplete();
+        return;
+      }
+
+      // Send notification if requested (only for a confirmed cancellation).
+      if (notifyCustomer && data?.status !== 'already_cancelled') {
         await supabase.functions.invoke('send-notification', {
           body: {
             bookingId: appointment.id,
@@ -101,7 +111,11 @@ export function AdminCancelDialog({
         });
       }
 
-      toast.success('Appointment cancelled');
+      toast.success(
+        data?.status === 'already_cancelled'
+          ? 'This appointment is already cancelled.'
+          : 'Appointment cancelled.',
+      );
       onComplete();
     } catch (err) {
       console.error('Failed to cancel appointment:', err);

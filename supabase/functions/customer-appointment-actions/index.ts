@@ -1,5 +1,10 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jobberGraphQL } from "../_shared/jobberClient.ts";
+import {
+  DELETE_VISIT_MUTATION,
+  interpretVisitDelete,
+  type VisitDeleteResult,
+} from "../_shared/jobberCancellation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -71,17 +76,10 @@ const UPDATE_VISIT_MUTATION = `
 `;
 
 // GraphQL mutation to cancel/delete a visit in Jobber
-const DELETE_VISIT_MUTATION = `
-  mutation DeleteVisit($visitId: EncodedId!) {
-    visitDelete(visitId: $visitId) {
-      deletedVisitId
-      userErrors {
-        message
-        path
-      }
-    }
-  }
-`;
+// NOTE: The mutation itself lives in ../_shared/jobberCancellation.ts so the
+// exact schema (plural `visitIds`, `VisitDeletePayload`) stays in one place and
+// is covered by unit tests. The old singular `visitDelete(visitId:)` form with a
+// `deletedVisitId` field was removed from Jobber and must never be reintroduced.
 
 // Convert ISO timestamp to Jobber's LocalDateTime format
 function parseToLocalDateTime(isoString: string): {
@@ -259,7 +257,12 @@ Deno.serve(async (req) => {
         result = await handleModifyServices(serviceClient, typedBooking, body);
         break;
       case 'cancel':
-        result = await handleCancel(serviceClient, typedBooking);
+        result = await handleCancel(
+          serviceClient,
+          typedBooking,
+          isVerifiedAdmin ? 'admin' : 'customer',
+          callerUserId,
+        );
         break;
       default:
         return new Response(
@@ -292,9 +295,15 @@ Deno.serve(async (req) => {
     }
 
     // Fire-and-forget transactional SMS + campaign enrollment for relevant actions.
+    // For cancellations we ONLY notify when Jobber genuinely confirmed the
+    // removal AND it was not an idempotent replay of an already-cancelled
+    // booking. A fail-closed "needs_attention" outcome must never send a
+    // "your appointment is cancelled" message.
+    const cancelFreshlyConfirmed =
+      action === 'cancel' && result.status === 'cancelled';
     const smsEvent =
       action === 'reschedule' ? 'appointment_rescheduled' :
-      action === 'cancel' ? 'appointment_cancelled' : null;
+      cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
     if (smsEvent) {
       try {
         fetch(`${supabaseUrl}/functions/v1/send-sms`, {
@@ -308,6 +317,23 @@ Deno.serve(async (req) => {
       } catch (smsErr) {
         console.warn("[CustomerAction] SMS dispatch error:", smsErr);
       }
+    }
+
+    // A cancellation that could not be verified with Jobber is returned as a
+    // recoverable, non-error state so the UI can show a "we'll confirm shortly"
+    // message instead of a false success or a scary failure.
+    if (action === 'cancel' && result.status === 'needs_attention') {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          needsAttention: true,
+          status: 'needs_attention',
+          message:
+            "We received your cancellation request, but it still needs to be confirmed by our team. We'll contact you shortly.",
+          ...result,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 202 }
+      );
     }
 
     return new Response(
@@ -499,43 +525,80 @@ async function handleModifyServices(
 // === CANCEL HANDLER ===
 async function handleCancel(
   supabase: AnySupabaseClient,
-  booking: BookingRecord
+  booking: BookingRecord,
+  source: 'customer' | 'admin' | 'system',
+  actorId: string | null,
 ): Promise<Record<string, unknown>> {
-  console.log(`[Cancel] Cancelling booking ${booking.reference_number}`);
+  console.log(`[Cancel] Requested by ${source} for booking ${booking.reference_number} (status=${booking.status})`);
 
-  // Cancel in Jobber if we have a visit ID
-  let jobberSynced = false;
-  if (booking.jobber_visit_id) {
-    console.log(`[Cancel] Deleting Jobber visit: ${booking.jobber_visit_id}`);
-
-    const jobberResult = await jobberGraphQL<{
-      visitDelete: {
-        deletedVisitId: string | null;
-        userErrors: Array<{ message: string }>;
-      };
-    }>(DELETE_VISIT_MUTATION, {
-      visitId: booking.jobber_visit_id,
-    });
-
-    if (jobberResult.throttled) {
-      console.warn("[Cancel] Jobber throttled - will proceed with local cancel only");
-    } else if (jobberResult.errors?.length || jobberResult.data?.visitDelete?.userErrors?.length) {
-      const errorMsg = jobberResult.errors?.[0]?.message || 
-                       jobberResult.data?.visitDelete?.userErrors?.[0]?.message ||
-                       "Unknown Jobber error";
-      console.warn("[Cancel] Jobber delete failed (proceeding anyway):", errorMsg);
-    } else {
-      jobberSynced = true;
-      console.log(`[Cancel] Jobber visit deleted successfully`);
-    }
+  // -------------------------------------------------------------------------
+  // 1) Idempotency: an already-cancelled booking is a safe no-op. No Jobber
+  //    call, no local mutation, no notifications.
+  // -------------------------------------------------------------------------
+  if (booking.status === 'cancelled') {
+    console.log(`[Cancel] Booking ${booking.reference_number} already cancelled — idempotent no-op`);
+    return {
+      action: 'cancel',
+      status: 'already_cancelled',
+      jobberConfirmed: true,
+      previousStart: booking.scheduled_start,
+    };
   }
 
-  // Update local booking status
+  // -------------------------------------------------------------------------
+  // 2) Missing Jobber visit ID => we cannot verify anything with Jobber.
+  //    This is a recoverable admin-attention case (fail closed).
+  // -------------------------------------------------------------------------
+  if (!booking.jobber_visit_id) {
+    const reason = "No Jobber visit ID on booking — cannot verify cancellation with Jobber";
+    console.warn(`[Cancel] ${reason} (${booking.reference_number})`);
+    await markNeedsAttention(supabase, booking, reason);
+    return {
+      action: 'cancel',
+      status: 'needs_attention',
+      jobberConfirmed: false,
+      previousStart: booking.scheduled_start,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // 3) Ask Jobber to delete the visit using the correct plural mutation.
+  // -------------------------------------------------------------------------
+  console.log(`[Cancel] Deleting Jobber visit: ${booking.jobber_visit_id}`);
+  const jobberResult = (await jobberGraphQL(DELETE_VISIT_MUTATION, {
+    visitIds: [booking.jobber_visit_id],
+  })) as VisitDeleteResult;
+
+  const interpretation = interpretVisitDelete(jobberResult);
+  console.log(`[Cancel] Jobber outcome: ${interpretation.outcome}${interpretation.reason ? ` (${interpretation.reason})` : ''}`);
+
+  // -------------------------------------------------------------------------
+  // 4) FAIL CLOSED: if we could not confirm removal, do NOT touch local state
+  //    as if cancelled. Flag for manual attention and return a safe message.
+  // -------------------------------------------------------------------------
+  if (interpretation.outcome === 'failed') {
+    await markNeedsAttention(supabase, booking, interpretation.reason || 'Jobber did not confirm cancellation');
+    return {
+      action: 'cancel',
+      status: 'needs_attention',
+      jobberConfirmed: false,
+      previousStart: booking.scheduled_start,
+    };
+  }
+
+  // interpretation.outcome is 'confirmed' or 'already_gone' — both mean the
+  // visit is gone from Jobber, so it is safe to synchronize local state.
+  const nowIso = new Date().toISOString();
+
+  // 5) Mark local booking cancelled with audit metadata.
   const { error: updateError } = await supabase
     .from("bookings")
     .update({
       status: 'cancelled',
-      updated_at: new Date().toISOString(),
+      cancelled_at: nowIso,
+      cancellation_source: source,
+      cancellation_needs_attention_reason: null,
+      updated_at: nowIso,
     })
     .eq("id", booking.id);
 
@@ -543,18 +606,56 @@ async function handleCancel(
     throw new Error(`Database update failed: ${updateError.message}`);
   }
 
-  // Remove from local busy blocks
-  if (booking.jobber_visit_id) {
-    await supabase
-      .from("jobber_busy_blocks")
-      .delete()
-      .eq("jobber_visit_id", booking.jobber_visit_id);
+  // 6) Mark mirrored schedule blocks cancelled (keep rows for audit) so the
+  //    time immediately frees up in availability.
+  const { error: blockErr } = await supabase
+    .from("jobber_busy_blocks")
+    .update({ status: 'cancelled', updated_at: nowIso })
+    .eq("jobber_visit_id", booking.jobber_visit_id);
+  if (blockErr) {
+    console.warn(`[Cancel] Failed to cancel busy blocks: ${blockErr.message}`);
   }
+
+  // 7) Release any active slot reservations tied to this booking.
+  const { error: resErr } = await supabase
+    .from("slot_reservations")
+    .update({ status: 'released', updated_at: nowIso })
+    .eq("booking_id", booking.id)
+    .in("status", ["held", "confirmed"]);
+  if (resErr) {
+    console.warn(`[Cancel] Failed to release slot reservations: ${resErr.message}`);
+  }
+
+  console.log(`[Cancel] Booking ${booking.reference_number} cancelled (${interpretation.outcome}) by ${source}${actorId ? ` [${actorId}]` : ''}`);
 
   return {
     action: 'cancel',
-    cancelledAt: new Date().toISOString(),
+    status: 'cancelled',
+    jobberConfirmed: true,
+    idempotentAlreadyGone: interpretation.outcome === 'already_gone',
+    cancelledAt: nowIso,
+    cancellationSource: source,
     previousStart: booking.scheduled_start,
-    jobberSynced,
   };
+}
+
+// Flag a booking that could not be confirmed-cancelled for manual admin review.
+// Never overwrites an already-terminal status, and never claims cancellation.
+async function markNeedsAttention(
+  supabase: AnySupabaseClient,
+  booking: BookingRecord,
+  reason: string,
+): Promise<void> {
+  if (booking.status === 'cancelled' || booking.status === 'completed') return;
+  const { error } = await supabase
+    .from("bookings")
+    .update({
+      status: 'needs_attention',
+      cancellation_needs_attention_reason: reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", booking.id);
+  if (error) {
+    console.error(`[Cancel] Failed to flag needs_attention for ${booking.reference_number}:`, error.message);
+  }
 }
