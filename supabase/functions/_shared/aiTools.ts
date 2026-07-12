@@ -10,6 +10,7 @@
 // Every tool validates its own inputs and returns a compact JSON result.
 // ============================================================================
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validateServiceArea } from "./serviceArea.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -186,9 +187,16 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
   // Require a prior firm/estimated quote so duration/price feed scheduling.
   const { data: convo } = await ctx.supabase
     .from("chat_conversations")
-    .select("quote_result")
+    .select("quote_result, service_area_status")
     .eq("id", ctx.conversationId)
     .maybeSingle();
+  // Never offer bookable times for an address that isn't confirmed eligible.
+  if (convo?.service_area_status !== "eligible") {
+    return {
+      status: "need_service_area",
+      message: "Confirm the service address is in our area before offering times. Use validate_service_area first.",
+    };
+  }
   const quote = convo?.quote_result as any;
   if (!quote || !Array.isArray(quote.lineItems) || quote.lineItems.length === 0) {
     return { status: "need_quote_first", message: "Get a quote before checking availability." };
