@@ -62,5 +62,3 @@ verify_jwt = false
 
 [functions.mcp]
 verify_jwt = false
-[functions.systest-introspect]
-verify_jwt = false
