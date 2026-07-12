@@ -349,6 +349,8 @@ const Index = () => {
                         houseWash: servicePrices.houseWash,
                         roofCleaning: servicePrices.roofCleaning,
                       }}
+                      homeDetails={homeDetails}
+                      additionalServices={additionalServices}
                       onCustomizePlan={(tier, customization) => {
                         setTierCustomization(tier, customization);
                         toast.success(`${tier.charAt(0).toUpperCase() + tier.slice(1)} plan customized!`, {
