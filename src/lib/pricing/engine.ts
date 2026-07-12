@@ -1232,9 +1232,24 @@ function calculateSinglePlanOption(
 // discounts) and `bundle_rules` (tier ordering + minimum tier buffer). No price
 // is hard-coded and no client-supplied discount is honored.
 
+/**
+ * Per-tier customization applied AFTER base tier pricing (mirrors the prior
+ * frontend "Customize plan" flow exactly): a changed window cadence and/or
+ * added/swapped services adjust the tier's annual total by a delta computed from
+ * the canonical per-service base prices. The delta is NOT re-bundle-discounted —
+ * this preserves the exact prior customer total.
+ */
+export interface BundleTierCustomization {
+  windowFrequency?: { exteriorFrequency: number; interiorFrequency: number };
+  serviceSwaps?: { from: string; to: string }[];
+  addedServices?: string[];
+}
+
 export interface BundleTiersInput {
   homeDetails: EngineHomeDetails;
   additionalServices: EngineAdditionalServices;
+  /** Optional per-tier customization keyed by tier (good|better|best). */
+  customizations?: Record<string, BundleTierCustomization>;
 }
 
 export interface BundleTierServiceBases {
@@ -1273,6 +1288,7 @@ export interface BundleTierOption {
   /** Amount added to this tier by the minimum-tier-buffer guardrail (admin-visible). */
   tierBufferAdjustment: number;
   isPopular: boolean;
+  isCustomized: boolean;
   trace: string[];
 }
 
@@ -1462,6 +1478,7 @@ export function computeBundleTiers(
 
   const bases = computeBundleServiceBases(home, svc, pricing);
   const BUNDLE_CONFIG = pricing.bundle_config as Record<string, BundleConfigEntry>;
+  const customizations = input.customizations ?? {};
 
   interface RawTier {
     tier: string;
@@ -1636,13 +1653,58 @@ export function computeBundleTiers(
       features.push(`${Math.round(addonDiscount * 100)}% off additional services`);
     }
 
-    const downPayment = roundDollars(t.annualTotal * (downPct / 100));
+    // Apply optional per-tier customization (exact legacy delta math).
+    let annualTotal = t.annualTotal;
+    let monthlyPayment = t.monthlyPayment;
+    let isCustomized = false;
+    let windowFrequencyConfig = {
+      exteriorFrequency: t.exteriorFreq,
+      interiorFrequency: t.interiorFreq,
+    };
+    const custom = customizations[t.tier];
+    if (custom) {
+      const freqConfig = custom.windowFrequency ?? windowFrequencyConfig;
+      const originalFreqCost =
+        bases.exteriorWindows * t.exteriorFreq +
+        bases.interiorWindows * t.interiorFreq;
+      const newFreqCost =
+        bases.exteriorWindows * freqConfig.exteriorFrequency +
+        bases.interiorWindows * freqConfig.interiorFrequency;
+      const freqDiff = newFreqCost - originalFreqCost;
+
+      const getServicePrice = (svcKey: string): number =>
+        svcKey === "gutter_cleaning"
+          ? bases.gutterCleaning
+          : svcKey === "house_wash"
+            ? bases.houseWash
+            : svcKey === "roof_cleaning"
+              ? bases.roofCleaning
+              : 0;
+
+      let serviceDiff = 0;
+      const swaps = custom.serviceSwaps ?? [];
+      for (const swap of swaps) {
+        serviceDiff += getServicePrice(swap.to) - getServicePrice(swap.from);
+      }
+      for (const added of custom.addedServices ?? []) {
+        if (!swaps.some((sw) => sw.to === added)) {
+          serviceDiff += getServicePrice(added);
+        }
+      }
+
+      annualTotal = Math.round(t.annualTotal + freqDiff + serviceDiff);
+      monthlyPayment = Math.round(annualTotal / 12);
+      windowFrequencyConfig = freqConfig;
+      isCustomized = true;
+    }
+
+    const downPayment = roundDollars(annualTotal * (downPct / 100));
     const recurringMonthly = roundDollars(
-      (t.annualTotal - downPayment) / installments,
+      (annualTotal - downPayment) / installments,
     );
 
     const trace: string[] = [
-      `tier=${t.tier} windowCost=${t.windowCost} baseServices=${t.baseServicesCost} addons=${t.addonsCost} bundleDiscount=${t.bundleDiscount} annualTotal=${t.annualTotal}${t.tierBufferAdjustment ? ` (buffer +${t.tierBufferAdjustment})` : ""}`,
+      `tier=${t.tier} windowCost=${t.windowCost} baseServices=${t.baseServicesCost} addons=${t.addonsCost} bundleDiscount=${t.bundleDiscount} annualTotal=${annualTotal}${t.tierBufferAdjustment ? ` (buffer +${t.tierBufferAdjustment})` : ""}${isCustomized ? " (customized)" : ""}`,
     ];
 
     return {
@@ -1652,15 +1714,12 @@ export function computeBundleTiers(
       description: config.description ?? "",
       features,
       windowFrequency: t.totalWindowFrequency,
-      windowFrequencyConfig: {
-        exteriorFrequency: t.exteriorFreq,
-        interiorFrequency: t.interiorFreq,
-      },
+      windowFrequencyConfig,
       additionalServicesIncluded: t.includedServices,
       baseServices: t.baseServices,
       availableAddons: t.availableAddons,
-      annualTotal: t.annualTotal,
-      monthlyPayment: t.monthlyPayment,
+      annualTotal,
+      monthlyPayment,
       downPayment,
       recurringMonthly,
       savings: t.savings,
@@ -1673,6 +1732,7 @@ export function computeBundleTiers(
       bundleDiscount: t.bundleDiscount,
       tierBufferAdjustment: t.tierBufferAdjustment,
       isPopular: t.tier === "better",
+      isCustomized,
       trace,
     };
   });
