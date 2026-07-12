@@ -58,8 +58,6 @@ function formatPrice(price: number) {
 }
 
 export function SchedulingPortal() {
-  const { data: pricing, isLoading: pricingLoading } = usePricingConfig();
-
   // Customer info state
   const [customerInfo, setCustomerInfo] = useState({
     firstName: '',
@@ -77,6 +75,8 @@ export function SchedulingPortal() {
 
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>({
     ...DEFAULT_ADDITIONAL_SERVICES,
+    // The portal always prices/schedules exterior window cleaning.
+    windowCleaning: true,
     gutterCleaning: true,
   });
 
@@ -85,15 +85,33 @@ export function SchedulingPortal() {
   const [showInspector, setShowInspector] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
 
-  // Calculate prices
-  const priceData = useMemo(() => {
-    if (!pricing) return { services: [], total: 0 };
-    return calculateServicePrices(homeDetails, additionalServices, pricing);
-  }, [homeDetails, additionalServices, pricing]);
+  // AUTHORITATIVE pricing — every dollar comes from the deployed calculate-quote
+  // Edge Function. No local pricing math in the portal.
+  const quoteState = useServerQuoteCalculation(
+    toQuoteInput(homeDetails, additionalServices),
+  );
+  const { quote, isFirm, loading: quoteLoading, isUnavailable, isMissingInfo } = quoteState;
 
-  // Services for availability check
+  // Line items + total come straight from the authoritative server quote.
+  const priceData = useMemo(() => {
+    if (!isFirm || !quote) return { services: [], total: 0 };
+    return {
+      services: quote.lineItems.map((li) => ({ service: li.key, name: li.label, price: li.amount })),
+      total: quote.total,
+    };
+  }, [isFirm, quote]);
+
+  // Server-returned OPERATIONAL duration metadata (not a price proxy).
+  const estimatedDurationMinutes = quote?.estimatedDurationMinutes ?? null;
+
+  // Services for availability — server-authoritative prices, keyed to the
+  // availability service vocabulary. Route-density/crew logic downstream uses
+  // these operational inputs, never a locally computed dollar amount.
   const servicesForAvailability = useMemo(() => {
-    return priceData.services.map(s => ({ service: s.service, price: s.price }));
+    return priceData.services.map((s) => ({
+      service: AVAILABILITY_SERVICE_KEY[s.service] ?? s.service,
+      price: s.price,
+    }));
   }, [priceData.services]);
 
   const handleSlotSelect = (slot: TimeSlot & Partial<SchedulerSlot>) => {
