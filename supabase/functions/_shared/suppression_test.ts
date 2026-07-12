@@ -26,9 +26,12 @@ function fakeClient(opts: {
           if (table === "test_identities") {
             const matches = (opts.identities ?? []).filter((id) =>
               builder._ors.some((o: string) => {
-                const [, , val] = o.split(".");
-                return (id.email && `email` && o.startsWith("email.eq.") && id.email === val) ||
-                       (id.phone && o.startsWith("phone.eq.") && id.phone === val);
+                const idx = o.indexOf(".eq.");
+                if (idx < 0) return false;
+                const field = o.slice(0, idx);
+                const val = o.slice(idx + 4);
+                return (field === "email" && id.email === val) ||
+                       (field === "phone" && id.phone === val);
               })
             );
             resolve({ data: matches, error: null });
