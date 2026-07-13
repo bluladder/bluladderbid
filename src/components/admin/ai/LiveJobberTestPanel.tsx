@@ -137,8 +137,44 @@ export function LiveJobberTestPanel({
   );
   const result = useMemo(() => parseAuthorizedResult(identity?.authorized_result), [identity?.authorized_result]);
 
-  // Visibility gate (belt-and-suspenders; parent also gates).
-  if (!shouldShowPanel({ isOperationsAdmin, convo, identity })) return null;
+  // Non-operations-admins never see anything about the live test.
+  if (!isOperationsAdmin) return null;
+
+  const panelVisible = shouldShowPanel({ isOperationsAdmin, convo, identity });
+  const readiness = liveTestReadiness({ isOperationsAdmin, convo, identity, globalSuppressionOn });
+
+  // Defect (panel visibility): never silently hide the control from an
+  // operations admin. When the full authorization panel is gated off, show a
+  // compact "Live test readiness" card explaining exactly which prerequisite is
+  // missing (protected identity, selected slot, awaiting confirmation, firm
+  // quote, test suppression, etc.).
+  if (!panelVisible) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <FlaskConical className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm font-semibold">Live test readiness</span>
+        </div>
+        {loading ? (
+          <p className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Checking prerequisites…</p>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              The live Jobber test authorization control appears once every prerequisite below is met.
+            </p>
+            <div className="space-y-1">
+              {readiness.map((p) => (
+                <div key={p.key} className="flex items-center gap-2 text-xs">
+                  {p.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-destructive shrink-0" />}
+                  <span className={p.ok ? "" : "text-muted-foreground"}>{p.label}{p.detail ? ` — ${p.detail}` : ""}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   const slotId = convo.selected_slot_id ?? convo.facts?.selectedSlotId ?? "";
   const canAuth = canAuthorize(preconditions, authStatus);
