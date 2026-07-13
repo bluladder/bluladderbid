@@ -1,6 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { blockOverlapsDay, slotHasConflict } from "./availability-core.ts";
 import { getMirrorFreshness, unavailableCustomerMessage } from "../_shared/scheduleFreshness.ts";
+import {
+  compactSlots,
+  computeMinViableGap,
+  DEFAULT_COMPACTION_CONFIG,
+  type ResolvedCompactionConfig,
+} from "./scheduleCompaction.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,7 +63,7 @@ interface BigJobSettings {
 }
 
 interface ExclusionReason {
-  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB' | 'GAP_PENALTY';
+  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB' | 'GAP_PENALTY' | 'COMPACTION';
   message: string;
   details?: string;
 }
@@ -87,6 +93,18 @@ interface TimeSlot {
   discouragedPenalty?: number;
   technicianScore?: number;
   whyLabel?: string;
+  // Schedule-compaction fields (populated after the compaction pass). These are
+  // internal ranking/debug aids; customer UIs simply ignore the extra fields.
+  freeBlockStartMs?: number;
+  freeBlockEndMs?: number;
+  gapBeforeMinutes?: number;
+  gapAfterMinutes?: number;
+  minViableGapMinutes?: number;
+  compactionScore?: number;
+  packsStart?: boolean;
+  packsEnd?: boolean;
+  compactionShown?: boolean;
+  compactionFilterReason?: string | null;
   // Team booking fields
   isTeamJob?: boolean;
   crewSize?: number;
@@ -177,6 +195,17 @@ const SLOT_GENERATION_CONFIG = {
   bufferBeforeMinutes: 0,
   bufferAfterMinutes: 15,
 };
+
+// Schedule-compaction defaults. Overridable per-business via the
+// pricing_config row keyed "schedule_compaction" (values below are the fallback
+// when that row is absent or partial). See scheduleCompaction.ts for the math.
+const DEFAULT_COMPACTION_SETTINGS: ResolvedCompactionConfig = {
+  ...DEFAULT_COMPACTION_CONFIG,
+};
+// Whether a customer's specific time request that fails compaction may be
+// escalated for manual review (an admin/human agent can still override — the AI
+// never overrides the rule on its own).
+const DEFAULT_ALLOW_TIME_REQUEST_ESCALATION = true;
 
 // Gap-scoring constants
 const GAP_SCORING = {
@@ -589,6 +618,35 @@ Deno.serve(async (req) => {
         workDays: (cfg.workDays as number[]) ?? DEFAULT_BUSINESS_HOURS.workDays,
         timezone: (cfg.timezone as string) ?? DEFAULT_BUSINESS_HOURS.timezone,
       };
+    }
+
+    // Fetch schedule-compaction config (additive; falls back to sane defaults).
+    let COMPACTION_CONFIG: ResolvedCompactionConfig = { ...DEFAULT_COMPACTION_SETTINGS };
+    let allowTimeRequestEscalation = DEFAULT_ALLOW_TIME_REQUEST_ESCALATION;
+    const { data: compactionConfigData } = await supabase
+      .from("pricing_config")
+      .select("config_value")
+      .eq("config_key", "schedule_compaction")
+      .maybeSingle();
+    if (compactionConfigData?.config_value) {
+      const cc = compactionConfigData.config_value as Record<string, unknown>;
+      COMPACTION_CONFIG = {
+        minimumFillableGapMinutes:
+          Number(cc.minimum_fillable_gap_minutes ?? DEFAULT_COMPACTION_SETTINGS.minimumFillableGapMinutes),
+        boundaryGapToleranceMinutes:
+          Number(cc.boundary_gap_tolerance_minutes ?? DEFAULT_COMPACTION_SETTINGS.boundaryGapToleranceMinutes),
+        maxCompactSlotsPerBlock:
+          Number(cc.max_compact_slots_per_block ?? DEFAULT_COMPACTION_SETTINGS.maxCompactSlotsPerBlock),
+        shortestFillableServiceMinutes:
+          cc.shortest_fillable_service_minutes == null
+            ? null
+            : Number(cc.shortest_fillable_service_minutes),
+        transitionBufferMinutes:
+          Number(cc.transition_buffer_minutes ?? DEFAULT_COMPACTION_SETTINGS.transitionBufferMinutes ?? 0),
+      };
+      if (typeof cc.allow_time_request_escalation === "boolean") {
+        allowTimeRequestEscalation = cc.allow_time_request_escalation;
+      }
     }
 
     // Fetch drive time config
@@ -1314,7 +1372,24 @@ Deno.serve(async (req) => {
           
           // Calculate technician preference score
           const technicianScore = (tech.skillScore * 100) + tech.preferenceBonus - tech.discouragedPenalty;
-          
+
+          // Contiguous free-block bounds for schedule compaction. The block is
+          // bounded by the buffered end of the previous appointment (or the
+          // effective day start) and the buffered start of the next appointment
+          // (or the work-day end). Slots already passed the conflict check, so
+          // these bounds are consistent with the real Jobber busy windows.
+          const compactionBufferAfterMs = SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000;
+          const freeBlockStartMs = Math.max(
+            effectiveStart.getTime(),
+            previousAppointment ? previousAppointment.expandedEnd.getTime() : effectiveStart.getTime(),
+          );
+          const freeBlockEndMs = Math.min(
+            dayEnd.getTime(),
+            nextAppointment
+              ? nextAppointment.expandedStart.getTime() - compactionBufferAfterMs
+              : dayEnd.getTime(),
+          );
+
           const slot: TimeSlot = {
             technicianId: tech.id,
             technicianName: tech.name,
@@ -1335,6 +1410,8 @@ Deno.serve(async (req) => {
             preferenceBonus: tech.preferenceBonus,
             discouragedPenalty: tech.discouragedPenalty,
             technicianScore,
+            freeBlockStartMs,
+            freeBlockEndMs,
           };
 
           let exclusionReason: ExclusionReason | null = null;
@@ -1545,6 +1622,25 @@ Deno.serve(async (req) => {
             // Only create slot if both techs are free
             if (!tech1Conflict && !tech2Conflict) {
               const displayTime = snapTo30Min(slotStart, businessTimezone);
+
+              // Free-block bounds for the crew: bounded by the union of both
+              // technicians' busy windows so team options are compacted too.
+              const teamBufferAfterMs = SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000;
+              const mergedBusy = [...tech1DayBusy, ...tech2DayBusy];
+              const prevBusy = mergedBusy
+                .filter((bt) => bt.end.getTime() <= slotStart.getTime())
+                .sort((a, b) => b.end.getTime() - a.end.getTime())[0];
+              const nextBusy = mergedBusy
+                .filter((bt) => bt.start.getTime() >= slotEnd.getTime())
+                .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+              const teamFreeBlockStartMs = Math.max(
+                effectiveStart.getTime(),
+                prevBusy ? prevBusy.expandedEnd.getTime() : effectiveStart.getTime(),
+              );
+              const teamFreeBlockEndMs = Math.min(
+                dayEnd.getTime(),
+                nextBusy ? nextBusy.expandedStart.getTime() - teamBufferAfterMs : dayEnd.getTime(),
+              );
               
               // Calculate combined skill score
               const avgSkillScore = (tech1.skillScore + tech2.skillScore) / 2;
@@ -1574,6 +1670,8 @@ Deno.serve(async (req) => {
                 teamTriggerReason: teamTriggerReason || undefined,
                 gapScore: 80, // Team jobs get a solid base score
                 gapEfficiencyLabel: 'Team booking',
+                freeBlockStartMs: teamFreeBlockStartMs,
+                freeBlockEndMs: teamFreeBlockEndMs,
               };
               
               teamSlots.push(teamSlot);
@@ -1624,39 +1722,129 @@ Deno.serve(async (req) => {
 
     console.log(`[Availability] Generated ${allSlots.length} valid slots, ${fullyBookedDays.length} fully booked days`);
 
+    // ===== SCHEDULE COMPACTION =====
+    // Every slot in `allSlots` is already technically bookable (Jobber busy
+    // blocks, buffers, working hours, blocked time and reservations were all
+    // applied above). Compaction now decides which of those valid starts are
+    // worth showing a customer so we don't surface a redundant row of near-
+    // identical 15-minute starts that leave unusable schedule fragments. The
+    // same compacted set is used by online booking, day/week/month browsing,
+    // the AI chat (recommended mode) and rescheduling.
+    const minViableGapUsed = computeMinViableGap(COMPACTION_CONFIG);
+    const compactionResults = compactSlots(
+      allSlots.map((s) => ({
+        technicianId: s.technicianId,
+        startMs: new Date(s.startTime).getTime(),
+        endMs: new Date(s.endTime).getTime(),
+        freeBlockStartMs: s.freeBlockStartMs ?? new Date(s.startTime).getTime(),
+        freeBlockEndMs: s.freeBlockEndMs ?? new Date(s.endTime).getTime(),
+        routeBonus: s.routeBonus,
+        routeDensityScore: s.routeDensityScore,
+      })),
+      COMPACTION_CONFIG,
+    );
+    for (const r of compactionResults) {
+      const s = allSlots[r.index];
+      s.gapBeforeMinutes = r.gapBeforeMinutes;
+      s.gapAfterMinutes = r.gapAfterMinutes;
+      s.minViableGapMinutes = r.minViableGapMinutes;
+      s.compactionScore = r.compactionScore;
+      s.packsStart = r.packsStart;
+      s.packsEnd = r.packsEnd;
+      s.compactionShown = r.shown;
+      s.compactionFilterReason = r.shown ? null : (r.filterReason ?? "redundant_interior");
+    }
+    // Customer-facing set (compacted) vs the valid-but-filtered set (admin only).
+    const shownSlots = allSlots.filter((s) => s.compactionShown);
+    const compactionFilteredSlots = allSlots.filter((s) => !s.compactionShown);
+    console.log(
+      `[Availability] Compaction: ${shownSlots.length} shown / ${compactionFilteredSlots.length} filtered ` +
+        `(minViableGap=${minViableGapUsed}m, tolerance=${COMPACTION_CONFIG.boundaryGapToleranceMinutes}m, ` +
+        `cap=${COMPACTION_CONFIG.maxCompactSlotsPerBlock}/block)`,
+    );
+
+    // Admin-only payload: raw technically-valid starts, which were shown vs
+    // filtered, the filter reason, gap-before / gap-after, the minimum viable
+    // gap used and the compaction score. Never returned to customers.
+    const buildAdminPayload = () => {
+      const toDebug = (s: TimeSlot) => ({
+        technicianId: s.technicianId,
+        technicianName: s.technicianName,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        displayTime: s.displayTime,
+        durationMinutes: s.durationMinutes,
+        shown: !!s.compactionShown,
+        filterReason: s.compactionShown ? null : s.compactionFilterReason ?? null,
+        gapBeforeMinutes: s.gapBeforeMinutes ?? null,
+        gapAfterMinutes: s.gapAfterMinutes ?? null,
+        minViableGapMinutes: s.minViableGapMinutes ?? null,
+        compactionScore: s.compactionScore ?? null,
+        packsStart: !!s.packsStart,
+        packsEnd: !!s.packsEnd,
+      });
+      // Surface compaction-filtered (but technically valid) slots through the
+      // existing "excluded" channel so admins can still override-book them.
+      const compactionExcluded: TimeSlot[] = compactionFilteredSlots.map((s) => ({
+        ...s,
+        excluded: true,
+        exclusionReason: {
+          code: "COMPACTION",
+          message: "Filtered to keep the schedule tight",
+          details:
+            `gapBefore ${s.gapBeforeMinutes ?? "?"}m / gapAfter ${s.gapAfterMinutes ?? "?"}m ` +
+            `/ minViableGap ${s.minViableGapMinutes ?? "?"}m (${s.compactionFilterReason ?? "redundant"})`,
+        },
+      }));
+      return {
+        rawSlots: allSlots,
+        excludedSlots: [...excludedSlots, ...compactionExcluded],
+        compactionDebug: allSlots.map(toDebug),
+        compactionConfig: {
+          minimum_fillable_gap_minutes: COMPACTION_CONFIG.minimumFillableGapMinutes,
+          boundary_gap_tolerance_minutes: COMPACTION_CONFIG.boundaryGapToleranceMinutes,
+          max_compact_slots_per_block: COMPACTION_CONFIG.maxCompactSlotsPerBlock,
+          shortest_fillable_service_minutes: COMPACTION_CONFIG.shortestFillableServiceMinutes ?? null,
+          transition_buffer_minutes: COMPACTION_CONFIG.transitionBufferMinutes ?? 0,
+          min_viable_gap_used_minutes: minViableGapUsed,
+          allow_time_request_escalation: allowTimeRequestEscalation,
+        },
+      };
+    };
+
     // Build response based on mode
     if (mode === 'dayGrid') {
-      // Return all slots for the selected date, snapped to 30-min display
+      // Return only the COMPACTED slots for the selected date, deduped by
+      // display time + technician (customer-facing browsing).
       const deduped = new Map<string, TimeSlot>();
-      
-      for (const slot of allSlots) {
-        // Dedupe by display time + technician
+      for (const slot of shownSlots) {
         const key = `${slot.displayTime}|${slot.technicianId}`;
         const existing = deduped.get(key);
-        
         if (!existing || (slot.gapScore || 0) > (existing.gapScore || 0)) {
           deduped.set(key, slot);
         }
       }
-      
-      const dayGridSlots = Array.from(deduped.values()).sort((a, b) => {
-        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-      });
-      
+      const dayGridSlots = Array.from(deduped.values()).sort(
+        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+      );
+
       return new Response(
         JSON.stringify({
           mode: 'dayGrid',
           slots: dayGridSlots,
           totalAvailable: dayGridSlots.length,
           fullyBookedDays,
+          ...(includeExcluded ? buildAdminPayload() : {}),
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // Recommended mode: return top 3 candidates
-    // Score and sort all slots with technician preference weighting
-    const scoredSlots = allSlots.map(slot => {
+    // Score and sort only the COMPACTED (customer-shown) slots so the ranked
+    // recommendations, "best recommended", "next available" and the AI-chat
+    // options can never surface a raw start time the website filters out.
+    const scoredSlots = shownSlots.map(slot => {
       const slotDate = new Date(slot.startTime);
       const daysSinceNow = (slotDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
       
@@ -1665,11 +1853,20 @@ Deno.serve(async (req) => {
       const gapScore = slot.gapScore || 50;
       const routeScore = slot.routeDensityScore || 50;
       const techScore = slot.technicianScore || 100; // Default to 100 (skill 3, no bonus/penalty)
-      
-      // Combined score with technician preference weighting
-      // Gap: 35%, Recency: 30%, Route: 15%, Tech Preference: 20%
-      const totalScore = (gapScore * 0.35) + (recencyScore * 0.30) + (routeScore * 0.15) + (techScore * 0.20);
-      
+      // Compaction score (schedule-efficiency): boundary-packing + route + low
+      // fragmentation. Folded into ranking so "Best Recommended" prefers slots
+      // that keep the overall schedule tight, not merely the chronologically
+      // earliest slot when that would damage the rest of the day.
+      const compactionScore = slot.compactionScore ?? 50;
+
+      // Combined score. Compaction 30%, Gap 20%, Recency 25%, Route 10%, Tech 15%.
+      const totalScore =
+        (compactionScore * 0.30) +
+        (gapScore * 0.20) +
+        (recencyScore * 0.25) +
+        (routeScore * 0.10) +
+        (techScore * 0.15);
+
       return { ...slot, totalScore };
     });
     
@@ -1803,12 +2000,15 @@ Deno.serve(async (req) => {
         nextAvailable,
         rankedSlots,
         fullyBookedDays,
-        totalAvailable: allSlots.length,
+        totalAvailable: shownSlots.length,
         eligibleTechnicians: eligibleTechs.map(t => ({ 
           id: t.id, 
           name: t.name, 
           durationMinutes: t.durationMinutes 
         })),
+        // Admin-only: customer-shown slots + raw availability + compaction
+        // decisions/reasons/config (the inspector reads `slots`/`excludedSlots`).
+        ...(includeExcluded ? { slots: shownSlots, ...buildAdminPayload() } : {}),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
