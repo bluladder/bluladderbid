@@ -661,6 +661,47 @@ Deno.serve(async (req) => {
       "pressureWashing": "driveway",
     };
 
+    // The AI-chat path passes the customer-facing line-item names emitted by the
+    // pricing engine (e.g. "Window Cleaning", "Gutter Cleaning", "House Wash").
+    // Those display names were NOT present in the camelCase map above, so every
+    // chat availability request fell through to the raw name and matched no
+    // technician ("No technicians can perform all selected services"). Add the
+    // canonical display names and resolve everything through one tolerant
+    // normalizer so both the API keys and the display names map correctly.
+    const displayNameMap: Record<string, string> = {
+      "window cleaning": "windows_exterior",
+      "window cleaning (exterior)": "windows_exterior",
+      "window cleaning (interior & exterior)": "windows_exterior",
+      "interior window cleaning": "windows_interior",
+      "house wash": "house_wash",
+      "gutter cleaning": "gutters",
+      "roof cleaning": "roof_wash",
+      "driveway cleaning": "driveway",
+      "pressure washing": "driveway",
+    };
+
+    const resolveServiceType = (raw: string): string => {
+      if (!raw) return raw;
+      // 1) Exact API key match (e.g. "windows_exterior", "windowCleaning").
+      if (serviceTypeMap[raw]) return serviceTypeMap[raw];
+      const lower = raw.trim().toLowerCase();
+      // 2) Exact display-name match.
+      if (displayNameMap[lower]) return displayNameMap[lower];
+      // 3) Keyword fallback so promo/variant labels still resolve safely
+      //    (e.g. "Exterior Window Cleaning Promotion (up to 15 windows)").
+      if (lower.includes("window")) {
+        return lower.includes("interior") && !lower.includes("exterior")
+          ? "windows_interior"
+          : "windows_exterior";
+      }
+      if (lower.includes("gutter")) return "gutters";
+      if (lower.includes("roof")) return "roof_wash";
+      if (lower.includes("driveway") || lower.includes("pressure")) return "driveway";
+      if (lower.includes("house wash") || lower.includes("house washing")) return "house_wash";
+      // 4) Unknown — return the raw value; it simply won't match a rate.
+      return raw;
+    };
+
     // Get all active technicians with their rates and capabilities
     const { data: technicians, error: techError } = await supabase
       .from("technicians")
@@ -732,14 +773,14 @@ Deno.serve(async (req) => {
     }> = [];
 
     // Extract unique service types for this booking
-    const requestedServiceTypes = services.map(s => serviceTypeMap[s.service] || s.service);
+    const requestedServiceTypes = services.map(s => resolveServiceType(s.service));
 
     for (const tech of technicians) {
       let totalDuration = 0;
       let canPerformAll = true;
 
       for (const svc of services) {
-        const serviceType = serviceTypeMap[svc.service] || svc.service;
+        const serviceType = resolveServiceType(svc.service);
         const rate = tech.technician_service_rates?.find(
           (r: { service_type: string }) => r.service_type === serviceType
         );
