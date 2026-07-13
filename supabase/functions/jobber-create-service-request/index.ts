@@ -26,6 +26,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jobberGraphQL } from "../_shared/jobberClient.ts";
 import { loadPricing } from "../_shared/loadPricing.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
+import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import {
   computeBundleTiers,
   evaluatePlanSelection,
@@ -38,6 +39,38 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Emit booking_completed for a successfully recorded recurring plan quote.
+// Idempotent on the local quote id so retries never duplicate the event.
+async function emitBookingCompleted(
+  _supabase: unknown,
+  quoteId: string,
+  customerId: string | null,
+  customer: { email?: string | null; phone?: string | null },
+  option: { tier?: string; annualTotal?: number; services?: unknown },
+  suppressed: boolean,
+): Promise<void> {
+  try {
+    await emitCampaignEvent({
+      eventName: "booking_completed",
+      idempotencyKey: `booking_completed:${quoteId}`,
+      email: customer.email ?? null,
+      phone: customer.phone ?? null,
+      customerId,
+      source: "jobber-create-service-request",
+      subject: "Recurring plan booking completed",
+      metadata: {
+        booking_status: "recurring_quote_created",
+        quote_id: quoteId,
+        plan_tier: option.tier ?? null,
+        annual_total: option.annualTotal ?? null,
+        suppressed_jobber_write: suppressed,
+      },
+    });
+  } catch (e) {
+    console.warn("booking_completed (recurring) emit failed:", e);
+  }
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -338,6 +371,7 @@ Deno.serve(async (req) => {
     const suppression = await checkSuppression(supabase, { email: customer.email, phone: customer.phone });
     if (suppression.suppressed) {
       console.log(`service-request: suppressed Jobber write (${suppression.reason}) for quote ${quoteId}`);
+      await emitBookingCompleted(supabase, quoteId, dbCustomer.id, customer, option, true);
       return json({
         status: "ok",
         suppressed: true,
@@ -449,6 +483,10 @@ Deno.serve(async (req) => {
     const jobberQuoteNumber = quoteResult.data?.quoteCreate?.quote?.quoteNumber ?? null;
 
     await supabase.from("quotes").update({ jobber_quote_id: jobberQuoteId }).eq("id", quoteId);
+
+    // booking_completed — the recurring plan quote was successfully created.
+    // Idempotent on the local quote id; STOPs abandoned-quote nurture.
+    await emitBookingCompleted(supabase, quoteId, dbCustomer.id, customer, option, false);
 
     return json({
       status: "ok",

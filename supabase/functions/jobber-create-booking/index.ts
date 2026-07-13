@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { jobberGraphQL } from "../_shared/jobberClient.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
@@ -1298,6 +1299,32 @@ Deno.serve(async (req) => {
       } catch (smsErr) {
         console.warn("Appointment SMS dispatch error:", smsErr);
       }
+    }
+
+    // booking_completed — emitted ONLY after a confirmed Jobber visit exists
+    // (the needs_attention / visit-creation-failed paths above return earlier).
+    // Idempotency is keyed on the booking id so retries never duplicate. This is
+    // a STOP event for abandoned-quote nurture in the campaign engine.
+    try {
+      await emitCampaignEvent({
+        eventName: "booking_completed",
+        idempotencyKey: `booking_completed:${bookingRecord?.id ?? jobberVisitId}`,
+        email: booking.customer?.email ?? null,
+        phone: booking.customer?.phone ?? null,
+        customerId: customer.id,
+        source: "jobber-create-booking",
+        subject: "One-time booking completed",
+        metadata: {
+          booking_status: "scheduled",
+          booking_id: bookingRecord?.id ?? null,
+          jobber_visit_id: jobberVisitId,
+          service_types: Array.isArray(booking.services)
+            ? booking.services.map((s: any) => s?.name ?? s?.service ?? s).filter(Boolean)
+            : [],
+        },
+      });
+    } catch (e) {
+      console.warn("booking_completed emit failed:", e);
     }
 
     console.log("=== Booking creation completed successfully ===");

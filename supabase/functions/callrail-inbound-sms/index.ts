@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { normalizePhone, classifyInbound } from "../_shared/sms.ts";
+import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -95,6 +96,27 @@ serve(async (req) => {
 
     const intent = classifyInbound(content);
     const nowIso = new Date().toISOString();
+
+    // customer_replied — one event per inbound message. The idempotency key is
+    // the CallRail/provider message id (fallback: phone+content hash) so replayed
+    // webhooks never create duplicate events. The campaign engine applies the
+    // configured reply behaviour (pause/stop nurture) and leaves transactional
+    // workflows untouched. STOP/START opt-out handling below remains authoritative.
+    const providerMessageId =
+      pick("message_id", "id", "sms_id", "resource_id", "call_id") ||
+      `${phone}:${nowIso.slice(0, 16)}:${(content || "").slice(0, 40)}`;
+    try {
+      await emitCampaignEvent({
+        eventName: "customer_replied",
+        idempotencyKey: `customer_replied:${providerMessageId}`,
+        phone,
+        source: "callrail",
+        subject: "Inbound SMS reply",
+        metadata: { intent, provider_message_id: providerMessageId },
+      });
+    } catch (e) {
+      console.error("customer_replied emit failed:", e);
+    }
 
     if (intent === "stop") {
       await supabase.from("sms_opt_outs").upsert({
