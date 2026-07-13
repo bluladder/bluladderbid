@@ -1,10 +1,14 @@
 import { MessageSquareText, Mail, LifeBuoy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  PHONE_FALLBACK,
+  PRIMARY_PUBLIC_PHONE,
+  SUPPORT_EMAIL,
+} from '@/config/contact';
 
-/** Business contact endpoints (kept in one place for easy updates). */
-const SUPPORT_PHONE = '+14697472877';
-const SUPPORT_PHONE_DISPLAY = '(469) 747-2877';
-const SUPPORT_EMAIL = 'info@bluladder.com';
+// SMS help routes to the app/AI transactional number; "call us" shows the
+// primary public business number. Both come from the canonical contact config.
+const SMS_PHONE = PHONE_FALLBACK.app_ai.e164;
 
 interface BookingHelpContactProps {
   /** Link to the customer's approved bid/quote. Defaults to the current page URL. */
@@ -42,7 +46,7 @@ export function BookingHelpContact({
   className,
 }: BookingHelpContactProps) {
   const message = buildMessage({ bidLink, bidReference, customerName });
-  const smsHref = `sms:${SUPPORT_PHONE}?body=${encodeURIComponent(message)}`;
+  const smsHref = `sms:${SMS_PHONE}?body=${encodeURIComponent(message)}`;
   const mailSubject =
     variant === 'quote'
       ? 'Help with my BluLadder bid'
@@ -87,7 +91,7 @@ export function BookingHelpContact({
         </Button>
       </div>
       <p className="mt-2 text-center text-[11px] text-muted-foreground">
-        {SUPPORT_PHONE_DISPLAY} · {SUPPORT_EMAIL}
+        {PRIMARY_PUBLIC_PHONE.display} · {SUPPORT_EMAIL}
       </p>
     </div>
   );

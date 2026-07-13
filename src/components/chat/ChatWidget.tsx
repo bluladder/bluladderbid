@@ -3,6 +3,7 @@ import { MessageCircle, X, Send, Loader2, RotateCcw, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
+import { PRIMARY_PUBLIC_PHONE } from '@/config/contact';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -153,7 +154,7 @@ export default function ChatWidget() {
     setIsLoading(true);
     sendChat(sessionRef.current, text, marketingConsent)
       .then(reply => setMessages(prev => [...prev, { role: 'assistant', content: reply }]))
-      .catch(() => setMessages(prev => [...prev, { role: 'assistant', content: "I couldn't reach the team just now — please call us at 469-242-6556." }]))
+      .catch(() => setMessages(prev => [...prev, { role: 'assistant', content: `I couldn't reach the team just now — please call us at ${PRIMARY_PUBLIC_PHONE.display}.` }]))
       .finally(() => { setIsLoading(false); inputRef.current?.focus(); });
   }, [isLoading, marketingConsent]);
 

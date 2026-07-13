@@ -39,6 +39,7 @@ export type ToolName =
   | "validate_service_area"
   | "request_manual_quote"
   | "request_human_callback"
+  | "escalate_to_human"
   | "record_consent";
 
 // Structured, server-authoritative facts. Corrections update these directly and
@@ -214,7 +215,7 @@ export function computeState(f: ConversationFacts): ConversationState {
 // may run. request_human_callback and record_consent are ALWAYS permitted
 // (a customer can ask for a person, or set consent, at any point).
 // ---------------------------------------------------------------------------
-const ALWAYS_ALLOWED: ToolName[] = ["request_human_callback", "record_consent"];
+const ALWAYS_ALLOWED: ToolName[] = ["request_human_callback", "escalate_to_human", "record_consent"];
 
 export function allowedToolsForState(state: ConversationState): ToolName[] {
   const base: Record<ConversationState, ToolName[]> = {

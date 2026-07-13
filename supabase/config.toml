@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.campaign-event]
 verify_jwt = false
+
+[functions.knowledge-sync]
+verify_jwt = false
