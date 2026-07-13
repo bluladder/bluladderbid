@@ -43,6 +43,14 @@ Deno.serve(async (req) => {
     }
     const message = rawMessage.slice(0, MAX_MESSAGE_LEN);
 
+    // Explicit, opt-in-only marketing consent from the on-screen checkbox. It is
+    // NEVER preselected in the UI and is recorded through the canonical consent
+    // service (record_consent), not just the transcript.
+    const marketingConsent = (body as any).marketingConsent === true;
+    const consentLanguage = typeof (body as any).consentLanguage === "string"
+      ? String((body as any).consentLanguage).slice(0, 500)
+      : null;
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -89,6 +97,37 @@ Deno.serve(async (req) => {
 
     await supabase.from("chat_messages").insert({ conversation_id: convo.id, role: "assistant", content: result.reply });
     await supabase.from("chat_conversations").update({ last_activity_at: new Date().toISOString() }).eq("id", convo.id);
+
+    // Record explicit marketing consent (if the visitor ticked the box) against
+    // whatever contact details the conversation has captured. Absence of the box
+    // is never treated as consent.
+    if (marketingConsent) {
+      const { data: c } = await supabase
+        .from("chat_conversations")
+        .select("prospect_email, prospect_phone, marketing_consent")
+        .eq("id", convo.id)
+        .maybeSingle();
+      await supabase.from("chat_conversations").update({ marketing_consent: true }).eq("id", convo.id);
+      const lang = consentLanguage || "Send me occasional promotions and offers from BluLadder.";
+      try {
+        if (c?.prospect_email) {
+          await supabase.rpc("record_consent", {
+            p_channel: "email", p_consent_type: "marketing", p_status: "granted",
+            p_email: c.prospect_email, p_language_shown: lang, p_source: "chat_checkbox",
+            p_conversation_id: convo.id, p_session_id: sessionToken,
+          });
+        }
+        if (c?.prospect_phone) {
+          await supabase.rpc("record_consent", {
+            p_channel: "sms", p_consent_type: "marketing", p_status: "granted",
+            p_phone: c.prospect_phone, p_language_shown: lang, p_source: "chat_checkbox",
+            p_conversation_id: convo.id, p_session_id: sessionToken,
+          });
+        }
+      } catch (e) {
+        console.error("marketing consent record failed:", e);
+      }
+    }
 
     return json({ reply: result.reply, events: result.events });
   } catch (e) {
