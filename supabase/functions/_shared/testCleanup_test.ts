@@ -28,7 +28,7 @@ Deno.test("approved identity is protected and never deletable", () => {
 });
 
 Deno.test("temporary verification records remain deletable", () => {
-  assertEquals(isProtectedTestIdentity(TEMP), true === false);
+  assertEquals(isProtectedTestIdentity(TEMP), false);
   assertEquals(isDeletableTestIdentity(TEMP), true);
 });
 
