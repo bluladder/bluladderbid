@@ -401,6 +401,16 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
     booking_status: "confirmed", last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
 
+  // Persist the original result against the (now-consumed) authorization so an
+  // audit trail and any idempotent replay can reference it. No-op for normal
+  // (non-test) customers where no authorization row matches.
+  try {
+    await ctx.supabase.rpc("record_live_jobber_authorization_result", {
+      p_email: email,
+      p_result: { status: "confirmed", jobberVisitId: visitId, confirmedTime: slot.displayTime },
+    });
+  } catch (_e) { /* audit-only; never block a confirmed booking */ }
+
   return {
     status: "confirmed",
     confirmedTime: slot.displayTime,
