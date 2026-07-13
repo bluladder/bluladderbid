@@ -650,6 +650,7 @@ export type ToolName =
   | "validate_service_area"
   | "request_manual_quote"
   | "request_human_callback"
+  | "escalate_to_human"
   | "record_consent";
 
 export async function runTool(name: string, ctx: ToolContext, args: Record<string, unknown>) {
@@ -660,6 +661,7 @@ export async function runTool(name: string, ctx: ToolContext, args: Record<strin
     case "validate_service_area": return await validateServiceAreaTool(ctx, args);
     case "request_manual_quote": return await manualQuoteTool(ctx, args);
     case "request_human_callback": return await humanCallbackTool(ctx, args);
+    case "escalate_to_human": return await escalateTool(ctx, args);
     case "record_consent": return await recordConsentTool(ctx, args);
     default:
       // Hard allowlist: anything else is refused (prompt-injection safe).
