@@ -1249,7 +1249,10 @@ Deno.serve(async (req) => {
         };
         const dayOfWeek = weekdayMap[weekdayStr] ?? 1;
         
-        if (!tech.workDays.includes(dayOfWeek)) {
+        // Defect 1: hard business-day gate (defense in depth). Even if a
+        // technician record somehow lists a weekend, the business working-days
+        // config is authoritative and blocks it here before any slot is built.
+        if (!isBusinessDay(dayOfWeek, BUSINESS_HOURS.workDays) || !tech.workDays.includes(dayOfWeek)) {
           dayOffset++;
           continue;
         }
