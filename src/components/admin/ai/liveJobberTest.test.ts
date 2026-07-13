@@ -180,3 +180,36 @@ describe("result parsing", () => {
     expect(parseAuthorizedResult(null)).toBeNull();
   });
 });
+describe("live test readiness (panel visibility explanation)", () => {
+  const gsuppOff = false;
+  it("reports all prerequisites met for a ready protected conversation", () => {
+    const checks = liveTestReadiness({
+      isOperationsAdmin: true,
+      convo: readyConvo(),
+      identity: protectedIdentity,
+      globalSuppressionOn: gsuppOff,
+    });
+    expect(checks.every((c) => c.ok)).toBe(true);
+  });
+
+  it("explains a missing protected identity instead of hiding silently", () => {
+    const checks = liveTestReadiness({
+      isOperationsAdmin: true,
+      convo: readyConvo({ prospect_email: "someone@else.com", prospect_phone: "+15550001111" }),
+      identity: protectedIdentity,
+      globalSuppressionOn: gsuppOff,
+    });
+    const identityCheck = checks.find((c) => c.key === "protected_identity");
+    expect(identityCheck?.ok).toBe(false);
+  });
+
+  it("flags global test suppression being ON as a blocker", () => {
+    const checks = liveTestReadiness({
+      isOperationsAdmin: true,
+      convo: readyConvo(),
+      identity: protectedIdentity,
+      globalSuppressionOn: true,
+    });
+    expect(checks.find((c) => c.key === "global_suppression_off")?.ok).toBe(false);
+  });
+});
