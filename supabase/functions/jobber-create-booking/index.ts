@@ -1315,6 +1315,7 @@ Deno.serve(async (req) => {
         customerId: customer.id,
         source: "jobber-create-booking",
         subject: "One-time booking completed",
+        recoverySupabase: supabase,
         metadata: {
           booking_status: "scheduled",
           booking_id: bookingRecord?.id ?? null,
