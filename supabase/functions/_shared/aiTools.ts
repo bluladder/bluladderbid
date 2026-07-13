@@ -473,12 +473,12 @@ async function recordConsent(
 async function emitCampaignEvent(
   ctx: ToolContext,
   eventName: string,
-  o: { email?: string; phone?: string; subject?: string; metadata?: Record<string, unknown> },
+  o: { email?: string; phone?: string; subject?: string; metadata?: Record<string, unknown>; idempotencyKey?: string },
 ) {
   try {
     await callFunction("campaign-event", {
       event_name: eventName,
-      idempotency_key: `${eventName}:${ctx.conversationId}`,
+      idempotency_key: o.idempotencyKey ?? `${eventName}:${ctx.conversationId}`,
       email: o.email ?? null,
       phone: o.phone ?? null,
       conversation_id: ctx.conversationId,
