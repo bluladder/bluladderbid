@@ -13,6 +13,9 @@ import { SmsOptOutManager } from './sms/SmsOptOutManager';
 import { LeadStatusBoard } from './sms/LeadStatusBoard';
 import { MessageTemplateManager } from './sms/MessageTemplateManager';
 import { CampaignAuditLog } from './sms/CampaignAuditLog';
+import { EnrollmentAdmin } from './sms/EnrollmentAdmin';
+import { CampaignDryRun } from './sms/CampaignDryRun';
+import { CampaignDashboard } from './sms/CampaignDashboard';
 
 export function IntegrationsTabContent() {
   const [activeSection, setActiveSection] = useState('jobber');
@@ -134,9 +137,13 @@ export function IntegrationsTabContent() {
             </CardContent>
           </Card>
 
+          <CampaignDashboard />
+
           <Tabs defaultValue="campaigns">
             <TabsList>
               <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
+              <TabsTrigger value="enrollments">Enrollments</TabsTrigger>
+              <TabsTrigger value="dryrun">Dry Run</TabsTrigger>
               <TabsTrigger value="templates">Templates</TabsTrigger>
               <TabsTrigger value="leads">Lead Board</TabsTrigger>
               <TabsTrigger value="log">Message Log</TabsTrigger>
@@ -146,6 +153,12 @@ export function IntegrationsTabContent() {
             </TabsList>
             <TabsContent value="campaigns" className="mt-4">
               <SmsCampaignManager />
+            </TabsContent>
+            <TabsContent value="enrollments" className="mt-4">
+              <EnrollmentAdmin />
+            </TabsContent>
+            <TabsContent value="dryrun" className="mt-4">
+              <CampaignDryRun />
             </TabsContent>
             <TabsContent value="templates" className="mt-4">
               <MessageTemplateManager />
