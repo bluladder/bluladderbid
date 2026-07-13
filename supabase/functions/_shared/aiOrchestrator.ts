@@ -65,6 +65,7 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
     .from("business_knowledge")
     .select("category, title, content")
     .eq("is_active", true)
+    .eq("review_status", "published")
     .order("sort_order");
   const knowledge = (data ?? [])
     .map((r) => `- [${r.category}] ${r.title}: ${r.content}`)
