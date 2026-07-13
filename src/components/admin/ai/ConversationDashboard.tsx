@@ -330,6 +330,52 @@ export function ConversationDashboard() {
                 </div>
               )}
 
+              {/* Defect 4: human reply composer — only after takeover. Customer-visible. */}
+              {!isReadOnly && inTakeover && (
+                <div className="rounded-lg border-2 border-primary/40 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Headset className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-semibold">Reply to customer (visible to customer)</span>
+                  </div>
+                  {/* Channel selector */}
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button size="sm" variant={replyChannel === 'sms' ? 'default' : 'outline'} onClick={() => setReplyChannel('sms')} disabled={!selected.prospect_phone}>
+                      <Phone className="w-3.5 h-3.5 mr-1" />SMS
+                    </Button>
+                    <Button size="sm" variant={replyChannel === 'email' ? 'default' : 'outline'} onClick={() => setReplyChannel('email')} disabled={!selected.prospect_email}>
+                      <Mail className="w-3.5 h-3.5 mr-1" />Email
+                    </Button>
+                    <Button size="sm" variant={replyChannel === 'call' ? 'default' : 'outline'} onClick={() => setReplyChannel('call')} disabled={!selected.prospect_phone}>
+                      <PhoneCall className="w-3.5 h-3.5 mr-1" />Call
+                    </Button>
+                  </div>
+                  {/* Sending identity / recipient shown before sending */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    {replyChannel === 'sms' && <span>To {selected.prospect_phone || '—'} · sent from the BluLadder app number (469) 747-2877</span>}
+                    {replyChannel === 'email' && <span>To {selected.prospect_email || '—'} · sent from BluLadder</span>}
+                    {replyChannel === 'call' && <span>Customer phone: {selected.prospect_phone || '—'}</span>}
+                    {selected.prospect_phone && (
+                      <button className="underline hover:text-foreground" onClick={() => { navigator.clipboard?.writeText(selected.prospect_phone || ''); toast({ title: 'Phone copied' }); }}>Copy phone</button>
+                    )}
+                  </div>
+                  {replyChannel === 'call' ? (
+                    <Button size="sm" asChild disabled={!selected.prospect_phone}>
+                      <a href={`tel:${selected.prospect_phone ?? ''}`}><PhoneCall className="w-3.5 h-3.5 mr-1" />Call {selected.prospect_phone || 'customer'}</a>
+                    </Button>
+                  ) : (
+                    <>
+                      <Textarea value={replyDraft} onChange={(e) => setReplyDraft(e.target.value)} rows={3} placeholder={`Type your ${replyChannel.toUpperCase()} reply to the customer…`} />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-muted-foreground">Opt-outs and suppression are respected automatically. This is not an internal note.</span>
+                        <Button size="sm" disabled={sendingReply} onClick={sendReply}>
+                          <Send className="w-3.5 h-3.5 mr-1" />{sendingReply ? 'Sending…' : `Send ${replyChannel.toUpperCase()}`}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* One-time live Jobber test authorization (operations admins, protected test identity only) */}
               <LiveJobberTestPanel
                 convo={selected as unknown as ConvoLike}
