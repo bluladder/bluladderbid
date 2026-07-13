@@ -9,7 +9,10 @@ import { ServicePlanSelector } from '@/components/homeowner/ServicePlanSelector'
 import { PricingSummary } from '@/components/homeowner/PricingSummary';
 import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
 import { ProgressStepper, type FlowStep } from '@/components/homeowner/ProgressStepper';
-import { useServicePricing } from '@/hooks/useServicePricing';
+import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
+import { useServerBundleTiers } from '@/hooks/useServerBundleTiers';
+import { fromQuoteResult } from '@/lib/pricing/fromQuoteResult';
+import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
 import { 
@@ -151,8 +154,24 @@ const ServiceLanding = () => {
   const [flowState, setFlowState] = useState<FlowState>('selecting');
   const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>('better');
 
-  const { servicePrices, bundles } = useServicePricing(homeDetails, additionalServices);
   const { customizations, setTierCustomization } = usePlanCustomizations();
+
+  // AUTHORITATIVE pricing — one-time totals AND the Good/Better/Best tiers come
+  // ONLY from the deployed pricing Edge Functions. No local pricing math.
+  const hasServices = hasAnyServiceSelected(additionalServices);
+  const oneTimeQuote = useServerQuoteCalculation(
+    hasServices ? toQuoteInput(homeDetails, additionalServices) : null,
+    { enabled: hasServices },
+  );
+  const servicePrices = useMemo(
+    () => fromQuoteResult(oneTimeQuote.quote),
+    [oneTimeQuote.quote],
+  );
+  const bundleState = useServerBundleTiers(
+    hasServices ? { homeDetails, additionalServices, customizations } : null,
+    { enabled: hasServices },
+  );
+  const bundles = bundleState.bundles;
 
   // If invalid service slug, show 404-like message
   if (!config) {
@@ -180,49 +199,9 @@ const ServiceLanding = () => {
     setAdditionalServices(prev => ({ ...prev, ...updates }));
   };
 
-  // Apply customizations to bundles
-  const customizedBundles = useMemo(() => {
-    return bundles.map(bundle => {
-      const customization = customizations[bundle.tier];
-      if (!customization) return bundle;
-      
-      const freqConfig = customization.windowFrequency;
-      const originalFreqCost = 
-        servicePrices.exteriorWindows * bundle.windowFrequencyConfig.exteriorFrequency +
-        servicePrices.interiorWindows * bundle.windowFrequencyConfig.interiorFrequency;
-      const newFreqCost = 
-        servicePrices.exteriorWindows * freqConfig.exteriorFrequency +
-        servicePrices.interiorWindows * freqConfig.interiorFrequency;
-      const freqDiff = newFreqCost - originalFreqCost;
-      
-      const getServicePrice = (svc: string) => {
-        if (svc === 'gutter_cleaning') return servicePrices.gutterCleaning;
-        if (svc === 'house_wash') return servicePrices.houseWash;
-        if (svc === 'roof_cleaning') return servicePrices.roofCleaning;
-        return 0;
-      };
-      
-      let serviceDiff = 0;
-      for (const swap of customization.serviceSwaps) {
-        serviceDiff += getServicePrice(swap.to) - getServicePrice(swap.from);
-      }
-      for (const added of customization.addedServices) {
-        if (!customization.serviceSwaps.some(s => s.to === added)) {
-          serviceDiff += getServicePrice(added);
-        }
-      }
-      
-      const newAnnualTotal = bundle.annualTotal + freqDiff + serviceDiff;
-      
-      return {
-        ...bundle,
-        windowFrequencyConfig: freqConfig,
-        annualTotal: Math.round(newAnnualTotal),
-        monthlyPayment: Math.round(newAnnualTotal / 12),
-        isCustomized: true,
-      };
-    });
-  }, [bundles, customizations, servicePrices]);
+  // Tier customizations are applied SERVER-SIDE via useServerBundleTiers, so the
+  // returned tiers are already customized. No local customization delta math.
+  const customizedBundles = bundles;
 
   const selectedBundle = selectedTier 
     ? customizedBundles.find(b => b.tier === selectedTier) || null 
@@ -380,6 +359,8 @@ const ServiceLanding = () => {
                     houseWash: servicePrices.houseWash,
                     roofCleaning: servicePrices.roofCleaning,
                   }}
+                  homeDetails={homeDetails}
+                  additionalServices={additionalServices}
                   onCustomizePlan={(tier, customization) => {
                     setTierCustomization(tier, customization);
                     toast.success(`${tier.charAt(0).toUpperCase() + tier.slice(1)} plan customized!`);

@@ -14,110 +14,29 @@ import type { HomeDetails, AdditionalServices } from '@/types/homeowner';
 import { DEFAULT_HOME_DETAILS, DEFAULT_ADDITIONAL_SERVICES } from '@/types/homeowner';
 import { usePricingConfig, type PricingData } from '@/hooks/usePricingConfig';
 import { useSavedScenarios, useCreateScenario, useDeleteScenario, type SavedScenario } from '@/hooks/useSavedScenarios';
+import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
+import { useServerQuotes, type QuoteRequest } from '@/hooks/useServerQuotes';
+import { toQuoteInput } from '@/lib/pricing/toQuoteInput';
+import { fromQuoteResult } from '@/lib/pricing/fromQuoteResult';
+import type { QuoteResult } from '@/lib/pricing/engine';
 
-// Pricing calculation function (mirrors useServicePricing logic)
-function calculatePrices(
-  homeDetails: HomeDetails,
-  additionalServices: AdditionalServices,
-  pricing: PricingData
-) {
-  const { squareFootage, stories, windowCleaningType, condition } = homeDetails;
-  
-  // Helper to apply percentage modifiers
-  const applyModifiers = (basePrice: number, modifierPercents: number[]): number => {
-    const totalPercent = modifierPercents.reduce((sum, pct) => sum + pct, 0);
-    return Math.round(basePrice * (1 + totalPercent / 100));
-  };
-  
-  // Window Cleaning
-  const windowConfig = pricing.window_cleaning;
-  const windowModifiers = windowConfig.modifiers;
-  
-  const baseExterior = squareFootage * windowConfig.exteriorPerSqFt;
-  const baseInterior = windowCleaningType === 'both' 
-    ? squareFootage * windowConfig.interiorPerSqFt
-    : 0;
-  const baseWindowPrice = baseExterior + baseInterior;
-  
-  const windowModifierPercents: number[] = [];
-  const storyMod = windowModifiers.stories[stories.toString()] ?? 0;
-  windowModifierPercents.push(storyMod);
-  const conditionMod = windowModifiers.condition?.[condition] ?? 0;
-  windowModifierPercents.push(conditionMod);
-  
-  const windowCalculated = applyModifiers(baseWindowPrice, windowModifierPercents);
-  const windowCleaning = Math.max(windowCalculated, windowConfig.minimumPrice ?? 0);
-  
-  // House Wash
-  let houseWash = 0;
-  if (additionalServices.houseWash) {
-    const houseConfig = pricing.house_wash;
-    const baseHouseWash = squareFootage * houseConfig.perSqFt;
-    const houseStoryMod = houseConfig.modifiers.stories[stories.toString()] ?? 0;
-    const houseCalculated = applyModifiers(baseHouseWash, [houseStoryMod]);
-    houseWash = Math.max(houseCalculated, houseConfig.minimumPrice ?? 0);
-  }
-  
-  // Gutter Cleaning
-  let gutterCleaning = 0;
-  if (additionalServices.gutterCleaning) {
-    const gutterConfig = pricing.gutter_cleaning;
-    const baseGutter = squareFootage * gutterConfig.perSqFt;
-    const gutterStoryMod = gutterConfig.modifiers.stories[stories.toString()] ?? 0;
-    const gutterCalculated = applyModifiers(baseGutter, [gutterStoryMod]);
-    gutterCleaning = Math.max(gutterCalculated, gutterConfig.minimumPrice ?? 0);
-  }
-  
-  // Roof Cleaning
-  let roofCleaning = 0;
-  if (additionalServices.roofCleaning) {
-    const roofConfig = pricing.roof_cleaning;
-    const baseRoof = squareFootage * roofConfig.perSqFt;
-    const roofModifiers: number[] = [];
-    roofModifiers.push(roofConfig.modifiers.stories[stories.toString()] ?? 0);
-    roofModifiers.push(roofConfig.modifiers.roofType?.[additionalServices.roofType] ?? 0);
-    roofModifiers.push(roofConfig.modifiers.severity?.[additionalServices.roofSeverity] ?? 0);
-    const roofCalculated = applyModifiers(baseRoof, roofModifiers);
-    roofCleaning = Math.max(roofCalculated, roofConfig.minimumPrice ?? 0);
-  }
-  
-  // Driveway Cleaning
-  let drivewayCleaning = 0;
-  if (additionalServices.drivewayCleaning?.enabled) {
-    const dwConfig = pricing.driveway_cleaning;
-    const { sqft, surfaceType } = additionalServices.drivewayCleaning;
-    const baseDriveway = sqft * dwConfig.perSqFt;
-    const surfaceMult = dwConfig.surfaceMultipliers[surfaceType] ?? 1;
-    drivewayCleaning = Math.max(Math.round(baseDriveway * surfaceMult), dwConfig.minimumPrice ?? 0);
-  }
-  
-  // Pressure Washing
-  let pressureWashing = 0;
-  if (additionalServices.pressureWashing?.enabled) {
-    const pwConfig = pricing.pressure_washing;
-    const surfaceMult = pwConfig.surfaceMultipliers[additionalServices.pressureWashing.surfaceType] ?? 1;
-    const areas = ['frontPorch', 'backPatio', 'poolDeck', 'walkways'] as const;
-    for (const area of areas) {
-      const areaData = additionalServices.pressureWashing[area];
-      if (areaData?.enabled) {
-        pressureWashing += Math.round(areaData.sqft * pwConfig.perSqFt * surfaceMult);
-      }
-    }
-    if (pressureWashing > 0) {
-      pressureWashing = Math.max(pressureWashing, pwConfig.minimumPrice ?? 0);
-    }
-  }
-  
-  const total = windowCleaning + houseWash + gutterCleaning + roofCleaning + drivewayCleaning + pressureWashing;
-  
+// The admin preview always prices exterior window cleaning (there is no window
+// toggle here), so window cleaning is forced on when building the server input.
+function previewInput(homeDetails: HomeDetails, additionalServices: AdditionalServices) {
+  return toQuoteInput(homeDetails, { ...additionalServices, windowCleaning: true });
+}
+
+/** Map an authoritative server quote → the small display shape this UI needs. */
+function displayPrices(quote: QuoteResult | null) {
+  const sp = fromQuoteResult(quote);
   return {
-    windowCleaning,
-    houseWash,
-    gutterCleaning,
-    roofCleaning,
-    drivewayCleaning,
-    pressureWashing,
-    total,
+    windowCleaning: sp.windowCleaningTotal,
+    houseWash: sp.houseWashTotal,
+    gutterCleaning: sp.gutterCleaningTotal,
+    roofCleaning: sp.roofCleaning,
+    drivewayCleaning: sp.drivewayCleaning,
+    pressureWashing: sp.pressureWashing,
+    total: quote?.total ?? 0,
   };
 }
 
@@ -199,19 +118,28 @@ export function PricingPreview() {
   const [scenarioName, setScenarioName] = useState('');
   const [scenarioDescription, setScenarioDescription] = useState('');
   
-  const prices = useMemo(() => {
-    if (!pricing) return null;
-    return calculatePrices(homeDetails, additionalServices, pricing);
-  }, [homeDetails, additionalServices, pricing]);
-  
-  // Calculate prices for all sample scenarios
+  // AUTHORITATIVE custom-builder quote — same calculate-quote endpoint the
+  // customer UI uses. Identical inputs → identical totals, line items and trace.
+  const customQuoteState = useServerQuoteCalculation(
+    previewInput(homeDetails, additionalServices),
+  );
+  const prices = useMemo(
+    () => (customQuoteState.quote ? displayPrices(customQuoteState.quote) : null),
+    [customQuoteState.quote],
+  );
+
+  // AUTHORITATIVE sample-scenario quotes — batched through the same endpoint.
+  const sampleRequests = useMemo<QuoteRequest[]>(
+    () => SAMPLE_SCENARIOS.map((s, i) => ({ id: `sample_${i}`, input: previewInput(s.homeDetails, s.services) })),
+    [],
+  );
+  const sampleQuotes = useServerQuotes(sampleRequests);
   const scenarioPrices = useMemo(() => {
-    if (!pricing) return [];
-    return SAMPLE_SCENARIOS.map((scenario) => ({
+    return SAMPLE_SCENARIOS.map((scenario, i) => ({
       ...scenario,
-      prices: calculatePrices(scenario.homeDetails, scenario.services, pricing),
+      prices: displayPrices(sampleQuotes.byId[`sample_${i}`] ?? null),
     }));
-  }, [pricing]);
+  }, [sampleQuotes]);
   
   const handleSaveScenario = () => {
     if (!scenarioName.trim()) return;
@@ -684,6 +612,42 @@ export function PricingPreview() {
                   <p>• Roof: ${pricing.roof_cleaning.perSqFt}/sq ft</p>
                   <p>• Story modifier ({homeDetails.stories}-story): +{pricing.window_cleaning.modifiers.stories[homeDetails.stories.toString()] ?? 0}%</p>
                 </div>
+              </div>
+
+              {/* Authoritative engine metadata + calculation trace */}
+              <div className="p-4 rounded-lg border bg-muted/30 text-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <h5 className="font-medium">Engine (server-authoritative)</h5>
+                  <div className="flex gap-2">
+                    {customQuoteState.engineVersion && (
+                      <Badge variant="outline" className="font-mono text-xs">
+                        engine {customQuoteState.engineVersion}
+                      </Badge>
+                    )}
+                    {customQuoteState.ruleVersion != null && (
+                      <Badge variant="outline" className="font-mono text-xs">
+                        rules v{customQuoteState.ruleVersion}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                {customQuoteState.quote?.discount && (
+                  <p className="text-muted-foreground text-xs mb-2">
+                    Discount applied: -${customQuoteState.quote.discount.amount.toLocaleString()}
+                  </p>
+                )}
+                {customQuoteState.quote?.trace?.length ? (
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer select-none">Calculation trace</summary>
+                    <pre className="mt-2 whitespace-pre-wrap font-mono leading-relaxed">
+                      {customQuoteState.quote.trace.join('\n')}
+                    </pre>
+                  </details>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    {customQuoteState.loading ? 'Calculating…' : 'Enter details to see the calculation trace.'}
+                  </p>
+                )}
               </div>
             </div>
           </div>

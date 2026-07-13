@@ -26,7 +26,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO, isSameDay } from 'date-fns';
-import { usePricingConfig } from '@/hooks/usePricingConfig';
+import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
+import { toQuoteInput } from '@/lib/pricing/toQuoteInput';
 import type { HomeDetails, AdditionalServices } from '@/types/homeowner';
 import { DEFAULT_HOME_DETAILS, DEFAULT_ADDITIONAL_SERVICES } from '@/types/homeowner';
 import { AdminAvailabilityViewer, type TimeSlot } from './AdminAvailabilityViewer';
@@ -34,50 +35,18 @@ import { SmartScheduler, type SchedulerSlot } from '@/components/scheduling/Smar
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown } from 'lucide-react';
 
-// Simple pricing calculation (mirrors useServicePricing)
-function calculateServicePrices(
-  homeDetails: HomeDetails,
-  additionalServices: AdditionalServices,
-  pricing: any
-): { services: Array<{ service: string; name: string; price: number }>; total: number } {
-  const services: Array<{ service: string; name: string; price: number }> = [];
-  const { squareFootage, stories } = homeDetails;
-
-  // Window cleaning
-  const windowConfig = pricing?.window_cleaning;
-  if (windowConfig) {
-    const baseExterior = squareFootage * windowConfig.exteriorPerSqFt;
-    const storyMod = windowConfig.modifiers?.stories?.[stories.toString()] ?? 0;
-    const calculated = Math.round(baseExterior * (1 + storyMod / 100));
-    const windowPrice = Math.max(calculated, windowConfig.minimumPrice ?? 0);
-    if (windowPrice > 0) {
-      services.push({ service: 'windows_exterior', name: 'Window Cleaning (Exterior)', price: windowPrice });
-    }
-  }
-
-  // Gutter cleaning
-  if (additionalServices.gutterCleaning && pricing?.gutter_cleaning) {
-    const gutterConfig = pricing.gutter_cleaning;
-    const baseGutter = squareFootage * gutterConfig.perSqFt;
-    const storyMod = gutterConfig.modifiers?.stories?.[stories.toString()] ?? 0;
-    const calculated = Math.round(baseGutter * (1 + storyMod / 100));
-    const gutterPrice = Math.max(calculated, gutterConfig.minimumPrice ?? 0);
-    services.push({ service: 'gutters', name: 'Gutter Cleaning', price: gutterPrice });
-  }
-
-  // House wash
-  if (additionalServices.houseWash && pricing?.house_wash) {
-    const houseConfig = pricing.house_wash;
-    const baseHouse = squareFootage * houseConfig.perSqFt;
-    const storyMod = houseConfig.modifiers?.stories?.[stories.toString()] ?? 0;
-    const calculated = Math.round(baseHouse * (1 + storyMod / 100));
-    const housePrice = Math.max(calculated, houseConfig.minimumPrice ?? 0);
-    services.push({ service: 'house_wash', name: 'House Wash', price: housePrice });
-  }
-
-  const total = services.reduce((sum, s) => sum + s.price, 0);
-  return { services, total };
-}
+// Maps canonical server line-item keys → the availability service keys expected
+// by the shared jobber-availability function (which derives operational duration
+// and crew requirements). Purely a key rename — NO pricing math here.
+const AVAILABILITY_SERVICE_KEY: Record<string, string> = {
+  window_cleaning: 'windows_exterior',
+  interior_windows: 'windows_interior',
+  gutter_cleaning: 'gutters',
+  house_wash: 'house_wash',
+  roof_cleaning: 'roof_cleaning',
+  driveway_cleaning: 'driveway',
+  pressure_washing: 'pressure_wash_addon',
+};
 
 function formatPrice(price: number) {
   return new Intl.NumberFormat('en-US', {
@@ -89,8 +58,6 @@ function formatPrice(price: number) {
 }
 
 export function SchedulingPortal() {
-  const { data: pricing, isLoading: pricingLoading } = usePricingConfig();
-
   // Customer info state
   const [customerInfo, setCustomerInfo] = useState({
     firstName: '',
@@ -108,6 +75,8 @@ export function SchedulingPortal() {
 
   const [additionalServices, setAdditionalServices] = useState<AdditionalServices>({
     ...DEFAULT_ADDITIONAL_SERVICES,
+    // The portal always prices/schedules exterior window cleaning.
+    windowCleaning: true,
     gutterCleaning: true,
   });
 
@@ -116,15 +85,33 @@ export function SchedulingPortal() {
   const [showInspector, setShowInspector] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
 
-  // Calculate prices
-  const priceData = useMemo(() => {
-    if (!pricing) return { services: [], total: 0 };
-    return calculateServicePrices(homeDetails, additionalServices, pricing);
-  }, [homeDetails, additionalServices, pricing]);
+  // AUTHORITATIVE pricing — every dollar comes from the deployed calculate-quote
+  // Edge Function. No local pricing math in the portal.
+  const quoteState = useServerQuoteCalculation(
+    toQuoteInput(homeDetails, additionalServices),
+  );
+  const { quote, isFirm, loading: quoteLoading, isUnavailable, isMissingInfo } = quoteState;
 
-  // Services for availability check
+  // Line items + total come straight from the authoritative server quote.
+  const priceData = useMemo(() => {
+    if (!isFirm || !quote) return { services: [], total: 0 };
+    return {
+      services: quote.lineItems.map((li) => ({ service: li.key, name: li.label, price: li.amount })),
+      total: quote.total,
+    };
+  }, [isFirm, quote]);
+
+  // Server-returned OPERATIONAL duration metadata (not a price proxy).
+  const estimatedDurationMinutes = quote?.estimatedDurationMinutes ?? null;
+
+  // Services for availability — server-authoritative prices, keyed to the
+  // availability service vocabulary. Route-density/crew logic downstream uses
+  // these operational inputs, never a locally computed dollar amount.
   const servicesForAvailability = useMemo(() => {
-    return priceData.services.map(s => ({ service: s.service, price: s.price }));
+    return priceData.services.map((s) => ({
+      service: AVAILABILITY_SERVICE_KEY[s.service] ?? s.service,
+      price: s.price,
+    }));
   }, [priceData.services]);
 
   const handleSlotSelect = (slot: TimeSlot & Partial<SchedulerSlot>) => {
@@ -156,6 +143,8 @@ export function SchedulingPortal() {
         scheduledStart: selectedSlot.startTime,
         scheduledEnd: selectedSlot.endTime,
         durationMinutes: selectedSlot.durationMinutes,
+        // Server-authoritative operational duration estimate for the job.
+        estimatedDurationMinutes,
         services: priceData.services.map(s => ({
           name: s.name,
           price: s.price,
@@ -195,16 +184,6 @@ export function SchedulingPortal() {
       setIsBooking(false);
     }
   };
-
-  if (pricingLoading) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -353,18 +332,33 @@ export function SchedulingPortal() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {priceData.services.map((svc, idx) => (
-                  <div key={idx} className="flex justify-between text-sm">
-                    <span>{svc.name}</span>
-                    <span className="font-mono">{formatPrice(svc.price)}</span>
-                  </div>
-                ))}
-                {priceData.services.length === 0 && (
-                  <p className="text-sm text-muted-foreground">Enter home details to see pricing</p>
-                )}
-              </div>
-              {priceData.total > 0 && (
+              {quoteLoading ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Calculating price…
+                </div>
+              ) : isUnavailable ? (
+                <p className="text-sm text-muted-foreground">
+                  Pricing is temporarily unavailable. Please try again shortly.
+                </p>
+              ) : isMissingInfo ? (
+                <p className="text-sm text-muted-foreground">
+                  Enter home details to see pricing.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {priceData.services.map((svc, idx) => (
+                    <div key={idx} className="flex justify-between text-sm">
+                      <span>{svc.name}</span>
+                      <span className="font-mono">{formatPrice(svc.price)}</span>
+                    </div>
+                  ))}
+                  {priceData.services.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Enter home details to see pricing</p>
+                  )}
+                </div>
+              )}
+              {isFirm && priceData.total > 0 && (
                 <>
                   <Separator className="my-3" />
                   <div className="flex justify-between items-center">
@@ -373,6 +367,16 @@ export function SchedulingPortal() {
                       {formatPrice(priceData.total)}
                     </Badge>
                   </div>
+                  {estimatedDurationMinutes != null && (
+                    <div className="flex justify-between items-center mt-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> Est. duration
+                      </span>
+                      <span className="font-mono">
+                        {Math.round((estimatedDurationMinutes / 60) * 10) / 10} hrs
+                      </span>
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>

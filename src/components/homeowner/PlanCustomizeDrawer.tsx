@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Settings2, Calendar, Sparkles, Check, Info, ArrowLeftRight, AlertCircle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -16,7 +17,8 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from '@/components/ui/drawer';
-import type { BundleTier, WindowFrequencyConfig } from '@/types/homeowner';
+import type { BundleTier, WindowFrequencyConfig, HomeDetails, AdditionalServices } from '@/types/homeowner';
+import { useServerBundleTiers } from '@/hooks/useServerBundleTiers';
 
 // Service swap configuration
 export interface ServiceSwap {
@@ -39,6 +41,9 @@ interface PlanCustomizeDrawerProps {
     houseWash: number;
     roofCleaning: number;
   };
+  /** Needed so the live preview price is computed by the server, not locally. */
+  homeDetails: HomeDetails;
+  additionalServices: AdditionalServices;
   onCustomize: (customization: PlanCustomization) => void;
   children?: React.ReactNode;
 }
@@ -95,6 +100,8 @@ export function PlanCustomizeDrawer({
   baseExteriorPrice,
   baseInteriorPrice,
   servicePrices,
+  homeDetails,
+  additionalServices,
   onCustomize,
   children,
 }: PlanCustomizeDrawerProps) {
@@ -129,37 +136,6 @@ export function PlanCustomizeDrawer({
     setSelectedServices(bundle.baseServices);
   }, [bundle]);
 
-  // Calculate price impact from frequency changes
-  const frequencyPriceImpact = useMemo(() => {
-    const originalWindowCost =
-      baseExteriorPrice * bundle.windowFrequencyConfig.exteriorFrequency +
-      baseInteriorPrice * bundle.windowFrequencyConfig.interiorFrequency;
-
-    const newWindowCost =
-      baseExteriorPrice * exteriorFreq + baseInteriorPrice * interiorFreq;
-
-    return newWindowCost - originalWindowCost;
-  }, [exteriorFreq, interiorFreq, baseExteriorPrice, baseInteriorPrice, bundle]);
-
-  // Calculate price impact from service swaps
-  const servicePriceImpact = useMemo(() => {
-    const getServicePrice = (svc: string) => {
-      if (svc === 'gutter_cleaning') return servicePrices.gutterCleaning;
-      if (svc === 'house_wash') return servicePrices.houseWash;
-      if (svc === 'roof_cleaning') return servicePrices.roofCleaning;
-      return 0;
-    };
-
-    const originalCost = defaultIncludedServices.reduce((sum, svc) => sum + getServicePrice(svc), 0);
-    const newCost = selectedServices.reduce((sum, svc) => sum + getServicePrice(svc), 0);
-
-    return newCost - originalCost;
-  }, [selectedServices, defaultIncludedServices, servicePrices]);
-
-  const totalPriceImpact = frequencyPriceImpact + servicePriceImpact;
-  const newAnnualTotal = bundle.annualTotal + totalPriceImpact;
-  const newMonthlyPayment = Math.round(newAnnualTotal / 12);
-
   // Check if there are any changes
   const hasFrequencyChanges =
     exteriorFreq !== bundle.windowFrequencyConfig.exteriorFrequency ||
@@ -186,6 +162,39 @@ export function PlanCustomizeDrawer({
     
     return swaps;
   };
+
+  // ------------------------------------------------------------------
+  // LIVE PREVIEW PRICING — server-authoritative. The in-progress
+  // customization is sent to calculate-plan-options (bundle_tiers) and the
+  // returned tier price is displayed. No local delta/frequency/swap math.
+  // ------------------------------------------------------------------
+  const previewCustomization = useMemo<PlanCustomization>(() => {
+    const removed = defaultIncludedServices.filter((svc) => !selectedServices.includes(svc));
+    const added = selectedServices.filter((svc) => !defaultIncludedServices.includes(svc));
+    const swaps: ServiceSwap[] = [];
+    const swapCount = Math.min(removed.length, added.length);
+    for (let i = 0; i < swapCount; i++) swaps.push({ from: removed[i], to: added[i] });
+    return {
+      windowFrequency: {
+        exteriorFrequency: exteriorFreq as 1 | 2 | 3 | 4,
+        interiorFrequency: interiorFreq as 0 | 1 | 2,
+      },
+      serviceSwaps: swaps,
+      addedServices: added,
+    };
+  }, [defaultIncludedServices, selectedServices, exteriorFreq, interiorFreq]);
+
+  const previewState = useServerBundleTiers(
+    open ? { homeDetails, additionalServices, customizations: { [bundle.tier]: previewCustomization } } : null,
+    { enabled: open, debounceMs: 300 },
+  );
+  const previewTier = previewState.bundles.find((b) => b.tier === bundle.tier) ?? null;
+  const previewLoading = previewState.loading || (open && !previewTier && !previewState.isUnavailable);
+  const newAnnualTotal = previewTier?.annualTotal ?? null;
+  const newMonthlyPayment = previewTier?.monthlyPayment ?? null;
+  // Display-only difference between two server-computed totals (not a price calc).
+  const totalPriceImpact =
+    previewTier != null ? previewTier.annualTotal - bundle.annualTotal : 0;
 
   const handleApply = () => {
     onCustomize({
@@ -225,8 +234,9 @@ export function PlanCustomizeDrawer({
 
   // Check for pricing guardrail violations
   const guardrailWarning = useMemo(() => {
-    // Ensure the customized price doesn't break tier hierarchy
-    // This is a simplified check - real validation happens in useServicePricing
+    // The $25 minimum-tier-buffer guardrail is enforced SERVER-SIDE by the
+    // canonical engine; this is only a soft, display-time hint.
+    if (newAnnualTotal == null) return null;
     if (bundle.tier === 'better' && newAnnualTotal < bundle.annualTotal * 0.7) {
       return "This configuration may be limited to maintain plan hierarchy";
     }
@@ -403,29 +413,43 @@ export function PlanCustomizeDrawer({
               <div className="text-sm font-medium text-muted-foreground">
                 Updated Pricing
               </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className="text-3xl font-bold text-foreground">
-                    {formatPrice(newMonthlyPayment)}
-                    <span className="text-base font-normal text-muted-foreground">
-                      /mo
-                    </span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {formatPrice(newAnnualTotal)} per year
-                  </div>
+              {previewLoading ? (
+                <div className="flex items-center gap-2 py-2 text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm">Updating price…</span>
                 </div>
-                {hasChanges && (
-                  <div
-                    className={`text-sm font-medium ${
-                      totalPriceImpact > 0 ? 'text-amber-600' : totalPriceImpact < 0 ? 'text-green-600' : ''
-                    }`}
-                  >
-                    {totalPriceImpact > 0 ? '+' : ''}
-                    {totalPriceImpact !== 0 && formatPrice(totalPriceImpact) + '/yr'}
+              ) : previewState.isUnavailable || newMonthlyPayment == null || newAnnualTotal == null ? (
+                <div className="flex items-start gap-2 py-2 text-muted-foreground">
+                  <Info className="w-4 h-4 mt-0.5 text-primary" />
+                  <span className="text-sm">
+                    We're temporarily unable to price this configuration. Your changes will still be saved.
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-end justify-between">
+                  <div>
+                    <div className="text-3xl font-bold text-foreground">
+                      {formatPrice(newMonthlyPayment)}
+                      <span className="text-base font-normal text-muted-foreground">
+                        /mo
+                      </span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {formatPrice(newAnnualTotal)} per year
+                    </div>
                   </div>
-                )}
-              </div>
+                  {hasChanges && totalPriceImpact !== 0 && (
+                    <div
+                      className={`text-sm font-medium ${
+                        totalPriceImpact > 0 ? 'text-amber-600' : 'text-green-600'
+                      }`}
+                    >
+                      {totalPriceImpact > 0 ? '+' : ''}
+                      {formatPrice(totalPriceImpact) + '/yr'}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Summary of Changes */}
