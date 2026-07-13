@@ -22,7 +22,7 @@
 // duplicate Jobber quotes. Test identities are suppressed (no live Jobber write)
 // so the full flow can be verified safely.
 // ============================================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jobberGraphQL } from "../_shared/jobberClient.ts";
 import { loadPricing } from "../_shared/loadPricing.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
