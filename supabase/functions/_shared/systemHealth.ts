@@ -48,3 +48,43 @@ export async function recordSystemIssue(supabase: any, input: IssueInput): Promi
     return { isNew: false, id: null };
   }
 }
+
+/**
+ * Mark an operational issue resolved (a successful check). If no row exists yet,
+ * an "info"/resolved marker row is created so the latest-success timestamp is
+ * still recorded. `details` must never contain secrets — only sanitized data
+ * such as { last_success_at }.
+ */
+export async function resolveSystemIssue(
+  supabase: any,
+  dedupeKey: string,
+  details?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const { data: existing } = await supabase
+      .from("system_issues")
+      .select("id")
+      .eq("dedupe_key", dedupeKey)
+      .maybeSingle();
+    if (existing) {
+      await supabase
+        .from("system_issues")
+        .update({
+          status: "resolved",
+          last_seen_at: new Date().toISOString(),
+          details: details ?? undefined,
+        })
+        .eq("id", existing.id);
+    } else if (details) {
+      await supabase.from("system_issues").insert({
+        issue_type: dedupeKey,
+        dedupe_key: dedupeKey,
+        severity: "info",
+        status: "resolved",
+        details,
+      });
+    }
+  } catch {
+    // Health bookkeeping must never break the caller.
+  }
+}
