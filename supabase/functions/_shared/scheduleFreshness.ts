@@ -74,6 +74,36 @@ export async function getMirrorFreshness(
     ? (now - new Date(lastCompleteSyncAt).getTime()) / 60000
     : null;
 
+  // A fresh, cleanly-completed snapshot is authoritative. The near-term autosync
+  // holds the lock for ~75s every 5 minutes, so a routine refresh is in progress
+  // roughly a quarter of the time. That refresh does NOT invalidate the last
+  // completed snapshot — it only produces a newer one. Serving the fresh snapshot
+  // while a routine refresh runs is safe and prevents ~25% of availability
+  // requests from failing closed for no reason.
+  //
+  // This does NOT weaken the 30-minute safety threshold: we still require a
+  // completed sweep no older than `staleThresholdMinutes`. `syncInProgress` is
+  // surfaced for administrators/logs but no longer withholds fresh data.
+  const haveFreshSnapshot =
+    lastCompleteSyncAt !== null &&
+    ageMinutes !== null &&
+    ageMinutes <= staleThresholdMinutes;
+
+  if (haveFreshSnapshot) {
+    return {
+      ok: true,
+      reason: "fresh",
+      ageMinutes,
+      syncInProgress,
+      lastCompleteSyncAt,
+    };
+  }
+
+  // No trustworthy snapshot to serve. Fail closed, but report the most specific
+  // reason so administrators can distinguish the cases:
+  //  - a sync is actively running (first sync, or a refresh recovering staleness)
+  //  - no clean sweep has ever completed
+  //  - the last completed sweep is older than the safety threshold
   if (syncInProgress) {
     return {
       ok: false,
@@ -94,19 +124,9 @@ export async function getMirrorFreshness(
     };
   }
 
-  if (ageMinutes > staleThresholdMinutes) {
-    return {
-      ok: false,
-      reason: "stale",
-      ageMinutes,
-      syncInProgress: false,
-      lastCompleteSyncAt,
-    };
-  }
-
   return {
-    ok: true,
-    reason: "fresh",
+    ok: false,
+    reason: "stale",
     ageMinutes,
     syncInProgress: false,
     lastCompleteSyncAt,
