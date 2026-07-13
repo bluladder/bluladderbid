@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
     try {
       const { data: lead } = await supabase
         .from("chat_conversations")
-        .select("prospect_email, prospect_phone, services_discussed, service_area_status, city, booking_status")
+        .select("prospect_email, prospect_phone, services_discussed, service_area_status, booking_status")
         .eq("id", convo.id)
         .maybeSingle();
       if (lead && (lead.prospect_email || lead.prospect_phone)) {
@@ -120,7 +120,6 @@ Deno.serve(async (req) => {
             lead_source: "ai_chat",
             service_types: Array.isArray(lead.services_discussed) ? lead.services_discussed : [],
             service_area_status: lead.service_area_status ?? null,
-            city: lead.city ?? null,
             quote_status: lead.booking_status ?? null,
           },
         });
