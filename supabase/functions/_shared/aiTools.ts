@@ -19,6 +19,81 @@ import { recordKnowledgeGap } from "./knowledgeGaps.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// How long an availability offer stays selectable before it must be refreshed.
+const OFFER_TTL_MS = 15 * 60 * 1000;
+// After this many consecutive failed slot selections we stop looping and hand
+// the conversation to a human instead of repeatedly saying "just taken".
+const MAX_SLOT_FAILURES_BEFORE_ESCALATION = 2;
+
+/**
+ * A stable signature of the priced job. If any of these change between the
+ * moment slots were offered and the moment the customer confirms, the offer is
+ * invalid and must not be booked against a stale price/duration.
+ */
+function computeQuoteSignature(quote: any): string {
+  const lineItems = (quote?.jobberLineItems ?? quote?.lineItems ?? []).map((li: any) => ({
+    n: li.name ?? li.label ?? "",
+    p: Number(li.unitPrice ?? li.amount ?? 0),
+  }));
+  return JSON.stringify({
+    total: quote?.total ?? null,
+    rule: quote?.ruleVersion ?? null,
+    engine: quote?.engineVersion ?? null,
+    dur: quote?.estimatedDurationMinutes ?? null,
+    items: lineItems,
+  });
+}
+
+/**
+ * Record a failed slot-selection attempt with its exact technical reason (for
+ * the admin conversation view) and bump the consecutive-failure counter. After
+ * MAX_SLOT_FAILURES_BEFORE_ESCALATION consecutive failures, create ONE human
+ * escalation instead of looping. Returns the new failure count.
+ */
+async function recordSlotFailure(
+  ctx: ToolContext,
+  code: string,
+  technicalReason: string,
+  convo: { prospect_name?: string | null; prospect_email?: string | null; prospect_phone?: string | null; service_address?: string | null } | null,
+): Promise<number> {
+  const { data: row } = await ctx.supabase
+    .from("chat_conversations")
+    .select("slot_failure_count")
+    .eq("id", ctx.conversationId)
+    .maybeSingle();
+  const count = (row?.slot_failure_count ?? 0) + 1;
+
+  await ctx.supabase.from("chat_messages").insert({
+    conversation_id: ctx.conversationId,
+    role: "tool",
+    tool_name: "booking_attempt",
+    tool_result: { outcome: "failed", code, technicalReason, attempt: count },
+  });
+  await ctx.supabase.from("chat_conversations").update({
+    slot_failure_count: count,
+    last_error: `slot_selection_failed:${code}`,
+    last_activity_at: new Date().toISOString(),
+  }).eq("id", ctx.conversationId);
+
+  if (count >= MAX_SLOT_FAILURES_BEFORE_ESCALATION) {
+    try {
+      await escalateToHuman(ctx.supabase, {
+        conversationId: ctx.conversationId,
+        category: "booking_needs_attention",
+        severity: "high",
+        prospectName: convo?.prospect_name ?? null,
+        prospectPhone: convo?.prospect_phone ?? null,
+        prospectEmail: convo?.prospect_email ?? null,
+        serviceAddress: convo?.service_address ?? null,
+        summary: `AI could not complete scheduling after ${count} slot-selection failures (last: ${code}). Needs a human to confirm a time.`,
+      });
+    } catch (e) {
+      console.error("slot-failure escalation failed:", e);
+    }
+  }
+  return count;
+}
+
 export const ALLOWED_SERVICES = [
   "window_cleaning",
   "house_wash",
