@@ -308,8 +308,9 @@ serve(async (req) => {
   return json({ event_id: eventId, simulate: !!body.simulate, suppressed: suppression.suppressed, stopped, decisions });
 });
 
+// deno-lint-ignore no-explicit-any
 async function grantedTypes(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   channel: "sms" | "email",
   email: string | null,
   phone: string | null,
@@ -322,8 +323,9 @@ async function grantedTypes(
 }
 
 // Stop active enrollments and cancel their unsent (pending) messages.
+// deno-lint-ignore no-explicit-any
 async function applyStop(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   customerId: string,
   email: string | null,
   phone: string | null,
