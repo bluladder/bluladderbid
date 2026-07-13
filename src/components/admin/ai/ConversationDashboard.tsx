@@ -440,6 +440,39 @@ export function ConversationDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={returnAiOpen} onOpenChange={setReturnAiOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Return this conversation to the AI?</DialogTitle>
+            <DialogDescription>
+              This ends staff handling and lets the assistant respond automatically again on the customer's next message.
+              Nurture stays paused until the customer re-engages. This action is audited.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReturnAiOpen(false)}>Cancel</Button>
+            <Button onClick={returnToAi}>Return to AI</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={testNotifyOpen} onOpenChange={setTestNotifyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send one real internal test alert?</DialogTitle>
+            <DialogDescription>
+              This sends ONE real escalation SMS (and email, if configured) to the primary recipient
+              (Ben, +1 469-215-0144) to verify notifications work end-to-end. It deliberately bypasses
+              test-identity suppression for this one controlled check. No customer is contacted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTestNotifyOpen(false)} disabled={testNotifyBusy}>Cancel</Button>
+            <Button onClick={runTestNotify} disabled={testNotifyBusy}>{testNotifyBusy ? 'Sending…' : 'Send test alert'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
