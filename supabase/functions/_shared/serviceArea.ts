@@ -84,29 +84,46 @@ async function geocode(address: string): Promise<Geo | null | "unavailable"> {
     return "unavailable";
   }
 
-  let resp: Response;
-  try {
-    // Address is URL-encoded; the customer can never inject an arbitrary URL —
-    // the host, path and gateway route are fixed constants here.
-    resp = await fetch(
-      `${GATEWAY_URL}/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=us`,
-      {
-        headers: {
-          Authorization: `Bearer ${lovableKey}`,
-          "X-Connection-Api-Key": connectionKey,
-        },
-      },
-    );
-  } catch {
-    return "unavailable";
+  // Address is URL-encoded; the customer can never inject an arbitrary URL —
+  // the host, path and gateway route are fixed constants here.
+  const url = `${GATEWAY_URL}/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=us`;
+  const headers = {
+    Authorization: `Bearer ${lovableKey}`,
+    "X-Connection-Api-Key": connectionKey,
+  };
+  // Transient gateway/network blips (e.g. a 503 "remote connection failure")
+  // must NOT flip a valid address to validation_unavailable. Retry a few times
+  // with short backoff; only DEFINITIVE Google statuses (OK / ZERO_RESULTS /
+  // INVALID_REQUEST / REQUEST_DENIED) end the loop early.
+  const MAX_ATTEMPTS = 3;
+  let data: any = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let resp: Response | null = null;
+    try {
+      resp = await fetch(url, { headers });
+    } catch {
+      resp = null; // network error → transient
+    }
+    if (resp && resp.ok) {
+      const body = await resp.json().catch(() => null);
+      // A 200 with a transient Google status is still retryable.
+      if (body && (body.status === "OVER_QUERY_LIMIT" || body.status === "UNKNOWN_ERROR")) {
+        console.error("[serviceArea] geocode transient status", body.status);
+      } else {
+        data = body;
+        break;
+      }
+    } else if (resp) {
+      const errBody = await resp.text().catch(() => "");
+      // Never logs the key — only the sanitized gateway status/body preview.
+      console.error("[serviceArea] geocode gateway error", resp.status, errBody.slice(0, 160));
+      // 4xx (other than handled statuses) are not going to fix themselves.
+      if (resp.status < 500 && resp.status !== 429) break;
+    }
+    if (attempt < MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 300 * attempt));
+    }
   }
-  if (!resp.ok) {
-    const errBody = await resp.text().catch(() => "");
-    // Never logs the key — only the sanitized gateway status/body preview.
-    console.error("[serviceArea] geocode gateway error", resp.status, errBody.slice(0, 160));
-    return "unavailable";
-  }
-  const data = await resp.json().catch(() => null);
   if (!data) return "unavailable";
   if (data.status === "ZERO_RESULTS" || data.status === "INVALID_REQUEST") return null;
   if (data.status === "REQUEST_DENIED") {
