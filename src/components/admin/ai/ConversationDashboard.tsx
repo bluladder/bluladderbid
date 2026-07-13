@@ -298,6 +298,8 @@ export function ConversationDashboard() {
                     : <Button size="sm" variant="outline" onClick={markResolved}><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Resolve</Button>)}
                   {!isReadOnly && selected.conversation_state !== 'staff_takeover' &&
                     <Button size="sm" variant="destructive" onClick={() => setTakeoverOpen(true)}>Take over</Button>}
+                  {!isReadOnly && inTakeover &&
+                    <Button size="sm" variant="outline" onClick={() => setReturnAiOpen(true)}><RotateCcw className="w-3.5 h-3.5 mr-1" />Return to AI</Button>}
                 </div>
               </div>
 
