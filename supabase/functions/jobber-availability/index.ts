@@ -1622,6 +1622,25 @@ Deno.serve(async (req) => {
             // Only create slot if both techs are free
             if (!tech1Conflict && !tech2Conflict) {
               const displayTime = snapTo30Min(slotStart, businessTimezone);
+
+              // Free-block bounds for the crew: bounded by the union of both
+              // technicians' busy windows so team options are compacted too.
+              const teamBufferAfterMs = SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000;
+              const mergedBusy = [...tech1DayBusy, ...tech2DayBusy];
+              const prevBusy = mergedBusy
+                .filter((bt) => bt.end.getTime() <= slotStart.getTime())
+                .sort((a, b) => b.end.getTime() - a.end.getTime())[0];
+              const nextBusy = mergedBusy
+                .filter((bt) => bt.start.getTime() >= slotEnd.getTime())
+                .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+              const teamFreeBlockStartMs = Math.max(
+                effectiveStart.getTime(),
+                prevBusy ? prevBusy.expandedEnd.getTime() : effectiveStart.getTime(),
+              );
+              const teamFreeBlockEndMs = Math.min(
+                dayEnd.getTime(),
+                nextBusy ? nextBusy.expandedStart.getTime() - teamBufferAfterMs : dayEnd.getTime(),
+              );
               
               // Calculate combined skill score
               const avgSkillScore = (tech1.skillScore + tech2.skillScore) / 2;
@@ -1651,6 +1670,8 @@ Deno.serve(async (req) => {
                 teamTriggerReason: teamTriggerReason || undefined,
                 gapScore: 80, // Team jobs get a solid base score
                 gapEfficiencyLabel: 'Team booking',
+                freeBlockStartMs: teamFreeBlockStartMs,
+                freeBlockEndMs: teamFreeBlockEndMs,
               };
               
               teamSlots.push(teamSlot);
