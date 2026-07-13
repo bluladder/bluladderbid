@@ -112,6 +112,7 @@ serve(async (req) => {
         phone,
         source: "callrail",
         subject: "Inbound SMS reply",
+        recoverySupabase: supabase,
         metadata: { intent, provider_message_id: providerMessageId },
       });
     } catch (e) {
