@@ -1720,6 +1720,29 @@ Deno.serve(async (req) => {
 
     // Calculate fully booked days (no slots available for any tech)
     const fullyBookedDays: string[] = [];
+
+    // Defect 1 backstop: authoritative per-slot business-day gate. Regardless of
+    // any day/weekday iteration edge case, a slot whose ACTUAL start time falls
+    // on a non-business day (default: weekends) is removed here before anything
+    // is returned to ANY channel (online booking, AI chat, day/week/month grid,
+    // rescheduling, future voice). Weekend Jobber visits still exist as busy
+    // blocks for admins; they never open weekend booking.
+    const weekdayNumMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const slotWeekdayNum = (iso: string): number => {
+      const wd = new Intl.DateTimeFormat("en-US", { timeZone: businessTimezone, weekday: "short" }).format(new Date(iso));
+      return weekdayNumMap[wd] ?? 1;
+    };
+    const isSlotBusinessDay = (s: TimeSlot): boolean =>
+      isBusinessDay(slotWeekdayNum(s.startTime), BUSINESS_HOURS.workDays);
+    for (let i = allSlots.length - 1; i >= 0; i--) {
+      if (!isSlotBusinessDay(allSlots[i])) {
+        const removed = allSlots.splice(i, 1)[0];
+        removed.excluded = true;
+        removed.exclusionReason = { code: "BOUNDARY", message: "Outside business working days" };
+        excludedSlots.push(removed);
+      }
+    }
+
     for (const [dateStr, metrics] of dayMetrics) {
       if (!metrics.hasAnySlot) {
         fullyBookedDays.push(dateStr);
