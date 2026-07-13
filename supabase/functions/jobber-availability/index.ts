@@ -620,6 +620,35 @@ Deno.serve(async (req) => {
       };
     }
 
+    // Fetch schedule-compaction config (additive; falls back to sane defaults).
+    let COMPACTION_CONFIG: ResolvedCompactionConfig = { ...DEFAULT_COMPACTION_SETTINGS };
+    let allowTimeRequestEscalation = DEFAULT_ALLOW_TIME_REQUEST_ESCALATION;
+    const { data: compactionConfigData } = await supabase
+      .from("pricing_config")
+      .select("config_value")
+      .eq("config_key", "schedule_compaction")
+      .maybeSingle();
+    if (compactionConfigData?.config_value) {
+      const cc = compactionConfigData.config_value as Record<string, unknown>;
+      COMPACTION_CONFIG = {
+        minimumFillableGapMinutes:
+          Number(cc.minimum_fillable_gap_minutes ?? DEFAULT_COMPACTION_SETTINGS.minimumFillableGapMinutes),
+        boundaryGapToleranceMinutes:
+          Number(cc.boundary_gap_tolerance_minutes ?? DEFAULT_COMPACTION_SETTINGS.boundaryGapToleranceMinutes),
+        maxCompactSlotsPerBlock:
+          Number(cc.max_compact_slots_per_block ?? DEFAULT_COMPACTION_SETTINGS.maxCompactSlotsPerBlock),
+        shortestFillableServiceMinutes:
+          cc.shortest_fillable_service_minutes == null
+            ? null
+            : Number(cc.shortest_fillable_service_minutes),
+        transitionBufferMinutes:
+          Number(cc.transition_buffer_minutes ?? DEFAULT_COMPACTION_SETTINGS.transitionBufferMinutes ?? 0),
+      };
+      if (typeof cc.allow_time_request_escalation === "boolean") {
+        allowTimeRequestEscalation = cc.allow_time_request_escalation;
+      }
+    }
+
     // Fetch drive time config
     let DRIVE_TIME_CONFIG: DriveTimeConfig = DEFAULT_DRIVE_TIME_CONFIG;
     
