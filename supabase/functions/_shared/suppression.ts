@@ -14,8 +14,6 @@
 //
 // It MUST be called immediately before delivery, not only at enrollment time.
 // ============================================================================
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-
 export function normalizeEmail(raw?: string | null): string | null {
   if (!raw) return null;
   const t = String(raw).trim().toLowerCase();
@@ -37,8 +35,9 @@ export interface SuppressionResult {
   reason: string | null;
 }
 
+// deno-lint-ignore no-explicit-any
 export async function checkSuppression(
-  supabase: SupabaseClient,
+  supabase: any,
   target: { phone?: string | null; email?: string | null },
 ): Promise<SuppressionResult> {
   // 1) Environment-level suppression for non-production environments.
