@@ -1793,3 +1793,159 @@ export function computeBundleTiers(
     manualReviewReasons: [],
   };
 }
+
+// ===========================================================================
+// RECURRING PLAN BOOKING — server-authoritative selection & Jobber line items
+// ===========================================================================
+// These helpers turn a recalculated Good/Better/Best tier (from
+// `computeBundleTiers`) into (a) a validated canonical selection and (b) Jobber
+// line items whose sum reconciles EXACTLY to the tier's annual total. They are
+// the single source of truth shared by the client display and the
+// `jobber-create-service-request` Edge Function — no pricing math is duplicated
+// or trusted from the browser.
+
+export interface PlanJobberLineItem {
+  name: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+/**
+ * Build Jobber quote line items from a recalculated tier. Interior windows are
+ * ALWAYS a separate line item. Every bundle discount, add-on discount,
+ * tier-buffer adjustment, customization delta and rounding difference is folded
+ * into a single reconciling "plan services & savings" line so the line-item sum
+ * equals `tier.annualTotal` to the dollar.
+ */
+export function buildPlanJobberLineItems(
+  tier: BundleTierOption,
+  serviceBases: BundleTierServiceBases,
+): PlanJobberLineItem[] {
+  const cfg = tier.windowFrequencyConfig;
+  const items: PlanJobberLineItem[] = [];
+
+  const extAnnual = Math.round(serviceBases.exteriorWindows * cfg.exteriorFrequency);
+  if (extAnnual > 0) {
+    items.push({
+      name: "Exterior Window Cleaning",
+      description: `${cfg.exteriorFrequency}x per year — annual total`,
+      quantity: 1,
+      unitPrice: extAnnual,
+    });
+  }
+
+  // Interior windows are ALWAYS represented as their own line item.
+  const intAnnual = Math.round(serviceBases.interiorWindows * cfg.interiorFrequency);
+  if (intAnnual > 0) {
+    items.push({
+      name: "Interior Window Cleaning",
+      description: `${cfg.interiorFrequency}x per year — annual total (billed separately)`,
+      quantity: 1,
+      unitPrice: intAnnual,
+    });
+  }
+
+  // Fold everything else (included services, add-ons, all discounts, tier
+  // buffer, customization deltas, rounding) into ONE reconciling line so the
+  // Jobber line-item sum equals the canonical annual total exactly.
+  const remainder = tier.annualTotal - extAnnual - intAnnual;
+  const serviceList = tier.additionalServicesIncluded.length
+    ? tier.additionalServicesIncluded.join(", ")
+    : "Plan membership";
+  const savingsBits: string[] = [];
+  if (tier.bundleDiscount > 0) savingsBits.push(`bundle discount -$${tier.bundleDiscount}`);
+  if (tier.addonSavings > 0) savingsBits.push(`add-on discount -$${tier.addonSavings}`);
+  if (tier.tierBufferAdjustment > 0) savingsBits.push(`tier adjustment +$${tier.tierBufferAdjustment}`);
+  const descParts = [`${tier.name} plan includes: ${serviceList}`];
+  if (savingsBits.length) descParts.push(savingsBits.join("; "));
+  if (remainder !== 0 || items.length === 0) {
+    items.push({
+      name: `${tier.name} Plan Services & Savings`,
+      description: descParts.join(" · "),
+      quantity: 1,
+      unitPrice: remainder,
+    });
+  }
+  return items;
+}
+
+export function planJobberLineItemsTotal(items: PlanJobberLineItem[]): number {
+  return items.reduce((sum, li) => sum + li.unitPrice * li.quantity, 0);
+}
+
+export type PlanSelectionOutcome =
+  | { ok: false; reason: "missing_information"; missing: string[] }
+  | { ok: false; reason: "manual_review_required"; manualReviewReasons: string[] }
+  | { ok: false; reason: "unknown_option"; detail: string }
+  | {
+      ok: false;
+      reason: "pricing_changed";
+      option: BundleTierOption;
+      lineItems: PlanJobberLineItem[];
+      engineVersion: string;
+      ruleVersion: number | null;
+    }
+  | {
+      ok: true;
+      option: BundleTierOption;
+      lineItems: PlanJobberLineItem[];
+      engineVersion: string;
+      ruleVersion: number | null;
+    };
+
+export interface PlanSelectionRequest {
+  tier: string;
+  expectedEngineVersion?: string | null;
+  expectedRuleVersion?: number | null;
+  expectedAnnualTotal?: number | null;
+  confirmPricingChange?: boolean;
+  /** Dollar tolerance for total drift; harmless rounding never triggers a mismatch. */
+  totalTolerance?: number;
+}
+
+/**
+ * Validate a recalculated tiers result against the customer's submitted
+ * selection. Rejects missing-information, manual-review and unknown options, and
+ * flags `pricing_changed` when the engine/rule version or total no longer
+ * matches what the customer saw (unless they explicitly reconfirmed). Browser
+ * totals are used ONLY for mismatch detection and are never authoritative.
+ */
+export function evaluatePlanSelection(
+  result: BundleTiersResult,
+  req: PlanSelectionRequest,
+): PlanSelectionOutcome {
+  if (result.status === "missing_information") {
+    return { ok: false, reason: "missing_information", missing: result.missing ?? [] };
+  }
+  if (result.status === "manual_review_required") {
+    return {
+      ok: false,
+      reason: "manual_review_required",
+      manualReviewReasons: result.manualReviewReasons ?? [],
+    };
+  }
+
+  const option = result.tiers.find((t) => t.tier === req.tier);
+  if (!option) {
+    return { ok: false, reason: "unknown_option", detail: `Unknown plan option: ${req.tier}` };
+  }
+
+  const lineItems = buildPlanJobberLineItems(option, result.serviceBases);
+  const engineVersion = result.engineVersion;
+  const ruleVersion = result.ruleVersion;
+
+  const tol = isValidNumber(req.totalTolerance) ? (req.totalTolerance as number) : 1;
+  const versionChanged =
+    (req.expectedEngineVersion != null && req.expectedEngineVersion !== engineVersion) ||
+    (req.expectedRuleVersion != null && req.expectedRuleVersion !== ruleVersion);
+  const totalChanged =
+    req.expectedAnnualTotal != null &&
+    Math.abs((req.expectedAnnualTotal as number) - option.annualTotal) > tol;
+
+  if ((versionChanged || totalChanged) && !req.confirmPricingChange) {
+    return { ok: false, reason: "pricing_changed", option, lineItems, engineVersion, ruleVersion };
+  }
+
+  return { ok: true, option, lineItems, engineVersion, ruleVersion };
+}
