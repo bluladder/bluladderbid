@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Activity, AlertTriangle, MapPinOff } from 'lucide-react';
+import { Activity, AlertTriangle, MapPinOff, MapPin } from 'lucide-react';
 
 interface Issue {
   id: string;
@@ -24,11 +24,22 @@ const SEV_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'out
 
 export function SystemHealthView() {
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [geocode, setGeocode] = useState<{ status: string; lastSuccessAt: string | null } | null>(null);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from('system_issues').select('*')
       .neq('status', 'resolved').order('last_seen_at', { ascending: false }).limit(200);
     setIssues((data as Issue[]) ?? []);
+    // Geocoding health is tracked as a single dedupe_key row, regardless of status,
+    // so we can both show an open warning and the latest successful check time.
+    const { data: geo } = await supabase.from('system_issues')
+      .select('status, details').eq('dedupe_key', 'geocoding_api').maybeSingle();
+    if (geo) {
+      const details = (geo.details ?? {}) as { last_success_at?: string };
+      setGeocode({ status: geo.status, lastSuccessAt: details.last_success_at ?? null });
+    } else {
+      setGeocode(null);
+    }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -39,16 +50,29 @@ export function SystemHealthView() {
 
   return (
     <div className="space-y-4">
-      {/* Persistent external blocker: Google Geocoding API misconfigured. */}
-      <Alert variant="destructive">
-        <MapPinOff className="h-4 w-4" />
-        <AlertTitle>Service-area address validation unavailable</AlertTitle>
-        <AlertDescription className="text-xs space-y-1">
-          <p>The Google Geocoding API is not authorized for the server-side key, so addresses cannot be automatically validated.</p>
-          <p><strong>Required action:</strong> enable and authorize the Geocoding API for the server-side Google Maps key.</p>
-          <p><strong>Booking impact:</strong> affected addresses fall back to manual review — the AI never guesses eligibility.</p>
-        </AlertDescription>
-      </Alert>
+      {/* Geocoding health is data-driven: the warning clears once a real geocode succeeds. */}
+      {geocode && geocode.status !== 'resolved' ? (
+        <Alert variant="destructive">
+          <MapPinOff className="h-4 w-4" />
+          <AlertTitle>Service-area address validation unavailable</AlertTitle>
+          <AlertDescription className="text-xs space-y-1">
+            <p>Google Geocoding is unreachable through the Maps connector, so addresses cannot be automatically validated.</p>
+            <p><strong>Required action:</strong> confirm the Maps connector key is authorized for the Geocoding API and billing is enabled.</p>
+            <p><strong>Booking impact:</strong> affected addresses fall back to manual review — the AI never guesses eligibility.</p>
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Alert>
+          <MapPin className="h-4 w-4" />
+          <AlertTitle>Service-area address validation operational</AlertTitle>
+          <AlertDescription className="text-xs space-y-1">
+            <p>Geocoding is running through the Maps connector gateway.</p>
+            {geocode?.lastSuccessAt && (
+              <p><strong>Last successful check:</strong> {new Date(geocode.lastSuccessAt).toLocaleString()}</p>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader>
