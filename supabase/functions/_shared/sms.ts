@@ -134,8 +134,9 @@ interface MinimalSupabase {
 }
 
 /** Returns true if the given phone number has opted out of texts. Fails open (false) on error. */
+// deno-lint-ignore no-explicit-any
 export async function isPhoneOptedOut(
-  supabase: MinimalSupabase,
+  supabase: any,
   phone: string | null | undefined,
 ): Promise<boolean> {
   const normalized = normalizePhone(phone);
