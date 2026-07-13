@@ -14,6 +14,8 @@ import { validateServiceArea } from "./serviceArea.ts";
 import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
 import { checkSuppression } from "./suppression.ts";
 import { escalateToHuman } from "./escalation.ts";
+import { customerEscalationMessage } from "./escalationDelivery.ts";
+import { getPhoneByPurpose } from "./phoneConfig.ts";
 import { recordKnowledgeGap } from "./knowledgeGaps.ts";
 import {
   OFFER_TTL_MS,
@@ -681,7 +683,7 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
   // (if a recipient is configured) queue a suppression-checked internal alert.
   const reason = (args.reason as string) || "";
   const unanswered = /can'?t (confirm|answer)|not sure|unsure|don'?t know|missing/i.test(reason);
-  await escalateToHuman(ctx.supabase, {
+  const cbResult = await escalateToHuman(ctx.supabase, {
     conversationId: ctx.conversationId,
     category: unanswered ? "unanswered_question" : "human_request",
     severity: "normal",
@@ -700,7 +702,17 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
     });
   }
 
-  return { status: "saved", event: "callback_requested", message: "Your request was sent to the BluLadder team. A team member will follow up. You can also call us at (866) 242-2583." };
+  // Customer-facing language is derived from the ACTUAL delivery state — never
+  // a claim of delivery the workflow hasn't confirmed. Office number is resolved
+  // from the centralized purpose-based phone config (never hard-coded here).
+  const cbOffice = (await getPhoneByPurpose(ctx.supabase, "primary_public")).display;
+  return {
+    status: "saved",
+    event: "callback_requested",
+    deliveryState: cbResult.deliveryState,
+    severity: cbResult.severity,
+    message: customerEscalationMessage(cbResult.deliveryState, cbResult.severity, cbOffice),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -760,12 +772,17 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
     });
   }
 
+  // The customer-facing sentence is fully determined by the auditable delivery
+  // state. The model must relay this `message` and MUST NOT claim an alert was
+  // sent unless deliveryState is a confirmed-sent state. Office number comes
+  // from the centralized purpose-based phone config.
+  const escOffice = (await getPhoneByPurpose(ctx.supabase, "primary_public")).display;
   return {
     status: "escalated",
     event: "human_escalation",
-    // Never claim the internal SMS was delivered unless it actually was.
-    message: "Your request was sent to the BluLadder team and a team member will follow up. If it's urgent you can call us at (866) 242-2583.",
-    internalAlert: result.alertSent ? "delivered" : "queued_or_pending",
+    deliveryState: result.deliveryState,
+    severity: result.severity,
+    message: customerEscalationMessage(result.deliveryState, result.severity, escOffice),
   };
 }
 

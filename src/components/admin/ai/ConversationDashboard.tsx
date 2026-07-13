@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { useAuth } from '@/hooks/useAuth';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -54,6 +55,8 @@ export function ConversationDashboard() {
   const [replyDraft, setReplyDraft] = useState('');
   const [replyChannel, setReplyChannel] = useState<'sms' | 'email' | 'call'>('sms');
   const [sendingReply, setSendingReply] = useState(false);
+  const [replyDiag, setReplyDiag] = useState<{ correlationId?: string; detail?: string } | null>(null);
+  const [authorizingTest, setAuthorizingTest] = useState(false);
   const [returnAiOpen, setReturnAiOpen] = useState(false);
   const [testNotifyOpen, setTestNotifyOpen] = useState(false);
   const [testNotifyBusy, setTestNotifyBusy] = useState(false);
@@ -155,31 +158,79 @@ export function ConversationDashboard() {
   // ---- Defect 4: staff takeover human reply composer -----------------------
   const inTakeover = !!selected?.staff_takeover_at || selected?.conversation_state === 'staff_takeover';
 
-  const sendReply = async () => {
+  // Refresh the transcript so the outbound staff message (sent OR "would have
+  // sent") appears immediately in the timeline.
+  const refreshTranscript = async (id: string) => {
+    const { data: msgs } = await supabase.from('chat_messages')
+      .select('id, role, content, created_at, tool_name')
+      .eq('conversation_id', id).order('created_at', { ascending: true }).limit(500);
+    setMessages((msgs ?? []) as ChatMsg[]);
+  };
+
+  const sendReply = async (useTestAuthorization = false) => {
     if (!selected) return;
     if (replyChannel === 'call') return; // call is a click-to-call action, not a send
     const msg = replyDraft.trim();
     if (!msg) { toast({ title: 'Write a reply first', variant: 'destructive' }); return; }
     setSendingReply(true);
+    setReplyDiag(null);
+    const chan = replyChannel;
     try {
       const { data, error } = await supabase.functions.invoke('staff-reply', {
-        body: { conversationId: selected.id, channel: replyChannel, message: msg },
+        body: { conversationId: selected.id, channel: chan, message: msg, useTestAuthorization },
       });
-      const d = data as { status?: string; reason?: string } | null;
-      if (error) { toast({ title: 'Reply failed', description: error.message, variant: 'destructive' }); return; }
-      if (d?.status === 'suppressed') {
-        toast({ title: 'Not sent — recipient suppressed', description: d.reason ?? 'Opt-out or suppression in effect', variant: 'destructive' });
+      // Non-2xx (auth / eligibility / validation): read the real reason from context.
+      if (error) {
+        let detail = error.message;
+        let correlationId: string | undefined;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const parsed = JSON.parse(await error.context.text());
+            detail = parsed?.message || detail;
+            correlationId = parsed?.correlationId;
+          } catch { /* keep generic */ }
+        }
+        setReplyDiag({ correlationId, detail });
+        toast({ title: 'Reply not sent', description: detail, variant: 'destructive' });
         return;
       }
-      if (d?.status === 'failed') { toast({ title: 'Delivery failed', description: 'The provider rejected the message.', variant: 'destructive' }); return; }
-      toast({ title: `Reply sent by ${replyChannel.toUpperCase()}` });
+      const d = data as {
+        ok?: boolean; status?: string; deliveryState?: string; reason?: string;
+        message?: string; wouldHaveSent?: boolean; correlationId?: string; errorCode?: string;
+      } | null;
+      // Handled non-delivery outcomes come back 2xx with ok:false + a safe message.
+      if (d && d.ok === false) {
+        setReplyDiag({ correlationId: d.correlationId, detail: `${d.errorCode ?? d.status ?? 'error'}` });
+        if (d.status === 'suppressed') {
+          toast({ title: 'Recorded as "would have sent"', description: d.message ?? 'Recipient is protected by test suppression.' });
+          await refreshTranscript(selected.id);
+        } else {
+          toast({ title: `${chan.toUpperCase()} not sent`, description: d.message ?? 'The message could not be delivered.', variant: 'destructive' });
+        }
+        return;
+      }
+      toast({ title: `Reply sent by ${chan.toUpperCase()}`, description: d?.correlationId ? `Ref ${d.correlationId.slice(0, 8)}` : undefined });
       setReplyDraft('');
-      // refresh the transcript to show the outbound staff message
-      const { data: msgs } = await supabase.from('chat_messages')
-        .select('id, role, content, created_at, tool_name')
-        .eq('conversation_id', selected.id).order('created_at', { ascending: true }).limit(500);
-      setMessages((msgs ?? []) as ChatMsg[]);
+      setReplyDiag(null);
+      await refreshTranscript(selected.id);
     } finally { setSendingReply(false); }
+  };
+
+  // Operations-admin: authorize exactly ONE real reply to a protected test
+  // identity, then send it. The authorization is single-use and short-lived.
+  const authorizeAndSendTestReply = async () => {
+    if (!selected || replyChannel === 'call') return;
+    setAuthorizingTest(true);
+    try {
+      // Cast: RPC is newly added and may not yet be in generated types.
+      const { error } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>,
+      ) => Promise<{ error: { message: string } | null }>)('authorize_staff_test_reply', {
+        p_conversation_id: selected.id, p_channel: replyChannel,
+      });
+      if (error) { toast({ title: 'Authorization failed', description: error.message, variant: 'destructive' }); return; }
+      await sendReply(true);
+    } finally { setAuthorizingTest(false); }
   };
 
   const returnToAi = async () => {
@@ -367,10 +418,33 @@ export function ConversationDashboard() {
                       <Textarea value={replyDraft} onChange={(e) => setReplyDraft(e.target.value)} rows={3} placeholder={`Type your ${replyChannel.toUpperCase()} reply to the customer…`} />
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] text-muted-foreground">Opt-outs and suppression are respected automatically. This is not an internal note.</span>
-                        <Button size="sm" disabled={sendingReply} onClick={sendReply}>
+                        <Button size="sm" disabled={sendingReply} onClick={() => sendReply()}>
                           <Send className="w-3.5 h-3.5 mr-1" />{sendingReply ? 'Sending…' : `Send ${replyChannel.toUpperCase()}`}
                         </Button>
                       </div>
+                      {replyDiag && (
+                        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-[11px] space-y-1">
+                          <div className="flex items-center gap-1 font-medium text-destructive">
+                            <AlertTriangle className="w-3 h-3" /> Delivery diagnostics
+                          </div>
+                          <div className="text-muted-foreground">Reason: {replyDiag.detail || 'unknown'}</div>
+                          {replyDiag.correlationId && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">Ref {replyDiag.correlationId}</span>
+                              <button className="underline" onClick={() => { navigator.clipboard?.writeText(replyDiag.correlationId ?? ''); toast({ title: 'Reference copied' }); }}>Copy</button>
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button className="underline" onClick={() => sendReply()} disabled={sendingReply}>Retry</button>
+                            <a className="underline" href="/admin?tab=knowledge&section=health">Open System Health</a>
+                            {canOverrideBookings && (
+                              <button className="underline text-destructive" onClick={authorizeAndSendTestReply} disabled={authorizingTest || sendingReply}>
+                                {authorizingTest ? 'Authorizing…' : 'Send one real test reply despite test suppression'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
