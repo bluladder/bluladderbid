@@ -233,14 +233,22 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
 }
 
 function persistFacts(supabase: SupabaseClient, conversationId: string, facts: ConversationFacts, state: string) {
+  const c = facts.contact ?? {};
+  const update: Record<string, unknown> = {
+    facts: facts as any,
+    conversation_state: state,
+    selected_slot_id: facts.selectedSlotId ?? null,
+    last_activity_at: new Date().toISOString(),
+  };
+  // Mirror captured contact into the canonical prospect_* columns (used by the
+  // booking tool, consent recording and the admin dashboard). Never overwrite
+  // an existing value with an empty one.
+  if (c.name) update.prospect_name = c.name;
+  if (c.email) update.prospect_email = c.email;
+  if (c.phone) update.prospect_phone = c.phone;
   return supabase
     .from("chat_conversations")
-    .update({
-      facts: facts as any,
-      conversation_state: state,
-      selected_slot_id: facts.selectedSlotId ?? null,
-      last_activity_at: new Date().toISOString(),
-    })
+    .update(update)
     .eq("id", conversationId);
 }
 
