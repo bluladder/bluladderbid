@@ -79,6 +79,47 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
   ].join("\n");
 }
 
+// Milestone states worth (re)summarizing for the admin dashboard. We do NOT
+// summarize on every trivial message — only when the situation materially
+// changed. The transcript remains authoritative; the summary is assistance.
+const SUMMARY_MILESTONES = new Set([
+  "manual_review", "quote_ready", "checking_availability", "awaiting_booking_confirmation",
+  "booked", "callback_requested", "error_recovery",
+]);
+
+function buildSummary(f: ConversationFacts, state: string): string {
+  const parts: string[] = [];
+  const services = (f.services ?? []).map((s) => s.replace(/_/g, " ")).join(", ");
+  parts.push(`Wants: ${services || "not specified yet"}.`);
+  if (f.address) parts.push(`Address: ${f.address}${f.serviceArea?.status ? ` (${f.serviceArea.status})` : ""}.`);
+  const p = f.property ?? {};
+  const propBits = [
+    p.squareFootage ? `${p.squareFootage} sqft` : null,
+    p.stories ? `${p.stories} stories` : null,
+    p.windowCleaningType ? `windows ${p.windowCleaningType}` : null,
+  ].filter(Boolean);
+  if (propBits.length) parts.push(`Property: ${propBits.join(", ")}.`);
+  if (f.quote) {
+    if (f.quote.status === "firm" && f.quote.total != null) parts.push(`Firm quote $${f.quote.total} (pricing v${f.quote.pricingVersion ?? "?"}).`);
+    else if (f.quote.status === "estimated") parts.push("Estimated quote provided (not firm).");
+    else if (f.quote.status === "manual_review_required") parts.push("Needs a manual quote.");
+  }
+  if (f.manualReviewReason) parts.push(`Manual review: ${f.manualReviewReason}.`);
+  if (f.availability?.offeredSlotIds?.length) parts.push(`${f.availability.offeredSlotIds.length} time(s) offered.`);
+  if (f.callbackRequested) parts.push("Requested a human callback.");
+  const next: Record<string, string> = {
+    manual_review: "Prepare a manual quote and follow up.",
+    quote_ready: "Collect contact details, then offer times.",
+    checking_availability: "Offer available appointment times.",
+    awaiting_booking_confirmation: "Awaiting explicit booking confirmation.",
+    booked: "Booked — no action needed.",
+    callback_requested: "Call the customer back.",
+    error_recovery: "Recover the flow or reach out manually.",
+  };
+  parts.push(`Next: ${next[state] ?? "Continue assisting."}`);
+  return parts.join(" ");
+}
+
 async function callModel(messages: any[], tools: any[]): Promise<any> {
   const key = Deno.env.get("LOVABLE_API_KEY");
   if (!key) throw new Error("LOVABLE_API_KEY not configured");
