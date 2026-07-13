@@ -16,7 +16,31 @@ import { toast } from '@/hooks/use-toast';
 import { MessageSquare, Copy, UserCheck, CheckCircle2, RotateCcw, AlertTriangle, Bot, User, Search } from 'lucide-react';
 import { DashboardFilter, FILTER_LABELS, matchesFilter, isAbandoned } from './conversationFilters';
 
-type Convo = Record<string, unknown>;
+interface Convo {
+  id: string;
+  prospect_name?: string | null;
+  prospect_email?: string | null;
+  prospect_phone?: string | null;
+  service_address?: string | null;
+  service_area_status?: string | null;
+  services_discussed?: string[] | null;
+  conversation_state: string;
+  booking_status?: string | null;
+  pricing_version?: number | null;
+  selected_slot_id?: string | null;
+  marketing_consent?: boolean | null;
+  manual_review_reason?: string | null;
+  callback_requested?: boolean | null;
+  needs_attention?: boolean | null;
+  resolved?: boolean | null;
+  internal_notes?: string | null;
+  assigned_admin?: string | null;
+  ai_summary?: string | null;
+  last_activity_at?: string | null;
+  staff_takeover_at?: string | null;
+  staff_takeover_reason?: string | null;
+  facts?: { quote?: { total?: number | null; status?: string | null } } | null;
+}
 type ChatMsg = { id: string; role: string; content: string | null; created_at: string; tool_name?: string | null };
 
 const FILTERS: DashboardFilter[] = [
@@ -95,7 +119,7 @@ export function ConversationDashboard() {
     return m;
   }, [convos]);
 
-  const patchSelected = async (patch: Record<string, any>, successMsg: string) => {
+  const patchSelected = async (patch: Record<string, unknown>, successMsg: string) => {
     if (!selectedId) return;
     const { error } = await supabase.from('chat_conversations').update(patch).eq('id', selectedId);
     if (error) { toast({ title: 'Update failed', description: error.message, variant: 'destructive' }); return; }
