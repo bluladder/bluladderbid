@@ -203,8 +203,9 @@ export function computeState(f: ConversationFacts): ConversationState {
   }
 
   if (!isAvailabilityCurrent(f)) return "checking_availability";
-  if (!isSelectedSlotValid(f)) return "slot_selected"; // slots offered, awaiting a valid pick? -> handled below
-
+  // Slots have been offered for the current quote and we have contact details.
+  // The single booking tool carries the chosen slot + explicit confirmation, so
+  // this is the ready-to-book state; the tool itself re-resolves/expires slots.
   return "awaiting_booking_confirmation";
 }
 
