@@ -111,8 +111,9 @@ export default function ChatWidget() {
     try {
       const reply = await sendChat(sessionRef.current, text, marketingConsent);
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-    } catch (e: any) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, something went wrong: ${e.message}` }]);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'please try again';
+      setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, something went wrong: ${msg}` }]);
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
