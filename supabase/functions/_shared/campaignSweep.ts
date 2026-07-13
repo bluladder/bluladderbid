@@ -8,8 +8,7 @@
 // The pure helpers (computeEffectiveAbandonmentDelay, evaluateAbandonment,
 // abandonmentIdempotencyKey) carry no I/O so they are directly unit-testable.
 // ============================================================================
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { emitCampaignEvent } from "./campaignEmitter.ts";
+import { emitCampaignEvent, type SupabaseLike } from "./campaignEmitter.ts";
 
 // Fallback delay used only when no quote_abandoned campaign configures one.
 export const DEFAULT_ABANDONMENT_DELAY_MINUTES = 1440; // 24h
@@ -124,7 +123,7 @@ export interface SweepResult {
 }
 
 export async function runAbandonmentSweep(
-  supabase: SupabaseClient,
+  supabase: SupabaseLike,
   opts: { batchSize?: number; nowMs?: number } = {},
 ): Promise<SweepResult> {
   const batchSize = opts.batchSize ?? ABANDONMENT_BATCH_SIZE;
@@ -217,7 +216,7 @@ export interface RecoveryResult {
 // idempotency_key makes campaign-event process the existing pending row — it
 // never creates a duplicate.
 export async function recoverPendingCampaignEvents(
-  supabase: SupabaseClient,
+  supabase: SupabaseLike,
   opts: { batchSize?: number; supabaseUrl?: string; serviceKey?: string; graceMs?: number } = {},
 ): Promise<RecoveryResult> {
   const batchSize = opts.batchSize ?? RECOVERY_BATCH_SIZE;
