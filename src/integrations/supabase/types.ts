@@ -2031,11 +2031,13 @@ export type Database = {
         Row: {
           active: boolean
           body_template: string
+          business_hours_only: boolean
           campaign_id: string
           channel: string
           created_at: string
           delay_hours: number
           id: string
+          is_marketing: boolean
           step_order: number
           subject: string | null
           updated_at: string
@@ -2043,11 +2045,13 @@ export type Database = {
         Insert: {
           active?: boolean
           body_template: string
+          business_hours_only?: boolean
           campaign_id: string
           channel?: string
           created_at?: string
           delay_hours?: number
           id?: string
+          is_marketing?: boolean
           step_order?: number
           subject?: string | null
           updated_at?: string
@@ -2055,11 +2059,13 @@ export type Database = {
         Update: {
           active?: boolean
           body_template?: string
+          business_hours_only?: boolean
           campaign_id?: string
           channel?: string
           created_at?: string
           delay_hours?: number
           id?: string
+          is_marketing?: boolean
           step_order?: number
           subject?: string | null
           updated_at?: string
@@ -2082,6 +2088,8 @@ export type Database = {
           campaign_kind: string
           created_at: string
           description: string | null
+          effective_end: string | null
+          effective_start: string | null
           event_name: string | null
           id: string
           lifecycle_status:
@@ -2091,6 +2099,7 @@ export type Database = {
           reentry_cooldown_hours: number | null
           reentry_enabled: boolean
           required_consent: Database["public"]["Enums"]["consent_type"] | null
+          status: string
           stop_conditions: Json
           trigger_event: Database["public"]["Enums"]["sms_trigger_event"] | null
           updated_at: string
@@ -2103,6 +2112,8 @@ export type Database = {
           campaign_kind?: string
           created_at?: string
           description?: string | null
+          effective_end?: string | null
+          effective_start?: string | null
           event_name?: string | null
           id?: string
           lifecycle_status?:
@@ -2112,6 +2123,7 @@ export type Database = {
           reentry_cooldown_hours?: number | null
           reentry_enabled?: boolean
           required_consent?: Database["public"]["Enums"]["consent_type"] | null
+          status?: string
           stop_conditions?: Json
           trigger_event?:
             | Database["public"]["Enums"]["sms_trigger_event"]
@@ -2126,6 +2138,8 @@ export type Database = {
           campaign_kind?: string
           created_at?: string
           description?: string | null
+          effective_end?: string | null
+          effective_start?: string | null
           event_name?: string | null
           id?: string
           lifecycle_status?:
@@ -2135,6 +2149,7 @@ export type Database = {
           reentry_cooldown_hours?: number | null
           reentry_enabled?: boolean
           required_consent?: Database["public"]["Enums"]["consent_type"] | null
+          status?: string
           stop_conditions?: Json
           trigger_event?:
             | Database["public"]["Enums"]["sms_trigger_event"]
