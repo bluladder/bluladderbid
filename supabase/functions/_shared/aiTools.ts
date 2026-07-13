@@ -683,7 +683,7 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
   // (if a recipient is configured) queue a suppression-checked internal alert.
   const reason = (args.reason as string) || "";
   const unanswered = /can'?t (confirm|answer)|not sure|unsure|don'?t know|missing/i.test(reason);
-  await escalateToHuman(ctx.supabase, {
+  const cbResult = await escalateToHuman(ctx.supabase, {
     conversationId: ctx.conversationId,
     category: unanswered ? "unanswered_question" : "human_request",
     severity: "normal",
@@ -702,7 +702,17 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
     });
   }
 
-  return { status: "saved", event: "callback_requested", message: "Your request was sent to the BluLadder team. A team member will follow up. You can also call us at (866) 242-2583." };
+  // Customer-facing language is derived from the ACTUAL delivery state — never
+  // a claim of delivery the workflow hasn't confirmed. Office number is resolved
+  // from the centralized purpose-based phone config (never hard-coded here).
+  const cbOffice = (await getPhoneByPurpose(ctx.supabase, "primary_public")).display;
+  return {
+    status: "saved",
+    event: "callback_requested",
+    deliveryState: cbResult.deliveryState,
+    severity: cbResult.severity,
+    message: customerEscalationMessage(cbResult.deliveryState, cbResult.severity, cbOffice),
+  };
 }
 
 // ---------------------------------------------------------------------------
