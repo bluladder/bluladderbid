@@ -398,12 +398,17 @@ export function ConversationDashboard() {
                 <p className="text-xs font-medium text-muted-foreground mb-2">Transcript</p>
                 <ScrollArea className="h-[240px] rounded-lg border border-border p-3">
                   <div className="space-y-2">
-                    {messages.filter((m) => m.role === 'user' || m.role === 'assistant').map((m) => (
+                    {messages.filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'staff').map((m) => (
                       <div key={m.id} className="flex gap-2 text-sm">
                         {m.role === 'user'
                           ? <User className="w-3.5 h-3.5 mt-1 shrink-0 text-muted-foreground" />
+                          : m.role === 'staff'
+                          ? <Headset className="w-3.5 h-3.5 mt-1 shrink-0 text-primary" />
                           : <Bot className="w-3.5 h-3.5 mt-1 shrink-0 text-primary" />}
-                        <span className={m.role === 'user' ? 'text-foreground' : 'text-muted-foreground'}>{m.content}</span>
+                        <span className={m.role === 'user' ? 'text-foreground' : 'text-muted-foreground'}>
+                          {m.role === 'staff' && <span className="font-medium text-primary mr-1">[Staff]</span>}
+                          {m.content}
+                        </span>
                       </div>
                     ))}
                     {messages.length === 0 && <p className="text-xs text-muted-foreground">No messages.</p>}
