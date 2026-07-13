@@ -118,19 +118,28 @@ export function PricingPreview() {
   const [scenarioName, setScenarioName] = useState('');
   const [scenarioDescription, setScenarioDescription] = useState('');
   
-  const prices = useMemo(() => {
-    if (!pricing) return null;
-    return calculatePrices(homeDetails, additionalServices, pricing);
-  }, [homeDetails, additionalServices, pricing]);
-  
-  // Calculate prices for all sample scenarios
+  // AUTHORITATIVE custom-builder quote — same calculate-quote endpoint the
+  // customer UI uses. Identical inputs → identical totals, line items and trace.
+  const customQuoteState = useServerQuoteCalculation(
+    previewInput(homeDetails, additionalServices),
+  );
+  const prices = useMemo(
+    () => (customQuoteState.quote ? displayPrices(customQuoteState.quote) : null),
+    [customQuoteState.quote],
+  );
+
+  // AUTHORITATIVE sample-scenario quotes — batched through the same endpoint.
+  const sampleRequests = useMemo<QuoteRequest[]>(
+    () => SAMPLE_SCENARIOS.map((s, i) => ({ id: `sample_${i}`, input: previewInput(s.homeDetails, s.services) })),
+    [],
+  );
+  const sampleQuotes = useServerQuotes(sampleRequests);
   const scenarioPrices = useMemo(() => {
-    if (!pricing) return [];
-    return SAMPLE_SCENARIOS.map((scenario) => ({
+    return SAMPLE_SCENARIOS.map((scenario, i) => ({
       ...scenario,
-      prices: calculatePrices(scenario.homeDetails, scenario.services, pricing),
+      prices: displayPrices(sampleQuotes.byId[`sample_${i}`] ?? null),
     }));
-  }, [pricing]);
+  }, [sampleQuotes]);
   
   const handleSaveScenario = () => {
     if (!scenarioName.trim()) return;
