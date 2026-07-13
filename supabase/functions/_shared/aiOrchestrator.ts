@@ -164,6 +164,10 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
         discountCode: (args.discountCode as string) ?? facts.discountCode ?? null,
         property: { ...(facts.property ?? {}), ...property },
       };
+      // Capture any contact details the model gathered along the way.
+      if (args.name || args.email || args.phone) {
+        patch.contact = { name: args.name as string, email: args.email as string, phone: args.phone as string };
+      }
       // compute inputsKey against the merged facts so it matches isQuoteCurrent
       const projected = mergeFacts(facts, patch);
       patch.quote = {
@@ -183,13 +187,17 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
     case "get_bluladder_availability": {
       if (result?.status !== "ok") return {};
       const offeredSlotIds = Array.isArray(result?.slots) ? result.slots.map((s: any) => s.slotId) : [];
-      return {
+      const patch: Partial<ConversationFacts> = {
         availability: {
           offeredSlotIds,
           forQuoteKey: quoteInputsKey(facts),
           fetchedAt: new Date().toISOString(),
         },
       };
+      if (args.name || args.email || args.phone) {
+        patch.contact = { name: args.name as string, email: args.email as string, phone: args.phone as string };
+      }
+      return patch;
     }
     case "create_bluladder_booking": {
       const map: Record<string, string> = {
