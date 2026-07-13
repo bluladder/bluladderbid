@@ -12,6 +12,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getBearer, verifyAdmin } from "../_shared/auth.ts";
 import { getCallRailConfig, sendCallRailSms } from "../_shared/sms.ts";
+import { getPhoneByPurpose } from "../_shared/phoneConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,7 +67,10 @@ Deno.serve(async (req) => {
     smsStatus = "not_configured";
     smsError = "CallRail is not configured";
   } else {
-    const r = await sendCallRailSms(cr, recipient.phone, messageBody);
+    // Send FROM the approved BluLadder app number (purpose=app_ai).
+    const appPhone = await getPhoneByPurpose(supabase, "app_ai");
+    const cfg = { ...cr, senderNumber: appPhone.e164 || cr.senderNumber };
+    const r = await sendCallRailSms(cfg, recipient.phone, messageBody);
     smsStatus = r.ok ? "sent" : "failed";
     smsError = r.ok ? null : (r.error ?? "unknown").slice(0, 200);
   }
