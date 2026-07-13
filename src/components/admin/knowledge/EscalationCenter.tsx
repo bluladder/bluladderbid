@@ -13,6 +13,9 @@ interface Esc {
   prospect_name: string | null; prospect_phone: string | null; summary: string | null;
   alert_status: string; assigned_recipient: string | null; created_at: string;
   conversation_id: string | null;
+  sms_alert_status?: string | null; email_alert_status?: string | null;
+  alert_error?: string | null; email_alert_error?: string | null;
+  alert_last_attempt_at?: string | null;
 }
 interface Recipient {
   id: string; name: string; phone: string; role: string; is_enabled: boolean;
@@ -25,7 +28,11 @@ interface Settings {
 }
 
 const ALERT_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  sent: 'default', pending: 'secondary', suppressed: 'outline', no_recipient: 'destructive', failed: 'destructive',
+  sms_sent: 'default', email_sent: 'default', partially_delivered: 'secondary',
+  queued: 'secondary', created: 'secondary', suppressed: 'outline',
+  no_recipient_configured: 'destructive', delivery_failed: 'destructive',
+  // legacy
+  sent: 'default', pending: 'secondary', no_recipient: 'destructive', failed: 'destructive',
 };
 
 export function EscalationCenter() {
