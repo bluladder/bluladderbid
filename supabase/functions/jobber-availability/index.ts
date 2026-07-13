@@ -2000,12 +2000,14 @@ Deno.serve(async (req) => {
         nextAvailable,
         rankedSlots,
         fullyBookedDays,
-        totalAvailable: allSlots.length,
+        totalAvailable: shownSlots.length,
         eligibleTechnicians: eligibleTechs.map(t => ({ 
           id: t.id, 
           name: t.name, 
           durationMinutes: t.durationMinutes 
         })),
+        // Admin-only: raw availability + compaction decisions/reasons/config.
+        ...(includeExcluded ? buildAdminPayload() : {}),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
