@@ -17,6 +17,7 @@ export type Database = {
       ai_escalations: {
         Row: {
           alert_count: number
+          alert_error: string | null
           alert_status: string
           assigned_recipient: string | null
           best_callback_time: string | null
@@ -25,6 +26,8 @@ export type Database = {
           claimed_by: string | null
           conversation_id: string | null
           created_at: string
+          email_alert_error: string | null
+          email_alert_status: string | null
           id: string
           last_alert_severity: string | null
           prospect_email: string | null
@@ -43,6 +46,7 @@ export type Database = {
         }
         Insert: {
           alert_count?: number
+          alert_error?: string | null
           alert_status?: string
           assigned_recipient?: string | null
           best_callback_time?: string | null
@@ -51,6 +55,8 @@ export type Database = {
           claimed_by?: string | null
           conversation_id?: string | null
           created_at?: string
+          email_alert_error?: string | null
+          email_alert_status?: string | null
           id?: string
           last_alert_severity?: string | null
           prospect_email?: string | null
@@ -69,6 +75,7 @@ export type Database = {
         }
         Update: {
           alert_count?: number
+          alert_error?: string | null
           alert_status?: string
           assigned_recipient?: string | null
           best_callback_time?: string | null
@@ -77,6 +84,8 @@ export type Database = {
           claimed_by?: string | null
           conversation_id?: string | null
           created_at?: string
+          email_alert_error?: string | null
+          email_alert_status?: string | null
           id?: string
           last_alert_severity?: string | null
           prospect_email?: string | null
@@ -843,6 +852,7 @@ export type Database = {
           service_area_status: string | null
           services_discussed: Json
           session_token: string
+          slot_failure_count: number
           staff_takeover_at: string | null
           staff_takeover_by: string | null
           staff_takeover_reason: string | null
@@ -884,6 +894,7 @@ export type Database = {
           service_area_status?: string | null
           services_discussed?: Json
           session_token: string
+          slot_failure_count?: number
           staff_takeover_at?: string | null
           staff_takeover_by?: string | null
           staff_takeover_reason?: string | null
@@ -925,6 +936,7 @@ export type Database = {
           service_area_status?: string | null
           services_discussed?: Json
           session_token?: string
+          slot_failure_count?: number
           staff_takeover_at?: string | null
           staff_takeover_by?: string | null
           staff_takeover_reason?: string | null
@@ -1411,6 +1423,7 @@ export type Database = {
         Row: {
           categories: Json
           created_at: string
+          email: string | null
           handles_urgent: boolean
           id: string
           is_enabled: boolean
@@ -1423,6 +1436,7 @@ export type Database = {
         Insert: {
           categories?: Json
           created_at?: string
+          email?: string | null
           handles_urgent?: boolean
           id?: string
           is_enabled?: boolean
@@ -1435,6 +1449,7 @@ export type Database = {
         Update: {
           categories?: Json
           created_at?: string
+          email?: string | null
           handles_urgent?: boolean
           id?: string
           is_enabled?: boolean
@@ -1454,8 +1469,10 @@ export type Database = {
           business_hours_start: number
           created_at: string
           dashboard_base_url: string | null
+          email_alerts_enabled: boolean
           id: string
           internal_alerts_enabled: boolean
+          notify_email: string | null
           singleton: boolean
           updated_at: string
         }
@@ -1466,8 +1483,10 @@ export type Database = {
           business_hours_start?: number
           created_at?: string
           dashboard_base_url?: string | null
+          email_alerts_enabled?: boolean
           id?: string
           internal_alerts_enabled?: boolean
+          notify_email?: string | null
           singleton?: boolean
           updated_at?: string
         }
@@ -1478,8 +1497,10 @@ export type Database = {
           business_hours_start?: number
           created_at?: string
           dashboard_base_url?: string | null
+          email_alerts_enabled?: boolean
           id?: string
           internal_alerts_enabled?: boolean
+          notify_email?: string | null
           singleton?: boolean
           updated_at?: string
         }
