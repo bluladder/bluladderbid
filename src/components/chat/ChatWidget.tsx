@@ -13,6 +13,11 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
 const SESSION_KEY = 'bluladder_chat_session';
 const MESSAGES_KEY = 'bluladder_chat_messages';
 
+// The exact, opt-in-only marketing consent language shown next to the checkbox.
+// It is recorded verbatim through the canonical consent service on the server.
+export const MARKETING_CONSENT_LANGUAGE =
+  'Send me occasional promotions and offers from BluLadder by text or email. Not required to get a quote or book.';
+
 function getSessionToken(): string {
   try {
     let token = localStorage.getItem(SESSION_KEY);
@@ -37,14 +42,20 @@ function loadStoredMessages(): Msg[] {
   }
 }
 
-async function sendChat(sessionToken: string, message: string): Promise<string> {
+async function sendChat(sessionToken: string, message: string, marketingConsent: boolean): Promise<string> {
   const resp = await fetch(CHAT_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
     },
-    body: JSON.stringify({ sessionToken, message }),
+    body: JSON.stringify({
+      sessionToken,
+      message,
+      // Only ever sent when explicitly ticked; never defaulted to true.
+      marketingConsent,
+      consentLanguage: marketingConsent ? MARKETING_CONSENT_LANGUAGE : undefined,
+    }),
   });
   const data = await resp.json().catch(() => ({ error: 'Connection failed' }));
   if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
