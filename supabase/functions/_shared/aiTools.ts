@@ -772,12 +772,17 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
     });
   }
 
+  // The customer-facing sentence is fully determined by the auditable delivery
+  // state. The model must relay this `message` and MUST NOT claim an alert was
+  // sent unless deliveryState is a confirmed-sent state. Office number comes
+  // from the centralized purpose-based phone config.
+  const escOffice = (await getPhoneByPurpose(ctx.supabase, "primary_public")).display;
   return {
     status: "escalated",
     event: "human_escalation",
-    // Never claim the internal SMS was delivered unless it actually was.
-    message: "Your request was sent to the BluLadder team and a team member will follow up. If it's urgent you can call us at (866) 242-2583.",
-    internalAlert: result.alertSent ? "delivered" : "queued_or_pending",
+    deliveryState: result.deliveryState,
+    severity: result.severity,
+    message: customerEscalationMessage(result.deliveryState, result.severity, escOffice),
   };
 }
 
