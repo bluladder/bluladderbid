@@ -14,6 +14,8 @@ import { validateServiceArea } from "./serviceArea.ts";
 import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
 import { checkSuppression } from "./suppression.ts";
 import { escalateToHuman } from "./escalation.ts";
+import { customerEscalationMessage } from "./escalationDelivery.ts";
+import { getPhoneByPurpose } from "./phoneConfig.ts";
 import { recordKnowledgeGap } from "./knowledgeGaps.ts";
 import {
   OFFER_TTL_MS,
