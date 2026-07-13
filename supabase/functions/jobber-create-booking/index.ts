@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { jobberGraphQL } from "../_shared/jobberClient.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
