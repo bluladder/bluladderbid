@@ -14,6 +14,95 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_escalations: {
+        Row: {
+          alert_count: number
+          alert_status: string
+          assigned_recipient: string | null
+          best_callback_time: string | null
+          category: string
+          claimed_at: string | null
+          claimed_by: string | null
+          conversation_id: string | null
+          created_at: string
+          id: string
+          last_alert_severity: string | null
+          prospect_email: string | null
+          prospect_name: string | null
+          prospect_phone: string | null
+          record_ref: string | null
+          requested_contact_method: string | null
+          resolution_notes: string | null
+          resolved_at: string | null
+          service_address: string | null
+          service_requested: string | null
+          severity: string
+          status: string
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          alert_count?: number
+          alert_status?: string
+          assigned_recipient?: string | null
+          best_callback_time?: string | null
+          category: string
+          claimed_at?: string | null
+          claimed_by?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          last_alert_severity?: string | null
+          prospect_email?: string | null
+          prospect_name?: string | null
+          prospect_phone?: string | null
+          record_ref?: string | null
+          requested_contact_method?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          service_address?: string | null
+          service_requested?: string | null
+          severity?: string
+          status?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          alert_count?: number
+          alert_status?: string
+          assigned_recipient?: string | null
+          best_callback_time?: string | null
+          category?: string
+          claimed_at?: string | null
+          claimed_by?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          last_alert_severity?: string | null
+          prospect_email?: string | null
+          prospect_name?: string | null
+          prospect_phone?: string | null
+          record_ref?: string | null
+          requested_contact_method?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          service_address?: string | null
+          service_requested?: string | null
+          severity?: string
+          status?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_escalations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       autosync_config: {
         Row: {
           created_at: string
@@ -370,6 +459,8 @@ export type Database = {
       }
       business_knowledge: {
         Row: {
+          applicable_region: string | null
+          applicable_service: string | null
           category: string
           content: string
           created_at: string
@@ -377,13 +468,25 @@ export type Database = {
           id: string
           is_active: boolean
           knowledge_key: string
+          last_changed_at: string | null
+          last_checked_at: string | null
+          pending_content: string | null
+          pending_source_hash: string | null
+          priority: number
           requires_admin_input: boolean
+          requires_owner_review: boolean
+          review_status: string
           revision: number
           sort_order: number
+          source_hash: string | null
+          source_page: string | null
+          source_type: string
           title: string
           updated_at: string
         }
         Insert: {
+          applicable_region?: string | null
+          applicable_service?: string | null
           category: string
           content: string
           created_at?: string
@@ -391,13 +494,25 @@ export type Database = {
           id?: string
           is_active?: boolean
           knowledge_key: string
+          last_changed_at?: string | null
+          last_checked_at?: string | null
+          pending_content?: string | null
+          pending_source_hash?: string | null
+          priority?: number
           requires_admin_input?: boolean
+          requires_owner_review?: boolean
+          review_status?: string
           revision?: number
           sort_order?: number
+          source_hash?: string | null
+          source_page?: string | null
+          source_type?: string
           title: string
           updated_at?: string
         }
         Update: {
+          applicable_region?: string | null
+          applicable_service?: string | null
           category?: string
           content?: string
           created_at?: string
@@ -405,9 +520,19 @@ export type Database = {
           id?: string
           is_active?: boolean
           knowledge_key?: string
+          last_changed_at?: string | null
+          last_checked_at?: string | null
+          pending_content?: string | null
+          pending_source_hash?: string | null
+          priority?: number
           requires_admin_input?: boolean
+          requires_owner_review?: boolean
+          review_status?: string
           revision?: number
           sort_order?: number
+          source_hash?: string | null
+          source_page?: string | null
+          source_type?: string
           title?: string
           updated_at?: string
         }
@@ -1282,6 +1407,84 @@ export type Database = {
         }
         Relationships: []
       }
+      escalation_recipients: {
+        Row: {
+          categories: Json
+          created_at: string
+          handles_urgent: boolean
+          id: string
+          is_enabled: boolean
+          name: string
+          phone: string
+          role: string
+          updated_at: string
+          verified_at: string | null
+        }
+        Insert: {
+          categories?: Json
+          created_at?: string
+          handles_urgent?: boolean
+          id?: string
+          is_enabled?: boolean
+          name: string
+          phone: string
+          role?: string
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Update: {
+          categories?: Json
+          created_at?: string
+          handles_urgent?: boolean
+          id?: string
+          is_enabled?: boolean
+          name?: string
+          phone?: string
+          role?: string
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Relationships: []
+      }
+      escalation_settings: {
+        Row: {
+          after_hours_behavior: string
+          alert_cooldown_minutes: number
+          business_hours_end: number
+          business_hours_start: number
+          created_at: string
+          dashboard_base_url: string | null
+          id: string
+          internal_alerts_enabled: boolean
+          singleton: boolean
+          updated_at: string
+        }
+        Insert: {
+          after_hours_behavior?: string
+          alert_cooldown_minutes?: number
+          business_hours_end?: number
+          business_hours_start?: number
+          created_at?: string
+          dashboard_base_url?: string | null
+          id?: string
+          internal_alerts_enabled?: boolean
+          singleton?: boolean
+          updated_at?: string
+        }
+        Update: {
+          after_hours_behavior?: string
+          alert_cooldown_minutes?: number
+          business_hours_end?: number
+          business_hours_start?: number
+          created_at?: string
+          dashboard_base_url?: string | null
+          id?: string
+          internal_alerts_enabled?: boolean
+          singleton?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       jobber_busy_blocks: {
         Row: {
           client_address: string | null
@@ -1419,6 +1622,71 @@ export type Database = {
           topic?: string | null
         }
         Relationships: []
+      }
+      knowledge_gaps: {
+        Row: {
+          category: string | null
+          conversation_count: number
+          created_at: string
+          example_wording: string | null
+          first_seen_at: string
+          handoff_count: number
+          id: string
+          internal_notes: string | null
+          last_seen_at: string
+          normalized_question: string
+          owner_id: string | null
+          reason: string | null
+          related_knowledge_id: string | null
+          service: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string | null
+          conversation_count?: number
+          created_at?: string
+          example_wording?: string | null
+          first_seen_at?: string
+          handoff_count?: number
+          id?: string
+          internal_notes?: string | null
+          last_seen_at?: string
+          normalized_question: string
+          owner_id?: string | null
+          reason?: string | null
+          related_knowledge_id?: string | null
+          service?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string | null
+          conversation_count?: number
+          created_at?: string
+          example_wording?: string | null
+          first_seen_at?: string
+          handoff_count?: number
+          id?: string
+          internal_notes?: string | null
+          last_seen_at?: string
+          normalized_question?: string
+          owner_id?: string | null
+          reason?: string | null
+          related_knowledge_id?: string | null
+          service?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_gaps_related_knowledge_id_fkey"
+            columns: ["related_knowledge_id"]
+            isOneToOne: false
+            referencedRelation: "business_knowledge"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       message_templates: {
         Row: {
@@ -1570,6 +1838,96 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      phone_number_revisions: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          display_format: string
+          e164: string
+          id: string
+          is_active: boolean
+          is_public: boolean
+          label: string
+          phone_id: string
+          purpose: string
+          revision: number
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          display_format: string
+          e164: string
+          id?: string
+          is_active: boolean
+          is_public: boolean
+          label: string
+          phone_id: string
+          purpose: string
+          revision: number
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          display_format?: string
+          e164?: string
+          id?: string
+          is_active?: boolean
+          is_public?: boolean
+          label?: string
+          phone_id?: string
+          purpose?: string
+          revision?: number
+        }
+        Relationships: []
+      }
+      phone_numbers: {
+        Row: {
+          created_at: string
+          description: string | null
+          display_format: string
+          e164: string
+          effective_date: string
+          id: string
+          is_active: boolean
+          is_public: boolean
+          label: string
+          provider: string | null
+          purpose: string
+          revision: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          display_format: string
+          e164: string
+          effective_date?: string
+          id?: string
+          is_active?: boolean
+          is_public?: boolean
+          label: string
+          provider?: string | null
+          purpose: string
+          revision?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          display_format?: string
+          e164?: string
+          effective_date?: string
+          id?: string
+          is_active?: boolean
+          is_public?: boolean
+          label?: string
+          provider?: string | null
+          purpose?: string
+          revision?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       pricing_config: {
         Row: {
@@ -2325,6 +2683,74 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      system_issues: {
+        Row: {
+          associated_ref: string | null
+          conversation_id: string | null
+          created_at: string
+          dedupe_key: string
+          details: Json | null
+          first_seen_at: string
+          id: string
+          issue_type: string
+          last_alerted_at: string | null
+          last_seen_at: string
+          occurrence_count: number
+          owner_id: string | null
+          resolution_notes: string | null
+          severity: string
+          status: string
+          suggested_action: string | null
+          updated_at: string
+        }
+        Insert: {
+          associated_ref?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          dedupe_key: string
+          details?: Json | null
+          first_seen_at?: string
+          id?: string
+          issue_type: string
+          last_alerted_at?: string | null
+          last_seen_at?: string
+          occurrence_count?: number
+          owner_id?: string | null
+          resolution_notes?: string | null
+          severity?: string
+          status?: string
+          suggested_action?: string | null
+          updated_at?: string
+        }
+        Update: {
+          associated_ref?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          dedupe_key?: string
+          details?: Json | null
+          first_seen_at?: string
+          id?: string
+          issue_type?: string
+          last_alerted_at?: string | null
+          last_seen_at?: string
+          occurrence_count?: number
+          owner_id?: string | null
+          resolution_notes?: string | null
+          severity?: string
+          status?: string
+          suggested_action?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_issues_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       system_test_config: {
         Row: {
