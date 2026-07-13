@@ -378,8 +378,8 @@ Deno.serve(async (req) => {
         if (loaded.ok && loaded.pricing) {
           const engineResult = calculateQuote(
             {
-              homeDetails: booking.homeDetails as QuoteInput["homeDetails"],
-              additionalServices: booking.additionalServices as QuoteInput["additionalServices"],
+              homeDetails: booking.homeDetails as unknown as QuoteInput["homeDetails"],
+              additionalServices: booking.additionalServices as unknown as QuoteInput["additionalServices"],
               discount: serverDiscount,
               promotion:
                 booking.promotion && typeof booking.promotion.id === "string"
