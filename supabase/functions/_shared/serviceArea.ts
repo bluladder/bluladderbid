@@ -30,6 +30,8 @@ export interface ServiceAreaResult {
   county?: string;
   state?: string;
   formattedAddress?: string;
+  latitude?: number;
+  longitude?: number;
   reason?: string;
   customerMessage: string;
 }
@@ -160,6 +162,15 @@ export async function validateServiceArea(
 
   const geo = await geocode(address);
   if (geo === "unavailable") {
+    // Hard API/gateway failure → open (or refresh) the health warning. Only the
+    // sanitized status is stored; no key or URL ever touches the record.
+    await recordSystemIssue(supabase, {
+      issueType: "geocoding_api",
+      dedupeKey: GEOCODE_HEALTH_KEY,
+      severity: "critical",
+      suggestedAction:
+        "Google Geocoding is unreachable through the Maps connector. Verify the connector key is authorized for the Geocoding API and billing is enabled.",
+    });
     return {
       status: "validation_unavailable",
       customerMessage: "I can't verify the address right now — I can take your details and have the team confirm eligibility.",
@@ -172,6 +183,12 @@ export async function validateServiceArea(
     };
   }
 
+  // A real geocode succeeded → clear any open geocoding warning and stamp the
+  // latest successful check (timestamp only, never any secret).
+  await resolveSystemIssue(supabase, GEOCODE_HEALTH_KEY, {
+    last_success_at: new Date().toISOString(),
+  });
+
   const city = norm(geo.city || "");
   const county = norm(geo.county || "");
   const state = norm(geo.state || "");
@@ -183,6 +200,8 @@ export async function validateServiceArea(
       county: geo.county,
       state: geo.state,
       formattedAddress: geo.formatted,
+      latitude: geo.lat,
+      longitude: geo.lng,
       customerMessage: "I need a bit more of the address (city and ZIP) to check availability.",
     };
   }
@@ -198,6 +217,8 @@ export async function validateServiceArea(
       county: geo.county,
       state: geo.state,
       formattedAddress: geo.formatted,
+      latitude: geo.lat,
+      longitude: geo.lng,
       customerMessage: `Great news — ${geo.city} is in our service area.`,
     };
   }
@@ -212,6 +233,8 @@ export async function validateServiceArea(
     county: geo.county,
     state: geo.state,
     formattedAddress: geo.formatted,
+    latitude: geo.lat,
+    longitude: geo.lng,
     reason,
     customerMessage: config.outOfAreaMessage,
   };
