@@ -231,9 +231,26 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
     price: Number(li.unitPrice ?? li.amount ?? 0),
   }));
 
+  // Server-side date safety: the model may supply a startDate derived from a
+  // stale notion of "today" (observed: it passed a past month), which makes
+  // jobber-availability search a window entirely in the past and return zero
+  // slots. Never let a past/invalid date drive the search — clamp to undefined
+  // so the function defaults to the real current day.
+  const todayCentral = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const rawStartDate = typeof args.startDate === "string" ? args.startDate.trim() : "";
+  const startDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(rawStartDate) && rawStartDate >= todayCentral
+      ? rawStartDate
+      : undefined;
+
   const { status, json } = await callFunction("jobber-availability", {
     services,
-    startDate: (args.startDate as string) || undefined,
+    startDate,
     daysToCheck: Math.min(Number(args.daysToCheck) || 14, 30),
     customerAddress: (args.address as string) || undefined,
     mode: "recommended",
