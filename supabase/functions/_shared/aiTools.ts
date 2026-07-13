@@ -658,4 +658,24 @@ export const TOOL_DEFINITIONS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "record_consent",
+      description: "Record an EXPLICIT communication-consent decision the customer just made. Use a SEPARATE call for each channel/type. Never assume marketing consent from a phone number, a chat, or a quote request — only call with consentType 'marketing' when the customer explicitly opted in to occasional promotions. Use 'requested_follow_up' when they asked to be contacted about THIS request. Always pass the exact languageShown you presented. Never send SMS or email yourself.",
+      parameters: {
+        type: "object",
+        properties: {
+          channel: { type: "string", enum: ["sms", "email"] },
+          consentType: { type: "string", enum: ["transactional", "requested_follow_up", "marketing"] },
+          granted: { type: "boolean" },
+          email: { type: "string" },
+          phone: { type: "string" },
+          languageShown: { type: "string", description: "The exact consent wording shown to the customer." },
+        },
+        required: ["channel", "consentType", "granted", "languageShown"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
