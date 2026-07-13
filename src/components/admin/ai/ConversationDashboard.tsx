@@ -213,8 +213,17 @@ export function ConversationDashboard() {
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2"><Bot className="w-5 h-5" /> AI Conversations</CardTitle>
-          <CardDescription>Live view of website-chat prospects, their deterministic state, and handoff tools.</CardDescription>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2"><Bot className="w-5 h-5" /> AI Conversations</CardTitle>
+              <CardDescription>Live view of website-chat prospects, their deterministic state, and handoff tools.</CardDescription>
+            </div>
+            {canOverrideBookings && (
+              <Button size="sm" variant="outline" onClick={() => setTestNotifyOpen(true)}>
+                <Bell className="w-3.5 h-3.5 mr-1" /> Test escalation alert
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="relative">
