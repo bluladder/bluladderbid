@@ -790,6 +790,25 @@ export const TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
+      name: "escalate_to_human",
+      description: "Escalate to a real BluLadder team member. Use for: a complaint, possible damage/restoration, a billing dispute, when pricing or availability cannot be verified, when booking/cancellation needs attention, when service-area validation is unavailable, when you cannot answer an important question, when the conversation is repeatedly confused, or an urgent/time-sensitive issue. Creates ONE internal escalation; do not call repeatedly for the same issue.",
+      parameters: {
+        type: "object",
+        properties: {
+          category: { type: "string", enum: ["human_request","manual_quote","complaint","damage","billing_dispute","pricing_unverified","booking_needs_attention","service_area_review","unanswered_question","confused_conversation","urgent","other"] },
+          severity: { type: "string", enum: ["low","normal","high","urgent"] },
+          name: { type: "string" }, phone: { type: "string" }, email: { type: "string" },
+          service: { type: "string" }, contactMethod: { type: "string", enum: ["phone","text","email"] },
+          reason: { type: "string" }, summary: { type: "string" },
+        },
+        required: ["category"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "record_consent",
       description: "Record an EXPLICIT communication-consent decision the customer just made. Use a SEPARATE call for each channel/type. Never assume marketing consent from a phone number, a chat, or a quote request — only call with consentType 'marketing' when the customer explicitly opted in to occasional promotions. Use 'requested_follow_up' when they asked to be contacted about THIS request. Always pass the exact languageShown you presented. Never send SMS or email yourself.",
       parameters: {
