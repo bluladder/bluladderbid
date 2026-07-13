@@ -77,3 +77,9 @@ verify_jwt = false
 
 [functions.knowledge-sync]
 verify_jwt = false
+
+[functions.staff-reply]
+verify_jwt = false
+
+[functions.escalation-test-notify]
+verify_jwt = false
