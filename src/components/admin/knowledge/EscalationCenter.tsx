@@ -162,9 +162,23 @@ export function EscalationCenter() {
                 </div>
               </div>
               {e.summary && <p className="text-xs text-muted-foreground">{e.summary}</p>}
+              {/* Per-channel delivery + failure reasons, surfaced prominently. */}
+              {(e.sms_alert_status || e.email_alert_status) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {e.sms_alert_status && <Badge variant={ALERT_VARIANT[e.sms_alert_status === 'sent' ? 'sms_sent' : e.sms_alert_status] ?? 'outline'} className="text-[10px]">SMS: {e.sms_alert_status}</Badge>}
+                  {e.email_alert_status && <Badge variant={ALERT_VARIANT[e.email_alert_status === 'sent' ? 'email_sent' : e.email_alert_status] ?? 'outline'} className="text-[10px]">Email: {e.email_alert_status}</Badge>}
+                </div>
+              )}
+              {(e.alert_error || e.email_alert_error) && (
+                <div className="rounded border border-destructive/30 bg-destructive/5 p-1.5 text-[10px] text-destructive">
+                  {e.alert_error && <div>SMS: {e.alert_error}</div>}
+                  {e.email_alert_error && <div>Email: {e.email_alert_error}</div>}
+                </div>
+              )}
               <div className="text-[11px] text-muted-foreground">
                 {e.prospect_phone ?? 'no phone'} · {new Date(e.created_at).toLocaleString()}
                 {e.assigned_recipient ? ` · → ${e.assigned_recipient}` : ''}
+                {e.alert_last_attempt_at ? ` · last attempt ${new Date(e.alert_last_attempt_at).toLocaleTimeString()}` : ''}
               </div>
               <Button size="sm" variant="ghost" onClick={() => resolveEsc(e)}>Resolve</Button>
             </div>
