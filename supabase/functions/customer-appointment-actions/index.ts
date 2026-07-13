@@ -317,6 +317,35 @@ Deno.serve(async (req) => {
       } catch (smsErr) {
         console.warn("[CustomerAction] SMS dispatch error:", smsErr);
       }
+
+      // Campaign lifecycle event — emitted ONLY after Jobber confirmed the change
+      // (reschedule reached here on success; cancellation only when freshly
+      // confirmed). appointment_cancelled STOPs future reminder sequences; a
+      // needs_attention cancellation returns earlier and never emits.
+      try {
+        const visitId = typedBooking.jobber_visit_id ?? bookingId;
+        const newStart = body.newSlot?.startTime ?? "";
+        const idempotencyKey = smsEvent === 'appointment_rescheduled'
+          ? `appointment_rescheduled:${visitId}:${newStart}`
+          : `appointment_cancelled:${visitId}`;
+        await emitCampaignEvent({
+          eventName: smsEvent,
+          idempotencyKey,
+          email: typedBooking.customer?.email ?? null,
+          customerId: typedBooking.customer_id,
+          source: "customer-appointment-actions",
+          subject: smsEvent === 'appointment_rescheduled' ? "Appointment rescheduled" : "Appointment cancelled",
+          metadata: {
+            booking_id: bookingId,
+            jobber_visit_id: typedBooking.jobber_visit_id ?? null,
+            previous_start: typedBooking.scheduled_start,
+            new_start: smsEvent === 'appointment_rescheduled' ? (body.newSlot?.startTime ?? null) : null,
+            booking_status: smsEvent === 'appointment_rescheduled' ? 'rescheduled' : 'cancelled',
+          },
+        });
+      } catch (emitErr) {
+        console.warn("[CustomerAction] campaign emit failed:", emitErr);
+      }
     }
 
     // A cancellation that could not be verified with Jobber is returned as a
