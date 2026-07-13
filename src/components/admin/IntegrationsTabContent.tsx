@@ -8,6 +8,7 @@ import { JobberIntegration } from './JobberIntegration';
 import { EmbedCodeManager } from './EmbedCodeManager';
 import { SmsCampaignManager } from './sms/SmsCampaignManager';
 import { SmsMessageLog } from './sms/SmsMessageLog';
+import { ConsentInspector } from './sms/ConsentInspector';
 import { SmsOptOutManager } from './sms/SmsOptOutManager';
 import { LeadStatusBoard } from './sms/LeadStatusBoard';
 import { MessageTemplateManager } from './sms/MessageTemplateManager';
