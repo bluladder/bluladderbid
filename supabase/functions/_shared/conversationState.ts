@@ -290,8 +290,12 @@ export function stateDirective(state: ConversationState, f: ConversationFacts): 
   ];
   switch (state) {
     case "new":
-    case "identifying_need":
       lines.push("Find out which service(s) the customer wants before anything else.");
+      break;
+    case "identifying_need":
+      lines.push(
+        "As soon as you know which service(s) the customer wants, call calculate_bluladder_quote with the services list (plus any property details you already have) — this records the service(s) and returns either a price or the exact missing details to ask for. If you don't yet have the address, get it and validate the service area first.",
+      );
       break;
     case "collecting_address":
       lines.push("Collect the full service address (street, city, ZIP) so we can validate the service area.");
