@@ -9,6 +9,11 @@
 // deno-lint-ignore-file no-explicit-any
 import { checkSuppression } from "./suppression.ts";
 import { getPhoneByPurpose } from "./phoneConfig.ts";
+import {
+  rollupDeliveryState,
+  type ChannelDeliveryStatus,
+  type EscalationDeliveryState,
+} from "./escalationDelivery.ts";
 
 export const SEVERITY_RANK: Record<string, number> = {
   low: 1, normal: 2, high: 3, urgent: 4,
@@ -34,6 +39,9 @@ export interface EscalationResult {
   created: boolean;
   alertStatus: string;
   alertSent: boolean;
+  /** Explicit, auditable overall delivery state (drives customer language). */
+  deliveryState: EscalationDeliveryState;
+  severity: string;
 }
 
 /** Build the concise internal alert. Excludes keys, prompts, transcripts, margins. */
