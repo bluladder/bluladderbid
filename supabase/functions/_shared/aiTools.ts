@@ -15,34 +15,15 @@ import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.
 import { checkSuppression } from "./suppression.ts";
 import { escalateToHuman } from "./escalation.ts";
 import { recordKnowledgeGap } from "./knowledgeGaps.ts";
+import {
+  OFFER_TTL_MS,
+  MAX_SLOT_FAILURES_BEFORE_ESCALATION,
+  computeQuoteSignature,
+  buildOfferSlotId,
+} from "./slotOffer.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-// How long an availability offer stays selectable before it must be refreshed.
-const OFFER_TTL_MS = 15 * 60 * 1000;
-// After this many consecutive failed slot selections we stop looping and hand
-// the conversation to a human instead of repeatedly saying "just taken".
-const MAX_SLOT_FAILURES_BEFORE_ESCALATION = 2;
-
-/**
- * A stable signature of the priced job. If any of these change between the
- * moment slots were offered and the moment the customer confirms, the offer is
- * invalid and must not be booked against a stale price/duration.
- */
-export function computeQuoteSignature(quote: any): string {
-  const lineItems = (quote?.jobberLineItems ?? quote?.lineItems ?? []).map((li: any) => ({
-    n: li.name ?? li.label ?? "",
-    p: Number(li.unitPrice ?? li.amount ?? 0),
-  }));
-  return JSON.stringify({
-    total: quote?.total ?? null,
-    rule: quote?.ruleVersion ?? null,
-    engine: quote?.engineVersion ?? null,
-    dur: quote?.estimatedDurationMinutes ?? null,
-    items: lineItems,
-  });
-}
 
 /**
  * Record a failed slot-selection attempt with its exact technical reason (for
