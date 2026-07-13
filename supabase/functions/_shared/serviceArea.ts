@@ -7,6 +7,16 @@
 // becomes manual_review_required so the team can follow up.
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recordSystemIssue, resolveSystemIssue } from "./systemHealth.ts";
+
+// Canonical connector-gateway route for Google Maps. The gateway injects the
+// real Google API key server-side; we only ever hold the gateway *connection*
+// key (GOOGLE_MAPS_API_KEY) plus the project LOVABLE_API_KEY. The raw Google
+// key never exists in this codebase, is never logged, and is never returned to
+// the browser. We never call maps.googleapis.com directly, and we NEVER use the
+// browser key for server-side geocoding.
+const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_maps";
+const GEOCODE_HEALTH_KEY = "geocoding_api";
 
 export type ServiceAreaStatus =
   | "eligible"
@@ -55,48 +65,56 @@ interface Geo {
   county?: string;
   state?: string;
   formatted?: string;
+  lat?: number;
+  lng?: number;
   partial: boolean;
 }
 
-// Returns null on a hard API failure (validation_unavailable), a Geo otherwise.
+// Returns null when Google cannot find the address (customer typo → ask again),
+// "unavailable" on a hard API/gateway failure (validation_unavailable), or a
+// Geo on success. Server-side geocoding ALWAYS goes through the connector
+// gateway — never a direct Google call, never the browser key.
 async function geocode(address: string): Promise<Geo | null | "unavailable"> {
-  // Some deployments only enable Geocoding on one of the connector keys, so try
-  // the server key first, then the browser key.
-  const keys = [
-    Deno.env.get("GOOGLE_MAPS_API_KEY"),
-    Deno.env.get("GOOGLE_MAPS_BROWSER_KEY"),
-  ].filter((k): k is string => !!k);
-  if (keys.length === 0) return "unavailable";
-
-  let data: any = null;
-  let denied = false;
-  for (const key of keys) {
-    let resp: Response;
-    try {
-      resp = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=us&key=${key}`,
-      );
-    } catch {
-      continue;
-    }
-    if (!resp.ok) continue;
-    const body = await resp.json().catch(() => null);
-    if (!body) continue;
-    if (body.status === "OK" || body.status === "ZERO_RESULTS" || body.status === "INVALID_REQUEST") {
-      data = body;
-      break;
-    }
-    if (body.status === "REQUEST_DENIED") {
-      denied = true;
-      console.error("[serviceArea] geocode REQUEST_DENIED", body.error_message || "");
-      continue; // try next key
-    }
-    // OVER_QUERY_LIMIT / UNKNOWN_ERROR → treat as temporary
-    console.error("[serviceArea] geocode api status", body.status, body.error_message || "");
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  const connectionKey = Deno.env.get("GOOGLE_MAPS_API_KEY");
+  if (!lovableKey || !connectionKey) {
+    console.error("[serviceArea] geocode misconfigured: missing gateway credentials");
+    return "unavailable";
   }
-  if (!data) return denied ? "unavailable" : "unavailable";
+
+  let resp: Response;
+  try {
+    // Address is URL-encoded; the customer can never inject an arbitrary URL —
+    // the host, path and gateway route are fixed constants here.
+    resp = await fetch(
+      `${GATEWAY_URL}/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=us`,
+      {
+        headers: {
+          Authorization: `Bearer ${lovableKey}`,
+          "X-Connection-Api-Key": connectionKey,
+        },
+      },
+    );
+  } catch {
+    return "unavailable";
+  }
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => "");
+    // Never logs the key — only the sanitized gateway status/body preview.
+    console.error("[serviceArea] geocode gateway error", resp.status, errBody.slice(0, 160));
+    return "unavailable";
+  }
+  const data = await resp.json().catch(() => null);
+  if (!data) return "unavailable";
   if (data.status === "ZERO_RESULTS" || data.status === "INVALID_REQUEST") return null;
-  if (data.status !== "OK" || !Array.isArray(data.results) || data.results.length === 0) return "unavailable";
+  if (data.status === "REQUEST_DENIED") {
+    console.error("[serviceArea] geocode REQUEST_DENIED", data.error_message || "");
+    return "unavailable";
+  }
+  if (data.status !== "OK" || !Array.isArray(data.results) || data.results.length === 0) {
+    console.error("[serviceArea] geocode api status", data.status, data.error_message || "");
+    return "unavailable";
+  }
   const r = data.results[0];
   const comps: any[] = r.address_components || [];
   const get = (type: string) =>
@@ -114,6 +132,8 @@ async function geocode(address: string): Promise<Geo | null | "unavailable"> {
     county,
     state,
     formatted: r.formatted_address,
+    lat: r.geometry?.location?.lat,
+    lng: r.geometry?.location?.lng,
     partial: !!r.partial_match || !hasStreet,
   };
 }
