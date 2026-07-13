@@ -10,6 +10,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runOrchestrator } from "../_shared/aiOrchestrator.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
+import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -97,6 +98,36 @@ Deno.serve(async (req) => {
 
     await supabase.from("chat_messages").insert({ conversation_id: convo.id, role: "assistant", content: result.reply });
     await supabase.from("chat_conversations").update({ last_activity_at: new Date().toISOString() }).eq("id", convo.id);
+
+    // chat_lead_created — emitted ONCE per conversation, only after the chat has
+    // captured usable contact info (email or phone). Idempotency is keyed on the
+    // conversation id, so repeated messages never re-raise the lead event.
+    try {
+      const { data: lead } = await supabase
+        .from("chat_conversations")
+        .select("prospect_email, prospect_phone, services_discussed, service_area_status, city, booking_status")
+        .eq("id", convo.id)
+        .maybeSingle();
+      if (lead && (lead.prospect_email || lead.prospect_phone)) {
+        await emitCampaignEvent({
+          eventName: "chat_lead_created",
+          idempotencyKey: `chat_lead_created:${convo.id}`,
+          email: lead.prospect_email ?? null,
+          phone: lead.prospect_phone ?? null,
+          conversationId: convo.id,
+          source: "ai_chat",
+          metadata: {
+            lead_source: "ai_chat",
+            service_types: Array.isArray(lead.services_discussed) ? lead.services_discussed : [],
+            service_area_status: lead.service_area_status ?? null,
+            city: lead.city ?? null,
+            quote_status: lead.booking_status ?? null,
+          },
+        });
+      }
+    } catch (e) {
+      console.error("chat_lead_created emit failed:", e);
+    }
 
     // Record explicit marketing consent (if the visitor ticked the box) against
     // whatever contact details the conversation has captured. Absence of the box
