@@ -92,7 +92,9 @@ export function evaluateAbandonment(
   if (status !== "firm") return { eligible: false, reason: "no_firm_quote" };
   if (convo.resolved) return { eligible: false, reason: "resolved" };
   if (convo.staff_takeover_at) return { eligible: false, reason: "staff_takeover" };
-  if (["booked", "converted"].includes(String(convo.booking_status ?? ""))) {
+  // On a chat conversation a completed booking is 'confirmed'; 'booked'/
+  // 'converted' are accepted too for robustness against other lead sources.
+  if (["confirmed", "booked", "converted"].includes(String(convo.booking_status ?? ""))) {
     return { eligible: false, reason: "booking_completed" };
   }
   if (convo.callback_requested) return { eligible: false, reason: "callback_active" };
