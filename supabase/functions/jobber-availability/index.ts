@@ -2006,8 +2006,9 @@ Deno.serve(async (req) => {
           name: t.name, 
           durationMinutes: t.durationMinutes 
         })),
-        // Admin-only: raw availability + compaction decisions/reasons/config.
-        ...(includeExcluded ? buildAdminPayload() : {}),
+        // Admin-only: customer-shown slots + raw availability + compaction
+        // decisions/reasons/config (the inspector reads `slots`/`excludedSlots`).
+        ...(includeExcluded ? { slots: shownSlots, ...buildAdminPayload() } : {}),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
