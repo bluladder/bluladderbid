@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { blockOverlapsDay, slotHasConflict } from "./availability-core.ts";
+import { blockOverlapsDay, slotHasConflict, effectiveWorkDays, isBusinessDay } from "./availability-core.ts";
 import { getMirrorFreshness, unavailableCustomerMessage } from "../_shared/scheduleFreshness.ts";
 import {
   compactSlots,
