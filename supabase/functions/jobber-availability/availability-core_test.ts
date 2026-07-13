@@ -8,6 +8,9 @@ import {
   filterBlocksForDay,
   slotHasConflict,
   type BusyInterval,
+  isBusinessDay,
+  effectiveWorkDays,
+  DEFAULT_BUSINESS_WORK_DAYS,
 } from "./availability-core.ts";
 
 // Fixed reference work day: 2026-07-02, 09:00 -> 17:00 UTC.
