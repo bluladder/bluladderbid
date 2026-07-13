@@ -146,12 +146,24 @@ Deno.serve(async (req) => {
             p_email: c.prospect_email, p_language_shown: lang, p_source: "chat_checkbox",
             p_conversation_id: convo.id, p_session_id: sessionToken,
           });
+          await emitCampaignEvent({
+            eventName: "consent_granted",
+            idempotencyKey: `consent_granted:marketing:email:${convo.id}`,
+            email: c.prospect_email, conversationId: convo.id, source: "chat_checkbox",
+            subject: "marketing email", metadata: { consent_type: "marketing", channel: "email" },
+          });
         }
         if (c?.prospect_phone) {
           await supabase.rpc("record_consent", {
             p_channel: "sms", p_consent_type: "marketing", p_status: "granted",
             p_phone: c.prospect_phone, p_language_shown: lang, p_source: "chat_checkbox",
             p_conversation_id: convo.id, p_session_id: sessionToken,
+          });
+          await emitCampaignEvent({
+            eventName: "consent_granted",
+            idempotencyKey: `consent_granted:marketing:sms:${convo.id}`,
+            phone: c.prospect_phone, conversationId: convo.id, source: "chat_checkbox",
+            subject: "marketing sms", metadata: { consent_type: "marketing", channel: "sms" },
           });
         }
       } catch (e) {
