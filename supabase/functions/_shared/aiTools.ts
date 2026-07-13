@@ -399,6 +399,27 @@ async function validateServiceAreaTool(ctx: ToolContext, args: Record<string, un
   }
   const result = await validateServiceArea(ctx.supabase, address);
 
+  // Defense-in-depth: a transient geocode failure (validation_unavailable) must
+  // never DOWNGRADE an address the same conversation already confirmed eligible.
+  // We only guard the exact same address to avoid preserving a stale result if
+  // the customer switched addresses.
+  if (result.status === "validation_unavailable") {
+    const { data: prior } = await ctx.supabase
+      .from("chat_conversations")
+      .select("service_area_status, service_address")
+      .eq("id", ctx.conversationId)
+      .maybeSingle();
+    const sameAddress =
+      typeof prior?.service_address === "string" &&
+      prior.service_address.trim().toLowerCase().startsWith(address.trim().toLowerCase().slice(0, 8));
+    if (prior?.service_area_status === "eligible" && sameAddress) {
+      return {
+        status: "eligible",
+        customerMessage: "You're all set — that address is in our service area.",
+      };
+    }
+  }
+
   await ctx.supabase
     .from("chat_conversations")
     .update({
