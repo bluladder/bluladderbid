@@ -399,21 +399,9 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   const slotId = String(args.slotId || "");
   if (!slotId) return { status: "missing_slot", message: "Select an available time first." };
 
-  // Resolve the opaque slotId back to internal IDs from the last availability offer.
-  const { data: toolMsgs } = await ctx.supabase
-    .from("chat_messages")
-    .select("tool_result")
-    .eq("conversation_id", ctx.conversationId)
-    .eq("tool_name", "get_bluladder_availability")
-    .order("created_at", { ascending: false })
-    .limit(1);
-  const offered = (toolMsgs?.[0]?.tool_result as any)?.offered as any[] | undefined;
-  const slot = offered?.find((s) => s.slotId === slotId);
-  if (!slot) return { status: "slot_expired", message: "That time is no longer held — let me pull fresh availability." };
-
   const { data: convo } = await ctx.supabase
     .from("chat_conversations")
-    .select("quote_result, prospect_name, prospect_email, prospect_phone")
+    .select("quote_result, prospect_name, prospect_email, prospect_phone, service_address")
     .eq("id", ctx.conversationId)
     .maybeSingle();
   const quote = convo?.quote_result as any;
@@ -421,6 +409,41 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
 
   const email = convo?.prospect_email;
   if (!email) return { status: "missing_contact", message: "I need the customer's email to book." };
+
+  // Defect 2: resolve the slot against the LATEST availability offer only, and
+  // validate it is genuinely current before touching Jobber. Distinct outcomes
+  // (expired / stale / quote-changed / genuinely taken / provider down /
+  // internal) are surfaced separately so the assistant never falsely tells the
+  // customer a slot was "just taken", and each failure counts toward a handoff.
+  const { data: toolMsgs } = await ctx.supabase
+    .from("chat_messages")
+    .select("tool_result")
+    .eq("conversation_id", ctx.conversationId)
+    .eq("tool_name", "get_bluladder_availability")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const latest = toolMsgs?.[0]?.tool_result as
+    | { offered?: any[]; offerVersion?: string; expiresAt?: string; quoteSignature?: string }
+    | undefined;
+  const offered = latest?.offered;
+
+  // Not in the latest offer → the id is stale (a prior offer) or absent. Refresh.
+  const slot = offered?.find((s) => s.slotId === slotId);
+  if (!slot) {
+    await recordSlotFailure(ctx, "slot_stale_not_in_latest_offer", `slotId ${slotId} not in latest offer ${latest?.offerVersion ?? "none"}`, convo);
+    return { status: "schedule_refresh_required", message: "That time isn't from the latest options — let me pull fresh availability and show current times." };
+  }
+  // Offer expired.
+  if (latest?.expiresAt && Date.now() > new Date(latest.expiresAt).getTime()) {
+    await recordSlotFailure(ctx, "offer_expired", `offer ${latest.offerVersion} expired at ${latest.expiresAt}`, convo);
+    return { status: "slot_expired", message: "That set of times has expired — let me pull fresh availability so we book a time that's genuinely open." };
+  }
+  // Quote/service details changed since the offer.
+  const currentSignature = computeQuoteSignature(quote);
+  if (latest?.quoteSignature && latest.quoteSignature !== currentSignature) {
+    await recordSlotFailure(ctx, "quote_changed_since_offer", "quote signature changed since availability offer", convo);
+    return { status: "quote_changed", message: "The quote or service details changed since those times were offered — let me re-check availability for the current quote." };
+  }
 
   // Two related keys:
   //  * authKey  — conversation + opaque slot. Predictable by an authorizing
