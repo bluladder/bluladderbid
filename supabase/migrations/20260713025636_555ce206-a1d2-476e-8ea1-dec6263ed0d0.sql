@@ -1,0 +1,2 @@
+DELETE FROM public.chat_messages WHERE conversation_id IN (SELECT id FROM public.chat_conversations WHERE session_token = 'precheck-geocode-0713');
+DELETE FROM public.chat_conversations WHERE session_token = 'precheck-geocode-0713';
