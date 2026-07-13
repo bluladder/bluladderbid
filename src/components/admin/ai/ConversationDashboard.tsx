@@ -152,6 +152,59 @@ export function ConversationDashboard() {
     toast({ title: 'Summary copied' });
   };
 
+  // ---- Defect 4: staff takeover human reply composer -----------------------
+  const inTakeover = !!selected?.staff_takeover_at || selected?.conversation_state === 'staff_takeover';
+
+  const sendReply = async () => {
+    if (!selected) return;
+    if (replyChannel === 'call') return; // call is a click-to-call action, not a send
+    const msg = replyDraft.trim();
+    if (!msg) { toast({ title: 'Write a reply first', variant: 'destructive' }); return; }
+    setSendingReply(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('staff-reply', {
+        body: { conversationId: selected.id, channel: replyChannel, message: msg },
+      });
+      const d = data as { status?: string; reason?: string } | null;
+      if (error) { toast({ title: 'Reply failed', description: error.message, variant: 'destructive' }); return; }
+      if (d?.status === 'suppressed') {
+        toast({ title: 'Not sent — recipient suppressed', description: d.reason ?? 'Opt-out or suppression in effect', variant: 'destructive' });
+        return;
+      }
+      if (d?.status === 'failed') { toast({ title: 'Delivery failed', description: 'The provider rejected the message.', variant: 'destructive' }); return; }
+      toast({ title: `Reply sent by ${replyChannel.toUpperCase()}` });
+      setReplyDraft('');
+      // refresh the transcript to show the outbound staff message
+      const { data: msgs } = await supabase.from('chat_messages')
+        .select('id, role, content, created_at, tool_name')
+        .eq('conversation_id', selected.id).order('created_at', { ascending: true }).limit(500);
+      setMessages((msgs ?? []) as ChatMsg[]);
+    } finally { setSendingReply(false); }
+  };
+
+  const returnToAi = async () => {
+    if (!selected) return;
+    const { error } = await supabase.from('chat_conversations')
+      .update({ staff_takeover_at: null, staff_takeover_reason: null })
+      .eq('id', selected.id);
+    if (error) { toast({ title: 'Failed to return to AI', description: error.message, variant: 'destructive' }); return; }
+    toast({ title: 'Conversation returned to AI', description: 'Automation resumes on the next customer message.' });
+    setReturnAiOpen(false);
+    setConvos((prev) => prev.map((c) => (c.id === selected.id ? { ...c, staff_takeover_at: null } : c)));
+    load();
+  };
+
+  const runTestNotify = async () => {
+    setTestNotifyBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('escalation-test-notify', { body: { confirm: true } });
+      if (error) { toast({ title: 'Test notification failed', description: error.message, variant: 'destructive' }); return; }
+      const d = data as { sms?: { status?: string }; email?: { status?: string } } | null;
+      toast({ title: 'Test alert sent', description: `SMS: ${d?.sms?.status ?? '—'} · Email: ${d?.email?.status ?? '—'}` });
+      setTestNotifyOpen(false);
+    } finally { setTestNotifyBusy(false); }
+  };
+
   if (!canViewAnalytics) {
     return <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">You do not have permission to view AI conversations.</CardContent></Card>;
   }
