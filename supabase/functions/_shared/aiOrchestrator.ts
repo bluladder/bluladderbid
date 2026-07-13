@@ -12,6 +12,7 @@
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runTool, TOOL_DEFINITIONS, type ToolContext } from "./aiTools.ts";
+import { getPhoneByPurpose } from "./phoneConfig.ts";
 import {
   type ConversationFacts,
   computeState,
