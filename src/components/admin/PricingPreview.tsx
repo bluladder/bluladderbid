@@ -613,6 +613,42 @@ export function PricingPreview() {
                   <p>• Story modifier ({homeDetails.stories}-story): +{pricing.window_cleaning.modifiers.stories[homeDetails.stories.toString()] ?? 0}%</p>
                 </div>
               </div>
+
+              {/* Authoritative engine metadata + calculation trace */}
+              <div className="p-4 rounded-lg border bg-muted/30 text-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <h5 className="font-medium">Engine (server-authoritative)</h5>
+                  <div className="flex gap-2">
+                    {customQuoteState.engineVersion && (
+                      <Badge variant="outline" className="font-mono text-xs">
+                        engine {customQuoteState.engineVersion}
+                      </Badge>
+                    )}
+                    {customQuoteState.ruleVersion != null && (
+                      <Badge variant="outline" className="font-mono text-xs">
+                        rules v{customQuoteState.ruleVersion}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                {customQuoteState.quote?.discount && (
+                  <p className="text-muted-foreground text-xs mb-2">
+                    Discount applied: -${customQuoteState.quote.discount.amount.toLocaleString()}
+                  </p>
+                )}
+                {customQuoteState.quote?.trace?.length ? (
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer select-none">Calculation trace</summary>
+                    <pre className="mt-2 whitespace-pre-wrap font-mono leading-relaxed">
+                      {customQuoteState.quote.trace.join('\n')}
+                    </pre>
+                  </details>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    {customQuoteState.loading ? 'Calculating…' : 'Enter details to see the calculation trace.'}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>
