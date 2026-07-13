@@ -741,6 +741,13 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
   const phone = (args.phone as string) || undefined;
   const email = (args.email as string) || undefined;
 
+  // Include the service address (from the conversation) in the internal alert.
+  const { data: convoRow } = await ctx.supabase
+    .from("chat_conversations")
+    .select("service_address")
+    .eq("id", ctx.conversationId)
+    .maybeSingle();
+
   await ctx.supabase.from("chat_conversations").update({
     prospect_name: (args.name as string) || undefined,
     prospect_phone: phone,
@@ -759,6 +766,7 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
     prospectPhone: phone ?? null,
     prospectEmail: email ?? null,
     serviceRequested: (args.service as string) || null,
+    serviceAddress: (convoRow?.service_address as string) ?? null,
     summary: (args.summary as string) || (args.reason as string) || null,
     requestedContactMethod: (args.contactMethod as string) || null,
   });
