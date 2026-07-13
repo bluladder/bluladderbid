@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { PRIMARY_PUBLIC_PHONE, SUPPORT_EMAIL, telHref } from '@/config/contact';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -268,8 +269,8 @@ export default function MyAppointments() {
               <CardContent className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <Phone className="w-4 h-4 text-muted-foreground" />
-                  <a href="tel:+14697472877" className="text-primary hover:underline">
-                    (469) 747-2877
+                  <a href={telHref(PRIMARY_PUBLIC_PHONE.e164)} className="text-primary hover:underline">
+                    {PRIMARY_PUBLIC_PHONE.display}
                   </a>
                 </div>
                 <div className="flex items-center gap-2">
