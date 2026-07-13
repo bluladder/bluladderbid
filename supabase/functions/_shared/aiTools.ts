@@ -516,10 +516,14 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   });
 
   if (status === 409) {
-    return { status: "slot_taken", message: "That time was just taken — let me get fresh options." };
+    // A GENUINE reservation conflict. This is the only path that may tell the
+    // customer a time was actually taken.
+    await recordSlotFailure(ctx, "reservation_conflict_409", "jobber-create-booking returned 409 (real conflict)", convo);
+    return { status: "slot_taken", message: "That exact time was just booked by someone else — let me get the current openings." };
   }
   if (status === 503) {
-    return { status: "temporarily_unavailable", message: "Booking is briefly unavailable — I can have the team confirm this time." };
+    await recordSlotFailure(ctx, "provider_unavailable_503", "jobber-create-booking returned 503 (provider unavailable)", convo);
+    return { status: "temporarily_unavailable", message: "Our booking system is briefly unavailable — I can have the team confirm this time, or you can try again in a moment." };
   }
   const visitId = json?.jobberVisitId || json?.visitId;
   if (json?.status === "needs_attention" || json?.needsAttention) {
@@ -527,17 +531,31 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
       booking_status: "needs_attention", needs_attention: true,
       last_error: "booking needs_attention", last_activity_at: new Date().toISOString(),
     }).eq("id", ctx.conversationId);
+    // needs_attention itself is a first-class escalation path.
+    try {
+      await escalateToHuman(ctx.supabase, {
+        conversationId: ctx.conversationId,
+        category: "booking_needs_attention",
+        severity: "high",
+        prospectName: convo?.prospect_name ?? null,
+        prospectPhone: convo?.prospect_phone ?? null,
+        prospectEmail: email,
+        serviceAddress: convo?.service_address ?? null,
+        summary: "Booking returned needs_attention; a human should confirm the appointment.",
+      });
+    } catch (_e) { /* non-blocking */ }
     return { status: "needs_attention", message: "Your appointment is being finalized and the team will confirm shortly." };
   }
   if (status !== 200 || !visitId) {
     await ctx.supabase.from("chat_conversations").update({
       booking_status: "failed", needs_attention: true, last_error: json?.error || "booking failed",
     }).eq("id", ctx.conversationId);
+    await recordSlotFailure(ctx, "internal_booking_error", `status ${status}, no visit id (${json?.error ?? "unknown"})`, convo);
     return { status: "error", message: "I couldn't finalize the booking — the team will follow up to confirm." };
   }
 
   await ctx.supabase.from("chat_conversations").update({
-    booking_status: "confirmed", last_activity_at: new Date().toISOString(),
+    booking_status: "confirmed", slot_failure_count: 0, last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
 
   // Persist the original result against the (now-consumed) authorization so an
