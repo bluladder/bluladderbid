@@ -304,6 +304,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
 
   let facts = factsFromRow(row);
   let state = computeState(facts);
+  const priorState: string = row?.conversation_state ?? "new";
 
   // Staff has taken over — the AI stays silent/deferential and takes no action.
   if (state === "staff_takeover") {
@@ -339,6 +340,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
 
     const toolCalls = choice.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
+      await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
       return { reply: choice.content || "How can I help with your exterior cleaning today?", toolEvents, events, state };
     }
 
@@ -384,5 +386,22 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   const tools = TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name as any));
   const data = await callModel(messages, tools);
   const reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
+  await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
   return { reply, toolEvents, events, state };
+}
+
+// Refresh the admin summary only when we reached a milestone state that differs
+// from where the conversation started this turn. Transcript stays authoritative.
+async function maybeUpdateSummary(
+  supabase: SupabaseClient, conversationId: string, facts: ConversationFacts, state: string, priorState: string,
+) {
+  if (!SUMMARY_MILESTONES.has(state) || state === priorState) return;
+  try {
+    await supabase.from("chat_conversations").update({
+      ai_summary: buildSummary(facts, state),
+      ai_summary_updated_at: new Date().toISOString(),
+    }).eq("id", conversationId);
+  } catch (e) {
+    console.error("summary update failed:", e);
+  }
 }
