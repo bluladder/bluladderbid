@@ -46,13 +46,48 @@ export function buildAlertMessage(
     "BluLadder AI escalation",
     esc.prospectName ? `Name: ${esc.prospectName}` : null,
     esc.prospectPhone ? `Callback: ${esc.prospectPhone}` : (callbackNumberDisplay ? `Callback via office: ${callbackNumberDisplay}` : null),
+    esc.prospectEmail ? `Email: ${esc.prospectEmail}` : null,
+    esc.serviceAddress ? `Address: ${esc.serviceAddress}` : null,
     `Reason: ${esc.category.replace(/_/g, " ")}`,
     `Urgency: ${esc.severity ?? "normal"}`,
     esc.serviceRequested ? `Service: ${esc.serviceRequested}` : null,
+    esc.bestCallbackTime ? `Preferred time: ${esc.bestCallbackTime}` : null,
     esc.summary ? `Summary: ${esc.summary.slice(0, 240)}` : null,
     dashboardHint,
   ].filter(Boolean);
   return lines.join("\n");
+}
+
+/**
+ * Best-effort secondary EMAIL alert via Resend. Never throws — email is a
+ * secondary channel and must never block or fail the SMS path. Returns a
+ * compact delivery status + provider response for the audit trail. Excludes
+ * secrets, prompts and transcripts (same customer-safe body as the SMS).
+ */
+async function sendEscalationEmail(
+  to: string,
+  subject: string,
+  body: string,
+): Promise<{ status: string; error: string | null }> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (!apiKey) return { status: "not_configured", error: "RESEND_API_KEY missing" };
+  try {
+    const html = `<pre style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${
+      body.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string))
+    }</pre>`;
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "BluLadder Alerts <noreply@bluladder.com>", to: [to], subject, html }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return { status: "failed", error: `Resend ${resp.status}: ${text.slice(0, 200)}` };
+    }
+    return { status: "sent", error: null };
+  } catch (e) {
+    return { status: "failed", error: e instanceof Error ? e.message.slice(0, 200) : String(e) };
+  }
 }
 
 /**
@@ -183,11 +218,34 @@ async function maybeQueueAlert(
   });
 
   const status = insErr ? "failed" : suppression.suppressed ? "suppressed" : "sent";
+  const smsError = insErr ? (insErr.message ?? "sms enqueue failed").slice(0, 200) : null;
+
+  // Secondary EMAIL alert (best-effort). Uses the recipient's own email when
+  // set, otherwise the configured default notify_email. Never blocks the SMS.
+  let emailStatus = "skipped";
+  let emailError: string | null = null;
+  const emailTarget = (recipient.email as string | null) || (settings.notify_email as string | null) || null;
+  if (settings.email_alerts_enabled && emailTarget) {
+    const emailSuppression = await checkSuppression(supabase, { email: emailTarget });
+    if (emailSuppression.suppressed) {
+      emailStatus = "suppressed";
+      emailError = emailSuppression.reason ?? null;
+    } else {
+      const subj = `BluLadder escalation: ${input.category.replace(/_/g, " ")} (${severity})`;
+      const r = await sendEscalationEmail(emailTarget, subj, messageBody);
+      emailStatus = r.status;
+      emailError = r.error;
+    }
+  }
+
   const { data: cur } = await supabase
     .from("ai_escalations").select("alert_count").eq("id", escalationId).maybeSingle();
   const nextCount = (cur?.alert_count ?? 0) + (status === "sent" ? 1 : 0);
   await supabase.from("ai_escalations").update({
     alert_status: status,
+    alert_error: smsError,
+    email_alert_status: emailStatus,
+    email_alert_error: emailError,
     assigned_recipient: recipient.name,
     alert_count: nextCount,
     last_alert_severity: severity,

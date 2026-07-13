@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { MessageSquare, Copy, UserCheck, CheckCircle2, RotateCcw, AlertTriangle, Bot, User, Search } from 'lucide-react';
+import { MessageSquare, Copy, UserCheck, CheckCircle2, RotateCcw, AlertTriangle, Bot, User, Search, Phone, Mail, Send, PhoneCall, Bell, Headset } from 'lucide-react';
 import { DashboardFilter, FILTER_LABELS, matchesFilter, isAbandoned } from './conversationFilters';
 import { LiveJobberTestPanel } from './LiveJobberTestPanel';
 import type { ConvoLike } from './liveJobberTest';
@@ -51,6 +51,12 @@ export function ConversationDashboard() {
   const [notesDraft, setNotesDraft] = useState('');
   const [takeoverOpen, setTakeoverOpen] = useState(false);
   const [takeoverReason, setTakeoverReason] = useState('');
+  const [replyDraft, setReplyDraft] = useState('');
+  const [replyChannel, setReplyChannel] = useState<'sms' | 'email' | 'call'>('sms');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [returnAiOpen, setReturnAiOpen] = useState(false);
+  const [testNotifyOpen, setTestNotifyOpen] = useState(false);
+  const [testNotifyBusy, setTestNotifyBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,6 +152,59 @@ export function ConversationDashboard() {
     toast({ title: 'Summary copied' });
   };
 
+  // ---- Defect 4: staff takeover human reply composer -----------------------
+  const inTakeover = !!selected?.staff_takeover_at || selected?.conversation_state === 'staff_takeover';
+
+  const sendReply = async () => {
+    if (!selected) return;
+    if (replyChannel === 'call') return; // call is a click-to-call action, not a send
+    const msg = replyDraft.trim();
+    if (!msg) { toast({ title: 'Write a reply first', variant: 'destructive' }); return; }
+    setSendingReply(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('staff-reply', {
+        body: { conversationId: selected.id, channel: replyChannel, message: msg },
+      });
+      const d = data as { status?: string; reason?: string } | null;
+      if (error) { toast({ title: 'Reply failed', description: error.message, variant: 'destructive' }); return; }
+      if (d?.status === 'suppressed') {
+        toast({ title: 'Not sent — recipient suppressed', description: d.reason ?? 'Opt-out or suppression in effect', variant: 'destructive' });
+        return;
+      }
+      if (d?.status === 'failed') { toast({ title: 'Delivery failed', description: 'The provider rejected the message.', variant: 'destructive' }); return; }
+      toast({ title: `Reply sent by ${replyChannel.toUpperCase()}` });
+      setReplyDraft('');
+      // refresh the transcript to show the outbound staff message
+      const { data: msgs } = await supabase.from('chat_messages')
+        .select('id, role, content, created_at, tool_name')
+        .eq('conversation_id', selected.id).order('created_at', { ascending: true }).limit(500);
+      setMessages((msgs ?? []) as ChatMsg[]);
+    } finally { setSendingReply(false); }
+  };
+
+  const returnToAi = async () => {
+    if (!selected) return;
+    const { error } = await supabase.from('chat_conversations')
+      .update({ staff_takeover_at: null, staff_takeover_reason: null })
+      .eq('id', selected.id);
+    if (error) { toast({ title: 'Failed to return to AI', description: error.message, variant: 'destructive' }); return; }
+    toast({ title: 'Conversation returned to AI', description: 'Automation resumes on the next customer message.' });
+    setReturnAiOpen(false);
+    setConvos((prev) => prev.map((c) => (c.id === selected.id ? { ...c, staff_takeover_at: null } : c)));
+    load();
+  };
+
+  const runTestNotify = async () => {
+    setTestNotifyBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('escalation-test-notify', { body: { confirm: true } });
+      if (error) { toast({ title: 'Test notification failed', description: error.message, variant: 'destructive' }); return; }
+      const d = data as { sms?: { status?: string }; email?: { status?: string } } | null;
+      toast({ title: 'Test alert sent', description: `SMS: ${d?.sms?.status ?? '—'} · Email: ${d?.email?.status ?? '—'}` });
+      setTestNotifyOpen(false);
+    } finally { setTestNotifyBusy(false); }
+  };
+
   if (!canViewAnalytics) {
     return <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">You do not have permission to view AI conversations.</CardContent></Card>;
   }
@@ -154,8 +213,17 @@ export function ConversationDashboard() {
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2"><Bot className="w-5 h-5" /> AI Conversations</CardTitle>
-          <CardDescription>Live view of website-chat prospects, their deterministic state, and handoff tools.</CardDescription>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2"><Bot className="w-5 h-5" /> AI Conversations</CardTitle>
+              <CardDescription>Live view of website-chat prospects, their deterministic state, and handoff tools.</CardDescription>
+            </div>
+            {canOverrideBookings && (
+              <Button size="sm" variant="outline" onClick={() => setTestNotifyOpen(true)}>
+                <Bell className="w-3.5 h-3.5 mr-1" /> Test escalation alert
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="relative">
@@ -230,6 +298,8 @@ export function ConversationDashboard() {
                     : <Button size="sm" variant="outline" onClick={markResolved}><CheckCircle2 className="w-3.5 h-3.5 mr-1" />Resolve</Button>)}
                   {!isReadOnly && selected.conversation_state !== 'staff_takeover' &&
                     <Button size="sm" variant="destructive" onClick={() => setTakeoverOpen(true)}>Take over</Button>}
+                  {!isReadOnly && inTakeover &&
+                    <Button size="sm" variant="outline" onClick={() => setReturnAiOpen(true)}><RotateCcw className="w-3.5 h-3.5 mr-1" />Return to AI</Button>}
                 </div>
               </div>
 
@@ -260,6 +330,52 @@ export function ConversationDashboard() {
                 </div>
               )}
 
+              {/* Defect 4: human reply composer — only after takeover. Customer-visible. */}
+              {!isReadOnly && inTakeover && (
+                <div className="rounded-lg border-2 border-primary/40 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Headset className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-semibold">Reply to customer (visible to customer)</span>
+                  </div>
+                  {/* Channel selector */}
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button size="sm" variant={replyChannel === 'sms' ? 'default' : 'outline'} onClick={() => setReplyChannel('sms')} disabled={!selected.prospect_phone}>
+                      <Phone className="w-3.5 h-3.5 mr-1" />SMS
+                    </Button>
+                    <Button size="sm" variant={replyChannel === 'email' ? 'default' : 'outline'} onClick={() => setReplyChannel('email')} disabled={!selected.prospect_email}>
+                      <Mail className="w-3.5 h-3.5 mr-1" />Email
+                    </Button>
+                    <Button size="sm" variant={replyChannel === 'call' ? 'default' : 'outline'} onClick={() => setReplyChannel('call')} disabled={!selected.prospect_phone}>
+                      <PhoneCall className="w-3.5 h-3.5 mr-1" />Call
+                    </Button>
+                  </div>
+                  {/* Sending identity / recipient shown before sending */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    {replyChannel === 'sms' && <span>To {selected.prospect_phone || '—'} · sent from the BluLadder app number (469) 747-2877</span>}
+                    {replyChannel === 'email' && <span>To {selected.prospect_email || '—'} · sent from BluLadder</span>}
+                    {replyChannel === 'call' && <span>Customer phone: {selected.prospect_phone || '—'}</span>}
+                    {selected.prospect_phone && (
+                      <button className="underline hover:text-foreground" onClick={() => { navigator.clipboard?.writeText(selected.prospect_phone || ''); toast({ title: 'Phone copied' }); }}>Copy phone</button>
+                    )}
+                  </div>
+                  {replyChannel === 'call' ? (
+                    <Button size="sm" asChild disabled={!selected.prospect_phone}>
+                      <a href={`tel:${selected.prospect_phone ?? ''}`}><PhoneCall className="w-3.5 h-3.5 mr-1" />Call {selected.prospect_phone || 'customer'}</a>
+                    </Button>
+                  ) : (
+                    <>
+                      <Textarea value={replyDraft} onChange={(e) => setReplyDraft(e.target.value)} rows={3} placeholder={`Type your ${replyChannel.toUpperCase()} reply to the customer…`} />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-muted-foreground">Opt-outs and suppression are respected automatically. This is not an internal note.</span>
+                        <Button size="sm" disabled={sendingReply} onClick={sendReply}>
+                          <Send className="w-3.5 h-3.5 mr-1" />{sendingReply ? 'Sending…' : `Send ${replyChannel.toUpperCase()}`}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* One-time live Jobber test authorization (operations admins, protected test identity only) */}
               <LiveJobberTestPanel
                 convo={selected as unknown as ConvoLike}
@@ -282,12 +398,17 @@ export function ConversationDashboard() {
                 <p className="text-xs font-medium text-muted-foreground mb-2">Transcript</p>
                 <ScrollArea className="h-[240px] rounded-lg border border-border p-3">
                   <div className="space-y-2">
-                    {messages.filter((m) => m.role === 'user' || m.role === 'assistant').map((m) => (
+                    {messages.filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'staff').map((m) => (
                       <div key={m.id} className="flex gap-2 text-sm">
                         {m.role === 'user'
                           ? <User className="w-3.5 h-3.5 mt-1 shrink-0 text-muted-foreground" />
+                          : m.role === 'staff'
+                          ? <Headset className="w-3.5 h-3.5 mt-1 shrink-0 text-primary" />
                           : <Bot className="w-3.5 h-3.5 mt-1 shrink-0 text-primary" />}
-                        <span className={m.role === 'user' ? 'text-foreground' : 'text-muted-foreground'}>{m.content}</span>
+                        <span className={m.role === 'user' ? 'text-foreground' : 'text-muted-foreground'}>
+                          {m.role === 'staff' && <span className="font-medium text-primary mr-1">[Staff]</span>}
+                          {m.content}
+                        </span>
                       </div>
                     ))}
                     {messages.length === 0 && <p className="text-xs text-muted-foreground">No messages.</p>}
@@ -316,6 +437,39 @@ export function ConversationDashboard() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setTakeoverOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={submitTakeover}>Record takeover</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={returnAiOpen} onOpenChange={setReturnAiOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Return this conversation to the AI?</DialogTitle>
+            <DialogDescription>
+              This ends staff handling and lets the assistant respond automatically again on the customer's next message.
+              Nurture stays paused until the customer re-engages. This action is audited.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReturnAiOpen(false)}>Cancel</Button>
+            <Button onClick={returnToAi}>Return to AI</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={testNotifyOpen} onOpenChange={setTestNotifyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send one real internal test alert?</DialogTitle>
+            <DialogDescription>
+              This sends ONE real escalation SMS (and email, if configured) to the primary recipient
+              (Ben, +1 469-215-0144) to verify notifications work end-to-end. It deliberately bypasses
+              test-identity suppression for this one controlled check. No customer is contacted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTestNotifyOpen(false)} disabled={testNotifyBusy}>Cancel</Button>
+            <Button onClick={runTestNotify} disabled={testNotifyBusy}>{testNotifyBusy ? 'Sending…' : 'Send test alert'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

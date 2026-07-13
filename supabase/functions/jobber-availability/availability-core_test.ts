@@ -8,6 +8,9 @@ import {
   filterBlocksForDay,
   slotHasConflict,
   type BusyInterval,
+  isBusinessDay,
+  effectiveWorkDays,
+  DEFAULT_BUSINESS_WORK_DAYS,
 } from "./availability-core.ts";
 
 // Fixed reference work day: 2026-07-02, 09:00 -> 17:00 UTC.
@@ -138,4 +141,47 @@ Deno.test("no slots offered when an all-day block covers the entire work day", (
     if (!slotHasConflict(s, s + durationMs + bufferAfterMs, busy)) freeSlots++;
   }
   assertEquals(freeSlots, 0);
+});
+// ===========================================================================
+// Defect 1 — business-day (weekend) enforcement. dayOfWeek: 0=Sun … 6=Sat.
+// These prove Saturday/Sunday are excluded server-side for EVERY channel that
+// reads availability (online booking, AI chat, day/week/month, rescheduling,
+// future voice), because they all flow through this shared gate.
+// ===========================================================================
+const MON_FRI = DEFAULT_BUSINESS_WORK_DAYS; // [1,2,3,4,5]
+
+Deno.test("isBusinessDay: Saturday (6) is NOT a default business day", () => {
+  assertFalse(isBusinessDay(6, MON_FRI));
+});
+
+Deno.test("isBusinessDay: Sunday (0) is NOT a default business day", () => {
+  assertFalse(isBusinessDay(0, MON_FRI));
+});
+
+Deno.test("isBusinessDay: Monday–Friday ARE default business days", () => {
+  for (const d of [1, 2, 3, 4, 5]) assert(isBusinessDay(d, MON_FRI));
+});
+
+Deno.test("isBusinessDay: admin may explicitly enable Saturday", () => {
+  assert(isBusinessDay(6, [1, 2, 3, 4, 5, 6]));
+  assertFalse(isBusinessDay(0, [1, 2, 3, 4, 5, 6])); // Sunday still off
+});
+
+Deno.test("effectiveWorkDays: a tech listing weekends cannot make them bookable", () => {
+  // Tech record erroneously includes Sat(6) and Sun(0); business gate strips them.
+  const result = effectiveWorkDays([0, 1, 2, 3, 4, 5, 6], MON_FRI);
+  assertEquals(result, [1, 2, 3, 4, 5]);
+  assertFalse(result.includes(6));
+  assertFalse(result.includes(0));
+});
+
+Deno.test("effectiveWorkDays: empty/absent tech days fall back to business days", () => {
+  assertEquals(effectiveWorkDays([], MON_FRI), [1, 2, 3, 4, 5]);
+  assertEquals(effectiveWorkDays(null, MON_FRI), [1, 2, 3, 4, 5]);
+  assertEquals(effectiveWorkDays(undefined, MON_FRI), [1, 2, 3, 4, 5]);
+});
+
+Deno.test("effectiveWorkDays: Saturday bookable ONLY when business enables it", () => {
+  assertFalse(effectiveWorkDays([1, 2, 3, 4, 5, 6], MON_FRI).includes(6));
+  assert(effectiveWorkDays([1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6]).includes(6));
 });

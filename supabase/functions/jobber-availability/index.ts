@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { blockOverlapsDay, slotHasConflict } from "./availability-core.ts";
+import { blockOverlapsDay, slotHasConflict, effectiveWorkDays, isBusinessDay } from "./availability-core.ts";
 import { getMirrorFreshness, unavailableCustomerMessage } from "../_shared/scheduleFreshness.ts";
 import {
   compactSlots,
@@ -892,7 +892,10 @@ Deno.serve(async (req) => {
           ? tech.starting_address 
           : DRIVE_TIME_CONFIG.office_address;
         
-        const workDays = (tech.work_days as number[]) || BUSINESS_HOURS.workDays;
+        // Defect 1: gate the technician's work days by the business working days
+        // (default Mon–Fri). Weekends are never bookable unless an admin adds
+        // them to business_hours.workDays, regardless of per-tech configuration.
+        const workDays = effectiveWorkDays(tech.work_days as number[] | null, BUSINESS_HOURS.workDays);
         
         // Calculate skill score (average of requested service skill levels)
         const skillLevels = capabilities?.skill_levels || {};
@@ -1246,7 +1249,10 @@ Deno.serve(async (req) => {
         };
         const dayOfWeek = weekdayMap[weekdayStr] ?? 1;
         
-        if (!tech.workDays.includes(dayOfWeek)) {
+        // Defect 1: hard business-day gate (defense in depth). Even if a
+        // technician record somehow lists a weekend, the business working-days
+        // config is authoritative and blocks it here before any slot is built.
+        if (!isBusinessDay(dayOfWeek, BUSINESS_HOURS.workDays) || !tech.workDays.includes(dayOfWeek)) {
           dayOffset++;
           continue;
         }
@@ -1714,6 +1720,29 @@ Deno.serve(async (req) => {
 
     // Calculate fully booked days (no slots available for any tech)
     const fullyBookedDays: string[] = [];
+
+    // Defect 1 backstop: authoritative per-slot business-day gate. Regardless of
+    // any day/weekday iteration edge case, a slot whose ACTUAL start time falls
+    // on a non-business day (default: weekends) is removed here before anything
+    // is returned to ANY channel (online booking, AI chat, day/week/month grid,
+    // rescheduling, future voice). Weekend Jobber visits still exist as busy
+    // blocks for admins; they never open weekend booking.
+    const weekdayNumMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const slotWeekdayNum = (iso: string): number => {
+      const wd = new Intl.DateTimeFormat("en-US", { timeZone: businessTimezone, weekday: "short" }).format(new Date(iso));
+      return weekdayNumMap[wd] ?? 1;
+    };
+    const isSlotBusinessDay = (s: TimeSlot): boolean =>
+      isBusinessDay(slotWeekdayNum(s.startTime), BUSINESS_HOURS.workDays);
+    for (let i = allSlots.length - 1; i >= 0; i--) {
+      if (!isSlotBusinessDay(allSlots[i])) {
+        const removed = allSlots.splice(i, 1)[0];
+        removed.excluded = true;
+        removed.exclusionReason = { code: "BOUNDARY", message: "Outside business working days" };
+        excludedSlots.push(removed);
+      }
+    }
+
     for (const [dateStr, metrics] of dayMetrics) {
       if (!metrics.hasAnySlot) {
         fullyBookedDays.push(dateStr);
