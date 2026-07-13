@@ -309,11 +309,11 @@ export function SmsCampaignManager() {
   };
 
   const editorModel = editing ? toEditor(editing) : null;
-  const editorSteps = editing ? steps.filter((s) => s.campaign_id === editing.id).map((s) => ({ ...s })) : [];
-  const validation = useMemo(
-    () => (editorModel ? validateActivation(editorModel, editorSteps) : null),
-    [editorModel, editorSteps],
-  );
+  const validation = useMemo(() => {
+    if (!editing || !editorModel) return null;
+    const editorSteps = steps.filter((s) => s.campaign_id === editing.id).map((s) => ({ ...s }));
+    return validateActivation(editorModel, editorSteps);
+  }, [editing, editorModel, steps]);
 
   return (
     <div className="space-y-4">
