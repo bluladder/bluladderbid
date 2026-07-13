@@ -11,7 +11,6 @@
 // arbitrary-fetch surface. This function is admin/service-only and allowlisted.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import {
   isAllowedKnowledgeUrl,
   hashContent,
@@ -20,6 +19,11 @@ import {
   type ExistingItem,
 } from "../_shared/knowledgeSync.ts";
 import { recordSystemIssue } from "../_shared/systemHealth.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 const BASE = "https://www.bluladder.com";
 const DEFAULT_PATHS = ["/", "/faq", "/services", "/contact", "/guarantee"];
