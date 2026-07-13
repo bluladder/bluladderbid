@@ -14,7 +14,11 @@ const db = supabase as unknown as { from: (t: string) => any };
 interface ConsentRow {
   id: string; channel: string; consent_type: string; status: string;
   email: string | null; phone: string | null; source: string; language_shown: string | null;
-  granted_at: string | null; revoked_at: string | null; created_at: string;
+  granted_at: string | null; revoked_at: string | null; opt_out_source: string | null; created_at: string;
+}
+interface ConsentEventRow {
+  id: string; consent_id: string | null; action: string; channel: string; consent_type: string;
+  status: string; source: string; language_shown: string | null; created_at: string;
 }
 interface Decision { campaignName: string; outcome: string; reason: string }
 interface EventRow {
@@ -40,6 +44,8 @@ const statusColor: Record<string, string> = {
 
 export function ConsentInspector() {
   const [consent, setConsent] = useState<ConsentRow[]>([]);
+  const [consentEvents, setConsentEvents] = useState<ConsentEventRow[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
   const [suppressed, setSuppressed] = useState<MsgRow[]>([]);
@@ -47,13 +53,15 @@ export function ConsentInspector() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [c, e, en, m] = await Promise.all([
+    const [c, ce, e, en, m] = await Promise.all([
       db.from('communication_consent').select('*').order('created_at', { ascending: false }).limit(100),
+      db.from('communication_consent_events').select('id, consent_id, action, channel, consent_type, status, source, language_shown, created_at').order('created_at', { ascending: false }).limit(300),
       db.from('campaign_events').select('*').order('created_at', { ascending: false }).limit(100),
       db.from('campaign_enrollments').select('id, campaign_id, status, event_name, email, phone, reason, stopped_reason, suppressed, suppressed_reason, enrolled_at').order('enrolled_at', { ascending: false }).limit(100),
       db.from('sms_messages').select('id, channel, to_number, to_email, body, suppressed_reason, error, created_at').eq('suppressed', true).order('created_at', { ascending: false }).limit(50),
     ]);
     setConsent(c.data ?? []);
+    setConsentEvents(ce.data ?? []);
     setEvents(e.data ?? []);
     setEnrollments(en.data ?? []);
     setSuppressed(m.data ?? []);
@@ -81,6 +89,10 @@ export function ConsentInspector() {
 
           <TabsContent value="consent" className="mt-4 space-y-2">
             {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+            <p className="text-xs text-muted-foreground rounded-md bg-muted/50 p-2">
+              Read-only. Consent is recorded only through explicit, sourced customer actions — administrators cannot fabricate consent here,
+              and a statutory-style opt-out is never overridden without a documented new opt-in.
+            </p>
             {!loading && consent.length === 0 && <p className="text-sm text-muted-foreground">No consent records yet.</p>}
             {consent.map((r) => (
               <div key={r.id} className="rounded-lg border border-border p-3 text-sm">
@@ -92,6 +104,32 @@ export function ConsentInspector() {
                   <span className="text-xs text-muted-foreground ml-auto">via {r.source}</span>
                 </div>
                 {r.language_shown && <p className="mt-1 text-xs text-muted-foreground italic">“{r.language_shown}”</p>}
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-muted-foreground">
+                  {r.granted_at && <span>granted {new Date(r.granted_at).toLocaleString()}</span>}
+                  {r.revoked_at && <span>revoked {new Date(r.revoked_at).toLocaleString()}</span>}
+                  {r.opt_out_source && <span>opt-out via {r.opt_out_source}</span>}
+                </div>
+                {(() => {
+                  const history = consentEvents.filter((ev) => ev.consent_id === r.id);
+                  if (!history.length) return null;
+                  const open = expanded === r.id;
+                  return (
+                    <div className="mt-1">
+                      <button className="text-[11px] underline text-muted-foreground" onClick={() => setExpanded(open ? null : r.id)}>
+                        {open ? 'Hide' : `Show`} audit history ({history.length})
+                      </button>
+                      {open && (
+                        <ul className="mt-1 space-y-0.5">
+                          {history.map((ev) => (
+                            <li key={ev.id} className="text-[11px] text-muted-foreground">
+                              <span className="font-medium text-foreground">{ev.action}</span> → {ev.status} · {ev.consent_type} · via {ev.source} · {new Date(ev.created_at).toLocaleString()}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </TabsContent>
