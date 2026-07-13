@@ -687,6 +687,8 @@ export type Database = {
         Row: {
           abandonment_emitted_version: string | null
           abandonment_swept_at: string | null
+          ai_summary: string | null
+          ai_summary_updated_at: string | null
           assigned_admin: string | null
           best_time_to_contact: string | null
           booking_status: string
@@ -694,7 +696,9 @@ export type Database = {
           campaign_status: string | null
           channel: string
           contact_method: string | null
+          conversation_state: string
           created_at: string
+          facts: Json
           id: string
           internal_notes: string | null
           last_activity_at: string
@@ -708,6 +712,7 @@ export type Database = {
           prospect_phone: string | null
           quote_result: Json | null
           resolved: boolean
+          selected_slot_id: string | null
           service_address: string | null
           service_area_result: Json | null
           service_area_status: string | null
@@ -723,6 +728,8 @@ export type Database = {
         Insert: {
           abandonment_emitted_version?: string | null
           abandonment_swept_at?: string | null
+          ai_summary?: string | null
+          ai_summary_updated_at?: string | null
           assigned_admin?: string | null
           best_time_to_contact?: string | null
           booking_status?: string
@@ -730,7 +737,9 @@ export type Database = {
           campaign_status?: string | null
           channel?: string
           contact_method?: string | null
+          conversation_state?: string
           created_at?: string
+          facts?: Json
           id?: string
           internal_notes?: string | null
           last_activity_at?: string
@@ -744,6 +753,7 @@ export type Database = {
           prospect_phone?: string | null
           quote_result?: Json | null
           resolved?: boolean
+          selected_slot_id?: string | null
           service_address?: string | null
           service_area_result?: Json | null
           service_area_status?: string | null
@@ -759,6 +769,8 @@ export type Database = {
         Update: {
           abandonment_emitted_version?: string | null
           abandonment_swept_at?: string | null
+          ai_summary?: string | null
+          ai_summary_updated_at?: string | null
           assigned_admin?: string | null
           best_time_to_contact?: string | null
           booking_status?: string
@@ -766,7 +778,9 @@ export type Database = {
           campaign_status?: string | null
           channel?: string
           contact_method?: string | null
+          conversation_state?: string
           created_at?: string
+          facts?: Json
           id?: string
           internal_notes?: string | null
           last_activity_at?: string
@@ -780,6 +794,7 @@ export type Database = {
           prospect_phone?: string | null
           quote_result?: Json | null
           resolved?: boolean
+          selected_slot_id?: string | null
           service_address?: string | null
           service_area_result?: Json | null
           service_area_status?: string | null

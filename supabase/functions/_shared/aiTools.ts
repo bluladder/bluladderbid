@@ -12,6 +12,7 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateServiceArea } from "./serviceArea.ts";
 import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
+import { checkSuppression } from "./suppression.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -310,6 +311,23 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   const email = convo?.prospect_email;
   if (!email) return { status: "missing_contact", message: "I need the customer's email to book." };
 
+  // CONTROLLED TEST GUARD at the final booking boundary. If the customer is an
+  // approved test identity (or global test-suppression is on), we simulate a
+  // confirmed booking and NEVER call Jobber. This lets the full chat flow be
+  // verified end-to-end without creating any live client/job/quote/visit.
+  const suppression = await checkSuppression(ctx.supabase, { email, phone: convo?.prospect_phone });
+  if (suppression.suppressed) {
+    await ctx.supabase.from("chat_conversations").update({
+      booking_status: "confirmed", last_activity_at: new Date().toISOString(),
+    }).eq("id", ctx.conversationId);
+    return {
+      status: "confirmed",
+      confirmedTime: slot.displayTime,
+      simulated: true,
+      message: "Booking confirmed (test identity — no live Jobber record created).",
+    };
+  }
+
   // Stable idempotency key — reused so retries never double-book.
   const idempotencyKey = `chat|${ctx.conversationId}|${slot.startTime}`;
 
@@ -591,6 +609,9 @@ export const TOOL_DEFINITIONS = [
           serviceFrequency: { type: "string" },
           discountCode: { type: "string" },
           customerType: { type: "string" },
+          name: { type: "string", description: "Customer name, if provided." },
+          email: { type: "string", description: "Customer email, if provided." },
+          phone: { type: "string", description: "Customer phone, if provided." },
         },
         required: ["services"],
         additionalProperties: false,
@@ -609,6 +630,9 @@ export const TOOL_DEFINITIONS = [
           startDate: { type: "string", description: "YYYY-MM-DD" },
           daysToCheck: { type: "number" },
           preference: { type: "string", enum: ["AM", "PM", "none"] },
+          name: { type: "string", description: "Customer name, if provided." },
+          email: { type: "string", description: "Customer email, if provided." },
+          phone: { type: "string", description: "Customer phone, if provided." },
         },
         additionalProperties: false,
       },

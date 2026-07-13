@@ -171,7 +171,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ reply: result.reply, events: result.events });
+    return json({ reply: result.reply, events: result.events, state: result.state });
   } catch (e) {
     console.error("ai-chat error:", e instanceof Error ? e.message : e);
     return json({ error: "Something went wrong. Please try again." }, 500);

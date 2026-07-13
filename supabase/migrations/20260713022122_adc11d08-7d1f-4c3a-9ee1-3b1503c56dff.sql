@@ -1,0 +1,2 @@
+DELETE FROM public.chat_messages WHERE conversation_id IN (SELECT id FROM public.chat_conversations WHERE session_token = 'verify1783909235ix6PwVoX9MkV');
+DELETE FROM public.chat_conversations WHERE session_token = 'verify1783909235ix6PwVoX9MkV';
