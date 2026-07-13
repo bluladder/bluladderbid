@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link2, Code, RefreshCw, ChevronDown, ChevronUp, ExternalLink, MessageSquare } from 'lucide-react';
+import { Link2, Code, RefreshCw, ChevronDown, ChevronUp, ExternalLink, MessageSquare, Bot } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -16,6 +16,7 @@ import { CampaignAuditLog } from './sms/CampaignAuditLog';
 import { EnrollmentAdmin } from './sms/EnrollmentAdmin';
 import { CampaignDryRun } from './sms/CampaignDryRun';
 import { CampaignDashboard } from './sms/CampaignDashboard';
+import { ConversationDashboard } from './ai/ConversationDashboard';
 
 export function IntegrationsTabContent() {
   const [activeSection, setActiveSection] = useState('jobber');
@@ -50,9 +51,20 @@ export function IntegrationsTabContent() {
               <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
               Campaigns &amp; Messaging
             </Badge>
+            <Badge
+              variant={activeSection === 'ai' ? 'default' : 'outline'}
+              className="cursor-pointer px-3 py-1.5"
+              onClick={() => setActiveSection('ai')}
+            >
+              <Bot className="w-3.5 h-3.5 mr-1.5" />
+              AI Conversations
+            </Badge>
           </div>
         </CardContent>
       </Card>
+
+      {/* AI Conversation dashboard */}
+      {activeSection === 'ai' && <ConversationDashboard />}
 
       {/* Jobber Integration */}
       {activeSection === 'jobber' && (
