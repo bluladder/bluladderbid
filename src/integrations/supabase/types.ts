@@ -1347,6 +1347,7 @@ export type Database = {
       }
       quotes: {
         Row: {
+          confirmed_at: string | null
           converted_at: string | null
           converted_booking_id: string | null
           created_at: string
@@ -1360,7 +1361,9 @@ export type Database = {
           expires_at: string | null
           home_details_json: Json
           id: string
+          idempotency_key: string | null
           input_snapshot: Json | null
+          jobber_quote_id: string | null
           line_item_snapshot: Json | null
           pricing_engine_version: string | null
           pricing_rule_version: number | null
@@ -1374,6 +1377,7 @@ export type Database = {
           viewed_at: string | null
         }
         Insert: {
+          confirmed_at?: string | null
           converted_at?: string | null
           converted_booking_id?: string | null
           created_at?: string
@@ -1387,7 +1391,9 @@ export type Database = {
           expires_at?: string | null
           home_details_json: Json
           id?: string
+          idempotency_key?: string | null
           input_snapshot?: Json | null
+          jobber_quote_id?: string | null
           line_item_snapshot?: Json | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
@@ -1401,6 +1407,7 @@ export type Database = {
           viewed_at?: string | null
         }
         Update: {
+          confirmed_at?: string | null
           converted_at?: string | null
           converted_booking_id?: string | null
           created_at?: string
@@ -1414,7 +1421,9 @@ export type Database = {
           expires_at?: string | null
           home_details_json?: Json
           id?: string
+          idempotency_key?: string | null
           input_snapshot?: Json | null
+          jobber_quote_id?: string | null
           line_item_snapshot?: Json | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null

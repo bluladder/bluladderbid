@@ -6,12 +6,17 @@ import { Separator } from '@/components/ui/separator';
 import { RecurringServiceRequestFlow } from '@/components/booking/RecurringServiceRequestFlow';
 import type { ServicePrices, BundleTier, HomeDetails, AdditionalServices } from '@/types/homeowner';
 import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
+import type { TierCustomizations } from '@/hooks/usePlanCustomizations';
 
 interface PricingSummaryProps {
   servicePrices: ServicePrices;
   selectedBundle: BundleTier | null;
   homeDetails: HomeDetails;
   additionalServices: AdditionalServices;
+  /** Canonical engine/rule versions the displayed tier prices came from. */
+  engineVersion: string | null;
+  ruleVersion: number | null;
+  customizations?: TierCustomizations;
   onDownloadPDF: () => void;
   onGetStarted: () => void;
   prefillCustomerInfo?: CustomerInfo | null;
@@ -31,6 +36,9 @@ export function PricingSummary({
   selectedBundle, 
   homeDetails,
   additionalServices,
+  engineVersion,
+  ruleVersion,
+  customizations,
   onDownloadPDF,
   onGetStarted,
   prefillCustomerInfo,
@@ -47,6 +55,9 @@ export function PricingSummary({
         additionalServices={additionalServices}
         homeDetails={homeDetails}
         selectedBundle={selectedBundle}
+        engineVersion={engineVersion}
+        ruleVersion={ruleVersion}
+        customizations={customizations}
         onCancel={() => setShowRequestFlow(false)}
         prefillCustomerInfo={prefillCustomerInfo}
       />
