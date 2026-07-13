@@ -116,7 +116,6 @@ function ScenarioDetails({ scenario }: ScenarioDetailsProps) {
 }
 
 export function ScenarioCompare() {
-  const { data: pricing, isLoading: pricingLoading } = usePricingConfig();
   const { data: savedScenarios = [], isLoading: scenariosLoading } = useSavedScenarios();
   
   const [scenarioAId, setScenarioAId] = useState<string>('');
@@ -125,17 +124,20 @@ export function ScenarioCompare() {
   const scenarioA = savedScenarios.find(s => s.id === scenarioAId);
   const scenarioB = savedScenarios.find(s => s.id === scenarioBId);
   
-  const pricesA = useMemo(() => {
-    if (!pricing || !scenarioA) return null;
-    return calculatePrices(scenarioA.home_details, scenarioA.additional_services, pricing);
-  }, [pricing, scenarioA]);
-  
-  const pricesB = useMemo(() => {
-    if (!pricing || !scenarioB) return null;
-    return calculatePrices(scenarioB.home_details, scenarioB.additional_services, pricing);
-  }, [pricing, scenarioB]);
-  
-  const isLoading = pricingLoading || scenariosLoading;
+  // Both scenarios priced through the SAME calculate-quote endpoint the customer
+  // UI uses — identical inputs guarantee identical totals and line items.
+  const requests = useMemo<QuoteRequest[]>(
+    () => [
+      { id: 'A', input: scenarioA ? scenarioInput(scenarioA.home_details, scenarioA.additional_services) : null },
+      { id: 'B', input: scenarioB ? scenarioInput(scenarioB.home_details, scenarioB.additional_services) : null },
+    ],
+    [scenarioA, scenarioB],
+  );
+  const quotes = useServerQuotes(requests);
+  const pricesA = scenarioA && quotes.byId['A'] ? displayPrices(quotes.byId['A']) : null;
+  const pricesB = scenarioB && quotes.byId['B'] ? displayPrices(quotes.byId['B']) : null;
+
+  const isLoading = scenariosLoading;
   
   if (isLoading) {
     return (
