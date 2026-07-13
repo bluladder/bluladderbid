@@ -30,7 +30,7 @@ const MAX_SLOT_FAILURES_BEFORE_ESCALATION = 2;
  * moment slots were offered and the moment the customer confirms, the offer is
  * invalid and must not be booked against a stale price/duration.
  */
-function computeQuoteSignature(quote: any): string {
+export function computeQuoteSignature(quote: any): string {
   const lineItems = (quote?.jobberLineItems ?? quote?.lineItems ?? []).map((li: any) => ({
     n: li.name ?? li.label ?? "",
     p: Number(li.unitPrice ?? li.amount ?? 0),
