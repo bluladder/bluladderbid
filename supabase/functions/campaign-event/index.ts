@@ -75,6 +75,13 @@ serve(async (req) => {
     if (!takeoverReason) {
       return json({ error: "reason_required", message: "manual_staff_takeover requires a brief reason" }, 400);
     }
+    // Stamp the actor + timestamp into the event metadata for the audit trail.
+    body.metadata = {
+      ...(body.metadata ?? {}),
+      reason: takeoverReason,
+      actor_id: authz.userId,
+      takeover_at: new Date().toISOString(),
+    };
   }
 
   // Deterministic idempotency key. Takeover defaults key to target + takeover
