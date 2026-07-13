@@ -522,42 +522,88 @@ export type Database = {
       }
       campaign_enrollments: {
         Row: {
+          campaign_event_id: string | null
           campaign_id: string
+          campaign_snapshot: Json | null
+          campaign_version: number | null
+          conversation_id: string | null
           created_at: string
-          customer_id: string
+          customer_id: string | null
+          email: string | null
           enrolled_at: string
+          event_name: string | null
           id: string
           lifecycle_status:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
+          paused_at: string | null
+          phone: string | null
+          reason: string | null
           status: string
+          stopped_at: string | null
+          stopped_reason: string | null
+          suppressed: boolean
+          suppressed_reason: string | null
           updated_at: string
         }
         Insert: {
+          campaign_event_id?: string | null
           campaign_id: string
+          campaign_snapshot?: Json | null
+          campaign_version?: number | null
+          conversation_id?: string | null
           created_at?: string
-          customer_id: string
+          customer_id?: string | null
+          email?: string | null
           enrolled_at?: string
+          event_name?: string | null
           id?: string
           lifecycle_status?:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
+          paused_at?: string | null
+          phone?: string | null
+          reason?: string | null
           status?: string
+          stopped_at?: string | null
+          stopped_reason?: string | null
+          suppressed?: boolean
+          suppressed_reason?: string | null
           updated_at?: string
         }
         Update: {
+          campaign_event_id?: string | null
           campaign_id?: string
+          campaign_snapshot?: Json | null
+          campaign_version?: number | null
+          conversation_id?: string | null
           created_at?: string
-          customer_id?: string
+          customer_id?: string | null
+          email?: string | null
           enrolled_at?: string
+          event_name?: string | null
           id?: string
           lifecycle_status?:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
+          paused_at?: string | null
+          phone?: string | null
+          reason?: string | null
           status?: string
+          stopped_at?: string | null
+          stopped_reason?: string | null
+          suppressed?: boolean
+          suppressed_reason?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "campaign_enrollments_campaign_event_id_fkey"
+            columns: ["campaign_event_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_events"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaign_enrollments_campaign_id_fkey"
             columns: ["campaign_id"]
@@ -567,6 +613,69 @@ export type Database = {
           },
           {
             foreignKeyName: "campaign_enrollments_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_events: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          customer_id: string | null
+          email: string | null
+          enrollments_created: number
+          event_name: string
+          id: string
+          idempotency_key: string
+          metadata: Json
+          phone: string | null
+          processed_at: string | null
+          source: string
+          subject: string | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          email?: string | null
+          enrollments_created?: number
+          event_name: string
+          id?: string
+          idempotency_key: string
+          metadata?: Json
+          phone?: string | null
+          processed_at?: string | null
+          source?: string
+          subject?: string | null
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          email?: string | null
+          enrollments_created?: number
+          event_name?: string
+          id?: string
+          idempotency_key?: string
+          metadata?: Json
+          phone?: string | null
+          processed_at?: string | null
+          source?: string
+          subject?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_events_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_events_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
@@ -704,6 +813,150 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      communication_consent: {
+        Row: {
+          booking_id: string | null
+          campaign_event_id: string | null
+          channel: Database["public"]["Enums"]["consent_channel"]
+          consent_type: Database["public"]["Enums"]["consent_type"]
+          conversation_id: string | null
+          created_at: string
+          customer_id: string | null
+          email: string | null
+          granted_at: string | null
+          id: string
+          language_shown: string | null
+          metadata: Json
+          opt_out_source: string | null
+          phone: string | null
+          revoked_at: string | null
+          session_id: string | null
+          source: string
+          status: Database["public"]["Enums"]["consent_status"]
+          updated_at: string
+        }
+        Insert: {
+          booking_id?: string | null
+          campaign_event_id?: string | null
+          channel: Database["public"]["Enums"]["consent_channel"]
+          consent_type: Database["public"]["Enums"]["consent_type"]
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          email?: string | null
+          granted_at?: string | null
+          id?: string
+          language_shown?: string | null
+          metadata?: Json
+          opt_out_source?: string | null
+          phone?: string | null
+          revoked_at?: string | null
+          session_id?: string | null
+          source?: string
+          status?: Database["public"]["Enums"]["consent_status"]
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string | null
+          campaign_event_id?: string | null
+          channel?: Database["public"]["Enums"]["consent_channel"]
+          consent_type?: Database["public"]["Enums"]["consent_type"]
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          email?: string | null
+          granted_at?: string | null
+          id?: string
+          language_shown?: string | null
+          metadata?: Json
+          opt_out_source?: string | null
+          phone?: string | null
+          revoked_at?: string | null
+          session_id?: string | null
+          source?: string
+          status?: Database["public"]["Enums"]["consent_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "communication_consent_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "communication_consent_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "communication_consent_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      communication_consent_events: {
+        Row: {
+          action: string
+          actor_id: string | null
+          channel: Database["public"]["Enums"]["consent_channel"] | null
+          consent_id: string | null
+          consent_type: Database["public"]["Enums"]["consent_type"] | null
+          created_at: string
+          email: string | null
+          id: string
+          language_shown: string | null
+          metadata: Json
+          phone: string | null
+          source: string | null
+          status: Database["public"]["Enums"]["consent_status"] | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          channel?: Database["public"]["Enums"]["consent_channel"] | null
+          consent_id?: string | null
+          consent_type?: Database["public"]["Enums"]["consent_type"] | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          language_shown?: string | null
+          metadata?: Json
+          phone?: string | null
+          source?: string | null
+          status?: Database["public"]["Enums"]["consent_status"] | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          channel?: Database["public"]["Enums"]["consent_channel"] | null
+          consent_id?: string | null
+          consent_type?: Database["public"]["Enums"]["consent_type"] | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          language_shown?: string | null
+          metadata?: Json
+          phone?: string | null
+          source?: string | null
+          status?: Database["public"]["Enums"]["consent_status"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "communication_consent_events_consent_id_fkey"
+            columns: ["consent_id"]
+            isOneToOne: false
+            referencedRelation: "communication_consent"
             referencedColumns: ["id"]
           },
         ]
@@ -1809,46 +2062,67 @@ export type Database = {
       sms_campaigns: {
         Row: {
           active: boolean
+          audience_conditions: Json
           campaign_kind: string
           created_at: string
           description: string | null
+          event_name: string | null
           id: string
           lifecycle_status:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           name: string
+          reentry_cooldown_hours: number | null
+          reentry_enabled: boolean
+          required_consent: Database["public"]["Enums"]["consent_type"] | null
+          stop_conditions: Json
           trigger_event: Database["public"]["Enums"]["sms_trigger_event"] | null
           updated_at: string
+          version: number
         }
         Insert: {
           active?: boolean
+          audience_conditions?: Json
           campaign_kind?: string
           created_at?: string
           description?: string | null
+          event_name?: string | null
           id?: string
           lifecycle_status?:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           name: string
+          reentry_cooldown_hours?: number | null
+          reentry_enabled?: boolean
+          required_consent?: Database["public"]["Enums"]["consent_type"] | null
+          stop_conditions?: Json
           trigger_event?:
             | Database["public"]["Enums"]["sms_trigger_event"]
             | null
           updated_at?: string
+          version?: number
         }
         Update: {
           active?: boolean
+          audience_conditions?: Json
           campaign_kind?: string
           created_at?: string
           description?: string | null
+          event_name?: string | null
           id?: string
           lifecycle_status?:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           name?: string
+          reentry_cooldown_hours?: number | null
+          reentry_enabled?: boolean
+          required_consent?: Database["public"]["Enums"]["consent_type"] | null
+          stop_conditions?: Json
           trigger_event?:
             | Database["public"]["Enums"]["sms_trigger_event"]
             | null
           updated_at?: string
+          version?: number
         }
         Relationships: []
       }
@@ -2314,6 +2588,15 @@ export type Database = {
         }
         Returns: undefined
       }
+      consent_allows: {
+        Args: {
+          p_channel: Database["public"]["Enums"]["consent_channel"]
+          p_email?: string
+          p_phone?: string
+          p_required: Database["public"]["Enums"]["consent_type"]
+        }
+        Returns: boolean
+      }
       current_pricing_version: { Args: never; Returns: number }
       expire_stale_reservations: { Args: never; Returns: number }
       generate_booking_reference: { Args: never; Returns: string }
@@ -2332,6 +2615,24 @@ export type Database = {
       is_read_only_admin: { Args: never; Returns: boolean }
       publish_pricing_version: { Args: { p_note?: string }; Returns: number }
       quote_has_real_services: { Args: { p: Json }; Returns: boolean }
+      record_consent: {
+        Args: {
+          p_actor_id?: string
+          p_booking_id?: string
+          p_channel: Database["public"]["Enums"]["consent_channel"]
+          p_consent_type: Database["public"]["Enums"]["consent_type"]
+          p_conversation_id?: string
+          p_customer_id?: string
+          p_email?: string
+          p_language_shown?: string
+          p_metadata?: Json
+          p_phone?: string
+          p_session_id?: string
+          p_source?: string
+          p_status: Database["public"]["Enums"]["consent_status"]
+        }
+        Returns: string
+      }
       release_autosync_lock: {
         Args: { p_error?: string; p_holder_id: string; p_status?: string }
         Returns: boolean
@@ -2375,6 +2676,9 @@ export type Database = {
         | "cancelled"
         | "pending_confirmation"
         | "needs_attention"
+      consent_channel: "sms" | "email"
+      consent_status: "granted" | "revoked" | "unknown"
+      consent_type: "transactional" | "requested_follow_up" | "marketing"
       lead_lifecycle_status:
         | "open"
         | "pending"
@@ -2548,6 +2852,9 @@ export const Constants = {
         "pending_confirmation",
         "needs_attention",
       ],
+      consent_channel: ["sms", "email"],
+      consent_status: ["granted", "revoked", "unknown"],
+      consent_type: ["transactional", "requested_follow_up", "marketing"],
       lead_lifecycle_status: [
         "open",
         "pending",
