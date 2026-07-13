@@ -8,18 +8,19 @@ import { ShieldCheck, ShieldOff, Mail, MessageSquare, Zap, EyeOff } from 'lucide
 // Read-only administrator view of the canonical consent model, allowlisted
 // campaign events (with per-campaign enrollment reasons), enrollments, and
 // suppressed "would have sent" messages. All writes happen server-side.
-const db = supabase as unknown as {
-  from: (t: string) => any;
-};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = supabase as unknown as { from: (t: string) => any };
 
 interface ConsentRow {
   id: string; channel: string; consent_type: string; status: string;
   email: string | null; phone: string | null; source: string; language_shown: string | null;
   granted_at: string | null; revoked_at: string | null; created_at: string;
 }
+interface Decision { campaignName: string; outcome: string; reason: string }
 interface EventRow {
   id: string; event_name: string; source: string; email: string | null; phone: string | null;
-  enrollments_created: number; created_at: string; processed_at: string | null; metadata: any;
+  enrollments_created: number; created_at: string; processed_at: string | null;
+  metadata: { decisions?: Decision[] } | null;
 }
 interface EnrollmentRow {
   id: string; campaign_id: string; status: string; event_name: string | null;
@@ -108,7 +109,7 @@ export function ConsentInspector() {
                 </div>
                 {Array.isArray(e.metadata?.decisions) && e.metadata.decisions.length > 0 && (
                   <ul className="mt-2 space-y-1">
-                    {e.metadata.decisions.map((d: any, i: number) => (
+                    {e.metadata.decisions.map((d: Decision, i: number) => (
                       <li key={i} className="text-xs text-muted-foreground">
                         <span className="font-medium text-foreground">{d.campaignName}:</span> {d.outcome} — {d.reason}
                       </li>
