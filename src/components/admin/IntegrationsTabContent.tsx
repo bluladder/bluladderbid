@@ -8,6 +8,7 @@ import { JobberIntegration } from './JobberIntegration';
 import { EmbedCodeManager } from './EmbedCodeManager';
 import { SmsCampaignManager } from './sms/SmsCampaignManager';
 import { SmsMessageLog } from './sms/SmsMessageLog';
+import { ConsentInspector } from './sms/ConsentInspector';
 import { SmsOptOutManager } from './sms/SmsOptOutManager';
 import { LeadStatusBoard } from './sms/LeadStatusBoard';
 import { MessageTemplateManager } from './sms/MessageTemplateManager';
@@ -140,6 +141,7 @@ export function IntegrationsTabContent() {
               <TabsTrigger value="leads">Lead Board</TabsTrigger>
               <TabsTrigger value="log">Message Log</TabsTrigger>
               <TabsTrigger value="audit">Audit Log</TabsTrigger>
+              <TabsTrigger value="consent">Consent</TabsTrigger>
               <TabsTrigger value="optouts">Opt-Outs</TabsTrigger>
             </TabsList>
             <TabsContent value="campaigns" className="mt-4">
@@ -156,6 +158,9 @@ export function IntegrationsTabContent() {
             </TabsContent>
             <TabsContent value="audit" className="mt-4">
               <CampaignAuditLog />
+            </TabsContent>
+            <TabsContent value="consent" className="mt-4">
+              <ConsentInspector />
             </TabsContent>
             <TabsContent value="optouts" className="mt-4">
               <SmsOptOutManager />

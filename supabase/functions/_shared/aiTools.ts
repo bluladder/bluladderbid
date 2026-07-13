@@ -399,6 +399,13 @@ async function manualQuoteTool(ctx: ToolContext, args: Record<string, unknown>) 
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
 
+  await emitCampaignEvent(ctx, "manual_quote_requested", {
+    email: (args.email as string) || undefined,
+    phone: (args.phone as string) || undefined,
+    subject: "AI chat manual quote",
+    metadata: { service_types: Array.isArray(args.services) ? args.services : [] },
+  });
+
   return { status: "saved", event: "manual_quote_requested", message: "Flagged for the team to prepare a manual quote." };
 }
 
@@ -406,10 +413,13 @@ async function manualQuoteTool(ctx: ToolContext, args: Record<string, unknown>) 
 // TOOL: request_human_callback
 // ---------------------------------------------------------------------------
 async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>) {
+  const email = (args.email as string) || undefined;
+  const phone = (args.phone as string) || undefined;
+  const method = (args.contactMethod as string) || "phone";
   await ctx.supabase.from("chat_conversations").update({
     prospect_name: (args.name as string) || undefined,
-    prospect_phone: (args.phone as string) || undefined,
-    prospect_email: (args.email as string) || undefined,
+    prospect_phone: phone,
+    prospect_email: email,
     contact_method: (args.contactMethod as string) || undefined,
     best_time_to_contact: (args.bestTime as string) || undefined,
     manual_review_reason: (args.reason as string) || "Human callback requested",
@@ -420,7 +430,96 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
 
+  // A callback grants ONLY the consent needed to fulfil the callback request
+  // (requested_follow_up), on the channel the customer chose — never marketing.
+  const followUpLang = `You asked us to contact you about this request via ${method}.`;
+  if ((method === "text" || method === "phone") && phone) {
+    await recordConsent(ctx, { channel: "sms", consentType: "requested_follow_up", granted: true, phone, email, languageShown: followUpLang, source: "chat_callback" });
+  }
+  if (method === "email" && email) {
+    await recordConsent(ctx, { channel: "email", consentType: "requested_follow_up", granted: true, phone, email, languageShown: followUpLang, source: "chat_callback" });
+  }
+  await emitCampaignEvent(ctx, "callback_requested", { email, phone, subject: "AI chat callback" });
+
   return { status: "saved", event: "callback_requested", message: "A team member will reach out." };
+}
+
+// ---------------------------------------------------------------------------
+// Consent helpers. Consent is stored through the canonical consent service
+// (record_consent), NOT only inside the chat transcript.
+// ---------------------------------------------------------------------------
+async function recordConsent(
+  ctx: ToolContext,
+  o: { channel: "sms" | "email"; consentType: "transactional" | "requested_follow_up" | "marketing"; granted: boolean; email?: string; phone?: string; languageShown: string; source: string },
+) {
+  try {
+    await ctx.supabase.rpc("record_consent", {
+      p_channel: o.channel,
+      p_consent_type: o.consentType,
+      p_status: o.granted ? "granted" : "revoked",
+      p_email: o.email ?? null,
+      p_phone: o.phone ?? null,
+      p_language_shown: o.languageShown,
+      p_source: o.source,
+      p_conversation_id: ctx.conversationId,
+      p_session_id: ctx.sessionToken,
+      p_metadata: { channel_ui: ctx.channel },
+    });
+  } catch (e) {
+    console.error("record_consent failed:", e);
+  }
+}
+
+async function emitCampaignEvent(
+  ctx: ToolContext,
+  eventName: string,
+  o: { email?: string; phone?: string; subject?: string; metadata?: Record<string, unknown> },
+) {
+  try {
+    await callFunction("campaign-event", {
+      event_name: eventName,
+      idempotency_key: `${eventName}:${ctx.conversationId}`,
+      email: o.email ?? null,
+      phone: o.phone ?? null,
+      conversation_id: ctx.conversationId,
+      source: "ai_chat",
+      subject: o.subject ?? null,
+      metadata: { lead_source: "ai_chat", ...(o.metadata ?? {}) },
+    });
+  } catch (e) {
+    console.error("emitCampaignEvent failed:", e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// TOOL: record_consent — the AI records an EXPLICIT consent decision. Marketing
+// consent must be explicit and is never assumed from a phone number or chat.
+// ---------------------------------------------------------------------------
+async function recordConsentTool(ctx: ToolContext, args: Record<string, unknown>) {
+  const channel = args.channel === "email" ? "email" : "sms";
+  const consentType = ["transactional", "requested_follow_up", "marketing"].includes(String(args.consentType))
+    ? (args.consentType as "transactional" | "requested_follow_up" | "marketing")
+    : null;
+  if (!consentType) return { status: "error", message: "Invalid consentType." };
+  const granted = args.granted === true;
+  const languageShown = typeof args.languageShown === "string" && args.languageShown.trim()
+    ? args.languageShown.trim()
+    : "Consent language not recorded.";
+  const email = (args.email as string) || undefined;
+  const phone = (args.phone as string) || undefined;
+  if (channel === "sms" && !phone) return { status: "error", message: "Phone required for SMS consent." };
+  if (channel === "email" && !email) return { status: "error", message: "Email required for email consent." };
+
+  await recordConsent(ctx, { channel, consentType, granted, email, phone, languageShown, source: "chat_explicit" });
+
+  if (consentType === "marketing") {
+    await ctx.supabase.from("chat_conversations").update({
+      marketing_consent: granted, last_activity_at: new Date().toISOString(),
+    }).eq("id", ctx.conversationId);
+  }
+  await emitCampaignEvent(ctx, granted ? "consent_granted" : "consent_revoked", { email, phone, subject: `${consentType} ${channel}` });
+
+  return { status: "saved", channel, consentType, granted, event: granted ? "consent_granted" : "consent_revoked" };
 }
 
 export type ToolName =
@@ -429,7 +528,8 @@ export type ToolName =
   | "create_bluladder_booking"
   | "validate_service_area"
   | "request_manual_quote"
-  | "request_human_callback";
+  | "request_human_callback"
+  | "record_consent";
 
 export async function runTool(name: string, ctx: ToolContext, args: Record<string, unknown>) {
   switch (name) {
@@ -439,6 +539,7 @@ export async function runTool(name: string, ctx: ToolContext, args: Record<strin
     case "validate_service_area": return await validateServiceAreaTool(ctx, args);
     case "request_manual_quote": return await manualQuoteTool(ctx, args);
     case "request_human_callback": return await humanCallbackTool(ctx, args);
+    case "record_consent": return await recordConsentTool(ctx, args);
     default:
       // Hard allowlist: anything else is refused (prompt-injection safe).
       return { status: "forbidden", message: "Unknown or disallowed tool." };
@@ -553,6 +654,26 @@ export const TOOL_DEFINITIONS = [
           contactMethod: { type: "string", enum: ["phone", "text", "email"] },
           bestTime: { type: "string" }, reason: { type: "string" }, summary: { type: "string" },
         },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "record_consent",
+      description: "Record an EXPLICIT communication-consent decision the customer just made. Use a SEPARATE call for each channel/type. Never assume marketing consent from a phone number, a chat, or a quote request — only call with consentType 'marketing' when the customer explicitly opted in to occasional promotions. Use 'requested_follow_up' when they asked to be contacted about THIS request. Always pass the exact languageShown you presented. Never send SMS or email yourself.",
+      parameters: {
+        type: "object",
+        properties: {
+          channel: { type: "string", enum: ["sms", "email"] },
+          consentType: { type: "string", enum: ["transactional", "requested_follow_up", "marketing"] },
+          granted: { type: "boolean" },
+          email: { type: "string" },
+          phone: { type: "string" },
+          languageShown: { type: "string", description: "The exact consent wording shown to the customer." },
+        },
+        required: ["channel", "consentType", "granted", "languageShown"],
         additionalProperties: false,
       },
     },

@@ -13,6 +13,11 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
 const SESSION_KEY = 'bluladder_chat_session';
 const MESSAGES_KEY = 'bluladder_chat_messages';
 
+// The exact, opt-in-only marketing consent language shown next to the checkbox.
+// It is recorded verbatim through the canonical consent service on the server.
+export const MARKETING_CONSENT_LANGUAGE =
+  'Send me occasional promotions and offers from BluLadder by text or email. Not required to get a quote or book.';
+
 function getSessionToken(): string {
   try {
     let token = localStorage.getItem(SESSION_KEY);
@@ -37,14 +42,20 @@ function loadStoredMessages(): Msg[] {
   }
 }
 
-async function sendChat(sessionToken: string, message: string): Promise<string> {
+async function sendChat(sessionToken: string, message: string, marketingConsent: boolean): Promise<string> {
   const resp = await fetch(CHAT_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
     },
-    body: JSON.stringify({ sessionToken, message }),
+    body: JSON.stringify({
+      sessionToken,
+      message,
+      // Only ever sent when explicitly ticked; never defaulted to true.
+      marketingConsent,
+      consentLanguage: marketingConsent ? MARKETING_CONSENT_LANGUAGE : undefined,
+    }),
   });
   const data = await resp.json().catch(() => ({ error: 'Connection failed' }));
   if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
@@ -57,6 +68,8 @@ export default function ChatWidget() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
+  // Explicit, opt-in-only. MUST start false — never preselect marketing consent.
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const sessionRef = useRef<string>(getSessionToken());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -96,15 +109,16 @@ export default function ChatWidget() {
     setIsLoading(true);
 
     try {
-      const reply = await sendChat(sessionRef.current, text);
+      const reply = await sendChat(sessionRef.current, text, marketingConsent);
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-    } catch (e: any) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, something went wrong: ${e.message}` }]);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'please try again';
+      setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, something went wrong: ${msg}` }]);
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
     }
-  }, [input, isLoading]);
+  }, [input, isLoading, marketingConsent]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -176,6 +190,16 @@ export default function ChatWidget() {
 
           {/* Input */}
           <div className="p-3 border-t border-border">
+            {/* Explicit marketing opt-in — never preselected. Not required to book. */}
+            <label className="flex items-start gap-2 mb-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={e => setMarketingConsent(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-input accent-primary"
+              />
+              <span>{MARKETING_CONSENT_LANGUAGE}</span>
+            </label>
             <div className="flex items-end gap-2">
               <textarea
                 ref={inputRef}

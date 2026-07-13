@@ -173,6 +173,12 @@ const ServiceLanding = () => {
   );
   const bundles = bundleState.bundles;
 
+  const currentProgressStep = useMemo<FlowStep>(() => {
+    if (flowState === 'selecting') return 'services';
+    if (flowState === 'one-time-booking' || flowState === 'plan-selected') return 'quote';
+    return 'book';
+  }, [flowState]);
+
   // If invalid service slug, show 404-like message
   if (!config) {
     return (
@@ -234,12 +240,6 @@ const ServiceLanding = () => {
   const handleBackToSelection = () => {
     setFlowState('selecting');
   };
-
-  const currentProgressStep = useMemo<FlowStep>(() => {
-    if (flowState === 'selecting') return 'services';
-    if (flowState === 'one-time-booking' || flowState === 'plan-selected') return 'quote';
-    return 'book';
-  }, [flowState]);
 
   const renderRightColumn = () => {
     if (flowState === 'one-time-booking') {
