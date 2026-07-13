@@ -892,7 +892,10 @@ Deno.serve(async (req) => {
           ? tech.starting_address 
           : DRIVE_TIME_CONFIG.office_address;
         
-        const workDays = (tech.work_days as number[]) || BUSINESS_HOURS.workDays;
+        // Defect 1: gate the technician's work days by the business working days
+        // (default Mon–Fri). Weekends are never bookable unless an admin adds
+        // them to business_hours.workDays, regardless of per-tech configuration.
+        const workDays = effectiveWorkDays(tech.work_days as number[] | null, BUSINESS_HOURS.workDays);
         
         // Calculate skill score (average of requested service skill levels)
         const skillLevels = capabilities?.skill_levels || {};
