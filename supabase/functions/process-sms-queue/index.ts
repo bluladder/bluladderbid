@@ -126,6 +126,47 @@ serve(async (req) => {
       continue;
     }
 
+    // ===== CAMPAIGN DELIVERY SAFETY (rechecked immediately before send) =====
+    // For campaign/marketing messages, re-verify that the campaign is still
+    // active, the enrollment is still active, and consent still permits this
+    // message type. Any stop condition that fired after queueing cancels the
+    // send here. Transactional messages have no enrollment and skip this gate.
+    if (msg.enrollment_id) {
+      const { data: enr } = await supabase
+        .from("campaign_enrollments")
+        .select("status, campaign_id, email, phone, campaign:sms_campaigns(active, required_consent)")
+        .eq("id", msg.enrollment_id)
+        .maybeSingle();
+      const camp = (enr?.campaign as { active?: boolean; required_consent?: string } | null) ?? null;
+      if (!enr || enr.status !== "active") {
+        await supabase.from("sms_messages").update({
+          status: "cancelled", error: `Enrollment not active (${enr?.status ?? "missing"})`, next_retry_at: null,
+        }).eq("id", msg.id);
+        continue;
+      }
+      if (!camp || camp.active === false) {
+        await supabase.from("sms_messages").update({
+          status: "cancelled", error: "Campaign deactivated", next_retry_at: null,
+        }).eq("id", msg.id);
+        continue;
+      }
+      const required = camp.required_consent ?? "transactional";
+      if (required !== "transactional") {
+        const { data: allowed } = await supabase.rpc("consent_allows", {
+          p_channel: msg.channel === "email" ? "email" : "sms",
+          p_required: required,
+          p_email: (msg.to_email as string) ?? enr.email ?? null,
+          p_phone: (msg.to_number as string) ?? enr.phone ?? null,
+        });
+        if (!allowed) {
+          await supabase.from("sms_messages").update({
+            status: "cancelled", error: `Consent no longer satisfies ${required}`, next_retry_at: null,
+          }).eq("id", msg.id);
+          continue;
+        }
+      }
+    }
+
     // ---- Email channel ----
     if (msg.channel === "email") {
       if (!msg.to_email) {
