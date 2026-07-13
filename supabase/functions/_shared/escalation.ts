@@ -46,13 +46,48 @@ export function buildAlertMessage(
     "BluLadder AI escalation",
     esc.prospectName ? `Name: ${esc.prospectName}` : null,
     esc.prospectPhone ? `Callback: ${esc.prospectPhone}` : (callbackNumberDisplay ? `Callback via office: ${callbackNumberDisplay}` : null),
+    esc.prospectEmail ? `Email: ${esc.prospectEmail}` : null,
+    esc.serviceAddress ? `Address: ${esc.serviceAddress}` : null,
     `Reason: ${esc.category.replace(/_/g, " ")}`,
     `Urgency: ${esc.severity ?? "normal"}`,
     esc.serviceRequested ? `Service: ${esc.serviceRequested}` : null,
+    esc.bestCallbackTime ? `Preferred time: ${esc.bestCallbackTime}` : null,
     esc.summary ? `Summary: ${esc.summary.slice(0, 240)}` : null,
     dashboardHint,
   ].filter(Boolean);
   return lines.join("\n");
+}
+
+/**
+ * Best-effort secondary EMAIL alert via Resend. Never throws — email is a
+ * secondary channel and must never block or fail the SMS path. Returns a
+ * compact delivery status + provider response for the audit trail. Excludes
+ * secrets, prompts and transcripts (same customer-safe body as the SMS).
+ */
+async function sendEscalationEmail(
+  to: string,
+  subject: string,
+  body: string,
+): Promise<{ status: string; error: string | null }> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (!apiKey) return { status: "not_configured", error: "RESEND_API_KEY missing" };
+  try {
+    const html = `<pre style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${
+      body.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string))
+    }</pre>`;
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "BluLadder Alerts <noreply@bluladder.com>", to: [to], subject, html }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return { status: "failed", error: `Resend ${resp.status}: ${text.slice(0, 200)}` };
+    }
+    return { status: "sent", error: null };
+  } catch (e) {
+    return { status: "failed", error: e instanceof Error ? e.message.slice(0, 200) : String(e) };
+  }
 }
 
 /**
