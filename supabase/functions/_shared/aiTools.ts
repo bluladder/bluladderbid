@@ -313,9 +313,16 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   const email = convo?.prospect_email;
   if (!email) return { status: "missing_contact", message: "I need the customer's email to book." };
 
-  // Stable idempotency key — derived from conversation + opaque slot so it is
-  // predictable by an authorizing admin and reused so retries never double-book.
-  const idempotencyKey = `chat|${ctx.conversationId}|${slotId}`;
+  // Two related keys:
+  //  * authKey  — conversation + opaque slot. Predictable by an authorizing
+  //    admin (they never see internal start times) and used to scope the
+  //    one-time live-write authorization.
+  //  * idempotencyKey — conversation + actual start time. Robust booking key so
+  //    a genuine re-book of a DIFFERENT time (after an availability refetch)
+  //    correctly creates a new booking instead of replaying an old one, while
+  //    real retries of the SAME booking still de-duplicate.
+  const authKey = `chat|${ctx.conversationId}|${slotId}`;
+  const idempotencyKey = `chat|${ctx.conversationId}|${slot.startTime}`;
 
   // CONTROLLED TEST GUARD at the final booking boundary. If the customer is an
   // approved test identity (or global test-suppression is on), we simulate a
@@ -331,7 +338,7 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
         p_email: email,
         p_conversation_id: ctx.conversationId,
         p_slot_id: slotId,
-        p_idempotency_key: idempotencyKey,
+        p_idempotency_key: authKey,
       });
       authStatus = (auth as { status?: string } | null)?.status ?? "denied";
     } catch (e) {
