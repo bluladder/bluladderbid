@@ -15,7 +15,7 @@ import {
 import {
   APPROVED_TEST_EMAIL, AUTH_STATUS_LABELS, buildAuthKey, canAuthorize,
   deriveAuthStatus, evaluatePreconditions, parseAuthorizedResult, readQuote,
-  shouldShowPanel, type AuthStatus, type ConvoLike, type TestIdentityLike,
+  shouldShowPanel, liveTestReadiness, type AuthStatus, type ConvoLike, type TestIdentityLike,
 } from "./liveJobberTest";
 
 interface OfferedSlot {
