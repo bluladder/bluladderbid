@@ -218,11 +218,34 @@ async function maybeQueueAlert(
   });
 
   const status = insErr ? "failed" : suppression.suppressed ? "suppressed" : "sent";
+  const smsError = insErr ? (insErr.message ?? "sms enqueue failed").slice(0, 200) : null;
+
+  // Secondary EMAIL alert (best-effort). Uses the recipient's own email when
+  // set, otherwise the configured default notify_email. Never blocks the SMS.
+  let emailStatus = "skipped";
+  let emailError: string | null = null;
+  const emailTarget = (recipient.email as string | null) || (settings.notify_email as string | null) || null;
+  if (settings.email_alerts_enabled && emailTarget) {
+    const emailSuppression = await checkSuppression(supabase, { email: emailTarget });
+    if (emailSuppression.suppressed) {
+      emailStatus = "suppressed";
+      emailError = emailSuppression.reason ?? null;
+    } else {
+      const subj = `BluLadder escalation: ${input.category.replace(/_/g, " ")} (${severity})`;
+      const r = await sendEscalationEmail(emailTarget, subj, messageBody);
+      emailStatus = r.status;
+      emailError = r.error;
+    }
+  }
+
   const { data: cur } = await supabase
     .from("ai_escalations").select("alert_count").eq("id", escalationId).maybeSingle();
   const nextCount = (cur?.alert_count ?? 0) + (status === "sent" ? 1 : 0);
   await supabase.from("ai_escalations").update({
     alert_status: status,
+    alert_error: smsError,
+    email_alert_status: emailStatus,
+    email_alert_error: emailError,
     assigned_recipient: recipient.name,
     alert_count: nextCount,
     last_alert_severity: severity,
