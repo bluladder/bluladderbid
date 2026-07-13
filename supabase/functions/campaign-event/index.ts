@@ -197,15 +197,24 @@ serve(async (req) => {
   const suppression = await checkSuppression(supabase, { email, phone });
 
   // ---- Enrolling: find active campaigns whose trigger matches this event ----
-  const { data: campaigns } = await supabase
+  const { data: campaignsRaw } = await supabase
     .from("sms_campaigns")
-    .select("id, name, active, version, event_name, trigger_event, required_consent, audience_conditions, reentry_enabled, reentry_cooldown_hours, sms_campaign_steps(id, step_order, delay_hours, body_template, subject, channel, active)")
+    .select("id, name, active, version, event_name, trigger_event, required_consent, audience_conditions, reentry_enabled, reentry_cooldown_hours, effective_start, effective_end, sms_campaign_steps(id, step_order, delay_hours, body_template, subject, channel, active)")
     .eq("active", true)
     .eq("event_name", eventName);
 
+  // Effective-window gate: a campaign only enrolls while inside its scheduled
+  // window. Null bounds mean unbounded (existing campaigns are unaffected).
+  const nowMs = Date.now();
+  const campaigns = ((campaignsRaw ?? []) as any[]).filter((c) => {
+    if (c.effective_start && new Date(c.effective_start).getTime() > nowMs) return false;
+    if (c.effective_end && new Date(c.effective_end).getTime() < nowMs) return false;
+    return true;
+  });
+
   const decisions: EnrollDecision[] = [];
 
-  for (const c of (campaigns ?? []) as any[]) {
+  for (const c of campaigns as any[]) {
     const required: ConsentType = (c.required_consent as ConsentType) ?? "transactional";
 
     // Audience
