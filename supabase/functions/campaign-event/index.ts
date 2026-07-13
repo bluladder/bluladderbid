@@ -132,6 +132,17 @@ serve(async (req) => {
     }
   }
 
+  // Record the staff-takeover on the source conversation (who / when / why) so
+  // the abandonment sweep and admin views can see the lead is being handled.
+  if (!body.simulate && eventName === "manual_staff_takeover" && body.conversation_id) {
+    await supabase.from("chat_conversations").update({
+      staff_takeover_at: new Date().toISOString(),
+      staff_takeover_by: authz.userId,
+      staff_takeover_reason: takeoverReason,
+      last_activity_at: new Date().toISOString(),
+    }).eq("id", body.conversation_id);
+  }
+
   // ---- Resolve customer + audience context ----
   let customerId = body.customer_id ?? null;
   let cust: Record<string, unknown> | null = null;
