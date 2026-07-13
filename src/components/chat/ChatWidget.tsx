@@ -68,6 +68,8 @@ export default function ChatWidget() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
+  // Explicit, opt-in-only. MUST start false — never preselect marketing consent.
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const sessionRef = useRef<string>(getSessionToken());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -107,7 +109,7 @@ export default function ChatWidget() {
     setIsLoading(true);
 
     try {
-      const reply = await sendChat(sessionRef.current, text);
+      const reply = await sendChat(sessionRef.current, text, marketingConsent);
       setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e: any) {
       setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, something went wrong: ${e.message}` }]);
@@ -115,7 +117,7 @@ export default function ChatWidget() {
       setIsLoading(false);
       inputRef.current?.focus();
     }
-  }, [input, isLoading]);
+  }, [input, isLoading, marketingConsent]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -187,6 +189,16 @@ export default function ChatWidget() {
 
           {/* Input */}
           <div className="p-3 border-t border-border">
+            {/* Explicit marketing opt-in — never preselected. Not required to book. */}
+            <label className="flex items-start gap-2 mb-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={e => setMarketingConsent(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-input accent-primary"
+              />
+              <span>{MARKETING_CONSENT_LANGUAGE}</span>
+            </label>
             <div className="flex items-end gap-2">
               <textarea
                 ref={inputRef}
