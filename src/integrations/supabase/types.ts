@@ -685,6 +685,8 @@ export type Database = {
       }
       chat_conversations: {
         Row: {
+          abandonment_emitted_version: string | null
+          abandonment_swept_at: string | null
           assigned_admin: string | null
           best_time_to_contact: string | null
           booking_status: string
@@ -711,11 +713,16 @@ export type Database = {
           service_area_status: string | null
           services_discussed: Json
           session_token: string
+          staff_takeover_at: string | null
+          staff_takeover_by: string | null
+          staff_takeover_reason: string | null
           status: string
           summary: string | null
           updated_at: string
         }
         Insert: {
+          abandonment_emitted_version?: string | null
+          abandonment_swept_at?: string | null
           assigned_admin?: string | null
           best_time_to_contact?: string | null
           booking_status?: string
@@ -742,11 +749,16 @@ export type Database = {
           service_area_status?: string | null
           services_discussed?: Json
           session_token: string
+          staff_takeover_at?: string | null
+          staff_takeover_by?: string | null
+          staff_takeover_reason?: string | null
           status?: string
           summary?: string | null
           updated_at?: string
         }
         Update: {
+          abandonment_emitted_version?: string | null
+          abandonment_swept_at?: string | null
           assigned_admin?: string | null
           best_time_to_contact?: string | null
           booking_status?: string
@@ -773,6 +785,9 @@ export type Database = {
           service_area_status?: string | null
           services_discussed?: Json
           session_token?: string
+          staff_takeover_at?: string | null
+          staff_takeover_by?: string | null
+          staff_takeover_reason?: string | null
           status?: string
           summary?: string | null
           updated_at?: string
@@ -2061,6 +2076,7 @@ export type Database = {
       }
       sms_campaigns: {
         Row: {
+          abandonment_delay_minutes: number | null
           active: boolean
           audience_conditions: Json
           campaign_kind: string
@@ -2081,6 +2097,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          abandonment_delay_minutes?: number | null
           active?: boolean
           audience_conditions?: Json
           campaign_kind?: string
@@ -2103,6 +2120,7 @@ export type Database = {
           version?: number
         }
         Update: {
+          abandonment_delay_minutes?: number | null
           active?: boolean
           audience_conditions?: Json
           campaign_kind?: string
