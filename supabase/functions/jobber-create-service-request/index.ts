@@ -43,7 +43,7 @@ const corsHeaders = {
 // Emit booking_completed for a successfully recorded recurring plan quote.
 // Idempotent on the local quote id so retries never duplicate the event.
 async function emitBookingCompleted(
-  _supabase: unknown,
+  supabase: SupabaseClient,
   quoteId: string,
   customerId: string | null,
   customer: { email?: string | null; phone?: string | null },
@@ -59,6 +59,7 @@ async function emitBookingCompleted(
       customerId,
       source: "jobber-create-service-request",
       subject: "Recurring plan booking completed",
+      recoverySupabase: supabase,
       metadata: {
         booking_status: "recurring_quote_created",
         quote_id: quoteId,
