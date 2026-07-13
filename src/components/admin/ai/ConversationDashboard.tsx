@@ -88,7 +88,7 @@ export function ConversationDashboard() {
       if (!q) return true;
       const hay = [
         c.prospect_name, c.prospect_email, c.prospect_phone, c.service_address,
-        c.conversation_state, c.ai_summary, JSON.stringify(c.services_discussed ?? []),
+        c.conversation_state, c.ai_summary, svcList(c).join(' '),
       ].join(' ').toLowerCase();
       return hay.includes(q);
     });
@@ -130,15 +130,15 @@ export function ConversationDashboard() {
 
   const copySummary = () => {
     if (!selected) return;
-    const facts = selected.facts ?? {};
+    const q = quoteFacts(selected);
     const lines = [
       `BluLadder AI conversation`,
       `Prospect: ${selected.prospect_name ?? '—'} | ${selected.prospect_email ?? '—'} | ${selected.prospect_phone ?? '—'}`,
       `State: ${selected.conversation_state}`,
       `Address: ${selected.service_address ?? '—'} (${selected.service_area_status ?? 'not validated'})`,
-      `Services: ${(selected.services_discussed ?? []).join(', ') || '—'}`,
+      `Services: ${svcList(selected).join(', ') || '—'}`,
       selected.ai_summary ? `Summary: ${selected.ai_summary}` : '',
-      facts?.quote?.total != null ? `Quote total: $${facts.quote.total}` : '',
+      q.total != null ? `Quote total: $${q.total}` : '',
     ].filter(Boolean);
     navigator.clipboard?.writeText(lines.join('\n'));
     toast({ title: 'Summary copied' });
@@ -188,7 +188,7 @@ export function ConversationDashboard() {
                         <span className="font-medium text-sm truncate">{c.prospect_name || c.prospect_email || 'Anonymous visitor'}</span>
                         <Badge variant={stateBadgeVariant(c.conversation_state)} className="shrink-0 text-[10px]">{c.conversation_state}</Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{c.ai_summary || (c.services_discussed ?? []).join(', ') || 'No summary yet'}</p>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">{c.ai_summary || svcList(c).join(', ') || 'No summary yet'}</p>
                       <div className="flex items-center gap-2 mt-1">
                         {c.needs_attention && <Badge variant="destructive" className="text-[10px] gap-1"><AlertTriangle className="w-3 h-3" />Attention</Badge>}
                         {isAbandoned(c) && <Badge variant="outline" className="text-[10px]">Abandoned</Badge>}
@@ -242,9 +242,9 @@ export function ConversationDashboard() {
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <Fact label="Address" value={selected.service_address} />
                 <Fact label="Service area" value={selected.service_area_status} />
-                <Fact label="Services" value={(selected.services_discussed ?? []).join(', ')} />
+                <Fact label="Services" value={svcList(selected).join(', ')} />
                 <Fact label="Booking" value={selected.booking_status} />
-                <Fact label="Quote total" value={selected.facts?.quote?.total != null ? `$${selected.facts.quote.total}` : selected.facts?.quote?.status} />
+                <Fact label="Quote total" value={quoteFacts(selected).total != null ? `$${quoteFacts(selected).total}` : quoteFacts(selected).status} />
                 <Fact label="Pricing version" value={selected.pricing_version} />
                 <Fact label="Selected slot" value={selected.selected_slot_id} />
                 <Fact label="Marketing consent" value={selected.marketing_consent ? 'granted' : 'no'} />
