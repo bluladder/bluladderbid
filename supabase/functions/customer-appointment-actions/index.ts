@@ -335,6 +335,7 @@ Deno.serve(async (req) => {
           email: typedBooking.customer?.email ?? null,
           customerId: typedBooking.customer_id,
           source: "customer-appointment-actions",
+          recoverySupabase: serviceClient,
           subject: smsEvent === 'appointment_rescheduled' ? "Appointment rescheduled" : "Appointment cancelled",
           metadata: {
             booking_id: bookingId,
