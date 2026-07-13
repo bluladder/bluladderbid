@@ -160,6 +160,26 @@ async function calculateQuoteTool(ctx: ToolContext, args: Record<string, unknown
     .eq("id", ctx.conversationId);
 
   const firm = json.status === "firm" && !manualHit;
+
+  // Emit a campaign event ONLY for a meaningful (firm or estimated) result, and
+  // dedupe on conversation + pricing version + service set so identical repeat
+  // calculations do not re-emit. Total is included only when the quote is firm.
+  const quoteStatus = manualHit ? "manual_review_required" : json.status;
+  if (quoteStatus === "firm" || quoteStatus === "estimated") {
+    const servicesKey = [...services].sort().join(",");
+    await emitCampaignEvent(ctx, "quote_calculated", {
+      idempotencyKey: `quote_calculated:${ctx.conversationId}:${json.ruleVersion ?? "v0"}:${servicesKey}`,
+      metadata: {
+        service_types: services,
+        quote_status: quoteStatus,
+        pricing_version: json.ruleVersion ?? null,
+        engine_version: json.engineVersion ?? null,
+        manual_review: !!manualHit,
+        total: firm ? json.total : null,
+      },
+    });
+  }
+
   return {
     status: manualHit ? "manual_review_required" : json.status,
     firm,
