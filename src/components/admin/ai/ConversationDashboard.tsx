@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { MessageSquare, Copy, UserCheck, CheckCircle2, RotateCcw, AlertTriangle, Bot, User, Search } from 'lucide-react';
+import { MessageSquare, Copy, UserCheck, CheckCircle2, RotateCcw, AlertTriangle, Bot, User, Search, Phone, Mail, Send, PhoneCall, Bell, Headset } from 'lucide-react';
 import { DashboardFilter, FILTER_LABELS, matchesFilter, isAbandoned } from './conversationFilters';
 import { LiveJobberTestPanel } from './LiveJobberTestPanel';
 import type { ConvoLike } from './liveJobberTest';
@@ -51,6 +51,12 @@ export function ConversationDashboard() {
   const [notesDraft, setNotesDraft] = useState('');
   const [takeoverOpen, setTakeoverOpen] = useState(false);
   const [takeoverReason, setTakeoverReason] = useState('');
+  const [replyDraft, setReplyDraft] = useState('');
+  const [replyChannel, setReplyChannel] = useState<'sms' | 'email' | 'call'>('sms');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [returnAiOpen, setReturnAiOpen] = useState(false);
+  const [testNotifyOpen, setTestNotifyOpen] = useState(false);
+  const [testNotifyBusy, setTestNotifyBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
