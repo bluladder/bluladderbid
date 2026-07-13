@@ -399,6 +399,13 @@ async function manualQuoteTool(ctx: ToolContext, args: Record<string, unknown>) 
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
 
+  await emitCampaignEvent(ctx, "manual_quote_requested", {
+    email: (args.email as string) || undefined,
+    phone: (args.phone as string) || undefined,
+    subject: "AI chat manual quote",
+    metadata: { service_types: Array.isArray(args.services) ? args.services : [] },
+  });
+
   return { status: "saved", event: "manual_quote_requested", message: "Flagged for the team to prepare a manual quote." };
 }
 
