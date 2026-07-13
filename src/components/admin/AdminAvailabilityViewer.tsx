@@ -287,7 +287,8 @@ export function AdminAvailabilityViewer({
               Availability Inspector
             </CardTitle>
             <CardDescription>
-              Admin view showing all slots including excluded ones
+              Admin view of raw availability: which technically-valid start times were
+              shown to customers and which were compaction-filtered (with reasons).
             </CardDescription>
           </div>
           <Button variant="outline" size="sm" onClick={fetchAvailability}>
@@ -297,6 +298,29 @@ export function AdminAvailabilityViewer({
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Compaction policy summary */}
+        {compactionConfig && (
+          <div className="rounded-lg border bg-muted/40 p-3 text-xs space-y-1">
+            <div className="font-medium flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" /> Schedule-compaction policy
+            </div>
+            <div className="text-muted-foreground">
+              Min viable gap used: <strong>{compactionConfig.min_viable_gap_used_minutes}m</strong>{' '}
+              (fallback {compactionConfig.minimum_fillable_gap_minutes}m) · Boundary tolerance:{' '}
+              <strong>{compactionConfig.boundary_gap_tolerance_minutes}m</strong> · Max compact slots/block:{' '}
+              <strong>{compactionConfig.max_compact_slots_per_block}</strong>
+              {compactionConfig.shortest_fillable_service_minutes != null && (
+                <> · Shortest fillable service: {compactionConfig.shortest_fillable_service_minutes}m</>
+              )}
+            </div>
+            <div className="text-muted-foreground">
+              Enable “Show Excluded” to reveal compaction-filtered slots — hover any{' '}
+              <span className="text-sky-600 font-medium">compaction</span> slot for gapBefore / gapAfter /
+              min-viable-gap. These remain technically bookable via Override Mode.
+            </div>
+          </div>
+        )}
+
         {/* Controls */}
         <div className="flex flex-wrap items-center gap-4 p-3 bg-muted/50 rounded-lg">
           <div className="flex items-center gap-2">
