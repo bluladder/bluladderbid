@@ -1372,7 +1372,24 @@ Deno.serve(async (req) => {
           
           // Calculate technician preference score
           const technicianScore = (tech.skillScore * 100) + tech.preferenceBonus - tech.discouragedPenalty;
-          
+
+          // Contiguous free-block bounds for schedule compaction. The block is
+          // bounded by the buffered end of the previous appointment (or the
+          // effective day start) and the buffered start of the next appointment
+          // (or the work-day end). Slots already passed the conflict check, so
+          // these bounds are consistent with the real Jobber busy windows.
+          const compactionBufferAfterMs = SLOT_GENERATION_CONFIG.bufferAfterMinutes * 60 * 1000;
+          const freeBlockStartMs = Math.max(
+            effectiveStart.getTime(),
+            previousAppointment ? previousAppointment.expandedEnd.getTime() : effectiveStart.getTime(),
+          );
+          const freeBlockEndMs = Math.min(
+            dayEnd.getTime(),
+            nextAppointment
+              ? nextAppointment.expandedStart.getTime() - compactionBufferAfterMs
+              : dayEnd.getTime(),
+          );
+
           const slot: TimeSlot = {
             technicianId: tech.id,
             technicianName: tech.name,
@@ -1393,6 +1410,8 @@ Deno.serve(async (req) => {
             preferenceBonus: tech.preferenceBonus,
             discouragedPenalty: tech.discouragedPenalty,
             technicianScore,
+            freeBlockStartMs,
+            freeBlockEndMs,
           };
 
           let exclusionReason: ExclusionReason | null = null;
