@@ -334,6 +334,7 @@ Deno.serve(async (req) => {
       inputSnapshot: unknown;
       lineItemSnapshot: unknown;
       discountSnapshot: unknown;
+      promotionSnapshot?: unknown;
     } = {
       engineVersion: null,
       ruleVersion: null,
@@ -377,8 +378,8 @@ Deno.serve(async (req) => {
         if (loaded.ok && loaded.pricing) {
           const engineResult = calculateQuote(
             {
-              homeDetails: booking.homeDetails as QuoteInput["homeDetails"],
-              additionalServices: booking.additionalServices as QuoteInput["additionalServices"],
+              homeDetails: booking.homeDetails as unknown as QuoteInput["homeDetails"],
+              additionalServices: booking.additionalServices as unknown as QuoteInput["additionalServices"],
               discount: serverDiscount,
               promotion:
                 booking.promotion && typeof booking.promotion.id === "string"
@@ -1314,6 +1315,7 @@ Deno.serve(async (req) => {
         customerId: customer.id,
         source: "jobber-create-booking",
         subject: "One-time booking completed",
+        recoverySupabase: supabase,
         metadata: {
           booking_status: "scheduled",
           booking_id: bookingRecord?.id ?? null,

@@ -122,20 +122,10 @@ export function classifyInbound(body: string | null | undefined): "stop" | "star
 }
 
 // Minimal shape of the Supabase client we rely on (avoids importing types here).
-interface MinimalSupabase {
-  from: (table: string) => {
-    select: (cols: string) => {
-      eq: (col: string, val: unknown) => {
-        eq: (col: string, val: unknown) => { maybeSingle: () => Promise<{ data: unknown }> };
-        maybeSingle: () => Promise<{ data: unknown }>;
-      };
-    };
-  };
-}
-
 /** Returns true if the given phone number has opted out of texts. Fails open (false) on error. */
+// deno-lint-ignore no-explicit-any
 export async function isPhoneOptedOut(
-  supabase: MinimalSupabase,
+  supabase: any,
   phone: string | null | undefined,
 ): Promise<boolean> {
   const normalized = normalizePhone(phone);

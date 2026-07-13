@@ -11,6 +11,7 @@
 // ============================================================================
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateServiceArea } from "./serviceArea.ts";
+import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -495,20 +496,19 @@ async function emitCampaignEvent(
   eventName: string,
   o: { email?: string; phone?: string; subject?: string; metadata?: Record<string, unknown>; idempotencyKey?: string },
 ) {
-  try {
-    await callFunction("campaign-event", {
-      event_name: eventName,
-      idempotency_key: o.idempotencyKey ?? `${eventName}:${ctx.conversationId}`,
-      email: o.email ?? null,
-      phone: o.phone ?? null,
-      conversation_id: ctx.conversationId,
-      source: "ai_chat",
-      subject: o.subject ?? null,
-      metadata: { lead_source: "ai_chat", ...(o.metadata ?? {}) },
-    });
-  } catch (e) {
-    console.error("emitCampaignEvent failed:", e);
-  }
+  // Routes through the shared emitter: bounded timeout, transient retries, and
+  // — for critical events like consent_revoked — persistence for cron recovery.
+  await emitCampaignEventShared({
+    eventName,
+    idempotencyKey: o.idempotencyKey ?? `${eventName}:${ctx.conversationId}`,
+    email: o.email ?? null,
+    phone: o.phone ?? null,
+    conversationId: ctx.conversationId,
+    source: "ai_chat",
+    subject: o.subject ?? null,
+    metadata: { lead_source: "ai_chat", ...(o.metadata ?? {}) },
+    recoverySupabase: ctx.supabase,
+  });
 }
 
 // ---------------------------------------------------------------------------
