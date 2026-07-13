@@ -163,15 +163,23 @@ export async function escalateToHuman(
       .single();
     if (error || !data) {
       // A concurrent insert may have created the active row; treat as existing.
-      return { escalationId: "", created: false, alertStatus: "failed", alertSent: false };
+      return { escalationId: "", created: false, alertStatus: "delivery_failed", alertSent: false, deliveryState: "delivery_failed", severity };
     }
     escalationId = data.id;
     created = true;
     shouldAlert = true;
   }
 
-  const alertStatus = await maybeQueueAlert(supabase, escalationId, input, severity, shouldAlert);
-  return { escalationId, created, alertStatus, alertSent: alertStatus === "sent" };
+  const deliveryState = await maybeQueueAlert(supabase, escalationId, input, severity, shouldAlert);
+  return {
+    escalationId,
+    created,
+    alertStatus: deliveryState,
+    // "sent" ONLY when the provider actually confirmed acceptance.
+    alertSent: deliveryState === "sms_sent" || deliveryState === "email_sent" || deliveryState === "partially_delivered",
+    deliveryState,
+    severity,
+  };
 }
 
 async function maybeQueueAlert(
@@ -180,14 +188,28 @@ async function maybeQueueAlert(
   input: EscalationInput,
   severity: string,
   shouldAlert: boolean,
-): Promise<string> {
-  if (!shouldAlert) return "skipped";
+): Promise<EscalationDeliveryState> {
+  const nowIso = new Date().toISOString();
+  // A repeat (same/lower severity) escalation does not re-alert; report the
+  // record's CURRENT persisted delivery state so language stays accurate.
+  if (!shouldAlert) {
+    const { data: cur } = await supabase
+      .from("ai_escalations").select("alert_status").eq("id", escalationId).maybeSingle();
+    const known: EscalationDeliveryState[] = [
+      "created", "queued", "sms_sent", "email_sent",
+      "partially_delivered", "delivery_failed", "suppressed", "no_recipient_configured",
+    ];
+    const s = cur?.alert_status as EscalationDeliveryState | undefined;
+    return s && known.includes(s) ? s : "queued";
+  }
 
   const { data: settings } = await supabase
     .from("escalation_settings").select("*").eq("singleton", true).maybeSingle();
   if (!settings?.internal_alerts_enabled) {
-    await supabase.from("ai_escalations").update({ alert_status: "no_recipient" }).eq("id", escalationId);
-    return "no_recipient";
+    await supabase.from("ai_escalations").update({
+      alert_status: "no_recipient_configured", alert_last_attempt_at: nowIso,
+    }).eq("id", escalationId);
+    return "no_recipient_configured";
   }
 
   // Choose an enabled recipient that handles this category (or urgent).
@@ -202,8 +224,10 @@ async function maybeQueueAlert(
   pick.sort((a: any, b: any) => (a.role === "primary" ? -1 : 1) - (b.role === "primary" ? -1 : 1));
   const recipient = pick[0];
   if (!recipient) {
-    await supabase.from("ai_escalations").update({ alert_status: "no_recipient" }).eq("id", escalationId);
-    return "no_recipient";
+    await supabase.from("ai_escalations").update({
+      alert_status: "no_recipient_configured", alert_last_attempt_at: nowIso,
+    }).eq("id", escalationId);
+    return "no_recipient_configured";
   }
 
   // Suppression is re-checked at delivery too, but check here to record status.
@@ -225,38 +249,64 @@ async function maybeQueueAlert(
     send_at: new Date().toISOString(),
   });
 
-  const status = insErr ? "failed" : suppression.suppressed ? "suppressed" : "sent";
-  const smsError = insErr ? (insErr.message ?? "sms enqueue failed").slice(0, 200) : null;
+  // The SMS is now on the async queue. We must NOT report it as "sent": that is
+  // only known later, when process-sms-queue records provider acceptance.
+  const smsStatus: ChannelDeliveryStatus = insErr
+    ? "failed"
+    : suppression.suppressed
+      ? "suppressed"
+      : "queued";
+  const smsError = insErr
+    ? (insErr.message ?? "sms enqueue failed").slice(0, 200)
+    : suppression.suppressed
+      ? `suppressed:${suppression.reason ?? "unknown"}`
+      : null;
+  const smsProviderResponse = insErr ? "enqueue_failed" : suppression.suppressed ? "suppressed" : "queued";
 
   // Secondary EMAIL alert (best-effort). Uses the recipient's own email when
   // set, otherwise the configured default notify_email. Never blocks the SMS.
-  let emailStatus = "skipped";
+  let emailStatus: ChannelDeliveryStatus = "skipped";
   let emailError: string | null = null;
+  let emailProviderResponse: string | null = null;
   const emailTarget = (recipient.email as string | null) || (settings.notify_email as string | null) || null;
   if (settings.email_alerts_enabled && emailTarget) {
     const emailSuppression = await checkSuppression(supabase, { email: emailTarget });
     if (emailSuppression.suppressed) {
       emailStatus = "suppressed";
       emailError = emailSuppression.reason ?? null;
+      emailProviderResponse = "suppressed";
     } else {
       const subj = `BluLadder escalation: ${input.category.replace(/_/g, " ")} (${severity})`;
       const r = await sendEscalationEmail(emailTarget, subj, messageBody);
-      emailStatus = r.status;
+      emailStatus = r.status === "sent" ? "sent" : r.status === "not_configured" ? "not_configured" : "failed";
       emailError = r.error;
+      emailProviderResponse = r.status === "sent" ? "accepted" : (r.error ?? r.status);
     }
   }
 
+  const deliveryState = rollupDeliveryState({
+    hasRecipient: true,
+    alertsEnabled: true,
+    sms: smsStatus,
+    email: emailStatus,
+  });
+
   const { data: cur } = await supabase
     .from("ai_escalations").select("alert_count").eq("id", escalationId).maybeSingle();
-  const nextCount = (cur?.alert_count ?? 0) + (status === "sent" ? 1 : 0);
+  const attempted = deliveryState !== "no_recipient_configured";
+  const nextCount = (cur?.alert_count ?? 0) + (attempted ? 1 : 0);
   await supabase.from("ai_escalations").update({
-    alert_status: status,
+    alert_status: deliveryState,
+    sms_alert_status: smsStatus,
     alert_error: smsError,
+    sms_provider_response: smsProviderResponse,
     email_alert_status: emailStatus,
     email_alert_error: emailError,
+    email_provider_response: emailProviderResponse,
+    alert_last_attempt_at: nowIso,
     assigned_recipient: recipient.name,
     alert_count: nextCount,
     last_alert_severity: severity,
   }).eq("id", escalationId);
-  return status;
+  return deliveryState;
 }
