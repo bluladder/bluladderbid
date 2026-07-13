@@ -50,11 +50,39 @@ Deno.test("stale schedule data is rejected", async () => {
   assertEquals(f.reason, "stale");
 });
 
-Deno.test("sync-in-progress data is rejected", async () => {
+Deno.test("routine in-progress refresh still serves a FRESH snapshot", async () => {
+  // The near-term autosync holds the lock ~75s every 5 minutes. A fresh
+  // completed snapshot must still be served during that routine refresh instead
+  // of failing closed (the bug that surfaced during the live AI-chat test).
   const c = mockClient({
     last_full_sync_completed_at: minsAgo(5),
     lock_holder_id: "run-123",
     lock_acquired_at: minsAgo(2), // within lock TTL => actively running
+    last_run_status: "running",
+  });
+  const f = await getMirrorFreshness(c);
+  assertEquals(f.ok, true);
+  assertEquals(f.reason, "fresh");
+  assertEquals(f.syncInProgress, true); // still reported for admins/logs
+});
+
+Deno.test("in-progress sync with a STALE snapshot is rejected", async () => {
+  const c = mockClient({
+    last_full_sync_completed_at: minsAgo(STALE_THRESHOLD_MINUTES + 10),
+    lock_holder_id: "run-123",
+    lock_acquired_at: minsAgo(2), // within lock TTL => actively running
+    last_run_status: "running",
+  });
+  const f = await getMirrorFreshness(c);
+  assertEquals(f.ok, false);
+  assertEquals(f.reason, "sync_in_progress");
+});
+
+Deno.test("in-progress FIRST sync (never completed) is rejected", async () => {
+  const c = mockClient({
+    last_full_sync_completed_at: null,
+    lock_holder_id: "run-123",
+    lock_acquired_at: minsAgo(2),
     last_run_status: "running",
   });
   const f = await getMirrorFreshness(c);
