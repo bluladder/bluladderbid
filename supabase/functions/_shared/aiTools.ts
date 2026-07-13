@@ -482,7 +482,88 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
   }
   await emitCampaignEvent(ctx, "callback_requested", { email, phone, subject: "AI chat callback" });
 
-  return { status: "saved", event: "callback_requested", message: "A team member will reach out." };
+  // Create ONE active internal escalation for this conversation + category and
+  // (if a recipient is configured) queue a suppression-checked internal alert.
+  const reason = (args.reason as string) || "";
+  const unanswered = /can'?t (confirm|answer)|not sure|unsure|don'?t know|missing/i.test(reason);
+  await escalateToHuman(ctx.supabase, {
+    conversationId: ctx.conversationId,
+    category: unanswered ? "unanswered_question" : "human_request",
+    severity: "normal",
+    prospectName: (args.name as string) || null,
+    prospectPhone: phone ?? null,
+    prospectEmail: email ?? null,
+    summary: (args.summary as string) || reason || "Human callback requested",
+    requestedContactMethod: method,
+    bestCallbackTime: (args.bestTime as string) || null,
+  });
+  if (unanswered) {
+    await recordKnowledgeGap(ctx.supabase, {
+      question: (args.summary as string) || reason || "unspecified",
+      reason: "AI could not confirm the answer; callback offered.",
+      isHandoff: true,
+    });
+  }
+
+  return { status: "saved", event: "callback_requested", message: "Your request was sent to the BluLadder team. A team member will follow up. You can also call us at (866) 242-2583." };
+}
+
+// ---------------------------------------------------------------------------
+// TOOL: escalate_to_human — complaints, damage, billing disputes, urgent or
+// repeatedly-confused conversations. Creates one active escalation + one
+// suppression-checked internal alert (never spams; higher severity may add one).
+// ---------------------------------------------------------------------------
+const ESCALATION_CATEGORIES = new Set([
+  "human_request", "manual_quote", "complaint", "damage", "billing_dispute",
+  "pricing_unverified", "booking_needs_attention", "service_area_review",
+  "unanswered_question", "confused_conversation", "urgent", "other",
+]);
+
+async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
+  const rawCat = String(args.category || "other");
+  const category = ESCALATION_CATEGORIES.has(rawCat) ? rawCat : "other";
+  const severity = ["low", "normal", "high", "urgent"].includes(String(args.severity))
+    ? String(args.severity) : "normal";
+  const phone = (args.phone as string) || undefined;
+  const email = (args.email as string) || undefined;
+
+  await ctx.supabase.from("chat_conversations").update({
+    prospect_name: (args.name as string) || undefined,
+    prospect_phone: phone,
+    prospect_email: email,
+    needs_attention: true,
+    manual_review_reason: (args.reason as string) || `Escalation: ${category}`,
+    summary: (args.summary as string) || undefined,
+    last_activity_at: new Date().toISOString(),
+  }).eq("id", ctx.conversationId);
+
+  const result = await escalateToHuman(ctx.supabase, {
+    conversationId: ctx.conversationId,
+    category,
+    severity,
+    prospectName: (args.name as string) || null,
+    prospectPhone: phone ?? null,
+    prospectEmail: email ?? null,
+    serviceRequested: (args.service as string) || null,
+    summary: (args.summary as string) || (args.reason as string) || null,
+    requestedContactMethod: (args.contactMethod as string) || null,
+  });
+
+  if (category === "unanswered_question") {
+    await recordKnowledgeGap(ctx.supabase, {
+      question: (args.summary as string) || (args.reason as string) || "unspecified",
+      reason: "Escalated as an unanswered question.",
+      isHandoff: true,
+    });
+  }
+
+  return {
+    status: "escalated",
+    event: "human_escalation",
+    // Never claim the internal SMS was delivered unless it actually was.
+    message: "Your request was sent to the BluLadder team and a team member will follow up. If it's urgent you can call us at (866) 242-2583.",
+    internalAlert: result.alertSent ? "delivered" : "queued_or_pending",
+  };
 }
 
 // ---------------------------------------------------------------------------
