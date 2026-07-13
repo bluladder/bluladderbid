@@ -3,6 +3,7 @@ import {
   APPROVED_TEST_EMAIL, APPROVED_TEST_PHONE, buildAuthKey, canAuthorize,
   deriveAuthStatus, evaluatePreconditions, isProtectedTestConversation,
   normalizePhone, parseAuthorizedResult, selectedSlotBelongs, shouldShowPanel,
+  liveTestReadiness,
   type ConvoLike, type TestIdentityLike,
 } from "./liveJobberTest";
 
