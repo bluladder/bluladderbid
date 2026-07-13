@@ -1841,8 +1841,10 @@ Deno.serve(async (req) => {
     }
 
     // Recommended mode: return top 3 candidates
-    // Score and sort all slots with technician preference weighting
-    const scoredSlots = allSlots.map(slot => {
+    // Score and sort only the COMPACTED (customer-shown) slots so the ranked
+    // recommendations, "best recommended", "next available" and the AI-chat
+    // options can never surface a raw start time the website filters out.
+    const scoredSlots = shownSlots.map(slot => {
       const slotDate = new Date(slot.startTime);
       const daysSinceNow = (slotDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000);
       
@@ -1851,11 +1853,20 @@ Deno.serve(async (req) => {
       const gapScore = slot.gapScore || 50;
       const routeScore = slot.routeDensityScore || 50;
       const techScore = slot.technicianScore || 100; // Default to 100 (skill 3, no bonus/penalty)
-      
-      // Combined score with technician preference weighting
-      // Gap: 35%, Recency: 30%, Route: 15%, Tech Preference: 20%
-      const totalScore = (gapScore * 0.35) + (recencyScore * 0.30) + (routeScore * 0.15) + (techScore * 0.20);
-      
+      // Compaction score (schedule-efficiency): boundary-packing + route + low
+      // fragmentation. Folded into ranking so "Best Recommended" prefers slots
+      // that keep the overall schedule tight, not merely the chronologically
+      // earliest slot when that would damage the rest of the day.
+      const compactionScore = slot.compactionScore ?? 50;
+
+      // Combined score. Compaction 30%, Gap 20%, Recency 25%, Route 10%, Tech 15%.
+      const totalScore =
+        (compactionScore * 0.30) +
+        (gapScore * 0.20) +
+        (recencyScore * 0.25) +
+        (routeScore * 0.10) +
+        (techScore * 0.15);
+
       return { ...slot, totalScore };
     });
     
