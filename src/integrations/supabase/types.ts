@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           alert_count: number
           alert_error: string | null
+          alert_last_attempt_at: string | null
           alert_status: string
           assigned_recipient: string | null
           best_callback_time: string | null
@@ -28,6 +29,7 @@ export type Database = {
           created_at: string
           email_alert_error: string | null
           email_alert_status: string | null
+          email_provider_response: string | null
           id: string
           last_alert_severity: string | null
           prospect_email: string | null
@@ -40,6 +42,8 @@ export type Database = {
           service_address: string | null
           service_requested: string | null
           severity: string
+          sms_alert_status: string | null
+          sms_provider_response: string | null
           status: string
           summary: string | null
           updated_at: string
@@ -47,6 +51,7 @@ export type Database = {
         Insert: {
           alert_count?: number
           alert_error?: string | null
+          alert_last_attempt_at?: string | null
           alert_status?: string
           assigned_recipient?: string | null
           best_callback_time?: string | null
@@ -57,6 +62,7 @@ export type Database = {
           created_at?: string
           email_alert_error?: string | null
           email_alert_status?: string | null
+          email_provider_response?: string | null
           id?: string
           last_alert_severity?: string | null
           prospect_email?: string | null
@@ -69,6 +75,8 @@ export type Database = {
           service_address?: string | null
           service_requested?: string | null
           severity?: string
+          sms_alert_status?: string | null
+          sms_provider_response?: string | null
           status?: string
           summary?: string | null
           updated_at?: string
@@ -76,6 +84,7 @@ export type Database = {
         Update: {
           alert_count?: number
           alert_error?: string | null
+          alert_last_attempt_at?: string | null
           alert_status?: string
           assigned_recipient?: string | null
           best_callback_time?: string | null
@@ -86,6 +95,7 @@ export type Database = {
           created_at?: string
           email_alert_error?: string | null
           email_alert_status?: string | null
+          email_provider_response?: string | null
           id?: string
           last_alert_severity?: string | null
           prospect_email?: string | null
@@ -98,6 +108,8 @@ export type Database = {
           service_address?: string | null
           service_requested?: string | null
           severity?: string
+          sms_alert_status?: string | null
+          sms_provider_response?: string | null
           status?: string
           summary?: string | null
           updated_at?: string
@@ -2705,6 +2717,47 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_reply_test_authorizations: {
+        Row: {
+          authorized_by: string | null
+          channel: string
+          consumed_at: string | null
+          consumed_message_id: string | null
+          conversation_id: string
+          created_at: string
+          expires_at: string
+          id: string
+        }
+        Insert: {
+          authorized_by?: string | null
+          channel: string
+          consumed_at?: string | null
+          consumed_message_id?: string | null
+          conversation_id: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+        }
+        Update: {
+          authorized_by?: string | null
+          channel?: string
+          consumed_at?: string | null
+          consumed_message_id?: string | null
+          conversation_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_reply_test_authorizations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_issues: {
         Row: {
           associated_ref: string | null
@@ -3067,6 +3120,10 @@ export type Database = {
         }
         Returns: Json
       }
+      authorize_staff_test_reply: {
+        Args: { p_channel: string; p_conversation_id: string }
+        Returns: string
+      }
       can_edit_crew_rules: { Args: never; Returns: boolean }
       can_manage_schedule_blocks: { Args: never; Returns: boolean }
       can_override_bookings: { Args: never; Returns: boolean }
@@ -3141,6 +3198,10 @@ export type Database = {
           p_slot_id: string
         }
         Returns: Json
+      }
+      consume_staff_test_reply_auth: {
+        Args: { p_channel: string; p_conversation_id: string }
+        Returns: string
       }
       current_pricing_version: { Args: never; Returns: number }
       expire_stale_reservations: { Args: never; Returns: number }
