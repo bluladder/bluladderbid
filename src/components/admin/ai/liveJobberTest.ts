@@ -211,6 +211,37 @@ export function shouldShowPanel(input: {
   return hasSlot && readyish;
 }
 
+// Live-test readiness: the exact prerequisites the panel gates on, each with a
+// clear pass/fail + explanation, so an operations admin is NEVER shown a
+// silently-missing panel. When every gate passes the full authorization control
+// is shown; otherwise this list explains precisely what is missing.
+export function liveTestReadiness(input: {
+  isOperationsAdmin: boolean;
+  convo: ConvoLike;
+  identity: TestIdentityLike | null;
+  globalSuppressionOn: boolean;
+}): Precondition[] {
+  const { isOperationsAdmin, convo, identity, globalSuppressionOn } = input;
+  const quote = readQuote(convo);
+  const state = convo.conversation_state ?? "";
+  const hasSlot = !!(convo.selected_slot_id ?? convo.facts?.selectedSlotId);
+  return [
+    { key: "operations_admin", label: "You are an operations admin", ok: isOperationsAdmin,
+      detail: isOperationsAdmin ? undefined : "requires operations-admin permission" },
+    { key: "protected_identity", label: "Conversation is the protected test identity", ok: isProtectedTestConversation(convo, identity),
+      detail: isProtectedTestConversation(convo, identity) ? undefined : "not the approved test customer" },
+    { key: "selected_slot", label: "A slot is currently selected", ok: hasSlot,
+      detail: hasSlot ? undefined : "no selected slot yet" },
+    { key: "state_ready", label: "Conversation is awaiting booking confirmation", ok: state === "awaiting_booking_confirmation" || state === "booked",
+      detail: state || "unknown" },
+    { key: "quote_firm", label: "Quote is firm and current", ok: quote.firm, detail: quote.status ?? "no quote" },
+    { key: "suppression_active", label: "Permanent test suppression is active", ok: identity?.active === true && identity?.protected === true,
+      detail: identity?.active && identity?.protected ? undefined : "test suppression missing" },
+    { key: "global_suppression_off", label: "Global test suppression is off", ok: !globalSuppressionOn,
+      detail: globalSuppressionOn ? "global test suppression is ON" : undefined },
+  ];
+}
+
 // A parsed view of the stored authorization result for the verification panel.
 export interface AuthorizedResultView {
   status: string | null;
