@@ -222,7 +222,10 @@ export function ConversationDashboard() {
     if (!selected || replyChannel === 'call') return;
     setAuthorizingTest(true);
     try {
-      const { error } = await supabase.rpc('authorize_staff_test_reply', {
+      // Cast: RPC is newly added and may not yet be in generated types.
+      const { error } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>,
+      ) => Promise<{ error: { message: string } | null }>)('authorize_staff_test_reply', {
         p_conversation_id: selected.id, p_channel: replyChannel,
       });
       if (error) { toast({ title: 'Authorization failed', description: error.message, variant: 'destructive' }); return; }
