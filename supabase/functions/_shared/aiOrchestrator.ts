@@ -70,8 +70,20 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
   const knowledge = (data ?? [])
     .map((r) => `- [${r.category}] ${r.title}: ${r.content}`)
     .join("\n");
+  // Anchor the model to the real current date (business timezone). Without this
+  // the model guesses "today" from its training data and can present — or pass
+  // to get_bluladder_availability — a stale past date, which returns zero slots
+  // and a misleading "no openings" reply.
+  const todayCentral = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
   return [
     BASE_PROMPT,
+    "",
+    `TODAY'S DATE (America/Chicago): ${todayCentral}. Always reason about availability and appointment dates relative to this date. Never assume a different current date.`,
     "",
     "APPROVED BUSINESS FACTS (the only facts you may assert):",
     knowledge || "- (none configured yet)",
