@@ -111,6 +111,7 @@ export function AdminAvailabilityViewer({
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [overrideMode, setOverrideMode] = useState(false);
   const [pendingOverrideSlot, setPendingOverrideSlot] = useState<TimeSlot | null>(null);
+  const [compactionConfig, setCompactionConfig] = useState<CompactionConfigView | null>(null);
 
   // Debounce availability requests so typing an address doesn't spam the provider.
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -146,6 +147,7 @@ export function AdminAvailabilityViewer({
       
       setSlots(fetchedSlots);
       setExcludedSlots(fetchedExcluded);
+      setCompactionConfig((data.compactionConfig as CompactionConfigView) ?? null);
 
       // Extract unique dates that have any slots
       const allSlots = [...fetchedSlots, ...fetchedExcluded];
