@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut, getCustomerPause } from "../_shared/sms.ts";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
+import { runAbandonmentSweep, recoverPendingCampaignEvents } from "../_shared/campaignSweep.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -245,7 +246,23 @@ serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed }), {
+  // ===== CAMPAIGN LIFECYCLE (runs AFTER normal queue work so sends are never
+  // delayed). Both steps are bounded and continue across subsequent ticks.
+  // Logically separated in _shared/campaignSweep.ts; NO new cron/queue. =====
+  let abandonment: unknown = null;
+  let recovery: unknown = null;
+  try {
+    recovery = await recoverPendingCampaignEvents(supabase);
+  } catch (e) {
+    console.error("recoverPendingCampaignEvents error:", e instanceof Error ? e.message : e);
+  }
+  try {
+    abandonment = await runAbandonmentSweep(supabase);
+  } catch (e) {
+    console.error("runAbandonmentSweep error:", e instanceof Error ? e.message : e);
+  }
+
+  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, recovery }), {
     status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });
