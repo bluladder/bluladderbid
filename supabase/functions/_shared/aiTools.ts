@@ -13,6 +13,8 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { validateServiceArea } from "./serviceArea.ts";
 import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
 import { checkSuppression } from "./suppression.ts";
+import { escalateToHuman } from "./escalation.ts";
+import { recordKnowledgeGap } from "./knowledgeGaps.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
