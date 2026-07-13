@@ -1816,23 +1816,22 @@ Deno.serve(async (req) => {
     if (mode === 'dayGrid') {
       // Return only the COMPACTED slots for the selected date, deduped by
       // display time + technician (customer-facing browsing).
-      const compactionSource = includeExcluded ? allSlots : shownSlots;
       const deduped = new Map<string, TimeSlot>();
-      for (const slot of compactionSource) {
+      for (const slot of shownSlots) {
         const key = `${slot.displayTime}|${slot.technicianId}`;
         const existing = deduped.get(key);
         if (!existing || (slot.gapScore || 0) > (existing.gapScore || 0)) {
           deduped.set(key, slot);
         }
       }
-      const dayGridSlots = Array.from(deduped.values()).sort((a, b) => {
-        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-      });
+      const dayGridSlots = Array.from(deduped.values()).sort(
+        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+      );
 
       return new Response(
         JSON.stringify({
           mode: 'dayGrid',
-          slots: includeExcluded ? shownSlots.slice().sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()) : dayGridSlots,
+          slots: dayGridSlots,
           totalAvailable: dayGridSlots.length,
           fullyBookedDays,
           ...(includeExcluded ? buildAdminPayload() : {}),
