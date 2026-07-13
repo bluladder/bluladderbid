@@ -262,6 +262,9 @@ const ServiceLanding = () => {
           selectedBundle={selectedBundle}
           homeDetails={homeDetails}
           additionalServices={additionalServices}
+          engineVersion={bundleState.engineVersion}
+          ruleVersion={bundleState.ruleVersion}
+          customizations={customizations}
           onDownloadPDF={handleDownloadPDF}
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={null}
