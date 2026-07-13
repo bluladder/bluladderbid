@@ -1722,31 +1722,120 @@ Deno.serve(async (req) => {
 
     console.log(`[Availability] Generated ${allSlots.length} valid slots, ${fullyBookedDays.length} fully booked days`);
 
+    // ===== SCHEDULE COMPACTION =====
+    // Every slot in `allSlots` is already technically bookable (Jobber busy
+    // blocks, buffers, working hours, blocked time and reservations were all
+    // applied above). Compaction now decides which of those valid starts are
+    // worth showing a customer so we don't surface a redundant row of near-
+    // identical 15-minute starts that leave unusable schedule fragments. The
+    // same compacted set is used by online booking, day/week/month browsing,
+    // the AI chat (recommended mode) and rescheduling.
+    const minViableGapUsed = computeMinViableGap(COMPACTION_CONFIG);
+    const compactionResults = compactSlots(
+      allSlots.map((s) => ({
+        technicianId: s.technicianId,
+        startMs: new Date(s.startTime).getTime(),
+        endMs: new Date(s.endTime).getTime(),
+        freeBlockStartMs: s.freeBlockStartMs ?? new Date(s.startTime).getTime(),
+        freeBlockEndMs: s.freeBlockEndMs ?? new Date(s.endTime).getTime(),
+        routeBonus: s.routeBonus,
+        routeDensityScore: s.routeDensityScore,
+      })),
+      COMPACTION_CONFIG,
+    );
+    for (const r of compactionResults) {
+      const s = allSlots[r.index];
+      s.gapBeforeMinutes = r.gapBeforeMinutes;
+      s.gapAfterMinutes = r.gapAfterMinutes;
+      s.minViableGapMinutes = r.minViableGapMinutes;
+      s.compactionScore = r.compactionScore;
+      s.packsStart = r.packsStart;
+      s.packsEnd = r.packsEnd;
+      s.compactionShown = r.shown;
+      s.compactionFilterReason = r.shown ? null : (r.filterReason ?? "redundant_interior");
+    }
+    // Customer-facing set (compacted) vs the valid-but-filtered set (admin only).
+    const shownSlots = allSlots.filter((s) => s.compactionShown);
+    const compactionFilteredSlots = allSlots.filter((s) => !s.compactionShown);
+    console.log(
+      `[Availability] Compaction: ${shownSlots.length} shown / ${compactionFilteredSlots.length} filtered ` +
+        `(minViableGap=${minViableGapUsed}m, tolerance=${COMPACTION_CONFIG.boundaryGapToleranceMinutes}m, ` +
+        `cap=${COMPACTION_CONFIG.maxCompactSlotsPerBlock}/block)`,
+    );
+
+    // Admin-only payload: raw technically-valid starts, which were shown vs
+    // filtered, the filter reason, gap-before / gap-after, the minimum viable
+    // gap used and the compaction score. Never returned to customers.
+    const buildAdminPayload = () => {
+      const toDebug = (s: TimeSlot) => ({
+        technicianId: s.technicianId,
+        technicianName: s.technicianName,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        displayTime: s.displayTime,
+        durationMinutes: s.durationMinutes,
+        shown: !!s.compactionShown,
+        filterReason: s.compactionShown ? null : s.compactionFilterReason ?? null,
+        gapBeforeMinutes: s.gapBeforeMinutes ?? null,
+        gapAfterMinutes: s.gapAfterMinutes ?? null,
+        minViableGapMinutes: s.minViableGapMinutes ?? null,
+        compactionScore: s.compactionScore ?? null,
+        packsStart: !!s.packsStart,
+        packsEnd: !!s.packsEnd,
+      });
+      // Surface compaction-filtered (but technically valid) slots through the
+      // existing "excluded" channel so admins can still override-book them.
+      const compactionExcluded: TimeSlot[] = compactionFilteredSlots.map((s) => ({
+        ...s,
+        excluded: true,
+        exclusionReason: {
+          code: "COMPACTION",
+          message: "Filtered to keep the schedule tight",
+          details:
+            `gapBefore ${s.gapBeforeMinutes ?? "?"}m / gapAfter ${s.gapAfterMinutes ?? "?"}m ` +
+            `/ minViableGap ${s.minViableGapMinutes ?? "?"}m (${s.compactionFilterReason ?? "redundant"})`,
+        },
+      }));
+      return {
+        rawSlots: allSlots,
+        excludedSlots: [...excludedSlots, ...compactionExcluded],
+        compactionDebug: allSlots.map(toDebug),
+        compactionConfig: {
+          minimum_fillable_gap_minutes: COMPACTION_CONFIG.minimumFillableGapMinutes,
+          boundary_gap_tolerance_minutes: COMPACTION_CONFIG.boundaryGapToleranceMinutes,
+          max_compact_slots_per_block: COMPACTION_CONFIG.maxCompactSlotsPerBlock,
+          shortest_fillable_service_minutes: COMPACTION_CONFIG.shortestFillableServiceMinutes ?? null,
+          transition_buffer_minutes: COMPACTION_CONFIG.transitionBufferMinutes ?? 0,
+          min_viable_gap_used_minutes: minViableGapUsed,
+          allow_time_request_escalation: allowTimeRequestEscalation,
+        },
+      };
+    };
+
     // Build response based on mode
     if (mode === 'dayGrid') {
-      // Return all slots for the selected date, snapped to 30-min display
+      // Return only the COMPACTED slots for the selected date, deduped by
+      // display time + technician (customer-facing browsing).
+      const compactionSource = includeExcluded ? allSlots : shownSlots;
       const deduped = new Map<string, TimeSlot>();
-      
-      for (const slot of allSlots) {
-        // Dedupe by display time + technician
+      for (const slot of compactionSource) {
         const key = `${slot.displayTime}|${slot.technicianId}`;
         const existing = deduped.get(key);
-        
         if (!existing || (slot.gapScore || 0) > (existing.gapScore || 0)) {
           deduped.set(key, slot);
         }
       }
-      
       const dayGridSlots = Array.from(deduped.values()).sort((a, b) => {
         return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
       });
-      
+
       return new Response(
         JSON.stringify({
           mode: 'dayGrid',
-          slots: dayGridSlots,
+          slots: includeExcluded ? shownSlots.slice().sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()) : dayGridSlots,
           totalAvailable: dayGridSlots.length,
           fullyBookedDays,
+          ...(includeExcluded ? buildAdminPayload() : {}),
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
