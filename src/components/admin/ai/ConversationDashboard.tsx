@@ -16,7 +16,7 @@ import { toast } from '@/hooks/use-toast';
 import { MessageSquare, Copy, UserCheck, CheckCircle2, RotateCcw, AlertTriangle, Bot, User, Search } from 'lucide-react';
 import { DashboardFilter, FILTER_LABELS, matchesFilter, isAbandoned } from './conversationFilters';
 
-type Convo = Record<string, any>;
+type Convo = Record<string, unknown>;
 type ChatMsg = { id: string; role: string; content: string | null; created_at: string; tool_name?: string | null };
 
 const FILTERS: DashboardFilter[] = [
@@ -40,7 +40,7 @@ export function ConversationDashboard() {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<{ id: string; event_name: string; created_at: string }[]>([]);
   const [notesDraft, setNotesDraft] = useState('');
   const [takeoverOpen, setTakeoverOpen] = useState(false);
   const [takeoverReason, setTakeoverReason] = useState('');
