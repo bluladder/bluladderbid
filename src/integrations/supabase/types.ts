@@ -2881,9 +2881,17 @@ export type Database = {
       test_identities: {
         Row: {
           active: boolean
+          authorization_consumed_at: string | null
+          authorization_expires_at: string | null
+          authorized_by: string | null
+          authorized_conversation_id: string | null
+          authorized_idempotency_key: string | null
+          authorized_result: Json | null
+          authorized_slot_id: string | null
           created_at: string
           email: string | null
           id: string
+          live_jobber_test_enabled: boolean
           name: string
           note: string | null
           phone: string | null
@@ -2892,9 +2900,17 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          authorization_consumed_at?: string | null
+          authorization_expires_at?: string | null
+          authorized_by?: string | null
+          authorized_conversation_id?: string | null
+          authorized_idempotency_key?: string | null
+          authorized_result?: Json | null
+          authorized_slot_id?: string | null
           created_at?: string
           email?: string | null
           id?: string
+          live_jobber_test_enabled?: boolean
           name: string
           note?: string | null
           phone?: string | null
@@ -2903,9 +2919,17 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          authorization_consumed_at?: string | null
+          authorization_expires_at?: string | null
+          authorized_by?: string | null
+          authorized_conversation_id?: string | null
+          authorized_idempotency_key?: string | null
+          authorized_result?: Json | null
+          authorized_slot_id?: string | null
           created_at?: string
           email?: string | null
           id?: string
+          live_jobber_test_enabled?: boolean
           name?: string
           note?: string | null
           phone?: string | null
@@ -3012,6 +3036,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      authorize_live_jobber_test: {
+        Args: {
+          p_conversation_id: string
+          p_email: string
+          p_idempotency_key: string
+          p_slot_id: string
+          p_ttl_minutes?: number
+        }
+        Returns: Json
+      }
       can_edit_crew_rules: { Args: never; Returns: boolean }
       can_manage_schedule_blocks: { Args: never; Returns: boolean }
       can_override_bookings: { Args: never; Returns: boolean }
@@ -3051,6 +3085,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      clear_live_jobber_authorization: {
+        Args: { p_email: string }
+        Returns: undefined
+      }
       compute_customer_lifecycle: {
         Args: { p_customer_id: string }
         Returns: Database["public"]["Enums"]["lead_lifecycle_status"]
@@ -3073,6 +3111,15 @@ export type Database = {
           p_required: Database["public"]["Enums"]["consent_type"]
         }
         Returns: boolean
+      }
+      consume_live_jobber_authorization: {
+        Args: {
+          p_conversation_id: string
+          p_email: string
+          p_idempotency_key: string
+          p_slot_id: string
+        }
+        Returns: Json
       }
       current_pricing_version: { Args: never; Returns: number }
       expire_stale_reservations: { Args: never; Returns: number }
@@ -3109,6 +3156,10 @@ export type Database = {
           p_status: Database["public"]["Enums"]["consent_status"]
         }
         Returns: string
+      }
+      record_live_jobber_authorization_result: {
+        Args: { p_email: string; p_result: Json }
+        Returns: undefined
       }
       release_autosync_lock: {
         Args: { p_error?: string; p_holder_id: string; p_status?: string }

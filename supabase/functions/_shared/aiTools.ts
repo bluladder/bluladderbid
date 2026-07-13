@@ -313,25 +313,58 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   const email = convo?.prospect_email;
   if (!email) return { status: "missing_contact", message: "I need the customer's email to book." };
 
+  // Two related keys:
+  //  * authKey  — conversation + opaque slot. Predictable by an authorizing
+  //    admin (they never see internal start times) and used to scope the
+  //    one-time live-write authorization.
+  //  * idempotencyKey — conversation + actual start time. Robust booking key so
+  //    a genuine re-book of a DIFFERENT time (after an availability refetch)
+  //    correctly creates a new booking instead of replaying an old one, while
+  //    real retries of the SAME booking still de-duplicate.
+  const authKey = `chat|${ctx.conversationId}|${slotId}`;
+  const idempotencyKey = `chat|${ctx.conversationId}|${slot.startTime}`;
+
   // CONTROLLED TEST GUARD at the final booking boundary. If the customer is an
   // approved test identity (or global test-suppression is on), we simulate a
-  // confirmed booking and NEVER call Jobber. This lets the full chat flow be
-  // verified end-to-end without creating any live client/job/quote/visit.
+  // confirmed booking and NEVER call Jobber — UNLESS an admin has issued a
+  // one-time, single-use authorization scoped to THIS conversation + slot +
+  // idempotency key. Message suppression (SMS/email/CallRail/campaigns/internal
+  // alerts) stays fully active either way; it lives at the delivery layer.
   const suppression = await checkSuppression(ctx.supabase, { email, phone: convo?.prospect_phone });
   if (suppression.suppressed) {
-    await ctx.supabase.from("chat_conversations").update({
-      booking_status: "confirmed", last_activity_at: new Date().toISOString(),
-    }).eq("id", ctx.conversationId);
-    return {
-      status: "confirmed",
-      confirmedTime: slot.displayTime,
-      simulated: true,
-      message: "Booking confirmed (test identity — no live Jobber record created).",
-    };
-  }
+    let authStatus = "denied";
+    try {
+      const { data: auth } = await ctx.supabase.rpc("consume_live_jobber_authorization", {
+        p_email: email,
+        p_conversation_id: ctx.conversationId,
+        p_slot_id: slotId,
+        p_idempotency_key: authKey,
+      });
+      authStatus = (auth as { status?: string } | null)?.status ?? "denied";
+    } catch (e) {
+      console.error("consume_live_jobber_authorization failed:", e);
+      authStatus = "denied";
+    }
 
-  // Stable idempotency key — reused so retries never double-book.
-  const idempotencyKey = `chat|${ctx.conversationId}|${slot.startTime}`;
+    // Only a fresh authorization ("authorized") or an idempotent replay of the
+    // SAME authorized request ("already_consumed") may reach the real Jobber
+    // write. Any other status (denied/expired/mismatch — e.g. a different
+    // conversation, slot, identity or key) stays fully simulated.
+    if (authStatus !== "authorized" && authStatus !== "already_consumed") {
+      await ctx.supabase.from("chat_conversations").update({
+        booking_status: "confirmed", last_activity_at: new Date().toISOString(),
+      }).eq("id", ctx.conversationId);
+      return {
+        status: "confirmed",
+        confirmedTime: slot.displayTime,
+        simulated: true,
+        message: "Booking confirmed (test identity — no live Jobber record created).",
+      };
+    }
+    // authorized / already_consumed → fall through to the real Jobber write.
+    // jobber-create-booking is itself idempotent on idempotencyKey, so a repeat
+    // replays the original booking without creating any duplicate records.
+  }
 
   const { status, json } = await callFunction("jobber-create-booking", {
     customer: {
@@ -374,6 +407,16 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   await ctx.supabase.from("chat_conversations").update({
     booking_status: "confirmed", last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
+
+  // Persist the original result against the (now-consumed) authorization so an
+  // audit trail and any idempotent replay can reference it. No-op for normal
+  // (non-test) customers where no authorization row matches.
+  try {
+    await ctx.supabase.rpc("record_live_jobber_authorization_result", {
+      p_email: email,
+      p_result: { status: "confirmed", jobberVisitId: visitId, confirmedTime: slot.displayTime },
+    });
+  } catch (_e) { /* audit-only; never block a confirmed booking */ }
 
   return {
     status: "confirmed",
