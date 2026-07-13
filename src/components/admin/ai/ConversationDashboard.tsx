@@ -415,10 +415,33 @@ export function ConversationDashboard() {
                       <Textarea value={replyDraft} onChange={(e) => setReplyDraft(e.target.value)} rows={3} placeholder={`Type your ${replyChannel.toUpperCase()} reply to the customer…`} />
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] text-muted-foreground">Opt-outs and suppression are respected automatically. This is not an internal note.</span>
-                        <Button size="sm" disabled={sendingReply} onClick={sendReply}>
+                        <Button size="sm" disabled={sendingReply} onClick={() => sendReply()}>
                           <Send className="w-3.5 h-3.5 mr-1" />{sendingReply ? 'Sending…' : `Send ${replyChannel.toUpperCase()}`}
                         </Button>
                       </div>
+                      {replyDiag && (
+                        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-[11px] space-y-1">
+                          <div className="flex items-center gap-1 font-medium text-destructive">
+                            <AlertTriangle className="w-3 h-3" /> Delivery diagnostics
+                          </div>
+                          <div className="text-muted-foreground">Reason: {replyDiag.detail || 'unknown'}</div>
+                          {replyDiag.correlationId && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">Ref {replyDiag.correlationId}</span>
+                              <button className="underline" onClick={() => { navigator.clipboard?.writeText(replyDiag.correlationId ?? ''); toast({ title: 'Reference copied' }); }}>Copy</button>
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button className="underline" onClick={() => sendReply()} disabled={sendingReply}>Retry</button>
+                            <a className="underline" href="/admin?tab=knowledge&section=health">Open System Health</a>
+                            {canOverrideBookings && (
+                              <button className="underline text-destructive" onClick={authorizeAndSendTestReply} disabled={authorizingTest || sendingReply}>
+                                {authorizingTest ? 'Authorizing…' : 'Send one real test reply despite test suppression'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
