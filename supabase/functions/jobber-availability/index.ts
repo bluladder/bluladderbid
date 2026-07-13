@@ -1,6 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { blockOverlapsDay, slotHasConflict } from "./availability-core.ts";
 import { getMirrorFreshness, unavailableCustomerMessage } from "../_shared/scheduleFreshness.ts";
+import {
+  compactSlots,
+  computeMinViableGap,
+  DEFAULT_COMPACTION_CONFIG,
+  type ResolvedCompactionConfig,
+} from "./scheduleCompaction.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,7 +63,7 @@ interface BigJobSettings {
 }
 
 interface ExclusionReason {
-  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB' | 'GAP_PENALTY';
+  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB' | 'GAP_PENALTY' | 'COMPACTION';
   message: string;
   details?: string;
 }
@@ -87,6 +93,18 @@ interface TimeSlot {
   discouragedPenalty?: number;
   technicianScore?: number;
   whyLabel?: string;
+  // Schedule-compaction fields (populated after the compaction pass). These are
+  // internal ranking/debug aids; customer UIs simply ignore the extra fields.
+  freeBlockStartMs?: number;
+  freeBlockEndMs?: number;
+  gapBeforeMinutes?: number;
+  gapAfterMinutes?: number;
+  minViableGapMinutes?: number;
+  compactionScore?: number;
+  packsStart?: boolean;
+  packsEnd?: boolean;
+  compactionShown?: boolean;
+  compactionFilterReason?: string | null;
   // Team booking fields
   isTeamJob?: boolean;
   crewSize?: number;
