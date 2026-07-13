@@ -42,7 +42,12 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const authz = await requireAdminOrService(req);
-  if (!authz.ok) return json({ error: "Unauthorized" }, 401);
+  if (!authz.ok) {
+    // A present-but-insufficient token (authenticated non-admin) is 403;
+    // a missing token is 401. Both deny the action.
+    const hadToken = !!req.headers.get("Authorization");
+    return json({ error: hadToken ? "Forbidden" : "Unauthorized" }, hadToken ? 403 : 401);
+  }
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -59,8 +64,28 @@ serve(async (req) => {
 
   const email = normalizeEmail(body.email);
   const phone = normalizePhoneE164(body.phone);
+
+  // ---- manual_staff_takeover: administrator-only controlled action ----
+  // A brief reason is REQUIRED; the takeover is deterministic per target +
+  // takeover record so retries never create duplicate events. The staff
+  // identity + timestamp are recorded on the conversation (source record).
+  let takeoverReason: string | null = null;
+  if (eventName === "manual_staff_takeover") {
+    takeoverReason = typeof body.metadata?.reason === "string" ? String(body.metadata.reason).trim() : "";
+    if (!takeoverReason) {
+      return json({ error: "reason_required", message: "manual_staff_takeover requires a brief reason" }, 400);
+    }
+  }
+
+  // Deterministic idempotency key. Takeover defaults key to target + takeover
+  // record so repeating the same action is idempotent even without a client key.
+  const takeoverRecord = typeof body.metadata?.takeover_record_id === "string"
+    ? String(body.metadata.takeover_record_id)
+    : (body.conversation_id || body.customer_id || email || phone || "anon");
   const idempotencyKey = body.idempotency_key ||
-    `${eventName}:${body.customer_id || email || phone || "anon"}:${new Date().toISOString().slice(0, 13)}`;
+    (eventName === "manual_staff_takeover"
+      ? `manual_staff_takeover:${body.customer_id || body.conversation_id || email || phone || "anon"}:${takeoverRecord}`
+      : `${eventName}:${body.customer_id || email || phone || "anon"}:${new Date().toISOString().slice(0, 13)}`);
 
   // ---- Idempotent event record (replayed webhooks return the original) ----
   let eventId: string | null = null;
