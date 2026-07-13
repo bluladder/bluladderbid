@@ -196,6 +196,17 @@ const SLOT_GENERATION_CONFIG = {
   bufferAfterMinutes: 15,
 };
 
+// Schedule-compaction defaults. Overridable per-business via the
+// pricing_config row keyed "schedule_compaction" (values below are the fallback
+// when that row is absent or partial). See scheduleCompaction.ts for the math.
+const DEFAULT_COMPACTION_SETTINGS: ResolvedCompactionConfig = {
+  ...DEFAULT_COMPACTION_CONFIG,
+};
+// Whether a customer's specific time request that fails compaction may be
+// escalated for manual review (an admin/human agent can still override — the AI
+// never overrides the rule on its own).
+const DEFAULT_ALLOW_TIME_REQUEST_ESCALATION = true;
+
 // Gap-scoring constants
 const GAP_SCORING = {
   idealGapMax: 15,
