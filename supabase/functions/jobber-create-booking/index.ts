@@ -334,6 +334,7 @@ Deno.serve(async (req) => {
       inputSnapshot: unknown;
       lineItemSnapshot: unknown;
       discountSnapshot: unknown;
+      promotionSnapshot?: unknown;
     } = {
       engineVersion: null,
       ruleVersion: null,
