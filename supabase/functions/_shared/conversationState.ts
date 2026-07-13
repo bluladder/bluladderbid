@@ -220,7 +220,13 @@ const ALWAYS_ALLOWED: ToolName[] = ["request_human_callback", "escalate_to_human
 export function allowedToolsForState(state: ConversationState): ToolName[] {
   const base: Record<ConversationState, ToolName[]> = {
     new: ["validate_service_area", "request_manual_quote"],
-    identifying_need: ["validate_service_area", "request_manual_quote"],
+    // calculate_bluladder_quote is permitted here so the model can RECORD the
+    // requested service(s) once known — services are only persisted by that tool,
+    // and computeState cannot advance past identifying_need until they exist.
+    // Eligibility ordering is preserved: an ineligible address still routes to
+    // manual_review on the next computeState, and validate_service_area remains
+    // available so the area is confirmed first.
+    identifying_need: ["calculate_bluladder_quote", "validate_service_area", "request_manual_quote"],
     collecting_address: ["validate_service_area", "request_manual_quote"],
     validating_service_area: ["validate_service_area", "request_manual_quote"],
     collecting_property_details: ["calculate_bluladder_quote", "validate_service_area", "request_manual_quote"],
