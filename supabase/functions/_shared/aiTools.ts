@@ -332,7 +332,7 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
   const expiresAt = new Date(Date.now() + OFFER_TTL_MS).toISOString();
   const quoteSignature = computeQuoteSignature(quote);
   const offered = rawSlots.slice(0, 3).map((s, i) => ({
-    slotId: `slot_${offerVersion}_${i + 1}`,
+    slotId: buildOfferSlotId(offerVersion, i),
     startTime: s.startTime,
     endTime: s.endTime,
     displayTime: s.displayTime,
