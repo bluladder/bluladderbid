@@ -14,7 +14,9 @@
 //     the existing campaign_events table (unique idempotency_key => no dup) so
 //     the process-sms-queue cron can replay it later.
 // ============================================================================
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Minimal structural client type so any supabase-js version (the callers pin
+// different patch versions) can be passed without generic-arity conflicts.
+export type SupabaseLike = { from: (table: string) => any };
 
 const CRITICAL_EVENTS = new Set([
   "booking_completed",
@@ -46,7 +48,7 @@ export interface EmitEventInput {
   maxAttempts?: number;
   // When provided, a failed CRITICAL event is persisted as a pending row for
   // cron recovery. Pass the function's service-role client.
-  recoverySupabase?: SupabaseClient;
+  recoverySupabase?: SupabaseLike;
 }
 
 export interface EmitResult {
