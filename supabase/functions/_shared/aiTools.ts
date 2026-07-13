@@ -342,9 +342,16 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
   }
 
   const rawSlots: any[] = json.recommendations || json.slots || [];
-  // Strip ALL internal Jobber IDs. Give each slot an opaque, per-conversation id.
+  // Defect 2: every offer is VERSIONED and EXPIRING, and each opaque slot id is
+  // unique to this offer version — so a stale id from an earlier offer can never
+  // silently resolve to a different current slot. The id binds:
+  //   conversation (this convo) + offerVersion + technician/crew + start/end +
+  //   duration + quote signature (checked again at booking time).
+  const offerVersion = Date.now().toString(36);
+  const expiresAt = new Date(Date.now() + OFFER_TTL_MS).toISOString();
+  const quoteSignature = computeQuoteSignature(quote);
   const offered = rawSlots.slice(0, 3).map((s, i) => ({
-    slotId: `slot_${i + 1}`,
+    slotId: `slot_${offerVersion}_${i + 1}`,
     startTime: s.startTime,
     endTime: s.endTime,
     displayTime: s.displayTime,
@@ -355,17 +362,27 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
     __teamTechnicianIds: s.teamTechnicianIds ?? null,
   }));
 
-  // Persist the resolver map as a tool message (auditable, server-only).
+  // Persist the resolver map as a tool message (auditable, server-only). The
+  // offer version / expiry / quote signature travel WITH the offer so booking
+  // can verify the chosen slot belongs to the latest offer and still matches
+  // the priced job.
   await ctx.supabase.from("chat_messages").insert({
     conversation_id: ctx.conversationId,
     role: "tool",
     tool_name: "get_bluladder_availability",
-    tool_result: { offered },
+    tool_result: { offered, offerVersion, expiresAt, quoteSignature },
   });
+
+  // A fresh, genuinely-current offer clears any prior slot-failure streak.
+  await ctx.supabase
+    .from("chat_conversations")
+    .update({ slot_failure_count: 0 })
+    .eq("id", ctx.conversationId);
 
   // Return only customer-safe fields to the model.
   return {
     status: "ok",
+    offerExpiresAt: expiresAt,
     slots: offered.map(({ slotId, startTime, endTime, displayTime, durationMinutes }) => ({
       slotId, startTime, endTime, displayTime, durationMinutes,
     })),
