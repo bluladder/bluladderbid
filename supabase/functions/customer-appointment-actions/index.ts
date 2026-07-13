@@ -5,6 +5,7 @@ import {
   interpretVisitDelete,
   type VisitDeleteResult,
 } from "../_shared/jobberCancellation.ts";
+import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
