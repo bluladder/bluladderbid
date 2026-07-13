@@ -26,7 +26,7 @@ import {
 import { format, parseISO, isSameDay } from 'date-fns';
 
 interface ExclusionReason {
-  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB';
+  code: 'OVERLAP' | 'DRIVE_TIME' | 'BUFFER' | 'BOUNDARY' | 'LAST_JOB' | 'GAP_PENALTY' | 'COMPACTION';
   message: string;
   details?: string;
 }
@@ -44,6 +44,23 @@ export interface TimeSlot {
   excluded?: boolean;
   exclusionReason?: ExclusionReason;
   isOverride?: boolean;
+  // Schedule-compaction fields (admin visibility only).
+  compactionShown?: boolean;
+  compactionScore?: number;
+  gapBeforeMinutes?: number;
+  gapAfterMinutes?: number;
+  minViableGapMinutes?: number;
+  compactionFilterReason?: string | null;
+}
+
+interface CompactionConfigView {
+  minimum_fillable_gap_minutes: number;
+  boundary_gap_tolerance_minutes: number;
+  max_compact_slots_per_block: number;
+  shortest_fillable_service_minutes: number | null;
+  transition_buffer_minutes: number;
+  min_viable_gap_used_minutes: number;
+  allow_time_request_escalation: boolean;
 }
 
 interface ServiceForAvailability {
@@ -64,6 +81,8 @@ const exclusionIcons: Record<string, React.ReactNode> = {
   BUFFER: <Clock className="w-3 h-3" />,
   BOUNDARY: <Calendar className="w-3 h-3" />,
   LAST_JOB: <MapPin className="w-3 h-3" />,
+  GAP_PENALTY: <Clock className="w-3 h-3" />,
+  COMPACTION: <Clock className="w-3 h-3" />,
 };
 
 const exclusionColors: Record<string, string> = {
@@ -72,6 +91,8 @@ const exclusionColors: Record<string, string> = {
   BUFFER: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/30',
   BOUNDARY: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
   LAST_JOB: 'bg-purple-500/10 text-purple-600 border-purple-500/30',
+  GAP_PENALTY: 'bg-amber-500/10 text-amber-600 border-amber-500/30',
+  COMPACTION: 'bg-sky-500/10 text-sky-600 border-sky-500/30',
 };
 
 export function AdminAvailabilityViewer({ 
