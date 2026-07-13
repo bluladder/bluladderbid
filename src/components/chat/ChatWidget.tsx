@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageCircle, X, Send, Loader2 } from 'lucide-react';
+import { MessageCircle, X, Send, Loader2, RotateCcw, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
@@ -70,6 +70,8 @@ export default function ChatWidget() {
   const [hasGreeted, setHasGreeted] = useState(false);
   // Explicit, opt-in-only. MUST start false — never preselect marketing consent.
   const [marketingConsent, setMarketingConsent] = useState(false);
+  // Start-over confirmation gate — clearing the transcript is destructive.
+  const [confirmReset, setConfirmReset] = useState(false);
   const sessionRef = useRef<string>(getSessionToken());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -127,6 +129,34 @@ export default function ChatWidget() {
     }
   };
 
+  // Start over: new session token + cleared transcript. Server state is keyed on
+  // the session token, so a fresh token begins a brand-new deterministic flow.
+  const startOver = useCallback(() => {
+    try {
+      const token = (crypto.randomUUID?.() ?? `s${Date.now()}${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, '');
+      localStorage.setItem(SESSION_KEY, token);
+      sessionRef.current = token;
+      localStorage.removeItem(MESSAGES_KEY);
+    } catch { /* ignore */ }
+    setMessages([]);
+    setHasGreeted(false);
+    setConfirmReset(false);
+    setMarketingConsent(false);
+    inputRef.current?.focus();
+  }, []);
+
+  const requestCallback = useCallback(() => {
+    if (isLoading) return;
+    setInput('');
+    const text = "I'd like a team member to call me back, please.";
+    setMessages(prev => [...prev, { role: 'user', content: text }]);
+    setIsLoading(true);
+    sendChat(sessionRef.current, text, marketingConsent)
+      .then(reply => setMessages(prev => [...prev, { role: 'assistant', content: reply }]))
+      .catch(() => setMessages(prev => [...prev, { role: 'assistant', content: "I couldn't reach the team just now — please call us at 469-242-6556." }]))
+      .finally(() => { setIsLoading(false); inputRef.current?.focus(); });
+  }, [isLoading, marketingConsent]);
+
   return (
     <>
       {/* Floating bubble */}
@@ -152,10 +182,31 @@ export default function ChatWidget() {
                 <p className="text-xs opacity-80">Get an instant price estimate</p>
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-white/20 rounded-full transition-colors">
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setConfirmReset(true)}
+                className="p-1 hover:bg-white/20 rounded-full transition-colors"
+                aria-label="Start over"
+                title="Start over"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-white/20 rounded-full transition-colors" aria-label="Minimize chat">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+
+          {/* Start-over confirmation */}
+          {confirmReset && (
+            <div className="px-4 py-3 bg-muted border-b border-border flex items-center justify-between gap-2">
+              <p className="text-xs text-foreground">Start a new conversation? This clears the current chat.</p>
+              <div className="flex gap-2 shrink-0">
+                <Button size="sm" variant="ghost" onClick={() => setConfirmReset(false)}>Cancel</Button>
+                <Button size="sm" variant="destructive" onClick={startOver}>Start over</Button>
+              </div>
+            </div>
+          )}
 
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -190,6 +241,16 @@ export default function ChatWidget() {
 
           {/* Input */}
           <div className="p-3 border-t border-border">
+            {/* Quick action: always offer a human handoff. */}
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={requestCallback}
+                disabled={isLoading}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
+              >
+                <Phone className="w-3 h-3" /> Talk to a person
+              </button>
+            </div>
             {/* Explicit marketing opt-in — never preselected. Not required to book. */}
             <label className="flex items-start gap-2 mb-2 text-xs text-muted-foreground cursor-pointer select-none">
               <input
