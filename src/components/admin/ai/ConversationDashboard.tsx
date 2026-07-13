@@ -15,6 +15,8 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { MessageSquare, Copy, UserCheck, CheckCircle2, RotateCcw, AlertTriangle, Bot, User, Search } from 'lucide-react';
 import { DashboardFilter, FILTER_LABELS, matchesFilter, isAbandoned } from './conversationFilters';
+import { LiveJobberTestPanel } from './LiveJobberTestPanel';
+import type { ConvoLike } from './liveJobberTest';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Convo = Tables<'chat_conversations'>;
@@ -38,7 +40,7 @@ function stateBadgeVariant(state: string): 'default' | 'secondary' | 'destructiv
 
 export function ConversationDashboard() {
   const { user } = useAuth();
-  const { canViewAnalytics, isReadOnly } = useAdminPermissions();
+  const { canViewAnalytics, isReadOnly, canOverrideBookings } = useAdminPermissions();
   const [convos, setConvos] = useState<Convo[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<DashboardFilter>('all');
@@ -257,6 +259,14 @@ export function ConversationDashboard() {
                   Staff takeover recorded {new Date(selected.staff_takeover_at).toLocaleString()} — {selected.staff_takeover_reason}
                 </div>
               )}
+
+              {/* One-time live Jobber test authorization (operations admins, protected test identity only) */}
+              <LiveJobberTestPanel
+                convo={selected as unknown as ConvoLike}
+                isOperationsAdmin={canOverrideBookings}
+                adminUserId={user?.id ?? null}
+                onChanged={load}
+              />
 
               {/* Campaign events */}
               {events.length > 0 && (
