@@ -183,13 +183,14 @@ async function maybeQueueAlert(
   });
 
   const status = insErr ? "failed" : suppression.suppressed ? "suppressed" : "sent";
+  const { data: cur } = await supabase
+    .from("ai_escalations").select("alert_count").eq("id", escalationId).maybeSingle();
+  const nextCount = (cur?.alert_count ?? 0) + (status === "sent" ? 1 : 0);
   await supabase.from("ai_escalations").update({
     alert_status: status,
     assigned_recipient: recipient.name,
-    alert_count: (recipient ? 1 : 0),
+    alert_count: nextCount,
     last_alert_severity: severity,
   }).eq("id", escalationId);
-  // Increment alert_count relative to existing.
-  await supabase.rpc; // no-op guard for older clients
   return status;
 }
