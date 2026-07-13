@@ -2887,6 +2887,7 @@ export type Database = {
           name: string
           note: string | null
           phone: string | null
+          protected: boolean
           updated_at: string
         }
         Insert: {
@@ -2897,6 +2898,7 @@ export type Database = {
           name: string
           note?: string | null
           phone?: string | null
+          protected?: boolean
           updated_at?: string
         }
         Update: {
@@ -2907,6 +2909,7 @@ export type Database = {
           name?: string
           note?: string | null
           phone?: string | null
+          protected?: boolean
           updated_at?: string
         }
         Relationships: []
