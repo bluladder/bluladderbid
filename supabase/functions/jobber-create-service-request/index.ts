@@ -338,6 +338,7 @@ Deno.serve(async (req) => {
     const suppression = await checkSuppression(supabase, { email: customer.email, phone: customer.phone });
     if (suppression.suppressed) {
       console.log(`service-request: suppressed Jobber write (${suppression.reason}) for quote ${quoteId}`);
+      await emitBookingCompleted(supabase, quoteId, dbCustomer.id, customer, option, true);
       return json({
         status: "ok",
         suppressed: true,
@@ -449,6 +450,10 @@ Deno.serve(async (req) => {
     const jobberQuoteNumber = quoteResult.data?.quoteCreate?.quote?.quoteNumber ?? null;
 
     await supabase.from("quotes").update({ jobber_quote_id: jobberQuoteId }).eq("id", quoteId);
+
+    // booking_completed — the recurring plan quote was successfully created.
+    // Idempotent on the local quote id; STOPs abandoned-quote nurture.
+    await emitBookingCompleted(supabase, quoteId, dbCustomer.id, customer, option, false);
 
     return json({
       status: "ok",
