@@ -96,8 +96,13 @@ Deno.test("compaction: min viable gap respects shortest service + buffer", () =>
   // fillable, but it still packs the start (gapBefore 0) so it is accepted.
   // Prove the trailing-gap rejection on an interior candidate instead:
   const interior = slot(10, 0, freeStart, t(13, 0), 60); // gapBefore 60, gapAfter 120
+  // With the default fallback (60) both 60-min gaps are fillable -> accepted.
   assert(evaluateSlot(interior, cfg(), computeMinViableGap(cfg())).accepted);
-  assertFalse(evaluateSlot(interior, withService, computeMinViableGap(withService)).accepted === false && false);
+  // With a 105-min minimum viable gap, the leading 60-min gap can no longer host
+  // the shortest service + buffer, so the interior candidate is rejected.
+  const rejected = evaluateSlot(interior, withService, computeMinViableGap(withService));
+  assertFalse(rejected.accepted);
+  assertEquals(rejected.filterReason, "unusable_gap_before");
 });
 
 // ---------------------------------------------------------------------------
