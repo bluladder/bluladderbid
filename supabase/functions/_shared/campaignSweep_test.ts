@@ -54,6 +54,7 @@ Deno.test("manual-review / non-firm quote never emits", () => {
 Deno.test("booking prevents abandonment", () => {
   assertEquals(evaluateAbandonment(base({ booking_status: "booked" }), NOW, 60).reason, "booking_completed");
   assertEquals(evaluateAbandonment(base({ booking_status: "converted" }), NOW, 60).reason, "booking_completed");
+  assertEquals(evaluateAbandonment(base({ booking_status: "confirmed" }), NOW, 60).reason, "booking_completed");
 });
 
 Deno.test("callback / manual-quote / reply / takeover / resolved prevent abandonment", () => {
