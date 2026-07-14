@@ -157,6 +157,10 @@ Deno.serve(async (req) => {
   let providerMessageId: string | null = null;
   let providerStatus: string | null = null;
   let errorCode: string | null = null;
+  let failureCategory: string | null = null;
+  let retryable = false;
+  let fromAddress: string | null = null;
+  let replyToAddress: string | null = null;
   let userMessage = `Reply sent by ${channel.toUpperCase()}.`;
 
   if (channel === "sms") {
@@ -186,29 +190,23 @@ Deno.serve(async (req) => {
       console.error(`[staff-reply ${correlationId}] CallRail send failed: ${result.error}`);
     }
   } else {
-    const apiKey = Deno.env.get("RESEND_API_KEY");
-    if (!apiKey) {
-      await recordTimeline(supabase, conversationId, channel, to, message, "failed", "resend not configured", adminId, correlationId, false);
-      return json({ ok: false, status: "failed", errorCode: "provider_not_configured", deliveryState: "delivery_failed", channel, to, message: "Email could not be sent: the email provider is not configured (missing API key).", correlationId }, 200, correlationId);
-    }
+    // Customer-visible email via the SINGLE centralized sender (no hard-coded From).
     const html = `<div style="font-family:system-ui,sans-serif;font-size:15px;white-space:pre-wrap">${escapeHtml(message)}</div>`;
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: EMAIL_FROM, to: [to], subject, html }),
-    });
-    if (resp.ok) {
+    const res = await sendEmail({ to, subject, html });
+    fromAddress = res.from;
+    replyToAddress = res.replyTo;
+    if (res.ok) {
       deliveryState = "sent";
       providerStatus = "accepted";
-      try { const jr = await resp.json(); providerMessageId = jr?.id ?? null; } catch { /* ignore */ }
+      providerMessageId = res.providerMessageId;
     } else {
-      const text = await resp.text();
-      const mapped = resendErrorMessage(resp.status, text);
       deliveryState = "delivery_failed";
-      providerStatus = `rejected_${resp.status}`;
-      errorCode = mapped.code;
-      userMessage = mapped.message;
-      console.error(`[staff-reply ${correlationId}] Resend ${resp.status}: ${text.slice(0, 300)}`);
+      providerStatus = res.failure?.reachedProvider ? `rejected_${res.httpStatus ?? "?"}` : "not_attempted";
+      errorCode = res.failure?.category ?? "provider_rejected";
+      failureCategory = res.failure?.category ?? "provider_rejected";
+      retryable = res.failure?.retryable ?? false;
+      userMessage = `Email not sent: ${res.failure?.message ?? "the email provider rejected the request."}`;
+      console.error(`[staff-reply ${correlationId}] email failed [${errorCode}] status=${res.httpStatus} reached=${res.failure?.reachedProvider}`);
     }
   }
 
@@ -224,9 +222,13 @@ Deno.serve(async (req) => {
     deliveryState,
     channel,
     to,
+    from: fromAddress,
+    replyTo: replyToAddress,
     providerMessageId,
     providerStatus,
     errorCode,
+    failureCategory,
+    retryable,
     message: userMessage,
     correlationId,
   }, 200, correlationId);
