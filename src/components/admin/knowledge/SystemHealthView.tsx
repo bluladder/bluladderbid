@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Activity, AlertTriangle, MapPinOff, MapPin } from 'lucide-react';
+import { EmailDiagnosticsPanel } from './EmailDiagnosticsPanel';
 
 interface Issue {
   id: string;
@@ -22,7 +23,7 @@ const SEV_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'out
   info: 'secondary', warning: 'outline', critical: 'destructive',
 };
 
-export function SystemHealthView() {
+export function SystemHealthView({ onOpenAiConversations }: { onOpenAiConversations?: () => void }) {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [geocode, setGeocode] = useState<{ status: string; lastSuccessAt: string | null } | null>(null);
 
@@ -50,6 +51,9 @@ export function SystemHealthView() {
 
   return (
     <div className="space-y-4">
+      {/* Email delivery diagnostics (operations-admin only, no-send by default) */}
+      <EmailDiagnosticsPanel onOpenAiConversations={onOpenAiConversations} />
+
       {/* Geocoding health is data-driven: the warning clears once a real geocode succeeds. */}
       {geocode && geocode.status !== 'resolved' ? (
         <Alert variant="destructive">
@@ -74,7 +78,7 @@ export function SystemHealthView() {
         </Alert>
       )}
 
-      <Card>
+      <Card id="system-health-issues">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base"><Activity className="w-4 h-4" /> System Health</CardTitle>
           <CardDescription>Open operational issues that may need attention.</CardDescription>

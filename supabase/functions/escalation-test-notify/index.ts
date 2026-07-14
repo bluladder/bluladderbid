@@ -36,6 +36,9 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   if (body?.confirm !== true) return json({ error: "Explicit confirmation required" }, 400);
+  // Email-only mode: the admin Email Diagnostics panel verifies the email path
+  // without dispatching an SMS. Defaults to false (full SMS+email test).
+  const emailOnly = body?.emailOnly === true;
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
@@ -52,7 +55,7 @@ Deno.serve(async (req) => {
     .eq("singleton", true)
     .maybeSingle();
 
-  if (!recipient?.phone) return json({ error: "No enabled escalation recipient with a phone is configured." }, 400);
+  if (!emailOnly && !recipient?.phone) return json({ error: "No enabled escalation recipient with a phone is configured." }, 400);
 
   const messageBody = [
     "BluLadder internal test alert",
@@ -64,7 +67,9 @@ Deno.serve(async (req) => {
   let smsStatus = "skipped";
   let smsError: string | null = null;
   const cr = getCallRailConfig();
-  if (!cr) {
+  if (emailOnly) {
+    smsStatus = "skipped";
+  } else if (!cr) {
     smsStatus = "not_configured";
     smsError = "CallRail is not configured";
   } else {
@@ -91,6 +96,17 @@ Deno.serve(async (req) => {
     if (res.ok) {
       emailStatus = "sent";
       emailProviderMessageId = res.providerMessageId;
+      // Record the last successful real email-send for the Email Diagnostics panel.
+      try {
+        const now = new Date().toISOString();
+        const { data: sr } = await supabase.from("system_issues")
+          .select("id").eq("dedupe_key", "email_send_success").maybeSingle();
+        if (sr) {
+          await supabase.from("system_issues").update({ status: "resolved", last_seen_at: now, details: { last_success_at: now } }).eq("id", sr.id);
+        } else {
+          await supabase.from("system_issues").insert({ issue_type: "email_delivery", dedupe_key: "email_send_success", severity: "info", status: "resolved", details: { last_success_at: now } });
+        }
+      } catch { /* health bookkeeping must never break the send result */ }
     } else if (res.failure?.category === "provider_not_configured") {
       emailStatus = "not_configured";
       emailError = res.failure.message;
@@ -107,5 +123,6 @@ Deno.serve(async (req) => {
     recipient: recipient.name,
     sms: { status: smsStatus, error: smsError, to: recipient.phone },
     email: { status: emailStatus, error: emailError, category: emailFailureCategory, from: emailFrom, providerMessageId: emailProviderMessageId, to: emailTo },
+    emailOnly,
   });
 });
