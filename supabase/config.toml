@@ -83,3 +83,6 @@ verify_jwt = false
 
 [functions.escalation-test-notify]
 verify_jwt = false
+
+[functions.email-diagnostics]
+verify_jwt = false

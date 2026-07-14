@@ -13,6 +13,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getBearer, verifyAdmin } from "../_shared/auth.ts";
 import { getCallRailConfig, sendCallRailSms } from "../_shared/sms.ts";
 import { getPhoneByPurpose } from "../_shared/phoneConfig.ts";
+import { sendEmail } from "../_shared/emailConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,23 +78,27 @@ Deno.serve(async (req) => {
 
   let emailStatus = "skipped";
   let emailError: string | null = null;
+  let emailFrom: string | null = null;
+  let emailProviderMessageId: string | null = null;
+  let emailFailureCategory: string | null = null;
   const emailTo = recipient.email || settings?.notify_email || null;
   if (settings?.email_alerts_enabled && emailTo) {
-    const apiKey = Deno.env.get("RESEND_API_KEY");
-    if (!apiKey) { emailStatus = "not_configured"; emailError = "RESEND_API_KEY missing"; }
-    else {
-      const resp = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from: "BluLadder Alerts <noreply@bluladder.com>",
-          to: [emailTo],
-          subject: "BluLadder internal test alert",
-          html: `<pre style="font-family:system-ui,sans-serif">${messageBody}</pre>`,
-        }),
-      });
-      emailStatus = resp.ok ? "sent" : "failed";
-      emailError = resp.ok ? null : `resend ${resp.status}: ${(await resp.text()).slice(0, 200)}`;
+    const html = `<pre style="font-family:system-ui,sans-serif;white-space:pre-wrap">${
+      messageBody.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string))
+    }</pre>`;
+    const res = await sendEmail({ to: emailTo, subject: "BluLadder internal test alert", html, fromNameOverride: "BluLadder Alerts" });
+    emailFrom = res.from;
+    if (res.ok) {
+      emailStatus = "sent";
+      emailProviderMessageId = res.providerMessageId;
+    } else if (res.failure?.category === "provider_not_configured") {
+      emailStatus = "not_configured";
+      emailError = res.failure.message;
+      emailFailureCategory = res.failure.category;
+    } else {
+      emailStatus = "failed";
+      emailError = res.failure?.message ?? "provider rejected";
+      emailFailureCategory = res.failure?.category ?? "provider_rejected";
     }
   }
 
@@ -101,6 +106,6 @@ Deno.serve(async (req) => {
     status: "done",
     recipient: recipient.name,
     sms: { status: smsStatus, error: smsError, to: recipient.phone },
-    email: { status: emailStatus, error: emailError, to: emailTo },
+    email: { status: emailStatus, error: emailError, category: emailFailureCategory, from: emailFrom, providerMessageId: emailProviderMessageId, to: emailTo },
   });
 });

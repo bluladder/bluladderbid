@@ -21,6 +21,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getBearer, verifyAdmin, isServiceRoleToken } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { getPhoneByPurpose } from "../_shared/phoneConfig.ts";
+import { sendEmail } from "../_shared/emailConfig.ts";
 import {
   getCallRailConfig,
   sendCallRailSms,
@@ -38,9 +39,6 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// The verified Resend sender for BluLadder customer-facing email.
-const EMAIL_FROM = "BluLadder <noreply@bluladder.com>";
-
 function json(body: unknown, status = 200, correlationId?: string) {
   const headers: Record<string, string> = { ...corsHeaders, "Content-Type": "application/json" };
   if (correlationId) headers["x-correlation-id"] = correlationId;
@@ -51,21 +49,6 @@ const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
-}
-
-/** Map a Resend HTTP failure to a specific, secret-free, actionable message. */
-function resendErrorMessage(status: number, bodyText: string): { code: string; message: string } {
-  const lower = bodyText.toLowerCase();
-  if (status === 401 || status === 403 || lower.includes("domain is not verified") || lower.includes("not verified")) {
-    return { code: "sender_not_verified", message: "Email could not be sent: the sender domain is not verified." };
-  }
-  if (status === 422 || lower.includes("invalid") && lower.includes("to")) {
-    return { code: "invalid_recipient", message: "Email could not be sent: the recipient address is invalid." };
-  }
-  if (status === 429) {
-    return { code: "rate_limited", message: "Email could not be sent right now: the provider is rate-limiting requests. Try again shortly." };
-  }
-  return { code: "provider_rejected", message: "Email could not be sent: the provider rejected the request." };
 }
 
 Deno.serve(async (req) => {
@@ -174,6 +157,10 @@ Deno.serve(async (req) => {
   let providerMessageId: string | null = null;
   let providerStatus: string | null = null;
   let errorCode: string | null = null;
+  let failureCategory: string | null = null;
+  let retryable = false;
+  let fromAddress: string | null = null;
+  let replyToAddress: string | null = null;
   let userMessage = `Reply sent by ${channel.toUpperCase()}.`;
 
   if (channel === "sms") {
@@ -203,29 +190,23 @@ Deno.serve(async (req) => {
       console.error(`[staff-reply ${correlationId}] CallRail send failed: ${result.error}`);
     }
   } else {
-    const apiKey = Deno.env.get("RESEND_API_KEY");
-    if (!apiKey) {
-      await recordTimeline(supabase, conversationId, channel, to, message, "failed", "resend not configured", adminId, correlationId, false);
-      return json({ ok: false, status: "failed", errorCode: "provider_not_configured", deliveryState: "delivery_failed", channel, to, message: "Email could not be sent: the email provider is not configured (missing API key).", correlationId }, 200, correlationId);
-    }
+    // Customer-visible email via the SINGLE centralized sender (no hard-coded From).
     const html = `<div style="font-family:system-ui,sans-serif;font-size:15px;white-space:pre-wrap">${escapeHtml(message)}</div>`;
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: EMAIL_FROM, to: [to], subject, html }),
-    });
-    if (resp.ok) {
+    const res = await sendEmail({ to, subject, html });
+    fromAddress = res.from;
+    replyToAddress = res.replyTo;
+    if (res.ok) {
       deliveryState = "sent";
       providerStatus = "accepted";
-      try { const jr = await resp.json(); providerMessageId = jr?.id ?? null; } catch { /* ignore */ }
+      providerMessageId = res.providerMessageId;
     } else {
-      const text = await resp.text();
-      const mapped = resendErrorMessage(resp.status, text);
       deliveryState = "delivery_failed";
-      providerStatus = `rejected_${resp.status}`;
-      errorCode = mapped.code;
-      userMessage = mapped.message;
-      console.error(`[staff-reply ${correlationId}] Resend ${resp.status}: ${text.slice(0, 300)}`);
+      providerStatus = res.failure?.reachedProvider ? `rejected_${res.httpStatus ?? "?"}` : "not_attempted";
+      errorCode = res.failure?.category ?? "provider_rejected";
+      failureCategory = res.failure?.category ?? "provider_rejected";
+      retryable = res.failure?.retryable ?? false;
+      userMessage = `Email not sent: ${res.failure?.message ?? "the email provider rejected the request."}`;
+      console.error(`[staff-reply ${correlationId}] email failed [${errorCode}] status=${res.httpStatus} reached=${res.failure?.reachedProvider}`);
     }
   }
 
@@ -241,9 +222,13 @@ Deno.serve(async (req) => {
     deliveryState,
     channel,
     to,
+    from: fromAddress,
+    replyTo: replyToAddress,
     providerMessageId,
     providerStatus,
     errorCode,
+    failureCategory,
+    retryable,
     message: userMessage,
     correlationId,
   }, 200, correlationId);
@@ -263,11 +248,14 @@ async function recordTimeline(
   delivered: boolean,
   providerMessageId: string | null = null,
 ) {
-  await supabase.from("chat_messages").insert({
+  const { error } = await supabase.from("chat_messages").insert({
     conversation_id: conversationId,
     role: "staff",
     content,
     tool_name: "staff_reply",
     tool_result: { channel, to, deliveryState, delivered, providerResponse, providerMessageId, adminId, correlationId },
   });
+  // supabase-js does NOT throw on a DB error; surface it so a failed audit
+  // write can never again silently disappear (the role-constraint defect).
+  if (error) console.error(`[staff-reply ${correlationId}] timeline insert failed: ${error.message ?? error}`);
 }

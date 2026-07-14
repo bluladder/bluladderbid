@@ -9,6 +9,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { checkSuppression } from "./suppression.ts";
 import { getPhoneByPurpose } from "./phoneConfig.ts";
+import { sendEmail } from "./emailConfig.ts";
 import {
   rollupDeliveryState,
   type ChannelDeliveryStatus,
@@ -77,25 +78,14 @@ async function sendEscalationEmail(
   subject: string,
   body: string,
 ): Promise<{ status: string; error: string | null }> {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  if (!apiKey) return { status: "not_configured", error: "RESEND_API_KEY missing" };
-  try {
-    const html = `<pre style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${
-      body.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string))
-    }</pre>`;
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: "BluLadder Alerts <noreply@bluladder.com>", to: [to], subject, html }),
-    });
-    if (!resp.ok) {
-      const text = await resp.text();
-      return { status: "failed", error: `Resend ${resp.status}: ${text.slice(0, 200)}` };
-    }
-    return { status: "sent", error: null };
-  } catch (e) {
-    return { status: "failed", error: e instanceof Error ? e.message.slice(0, 200) : String(e) };
-  }
+  const html = `<pre style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${
+    body.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string))
+  }</pre>`;
+  // Single centralized sender — no hard-coded From. Never throws.
+  const res = await sendEmail({ to, subject, html, fromNameOverride: "BluLadder Alerts" });
+  if (res.ok) return { status: "sent", error: null };
+  if (res.failure?.category === "provider_not_configured") return { status: "not_configured", error: res.failure.message };
+  return { status: "failed", error: res.failure?.message ?? "provider rejected" };
 }
 
 /**

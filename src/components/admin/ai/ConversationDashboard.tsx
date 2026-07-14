@@ -55,7 +55,7 @@ export function ConversationDashboard() {
   const [replyDraft, setReplyDraft] = useState('');
   const [replyChannel, setReplyChannel] = useState<'sms' | 'email' | 'call'>('sms');
   const [sendingReply, setSendingReply] = useState(false);
-  const [replyDiag, setReplyDiag] = useState<{ correlationId?: string; detail?: string } | null>(null);
+  const [replyDiag, setReplyDiag] = useState<{ correlationId?: string; detail?: string; category?: string; channel?: string; from?: string; to?: string; retryable?: boolean } | null>(null);
   const [authorizingTest, setAuthorizingTest] = useState(false);
   const [returnAiOpen, setReturnAiOpen] = useState(false);
   const [testNotifyOpen, setTestNotifyOpen] = useState(false);
@@ -190,17 +190,26 @@ export function ConversationDashboard() {
             correlationId = parsed?.correlationId;
           } catch { /* keep generic */ }
         }
-        setReplyDiag({ correlationId, detail });
+        setReplyDiag({ correlationId, detail, channel: chan });
         toast({ title: 'Reply not sent', description: detail, variant: 'destructive' });
         return;
       }
       const d = data as {
         ok?: boolean; status?: string; deliveryState?: string; reason?: string;
         message?: string; wouldHaveSent?: boolean; correlationId?: string; errorCode?: string;
+        failureCategory?: string; retryable?: boolean; from?: string; to?: string;
       } | null;
       // Handled non-delivery outcomes come back 2xx with ok:false + a safe message.
       if (d && d.ok === false) {
-        setReplyDiag({ correlationId: d.correlationId, detail: `${d.errorCode ?? d.status ?? 'error'}` });
+        setReplyDiag({
+          correlationId: d.correlationId,
+          detail: d.message ?? `${d.errorCode ?? d.status ?? 'error'}`,
+          category: d.failureCategory ?? d.errorCode ?? d.status,
+          channel: chan,
+          from: d.from,
+          to: d.to,
+          retryable: d.retryable,
+        });
         if (d.status === 'suppressed') {
           toast({ title: 'Recorded as "would have sent"', description: d.message ?? 'Recipient is protected by test suppression.' });
           await refreshTranscript(selected.id);
@@ -250,8 +259,19 @@ export function ConversationDashboard() {
     try {
       const { data, error } = await supabase.functions.invoke('escalation-test-notify', { body: { confirm: true } });
       if (error) { toast({ title: 'Test notification failed', description: error.message, variant: 'destructive' }); return; }
-      const d = data as { sms?: { status?: string }; email?: { status?: string } } | null;
-      toast({ title: 'Test alert sent', description: `SMS: ${d?.sms?.status ?? '—'} · Email: ${d?.email?.status ?? '—'}` });
+      const d = data as {
+        sms?: { status?: string; error?: string };
+        email?: { status?: string; error?: string; category?: string; from?: string };
+      } | null;
+      const emailOk = d?.email?.status === 'sent';
+      const emailLine = emailOk
+        ? `Email: sent${d?.email?.from ? ` (from ${d.email.from})` : ''}`
+        : `Email: ${d?.email?.status ?? '—'}${d?.email?.error ? ` — ${d.email.error}` : ''}`;
+      toast({
+        title: 'Escalation test result',
+        description: `SMS: ${d?.sms?.status ?? '—'} · ${emailLine}`,
+        variant: emailOk || d?.sms?.status === 'sent' ? undefined : 'destructive',
+      });
       setTestNotifyOpen(false);
     } finally { setTestNotifyBusy(false); }
   };
@@ -428,6 +448,12 @@ export function ConversationDashboard() {
                             <AlertTriangle className="w-3 h-3" /> Delivery diagnostics
                           </div>
                           <div className="text-muted-foreground">Reason: {replyDiag.detail || 'unknown'}</div>
+                          {replyDiag.channel && <div className="text-muted-foreground">Channel: {replyDiag.channel.toUpperCase()}</div>}
+                          {replyDiag.category && <div className="text-muted-foreground">Category: {replyDiag.category}</div>}
+                          {replyDiag.from && <div className="text-muted-foreground">From: {replyDiag.from}{replyDiag.to ? ` → ${replyDiag.to}` : ''}</div>}
+                          {replyDiag.retryable !== undefined && (
+                            <div className="text-muted-foreground">Retry eligible: {replyDiag.retryable ? 'yes' : 'no — fix the sender configuration first'}</div>
+                          )}
                           {replyDiag.correlationId && (
                             <div className="flex items-center gap-2">
                               <span className="text-muted-foreground">Ref {replyDiag.correlationId}</span>
@@ -435,7 +461,9 @@ export function ConversationDashboard() {
                             </div>
                           )}
                           <div className="flex flex-wrap items-center gap-3">
-                            <button className="underline" onClick={() => sendReply()} disabled={sendingReply}>Retry</button>
+                            {replyDiag.retryable !== false && (
+                              <button className="underline" onClick={() => sendReply()} disabled={sendingReply}>Retry</button>
+                            )}
                             <a className="underline" href="/admin?tab=knowledge&section=health">Open System Health</a>
                             {canOverrideBookings && (
                               <button className="underline text-destructive" onClick={authorizeAndSendTestReply} disabled={authorizingTest || sendingReply}>
