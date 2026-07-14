@@ -9,8 +9,8 @@
 // The sender identity is configurable via environment so the verified Resend
 // domain can be corrected without a code change:
 //   EMAIL_FROM_NAME     (default "BluLadder")
-//   EMAIL_FROM_ADDRESS  (default "noreply@bluladder.com")
-//   EMAIL_REPLY_TO      (default "support@bluladder.com")
+//   EMAIL_FROM_ADDRESS  (default "alerts@admin.bluladder.com")
+//   EMAIL_REPLY_TO      (default "info@bluladder.com")
 //
 // It also exposes a NO-SEND provider validation (listResendDomains) used by the
 // admin email-diagnostics function to confirm the From domain is verified in
@@ -32,8 +32,8 @@ export interface SenderConfig {
 /** Resolve the one-and-only sender identity from env (with safe defaults). */
 export function getSenderConfig(fromNameOverride?: string): SenderConfig {
   const fromName = (fromNameOverride || Deno.env.get("EMAIL_FROM_NAME") || "BluLadder").trim();
-  const fromEmail = (Deno.env.get("EMAIL_FROM_ADDRESS") || "noreply@bluladder.com").trim();
-  const replyTo = (Deno.env.get("EMAIL_REPLY_TO") || "support@bluladder.com").trim();
+  const fromEmail = (Deno.env.get("EMAIL_FROM_ADDRESS") || "alerts@admin.bluladder.com").trim();
+  const replyTo = (Deno.env.get("EMAIL_REPLY_TO") || "info@bluladder.com").trim();
   const fromDomain = fromEmail.includes("@") ? fromEmail.split("@")[1].toLowerCase() : "";
   return {
     fromName,
