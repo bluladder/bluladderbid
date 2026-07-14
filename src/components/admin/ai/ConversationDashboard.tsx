@@ -190,17 +190,26 @@ export function ConversationDashboard() {
             correlationId = parsed?.correlationId;
           } catch { /* keep generic */ }
         }
-        setReplyDiag({ correlationId, detail });
+        setReplyDiag({ correlationId, detail, channel: chan });
         toast({ title: 'Reply not sent', description: detail, variant: 'destructive' });
         return;
       }
       const d = data as {
         ok?: boolean; status?: string; deliveryState?: string; reason?: string;
         message?: string; wouldHaveSent?: boolean; correlationId?: string; errorCode?: string;
+        failureCategory?: string; retryable?: boolean; from?: string; to?: string;
       } | null;
       // Handled non-delivery outcomes come back 2xx with ok:false + a safe message.
       if (d && d.ok === false) {
-        setReplyDiag({ correlationId: d.correlationId, detail: `${d.errorCode ?? d.status ?? 'error'}` });
+        setReplyDiag({
+          correlationId: d.correlationId,
+          detail: d.message ?? `${d.errorCode ?? d.status ?? 'error'}`,
+          category: d.failureCategory ?? d.errorCode ?? d.status,
+          channel: chan,
+          from: d.from,
+          to: d.to,
+          retryable: d.retryable,
+        });
         if (d.status === 'suppressed') {
           toast({ title: 'Recorded as "would have sent"', description: d.message ?? 'Recipient is protected by test suppression.' });
           await refreshTranscript(selected.id);
