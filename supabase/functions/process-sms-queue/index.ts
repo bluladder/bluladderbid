@@ -56,10 +56,17 @@ async function sendEmail(
       .map((line) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
       .join("<br />");
     const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1f2937;">${safeHtml}</div>`;
+    const cfg = getSenderConfig();
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject: subject || "BluLadder", html }),
+      body: JSON.stringify({
+        from: cfg.fromHeader,
+        reply_to: cfg.replyTo,
+        to: [to],
+        subject: subject || "BluLadder",
+        html,
+      }),
     });
     const body = await res.text();
     if (!res.ok) return { ok: false, error: `Resend ${res.status}: ${body}` };
