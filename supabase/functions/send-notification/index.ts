@@ -25,7 +25,6 @@ interface NotificationRequest {
 }
 
 const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
-const FROM_EMAIL = "BluLadder <noreply@bluladder.com>";
 
 function formatPrice(price: number): string {
   return new Intl.NumberFormat('en-US', {
