@@ -68,3 +68,28 @@ Vitest + Deno test matrix (minimums, tiers, story mods, add-ons, exclusivity, bu
 3. OK to add the snapshot/version columns and `pricing_versions` table.
 
 On approval I'll implement Phases 3–10 exactly as above, preserving every current production price.
+
+---
+
+## Follow-up task — make the Deno test suite deterministic (2026-07-14)
+
+Six Deno tests are environment-dependent: they pass in local isolation but fail
+in environments where `SUPABASE_URL` / service env vars are present, because
+helpers like `campaignEmitter` (`emitCampaignEvent`) and other network-touching
+utilities attempt real `fetch` calls instead of hitting an injected stub.
+Symptoms show as `emitCampaignEvent FAILED ... status=0/400` log lines and
+intermittent failures depending on ambient env.
+
+**Task:** introduce explicit test-environment setup / dependency injection so
+every Deno test runs hermetically:
+- Inject a fetch/HTTP client (or a `SUPABASE_URL`-guard) into `campaignEmitter`
+  and any other module that performs network I/O, defaulting to a no-op/stub in
+  tests.
+- Add a shared Deno test bootstrap that clears/sets a known env baseline before
+  each network-touching test.
+- Gate real-network paths behind an explicit env flag so absence of config is a
+  deterministic skip, not a failure.
+
+**Hard constraint:** do NOT weaken production suppression, auth, or admin gating
+to make tests pass. Tests must be fixed via mocks/DI, never by loosening runtime
+safety.
