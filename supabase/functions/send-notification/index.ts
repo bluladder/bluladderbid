@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
+import { sendEmail } from "../_shared/emailConfig.ts";
 
 // Use fetch-based Resend API call instead of npm package
 async function sendEmail(apiKey: string, options: { from: string; to: string[]; subject: string; html: string }) {
