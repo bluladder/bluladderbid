@@ -259,8 +259,19 @@ export function ConversationDashboard() {
     try {
       const { data, error } = await supabase.functions.invoke('escalation-test-notify', { body: { confirm: true } });
       if (error) { toast({ title: 'Test notification failed', description: error.message, variant: 'destructive' }); return; }
-      const d = data as { sms?: { status?: string }; email?: { status?: string } } | null;
-      toast({ title: 'Test alert sent', description: `SMS: ${d?.sms?.status ?? '—'} · Email: ${d?.email?.status ?? '—'}` });
+      const d = data as {
+        sms?: { status?: string; error?: string };
+        email?: { status?: string; error?: string; category?: string; from?: string };
+      } | null;
+      const emailOk = d?.email?.status === 'sent';
+      const emailLine = emailOk
+        ? `Email: sent${d?.email?.from ? ` (from ${d.email.from})` : ''}`
+        : `Email: ${d?.email?.status ?? '—'}${d?.email?.error ? ` — ${d.email.error}` : ''}`;
+      toast({
+        title: 'Escalation test result',
+        description: `SMS: ${d?.sms?.status ?? '—'} · ${emailLine}`,
+        variant: emailOk || d?.sms?.status === 'sent' ? undefined : 'destructive',
+      });
       setTestNotifyOpen(false);
     } finally { setTestNotifyBusy(false); }
   };
