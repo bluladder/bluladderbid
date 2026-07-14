@@ -55,7 +55,7 @@ export function ConversationDashboard() {
   const [replyDraft, setReplyDraft] = useState('');
   const [replyChannel, setReplyChannel] = useState<'sms' | 'email' | 'call'>('sms');
   const [sendingReply, setSendingReply] = useState(false);
-  const [replyDiag, setReplyDiag] = useState<{ correlationId?: string; detail?: string } | null>(null);
+  const [replyDiag, setReplyDiag] = useState<{ correlationId?: string; detail?: string; category?: string; channel?: string; from?: string; to?: string; retryable?: boolean } | null>(null);
   const [authorizingTest, setAuthorizingTest] = useState(false);
   const [returnAiOpen, setReturnAiOpen] = useState(false);
   const [testNotifyOpen, setTestNotifyOpen] = useState(false);
