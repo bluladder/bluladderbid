@@ -437,6 +437,12 @@ export function ConversationDashboard() {
                             <AlertTriangle className="w-3 h-3" /> Delivery diagnostics
                           </div>
                           <div className="text-muted-foreground">Reason: {replyDiag.detail || 'unknown'}</div>
+                          {replyDiag.channel && <div className="text-muted-foreground">Channel: {replyDiag.channel.toUpperCase()}</div>}
+                          {replyDiag.category && <div className="text-muted-foreground">Category: {replyDiag.category}</div>}
+                          {replyDiag.from && <div className="text-muted-foreground">From: {replyDiag.from}{replyDiag.to ? ` → ${replyDiag.to}` : ''}</div>}
+                          {replyDiag.retryable !== undefined && (
+                            <div className="text-muted-foreground">Retry eligible: {replyDiag.retryable ? 'yes' : 'no — fix the sender configuration first'}</div>
+                          )}
                           {replyDiag.correlationId && (
                             <div className="flex items-center gap-2">
                               <span className="text-muted-foreground">Ref {replyDiag.correlationId}</span>
@@ -444,7 +450,9 @@ export function ConversationDashboard() {
                             </div>
                           )}
                           <div className="flex flex-wrap items-center gap-3">
-                            <button className="underline" onClick={() => sendReply()} disabled={sendingReply}>Retry</button>
+                            {replyDiag.retryable !== false && (
+                              <button className="underline" onClick={() => sendReply()} disabled={sendingReply}>Retry</button>
+                            )}
                             <a className="underline" href="/admin?tab=knowledge&section=health">Open System Health</a>
                             {canOverrideBookings && (
                               <button className="underline text-destructive" onClick={authorizeAndSendTestReply} disabled={authorizingTest || sendingReply}>
