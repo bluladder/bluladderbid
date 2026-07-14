@@ -4,13 +4,14 @@ import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut, getCustomerPause }
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { runAbandonmentSweep, recoverPendingCampaignEvents } from "../_shared/campaignSweep.ts";
+import { getSenderConfig } from "../_shared/emailConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const FROM_EMAIL = "BluLadder <noreply@bluladder.com>";
+
 
 // Exponential-ish backoff (in minutes) applied before each retry, indexed by
 // the attempt number that just failed (1st failure -> 5 min, 2nd -> 30 min, ...).
@@ -55,10 +56,17 @@ async function sendEmail(
       .map((line) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
       .join("<br />");
     const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1f2937;">${safeHtml}</div>`;
+    const cfg = getSenderConfig();
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject: subject || "BluLadder", html }),
+      body: JSON.stringify({
+        from: cfg.fromHeader,
+        reply_to: cfg.replyTo,
+        to: [to],
+        subject: subject || "BluLadder",
+        html,
+      }),
     });
     const body = await res.text();
     if (!res.ok) return { ok: false, error: `Resend ${res.status}: ${body}` };
