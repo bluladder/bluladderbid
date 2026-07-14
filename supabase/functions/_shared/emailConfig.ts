@@ -195,7 +195,7 @@ export async function listResendDomains(): Promise<DomainValidation> {
   }
   let resp: Response;
   try {
-    resp = await fetch(RESEND_DOMAINS_URL, { headers: { Authorization: `Bearer ${apiKey}` } });
+    resp = await fetch(RESEND_DOMAINS_URL, { headers: gatewayHeaders() });
   } catch {
     return { ok: false, apiKeyPresent: true, reachedProvider: false, httpStatus: null, domains: [], error: "Could not reach the email provider." };
   }
