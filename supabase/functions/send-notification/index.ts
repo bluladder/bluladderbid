@@ -166,7 +166,7 @@ function generateEmailContent(
         </div>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
         <p style="font-size: 14px; color: #6b7280;">
-          If you have any questions, please contact us at support@bluladder.com
+          If you have any questions, please contact us at info@bluladder.com
         </p>
       </div>
       <div style="text-align: center; padding: 16px; color: #9ca3af; font-size: 12px;">
