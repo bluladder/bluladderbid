@@ -21,6 +21,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getBearer, verifyAdmin, isServiceRoleToken } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { getPhoneByPurpose } from "../_shared/phoneConfig.ts";
+import { sendEmail } from "../_shared/emailConfig.ts";
 import {
   getCallRailConfig,
   sendCallRailSms,
@@ -38,9 +39,6 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// The verified Resend sender for BluLadder customer-facing email.
-const EMAIL_FROM = "BluLadder <noreply@bluladder.com>";
-
 function json(body: unknown, status = 200, correlationId?: string) {
   const headers: Record<string, string> = { ...corsHeaders, "Content-Type": "application/json" };
   if (correlationId) headers["x-correlation-id"] = correlationId;
@@ -51,21 +49,6 @@ const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
-}
-
-/** Map a Resend HTTP failure to a specific, secret-free, actionable message. */
-function resendErrorMessage(status: number, bodyText: string): { code: string; message: string } {
-  const lower = bodyText.toLowerCase();
-  if (status === 401 || status === 403 || lower.includes("domain is not verified") || lower.includes("not verified")) {
-    return { code: "sender_not_verified", message: "Email could not be sent: the sender domain is not verified." };
-  }
-  if (status === 422 || lower.includes("invalid") && lower.includes("to")) {
-    return { code: "invalid_recipient", message: "Email could not be sent: the recipient address is invalid." };
-  }
-  if (status === 429) {
-    return { code: "rate_limited", message: "Email could not be sent right now: the provider is rate-limiting requests. Try again shortly." };
-  }
-  return { code: "provider_rejected", message: "Email could not be sent: the provider rejected the request." };
 }
 
 Deno.serve(async (req) => {
