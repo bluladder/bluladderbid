@@ -11,7 +11,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const FROM_EMAIL = "BluLadder <noreply@bluladder.com>";
+
 
 // Exponential-ish backoff (in minutes) applied before each retry, indexed by
 // the attempt number that just failed (1st failure -> 5 min, 2nd -> 30 min, ...).
