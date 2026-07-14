@@ -351,6 +351,72 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_test_runs: {
+        Row: {
+          auth_key: string | null
+          booking_id: string | null
+          checkpoint: string | null
+          conversation_id: string | null
+          correlation_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          idempotency_key: string | null
+          jobber_job_id: string | null
+          jobber_visit_id: string | null
+          last_error: string | null
+          last_error_step: string | null
+          phase: string
+          slot_id: string | null
+          slot_start: string | null
+          status: string
+          steps: Json
+          updated_at: string
+        }
+        Insert: {
+          auth_key?: string | null
+          booking_id?: string | null
+          checkpoint?: string | null
+          conversation_id?: string | null
+          correlation_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          idempotency_key?: string | null
+          jobber_job_id?: string | null
+          jobber_visit_id?: string | null
+          last_error?: string | null
+          last_error_step?: string | null
+          phase?: string
+          slot_id?: string | null
+          slot_start?: string | null
+          status?: string
+          steps?: Json
+          updated_at?: string
+        }
+        Update: {
+          auth_key?: string | null
+          booking_id?: string | null
+          checkpoint?: string | null
+          conversation_id?: string | null
+          correlation_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          idempotency_key?: string | null
+          jobber_job_id?: string | null
+          jobber_visit_id?: string | null
+          last_error?: string | null
+          last_error_step?: string | null
+          phase?: string
+          slot_id?: string | null
+          slot_start?: string | null
+          status?: string
+          steps?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           cancellation_needs_attention_reason: string | null

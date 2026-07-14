@@ -17,6 +17,7 @@ import { toast } from '@/hooks/use-toast';
 import { MessageSquare, Copy, UserCheck, CheckCircle2, RotateCcw, AlertTriangle, Bot, User, Search, Phone, Mail, Send, PhoneCall, Bell, Headset } from 'lucide-react';
 import { DashboardFilter, FILTER_LABELS, matchesFilter, isAbandoned } from './conversationFilters';
 import { LiveJobberTestPanel } from './LiveJobberTestPanel';
+import { RunControlledBookingTest } from './RunControlledBookingTest';
 import type { ConvoLike } from './liveJobberTest';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -282,6 +283,7 @@ export function ConversationDashboard() {
 
   return (
     <div className="space-y-4">
+      <RunControlledBookingTest isOperationsAdmin={!!canOverrideBookings} />
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-2">
