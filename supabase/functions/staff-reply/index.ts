@@ -248,11 +248,14 @@ async function recordTimeline(
   delivered: boolean,
   providerMessageId: string | null = null,
 ) {
-  await supabase.from("chat_messages").insert({
+  const { error } = await supabase.from("chat_messages").insert({
     conversation_id: conversationId,
     role: "staff",
     content,
     tool_name: "staff_reply",
     tool_result: { channel, to, deliveryState, delivered, providerResponse, providerMessageId, adminId, correlationId },
   });
+  // supabase-js does NOT throw on a DB error; surface it so a failed audit
+  // write can never again silently disappear (the role-constraint defect).
+  if (error) console.error(`[staff-reply ${correlationId}] timeline insert failed: ${error.message ?? error}`);
 }
