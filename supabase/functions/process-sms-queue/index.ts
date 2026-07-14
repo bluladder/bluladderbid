@@ -4,6 +4,7 @@ import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut, getCustomerPause }
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { runAbandonmentSweep, recoverPendingCampaignEvents } from "../_shared/campaignSweep.ts";
+import { getSenderConfig } from "../_shared/emailConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
