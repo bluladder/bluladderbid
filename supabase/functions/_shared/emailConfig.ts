@@ -67,18 +67,20 @@ export interface EmailFailure {
 export function classifyResendFailure(status: number, bodyText: string): EmailFailure {
   const lower = (bodyText || "").toLowerCase();
 
+  // Sandbox / test-domain restriction — check first, its body often returns 403.
+  if (lower.includes("onboarding@resend.dev") || lower.includes("testing emails") || lower.includes("can only send")) {
+    return { category: "sandbox_restricted", message: "The email provider is in sandbox mode: verify a domain to email addresses other than the account owner.", retryable: false, reachedProvider: true, httpStatus: status };
+  }
+  // Explicit unverified-domain wording, regardless of status code.
+  if (lower.includes("not verified") || lower.includes("domain is not verified") || lower.includes("verify a domain")) {
+    return { category: "sender_not_verified", message: "Email sender domain is not verified in the email provider.", retryable: false, reachedProvider: true, httpStatus: status };
+  }
   if (status === 401 || status === 403 || lower.includes("api key") || lower.includes("unauthorized")) {
     // A bad/absent key OR a key whose account cannot use this domain.
     if (lower.includes("domain") && (lower.includes("verif") || lower.includes("not found"))) {
       return { category: "sender_not_verified", message: "Email sender domain is not verified in the email provider.", retryable: false, reachedProvider: true, httpStatus: status };
     }
     return { category: "sender_not_verified", message: "The email provider rejected the sender: the From domain is not verified (or the API key cannot use it).", retryable: false, reachedProvider: true, httpStatus: status };
-  }
-  if (lower.includes("not verified") || lower.includes("domain is not verified") || lower.includes("verify a domain")) {
-    return { category: "sender_not_verified", message: "Email sender domain is not verified in the email provider.", retryable: false, reachedProvider: true, httpStatus: status };
-  }
-  if (lower.includes("onboarding@resend.dev") || lower.includes("testing emails") || lower.includes("can only send")) {
-    return { category: "sandbox_restricted", message: "The email provider is in sandbox mode: verify a domain to email addresses other than the account owner.", retryable: false, reachedProvider: true, httpStatus: status };
   }
   if (status === 422 && (lower.includes("from") || lower.includes("sender"))) {
     return { category: "invalid_sender", message: "The email provider rejected the From address format.", retryable: false, reachedProvider: true, httpStatus: status };
