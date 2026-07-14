@@ -291,18 +291,18 @@ serve(async (req) => {
 
     // Send email if notifying customer, Resend is configured, and not suppressed
     if (notifyCustomer && resendApiKey && !notifySuppression.suppressed) {
-      try {
-        const emailResponse = await sendEmail(resendApiKey, {
-          from: FROM_EMAIL,
-          to: [customerEmail],
-          subject,
-          html,
-        });
-        console.log("Email sent:", emailResponse);
-        emailSent = true;
-      } catch (err) {
-        console.error("Failed to send email:", err);
-        emailError = err instanceof Error ? err.message : String(err);
+      const emailResult = await sendEmail({
+        to: customerEmail,
+        subject,
+        html,
+        fromNameOverride: "BluLadder",
+      });
+      emailSent = emailResult.ok;
+      if (!emailResult.ok) {
+        emailError = emailResult.failure?.message ?? "Email provider rejected the request.";
+        console.error("Failed to send email:", emailError, emailResult.failure);
+      } else {
+        console.log("Email sent:", emailResult.providerMessageId);
       }
     }
 
