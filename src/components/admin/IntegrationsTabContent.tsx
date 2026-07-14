@@ -76,7 +76,7 @@ export function IntegrationsTabContent() {
       {activeSection === 'ai' && <ConversationDashboard />}
 
       {/* Knowledge, gaps, system health, escalations, phone numbers */}
-      {activeSection === 'knowledge' && <KnowledgeCenter />}
+      {activeSection === 'knowledge' && <KnowledgeCenter onOpenAiConversations={() => setActiveSection('ai')} />}
 
       {/* Jobber Integration */}
       {activeSection === 'jobber' && (
