@@ -17,8 +17,23 @@
 // the Resend account WITHOUT dispatching a message.
 // ============================================================================
 
-const RESEND_EMAILS_URL = "https://api.resend.com/emails";
-const RESEND_DOMAINS_URL = "https://api.resend.com/domains";
+// Resend is reached through the Lovable connector gateway (the linked "resend"
+// connector), NOT the raw Resend API. The connector injects RESEND_API_KEY as a
+// gateway *connection* key, so calling api.resend.com directly with it fails.
+const GATEWAY_BASE = "https://connector-gateway.lovable.dev/resend";
+const RESEND_EMAILS_URL = `${GATEWAY_BASE}/emails`;
+const RESEND_DOMAINS_URL = `${GATEWAY_BASE}/domains`;
+
+/** Auth headers for the connector gateway (Lovable key + connection key). */
+function gatewayHeaders(extra?: Record<string, string>): Record<string, string> {
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY") ?? "";
+  const connectionKey = Deno.env.get("RESEND_API_KEY") ?? "";
+  return {
+    Authorization: `Bearer ${lovableKey}`,
+    "X-Connection-Api-Key": connectionKey,
+    ...(extra ?? {}),
+  };
+}
 
 export interface SenderConfig {
   fromName: string;
@@ -130,7 +145,7 @@ export async function sendEmail(opts: {
   try {
     resp = await fetch(RESEND_EMAILS_URL, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: gatewayHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         from: cfg.fromHeader,
         reply_to: cfg.replyTo,
