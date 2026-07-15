@@ -10,6 +10,8 @@ import { BookingConfirmation } from './BookingConfirmation';
 import { ServiceReviewStep } from './ServiceReviewStep';
 import { BookingTermsAck } from './BookingTermsAck';
 import { BookingStepper } from './BookingStepper';
+import { CompleteYourRefresh } from './CompleteYourRefresh';
+import { LiveQuoteBar } from './LiveQuoteBar';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
 import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
@@ -25,6 +27,12 @@ interface BookingFlowProps {
   discountAmount?: number;
   onCancel: () => void;
   prefillCustomerInfo?: CustomerInfo | null;
+  /**
+   * Allow the customer to add services from within the booking flow
+   * (upsell surfaces). Presentation-only: the pricing engine still computes
+   * the actual amount. If omitted, upsell surfaces render nothing.
+   */
+  onAdditionalServicesChange?: (updater: (prev: AdditionalServices) => AdditionalServices) => void;
 }
 
 interface BookingResult {
@@ -52,6 +60,7 @@ export function BookingFlow({
   discountAmount = 0,
   onCancel,
   prefillCustomerInfo,
+  onAdditionalServicesChange,
 }: BookingFlowProps) {
   const [step, setStep] = useState<BookingStep>('review');
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
@@ -517,12 +526,18 @@ export function BookingFlow({
           estimatedDuration={estimatedDuration}
           onProceed={handleProceedFromReview}
           onBack={onCancel}
+          onAdditionalServicesChange={onAdditionalServicesChange}
         />
       )}
 
       {/* Step: Customer Info */}
       {step === 'info' && (
         <div className="space-y-3">
+          <LiveQuoteBar
+            servicePrices={servicePrices}
+            additionalServices={additionalServices}
+            discountAmount={discountAmount}
+          />
           <CustomerInfoForm
             onSubmit={handleCustomerInfoSubmit}
             initialData={customerInfo || prefillCustomerInfo || undefined}
@@ -544,6 +559,11 @@ export function BookingFlow({
       {/* Step: Time Selection */}
       {step === 'time' && customerInfo && (
         <div className="space-y-4">
+          <LiveQuoteBar
+            servicePrices={servicePrices}
+            additionalServices={additionalServices}
+            discountAmount={discountAmount}
+          />
           {/* Address confirmation - compact */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/40 text-xs">
             <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -596,7 +616,20 @@ export function BookingFlow({
                 </div>
               </div>
             )}
-            
+
+            {/* Final "Before we reserve your appointment..." upsell — inline, no popup */}
+            {selectedSlot && onAdditionalServicesChange && (
+              <div className="mb-4">
+                <CompleteYourRefresh
+                  additionalServices={additionalServices}
+                  onAdd={onAdditionalServicesChange}
+                  title="Before we reserve your appointment…"
+                  subtitle="One last look — add anything you'd like handled during this same visit."
+                  variant="compact"
+                />
+              </div>
+            )}
+
             <div className="flex flex-col-reverse sm:flex-row gap-3">
               <Button 
                 variant="ghost" 

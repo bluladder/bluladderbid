@@ -21,6 +21,8 @@ interface OneTimeSummaryProps {
   prefillCustomerInfo?: CustomerInfo | null;
   /** Notifies the page when the full booking flow opens/closes so it can widen the layout. */
   onBookingActiveChange?: (active: boolean) => void;
+  /** Enables in-flow upsells that mutate parent selection state (presentation only). */
+  onAdditionalServicesChange?: (updater: (prev: AdditionalServices) => AdditionalServices) => void;
 }
 
 function formatPrice(price: number) {
@@ -47,6 +49,7 @@ export function OneTimeSummary({
   onGetStarted,
   prefillCustomerInfo,
   onBookingActiveChange,
+  onAdditionalServicesChange,
 }: OneTimeSummaryProps) {
   const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
   const [showBookingFlow, setShowBookingFlow] = useState(false);
@@ -80,6 +83,7 @@ export function OneTimeSummary({
         discountAmount={serverDiscountAmount}
         onCancel={() => setShowBookingFlow(false)}
         prefillCustomerInfo={prefillCustomerInfo}
+        onAdditionalServicesChange={onAdditionalServicesChange}
       />
     );
   }

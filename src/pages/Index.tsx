@@ -201,6 +201,7 @@ const Index = () => {
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={prefillCustomerInfo}
           onBookingActiveChange={setBookingActive}
+          onAdditionalServicesChange={setAdditionalServices}
         />
       );
     }
