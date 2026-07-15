@@ -60,6 +60,11 @@ export function OneTimeSummary({
 }: OneTimeSummaryProps) {
   const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
   const [showBookingFlow, setShowBookingFlow] = useState(false);
+  const [saveDialogAction, setSaveDialogAction] = useState<null | 'save' | 'email'>(null);
+  const [saveEmail, setSaveEmail] = useState(prefillCustomerInfo?.email ?? '');
+  const [saveFirstName, setSaveFirstName] = useState(prefillCustomerInfo?.firstName ?? '');
+  const [saveSubmitting, setSaveSubmitting] = useState(false);
+  const [savedQuoteUrl, setSavedQuoteUrl] = useState<string | null>(null);
 
   // Let the page know whether the booking flow is taking over the view.
   useEffect(() => {
@@ -78,6 +83,52 @@ export function OneTimeSummary({
 
   const serverDiscountAmount = quote?.discount?.amount ?? 0;
   const canBook = isFirm && typeof total === 'number';
+
+  const handleSaveOrEmail = async () => {
+    if (!saveDialogAction || !quote || typeof total !== 'number') return;
+    const email = saveEmail.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    setSaveSubmitting(true);
+    try {
+      const attribution = readAttribution();
+      const services = quote.lineItems.map((li) => ({ key: li.key, name: li.label, amount: li.amount }));
+      const { data, error } = await supabase.functions.invoke('save-quote', {
+        body: {
+          action: saveDialogAction,
+          email,
+          firstName: saveFirstName || prefillCustomerInfo?.firstName || null,
+          lastName: prefillCustomerInfo?.lastName || null,
+          phone: prefillCustomerInfo?.phone || null,
+          total,
+          subtotal: quote.subtotal,
+          services,
+          homeDetails,
+          sourceSessionId: getOrCreateSourceSessionId(),
+          utmParams: attribution.touch ?? null,
+          attribution,
+          ruleVersion: quoteState.ruleVersion,
+          engineVersion: quoteState.engineVersion,
+          lineItems: quote.lineItems,
+        },
+      });
+      if (error) throw error;
+      const resp = data as { quoteUrl?: string; emailStatus?: string } | null;
+      setSavedQuoteUrl(resp?.quoteUrl ?? null);
+      if (saveDialogAction === 'email') {
+        toast.success(resp?.emailStatus === 'sent' ? 'Bid emailed — check your inbox.' : 'Bid saved. Email couldn\u2019t be sent right now, but your link is safe.');
+      } else {
+        toast.success('Bid saved for 30 days.');
+      }
+      setSaveDialogAction(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Something went wrong saving this bid.');
+    } finally {
+      setSaveSubmitting(false);
+    }
+  };
 
   // Fire Meta Pixel "Lead" ONLY after the canonical server quote returns firm.
   // The event id is deterministic per canonical fingerprint, so refreshes,
@@ -331,8 +382,54 @@ export function OneTimeSummary({
             <Download className="w-4 h-4 mr-2" />
             Download Quote PDF
           </Button>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" onClick={() => setSaveDialogAction('save')} disabled={!canBook}>
+              <Bookmark className="w-4 h-4 mr-2" />
+              Save this bid
+            </Button>
+            <Button variant="outline" onClick={() => setSaveDialogAction('email')} disabled={!canBook}>
+              <Mail className="w-4 h-4 mr-2" />
+              Email me this bid
+            </Button>
+          </div>
+          {savedQuoteUrl && (
+            <p className="text-xs text-center text-muted-foreground">
+              Bid saved. <a href={savedQuoteUrl} className="underline text-primary">View your saved bid</a> — held for 30 days.
+            </p>
+          )}
         </div>
       </CardContent>
+
+      <Dialog open={saveDialogAction !== null} onOpenChange={(o) => !o && setSaveDialogAction(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {saveDialogAction === 'email' ? 'Email me this bid' : 'Save this bid'}
+            </DialogTitle>
+            <DialogDescription>
+              We'll hold this exact price for 30 days. No payment or commitment.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="save-first">First name (optional)</Label>
+              <Input id="save-first" value={saveFirstName} onChange={(e) => setSaveFirstName(e.target.value)} placeholder="Jane" />
+            </div>
+            <div>
+              <Label htmlFor="save-email">Email</Label>
+              <Input id="save-email" type="email" value={saveEmail} onChange={(e) => setSaveEmail(e.target.value)} placeholder="you@example.com" autoFocus />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSaveDialogAction(null)} disabled={saveSubmitting}>Cancel</Button>
+            <Button onClick={handleSaveOrEmail} disabled={saveSubmitting || !saveEmail}>
+              {saveSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {saveDialogAction === 'email' ? 'Email me the bid' : 'Save my bid'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
