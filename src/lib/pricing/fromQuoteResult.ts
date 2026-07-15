@@ -46,6 +46,8 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
   const roof = byKey(quote, 'roof_cleaning');
   const driveway = byKey(quote, 'driveway_cleaning');
   const pressure = byKey(quote, 'pressure_washing');
+  const solar = byKey(quote, 'solar_panel_cleaning');
+  const screen = byKey(quote, 'screen_repair');
 
   const windowCleaningTotal = comp(win, 'windowCleaningTotal');
   const drivewayCleaning = driveway?.amount ?? 0;
@@ -53,9 +55,12 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
   const gutterCleaningTotal = comp(gutter, 'gutterCleaningTotal') || (gutter?.amount ?? 0);
   const houseWashTotal = comp(house, 'houseWashTotal') || (house?.amount ?? 0);
   const roofCleaning = roof?.amount ?? 0;
+  const solarPanelCleaning = solar?.amount ?? 0;
+  const screenRepair = screen?.amount ?? 0;
 
   const additionalServicesTotal =
-    drivewayCleaning + pressureWashing + gutterCleaningTotal + houseWashTotal + roofCleaning;
+    drivewayCleaning + pressureWashing + gutterCleaningTotal + houseWashTotal + roofCleaning +
+    solarPanelCleaning + screenRepair;
 
   return {
     // Window cleaning (server components)
@@ -94,6 +99,10 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
 
     // Roof
     roofCleaning,
+
+    // Per-unit services
+    solarPanelCleaning,
+    screenRepair,
 
     // Totals — from the authoritative server line-item amounts only.
     additionalServicesTotal,

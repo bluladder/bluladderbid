@@ -13,6 +13,8 @@ const REQUIRED_KEYS = [
   "roof_cleaning",
   "driveway_cleaning",
   "pressure_washing",
+  "solar_panel_cleaning",
+  "screen_repair",
 ];
 
 export interface LoadedPricing {

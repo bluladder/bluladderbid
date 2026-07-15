@@ -144,5 +144,13 @@ function extractAdditionalServices(services: Array<{ name: string; price: number
     roofType: 'asphalt',
     roofSeverity: 'light',
     roofPitch: 'walkable',
+    solarPanelCleaning: {
+      enabled: serviceNames.some(n => n.includes('solar')),
+      panelCount: 20,
+    },
+    screenRepair: {
+      enabled: serviceNames.some(n => n.includes('screen repair')),
+      screenCount: 1,
+    },
   };
 }
