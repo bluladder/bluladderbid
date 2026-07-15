@@ -51,6 +51,16 @@ interface BookingRequest {
   discountCode?: string;
   notes?: string;
   utmParams?: UtmParams;
+  /** Whitelisted attribution snapshot. Never used for pricing. */
+  attribution?: {
+    source_session_id?: string;
+    first_touch?: Record<string, unknown>;
+    last_touch?: Record<string, unknown>;
+    landing_page_slug?: string;
+    fbclid?: string;
+    referrer?: string;
+  };
+  sourceSessionId?: string;
   // Team booking fields
   isTeamJob?: boolean;
   teamTechnicianIds?: string[];
