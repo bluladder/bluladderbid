@@ -80,6 +80,17 @@ export interface HouseWashDetails {
 // Roof pitch options (informational only)
 export type RoofPitch = 'walkable' | 'moderate' | 'steep';
 
+// Per-unit services with quantity input
+export interface SolarPanelCleaningOptions {
+  enabled: boolean;
+  panelCount: number;
+}
+
+export interface ScreenRepairOptions {
+  enabled: boolean;
+  screenCount: number;
+}
+
 export interface AdditionalServices {
   windowCleaning: boolean;
   drivewayCleaning: DrivewayCleaningOptions;
@@ -92,6 +103,8 @@ export interface AdditionalServices {
   roofType: 'asphalt' | 'tile' | 'metal' | 'flat';
   roofSeverity: 'light' | 'moderate' | 'heavy';
   roofPitch: RoofPitch;
+  solarPanelCleaning: SolarPanelCleaningOptions;
+  screenRepair: ScreenRepairOptions;
 }
 
 // All calculated service prices - the single source of truth
@@ -133,6 +146,10 @@ export interface ServicePrices {
   // Roof cleaning
   roofCleaning: number;
   
+  // Per-unit services
+  solarPanelCleaning: number;
+  screenRepair: number;
+
   // Totals
   additionalServicesTotal: number;
   grandTotal: number;
@@ -238,6 +255,14 @@ export const DEFAULT_ADDITIONAL_SERVICES: AdditionalServices = {
   roofType: 'asphalt',
   roofSeverity: 'light',
   roofPitch: 'walkable',
+  solarPanelCleaning: {
+    enabled: false,
+    panelCount: 20,
+  },
+  screenRepair: {
+    enabled: false,
+    screenCount: 1,
+  },
 };
 
 export const DEFAULT_SERVICE_PRICES: ServicePrices = {
@@ -266,6 +291,8 @@ export const DEFAULT_SERVICE_PRICES: ServicePrices = {
   houseWashRustSurcharge: 0,
   houseWashTotal: 0,
   roofCleaning: 0,
+  solarPanelCleaning: 0,
+  screenRepair: 0,
   additionalServicesTotal: 0,
   grandTotal: 0,
 };
