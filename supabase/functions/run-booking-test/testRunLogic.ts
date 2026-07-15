@@ -59,6 +59,7 @@ export const PREPARE_STEPS: RunStep[] = [
 export const EXECUTE_STEPS: RunStep[] = [
   { key: "auth_authorized", label: "Authorization is authorized and scoped", status: "pending" },
   { key: "explicit_confirmation", label: "Explicit booking confirmation submitted", status: "pending" },
+  { key: "booking_payload_validation", label: "Booking payload built from canonical quote and slot", status: "pending" },
   { key: "reservation", label: "One reservation created", status: "pending" },
   { key: "jobber_client", label: "One Jobber client matched or created", status: "pending" },
   { key: "jobber_job", label: "One Jobber job created", status: "pending" },
@@ -200,4 +201,160 @@ export function safeStageLabel(phase: RunPhase, stepKey?: string | null): string
     phase === "complete" ? "Complete" :
     "Failed";
   return stepKey ? `${p} → ${stepKey}` : p;
+}
+
+// ---------------------------------------------------------------------------
+// Booking payload construction & validation (runner-only).
+//
+// The runner reuses the production `jobber-create-booking` edge function
+// exactly as-is. That function requires the same full payload real customers
+// send: `services[]`, `subtotal`, `total`, `discountAmount`, `durationMinutes`,
+// and `customer.firstName` / `customer.lastName`. Earlier the runner posted a
+// minimal payload and the production function crashed on `services.map` — a
+// runner defect, not a production bug. These helpers rebuild the full payload
+// deterministically from the canonical server quote and the selected slot the
+// runner already stored, and validate it fully BEFORE any live authorization
+// is consumed. The single-use live authorization must never be spent on a
+// payload the runner itself cannot construct correctly.
+// ---------------------------------------------------------------------------
+
+export interface CanonicalQuoteLike {
+  jobberLineItems?: Array<{ name?: string; unitPrice?: number; price?: number; description?: string }>;
+  lineItems?: Array<{ label?: string; name?: string; amount?: number; price?: number; description?: string }>;
+  subtotal?: number;
+  total?: number;
+  discountAmount?: number;
+  discount?: { amount?: number } | null;
+}
+
+export interface RunnerSlotLike {
+  slotId: string;
+  startTime: string;
+  endTime?: string;
+  durationMinutes?: number;
+  __technicianId?: string;
+  __isTeamJob?: boolean;
+  __teamTechnicianIds?: string[] | null;
+}
+
+export interface BuiltBookingPayload {
+  customer: { firstName: string; lastName: string; email: string; phone: string; address: string };
+  technicianId: string;
+  isTeamJob: boolean;
+  teamTechnicianIds: string[] | null;
+  scheduledStart: string;
+  scheduledEnd: string;
+  durationMinutes: number;
+  services: Array<{ name: string; price: number; description?: string }>;
+  subtotal: number;
+  total: number;
+  discountAmount: number;
+  idempotencyKey: string;
+}
+
+/**
+ * Split the customer full name into firstName/lastName. For the approved
+ * protected test identity we return the explicit ("BluLadder", "Booking Test")
+ * pair — never a fragile one-word split that would leave lastName empty and
+ * fail production validation. For any other name we fall back to a safe
+ * whitespace split that guarantees a non-empty lastName when possible.
+ */
+export function splitCustomerName(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = (fullName || "").trim().replace(/\s+/g, " ");
+  if (trimmed === APPROVED_TEST_NAME) return { firstName: "BluLadder", lastName: "Booking Test" };
+  if (!trimmed) return { firstName: "", lastName: "" };
+  const parts = trimmed.split(" ");
+  if (parts.length === 1) return { firstName: parts[0], lastName: parts[0] };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+/**
+ * Map the canonical server quote's line items to the exact shape
+ * `jobber-create-booking` expects: `{ name, price, description? }`.
+ * Prefer `jobberLineItems` (already normalized for Jobber). Fall back to
+ * `lineItems` only when the Jobber-shaped list is missing.
+ * Prices are never derived from client state.
+ */
+export function mapQuoteToServices(
+  quote: CanonicalQuoteLike | null | undefined,
+): Array<{ name: string; price: number; description?: string }> {
+  if (!quote) return [];
+  if (Array.isArray(quote.jobberLineItems) && quote.jobberLineItems.length > 0) {
+    return quote.jobberLineItems.map((li) => ({
+      name: String(li?.name ?? "").trim(),
+      price: Number(li?.unitPrice ?? li?.price ?? NaN),
+      description: li?.description ? String(li.description) : undefined,
+    }));
+  }
+  if (Array.isArray(quote.lineItems) && quote.lineItems.length > 0) {
+    return quote.lineItems.map((li) => ({
+      name: String(li?.label ?? li?.name ?? "").trim(),
+      price: Number(li?.amount ?? li?.price ?? NaN),
+      description: li?.description ? String(li.description) : undefined,
+    }));
+  }
+  return [];
+}
+
+export function buildBookingPayload(input: {
+  quote: CanonicalQuoteLike | null | undefined;
+  slot: RunnerSlotLike | null | undefined;
+  customer: { name: string; email: string; phone: string; address: string };
+  idempotencyKey: string;
+}): BuiltBookingPayload {
+  const { quote, slot, customer, idempotencyKey } = input;
+  const { firstName, lastName } = splitCustomerName(customer?.name ?? "");
+  const discountFromQuote = quote?.discountAmount ?? quote?.discount?.amount ?? 0;
+  return {
+    customer: {
+      firstName,
+      lastName,
+      email: customer?.email ?? "",
+      phone: customer?.phone ?? "",
+      address: customer?.address ?? "",
+    },
+    technicianId: slot?.__technicianId ?? "",
+    isTeamJob: slot?.__isTeamJob === true,
+    teamTechnicianIds: slot?.__teamTechnicianIds ?? null,
+    scheduledStart: slot?.startTime ?? "",
+    scheduledEnd: slot?.endTime ?? "",
+    durationMinutes: Number(slot?.durationMinutes ?? NaN),
+    services: mapQuoteToServices(quote),
+    subtotal: Number(quote?.subtotal ?? NaN),
+    total: Number(quote?.total ?? NaN),
+    discountAmount: Number(discountFromQuote ?? NaN),
+    idempotencyKey: idempotencyKey ?? "",
+  };
+}
+
+/**
+ * Fail-fast payload validation. Returns the list of missing/invalid field
+ * names — the coordinator halts on `booking_payload_validation` and does NOT
+ * consume the one-time live authorization when this fails.
+ */
+export function validateBookingPayload(p: BuiltBookingPayload): { ok: boolean; missing: string[] } {
+  const missing: string[] = [];
+  if (!Array.isArray(p.services) || p.services.length === 0) {
+    missing.push("services");
+  } else {
+    for (const [i, s] of p.services.entries()) {
+      if (!s.name) missing.push(`services[${i}].name`);
+      if (!Number.isFinite(s.price) || s.price < 0) missing.push(`services[${i}].price`);
+    }
+  }
+  if (!Number.isFinite(p.subtotal)) missing.push("subtotal");
+  if (!Number.isFinite(p.total)) missing.push("total");
+  if (!Number.isFinite(p.discountAmount)) missing.push("discountAmount");
+  if (!Number.isFinite(p.durationMinutes) || !Number.isInteger(p.durationMinutes) || p.durationMinutes <= 0) {
+    missing.push("durationMinutes");
+  }
+  if (!p.customer.firstName) missing.push("customer.firstName");
+  if (!p.customer.lastName) missing.push("customer.lastName");
+  if (!p.customer.email) missing.push("customer.email");
+  if (!p.customer.phone) missing.push("customer.phone");
+  if (!p.scheduledStart) missing.push("slot.startTime");
+  const hasTech = !!p.technicianId || (p.isTeamJob && Array.isArray(p.teamTechnicianIds) && p.teamTechnicianIds.length > 0);
+  if (!hasTech) missing.push("technicianId");
+  if (!p.idempotencyKey) missing.push("idempotencyKey");
+  return { ok: missing.length === 0, missing };
 }

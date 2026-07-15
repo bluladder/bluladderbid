@@ -28,6 +28,8 @@ import {
   CANCEL_STEPS,
   buildAuthKey,
   buildIdempotencyKey,
+  buildBookingPayload,
+  validateBookingPayload,
   evaluateAuthGate,
   initialSteps,
   markStep,
@@ -529,11 +531,51 @@ async function runExecute(supabase: any, runId: string): Promise<Response> {
   const latest = toolMsgs?.[0]?.tool_result as { offered?: any[] } | undefined;
   const slot = latest?.offered?.find((s) => s.slotId === run.slot_id);
   if (!slot) {
-    steps = await stepFail(supabase, runId, steps, "reservation", "selected slot no longer in latest offer");
-    return json({ ok: false, runId, safeStage: safeStageLabel("execute", "reservation"), steps });
+    steps = await stepFail(supabase, runId, steps, "booking_payload_validation", "selected slot no longer in latest offer");
+    return json({ ok: false, runId, safeStage: safeStageLabel("execute", "booking_payload_validation"), steps });
   }
 
-  // Consume the authorization atomically before the live write.
+  // Build the FULL booking payload from the canonical server quote and the
+  // stored selected slot BEFORE consuming the one-time live authorization.
+  // Validate every field the production booking function will read. If the
+  // runner cannot construct a complete valid payload we halt here and leave
+  // the authorization unconsumed — spending the single-use auth on a broken
+  // payload would waste the human authorization gate.
+  steps = await stepStart(supabase, runId, steps, "booking_payload_validation");
+  const quote = convo?.quote_result as any;
+  const payload = buildBookingPayload({
+    quote,
+    slot,
+    customer: {
+      name: convo?.prospect_name || APPROVED_TEST_NAME,
+      email: convo?.prospect_email || APPROVED_TEST_EMAIL,
+      phone: convo?.prospect_phone || APPROVED_TEST_PHONE,
+      address: convo?.service_address || APPROVED_TEST_ADDRESS,
+    },
+    idempotencyKey: run.idempotency_key,
+  });
+  const validation = validateBookingPayload(payload);
+  if (!validation.ok) {
+    steps = await stepFail(
+      supabase,
+      runId,
+      steps,
+      "booking_payload_validation",
+      `invalid payload: missing/invalid ${validation.missing.join(", ")}`,
+    );
+    return json({
+      ok: false,
+      runId,
+      safeStage: safeStageLabel("execute", "booking_payload_validation"),
+      steps,
+      invalidPayloadFields: validation.missing,
+    });
+  }
+  steps = await stepPass(supabase, runId, steps, "booking_payload_validation");
+
+  // Consume the authorization atomically ONLY after payload validation passes.
+  // This is the last local check before the first operation capable of
+  // creating an external Jobber record.
   const { data: consume } = await supabase.rpc("consume_live_jobber_authorization", {
     p_email: APPROVED_TEST_EMAIL,
     p_conversation_id: run.conversation_id,
@@ -548,22 +590,21 @@ async function runExecute(supabase: any, runId: string): Promise<Response> {
 
   // 3) live Jobber write via existing booking function (idempotent on idempotencyKey).
   steps = await stepStart(supabase, runId, steps, "reservation");
-  const quote = convo?.quote_result as any;
   const bookResp = await callFn("jobber-create-booking", {
-    customer: {
-      name: convo?.prospect_name || APPROVED_TEST_NAME,
-      email: APPROVED_TEST_EMAIL,
-      phone: convo?.prospect_phone || APPROVED_TEST_PHONE,
-      address: convo?.service_address || APPROVED_TEST_ADDRESS,
-    },
-    technicianId: slot.__technicianId,
-    isTeamJob: slot.__isTeamJob,
-    teamTechnicianIds: slot.__teamTechnicianIds,
-    scheduledStart: slot.startTime,
-    scheduledEnd: slot.endTime,
+    customer: payload.customer,
+    technicianId: payload.technicianId,
+    isTeamJob: payload.isTeamJob,
+    teamTechnicianIds: payload.teamTechnicianIds ?? undefined,
+    scheduledStart: payload.scheduledStart,
+    scheduledEnd: payload.scheduledEnd,
+    durationMinutes: payload.durationMinutes,
+    services: payload.services,
+    subtotal: payload.subtotal,
+    total: payload.total,
+    discountAmount: payload.discountAmount,
     homeDetails: quote?.__homeDetails ?? quote?.homeDetails ?? {},
     additionalServices: quote?.__additionalServices ?? quote?.additionalServices ?? undefined,
-    idempotencyKey: run.idempotency_key,
+    idempotencyKey: payload.idempotencyKey,
   });
   if (bookResp.status === 409) {
     steps = await stepFail(supabase, runId, steps, "reservation", "reservation conflict (409)");
