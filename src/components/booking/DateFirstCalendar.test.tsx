@@ -7,12 +7,17 @@ function findDay(dateKey: string) {
   return screen.getByTestId(`calendar-day-${dateKey}`) as HTMLButtonElement;
 }
 
-function nthWeekday(offsetDays: number) {
-  // Return an upcoming Monday-Friday date offset from today so tests are
-  // deterministic regardless of when they run.
-  let d = addDays(new Date(), offsetDays);
-  while (d.getDay() === 0 || d.getDay() === 6) d = addDays(d, 1);
-  return d;
+/** Return the Nth (1-based) upcoming business day, deterministic per run. */
+function nthWeekday(n: number) {
+  let d = addDays(new Date(), 1);
+  let picked = 0;
+  while (true) {
+    if (d.getDay() !== 0 && d.getDay() !== 6) {
+      picked += 1;
+      if (picked === n) return d;
+    }
+    d = addDays(d, 1);
+  }
 }
 
 function iso(d: Date, hour: number) {
