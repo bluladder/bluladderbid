@@ -166,8 +166,21 @@ const Index = () => {
     setFlowState('one-time-booking');
   };
 
-  // Handle upgrade to plan
+  // Handle upgrade to plan. Fail closed if the server hasn't returned a real,
+  // non-zero plan — never let the customer proceed with a $0 plan.
   const handleUpgradeAndBook = () => {
+    const bundle = selectedTier
+      ? customizedBundles.find((b) => b.tier === selectedTier) ?? null
+      : customizedBundles.find((b) => b.tier === 'better') ?? null;
+    const monthly = bundle
+      ? Math.round((bundle.annualTotal - Math.round(bundle.annualTotal * 0.20)) / 11)
+      : 0;
+    if (!bundle || bundle.annualTotal <= 0 || monthly <= 0) {
+      toast.error("We couldn't calculate this plan yet.", {
+        description: 'Your one-time quote is still available. Please try again in a moment.',
+      });
+      return;
+    }
     setFlowState('plan-selected');
   };
 
