@@ -776,13 +776,33 @@ Deno.serve(async (req) => {
         max_drive_time_minutes,
         max_stories,
         service_capabilities,
+        role,
+        customer_bookable_lead,
+        has_company_vehicle,
+        max_crew_size,
+        public_display_name,
         technician_service_rates (
           service_type,
           dollars_per_hour,
           buffer_minutes
         )
       `)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      // CREW RULE: only crew leaders anchor customer-facing availability.
+      // Junior technicians are hidden capacity and can never independently
+      // create a customer-bookable slot. Enforced server-side so no channel
+      // (booking flow, AI chat, day/week grids, reschedule) can bypass it.
+      .eq("customer_bookable_lead", true);
+
+    // Load global crew configuration (hide names + default public label).
+    const { data: crewConfigRow } = await supabase
+      .from("crew_config")
+      .select("hide_technician_names, default_public_crew_label")
+      .maybeSingle();
+    const hideTechnicianNames: boolean =
+      crewConfigRow?.hide_technician_names !== false;
+    const publicCrewLabel: string =
+      crewConfigRow?.default_public_crew_label || "BluLadder Service Team";
 
     if (techError || !technicians?.length) {
       console.error("Tech query error:", techError);
@@ -1842,6 +1862,25 @@ Deno.serve(async (req) => {
     };
 
     // Build response based on mode
+    // Mask internal technician names for customer-facing responses. Admin
+    // callers pass includeExcluded=true and see real names; every other channel
+    // sees the configured public crew label.
+    const maskName = (name: string): string => {
+      if (!hideTechnicianNames) return name;
+      // Preserve visible cues (e.g., "Ben + Bryan" -> generic team label).
+      return publicCrewLabel;
+    };
+    const maskSlot = <T extends { technicianName?: string } | null | undefined>(s: T): T => {
+      if (!s) return s;
+      if (includeExcluded) return s;
+      return { ...s, technicianName: maskName(s.technicianName || "") } as T;
+    };
+    const maskSlots = <T extends { technicianName?: string }>(arr: T[] | undefined): T[] => {
+      if (!arr) return [];
+      if (includeExcluded) return arr;
+      return arr.map((s) => ({ ...s, technicianName: maskName(s.technicianName || "") }));
+    };
+
     if (mode === 'dayGrid') {
       // Return only the COMPACTED slots for the selected date, deduped by
       // display time + technician (customer-facing browsing).
@@ -1860,7 +1899,7 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           mode: 'dayGrid',
-          slots: dayGridSlots,
+          slots: maskSlots(dayGridSlots),
           totalAvailable: dayGridSlots.length,
           fullyBookedDays,
           ...(includeExcluded ? buildAdminPayload() : {}),
@@ -2024,15 +2063,15 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         mode: 'recommended',
-        recommendations,
-        bestRecommended,
-        nextAvailable,
-        rankedSlots,
+        recommendations: maskSlots(recommendations),
+        bestRecommended: maskSlot(bestRecommended),
+        nextAvailable: maskSlot(nextAvailable),
+        rankedSlots: maskSlots(rankedSlots),
         fullyBookedDays,
         totalAvailable: shownSlots.length,
         eligibleTechnicians: eligibleTechs.map(t => ({ 
           id: t.id, 
-          name: t.name, 
+          name: includeExcluded ? t.name : maskName(t.name),
           durationMinutes: t.durationMinutes 
         })),
         // Admin-only: customer-shown slots + raw availability + compaction

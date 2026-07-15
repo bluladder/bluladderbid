@@ -412,6 +412,77 @@ export type Database = {
           },
         ]
       }
+      booking_crew_assignments: {
+        Row: {
+          booking_id: string
+          calculated_duration_minutes: number | null
+          created_at: string
+          id: string
+          leader_technician_id: string
+          public_crew_label: string | null
+          requires_admin_review: boolean
+          review_reason: string | null
+          staffing_segments: Json
+          supporting_technician_ids: string[]
+          updated_at: string
+        }
+        Insert: {
+          booking_id: string
+          calculated_duration_minutes?: number | null
+          created_at?: string
+          id?: string
+          leader_technician_id: string
+          public_crew_label?: string | null
+          requires_admin_review?: boolean
+          review_reason?: string | null
+          staffing_segments?: Json
+          supporting_technician_ids?: string[]
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string
+          calculated_duration_minutes?: number | null
+          created_at?: string
+          id?: string
+          leader_technician_id?: string
+          public_crew_label?: string | null
+          requires_admin_review?: boolean
+          review_reason?: string | null
+          staffing_segments?: Json
+          supporting_technician_ids?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_crew_assignments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "booking_crew_assignments_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: true
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_crew_assignments_leader_technician_id_fkey"
+            columns: ["leader_technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "booking_crew_assignments_leader_technician_id_fkey"
+            columns: ["leader_technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_step_events: {
         Row: {
           created_at: string
@@ -1342,6 +1413,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      crew_config: {
+        Row: {
+          created_at: string
+          crew_size_max: number
+          crew_size_min: number
+          default_public_crew_label: string
+          hide_technician_names: boolean
+          id: string
+          productivity_multipliers: Json
+          singleton: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          crew_size_max?: number
+          crew_size_min?: number
+          default_public_crew_label?: string
+          hide_technician_names?: boolean
+          id?: string
+          productivity_multipliers?: Json
+          singleton?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          crew_size_max?: number
+          crew_size_min?: number
+          default_public_crew_label?: string
+          hide_technician_names?: boolean
+          id?: string
+          productivity_multipliers?: Json
+          singleton?: boolean
+          updated_at?: string
+        }
+        Relationships: []
       }
       customers: {
         Row: {
@@ -2621,6 +2728,45 @@ export type Database = {
         }
         Relationships: []
       }
+      service_staffing_requirements: {
+        Row: {
+          created_at: string
+          id: string
+          lead_vehicle_required: boolean
+          max_technicians: number | null
+          min_technicians: number
+          notes: string | null
+          preferred_technicians: number | null
+          service_key: string
+          solo_allowed: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_vehicle_required?: boolean
+          max_technicians?: number | null
+          min_technicians?: number
+          notes?: string | null
+          preferred_technicians?: number | null
+          service_key: string
+          solo_allowed?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_vehicle_required?: boolean
+          max_technicians?: number | null
+          min_technicians?: number
+          notes?: string | null
+          preferred_technicians?: number | null
+          service_key?: string
+          solo_allowed?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       slot_reservations: {
         Row: {
           booking_id: string | null
@@ -3152,14 +3298,21 @@ export type Database = {
         Row: {
           buffer_minutes: number | null
           created_at: string
+          customer_bookable_lead: boolean
+          eligible_leader_ids: string[]
           email: string | null
+          has_company_vehicle: boolean
           id: string
           is_active: boolean
           jobber_user_id: string
           location_type: string
+          max_crew_size: number | null
           max_drive_time_minutes: number | null
           max_stories: number | null
           name: string
+          public_display_name: string | null
+          role: string
+          role_effective_at: string | null
           schedule_end_hour: number | null
           schedule_start_hour: number | null
           service_capabilities: Json | null
@@ -3171,14 +3324,21 @@ export type Database = {
         Insert: {
           buffer_minutes?: number | null
           created_at?: string
+          customer_bookable_lead?: boolean
+          eligible_leader_ids?: string[]
           email?: string | null
+          has_company_vehicle?: boolean
           id?: string
           is_active?: boolean
           jobber_user_id: string
           location_type?: string
+          max_crew_size?: number | null
           max_drive_time_minutes?: number | null
           max_stories?: number | null
           name: string
+          public_display_name?: string | null
+          role?: string
+          role_effective_at?: string | null
           schedule_end_hour?: number | null
           schedule_start_hour?: number | null
           service_capabilities?: Json | null
@@ -3190,14 +3350,21 @@ export type Database = {
         Update: {
           buffer_minutes?: number | null
           created_at?: string
+          customer_bookable_lead?: boolean
+          eligible_leader_ids?: string[]
           email?: string | null
+          has_company_vehicle?: boolean
           id?: string
           is_active?: boolean
           jobber_user_id?: string
           location_type?: string
+          max_crew_size?: number | null
           max_drive_time_minutes?: number | null
           max_stories?: number | null
           name?: string
+          public_display_name?: string | null
+          role?: string
+          role_effective_at?: string | null
           schedule_end_hour?: number | null
           schedule_start_hour?: number | null
           service_capabilities?: Json | null

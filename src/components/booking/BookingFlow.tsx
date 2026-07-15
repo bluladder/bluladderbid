@@ -643,7 +643,7 @@ export function BookingFlow({
                     <span className="font-medium">{selectedSlot.displayTime || format(parseISO(selectedSlot.startTime), 'h:mm a')}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Technician:</span>
+                    <span className="text-muted-foreground">Crew:</span>
                     <span className="font-medium">{selectedSlot.technicianName}</span>
                   </div>
                   <div className="flex justify-between">
