@@ -15,6 +15,7 @@ import { fromQuoteResult } from '@/lib/pricing/fromQuoteResult';
 import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
+import { useAttribution } from '@/hooks/useAttribution';
 import { 
   HomeDetails, 
   AdditionalServices, 
