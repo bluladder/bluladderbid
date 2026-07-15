@@ -893,7 +893,15 @@ async function runCancelCleanup(
   steps = await stepPass(supabase, runId, steps, "temp_cleanup");
 
   const finalStatus = needsAttention ? "complete_with_manual_step" : "complete";
-  await patchRun(supabase, runId, { phase: "complete", status: finalStatus });
+  // Clear stale run-level failure surfaces when a resumed run reaches
+  // completion, so the UI does not display the prior red banner. The full
+  // history of prior failures remains in each step's `history` array.
+  await patchRun(supabase, runId, {
+    phase: "complete",
+    status: finalStatus,
+    last_error: null,
+    last_error_step: null,
+  });
   return json({
     ok: true,
     runId,
