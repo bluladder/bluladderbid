@@ -15,6 +15,7 @@ import { AdminScheduleCalendar } from './AdminScheduleCalendar';
 import { ScheduleSourceIndicator } from './ScheduleSourceIndicator';
 import { BigJobExplainer } from './BigJobExplainer';
 import { BookingImpactWarning } from './BookingImpactWarning';
+import { CrewRolesPanel } from './CrewRolesPanel';
 import { useAdminPermissions } from '@/hooks/useAdminPermissions';
 
 export function CrewTabContent() {
@@ -35,6 +36,14 @@ export function CrewTabContent() {
             >
               <Users className="w-3.5 h-3.5 mr-1.5" />
               Technicians
+            </Badge>
+            <Badge
+              variant={activeSection === 'crew_roles' ? 'default' : 'outline'}
+              className="cursor-pointer px-3 py-1.5"
+              onClick={() => setActiveSection('crew_roles')}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />
+              Crew Roles
             </Badge>
             <Badge
               variant={activeSection === 'eligibility' ? 'default' : 'outline'}
@@ -86,6 +95,13 @@ export function CrewTabContent() {
       {activeSection === 'technicians' && (
         <div className="space-y-4">
           <TechnicianManager />
+        </div>
+      )}
+
+      {/* Crew Roles */}
+      {activeSection === 'crew_roles' && (
+        <div className="space-y-4">
+          <CrewRolesPanel />
         </div>
       )}
 
