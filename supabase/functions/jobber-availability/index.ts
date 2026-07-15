@@ -1862,6 +1862,25 @@ Deno.serve(async (req) => {
     };
 
     // Build response based on mode
+    // Mask internal technician names for customer-facing responses. Admin
+    // callers pass includeExcluded=true and see real names; every other channel
+    // sees the configured public crew label.
+    const maskName = (name: string): string => {
+      if (!hideTechnicianNames) return name;
+      // Preserve visible cues (e.g., "Ben + Bryan" -> generic team label).
+      return publicCrewLabel;
+    };
+    const maskSlot = <T extends { technicianName?: string } | null | undefined>(s: T): T => {
+      if (!s) return s;
+      if (includeExcluded) return s;
+      return { ...s, technicianName: maskName(s.technicianName || "") } as T;
+    };
+    const maskSlots = <T extends { technicianName?: string }>(arr: T[] | undefined): T[] => {
+      if (!arr) return [];
+      if (includeExcluded) return arr;
+      return arr.map((s) => ({ ...s, technicianName: maskName(s.technicianName || "") }));
+    };
+
     if (mode === 'dayGrid') {
       // Return only the COMPACTED slots for the selected date, deduped by
       // display time + technician (customer-facing browsing).
