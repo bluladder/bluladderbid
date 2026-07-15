@@ -768,7 +768,12 @@ async function runDuplicate(supabase: any, runId: string): Promise<Response> {
 
 // -------- Phase: cancel_cleanup ---------------------------------------------
 // deno-lint-ignore no-explicit-any
-async function runCancelCleanup(supabase: any, runId: string, adminUserId: string | null): Promise<Response> {
+async function runCancelCleanup(
+  supabase: any,
+  runId: string,
+  adminUserId: string | null,
+  adminJwt: string | null,
+): Promise<Response> {
   const run = await loadRun(supabase, runId);
   if (!run) return json({ error: "Run not found" }, 404);
   if (!run.conversation_id || !run.booking_id) {
@@ -777,17 +782,42 @@ async function runCancelCleanup(supabase: any, runId: string, adminUserId: strin
   let steps = run.steps;
   await patchRun(supabase, runId, { phase: "cancel_cleanup", status: "running" });
 
-  // Call existing cancellation with admin override.
+  // Forward the operations-admin's own user JWT to the existing cancellation
+  // function. Never use the service-role key here — it has no user claims and
+  // is rejected as anonymous. The headers are held only in local memory and
+  // are never written to `patchRun`, logs, error responses, or the run row.
   steps = await stepStart(supabase, runId, steps, "visit_removed");
-  const cancelResp = await callFn("customer-appointment-actions", {
+  const forward = buildAdminCancelHeaders({
+    adminJwt,
+    serviceRoleKey: SERVICE_KEY,
+    anonKey: ANON_KEY,
+  });
+  if (!forward.ok) {
+    steps = await stepFail(supabase, runId, steps, "visit_removed", forward.reason);
+    return json({
+      ok: false,
+      runId,
+      error: forward.reason,
+      safeStage: safeStageLabel("cancel_cleanup", "visit_removed"),
+      steps,
+    }, forward.reason === "admin_reauthentication_required" ? 401 : 403);
+  }
+  const cancelResp = await callFnWithHeaders("customer-appointment-actions", forward.headers, {
     action: "cancel",
     bookingId: run.booking_id,
-    isAdminOverride: true,
+    // adminUserId is intentionally NOT trusted for authorization — the
+    // customer-appointment-actions function derives admin status from the
+    // forwarded JWT's own claims. This field is retained only as a run-id
+    // breadcrumb.
     adminUserId,
   });
   if (cancelResp.status !== 200 || cancelResp.json?.error) {
-    steps = await stepFail(supabase, runId, steps, "visit_removed",
-      safeReason(cancelResp.json?.error, "cancellation failed"));
+    // Distinguish an expired/invalid admin session (401/403) from a real
+    // cancellation failure so the operator knows to re-authenticate rather
+    // than assume a Jobber outage. Do NOT fall back to service-role auth.
+    const authFailure = cancelResp.status === 401 || cancelResp.status === 403;
+    const reason = authFailure ? "admin_session_expired" : safeReason(cancelResp.json?.error, "cancellation failed");
+    steps = await stepFail(supabase, runId, steps, "visit_removed", reason);
     return json({ ok: false, runId, safeStage: safeStageLabel("cancel_cleanup", "visit_removed"), steps });
   }
   const cancelled = cancelResp.json?.status === "cancelled";
