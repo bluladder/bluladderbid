@@ -32,6 +32,17 @@ export interface RunStep {
   startedAt?: string;
   finishedAt?: string;
   reason?: string;
+  // Historical failure attempts for this step. Populated by `applyPass`
+  // whenever a previously-failed attempt transitions to `passed` after
+  // `Resume from safe checkpoint`, so the current step reflects only the
+  // live state (no stale red failure reason) while the audit trail of every
+  // prior failure remains available for diagnostics.
+  history?: Array<{
+    status: StepStatus;
+    reason?: string;
+    startedAt?: string;
+    finishedAt?: string;
+  }>;
 }
 
 // Canonical, ordered step catalog. The coordinator flips status/reason as it
@@ -101,6 +112,38 @@ export function initialSteps(): RunStep[] {
 
 export function markStep(steps: RunStep[], key: string, patch: Partial<RunStep>): RunStep[] {
   return steps.map((s) => (s.key === key ? { ...s, ...patch } : s));
+}
+
+/**
+ * Transition a step to `passed`, clearing any stale failure reason from a
+ * prior attempt and preserving that attempt in `history`. Pure — safe to
+ * unit-test without hitting Supabase.
+ */
+export function applyPass(step: RunStep, now: string): RunStep {
+  const history = Array.isArray(step.history) ? [...step.history] : [];
+  if (step.status === "failed" && (step.reason || step.startedAt || step.finishedAt)) {
+    history.push({
+      status: "failed",
+      reason: step.reason,
+      startedAt: step.startedAt,
+      finishedAt: step.finishedAt,
+    });
+  }
+  // Strip stale failure fields from the current step. `reason` is the only
+  // failure surface today; we deliberately drop it (not set it to undefined
+  // via spread) so the persisted JSON does not carry the old red text.
+  const { reason: _staleReason, ...rest } = step;
+  const next: RunStep = {
+    ...rest,
+    status: "passed",
+    finishedAt: now,
+  };
+  if (history.length > 0) next.history = history;
+  return next;
+}
+
+export function markStepPass(steps: RunStep[], key: string, now: string): RunStep[] {
+  return steps.map((s) => (s.key === key ? applyPass(s, now) : s));
 }
 
 // Scoped authorization key MUST match the value the booking tool uses:
