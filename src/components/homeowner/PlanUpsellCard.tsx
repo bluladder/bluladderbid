@@ -344,11 +344,13 @@ export function PlanUpsellCard({
                   );
                 })}
               </div>
-            </CollapsibleContent>
-          </Collapsible>
-          
-          {/* Selected Plan Summary - Live updates */}
-          <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+             </CollapsibleContent>
+           </Collapsible>
+           )}
+
+           {/* Selected Plan Summary - Live updates. Only when a real plan exists. */}
+           {hasValidPlan && currentBundle && (
+           <div className="p-4 rounded-lg bg-primary/5 border border-primary/20" data-testid="plan-summary">
             <div className="flex items-center justify-between mb-2">
               <Badge className={`${
                 currentBundle?.tier === 'good' 
@@ -360,7 +362,7 @@ export function PlanUpsellCard({
                 {currentBundle?.name || 'Better'} Plan
               </Badge>
               <span className="text-sm font-medium text-primary">
-                {formatPrice(currentBundle?.annualTotal || 0)}/year
+                {formatPrice(currentBundle.annualTotal)}/year
               </span>
             </div>
             
@@ -404,6 +406,7 @@ export function PlanUpsellCard({
               ))}
             </div>
           </div>
+          )}
           
           {/* Social proof */}
           <p className="text-center text-xs text-muted-foreground mt-4">
