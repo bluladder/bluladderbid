@@ -35,6 +35,16 @@ const SERVICES = [
     name: "Pressure Washing (Flatwork)",
     description: "Pressure washing for patios, walkways, and other flatwork, priced per square foot.",
   },
+  {
+    key: "solar_panel_cleaning",
+    name: "Solar Panel Cleaning",
+    description: "Pure-water solar panel cleaning priced per panel. Restores lost energy output from dust, pollen, and bird droppings.",
+  },
+  {
+    key: "screen_repair",
+    name: "Screen Repair",
+    description: "On-site window screen re-screening priced per screen. Standard fiberglass mesh; pet-resistant mesh available on request.",
+  },
 ];
 
 export default defineTool({
