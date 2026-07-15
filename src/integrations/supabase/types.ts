@@ -524,6 +524,7 @@ export type Database = {
           cancellation_needs_attention_reason: string | null
           cancellation_source: string | null
           cancelled_at: string | null
+          completed_at: string | null
           created_at: string
           customer_id: string
           discount_amount: number | null
@@ -569,6 +570,7 @@ export type Database = {
           cancellation_needs_attention_reason?: string | null
           cancellation_source?: string | null
           cancelled_at?: string | null
+          completed_at?: string | null
           created_at?: string
           customer_id: string
           discount_amount?: number | null
@@ -614,6 +616,7 @@ export type Database = {
           cancellation_needs_attention_reason?: string | null
           cancellation_source?: string | null
           cancelled_at?: string | null
+          completed_at?: string | null
           created_at?: string
           customer_id?: string
           discount_amount?: number | null
@@ -2247,6 +2250,7 @@ export type Database = {
           discount_amount: number | null
           discount_code: string | null
           discount_snapshot: Json | null
+          emailed_at: string | null
           estimated_quote_revenue: number | null
           expires_at: string | null
           home_details_json: Json
@@ -2258,6 +2262,7 @@ export type Database = {
           pricing_engine_version: string | null
           pricing_rule_version: number | null
           quote_completion_seconds: number | null
+          saved_at: string | null
           services_json: Json
           session_id: string | null
           source_session_id: string | null
@@ -2281,6 +2286,7 @@ export type Database = {
           discount_amount?: number | null
           discount_code?: string | null
           discount_snapshot?: Json | null
+          emailed_at?: string | null
           estimated_quote_revenue?: number | null
           expires_at?: string | null
           home_details_json: Json
@@ -2292,6 +2298,7 @@ export type Database = {
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
           quote_completion_seconds?: number | null
+          saved_at?: string | null
           services_json: Json
           session_id?: string | null
           source_session_id?: string | null
@@ -2315,6 +2322,7 @@ export type Database = {
           discount_amount?: number | null
           discount_code?: string | null
           discount_snapshot?: Json | null
+          emailed_at?: string | null
           estimated_quote_revenue?: number | null
           expires_at?: string | null
           home_details_json?: Json
@@ -2326,6 +2334,7 @@ export type Database = {
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
           quote_completion_seconds?: number | null
+          saved_at?: string | null
           services_json?: Json
           session_id?: string | null
           source_session_id?: string | null
@@ -3578,7 +3587,18 @@ export type Database = {
         | "approved"
         | "booked"
         | "declined"
-      quote_status: "pending" | "viewed" | "converted" | "expired" | "declined"
+        | "quote_saved"
+        | "completed"
+        | "rebook_window"
+        | "expired"
+      quote_status:
+        | "pending"
+        | "viewed"
+        | "converted"
+        | "expired"
+        | "declined"
+        | "saved"
+        | "emailed"
       service_type:
         | "windows_exterior"
         | "windows_interior"
@@ -3754,8 +3774,20 @@ export const Constants = {
         "approved",
         "booked",
         "declined",
+        "quote_saved",
+        "completed",
+        "rebook_window",
+        "expired",
       ],
-      quote_status: ["pending", "viewed", "converted", "expired", "declined"],
+      quote_status: [
+        "pending",
+        "viewed",
+        "converted",
+        "expired",
+        "declined",
+        "saved",
+        "emailed",
+      ],
       service_type: [
         "windows_exterior",
         "windows_interior",
