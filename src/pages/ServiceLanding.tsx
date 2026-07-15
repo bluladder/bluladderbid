@@ -89,6 +89,8 @@ const ServiceLanding = () => {
   
   // Capture UTM tracking parameters for marketing attribution
   const { getStoredUtmParams } = useUtmTracking();
+  // Capture and persist first-touch/last-touch attribution + fbclid.
+  useAttribution();
   
   // Optional URL param to preselect a specific service (e.g., ?preset=roofCleaning)
   const presetParam = searchParams.get('preset') as 
