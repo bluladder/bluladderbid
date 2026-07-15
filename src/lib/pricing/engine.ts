@@ -71,6 +71,16 @@ export interface PricingConfig {
     minimumPrice: number;
     surfaceMultipliers: Record<string, number>;
   };
+  /** Per-unit price for solar panel cleaning. */
+  solar_panel_cleaning?: {
+    perPanel: number;
+    minimumPrice?: number;
+  };
+  /** Per-unit price for screen repair. */
+  screen_repair?: {
+    perScreen: number;
+    minimumPrice?: number;
+  };
   /** Optional administrator-controlled $99 window promotion. */
   window_promo_99?: PromotionConfig;
   /**
@@ -205,6 +215,8 @@ export interface EngineAdditionalServices {
     poolDeck: EngineAreaSelection;
     walkways: EngineAreaSelection;
   };
+  solarPanelCleaning?: { enabled: boolean; panelCount: number };
+  screenRepair?: { enabled: boolean; screenCount: number };
 }
 
 export interface EngineDiscount {
@@ -339,7 +351,9 @@ export function calculateQuote(
     !!svc.gutterCleaning ||
     !!svc.roofCleaning ||
     !!svc.drivewayCleaning?.enabled ||
-    !!svc.pressureWashing?.enabled;
+    !!svc.pressureWashing?.enabled ||
+    !!svc.solarPanelCleaning?.enabled ||
+    !!svc.screenRepair?.enabled;
 
   if (!anyServiceSelected) {
     missing.push("services");
