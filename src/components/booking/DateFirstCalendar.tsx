@@ -435,7 +435,7 @@ export function DateFirstCalendar({
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded ring-2 ring-primary" aria-hidden="true" />
-          <span>Weekend</span>
+          <span>Today</span>
         </div>
       </div>
     </div>
