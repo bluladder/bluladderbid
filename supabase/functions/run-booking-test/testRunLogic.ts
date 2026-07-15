@@ -48,7 +48,7 @@ export const PREPARE_STEPS: RunStep[] = [
   { key: "property_details", label: "Approved property details supplied", status: "pending" },
   { key: "quote_firm", label: "Canonical quote is firm", status: "pending" },
   { key: "availability", label: "Weekday availability retrieved", status: "pending" },
-  { key: "slot_selected", label: "Slot ≥ 7 days out selected", status: "pending" },
+  { key: "slot_selected", label: "First valid production slot selected", status: "pending" },
   { key: "slot_stored", label: "Selected slot stored on conversation", status: "pending" },
   { key: "state_ready", label: "State advanced to awaiting_booking_confirmation", status: "pending" },
   { key: "ambiguous_no_booking", label: "Ambiguous confirmation does not book", status: "pending" },
@@ -115,29 +115,50 @@ export function buildIdempotencyKey(conversationId: string, slotStart: string): 
   return `chat|${conversationId}|${slotStart}`;
 }
 
-// Pick the earliest offered slot that is at least `minDaysAhead` days in the
-// future (in the customer time zone). Returns null when nothing qualifies.
+// A candidate slot offered by jobber-availability, with optional ranking hints
+// used to mirror production selection priority.
 export interface OfferedSlot {
   slotId: string;
   startTime: string;
   endTime?: string;
   displayTime?: string;
   durationMinutes?: number;
+  isRecommended?: boolean;
+  whyLabel?: string;
 }
 
-export function pickSlotAtLeastDaysAhead(
-  slots: OfferedSlot[],
-  minDaysAhead: number,
-  now: Date = new Date(),
-): OfferedSlot | null {
-  const cutoff = new Date(now.getTime() + minDaysAhead * 24 * 60 * 60 * 1000).getTime();
-  const eligible = slots
-    .filter((s) => {
-      const t = Date.parse(s.startTime);
-      return Number.isFinite(t) && t >= cutoff;
-    })
-    .sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
-  return eligible[0] ?? null;
+/**
+ * Choose the slot the runner will book, mirroring real customer behavior.
+ *
+ * Priority:
+ *   1. Best Recommended slot (whyLabel === "best_recommended" or isRecommended).
+ *   2. Earliest compacted slot (whyLabel === "minimizes_gaps").
+ *   3. Earliest valid offered slot.
+ *
+ * jobber-availability already enforces every real booking rule upstream
+ * (weekday-only, mirror freshness, reservations, lead time, route compaction,
+ * quote signature), so any slot returned here is inherently valid. We do not
+ * add artificial floors like "must be N days ahead" — that would defeat the
+ * runner's purpose of simulating a real customer booking.
+ */
+export function pickProductionSlot(slots: OfferedSlot[]): OfferedSlot | null {
+  if (slots.length === 0) return null;
+  const byStart = (a: OfferedSlot, b: OfferedSlot) =>
+    Date.parse(a.startTime) - Date.parse(b.startTime);
+  const parseable = slots.filter((s) => Number.isFinite(Date.parse(s.startTime)));
+  if (parseable.length === 0) return null;
+
+  const recommended = parseable
+    .filter((s) => s.whyLabel === "best_recommended" || s.isRecommended === true)
+    .sort(byStart);
+  if (recommended[0]) return recommended[0];
+
+  const compacted = parseable
+    .filter((s) => s.whyLabel === "minimizes_gaps")
+    .sort(byStart);
+  if (compacted[0]) return compacted[0];
+
+  return [...parseable].sort(byStart)[0] ?? null;
 }
 
 // Auth precondition evaluator for `execute`. The coordinator only proceeds

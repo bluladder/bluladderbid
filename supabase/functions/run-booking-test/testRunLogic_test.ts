@@ -6,7 +6,7 @@ import {
   evaluateAuthGate,
   initialSteps,
   markStep,
-  pickSlotAtLeastDaysAhead,
+  pickProductionSlot,
   safeStageLabel,
   type OfferedSlot,
 } from "./testRunLogic.ts";
@@ -33,21 +33,33 @@ Deno.test("buildAuthKey and buildIdempotencyKey have the required shapes", () =>
   assertEquals(buildIdempotencyKey("c1", "2026-08-01T15:00:00Z"), "chat|c1|2026-08-01T15:00:00Z");
 });
 
-Deno.test("pickSlotAtLeastDaysAhead picks the earliest slot ≥ N days out", () => {
-  const now = new Date("2026-08-01T00:00:00Z");
+Deno.test("pickProductionSlot prefers best_recommended over earlier compacted/earliest", () => {
   const slots: OfferedSlot[] = [
-    { slotId: "a", startTime: "2026-08-05T15:00:00Z" }, // 4 days
-    { slotId: "b", startTime: "2026-08-09T15:00:00Z" }, // 8 days
-    { slotId: "c", startTime: "2026-08-15T15:00:00Z" }, // 14 days
+    { slotId: "earliest", startTime: "2026-08-02T15:00:00Z" },
+    { slotId: "compacted", startTime: "2026-08-03T15:00:00Z", whyLabel: "minimizes_gaps" },
+    { slotId: "rec", startTime: "2026-08-04T15:00:00Z", whyLabel: "best_recommended" },
   ];
-  const picked = pickSlotAtLeastDaysAhead(slots, 7, now);
-  assertEquals(picked?.slotId, "b");
+  assertEquals(pickProductionSlot(slots)?.slotId, "rec");
 });
 
-Deno.test("pickSlotAtLeastDaysAhead returns null when nothing qualifies", () => {
-  const now = new Date("2026-08-01T00:00:00Z");
-  const slots: OfferedSlot[] = [{ slotId: "a", startTime: "2026-08-05T15:00:00Z" }];
-  assertEquals(pickSlotAtLeastDaysAhead(slots, 7, now), null);
+Deno.test("pickProductionSlot falls back to earliest compacted, then earliest overall", () => {
+  const compactedOnly: OfferedSlot[] = [
+    { slotId: "a", startTime: "2026-08-05T15:00:00Z" },
+    { slotId: "b", startTime: "2026-08-03T15:00:00Z", whyLabel: "minimizes_gaps" },
+    { slotId: "c", startTime: "2026-08-04T15:00:00Z", whyLabel: "minimizes_gaps" },
+  ];
+  assertEquals(pickProductionSlot(compactedOnly)?.slotId, "b");
+
+  const plain: OfferedSlot[] = [
+    { slotId: "later", startTime: "2026-08-09T15:00:00Z" },
+    { slotId: "sooner", startTime: "2026-08-02T15:00:00Z" },
+  ];
+  assertEquals(pickProductionSlot(plain)?.slotId, "sooner");
+});
+
+Deno.test("pickProductionSlot returns null when there are no valid slots", () => {
+  assertEquals(pickProductionSlot([]), null);
+  assertEquals(pickProductionSlot([{ slotId: "x", startTime: "not-a-date" }]), null);
 });
 
 Deno.test("evaluateAuthGate — not enabled → not_authorized", () => {

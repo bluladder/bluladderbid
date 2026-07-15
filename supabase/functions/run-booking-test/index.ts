@@ -31,7 +31,7 @@ import {
   evaluateAuthGate,
   initialSteps,
   markStep,
-  pickSlotAtLeastDaysAhead,
+  pickProductionSlot,
   safeStageLabel,
   type OfferedSlot,
   type RunAction,
@@ -350,6 +350,8 @@ async function runPrepare(supabase: any, runId: string, createdBy: string | null
     endTime: s.endTime,
     displayTime: s.displayTime,
     durationMinutes: s.durationMinutes,
+    whyLabel: s.whyLabel,
+    isRecommended: s.isRecommended,
     __technicianId: s.technicianId,
     __isTeamJob: s.isTeamJob ?? false,
     __teamTechnicianIds: s.teamTechnicianIds ?? null,
@@ -362,17 +364,21 @@ async function runPrepare(supabase: any, runId: string, createdBy: string | null
   });
   steps = await stepPass(supabase, runId, steps, "availability");
 
-  // 11) select slot ≥ 7 days ahead
+  // 11) select first valid production slot (matches real customer behavior).
+  // jobber-availability already enforces weekday-only, mirror freshness,
+  // reservations, lead time, route compaction and quote signature — so any
+  // slot it returns is inherently valid. Priority mirrors production ranking:
+  // Best Recommended → earliest compacted → earliest valid.
   steps = await stepStart(supabase, runId, steps, "slot_selected");
-  const picked = pickSlotAtLeastDaysAhead(
+  const picked = pickProductionSlot(
     offered.map((s) => ({
       slotId: s.slotId, startTime: s.startTime, endTime: s.endTime,
       displayTime: s.displayTime, durationMinutes: s.durationMinutes,
+      whyLabel: s.whyLabel, isRecommended: s.isRecommended,
     })),
-    7,
   );
   if (!picked) {
-    steps = await stepFail(supabase, runId, steps, "slot_selected", "no offered slot is ≥ 7 days out");
+    steps = await stepFail(supabase, runId, steps, "slot_selected", "no valid production slot in offered availability");
     return json({ ok: false, runId, safeStage: safeStageLabel("prepare", "slot_selected"), steps });
   }
   steps = await stepPass(supabase, runId, steps, "slot_selected");
