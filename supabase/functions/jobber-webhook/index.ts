@@ -537,7 +537,7 @@ Deno.serve(async (req) => {
         
         await supabase
           .from("bookings")
-          .update({ status: "completed" })
+          .update({ status: "completed", completed_at: new Date().toISOString() })
           .eq("jobber_visit_id", parsedEvent.itemId);
         break;
       }
@@ -575,7 +575,7 @@ Deno.serve(async (req) => {
         
         await supabase
           .from("bookings")
-          .update({ status: "completed" })
+          .update({ status: "completed", completed_at: new Date().toISOString() })
           .eq("jobber_job_id", parsedEvent.itemId);
         result = { action: 'job_complete' };
         break;
