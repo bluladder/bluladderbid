@@ -13,6 +13,8 @@ import { BookingStepper } from './BookingStepper';
 import { CompleteYourRefresh } from './CompleteYourRefresh';
 import { LiveQuoteBar } from './LiveQuoteBar';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
+import { readAttribution } from '@/lib/attribution/attribution';
+import { fireSchedule, fireCompleteRegistration } from '@/lib/attribution/metaPixel';
 import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
@@ -41,6 +43,11 @@ interface BookingResult {
   scheduledStart: string;
   scheduledEnd: string;
   technicianName: string;
+  bookingId?: string;
+  jobberVisitId?: string;
+  bookedRevenue?: number;
+  bookedServiceCount?: number;
+  bookedServices?: string[];
 }
 
 function formatPrice(price: number) {
