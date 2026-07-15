@@ -45,9 +45,7 @@ export function CrewRolesPanel() {
   const load = async () => {
     setLoading(true);
     const [{ data: t }, { data: c }] = await Promise.all([
-      // @ts-expect-error – new columns not yet in generated types
       supabase.from('technicians').select('id,name,is_active,role,customer_bookable_lead,has_company_vehicle,max_crew_size,public_display_name').order('name'),
-      // @ts-expect-error – new table not yet in generated types
       supabase.from('crew_config').select('*').maybeSingle(),
     ]);
     setTechs((t as unknown as TechRow[]) || []);
@@ -68,7 +66,6 @@ export function CrewRolesPanel() {
   const updateTech = async (id: string, patch: Partial<TechRow>) => {
     // Optimistic
     setTechs((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-    // @ts-expect-error – new columns not yet in generated types
     const { error } = await supabase.from('technicians').update(patch).eq('id', id);
     if (error) {
       toast.error(`Save failed: ${error.message}`);
@@ -86,7 +83,6 @@ export function CrewRolesPanel() {
       const n = Number(v);
       if (Number.isFinite(n) && n > 0) mults[k] = n;
     }
-    // @ts-expect-error – new table not yet in generated types
     const { error } = await supabase.from('crew_config').update({
       hide_technician_names: config.hide_technician_names,
       default_public_crew_label: config.default_public_crew_label,
