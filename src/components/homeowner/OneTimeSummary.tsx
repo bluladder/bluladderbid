@@ -107,7 +107,7 @@ export function OneTimeSummary({
           services,
           homeDetails,
           sourceSessionId: getOrCreateSourceSessionId(),
-          utmParams: attribution.touch ?? null,
+          utmParams: attribution.last_touch ?? attribution.first_touch ?? null,
           attribution,
           ruleVersion: quoteState.ruleVersion,
           engineVersion: quoteState.engineVersion,
