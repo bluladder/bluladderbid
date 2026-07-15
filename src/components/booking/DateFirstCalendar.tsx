@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { 
   format, 
   startOfMonth, 
@@ -21,6 +21,11 @@ import {
 } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useSwipe } from '@/hooks/useSwipe';
+import {
+  buildDateStatusMap,
+  type CalendarDateStatus,
+  type DateStatusInfo,
+} from '@/lib/calendar/dateStatus';
 
 export type CalendarViewMode = 'week' | 'month';
 
@@ -34,6 +39,23 @@ interface DateFirstCalendarProps {
   workDays?: number[]; // 0=Sun, 1=Mon, etc. Default: [1,2,3,4,5] (Mon-Fri)
   fullyBookedDays?: string[]; // Array of date strings (YYYY-MM-DD) that are fully booked
   isLoadingSlots?: boolean;
+  /**
+   * Ranked customer-bookable slot options returned by the availability
+   * endpoint. Used ONLY to classify each visible date as Open / Limited.
+   * No pricing, availability, or booking logic is performed here.
+   */
+  availableSlots?: ReadonlyArray<{ startTime: string }>;
+  /** Whether monthly availability is still being loaded from the server. */
+  isLoadingAvailability?: boolean;
+  /** Fail-closed flag: availability could not be verified. */
+  availabilityUnavailable?: boolean;
+  /** Analytics callback for calendar interactions (no PII). */
+  onCalendarEvent?: (event:
+    | { type: 'calendar_month_viewed'; month: string }
+    | { type: 'open_date_selected'; date: string; count: number }
+    | { type: 'limited_date_selected'; date: string; count: number }
+    | { type: 'full_date_clicked'; date: string }
+  ) => void;
 }
 
 export function DateFirstCalendar({
@@ -46,6 +68,10 @@ export function DateFirstCalendar({
   workDays = [1, 2, 3, 4, 5],
   fullyBookedDays = [],
   isLoadingSlots = false,
+  availableSlots = [],
+  isLoadingAvailability = false,
+  availabilityUnavailable = false,
+  onCalendarEvent,
 }: DateFirstCalendarProps) {
   const [currentDate, setCurrentDate] = useState(selectedDate || new Date());
 
@@ -112,58 +138,108 @@ export function DateFirstCalendar({
     return false;
   };
 
-  const isDateFullyBooked = (date: Date) => {
-    const dateStr = format(date, 'yyyy-MM-dd');
-    return fullyBookedSet.has(dateStr);
-  };
+  // Classify every visible date once per render pass using the server-derived
+  // slot list. This never runs any availability math itself.
+  const dateStatusMap = useMemo(() => {
+    if (availabilityUnavailable) return {} as Record<string, DateStatusInfo>;
+    return buildDateStatusMap({
+      dates: days,
+      slots: availableSlots,
+      fullyBookedDays,
+      isBookableBusinessDay: (d) => !isDateDisabled(d),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, availableSlots, fullyBookedDays, availabilityUnavailable, workDays, minDate?.toString(), maxDate?.toString()]);
+
+  // Emit analytics when the visible month changes (month view only).
+  useEffect(() => {
+    if (!onCalendarEvent) return;
+    if (viewMode !== 'month') return;
+    onCalendarEvent({ type: 'calendar_month_viewed', month: format(currentDate, 'yyyy-MM') });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [format(currentDate, 'yyyy-MM'), viewMode]);
 
   const renderDay = (date: Date) => {
     const dayKey = format(date, 'yyyy-MM-dd');
     const isDisabled = isDateDisabled(date);
-    const isFullyBooked = isDateFullyBooked(date);
     const isSelected = selectedDate && isSameDay(date, selectedDate);
     const isToday = isSameDay(date, today);
     const isCurrentMonth = isSameMonth(date, currentDate);
     const isWorkDay = workDaysSet.has(getDay(date));
 
-    // Fully booked days are treated as disabled (not clickable)
+    // Fail-closed while loading OR when availability could not be verified:
+    // do NOT paint everything as open. We still let the user tap a work-day
+    // date to trigger a per-day load (existing behavior).
+    const info: DateStatusInfo = availabilityUnavailable
+      ? { status: isDisabled ? 'unavailable' : 'unknown' }
+      : (dateStatusMap[dayKey] ?? { status: isDisabled ? 'unavailable' : 'unknown' });
+
+    const status: CalendarDateStatus = info.status;
+    const count = info.count;
+
+    const isFullyBooked = status === 'full';
+    // Fully-booked and unavailable dates are not selectable.
     const isClickable = !isDisabled && !isFullyBooked;
-    // Combine all "unavailable" states for consistent styling
-    const isUnavailable = isDisabled || isFullyBooked;
+    const isUnavailable = isDisabled;
+
+    const handleClick = () => {
+      if (isFullyBooked) {
+        onCalendarEvent?.({ type: 'full_date_clicked', date: dayKey });
+        return;
+      }
+      if (!isClickable) return;
+      if (status === 'open' && count !== undefined) {
+        onCalendarEvent?.({ type: 'open_date_selected', date: dayKey, count });
+      } else if (status === 'limited' && count !== undefined) {
+        onCalendarEvent?.({ type: 'limited_date_selected', date: dayKey, count });
+      }
+      onSelectDate(date);
+    };
 
     return (
       <button
         key={dayKey}
-        onClick={() => isClickable && onSelectDate(date)}
+        onClick={handleClick}
         disabled={!isClickable}
         aria-disabled={!isClickable}
+        data-status={status}
+        data-testid={`calendar-day-${dayKey}`}
         aria-label={
-          isFullyBooked 
-            ? `${format(date, 'EEEE, MMMM d')} - Fully booked` 
-            : isDisabled 
-              ? `${format(date, 'EEEE, MMMM d')} - Unavailable`
-              : format(date, 'EEEE, MMMM d')
+          isFullyBooked
+            ? `${format(date, 'EEEE, MMMM d')} — Full, no times available`
+            : isDisabled
+              ? `${format(date, 'EEEE, MMMM d')} — Unavailable`
+              : status === 'open'
+                ? `${format(date, 'EEEE, MMMM d')} — Open${count ? `, ${count} times available` : ''}`
+                : status === 'limited'
+                  ? `${format(date, 'EEEE, MMMM d')} — Limited${count ? `, ${count} times left` : ''}`
+                  : format(date, 'EEEE, MMMM d')
         }
         className={cn(
-          'relative p-2 min-h-[58px] sm:min-h-[60px] flex flex-col items-center justify-center rounded-lg transition-all touch-manipulation select-none active:scale-[0.97]',
+          'relative p-2 min-h-[58px] sm:min-h-[60px] flex flex-col items-center justify-center rounded-lg border transition-all touch-manipulation select-none active:scale-[0.97]',
           viewMode === 'week' ? 'flex-1' : 'w-full aspect-square',
-          
-          // Base state - available
-          isClickable && 'hover:bg-accent cursor-pointer',
-          
+
+          // Default border is muted; status overrides below.
+          'border-transparent',
+          isClickable && 'cursor-pointer',
+
+          // Status treatments (color + border + background). We combine color
+          // with badges/text below so status is legible without color alone.
+          !isSelected && status === 'open' && 'bg-success/10 border-success/30 hover:bg-success/15',
+          !isSelected && status === 'limited' && 'bg-warning/10 border-warning/40 hover:bg-warning/15',
+          !isSelected && status === 'full' && 'bg-muted border-border cursor-not-allowed',
+          !isSelected && status === 'unknown' && isClickable && 'bg-background border-border hover:bg-accent',
+
           // Selected state (highest priority)
-          isSelected && 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm',
+          isSelected && 'bg-primary text-primary-foreground border-primary hover:bg-primary/90 shadow-sm',
           isSelected && isLoadingSlots && 'animate-pulse',
-          
+
           // Today indicator (only if not selected)
           isToday && !isSelected && 'ring-2 ring-primary ring-inset',
-          
-          // Unavailable states - consistent muted styling
-          isUnavailable && !isSelected && 'bg-muted/40 cursor-not-allowed',
-          
-          // Non-work day gets slightly darker muted (weekends)
-          !isWorkDay && !isSelected && 'bg-muted/60',
-          
+
+          // Disabled dates (past / weekends off / out-of-range).
+          isUnavailable && !isSelected && 'bg-muted/30 border-dashed border-border cursor-not-allowed opacity-60',
+
           // Non-current month fade (month view only)
           !isCurrentMonth && viewMode === 'month' && !isSelected && 'opacity-40'
         )}
@@ -171,10 +247,8 @@ export function DateFirstCalendar({
         <span className={cn(
           'text-sm font-medium',
           isSelected && 'text-primary-foreground',
-          // Unavailable days get muted text
           isUnavailable && !isSelected && 'text-muted-foreground',
-          // Fully booked days get strikethrough for extra clarity
-          isFullyBooked && !isSelected && 'line-through decoration-muted-foreground/50'
+          isFullyBooked && !isSelected && 'text-muted-foreground line-through decoration-muted-foreground/60'
         )}>
           {format(date, 'd')}
         </span>
@@ -188,13 +262,23 @@ export function DateFirstCalendar({
           </span>
         )}
         
-        {/* Fully booked label - more prominent indicator */}
-        {isFullyBooked && !isDisabled && (
-          <span className="text-[10px] font-medium text-destructive/70 mt-0.5">
-            Fully Booked
+        {/* Status label — text is present so the calendar is legible without color. */}
+        {!isSelected && !isUnavailable && status === 'open' && (
+          <span className="text-[10px] font-semibold text-success mt-0.5 leading-none">
+            {count && count > 0 ? `${count} open` : 'Open'}
           </span>
         )}
-        
+        {!isSelected && !isUnavailable && status === 'limited' && (
+          <span className="text-[10px] font-semibold text-warning mt-0.5 leading-none">
+            {count ? `${count} left` : 'Limited'}
+          </span>
+        )}
+        {!isSelected && !isUnavailable && status === 'full' && (
+          <span className="text-[10px] font-semibold text-muted-foreground mt-0.5 leading-none">
+            Full
+          </span>
+        )}
+
         {isSelected && isLoadingSlots && (
           <span className="text-xs mt-1 text-primary-foreground/80">
             Loading...
