@@ -72,8 +72,12 @@ function sanitize(value: string | null | undefined): string | undefined {
   if (value == null) return undefined;
   const trimmed = String(value).slice(0, MAX_LEN).trim();
   if (!trimmed) return undefined;
-  // Strip anything that looks like an email, phone, or path with an @ — belt & braces.
+  // Strip anything that looks like an email or phone number — belt & braces.
   if (/@/.test(trimmed) && /\.[a-z]{2,}/i.test(trimmed)) return undefined;
+  // Phone-like: 7+ digits (with optional separators). Marketing tokens rarely
+  // look like this, so this is a safe guard.
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length >= 7 && /^\+?[\d\s().-]+$/.test(trimmed)) return undefined;
   return trimmed;
 }
 
