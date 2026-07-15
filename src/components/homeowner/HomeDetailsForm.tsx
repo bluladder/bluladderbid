@@ -1,25 +1,79 @@
-import { Home, Car } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Home } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Button } from '@/components/ui/button';
 import type { HomeDetails } from '@/types/homeowner';
+import { SqftLookupHelper } from './SqftLookupHelper';
 
 interface HomeDetailsFormProps {
   homeDetails: HomeDetails;
   onChange: (updates: Partial<HomeDetails>) => void;
+  /** Optional address to prefill in the sqft lookup helper. */
+  formattedAddress?: string;
 }
 
-// Driveway preset sizes in sq ft
-const DRIVEWAY_PRESETS = [
-  { label: '1-car', sqft: 200, description: '~200 sq ft' },
-  { label: '2-car', sqft: 400, description: '~400 sq ft' },
-  { label: '3-car', sqft: 600, description: '~600 sq ft' },
-  { label: 'RV / Extended', sqft: 800, description: '~800 sq ft' },
-] as const;
+// Fires a lightweight, PII-free internal analytics event. We intentionally do
+// NOT include the address, name, email, or any customer identifier — only the
+// event name and (for lookup clicks) the source key.
+function emitInternalAnalytics(
+  event:
+    | 'square_footage_help_opened'
+    | 'square_footage_lookup_clicked'
+    | 'square_footage_entered_after_lookup',
+  detail?: Record<string, string | number | boolean>,
+) {
+  try {
+    if (typeof window === 'undefined') return;
+    const dl = (window as unknown as { dataLayer?: Array<Record<string, unknown>> }).dataLayer;
+    if (Array.isArray(dl)) dl.push({ event, ...(detail || {}) });
+    window.dispatchEvent(new CustomEvent(`bluladder:${event}`, { detail }));
+  } catch {
+    /* analytics must never break UX */
+  }
+}
 
-export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps) {
+// Parse a user-entered sqft string that may include commas / spaces.
+function parseSqft(raw: string): number {
+  const cleaned = raw.replace(/[,\s]/g, '');
+  if (cleaned === '') return 0;
+  const n = parseInt(cleaned, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatSqft(n: number): string {
+  if (!n || n <= 0) return '';
+  return n.toLocaleString('en-US');
+}
+
+export function HomeDetailsForm({
+  homeDetails,
+  onChange,
+  formattedAddress,
+}: HomeDetailsFormProps) {
+  const [helperOpen, setHelperOpen] = useState(false);
+  const [awaitingLookupReturn, setAwaitingLookupReturn] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const openHelper = () => {
+    emitInternalAnalytics('square_footage_help_opened');
+    setHelperOpen(true);
+  };
+
+  const handleLookup = (source: 'zillow' | 'realtor' | 'public_records') => {
+    emitInternalAnalytics('square_footage_lookup_clicked', { source });
+    setAwaitingLookupReturn(true);
+  };
+
+  const handleHelperOpenChange = (next: boolean) => {
+    setHelperOpen(next);
+    if (!next && awaitingLookupReturn) {
+      // Bring focus back to the sqft field so it's easy to type the number.
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  };
+
   return (
     <Card className="card-elevated">
       <CardHeader className="pb-4">
@@ -44,14 +98,20 @@ export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps)
             </Label>
             <Input
               id="sqft"
-              type="number"
-              value={homeDetails.squareFootage === 0 ? '' : homeDetails.squareFootage}
+              ref={inputRef}
+              type="text"
+              value={formatSqft(homeDetails.squareFootage)}
               onChange={(e) => {
-                const value = e.target.value;
-                onChange({ squareFootage: value === '' ? 0 : parseInt(value, 10) || 0 });
+                const next = parseSqft(e.target.value);
+                if (awaitingLookupReturn && next > 0 && next !== homeDetails.squareFootage) {
+                  emitInternalAnalytics('square_footage_entered_after_lookup', {
+                    sqft: next,
+                  });
+                  setAwaitingLookupReturn(false);
+                }
+                onChange({ squareFootage: next });
               }}
               onFocus={(e) => {
-                // Select all text on focus for easy replacement
                 if (homeDetails.squareFootage > 0) {
                   e.target.select();
                 }
@@ -60,10 +120,20 @@ export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps)
               placeholder="Enter your home's sq ft (e.g. 2,500)"
               inputMode="numeric"
               autoComplete="off"
+              aria-describedby="sqft-help sqft-lookup-copy"
             />
-            <p className="text-xs text-muted-foreground">
-              Find this on your property tax statement or home listing
+            <p id="sqft-help" className="text-xs text-muted-foreground">
+              Use your home's total heated or finished living area. Do not include the
+              garage, patio, porch, lot size, or unfinished space.
             </p>
+            <button
+              type="button"
+              onClick={openHelper}
+              className="text-xs font-medium text-primary hover:underline underline-offset-2"
+              id="sqft-lookup-copy"
+            >
+              Not sure? Find your home's square footage
+            </button>
           </div>
           
           <div className="space-y-2">
@@ -84,6 +154,13 @@ export function HomeDetailsForm({ homeDetails, onChange }: HomeDetailsFormProps)
             </RadioGroup>
           </div>
         </div>
+
+        <SqftLookupHelper
+          open={helperOpen}
+          onOpenChange={handleHelperOpenChange}
+          initialAddress={formattedAddress}
+          onLookup={handleLookup}
+        />
       </CardContent>
     </Card>
   );
