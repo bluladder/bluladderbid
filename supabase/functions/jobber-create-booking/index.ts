@@ -1254,6 +1254,19 @@ Deno.serve(async (req) => {
         input_snapshot: pricingSnapshot.inputSnapshot,
         line_item_snapshot: pricingSnapshot.lineItemSnapshot,
         discount_snapshot: pricingSnapshot.discountSnapshot,
+        // Marketing attribution and canonical booked revenue snapshot.
+        // These values are echoes of what we just wrote in `subtotal`/`total`
+        // (from the server-recomputed authoritative pricing pipeline). We
+        // record them into the attribution-specific columns so the marketing
+        // funnel view can filter and aggregate without joining line items.
+        attribution: booking.attribution ?? null,
+        source_session_id: booking.attribution?.source_session_id ?? booking.sourceSessionId ?? null,
+        booked_revenue: booking.total,
+        booked_subtotal: booking.subtotal,
+        booked_discount_amount: booking.discountAmount || 0,
+        booked_service_count: Array.isArray(booking.services) ? booking.services.length : null,
+        booked_services: booking.services?.map((s) => s.name) ?? null,
+        booking_completed_at: new Date().toISOString(),
       })
       .select()
       .single();
@@ -1263,6 +1276,23 @@ Deno.serve(async (req) => {
       // Job + visit exist in Jobber but local record failed - log for reconciliation
     } else {
       console.log("Created booking record:", bookingRecord.id);
+      // Link the attribution_events row to this booking + Jobber ids (best-effort).
+      const sessionForLink = booking.attribution?.source_session_id ?? booking.sourceSessionId;
+      if (sessionForLink) {
+        try {
+          await supabase
+            .from("attribution_events")
+            .update({
+              booking_id: bookingRecord.id,
+              customer_id: customer.id,
+              jobber_job_id: jobberJobId,
+              jobber_client_id: (customer as { jobber_client_id?: string }).jobber_client_id ?? null,
+            })
+            .eq("source_session_id", sessionForLink);
+        } catch (e) {
+          console.warn("attribution link failed:", (e as Error).message);
+        }
+      }
     }
 
     const successPayload = {
@@ -1275,6 +1305,8 @@ Deno.serve(async (req) => {
       scheduledEnd: booking.scheduledEnd,
       technicianName: technicianNames,
       bookingId: bookingRecord?.id,
+      subtotal: booking.subtotal,
+      total: booking.total,
       isTeamJob: booking.isTeamJob || false,
       crewSize: technicians.length,
     };
