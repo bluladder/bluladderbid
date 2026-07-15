@@ -14,10 +14,105 @@ import {
   evaluateAuthGate,
   initialSteps,
   markStep,
+  markStepPass,
+  applyPass,
   pickProductionSlot,
   safeStageLabel,
   type OfferedSlot,
+  type RunStep,
 } from "./testRunLogic.ts";
+
+// ---------------------------------------------------------------------------
+// Stale-reason clearing on safe resume (cosmetic-fix regression)
+// ---------------------------------------------------------------------------
+
+Deno.test("applyPass clears a prior failure reason and preserves it in history", () => {
+  const failed: RunStep = {
+    key: "visit_removed",
+    label: "Jobber visit removed",
+    status: "failed",
+    reason: "cancellation failed",
+    startedAt: "2026-07-15T05:04:43.956Z",
+    finishedAt: "2026-07-15T05:04:44.470Z",
+  };
+  // Sanity: original attempt has the failure reason.
+  assertEquals(failed.status, "failed");
+  assertEquals(failed.reason, "cancellation failed");
+
+  const resumedAt = "2026-07-15T05:14:05.596Z";
+  const passed = applyPass(failed, resumedAt);
+
+  // Current state reflects the successful resume.
+  assertEquals(passed.status, "passed");
+  assertEquals(passed.finishedAt, resumedAt);
+  // Stale failure reason MUST be gone on the current step.
+  assertEquals(Object.prototype.hasOwnProperty.call(passed, "reason"), false);
+  assertEquals(passed.reason, undefined);
+
+  // Historical failure attempt is preserved in the audit trail.
+  assert(Array.isArray(passed.history));
+  assertEquals(passed.history!.length, 1);
+  assertEquals(passed.history![0].status, "failed");
+  assertEquals(passed.history![0].reason, "cancellation failed");
+  assertEquals(passed.history![0].startedAt, "2026-07-15T05:04:43.956Z");
+  assertEquals(passed.history![0].finishedAt, "2026-07-15T05:04:44.470Z");
+});
+
+Deno.test("applyPass on a never-failed step leaves history untouched", () => {
+  const running: RunStep = {
+    key: "quote_firm",
+    label: "Canonical quote is firm",
+    status: "running",
+    startedAt: "2026-07-15T05:04:00.000Z",
+  };
+  const now = "2026-07-15T05:04:01.000Z";
+  const passed = applyPass(running, now);
+  assertEquals(passed.status, "passed");
+  assertEquals(passed.reason, undefined);
+  assertEquals(passed.history, undefined);
+});
+
+Deno.test("applyPass appends to an existing history without losing prior entries", () => {
+  const step: RunStep = {
+    key: "visit_removed",
+    label: "Jobber visit removed",
+    status: "failed",
+    reason: "cancellation failed (attempt 2)",
+    startedAt: "2026-07-15T05:14:00.000Z",
+    finishedAt: "2026-07-15T05:14:01.000Z",
+    history: [
+      {
+        status: "failed",
+        reason: "admin_reauthentication_required",
+        startedAt: "2026-07-15T05:04:43.956Z",
+        finishedAt: "2026-07-15T05:04:44.470Z",
+      },
+    ],
+  };
+  const passed = applyPass(step, "2026-07-15T05:14:05.596Z");
+  assertEquals(passed.status, "passed");
+  assertEquals(passed.reason, undefined);
+  assertEquals(passed.history!.length, 2);
+  assertEquals(passed.history![0].reason, "admin_reauthentication_required");
+  assertEquals(passed.history![1].reason, "cancellation failed (attempt 2)");
+});
+
+Deno.test("markStepPass only affects the target key", () => {
+  const steps: RunStep[] = [
+    { key: "a", label: "A", status: "failed", reason: "boom" },
+    { key: "b", label: "B", status: "passed" },
+  ];
+  const next = markStepPass(steps, "a", "2026-07-15T05:14:05.596Z");
+  const a = next.find((s) => s.key === "a")!;
+  const b = next.find((s) => s.key === "b")!;
+  assertEquals(a.status, "passed");
+  assertEquals(a.reason, undefined);
+  assertEquals(a.history!.length, 1);
+  // Untouched sibling.
+  assertEquals(b.status, "passed");
+  assertEquals(b.reason, undefined);
+  assertEquals(b.history, undefined);
+});
 
 // ---------------------------------------------------------------------------
 // buildAdminCancelHeaders — admin JWT forwarding for cancellation
