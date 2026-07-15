@@ -766,6 +766,96 @@ export function calculateQuote(
   }
 
   // =========================================================================
+  // SOLAR PANEL CLEANING — flat per-panel price × quantity
+  // =========================================================================
+  if (svc.solarPanelCleaning?.enabled) {
+    const cfg = pricing.solar_panel_cleaning;
+    if (!cfg) {
+      manualReviewReasons.push("solar_panel_cleaning pricing not configured");
+    } else {
+      const panels = Math.floor(svc.solarPanelCleaning.panelCount ?? 0);
+      if (!isValidNumber(panels) || panels <= 0) {
+        missing.push("solarPanelCount");
+      } else if (panels > 1000) {
+        manualReviewReasons.push(
+          `Solar panel count ${panels} exceeds automated range; manual review required`,
+        );
+      } else {
+        const perPanel = cfg.perPanel;
+        const calculated = roundDollars(panels * perPanel);
+        const minimum = cfg.minimumPrice ?? 0;
+        const amount = Math.max(calculated, minimum);
+        lineItems.push({
+          key: "solar_panel_cleaning",
+          label: "Solar Panel Cleaning",
+          quantity: panels,
+          unit: "each",
+          baseAmount: calculated,
+          adjustments: [],
+          minimumApplied: amount > calculated,
+          amount,
+          jobberLineItem: {
+            name: "Solar Panel Cleaning",
+            description: `${panels} solar panels`,
+            unitPrice: amount,
+          },
+          components: {
+            panelCount: panels,
+            perPanel,
+            solarPanelCleaningTotal: amount,
+          },
+        });
+        trace.push(`solar: ${panels} x $${perPanel} -> ${amount}`);
+      }
+    }
+  }
+
+  // =========================================================================
+  // SCREEN REPAIR — flat per-screen price × quantity
+  // =========================================================================
+  if (svc.screenRepair?.enabled) {
+    const cfg = pricing.screen_repair;
+    if (!cfg) {
+      manualReviewReasons.push("screen_repair pricing not configured");
+    } else {
+      const screens = Math.floor(svc.screenRepair.screenCount ?? 0);
+      if (!isValidNumber(screens) || screens <= 0) {
+        missing.push("screenRepairCount");
+      } else if (screens > 500) {
+        manualReviewReasons.push(
+          `Screen count ${screens} exceeds automated range; manual review required`,
+        );
+      } else {
+        const perScreen = cfg.perScreen;
+        const calculated = roundDollars(screens * perScreen);
+        const minimum = cfg.minimumPrice ?? 0;
+        const amount = Math.max(calculated, minimum);
+        lineItems.push({
+          key: "screen_repair",
+          label: "Screen Repair",
+          quantity: screens,
+          unit: "each",
+          baseAmount: calculated,
+          adjustments: [],
+          minimumApplied: amount > calculated,
+          amount,
+          jobberLineItem: {
+            name: "Screen Repair",
+            description: `${screens} screen${screens === 1 ? "" : "s"}`,
+            unitPrice: amount,
+          },
+          components: {
+            screenCount: screens,
+            perScreen,
+            screenRepairTotal: amount,
+          },
+        });
+        trace.push(`screen: ${screens} x $${perScreen} -> ${amount}`);
+      }
+    }
+  }
+
+  // =========================================================================
   // TOTALS + DISCOUNT
   // =========================================================================
   const subtotal = lineItems.reduce((s, li) => s + li.amount, 0);
