@@ -1,0 +1,198 @@
+// ============================================================================
+// save-quote — persists a customer-initiated quote as saved or emailed, so it
+// stays available for 30 days and enters the "quote_saved" lifecycle stage.
+// - Idempotent per (customer, source_session_id) so re-clicks update the same row.
+// - When action = "email", sends a transactional link to the recipient via the
+//   existing Resend path (emailConfig.ts). No marketing content.
+// - Never fires a Meta conversion event and never creates a Jobber record.
+// ============================================================================
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { sendEmail } from "../_shared/emailConfig.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+
+interface Body {
+  action: "save" | "email";
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  total: number;
+  subtotal: number;
+  services: Array<{ name: string; amount?: number }>;
+  homeDetails: Record<string, unknown>;
+  sourceSessionId?: string | null;
+  utmParams?: Record<string, unknown> | null;
+  attribution?: Record<string, unknown> | null;
+  ruleVersion?: number | null;
+  engineVersion?: string | null;
+  lineItems?: unknown;
+}
+
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]));
+}
+
+function money(n: number) { return `$${Math.round(n).toLocaleString("en-US")}`; }
+
+function renderEmail(opts: { firstName: string; total: number; services: Body["services"]; quoteUrl: string; expiresAt: string }) {
+  const expDate = new Date(opts.expiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const services = opts.services.map((s) => `<li style="margin:4px 0;">${escapeHtml(s.name)}</li>`).join("");
+  return `<!doctype html><html><body style="font-family:Arial,sans-serif;background:#ffffff;color:#0f172a;margin:0;padding:24px;">
+    <div style="max-width:560px;margin:0 auto;">
+      <h1 style="color:#1e3a8a;margin:0 0 12px;">Your BluLadder bid is saved</h1>
+      <p>Hi ${escapeHtml(opts.firstName)},</p>
+      <p>Here's the bid we prepared for you. It's held at <strong>${money(opts.total)}</strong> for 30 days (through <strong>${expDate}</strong>).</p>
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:16px 0;">
+        <div style="font-size:14px;color:#334155;margin-bottom:8px;">Services included</div>
+        <ul style="margin:0;padding-left:20px;color:#0f172a;">${services}</ul>
+      </div>
+      <p><a href="${opts.quoteUrl}" style="display:inline-block;background:#1e3a8a;color:#ffffff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:600;">View & book this bid</a></p>
+      <p style="font-size:12px;color:#64748b;margin-top:24px;">This is a transactional confirmation of a bid you requested. No further messages will be sent unless you opt in.</p>
+    </div>
+  </body></html>`;
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json(405, { error: "Method not allowed" });
+
+  let body: Body;
+  try { body = await req.json(); } catch { return json(400, { error: "Invalid JSON" }); }
+
+  const email = (body.email || "").trim().toLowerCase();
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return json(400, { error: "A valid email is required to save this bid." });
+  }
+  if (!body.services?.length || typeof body.total !== "number" || body.total <= 0) {
+    return json(400, { error: "Add at least one service before saving this bid." });
+  }
+  const action: "save" | "email" = body.action === "email" ? "email" : "save";
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+
+  // 1) Find or create the customer by email.
+  let customerId: string | null = null;
+  const { data: existing } = await supabase
+    .from("customers")
+    .select("id, first_name, last_name, phone")
+    .eq("email", email)
+    .maybeSingle();
+  if (existing?.id) {
+    customerId = existing.id;
+    const patch: Record<string, unknown> = {};
+    if (!existing.first_name && body.firstName) patch.first_name = body.firstName;
+    if (!existing.last_name && body.lastName) patch.last_name = body.lastName;
+    if (!existing.phone && body.phone) patch.phone = body.phone;
+    if (Object.keys(patch).length) {
+      await supabase.from("customers").update(patch).eq("id", customerId);
+    }
+  } else {
+    const { data: created, error: cErr } = await supabase
+      .from("customers")
+      .insert({
+        email,
+        first_name: body.firstName ?? null,
+        last_name: body.lastName ?? null,
+        phone: body.phone ?? null,
+      })
+      .select("id")
+      .single();
+    if (cErr || !created) return json(500, { error: "Could not create customer record." });
+    customerId = created.id;
+  }
+
+  const sessionId = body.sourceSessionId ?? null;
+  const nowIso = new Date().toISOString();
+  const expiresAtIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const services_json = { services: body.services, lineItems: body.lineItems ?? null };
+  const home_details_json = body.homeDetails ?? {};
+
+  // 2) Look up an existing saved/emailed quote for this session+customer.
+  let quoteId: string | null = null;
+  if (sessionId) {
+    const { data: existingQ } = await supabase
+      .from("quotes")
+      .select("id, status")
+      .eq("customer_id", customerId)
+      .eq("source_session_id", sessionId)
+      .in("status", ["saved", "emailed", "viewed", "pending"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingQ?.id) quoteId = existingQ.id;
+  }
+
+  const status = action === "email" ? "emailed" : "saved";
+  const payload: Record<string, unknown> = {
+    customer_id: customerId,
+    customer_email: email,
+    customer_name: [body.firstName, body.lastName].filter(Boolean).join(" ") || null,
+    customer_phone: body.phone ?? null,
+    services_json,
+    home_details_json,
+    subtotal: body.subtotal,
+    total: body.total,
+    status,
+    expires_at: expiresAtIso,
+    saved_at: nowIso,
+    source_session_id: sessionId,
+    utm_params_json: body.utmParams ?? null,
+    attribution: body.attribution ?? null,
+    pricing_engine_version: body.engineVersion ?? null,
+    pricing_rule_version: body.ruleVersion ?? null,
+  };
+  if (action === "email") payload.emailed_at = nowIso;
+
+  if (quoteId) {
+    const { error } = await supabase.from("quotes").update(payload).eq("id", quoteId);
+    if (error) return json(500, { error: "Could not update the saved bid." });
+  } else {
+    const { data: inserted, error } = await supabase
+      .from("quotes")
+      .insert(payload)
+      .select("id")
+      .single();
+    if (error || !inserted) return json(500, { error: "Could not save the bid." });
+    quoteId = inserted.id;
+  }
+
+  const quoteUrl = `${APP_URL}/quote/${quoteId}`;
+
+  // 3) Optional email send. Failure here still returns the saved quote.
+  let emailStatus: "sent" | "skipped" | "failed" = "skipped";
+  if (action === "email") {
+    const res = await sendEmail({
+      to: email,
+      subject: "Your BluLadder bid — saved for 30 days",
+      html: renderEmail({
+        firstName: body.firstName || "there",
+        total: body.total,
+        services: body.services,
+        quoteUrl,
+        expiresAt: expiresAtIso,
+      }),
+    });
+    emailStatus = res.ok ? "sent" : "failed";
+  }
+
+  return json(200, { quoteId, quoteUrl, expiresAt: expiresAtIso, status, emailStatus });
+});
