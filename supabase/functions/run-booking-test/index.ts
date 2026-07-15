@@ -13,7 +13,7 @@
 // and stops safely on failure — no auto-retry of live writes.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { requireAdminOrService } from "../_shared/auth.ts";
+import { getBearer, isServiceRoleToken, requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { partitionTestIdentitiesForCleanup } from "../_shared/testCleanup.ts";
 import {
@@ -28,6 +28,7 @@ import {
   CANCEL_STEPS,
   buildAuthKey,
   buildIdempotencyKey,
+  buildAdminCancelHeaders,
   buildBookingPayload,
   validateBookingPayload,
   evaluateAuthGate,
@@ -47,6 +48,7 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -67,6 +69,25 @@ async function callFn(name: string, body: unknown): Promise<{ status: number; js
       Authorization: `Bearer ${SERVICE_KEY}`,
       apikey: SERVICE_KEY,
     },
+    body: JSON.stringify(body),
+  });
+  let j: any = null;
+  try { j = await resp.json(); } catch { j = null; }
+  return { status: resp.status, json: j };
+}
+
+// Variant used ONLY for cancellation forwarding. The full headers map is
+// supplied by the caller and holds the operations-admin's user JWT in memory
+// for the duration of this outbound fetch. It is never returned to the
+// browser, never persisted to `booking_test_runs`, and never logged.
+async function callFnWithHeaders(
+  name: string,
+  headers: Record<string, string>,
+  body: unknown,
+): Promise<{ status: number; json: any }> {
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST",
+    headers,
     body: JSON.stringify(body),
   });
   let j: any = null;
@@ -747,7 +768,12 @@ async function runDuplicate(supabase: any, runId: string): Promise<Response> {
 
 // -------- Phase: cancel_cleanup ---------------------------------------------
 // deno-lint-ignore no-explicit-any
-async function runCancelCleanup(supabase: any, runId: string, adminUserId: string | null): Promise<Response> {
+async function runCancelCleanup(
+  supabase: any,
+  runId: string,
+  adminUserId: string | null,
+  adminJwt: string | null,
+): Promise<Response> {
   const run = await loadRun(supabase, runId);
   if (!run) return json({ error: "Run not found" }, 404);
   if (!run.conversation_id || !run.booking_id) {
@@ -756,17 +782,42 @@ async function runCancelCleanup(supabase: any, runId: string, adminUserId: strin
   let steps = run.steps;
   await patchRun(supabase, runId, { phase: "cancel_cleanup", status: "running" });
 
-  // Call existing cancellation with admin override.
+  // Forward the operations-admin's own user JWT to the existing cancellation
+  // function. Never use the service-role key here — it has no user claims and
+  // is rejected as anonymous. The headers are held only in local memory and
+  // are never written to `patchRun`, logs, error responses, or the run row.
   steps = await stepStart(supabase, runId, steps, "visit_removed");
-  const cancelResp = await callFn("customer-appointment-actions", {
+  const forward = buildAdminCancelHeaders({
+    adminJwt,
+    serviceRoleKey: SERVICE_KEY,
+    anonKey: ANON_KEY,
+  });
+  if (!forward.ok) {
+    steps = await stepFail(supabase, runId, steps, "visit_removed", forward.reason);
+    return json({
+      ok: false,
+      runId,
+      error: forward.reason,
+      safeStage: safeStageLabel("cancel_cleanup", "visit_removed"),
+      steps,
+    }, forward.reason === "admin_reauthentication_required" ? 401 : 403);
+  }
+  const cancelResp = await callFnWithHeaders("customer-appointment-actions", forward.headers, {
     action: "cancel",
     bookingId: run.booking_id,
-    isAdminOverride: true,
+    // adminUserId is intentionally NOT trusted for authorization — the
+    // customer-appointment-actions function derives admin status from the
+    // forwarded JWT's own claims. This field is retained only as a run-id
+    // breadcrumb.
     adminUserId,
   });
   if (cancelResp.status !== 200 || cancelResp.json?.error) {
-    steps = await stepFail(supabase, runId, steps, "visit_removed",
-      safeReason(cancelResp.json?.error, "cancellation failed"));
+    // Distinguish an expired/invalid admin session (401/403) from a real
+    // cancellation failure so the operator knows to re-authenticate rather
+    // than assume a Jobber outage. Do NOT fall back to service-role auth.
+    const authFailure = cancelResp.status === 401 || cancelResp.status === 403;
+    const reason = authFailure ? "admin_session_expired" : safeReason(cancelResp.json?.error, "cancellation failed");
+    steps = await stepFail(supabase, runId, steps, "visit_removed", reason);
     return json({ ok: false, runId, safeStage: safeStageLabel("cancel_cleanup", "visit_removed"), steps });
   }
   const cancelled = cancelResp.json?.status === "cancelled";
@@ -856,6 +907,12 @@ Deno.serve(async (req) => {
     const gate = await requireAdminOrService(req, "operations_admin");
     if (!gate.ok) return json({ error: "Not authorized" }, 403);
 
+    // Capture the caller's raw bearer token, ONLY for use as the forwarded
+    // Authorization on the cancellation call. Held in a local const, never
+    // written to the DB, never included in responses, never logged.
+    const rawBearer = getBearer(req);
+    const adminJwt = rawBearer && !isServiceRoleToken(rawBearer) ? rawBearer : null;
+
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "prepare") as RunAction;
     let runId: string | null = body.runId ? String(body.runId) : null;
@@ -884,13 +941,26 @@ Deno.serve(async (req) => {
     }
     if (action === "execute") return await runExecute(supabase, runId);
     if (action === "duplicate") return await runDuplicate(supabase, runId);
-    if (action === "cancel_cleanup") return await runCancelCleanup(supabase, runId, gate.userId);
+    if (action === "cancel_cleanup") {
+      if (!gate.userId || !adminJwt) {
+        return json({ error: "admin_reauthentication_required" }, 401);
+      }
+      return await runCancelCleanup(supabase, runId, gate.userId, adminJwt);
+    }
     if (action === "resume") {
       const run = await loadRun(supabase, runId);
       if (!run) return json({ error: "Run not found" }, 404);
       // Safe resume only from known idempotent checkpoints.
       if (run.checkpoint === "duplicate") return await runDuplicate(supabase, runId);
-      if (run.checkpoint === "cancel_cleanup") return await runCancelCleanup(supabase, runId, gate.userId);
+      if (run.checkpoint === "cancel_cleanup") {
+        // Resume from the safe cancel_cleanup checkpoint requires a fresh
+        // authenticated operations-admin caller because the original admin
+        // JWT was intentionally never persisted.
+        if (!gate.userId || !adminJwt) {
+          return json({ error: "admin_reauthentication_required" }, 401);
+        }
+        return await runCancelCleanup(supabase, runId, gate.userId, adminJwt);
+      }
       return json({ error: "This run cannot be safely resumed" }, 409);
     }
     return json({ error: "Unknown action" }, 400);
