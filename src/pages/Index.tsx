@@ -298,7 +298,8 @@ const Index = () => {
               {/* Home Details Form - Always visible */}
               <HomeDetailsForm 
                 homeDetails={homeDetails} 
-                onChange={handleHomeDetailsChange} 
+                onChange={handleHomeDetailsChange}
+                formattedAddress={prefillCustomerInfo?.address || returningCustomer?.address || ''}
               />
               
 
