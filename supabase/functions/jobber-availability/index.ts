@@ -776,13 +776,33 @@ Deno.serve(async (req) => {
         max_drive_time_minutes,
         max_stories,
         service_capabilities,
+        role,
+        customer_bookable_lead,
+        has_company_vehicle,
+        max_crew_size,
+        public_display_name,
         technician_service_rates (
           service_type,
           dollars_per_hour,
           buffer_minutes
         )
       `)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      // CREW RULE: only crew leaders anchor customer-facing availability.
+      // Junior technicians are hidden capacity and can never independently
+      // create a customer-bookable slot. Enforced server-side so no channel
+      // (booking flow, AI chat, day/week grids, reschedule) can bypass it.
+      .eq("customer_bookable_lead", true);
+
+    // Load global crew configuration (hide names + default public label).
+    const { data: crewConfigRow } = await supabase
+      .from("crew_config")
+      .select("hide_technician_names, default_public_crew_label")
+      .maybeSingle();
+    const hideTechnicianNames: boolean =
+      crewConfigRow?.hide_technician_names !== false;
+    const publicCrewLabel: string =
+      crewConfigRow?.default_public_crew_label || "BluLadder Service Team";
 
     if (techError || !technicians?.length) {
       console.error("Tech query error:", techError);
