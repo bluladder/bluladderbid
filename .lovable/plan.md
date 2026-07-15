@@ -1,110 +1,112 @@
-# Attribution & Revenue Tracking — Facebook Pilot
+# Lead-Anchored Crew Scheduling
 
-Preserve campaign attribution from bluladder.com landing page → quote → booking, and fire deduplicated Meta Pixel events using server-authoritative revenue. No changes to pricing, scheduling, Jobber mutations, AI orchestration, availability, discount rules, cancellation, authorization, or the newly completed upsell UI.
+Customers book time — not people. Only crew leaders anchor availability; juniors are hidden capacity.
 
-## 1. Attribution capture & session store
+## 1. Schema (single migration, additive)
 
-**New:** `src/lib/attribution/attribution.ts`
+Extend `technicians` (no rename, no destructive change):
+- `role` text: `crew_leader | junior_technician | inactive` (default `junior_technician`)
+- `customer_bookable_lead` boolean (default false)
+- `has_company_vehicle` boolean (default false)
+- `max_crew_size` int (default 1, CHECK NULL or 1–5) — only meaningful when `customer_bookable_lead=true`
+- `eligible_leader_ids` uuid[] (default `{}`) — which leaders a junior may support (empty = any leader)
+- `public_display_name` text nullable
+- `role_effective_at` timestamptz nullable (future role change)
 
-Extends the existing `useUtmTracking` model (currently sessionStorage-only, keys `bluladder_utm_params`). Adds:
-- `fbclid`, `landing_page_slug`, `referrer`, `source_session_id`
-- `first_touch` block (frozen after first meta/paid source seen) and `last_touch` block
-- Rule: a valid Meta first-touch (`utm_source ∈ {facebook, fb, meta, instagram, ig}` OR `fbclid` present) is never overwritten by later direct traffic. Non-meta first touches also freeze after first write.
+New `crew_config` (single row, admin-editable) for global settings:
+- `hide_technician_names` boolean (default true)
+- `default_public_crew_label` text (default `"BluLadder Service Team"`)
+- `productivity_multipliers` jsonb — default `{ "1": 1.0, "2": 1.8, "3": 2.5, "4": 3.1, "5": 3.6 }` (subject to your approval)
+- `crew_size_min` / `crew_size_max` int (1 / 5)
 
-**Storage:** `localStorage` for first-touch (survives refresh), `sessionStorage` for last-touch. Anonymous `source_session_id` = `crypto.randomUUID()` minted once per browser.
+New `service_staffing_requirements` (optional, empty by default — preserves current solo behavior):
+- `service_key` text
+- `min_technicians`, `preferred_technicians`, `max_technicians` int
+- `lead_vehicle_required` boolean
+- `solo_allowed` boolean
 
-**Hook:** replace/augment `useUtmTracking` — same file to keep call sites — capturing new params in `Index.tsx`, `ServiceLanding.tsx`, `PlanBuilder.tsx` on mount.
+New `booking_crew_assignments`:
+- `booking_id` fk, `leader_technician_id`, `supporting_technician_ids` uuid[]
+- `staffing_segments` jsonb `[{ start, end, tech_ids[], count, productivity }]`
+- `public_crew_label` text, `calculated_duration_minutes` int
 
-## 2. Cross-domain handoff (bluladder.com → bluladderbid.lovable.app)
+Seed:
+- Benjamin, Bryan → `crew_leader`, `customer_bookable_lead=true`, `has_company_vehicle=true`, max_crew_size 3 and 2
+- Samuel, Michael → `junior_technician`, `customer_bookable_lead=false`, `has_company_vehicle=false`
 
-**Method:** Query-string handoff only (smallest secure surface). Landing page appends the whitelisted params to the "Get Instant Quote" link. No PII, no prices, no discounts, no secrets in URL.
+All new tables get GRANTs + RLS (authenticated admins write, service_role full).
 
-**Whitelist enforced client-side:** `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `fbclid`, `landing_page_slug`, `referrer`, `source_session_id`. Unknown params dropped. All values length-capped (≤200 chars) and sanitized.
+## 2. Availability engine (`supabase/functions/jobber-availability`)
 
-**Landing-page snippet** (documented in final report, one-line change on bluladder.com side): append current UTMs + `fbclid` + `landing_page_slug=fb-window-cleaning-offer-bid` + generated `source_session_id` to the CTA link href.
+New module `crewAssignment.ts`:
+- `getEligibleLeaders(techs)` → only `customer_bookable_lead=true` AND active
+- `buildStaffingSegments(leader, juniors, dayWindow, busyByTech)` → merges leader free window with juniors' free intervals into contiguous segments `{ start, end, techIds[], count }`, respecting `max_crew_size`, `eligible_leader_ids`, and no-overlap-across-crews
+- `computeCrewAdjustedDuration(soloMinutes, segments, multipliers)` → walks segments, converts to work-units, returns `{ endTime, feasible }`
+- `serviceMeetsStaffing(service, segments)` → enforces min technicians for services in `service_staffing_requirements`
 
-## 3. Server persistence
+Slot generation change (server-side, not UI filter):
+1. Iterate leaders only.
+2. For each candidate start time, build staffing segments starting there.
+3. Compute crew-adjusted duration.
+4. Reject if leader isn't free for full duration, service min-staffing unmet, or feasibility unproven → fall back to conservative solo duration.
+5. Never surface a slot anchored by a junior.
 
-**New table** `attribution_events` — one row per anonymous session:
-```
-id uuid pk, source_session_id text unique, first_touch jsonb,
-last_touch jsonb, landing_page_slug text, fbclid text, referrer text,
-customer_id uuid null, quote_id uuid null, booking_id uuid null,
-jobber_client_id text null, jobber_job_id text null, created_at, updated_at
-```
-Grants: `authenticated`/`service_role` write; anon insert allowed via edge function only (not direct). RLS: only service role reads/writes.
+Existing team-pairing logic (leader+leader) preserved but reframed: leader-anchored only.
 
-**Extend existing tables** (columns only, no logic change):
-- `quotes`: `attribution jsonb`, `source_session_id text`, `quote_completion_seconds int`, `estimated_quote_revenue numeric`, `pricing_version text`, `quote_created_at timestamptz`
-- `bookings`: `attribution jsonb`, `source_session_id text`, `quote_to_booking_seconds int`, `booked_revenue numeric`, `booked_subtotal numeric`, `booked_discount_amount numeric`, `booked_bundle_savings numeric`, `booked_service_count int`, `booked_services jsonb`, `booking_completed_at timestamptz`, `meta_events_fired jsonb` (dedupe registry)
+## 3. Booking write (`jobber-create-booking`)
 
-All revenue fields are written **server-side only** — the edge functions `calculate-quote` (already canonical) and `jobber-create-booking` (already canonical) populate them from their own results. Client never supplies revenue.
+- Revalidate leader + segments immediately before Jobber call; fail closed on drift.
+- Jobber: assign leader for full visit. For juniors present the full visit, add via existing team-assignment. For partial juniors, store segments in `booking_crew_assignments` + internal `schedule_blocks` note; do NOT split the customer visit. Report Jobber's partial-assignment limits in the admin UI.
 
-**New edge function** `attribution-ingest`: accepts `{ source_session_id, first_touch, last_touch, landing_page_slug, fbclid, referrer }`, upserts into `attribution_events`. Rate-limited via existing `_shared/rateLimit.ts`. No PII accepted.
+## 4. Customer-facing UI
 
-**Modify `jobber-create-booking`** (persistence only, no behavior change): after successful Jobber write, populate the new `bookings` columns from the already-computed canonical totals + link `attribution_events.booking_id/jobber_job_id`. Idempotent by existing booking idempotency key.
+- Strip `technicianName` from all customer-visible components: `TimeSlotPicker`, `SmartScheduler`, `RecommendedSlots`, `DateFirstCalendar`, `BookingConfirmation`, `SelectedAppointmentSummary`, confirmation emails/SMS.
+- Show only date, time, duration, and optional generic crew label from `crew_config`.
+- Admin views still show internal names.
 
-## 4. Meta Pixel events
+## 5. Admin UI (extend, don't fork)
 
-**New:** `src/lib/attribution/metaPixel.ts` — thin wrapper around `window.fbq` with:
-- `fireLead(quote)` — event_id = `lead_${quote.id}`, params `{ value: quote.quoted_total, currency: 'USD', content_name: 'Instant Quote', content_category: 'Home Services', service_count, services_selected, city, zip_code, lead_source: 'fb_window_cleaning_offer_bid' }`
-- `fireSchedule(booking)` — event_id = `schedule_${booking.id}`, requires `jobber_visit_id`
-- `fireCompleteRegistration(booking)` — event_id = `complete_${booking.id}_completeregistration`
+`TechnicianManager` gains: role selector, `customer_bookable_lead` toggle, vehicle toggle, `max_crew_size` stepper (1–5, disabled unless leader), eligible-leaders multiselect for juniors, public display name, future effective date.
 
-**Firing sites** (client only, gated by server data):
-- **Lead:** `useServerQuoteCalculation` success handler in `OneTimeSummary` / `PricingSummary` when a *firm* canonical response arrives (`firm: true`, has `quoted_total`).
-- **Schedule:** `BookingConfirmation` mount, only when `booking.jobber_visit_id` is present on the server response.
-- **CompleteRegistration:** `BookingConfirmation` mount, same gate as Schedule.
+New `CrewSettings` panel (inside Crew tab): hide-names toggle, default public label, productivity multipliers editor, service staffing requirements editor.
 
-**Dedup:** localStorage set `meta_events_fired` keyed by event_id, plus `bookings.meta_events_fired` jsonb registry updated via a small edge function `meta-event-log` (best-effort; localStorage handles the common cases). Meta itself dedupes by event_id across browser/server.
+New `DailyCrewAssignment` inside existing `AdminScheduleCalendar`: junior assignment ribbons, crew-size timeline, unstaffed/understaffed appointment flags.
 
-**PII scrub:** helper strips name/email/phone/street before fbq call. Only `city` + `zip_code` allowed as location.
+Bookings that violate a newly reduced `max_crew_size` are flagged (not auto-modified).
 
-## 5. Admin dashboard data source
+## 6. Post-booking changes
 
-Extend the existing admin marketing view (small SQL view addition, no new dashboard UI in this pass):
-- Add `admin_marketing_funnel` SQL view joining `attribution_events`, `quotes`, `bookings` exposing the metrics in requirement §8.
-- If the admin already has a marketing panel, add a data hook `useMarketingFunnel` reading from the view. Otherwise, defer visual work — data is queryable.
+Junior becoming unavailable → recalculate feasibility, flag booking for admin review, keep leader, no auto-cancel, no silent customer notification.
 
-## 6. Tests
+## 7. Tests
 
-**New:**
-- `src/lib/attribution/attribution.test.ts` — handoff survival, first-touch freeze, Meta source not overwritten by direct, PII rejection, session id stability.
-- `src/lib/attribution/metaPixel.test.ts` — Lead value = canonical `quoted_total`; no fire without firm quote; Schedule requires `jobber_visit_id`; failed booking → no Schedule; dedupe on rerender + refresh + idempotent replay; PII scrub; browser cannot inject revenue.
-- `supabase/functions/attribution-ingest/*_test.ts` — rate limit, whitelist, rejects unknown fields.
+New unit tests in `crewAssignment_test.ts` and updates to `availability-core_test.ts` covering all 18 base tests + 10 crew-size tests you listed. Existing pricing/booking suites remain untouched and must stay green.
 
-Regression: full existing suite (pricing 256, booking, campaign) must stay green — verified.
-
-## 7. Privacy
-
-- Meta payloads restricted to `city`, `zip_code`, service metadata, canonical revenue.
-- Server logs redact `attribution.first_touch.referrer` beyond hostname.
-- No Meta credentials or service-role keys in client code. Pixel ID stays in existing pixel snippet in `index.html`.
-
-## 8. What does NOT change
-
-Pricing engine (client + server), discount validation, availability, `jobber-create-booking` business logic, AI orchestrator, authorization, cancellation, upsell UI (`CompleteYourRefresh`, `LiveQuoteBar`, `IntentFirstServiceSelector`).
-
-## Technical details
+## Technical Details
 
 ```text
-bluladder.com landing
-  └─ CTA href += ?utm_*&fbclid&landing_page_slug&source_session_id
-       │
-       ▼
-BluLadder Bid (React)
-  ├─ attribution.ts captures + stores (localStorage first-touch, sessionStorage last-touch)
-  ├─ attribution-ingest edge fn ← upsert attribution_events
-  ├─ calculate-quote (unchanged logic) → server writes quotes.attribution + revenue cols
-  │   └─ Lead pixel fires (event_id=lead_<quote_id>) with server value
-  ├─ jobber-create-booking (unchanged logic) → server writes bookings.* + attribution join
-  │   └─ Schedule pixel fires (event_id=schedule_<booking_id>) with server value + visit_id
-  │   └─ CompleteRegistration pixel fires once (event_id=complete_<booking_id>_cr)
-  └─ admin_marketing_funnel view exposes revenue metrics
+Availability pipeline (per candidate day):
+  leaders ──► for each leader
+                │
+                ├─ leader busy blocks (Jobber + PTO + reservations)
+                ├─ juniors' busy blocks + leader-eligibility filter
+                │
+                ▼
+       buildStaffingSegments()
+                │
+                ▼
+       computeCrewAdjustedDuration(soloMinutes, segments)
+                │
+                ▼
+       serviceMeetsStaffing() ──► emit slot (leader-anchored)
 ```
 
-**Migration:** one SQL migration adding `attribution_events` table (+ GRANTs + RLS), extending `quotes`/`bookings` with new columns, adding `admin_marketing_funnel` view.
+Productivity multipliers stored in `crew_config.productivity_multipliers` — editable in admin, initial defaults `{1:1.0, 2:1.8, 3:2.5, 4:3.1, 5:3.6}` pending your approval.
 
-**Small bluladder.com change (documented in final report):** add UTM+fbclid+landing_page_slug+session_id passthrough to the "Get Instant Quote" link. One-line JS snippet provided in report.
+## Decisions I need from you before building
 
-**No live event fired during implementation** — tests stub `window.fbq`; no live Jobber writes, no live customer messages, no live pixel events.
+1. **Productivity multipliers** — approve the initial defaults above, or provide your own.
+2. **Service staffing minimums** — leave the table empty (all services stay solo-capable) unless you name specific services and their minimums.
+3. **Jobber partial-team behavior** — confirm you're OK with the approach: full-visit juniors via Jobber team assignment; partial juniors internal-only until we verify Jobber supports partial windows.
+
+Reply "approve and go" (with any answers above) and I'll implement in a single pass: migration → availability engine → booking write → customer UI name-stripping → admin controls → tests.
