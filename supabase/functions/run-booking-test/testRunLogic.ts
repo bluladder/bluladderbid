@@ -358,3 +358,44 @@ export function validateBookingPayload(p: BuiltBookingPayload): { ok: boolean; m
   if (!p.idempotencyKey) missing.push("idempotencyKey");
   return { ok: missing.length === 0, missing };
 }
+
+// ---------------------------------------------------------------------------
+// Admin cancellation forwarding (runner-only).
+//
+// `customer-appointment-actions` verifies admin identity from real user JWT
+// claims (sub + email + verifyAdminRole). The runner MUST forward the
+// authenticated operations-admin caller's own bearer token — never the
+// service-role key, which has no `sub`/`email` and is rejected as anonymous.
+//
+// This helper is pure so we can prove in tests that the service-role key is
+// never used for this call, and that no token is ever logged or persisted
+// (the returned headers are held only in the request-scoped memory of the
+// coordinator's outbound fetch — they never touch `patchRun` or any log).
+// ---------------------------------------------------------------------------
+
+export type AdminForwardOutcome =
+  | { ok: true; headers: Record<string, string> }
+  | { ok: false; reason: "admin_reauthentication_required" | "service_role_forbidden" };
+
+export function buildAdminCancelHeaders(input: {
+  adminJwt: string | null | undefined;
+  serviceRoleKey: string;
+  anonKey: string;
+}): AdminForwardOutcome {
+  const jwt = (input.adminJwt ?? "").trim();
+  if (!jwt) return { ok: false, reason: "admin_reauthentication_required" };
+  // Refuse to present the service-role key to a function that expects real
+  // user claims. This is the exact failure mode that caused run
+  // 594cc548 to halt at visit_removed.
+  if (input.serviceRoleKey && jwt === input.serviceRoleKey) {
+    return { ok: false, reason: "service_role_forbidden" };
+  }
+  return {
+    ok: true,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+      apikey: input.anonKey,
+    },
+  };
+}
