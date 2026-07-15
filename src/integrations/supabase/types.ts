@@ -124,6 +124,93 @@ export type Database = {
           },
         ]
       }
+      attribution_events: {
+        Row: {
+          booking_id: string | null
+          created_at: string
+          customer_id: string | null
+          fbclid: string | null
+          first_touch: Json | null
+          id: string
+          jobber_client_id: string | null
+          jobber_job_id: string | null
+          landing_page_slug: string | null
+          last_touch: Json | null
+          quote_id: string | null
+          referrer: string | null
+          source_session_id: string
+          updated_at: string
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          fbclid?: string | null
+          first_touch?: Json | null
+          id?: string
+          jobber_client_id?: string | null
+          jobber_job_id?: string | null
+          landing_page_slug?: string | null
+          last_touch?: Json | null
+          quote_id?: string | null
+          referrer?: string | null
+          source_session_id: string
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          fbclid?: string | null
+          first_touch?: Json | null
+          id?: string
+          jobber_client_id?: string | null
+          jobber_job_id?: string | null
+          landing_page_slug?: string | null
+          last_touch?: Json | null
+          quote_id?: string | null
+          referrer?: string | null
+          source_session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attribution_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "attribution_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attribution_events_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attribution_events_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["quote_id"]
+          },
+          {
+            foreignKeyName: "attribution_events_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       autosync_config: {
         Row: {
           created_at: string
@@ -313,6 +400,13 @@ export type Database = {
             foreignKeyName: "booking_audit_log_booking_id_fkey"
             columns: ["booking_id"]
             isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "booking_audit_log_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
@@ -419,6 +513,14 @@ export type Database = {
       }
       bookings: {
         Row: {
+          attribution: Json | null
+          booked_bundle_savings: number | null
+          booked_discount_amount: number | null
+          booked_revenue: number | null
+          booked_service_count: number | null
+          booked_services: Json | null
+          booked_subtotal: number | null
+          booking_completed_at: string | null
           cancellation_needs_attention_reason: string | null
           cancellation_source: string | null
           cancelled_at: string | null
@@ -436,15 +538,18 @@ export type Database = {
           jobber_quote_id: string | null
           jobber_visit_id: string | null
           line_item_snapshot: Json | null
+          meta_events_fired: Json
           notes: string | null
           pricing_engine_version: string | null
           pricing_override_by: string | null
           pricing_override_reason: string | null
           pricing_rule_version: number | null
+          quote_to_booking_seconds: number | null
           reference_number: string
           scheduled_end: string | null
           scheduled_start: string | null
           services_json: Json
+          source_session_id: string | null
           status: Database["public"]["Enums"]["booking_status"]
           subtotal: number
           technician_id: string | null
@@ -453,6 +558,14 @@ export type Database = {
           utm_params_json: Json | null
         }
         Insert: {
+          attribution?: Json | null
+          booked_bundle_savings?: number | null
+          booked_discount_amount?: number | null
+          booked_revenue?: number | null
+          booked_service_count?: number | null
+          booked_services?: Json | null
+          booked_subtotal?: number | null
+          booking_completed_at?: string | null
           cancellation_needs_attention_reason?: string | null
           cancellation_source?: string | null
           cancelled_at?: string | null
@@ -470,15 +583,18 @@ export type Database = {
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
           line_item_snapshot?: Json | null
+          meta_events_fired?: Json
           notes?: string | null
           pricing_engine_version?: string | null
           pricing_override_by?: string | null
           pricing_override_reason?: string | null
           pricing_rule_version?: number | null
+          quote_to_booking_seconds?: number | null
           reference_number: string
           scheduled_end?: string | null
           scheduled_start?: string | null
           services_json: Json
+          source_session_id?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           subtotal: number
           technician_id?: string | null
@@ -487,6 +603,14 @@ export type Database = {
           utm_params_json?: Json | null
         }
         Update: {
+          attribution?: Json | null
+          booked_bundle_savings?: number | null
+          booked_discount_amount?: number | null
+          booked_revenue?: number | null
+          booked_service_count?: number | null
+          booked_services?: Json | null
+          booked_subtotal?: number | null
+          booking_completed_at?: string | null
           cancellation_needs_attention_reason?: string | null
           cancellation_source?: string | null
           cancelled_at?: string | null
@@ -504,15 +628,18 @@ export type Database = {
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
           line_item_snapshot?: Json | null
+          meta_events_fired?: Json
           notes?: string | null
           pricing_engine_version?: string | null
           pricing_override_by?: string | null
           pricing_override_reason?: string | null
           pricing_rule_version?: number | null
+          quote_to_booking_seconds?: number | null
           reference_number?: string
           scheduled_end?: string | null
           scheduled_start?: string | null
           services_json?: Json
+          source_session_id?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           subtotal?: number
           technician_id?: string | null
@@ -1127,6 +1254,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "communication_consent_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
           {
             foreignKeyName: "communication_consent_booking_id_fkey"
             columns: ["booking_id"]
@@ -1877,6 +2011,13 @@ export type Database = {
             foreignKeyName: "notification_events_booking_id_fkey"
             columns: ["booking_id"]
             isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "notification_events_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
@@ -1929,6 +2070,13 @@ export type Database = {
           token?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "pending_confirmations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
           {
             foreignKeyName: "pending_confirmations_booking_id_fkey"
             columns: ["booking_id"]
@@ -2087,6 +2235,7 @@ export type Database = {
       }
       quotes: {
         Row: {
+          attribution: Json | null
           confirmed_at: string | null
           converted_at: string | null
           converted_booking_id: string | null
@@ -2098,6 +2247,7 @@ export type Database = {
           discount_amount: number | null
           discount_code: string | null
           discount_snapshot: Json | null
+          estimated_quote_revenue: number | null
           expires_at: string | null
           home_details_json: Json
           id: string
@@ -2107,8 +2257,10 @@ export type Database = {
           line_item_snapshot: Json | null
           pricing_engine_version: string | null
           pricing_rule_version: number | null
+          quote_completion_seconds: number | null
           services_json: Json
           session_id: string | null
+          source_session_id: string | null
           status: Database["public"]["Enums"]["quote_status"]
           subtotal: number
           total: number
@@ -2117,6 +2269,7 @@ export type Database = {
           viewed_at: string | null
         }
         Insert: {
+          attribution?: Json | null
           confirmed_at?: string | null
           converted_at?: string | null
           converted_booking_id?: string | null
@@ -2128,6 +2281,7 @@ export type Database = {
           discount_amount?: number | null
           discount_code?: string | null
           discount_snapshot?: Json | null
+          estimated_quote_revenue?: number | null
           expires_at?: string | null
           home_details_json: Json
           id?: string
@@ -2137,8 +2291,10 @@ export type Database = {
           line_item_snapshot?: Json | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
+          quote_completion_seconds?: number | null
           services_json: Json
           session_id?: string | null
+          source_session_id?: string | null
           status?: Database["public"]["Enums"]["quote_status"]
           subtotal: number
           total: number
@@ -2147,6 +2303,7 @@ export type Database = {
           viewed_at?: string | null
         }
         Update: {
+          attribution?: Json | null
           confirmed_at?: string | null
           converted_at?: string | null
           converted_booking_id?: string | null
@@ -2158,6 +2315,7 @@ export type Database = {
           discount_amount?: number | null
           discount_code?: string | null
           discount_snapshot?: Json | null
+          estimated_quote_revenue?: number | null
           expires_at?: string | null
           home_details_json?: Json
           id?: string
@@ -2167,8 +2325,10 @@ export type Database = {
           line_item_snapshot?: Json | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
+          quote_completion_seconds?: number | null
           services_json?: Json
           session_id?: string | null
+          source_session_id?: string | null
           status?: Database["public"]["Enums"]["quote_status"]
           subtotal?: number
           total?: number
@@ -2177,6 +2337,13 @@ export type Database = {
           viewed_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "quotes_converted_booking_id_fkey"
+            columns: ["converted_booking_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
           {
             foreignKeyName: "quotes_converted_booking_id_fkey"
             columns: ["converted_booking_id"]
@@ -2718,6 +2885,13 @@ export type Database = {
             foreignKeyName: "sms_messages_booking_id_fkey"
             columns: ["booking_id"]
             isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "sms_messages_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
             referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
@@ -2734,6 +2908,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "sms_campaign_steps"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["quote_id"]
           },
           {
             foreignKeyName: "sms_messages_quote_id_fkey"
@@ -3101,6 +3282,42 @@ export type Database = {
       }
     }
     Views: {
+      admin_marketing_funnel: {
+        Row: {
+          attribution_id: string | null
+          booked_bundle_savings: number | null
+          booked_discount_amount: number | null
+          booked_revenue: number | null
+          booked_service_count: number | null
+          booked_services: Json | null
+          booked_subtotal: number | null
+          booking_completed_at: string | null
+          booking_id: string | null
+          booking_status: Database["public"]["Enums"]["booking_status"] | null
+          city: string | null
+          estimated_quote_revenue: number | null
+          fbclid: string | null
+          first_touch: Json | null
+          jobber_job_id: string | null
+          jobber_visit_id: string | null
+          landing_page_slug: string | null
+          last_touch: Json | null
+          quote_created_at: string | null
+          quote_id: string | null
+          quote_status: Database["public"]["Enums"]["quote_status"] | null
+          quoted_total: number | null
+          referrer: string | null
+          source_session_id: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+          visitor_at: string | null
+          zip_code: string | null
+        }
+        Relationships: []
+      }
       technicians_public: {
         Row: {
           buffer_minutes: number | null
