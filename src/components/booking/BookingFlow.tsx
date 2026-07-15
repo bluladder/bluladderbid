@@ -353,6 +353,16 @@ export function BookingFlow({
         sessionId: sessionIdRef.current,
       };
 
+      // Attach full attribution snapshot so the server can persist it on the
+      // booking row (revenue is still computed exclusively server-side).
+      try {
+        const attribution = readAttribution();
+        (bookingBody as Record<string, unknown>).attribution = attribution;
+        (bookingBody as Record<string, unknown>).sourceSessionId = attribution.source_session_id;
+      } catch {
+        /* attribution is best-effort; never block a booking */
+      }
+
       // Pass team booking data if the selected slot is a team job
       if ((selectedSlot as any).isTeamJob) {
         bookingBody.isTeamJob = true;
@@ -429,13 +439,35 @@ export function BookingFlow({
         return;
       }
 
+      const servicesSelected = services.map((s) => s.service);
       setBookingResult({
         referenceNumber: data.referenceNumber,
         jobNumber: data.jobNumber,
         scheduledStart: data.scheduledStart,
         scheduledEnd: data.scheduledEnd,
         technicianName: data.technicianName,
+        bookingId: data.bookingId,
+        jobberVisitId: data.jobberVisitId,
+        bookedRevenue: typeof data.total === 'number' ? data.total : finalTotal,
+        bookedServiceCount: servicesSelected.length,
+        bookedServices: servicesSelected,
       });
+
+      // Meta Pixel: Schedule + CompleteRegistration fire ONLY when Jobber
+      // returned a real visit id. Event IDs are derived from the booking id
+      // so page refreshes, idempotent replays, and reopening the confirmed
+      // booking never fire a duplicate.
+      if (data.bookingId && data.jobberVisitId) {
+        const bookingForPixel = {
+          id: String(data.bookingId),
+          jobber_visit_id: String(data.jobberVisitId),
+          booked_revenue: typeof data.total === 'number' ? data.total : finalTotal,
+          service_count: servicesSelected.length,
+          services_selected: servicesSelected,
+        };
+        fireSchedule(bookingForPixel);
+        fireCompleteRegistration(bookingForPixel);
+      }
       
       // Track confirmation
       trackConfirmation();
