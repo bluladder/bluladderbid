@@ -13,7 +13,7 @@
 // and stops safely on failure — no auto-retry of live writes.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { requireAdminOrService } from "../_shared/auth.ts";
+import { getBearer, isServiceRoleToken, requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { partitionTestIdentitiesForCleanup } from "../_shared/testCleanup.ts";
 import {
@@ -28,6 +28,7 @@ import {
   CANCEL_STEPS,
   buildAuthKey,
   buildIdempotencyKey,
+  buildAdminCancelHeaders,
   buildBookingPayload,
   validateBookingPayload,
   evaluateAuthGate,
@@ -47,6 +48,7 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -67,6 +69,25 @@ async function callFn(name: string, body: unknown): Promise<{ status: number; js
       Authorization: `Bearer ${SERVICE_KEY}`,
       apikey: SERVICE_KEY,
     },
+    body: JSON.stringify(body),
+  });
+  let j: any = null;
+  try { j = await resp.json(); } catch { j = null; }
+  return { status: resp.status, json: j };
+}
+
+// Variant used ONLY for cancellation forwarding. The full headers map is
+// supplied by the caller and holds the operations-admin's user JWT in memory
+// for the duration of this outbound fetch. It is never returned to the
+// browser, never persisted to `booking_test_runs`, and never logged.
+async function callFnWithHeaders(
+  name: string,
+  headers: Record<string, string>,
+  body: unknown,
+): Promise<{ status: number; json: any }> {
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST",
+    headers,
     body: JSON.stringify(body),
   });
   let j: any = null;
