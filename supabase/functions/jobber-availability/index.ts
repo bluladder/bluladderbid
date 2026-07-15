@@ -1899,7 +1899,7 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           mode: 'dayGrid',
-          slots: dayGridSlots,
+          slots: maskSlots(dayGridSlots),
           totalAvailable: dayGridSlots.length,
           fullyBookedDays,
           ...(includeExcluded ? buildAdminPayload() : {}),
@@ -2063,15 +2063,15 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         mode: 'recommended',
-        recommendations,
-        bestRecommended,
-        nextAvailable,
-        rankedSlots,
+        recommendations: maskSlots(recommendations),
+        bestRecommended: maskSlot(bestRecommended),
+        nextAvailable: maskSlot(nextAvailable),
+        rankedSlots: maskSlots(rankedSlots),
         fullyBookedDays,
         totalAvailable: shownSlots.length,
         eligibleTechnicians: eligibleTechs.map(t => ({ 
           id: t.id, 
-          name: t.name, 
+          name: includeExcluded ? t.name : maskName(t.name),
           durationMinutes: t.durationMinutes 
         })),
         // Admin-only: customer-shown slots + raw availability + compaction
