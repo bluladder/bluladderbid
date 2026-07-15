@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap } from 'lucide-react';
+import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap, AlertCircle, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,9 @@ interface PlanUpsellCardProps {
   onUpgradeAndBook: () => void;
   /** Used to show whether the displayed price is a starting estimate. */
   homeSquareFootage?: number;
+  /** Live server-authoritative plan phase; drives fail-closed behavior. */
+  planPhase?: 'idle' | 'loading' | 'ready' | 'missing_information' | 'manual_review_required' | 'unavailable';
+  onRetryPlan?: () => void;
 }
 
 function formatPrice(price: number) {
@@ -39,6 +42,8 @@ export function PlanUpsellCard({
   onBookOneTime,
   onUpgradeAndBook,
   homeSquareFootage,
+  planPhase,
+  onRetryPlan,
 }: PlanUpsellCardProps) {
   const [showAllPlans, setShowAllPlans] = useState(false);
   const hasServices = oneTimeTotal > 0;
@@ -46,11 +51,19 @@ export function PlanUpsellCard({
   // minimum, so we label it clearly to avoid it reading as a final quote.
   const isEstimate = !homeSquareFootage || homeSquareFootage <= 0;
   
-  // Default to "better" tier as recommended
+  // Default to "better" tier as recommended. When bundles are unavailable this
+  // is intentionally undefined — we fail closed below rather than render $0.
   const recommendedBundle = bundles.find(b => b.tier === 'better') || bundles[1];
-  const currentBundle = selectedTier 
-    ? bundles.find(b => b.tier === selectedTier) || recommendedBundle 
+  const currentBundle = selectedTier
+    ? bundles.find(b => b.tier === selectedTier) || recommendedBundle
     : recommendedBundle;
+
+  // A plan is only displayable when the server returned a real, non-zero
+  // annual total AND a real non-zero monthly amount. Zero-dollar plans must
+  // never render, be selectable, or be bookable.
+  const hasValidPlan = !!currentBundle
+    && currentBundle.annualTotal > 0
+    && Math.round((currentBundle.annualTotal - Math.round(currentBundle.annualTotal * 0.20)) / 11) > 0;
   
   // Count enabled services based on selection state
   const enabledServices = [
@@ -63,13 +76,13 @@ export function PlanUpsellCard({
   ].filter(Boolean).length;
   
   // Calculate annual value if they booked one-time multiple times
-  const annualOneTimeValue = oneTimeTotal * (currentBundle?.windowFrequency || 2);
-  const annualSavings = annualOneTimeValue - (currentBundle?.annualTotal || 0);
-  
+  const annualOneTimeValue = hasValidPlan ? oneTimeTotal * (currentBundle!.windowFrequency || 2) : 0;
+  const annualSavings = hasValidPlan ? annualOneTimeValue - currentBundle!.annualTotal : 0;
+
   // Calculate monthly payment structure (20% deposit + 11 monthly payments)
-  const deposit = currentBundle ? Math.round(currentBundle.annualTotal * 0.20) : 0;
-  const remainingBalance = currentBundle ? currentBundle.annualTotal - deposit : 0;
-  const monthlyPayment = Math.round(remainingBalance / 11);
+  const deposit = hasValidPlan ? Math.round(currentBundle!.annualTotal * 0.20) : 0;
+  const remainingBalance = hasValidPlan ? currentBundle!.annualTotal - deposit : 0;
+  const monthlyPayment = hasValidPlan ? Math.round(remainingBalance / 11) : 0;
   
   if (!hasServices) {
     return (
@@ -208,19 +221,61 @@ export function PlanUpsellCard({
             <Star className="w-4 h-4 fill-current" />
           </div>
         </div>
-        
+
         <CardContent className="p-5">
+          {/* Fail-closed states. A plan MUST have a real annual + monthly total
+              returned from the canonical server. Never show $0 or allow selection. */}
+          {!hasValidPlan && (planPhase === 'loading' || planPhase === 'idle') && (
+            <div
+              className="rounded-lg border border-border bg-muted/40 p-4 flex items-center gap-3"
+              data-testid="plan-loading"
+              aria-busy="true"
+            >
+              <Loader2 className="w-4 h-4 animate-spin text-primary" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground">Calculating your Annual Maintenance Plan…</p>
+            </div>
+          )}
+          {!hasValidPlan && (planPhase === 'unavailable' || planPhase === 'manual_review_required' || planPhase === 'missing_information' || (planPhase === 'ready' && bundles.length === 0)) && (
+            <div
+              className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3"
+              data-testid="plan-unavailable"
+              role="status"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Annual Maintenance Plan unavailable right now
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    We couldn’t calculate this plan yet. Your one-time quote above is still available.
+                  </p>
+                </div>
+              </div>
+              {onRetryPlan && (
+                <Button variant="outline" size="sm" onClick={onRetryPlan} data-testid="plan-retry">
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                  Try again
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Upgrade CTA - MOVED ABOVE PLAN CARDS */}
           <Button 
             className="w-full btn-secondary h-12 text-base mb-4"
             variant="outline"
             onClick={onUpgradeAndBook}
+            disabled={!hasValidPlan}
+            aria-disabled={!hasValidPlan}
+            data-testid="plan-upgrade-cta"
           >
             <RefreshCw className="w-5 h-5 mr-2" />
             Upgrade & Book on Autopilot
           </Button>
-          
-          {/* See All Plans - MOVED DIRECTLY BELOW CTA */}
+
+          {/* See All Plans - MOVED DIRECTLY BELOW CTA. Only when a valid plan exists. */}
+          {hasValidPlan && (
           <Collapsible open={showAllPlans} onOpenChange={setShowAllPlans}>
             <CollapsibleTrigger className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-2 mb-4">
               <ChevronDown className={`w-4 h-4 transition-transform ${showAllPlans ? 'rotate-180' : ''}`} />
@@ -289,11 +344,13 @@ export function PlanUpsellCard({
                   );
                 })}
               </div>
-            </CollapsibleContent>
-          </Collapsible>
-          
-          {/* Selected Plan Summary - Live updates */}
-          <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+             </CollapsibleContent>
+           </Collapsible>
+           )}
+
+           {/* Selected Plan Summary - Live updates. Only when a real plan exists. */}
+           {hasValidPlan && currentBundle && (
+           <div className="p-4 rounded-lg bg-primary/5 border border-primary/20" data-testid="plan-summary">
             <div className="flex items-center justify-between mb-2">
               <Badge className={`${
                 currentBundle?.tier === 'good' 
@@ -305,7 +362,7 @@ export function PlanUpsellCard({
                 {currentBundle?.name || 'Better'} Plan
               </Badge>
               <span className="text-sm font-medium text-primary">
-                {formatPrice(currentBundle?.annualTotal || 0)}/year
+                {formatPrice(currentBundle.annualTotal)}/year
               </span>
             </div>
             
@@ -349,6 +406,7 @@ export function PlanUpsellCard({
               ))}
             </div>
           </div>
+          )}
           
           {/* Social proof */}
           <p className="text-center text-xs text-muted-foreground mt-4">
