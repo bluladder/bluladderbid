@@ -221,19 +221,61 @@ export function PlanUpsellCard({
             <Star className="w-4 h-4 fill-current" />
           </div>
         </div>
-        
+
         <CardContent className="p-5">
+          {/* Fail-closed states. A plan MUST have a real annual + monthly total
+              returned from the canonical server. Never show $0 or allow selection. */}
+          {!hasValidPlan && (planPhase === 'loading' || planPhase === 'idle') && (
+            <div
+              className="rounded-lg border border-border bg-muted/40 p-4 flex items-center gap-3"
+              data-testid="plan-loading"
+              aria-busy="true"
+            >
+              <Loader2 className="w-4 h-4 animate-spin text-primary" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground">Calculating your Annual Maintenance Plan…</p>
+            </div>
+          )}
+          {!hasValidPlan && (planPhase === 'unavailable' || planPhase === 'manual_review_required' || planPhase === 'missing_information' || (planPhase === 'ready' && bundles.length === 0)) && (
+            <div
+              className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3"
+              data-testid="plan-unavailable"
+              role="status"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Annual Maintenance Plan unavailable right now
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    We couldn’t calculate this plan yet. Your one-time quote above is still available.
+                  </p>
+                </div>
+              </div>
+              {onRetryPlan && (
+                <Button variant="outline" size="sm" onClick={onRetryPlan} data-testid="plan-retry">
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                  Try again
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Upgrade CTA - MOVED ABOVE PLAN CARDS */}
           <Button 
             className="w-full btn-secondary h-12 text-base mb-4"
             variant="outline"
             onClick={onUpgradeAndBook}
+            disabled={!hasValidPlan}
+            aria-disabled={!hasValidPlan}
+            data-testid="plan-upgrade-cta"
           >
             <RefreshCw className="w-5 h-5 mr-2" />
             Upgrade & Book on Autopilot
           </Button>
-          
-          {/* See All Plans - MOVED DIRECTLY BELOW CTA */}
+
+          {/* See All Plans - MOVED DIRECTLY BELOW CTA. Only when a valid plan exists. */}
+          {hasValidPlan && (
           <Collapsible open={showAllPlans} onOpenChange={setShowAllPlans}>
             <CollapsibleTrigger className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-2 mb-4">
               <ChevronDown className={`w-4 h-4 transition-transform ${showAllPlans ? 'rotate-180' : ''}`} />
