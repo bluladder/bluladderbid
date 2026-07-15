@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { ArrowLeft, Check, Clock, MapPin, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
