@@ -7,7 +7,7 @@ function findDay(dateKey: string) {
   return screen.getByTestId(`calendar-day-${dateKey}`) as HTMLButtonElement;
 }
 
-function nextWeekday(offsetDays: number) {
+function nthWeekday(offsetDays: number) {
   // Return an upcoming Monday-Friday date offset from today so tests are
   // deterministic regardless of when they run.
   let d = addDays(new Date(), offsetDays);
@@ -25,7 +25,7 @@ function iso(d: Date, hour: number) {
 
 describe('DateFirstCalendar — status-driven presentation', () => {
   it('renders "Open" on a business day with several valid slots', () => {
-    const target = nextWeekday(3);
+    const target = nthWeekday(3);
     const key = format(target, 'yyyy-MM-dd');
     render(
       <DateFirstCalendar
@@ -43,7 +43,7 @@ describe('DateFirstCalendar — status-driven presentation', () => {
   });
 
   it('renders "Limited" with a count on 1–2 valid slots', () => {
-    const target = nextWeekday(4);
+    const target = nthWeekday(4);
     const key = format(target, 'yyyy-MM-dd');
     render(
       <DateFirstCalendar
@@ -61,7 +61,7 @@ describe('DateFirstCalendar — status-driven presentation', () => {
   });
 
   it('renders "Full" and disables selection for a fully-booked business day', () => {
-    const target = nextWeekday(5);
+    const target = nthWeekday(5);
     const key = format(target, 'yyyy-MM-dd');
     const onSelectDate = vi.fn();
     render(
@@ -102,7 +102,7 @@ describe('DateFirstCalendar — status-driven presentation', () => {
   });
 
   it('shows a fail-closed banner and never paints dates as Open when availability is unavailable', () => {
-    const target = nextWeekday(2);
+    const target = nthWeekday(2);
     const key = format(target, 'yyyy-MM-dd');
     render(
       <DateFirstCalendar
@@ -137,9 +137,9 @@ describe('DateFirstCalendar — status-driven presentation', () => {
   });
 
   it('emits open/limited/full analytics events without any PII', () => {
-    const openDate = nextWeekday(2);
-    const limitedDate = nextWeekday(3);
-    const fullDate = nextWeekday(4);
+    const openDate = nthWeekday(2);
+    const limitedDate = nthWeekday(3);
+    const fullDate = nthWeekday(4);
     const openKey = format(openDate, 'yyyy-MM-dd');
     const limitedKey = format(limitedDate, 'yyyy-MM-dd');
     const fullKey = format(fullDate, 'yyyy-MM-dd');
