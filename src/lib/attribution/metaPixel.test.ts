@@ -106,6 +106,7 @@ describe('metaPixel', () => {
 
   it('strips PII from event payloads', () => {
     const calls = installFbq();
+    // Cast to unknown so we can plant PII fields that TypeScript would reject.
     fireSchedule({
       id: 'b_3',
       jobber_visit_id: 'V3',
@@ -114,11 +115,9 @@ describe('metaPixel', () => {
       services_selected: ['windowCleaning'],
       city: 'Austin',
       zip_code: '78701',
-      // @ts-expect-error deliberately test that stray PII does not leak
       email: 'foo@bar.com',
-      // @ts-expect-error
       phone: '+1 415 555 1234',
-    });
+    } as unknown as Parameters<typeof fireSchedule>[0]);
     const payload = calls[0][2] as Record<string, unknown>;
     expect(payload.email).toBeUndefined();
     expect(payload.phone).toBeUndefined();
