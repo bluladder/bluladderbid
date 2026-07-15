@@ -41,6 +41,8 @@ export function toQuoteInput(
       roofSeverity: additionalServices.roofSeverity,
       drivewayCleaning: additionalServices.drivewayCleaning,
       pressureWashing: additionalServices.pressureWashing,
+      solarPanelCleaning: additionalServices.solarPanelCleaning,
+      screenRepair: additionalServices.screenRepair,
     },
     // The server RE-VALIDATES the code against the discount_codes table and
     // ignores any client-supplied type/value, so an invalid/expired code can
@@ -57,6 +59,8 @@ export function hasAnyServiceSelected(svc: AdditionalServices): boolean {
     !!svc.gutterCleaning ||
     !!svc.roofCleaning ||
     !!svc.drivewayCleaning?.enabled ||
-    !!svc.pressureWashing?.enabled
+    !!svc.pressureWashing?.enabled ||
+    !!svc.solarPanelCleaning?.enabled ||
+    !!svc.screenRepair?.enabled
   );
 }
