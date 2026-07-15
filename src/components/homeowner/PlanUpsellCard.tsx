@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap } from 'lucide-react';
+import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap, AlertCircle, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,9 @@ interface PlanUpsellCardProps {
   onUpgradeAndBook: () => void;
   /** Used to show whether the displayed price is a starting estimate. */
   homeSquareFootage?: number;
+  /** Live server-authoritative plan phase; drives fail-closed behavior. */
+  planPhase?: 'idle' | 'loading' | 'ready' | 'missing_information' | 'manual_review_required' | 'unavailable';
+  onRetryPlan?: () => void;
 }
 
 function formatPrice(price: number) {
@@ -39,6 +42,8 @@ export function PlanUpsellCard({
   onBookOneTime,
   onUpgradeAndBook,
   homeSquareFootage,
+  planPhase,
+  onRetryPlan,
 }: PlanUpsellCardProps) {
   const [showAllPlans, setShowAllPlans] = useState(false);
   const hasServices = oneTimeTotal > 0;
@@ -46,11 +51,19 @@ export function PlanUpsellCard({
   // minimum, so we label it clearly to avoid it reading as a final quote.
   const isEstimate = !homeSquareFootage || homeSquareFootage <= 0;
   
-  // Default to "better" tier as recommended
+  // Default to "better" tier as recommended. When bundles are unavailable this
+  // is intentionally undefined — we fail closed below rather than render $0.
   const recommendedBundle = bundles.find(b => b.tier === 'better') || bundles[1];
-  const currentBundle = selectedTier 
-    ? bundles.find(b => b.tier === selectedTier) || recommendedBundle 
+  const currentBundle = selectedTier
+    ? bundles.find(b => b.tier === selectedTier) || recommendedBundle
     : recommendedBundle;
+
+  // A plan is only displayable when the server returned a real, non-zero
+  // annual total AND a real non-zero monthly amount. Zero-dollar plans must
+  // never render, be selectable, or be bookable.
+  const hasValidPlan = !!currentBundle
+    && currentBundle.annualTotal > 0
+    && Math.round((currentBundle.annualTotal - Math.round(currentBundle.annualTotal * 0.20)) / 11) > 0;
   
   // Count enabled services based on selection state
   const enabledServices = [
@@ -63,13 +76,13 @@ export function PlanUpsellCard({
   ].filter(Boolean).length;
   
   // Calculate annual value if they booked one-time multiple times
-  const annualOneTimeValue = oneTimeTotal * (currentBundle?.windowFrequency || 2);
-  const annualSavings = annualOneTimeValue - (currentBundle?.annualTotal || 0);
-  
+  const annualOneTimeValue = hasValidPlan ? oneTimeTotal * (currentBundle!.windowFrequency || 2) : 0;
+  const annualSavings = hasValidPlan ? annualOneTimeValue - currentBundle!.annualTotal : 0;
+
   // Calculate monthly payment structure (20% deposit + 11 monthly payments)
-  const deposit = currentBundle ? Math.round(currentBundle.annualTotal * 0.20) : 0;
-  const remainingBalance = currentBundle ? currentBundle.annualTotal - deposit : 0;
-  const monthlyPayment = Math.round(remainingBalance / 11);
+  const deposit = hasValidPlan ? Math.round(currentBundle!.annualTotal * 0.20) : 0;
+  const remainingBalance = hasValidPlan ? currentBundle!.annualTotal - deposit : 0;
+  const monthlyPayment = hasValidPlan ? Math.round(remainingBalance / 11) : 0;
   
   if (!hasServices) {
     return (
