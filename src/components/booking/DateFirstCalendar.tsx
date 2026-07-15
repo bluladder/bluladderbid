@@ -363,9 +363,26 @@ export function DateFirstCalendar({
         </div>
       </div>
 
+      {/* Fail-closed banner: availability unverifiable. */}
+      {availabilityUnavailable && (
+        <div
+          role="status"
+          data-testid="calendar-availability-unavailable"
+          className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
+        >
+          <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" aria-hidden="true" />
+          <p className="text-foreground">
+            We couldn’t verify appointment availability just now. Please try again in a moment.
+          </p>
+        </div>
+      )}
+
       {/* Calendar grid */}
       <div
-        className="grid grid-cols-7 gap-1"
+        className={cn('grid grid-cols-7 gap-1', isLoadingAvailability && !availabilityUnavailable && 'animate-pulse')}
+        data-testid="calendar-grid"
+        data-loading={isLoadingAvailability ? 'true' : 'false'}
+        aria-busy={isLoadingAvailability ? 'true' : 'false'}
         {...useSwipe({
           onSwipeLeft: () => canNavigateNext() && navigateNext(),
           onSwipeRight: () => canNavigatePrevious() && navigatePrevious(),
@@ -390,24 +407,34 @@ export function DateFirstCalendar({
         Swipe left or right to change {viewMode === 'month' ? 'months' : 'weeks'}
       </p>
 
-      {/* Legend - updated with fully booked indicator */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t flex-wrap">
+      {/* Legend — availability statuses. Do not rely on color alone. */}
+      <div
+        className="flex items-center gap-x-4 gap-y-2 text-xs text-muted-foreground pt-2 border-t flex-wrap"
+        aria-label="Calendar legend"
+        data-testid="calendar-legend"
+      >
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded bg-primary" />
+          <div className="w-3 h-3 rounded bg-success/10 border border-success/40" aria-hidden="true" />
+          <span>Open</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-warning/10 border border-warning/50" aria-hidden="true" />
+          <span>Limited</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-muted border border-border" aria-hidden="true" />
+          <span>Full</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-muted/30 border border-dashed border-border" aria-hidden="true" />
+          <span>Unavailable</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded bg-primary" aria-hidden="true" />
           <span>Selected</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded ring-2 ring-primary" />
-          <span>Today</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded bg-muted/40 relative">
-            <span className="absolute inset-0 flex items-center justify-center text-[8px] text-destructive/70 font-bold">—</span>
-          </div>
-          <span>Fully Booked</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded bg-muted/60" />
+          <div className="w-3 h-3 rounded ring-2 ring-primary" aria-hidden="true" />
           <span>Weekend</span>
         </div>
       </div>
