@@ -10,6 +10,7 @@ import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
 import { ServiceReviewStep } from './ServiceReviewStep';
 import { BookingTermsAck } from './BookingTermsAck';
+import { BookingStepper } from './BookingStepper';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
 import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
@@ -217,6 +218,26 @@ export function BookingFlow({
         description: areas.join(', '),
       });
     }
+
+    if (additionalServices.solarPanelCleaning.enabled && servicePrices.solarPanelCleaning > 0) {
+      const panels = additionalServices.solarPanelCleaning.panelCount;
+      services.push({
+        service: 'solar_panels',
+        name: 'Solar Panel Cleaning',
+        price: servicePrices.solarPanelCleaning,
+        description: `${panels} solar panels`,
+      });
+    }
+
+    if (additionalServices.screenRepair.enabled && servicePrices.screenRepair > 0) {
+      const screens = additionalServices.screenRepair.screenCount;
+      services.push({
+        service: 'screen_repair',
+        name: 'Screen Repair',
+        price: servicePrices.screenRepair,
+        description: `${screens} screen${screens === 1 ? '' : 's'}`,
+      });
+    }
     
     return services;
   };
@@ -234,6 +255,8 @@ export function BookingFlow({
     if (additionalServices.roofCleaning && servicePrices.roofCleaning > 0) minutes += 90;
     if (additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0) minutes += 60;
     if (additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0) minutes += 45;
+    if (additionalServices.solarPanelCleaning.enabled && servicePrices.solarPanelCleaning > 0) minutes += 45;
+    if (additionalServices.screenRepair.enabled && servicePrices.screenRepair > 0) minutes += 30;
     return Math.max(60, minutes); // Minimum 1 hour
   }, [additionalServices, servicePrices]);
 
@@ -426,8 +449,6 @@ export function BookingFlow({
     window.location.href = '/';
   };
 
-  const stepProgress = step === 'review' ? 25 : step === 'info' ? 50 : step === 'time' ? 75 : 100;
-
   // Pending manual confirmation screen (backend returned 202 / needs_attention).
   if (pendingManual) {
     return (
@@ -476,29 +497,15 @@ export function BookingFlow({
 
   return (
     <div className="space-y-4">
-      {/* Progress Header - shown after review step */}
-      {step !== 'review' && (
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs font-medium">
-            <span className={step === 'info' ? 'text-primary font-semibold' : step === 'time' ? 'text-success' : 'text-muted-foreground'}>
-              1. Your Info
-            </span>
-            <span className={step === 'time' ? 'text-primary font-semibold' : 'text-muted-foreground'}>
-              2. Pick a Time
-            </span>
-            <span className="text-muted-foreground">
-              3. Confirm Booking
-            </span>
-          </div>
-          <Progress value={stepProgress} className="h-1" />
-          {/* Microcopy for time selection step */}
-          {step === 'time' && (
-            <p className="text-xs text-muted-foreground text-center">
-              Your price is locked — only availability is changing.
-            </p>
-          )}
-        </div>
-      )}
+      {/* Labeled step indicator — always visible so customers see progress and total scope */}
+      <div className="space-y-1.5 pb-2 border-b border-border/60">
+        <BookingStepper current={step} />
+        {step === 'time' && (
+          <p className="text-[11px] sm:text-xs text-muted-foreground text-center pt-1">
+            Your price is locked — only availability is changing.
+          </p>
+        )}
+      </div>
 
       {/* Step: Review Services */}
       {step === 'review' && (
