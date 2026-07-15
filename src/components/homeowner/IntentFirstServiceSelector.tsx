@@ -24,7 +24,7 @@ interface IntentFirstServiceSelectorProps {
   homeDetails: HomeDetails;
   onChange: (updates: Partial<AdditionalServices>) => void;
   onHomeDetailsChange: (updates: Partial<HomeDetails>) => void;
-  featuredService?: 'windowCleaning' | 'gutterCleaning' | 'houseWash' | 'roofCleaning' | 'drivewayCleaning' | 'pressureWashing';
+  featuredService?: 'windowCleaning' | 'gutterCleaning' | 'houseWash' | 'roofCleaning' | 'drivewayCleaning' | 'pressureWashing' | 'solarPanelCleaning' | 'screenRepair';
 }
 
 function formatPrice(price: number) {
