@@ -1,93 +1,110 @@
+# Attribution & Revenue Tracking — Facebook Pilot
 
-# Plan — Booking UX Lift + Solar/Screen as First-Class Services
+Preserve campaign attribution from bluladder.com landing page → quote → booking, and fire deduplicated Meta Pixel events using server-authoritative revenue. No changes to pricing, scheduling, Jobber mutations, AI orchestration, availability, discount rules, cancellation, authorization, or the newly completed upsell UI.
 
-Two parallel workstreams. Stream 1 is presentational-only and low risk. Stream 2 touches the pricing engine (client + server) you just validated end-to-end, so it must go through the exact same shape/adapters the existing services use — no special cases.
+## 1. Attribution capture & session store
 
-## Stream 1 — UX polish (frontend only)
+**New:** `src/lib/attribution/attribution.ts`
 
-### 1A. Labeled progress stepper
-- Replace the bare `<Progress value=… />` in `src/components/booking/BookingFlow.tsx` with a 4-step labeled indicator: **Review → Your info → Pick a time → Confirmed**.
-- Current step highlighted, completed steps show a check, upcoming steps are muted.
-- Mobile: horizontal scroll-free, condensed labels under 480 px.
-- New small component `src/components/booking/BookingStepper.tsx`. No state or logic changes.
+Extends the existing `useUtmTracking` model (currently sessionStorage-only, keys `bluladder_utm_params`). Adds:
+- `fbclid`, `landing_page_slug`, `referrer`, `source_session_id`
+- `first_touch` block (frozen after first meta/paid source seen) and `last_touch` block
+- Rule: a valid Meta first-touch (`utm_source ∈ {facebook, fb, meta, instagram, ig}` OR `fbclid` present) is never overwritten by later direct traffic. Non-meta first touches also freeze after first write.
 
-### 1B. Add-on value cards with price anchors
-- Rework the *collapsed* state in `IntentFirstServiceSelector.tsx` so each unselected add-on shows: icon tile, one-line benefit copy, and a "from $X" anchor pulled from the existing server-computed `servicePrices` estimate (already available). If no estimate yet, keep "Get instant pricing".
-- Add a "Included in your plan" badge on cards when a plan tier already bundles that service (data available on `bundle.additionalServicesIncluded`).
-- Same file only. No pricing math added — reads existing values.
+**Storage:** `localStorage` for first-touch (survives refresh), `sessionStorage` for last-touch. Anonymous `source_session_id` = `crypto.randomUUID()` minted once per browser.
 
-## Stream 2 — Solar Panel Cleaning + Screen Repair as first-class services
+**Hook:** replace/augment `useUtmTracking` — same file to keep call sites — capturing new params in `Index.tsx`, `ServiceLanding.tsx`, `PlanBuilder.tsx` on mount.
 
-Rate rules (from you):
-- **Solar Panel Cleaning:** `$10 × panels` (integer, min 1 when enabled).
-- **Screen Repair:** `$35 × screens` (integer, min 1 when enabled).
+## 2. Cross-domain handoff (bluladder.com → bluladderbid.lovable.app)
 
-Both flow through the existing architecture — no special-case code, no lead-capture behavior. They behave identically to House Wash / Roof Cleaning: toggle → quantity input → server calc → line item on quote → Jobber line item → visible in AI chat/pricing tools → schedulable duration.
+**Method:** Query-string handoff only (smallest secure surface). Landing page appends the whitelisted params to the "Get Instant Quote" link. No PII, no prices, no discounts, no secrets in URL.
 
-### 2A. Shared type surface
-`src/types/homeowner.ts`
-- Extend `AdditionalServices`:
-  ```
-  solarPanelCleaning: { enabled: boolean; panelCount: number };
-  screenRepair:       { enabled: boolean; screenCount: number };
-  ```
-- Extend `ServicePrices` with `solarPanelCleaning: number` and `screenRepair: number`.
-- Update `DEFAULT_ADDITIONAL_SERVICES` and `DEFAULT_SERVICE_PRICES`.
+**Whitelist enforced client-side:** `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `fbclid`, `landing_page_slug`, `referrer`, `source_session_id`. Unknown params dropped. All values length-capped (≤200 chars) and sanitized.
 
-### 2B. Canonical pricing engine — client
-`src/lib/pricing/engine.ts` (+ `toQuoteInput.ts`, `fromQuoteResult.ts`)
-- Register two new line-item keys: `solar_panel_cleaning`, `screen_repair`.
-- Calc: `amount = qty × unitPrice`. Components object mirrors `qty` and `unitPrice` for auditability.
-- `toQuoteInput` forwards the enable flags + counts.
-- `fromQuoteResult` maps `line.amount` back to `servicePrices.solarPanelCleaning` / `.screenRepair` using the same `byKey`/`comp` pattern used for every other service.
-- Included in `additionalServicesTotal`.
+**Landing-page snippet** (documented in final report, one-line change on bluladder.com side): append current UTMs + `fbclid` + `landing_page_slug=fb-window-cleaning-offer-bid` + generated `source_session_id` to the CTA link href.
 
-### 2C. Canonical pricing engine — server
-`supabase/functions/_shared/pricingEngine.ts` and `calculate-quote/index.ts`
-- Mirror 2B on the server. Same keys, same math, same component names — server is authoritative.
-- No change to config loader; unit prices live in the engine as constants next to the other simple per-unit services (matching existing pattern). If a pricing_config row is preferred, I'll surface it; but "no special case" reads as: keep them inline with the same style used today.
-- Extend the server engine tests (`pricingEngine_test.ts`, `engine.test.ts`) with per-unit cases and edge cases (0 qty disabled, negative rejected, non-integer floored).
-- Bundles: add-on discount % applied to these two exactly like other add-ons — no bespoke branching. Verified in `engine.bundleParity.test.ts`.
+## 3. Server persistence
 
-### 2D. Booking payload + Jobber line items
-`src/components/booking/BookingFlow.tsx` → `buildServicesArray()`
-- Two new branches, structurally identical to Roof/House Wash, feeding `service: 'solar_panels'` and `service: 'screen_repair'` names + `description: 'N panels'` / `'N screens'`.
-- `jobber-create-booking` already forwards `services[]` verbatim as Jobber line items — no server change needed beyond the engine recompute path already validated.
-- Duration estimate: +30 min per service block (matches Roof/House Wash ratios in `estimatedDuration`).
+**New table** `attribution_events` — one row per anonymous session:
+```
+id uuid pk, source_session_id text unique, first_touch jsonb,
+last_touch jsonb, landing_page_slug text, fbclid text, referrer text,
+customer_id uuid null, quote_id uuid null, booking_id uuid null,
+jobber_client_id text null, jobber_job_id text null, created_at, updated_at
+```
+Grants: `authenticated`/`service_role` write; anon insert allowed via edge function only (not direct). RLS: only service role reads/writes.
 
-### 2E. Service selection UI
-`src/components/homeowner/IntentFirstServiceSelector.tsx`
-- Add two new `ServiceCard` renderers with quantity inputs (same UX pattern as Driveway sqft input).
-- Insert into `serviceOrder` array. Featured logic already handles arbitrary keys.
-- `AdditionalServicesForm.tsx` (legacy surface) gets matching cards for parity.
+**Extend existing tables** (columns only, no logic change):
+- `quotes`: `attribution jsonb`, `source_session_id text`, `quote_completion_seconds int`, `estimated_quote_revenue numeric`, `pricing_version text`, `quote_created_at timestamptz`
+- `bookings`: `attribution jsonb`, `source_session_id text`, `quote_to_booking_seconds int`, `booked_revenue numeric`, `booked_subtotal numeric`, `booked_discount_amount numeric`, `booked_bundle_savings numeric`, `booked_service_count int`, `booked_services jsonb`, `booking_completed_at timestamptz`, `meta_events_fired jsonb` (dedupe registry)
 
-### 2F. AI chat + MCP tools
-- `src/lib/mcp/tools/list-services.ts` — add both services with brief descriptions.
-- `src/lib/mcp/tools/get-pricing-info.ts` — expose per-unit rates.
-- `supabase/functions/_shared/aiTools.ts` and `chat-quote/index.ts` — accept `solarPanelCount` / `screenRepairCount` in the quote intent so AI-generated quotes include them.
-- `supabase/functions/ai-chat/index.ts` prompts updated to mention both services.
+All revenue fields are written **server-side only** — the edge functions `calculate-quote` (already canonical) and `jobber-create-booking` (already canonical) populate them from their own results. Client never supplies revenue.
 
-### 2G. Bundle presentation
-- `BundleBuilder.tsx` / `bundleTiers` — no logic change; the two services are surfaced via `additionalServicesIncluded` copy where the business chooses to include them. For now they're standalone add-ons available to all tiers (matches Driveway/Pressure treatment).
+**New edge function** `attribution-ingest`: accepts `{ source_session_id, first_touch, last_touch, landing_page_slug, fbclid, referrer }`, upserts into `attribution_events`. Rate-limited via existing `_shared/rateLimit.ts`. No PII accepted.
 
-## Out of scope for this pass
+**Modify `jobber-create-booking`** (persistence only, no behavior change): after successful Jobber write, populate the new `bookings` columns from the already-computed canonical totals + link `attribution_events.booking_id/jobber_job_id`. Idempotent by existing booking idempotency key.
 
-- Scheduling logic, availability, drive-time, Jobber mutation shapes, authorization, suppression.
-- Redesigning the tier grid, review-step upsell, error/pending polish (Stream C/D from the earlier audit). Ready to ship next after this lands.
+## 4. Meta Pixel events
 
-## Verification
+**New:** `src/lib/attribution/metaPixel.ts` — thin wrapper around `window.fbq` with:
+- `fireLead(quote)` — event_id = `lead_${quote.id}`, params `{ value: quote.quoted_total, currency: 'USD', content_name: 'Instant Quote', content_category: 'Home Services', service_count, services_selected, city, zip_code, lead_source: 'fb_window_cleaning_offer_bid' }`
+- `fireSchedule(booking)` — event_id = `schedule_${booking.id}`, requires `jobber_visit_id`
+- `fireCompleteRegistration(booking)` — event_id = `complete_${booking.id}_completeregistration`
 
-- Unit: engine tests (client + server) for both new services; bundle parity test; `fromQuoteResult` test.
-- Integration: `calculate-quote` returns matching line items; `useServerQuoteCalculation` displays them.
-- Manual smoke: toggle each service in the intent-first selector, confirm totals update, complete review step, confirm Jobber payload includes both line items. **No live Jobber write** — inspect the client-side payload only.
-- No changes to the just-validated end-to-end controlled test.
+**Firing sites** (client only, gated by server data):
+- **Lead:** `useServerQuoteCalculation` success handler in `OneTimeSummary` / `PricingSummary` when a *firm* canonical response arrives (`firm: true`, has `quoted_total`).
+- **Schedule:** `BookingConfirmation` mount, only when `booking.jobber_visit_id` is present on the server response.
+- **CompleteRegistration:** `BookingConfirmation` mount, same gate as Schedule.
 
-## Files touched (planned)
+**Dedup:** localStorage set `meta_events_fired` keyed by event_id, plus `bookings.meta_events_fired` jsonb registry updated via a small edge function `meta-event-log` (best-effort; localStorage handles the common cases). Meta itself dedupes by event_id across browser/server.
 
-Frontend: `types/homeowner.ts`, `lib/pricing/engine.ts`, `lib/pricing/toQuoteInput.ts`, `lib/pricing/fromQuoteResult.ts`, `components/booking/BookingFlow.tsx`, `components/booking/BookingStepper.tsx` (new), `components/homeowner/IntentFirstServiceSelector.tsx`, `components/homeowner/AdditionalServicesForm.tsx`, `lib/mcp/tools/list-services.ts`, `lib/mcp/tools/get-pricing-info.ts`, plus tests.
+**PII scrub:** helper strips name/email/phone/street before fbq call. Only `city` + `zip_code` allowed as location.
 
-Server: `supabase/functions/_shared/pricingEngine.ts`, `supabase/functions/_shared/aiTools.ts`, `supabase/functions/calculate-quote/index.ts`, `supabase/functions/chat-quote/index.ts`, `supabase/functions/ai-chat/index.ts`, plus tests.
+## 5. Admin dashboard data source
 
-## Risk
+Extend the existing admin marketing view (small SQL view addition, no new dashboard UI in this pass):
+- Add `admin_marketing_funnel` SQL view joining `attribution_events`, `quotes`, `bookings` exposing the metrics in requirement §8.
+- If the admin already has a marketing panel, add a data hook `useMarketingFunnel` reading from the view. Otherwise, defer visual work — data is queryable.
 
-Stream 2 modifies the same engine files that gate the validated production booking path. Every touch is additive (new keys, new fields), never mutating existing keys/components, so parity tests should stay green. If any existing parity/bundle test regresses I'll stop and report before continuing.
+## 6. Tests
+
+**New:**
+- `src/lib/attribution/attribution.test.ts` — handoff survival, first-touch freeze, Meta source not overwritten by direct, PII rejection, session id stability.
+- `src/lib/attribution/metaPixel.test.ts` — Lead value = canonical `quoted_total`; no fire without firm quote; Schedule requires `jobber_visit_id`; failed booking → no Schedule; dedupe on rerender + refresh + idempotent replay; PII scrub; browser cannot inject revenue.
+- `supabase/functions/attribution-ingest/*_test.ts` — rate limit, whitelist, rejects unknown fields.
+
+Regression: full existing suite (pricing 256, booking, campaign) must stay green — verified.
+
+## 7. Privacy
+
+- Meta payloads restricted to `city`, `zip_code`, service metadata, canonical revenue.
+- Server logs redact `attribution.first_touch.referrer` beyond hostname.
+- No Meta credentials or service-role keys in client code. Pixel ID stays in existing pixel snippet in `index.html`.
+
+## 8. What does NOT change
+
+Pricing engine (client + server), discount validation, availability, `jobber-create-booking` business logic, AI orchestrator, authorization, cancellation, upsell UI (`CompleteYourRefresh`, `LiveQuoteBar`, `IntentFirstServiceSelector`).
+
+## Technical details
+
+```text
+bluladder.com landing
+  └─ CTA href += ?utm_*&fbclid&landing_page_slug&source_session_id
+       │
+       ▼
+BluLadder Bid (React)
+  ├─ attribution.ts captures + stores (localStorage first-touch, sessionStorage last-touch)
+  ├─ attribution-ingest edge fn ← upsert attribution_events
+  ├─ calculate-quote (unchanged logic) → server writes quotes.attribution + revenue cols
+  │   └─ Lead pixel fires (event_id=lead_<quote_id>) with server value
+  ├─ jobber-create-booking (unchanged logic) → server writes bookings.* + attribution join
+  │   └─ Schedule pixel fires (event_id=schedule_<booking_id>) with server value + visit_id
+  │   └─ CompleteRegistration pixel fires once (event_id=complete_<booking_id>_cr)
+  └─ admin_marketing_funnel view exposes revenue metrics
+```
+
+**Migration:** one SQL migration adding `attribution_events` table (+ GRANTs + RLS), extending `quotes`/`bookings` with new columns, adding `admin_marketing_funnel` view.
+
+**Small bluladder.com change (documented in final report):** add UTM+fbclid+landing_page_slug+session_id passthrough to the "Get Instant Quote" link. One-line JS snippet provided in report.
+
+**No live event fired during implementation** — tests stub `window.fbq`; no live Jobber writes, no live customer messages, no live pixel events.
