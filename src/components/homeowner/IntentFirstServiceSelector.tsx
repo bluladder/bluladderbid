@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Plus, Sparkles, Droplets, Home, Cloud, Warehouse, ChevronDown, ChevronUp, Grid3X3, SunMedium, ArrowUpFromLine, Square, Car, ShieldCheck } from 'lucide-react';
+import { Check, Plus, Sparkles, Droplets, Home, Cloud, Warehouse, ChevronDown, ChevronUp, Grid3X3, SunMedium, ArrowUpFromLine, Square, Car, ShieldCheck, Sun, Wrench } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -46,9 +46,15 @@ interface ServiceCardProps {
   onToggle: () => void;
   children?: React.ReactNode;
   isFeatured?: boolean;
+  /** Optional short benefit line shown in the compact card to justify the add. */
+  benefit?: string;
+  /** Optional "from $X" price anchor shown in the compact card. */
+  anchorPrice?: number;
+  /** Optional badge label (e.g. "Included with Better plan"). */
+  badge?: string;
 }
 
-function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggle, children, isFeatured }: ServiceCardProps) {
+function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggle, children, isFeatured, benefit, anchorPrice, badge }: ServiceCardProps) {
   // Compact view when not enabled
   if (!isEnabled) {
     return (
@@ -67,20 +73,34 @@ function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggl
           </div>
         )}
         
-        <div className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 bg-muted text-muted-foreground">
-          <Icon className="w-4 h-4" />
+        <div className="w-10 h-10 rounded-md flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary">
+          <Icon className="w-5 h-5" />
         </div>
         
         <div className="flex-1 min-w-0">
-          <span className="font-medium text-sm text-foreground/80">{title}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-sm text-foreground">{title}</span>
+            {badge && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-success/15 text-success border border-success/30">
+                {badge}
+              </span>
+            )}
+          </div>
+          {benefit && (
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{benefit}</p>
+          )}
         </div>
-        
+
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* No local/fallback price teaser — the firm price comes from the
-              server engine only after the service is added. */}
-          <span className="text-xs text-muted-foreground italic">Get instant pricing</span>
-          <div className="w-5 h-5 rounded-full flex items-center justify-center bg-primary/10 text-primary">
-            <Plus className="w-3 h-3" />
+          {anchorPrice && anchorPrice > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              from <span className="font-semibold text-foreground">{formatPrice(anchorPrice)}</span>
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground italic">Get instant pricing</span>
+          )}
+          <div className="w-6 h-6 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-sm">
+            <Plus className="w-3.5 h-3.5" />
           </div>
         </div>
       </div>
@@ -191,13 +211,15 @@ export function IntentFirstServiceSelector({
   const isFeatured = (serviceId: string) => featuredService === serviceId;
 
   // Define service order - featured service goes first
-  const serviceOrder: Array<'windowCleaning' | 'drivewayCleaning' | 'pressureWashing' | 'gutterCleaning' | 'houseWash' | 'roofCleaning'> = [
+  const serviceOrder: string[] = [
     'windowCleaning',
     'drivewayCleaning', 
     'pressureWashing',
     'gutterCleaning',
     'houseWash',
     'roofCleaning',
+    'solarPanelCleaning',
+    'screenRepair',
   ];
   
   // Reorder to put featured service first
@@ -217,6 +239,8 @@ export function IntentFirstServiceSelector({
       isEnabled={services.windowCleaning}
       onToggle={() => onChange({ windowCleaning: !services.windowCleaning })}
       isFeatured={isFeatured('windowCleaning')}
+      benefit="Streak-free interior + exterior clean, screens included"
+      anchorPrice={servicePrices.windowCleaningTotal}
     >
           {/* Window Options - shown when enabled */}
           <div className="space-y-4">
