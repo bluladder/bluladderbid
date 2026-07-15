@@ -530,6 +530,8 @@ export function IntentFirstServiceSelector({
         drivewayCleaning: { ...services.drivewayCleaning, enabled: !services.drivewayCleaning.enabled } 
       })}
       isFeatured={isFeatured('drivewayCleaning')}
+      benefit="Lift oil stains, mildew and buildup — instant curb appeal"
+      anchorPrice={servicePrices.drivewayCleaning}
     >
       <div className="space-y-4">
         {/* Driveway preset selector */}
@@ -581,6 +583,8 @@ export function IntentFirstServiceSelector({
         pressureWashing: { ...services.pressureWashing, enabled: !services.pressureWashing.enabled } 
       })}
       isFeatured={isFeatured('pressureWashing')}
+      benefit="Refresh porches, patios, pool decks and walkways"
+      anchorPrice={servicePrices.pressureWashing}
     >
       <div className="space-y-4">
         <div className="space-y-2">
@@ -653,6 +657,8 @@ export function IntentFirstServiceSelector({
       isEnabled={services.gutterCleaning}
       onToggle={() => onChange({ gutterCleaning: !services.gutterCleaning })}
       isFeatured={isFeatured('gutterCleaning')}
+      benefit="Prevent water damage and foundation issues"
+      anchorPrice={servicePrices.gutterCleaningTotal}
     >
       <div className="space-y-4">
         <p className="text-xs text-muted-foreground">
@@ -685,6 +691,8 @@ export function IntentFirstServiceSelector({
       isEnabled={services.houseWash}
       onToggle={() => onChange({ houseWash: !services.houseWash })}
       isFeatured={isFeatured('houseWash')}
+      benefit="Kills mold and algae — safe soft-wash system"
+      anchorPrice={servicePrices.houseWashTotal}
     >
       <HouseWashDetailsCard
         details={services.houseWashDetails}
@@ -707,6 +715,8 @@ export function IntentFirstServiceSelector({
       isEnabled={services.roofCleaning}
       onToggle={() => onChange({ roofCleaning: !services.roofCleaning })}
       isFeatured={isFeatured('roofCleaning')}
+      benefit="Extend roof life — remove black streaks and moss"
+      anchorPrice={servicePrices.roofCleaning}
     >
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -754,6 +764,94 @@ export function IntentFirstServiceSelector({
     </ServiceCard>
   );
 
+  const renderSolarPanelCleaning = () => (
+    <ServiceCard
+      key="solarPanelCleaning"
+      id="solarPanelCleaning"
+      icon={Sun}
+      title="Solar Panel Cleaning"
+      description="Restore panel efficiency — dust, pollen and bird droppings block output"
+      price={servicePrices.solarPanelCleaning}
+      isEnabled={services.solarPanelCleaning.enabled}
+      onToggle={() => onChange({
+        solarPanelCleaning: { ...services.solarPanelCleaning, enabled: !services.solarPanelCleaning.enabled }
+      })}
+      isFeatured={isFeatured('solarPanelCleaning' as any)}
+      benefit="Boost energy output — $10 per panel, no minimums"
+      anchorPrice={services.solarPanelCleaning.panelCount * 10}
+    >
+      <div className="space-y-3">
+        <div className="space-y-2">
+          <Label className="text-sm">How many solar panels?</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              max={200}
+              value={services.solarPanelCleaning.panelCount || ''}
+              onChange={(e) => onChange({
+                solarPanelCleaning: {
+                  ...services.solarPanelCleaning,
+                  panelCount: Math.max(1, parseInt(e.target.value) || 1),
+                },
+              })}
+              placeholder="20"
+              className="w-28"
+            />
+            <span className="text-sm text-muted-foreground">panels × $10 each</span>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          We use pure-water fed-pole systems — no soaps, no residue, no roof damage.
+        </p>
+      </div>
+    </ServiceCard>
+  );
+
+  const renderScreenRepair = () => (
+    <ServiceCard
+      key="screenRepair"
+      id="screenRepair"
+      icon={Wrench}
+      title="Screen Repair"
+      description="We re-screen torn or damaged window screens on the same visit"
+      price={servicePrices.screenRepair}
+      isEnabled={services.screenRepair.enabled}
+      onToggle={() => onChange({
+        screenRepair: { ...services.screenRepair, enabled: !services.screenRepair.enabled }
+      })}
+      isFeatured={isFeatured('screenRepair' as any)}
+      benefit="Fresh screens installed on-site — $35 per screen, all materials included"
+      anchorPrice={services.screenRepair.screenCount * 35}
+    >
+      <div className="space-y-3">
+        <div className="space-y-2">
+          <Label className="text-sm">How many screens need repair?</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              value={services.screenRepair.screenCount || ''}
+              onChange={(e) => onChange({
+                screenRepair: {
+                  ...services.screenRepair,
+                  screenCount: Math.max(1, parseInt(e.target.value) || 1),
+                },
+              })}
+              placeholder="1"
+              className="w-28"
+            />
+            <span className="text-sm text-muted-foreground">screens × $35 each</span>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Standard fiberglass mesh in charcoal or grey. Pet-resistant mesh available on request.
+        </p>
+      </div>
+    </ServiceCard>
+  );
+
   // Map service IDs to their render functions
   const serviceRenderers: Record<string, () => JSX.Element> = {
     windowCleaning: renderWindowCleaning,
@@ -762,6 +860,8 @@ export function IntentFirstServiceSelector({
     gutterCleaning: renderGutterCleaning,
     houseWash: renderHouseWash,
     roofCleaning: renderRoofCleaning,
+    solarPanelCleaning: renderSolarPanelCleaning,
+    screenRepair: renderScreenRepair,
   };
 
   return (
