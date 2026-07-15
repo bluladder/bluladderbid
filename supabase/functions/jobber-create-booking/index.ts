@@ -6,6 +6,7 @@ import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
 import { getMirrorFreshness } from "../_shared/scheduleFreshness.ts";
 import { calculateQuote, type QuoteInput } from "../_shared/pricingEngine.ts";
 import { loadPricing } from "../_shared/loadPricing.ts";
+import { sendBookingConfirmationEmails } from "../_shared/bookingEmails.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
