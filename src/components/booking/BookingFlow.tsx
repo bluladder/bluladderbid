@@ -9,6 +9,7 @@ import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
 import { ServiceReviewStep } from './ServiceReviewStep';
 import { BookingTermsAck } from './BookingTermsAck';
+import { FinalReviewDialog } from './FinalReviewDialog';
 import { BookingStepper } from './BookingStepper';
 import { CompleteYourRefresh } from './CompleteYourRefresh';
 import { LiveQuoteBar } from './LiveQuoteBar';
@@ -81,6 +82,11 @@ export function BookingFlow({
   // the appointment on the calendar. The slot is held and staff will finish it —
   // this is NOT a failure and must NOT be shown as a confirmed booking.
   const [pendingManual, setPendingManual] = useState<{ referenceNumber?: string } | null>(null);
+  // Controls the "Confirm your details" dialog. The final booking write
+  // happens ONLY from the dialog's "Confirm and Book" button — clicking the
+  // sticky CTA opens this dialog first so customers explicitly review
+  // everything before we commit.
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   // One idempotency key per booking attempt, reused across retries of the SAME
   // slot so a duplicate submission (double click, network retry) can never
@@ -680,7 +686,7 @@ export function BookingFlow({
                 Edit Info
               </Button>
               <Button 
-                onClick={handleConfirmBooking} 
+                onClick={() => setReviewOpen(true)}
                 disabled={!selectedSlot || isSubmitting || !confirmationChecked}
                 className="flex-1 min-w-0 h-14 text-sm sm:text-base font-bold shadow-lg"
                 size="lg"
@@ -692,7 +698,7 @@ export function BookingFlow({
                   </>
                 ) : (
                   <>
-                    Confirm Booking • {formatPrice(finalTotal)}
+                    Review &amp; Confirm • {formatPrice(finalTotal)}
                     <Check className="w-5 h-5 ml-2" />
                   </>
                 )}
@@ -705,6 +711,27 @@ export function BookingFlow({
             </p>
           </div>
         </div>
+      )}
+
+      {/* Final review dialog. Opaque surface over dark overlay; body scrolls
+          on small screens. No booking write happens until the user taps
+          "Confirm and Book" inside this dialog. */}
+      {customerInfo && (
+        <FinalReviewDialog
+          open={reviewOpen}
+          onOpenChange={(o) => { if (!isSubmitting) setReviewOpen(o); }}
+          customer={customerInfo}
+          services={services.map((s) => ({ name: s.name, price: s.price }))}
+          subtotal={subtotal}
+          discountAmount={discountAmount}
+          discountCode={appliedDiscount?.code}
+          total={finalTotal}
+          slot={selectedSlot}
+          estimatedDurationMinutes={estimatedDuration}
+          onEditDetails={() => setStep('info')}
+          onConfirm={async () => { await handleConfirmBooking(); setReviewOpen(false); }}
+          isSubmitting={isSubmitting}
+        />
       )}
     </div>
   );
