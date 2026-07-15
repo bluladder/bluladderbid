@@ -28,6 +28,8 @@ import {
   CANCEL_STEPS,
   buildAuthKey,
   buildIdempotencyKey,
+  buildBookingPayload,
+  validateBookingPayload,
   evaluateAuthGate,
   initialSteps,
   markStep,
