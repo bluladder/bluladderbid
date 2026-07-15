@@ -1345,6 +1345,55 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Transactional booking emails — customer confirmation + internal owner
+    // alert. Independent of SMS: one channel failing must not affect the
+    // others. Sends are deduplicated per (booking, channel) inside the helper
+    // so refreshes, retries and idempotent replays never send twice. Only
+    // fires when a real Jobber visit id exists.
+    if (bookingRecord?.id && jobberVisitId) {
+      try {
+        const emailCtx = {
+          bookingId: bookingRecord.id,
+          referenceNumber,
+          jobberVisitId,
+          jobberJobId,
+          scheduledStart: booking.scheduledStart,
+          scheduledEnd: booking.scheduledEnd,
+          serviceAddress: booking.customer.address || "",
+          services: (booking.services || []).map((s) => ({ name: (s as any).name, price: (s as any).price })),
+          subtotal: booking.subtotal,
+          discountAmount: booking.discountAmount || 0,
+          discountCode: booking.discountCode ?? null,
+          total: booking.total,
+          technicianName: technicianNames,
+          durationMinutes: booking.durationMinutes,
+          customer: {
+            firstName: booking.customer.firstName,
+            lastName: booking.customer.lastName,
+            email: booking.customer.email,
+            phone: booking.customer.phone ?? null,
+          },
+          utm: booking.utmParams
+            ? {
+                campaign: booking.utmParams.utm_campaign,
+                content: booking.utmParams.utm_content,
+                source: booking.utmParams.utm_source,
+                medium: booking.utmParams.utm_medium,
+                landing_page_slug: booking.attribution?.landing_page_slug,
+              }
+            : null,
+          attributionSource: booking.attribution?.last_touch
+            ? String((booking.attribution.last_touch as Record<string, unknown>).utm_source || "")
+            : null,
+        };
+        sendBookingConfirmationEmails(supabase, emailCtx)
+          .then((r) => console.log("Booking emails:", JSON.stringify({ customer: r.customer.status, owner: r.owner.status })))
+          .catch((e) => console.warn("Booking email dispatch failed:", (e as Error).message));
+      } catch (emailErr) {
+        console.warn("Booking email dispatch error:", emailErr);
+      }
+    }
+
     // booking_completed — emitted ONLY after a confirmed Jobber visit exists
     // (the needs_attention / visit-creation-failed paths above return earlier).
     // Idempotency is keyed on the booking id so retries never duplicate. This is
