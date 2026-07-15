@@ -14,7 +14,7 @@ import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
 import { deriveQuoteId, fireLead } from '@/lib/attribution/metaPixel';
-import { getOrCreateSourceSessionId, getStoredUtmParams } from '@/lib/attribution/attribution';
+import { getOrCreateSourceSessionId, readAttribution } from '@/lib/attribution/attribution';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
