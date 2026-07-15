@@ -59,6 +59,7 @@ export const PREPARE_STEPS: RunStep[] = [
 export const EXECUTE_STEPS: RunStep[] = [
   { key: "auth_authorized", label: "Authorization is authorized and scoped", status: "pending" },
   { key: "explicit_confirmation", label: "Explicit booking confirmation submitted", status: "pending" },
+  { key: "booking_payload_validation", label: "Booking payload built from canonical quote and slot", status: "pending" },
   { key: "reservation", label: "One reservation created", status: "pending" },
   { key: "jobber_client", label: "One Jobber client matched or created", status: "pending" },
   { key: "jobber_job", label: "One Jobber job created", status: "pending" },
