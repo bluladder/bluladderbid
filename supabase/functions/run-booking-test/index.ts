@@ -31,7 +31,7 @@ import {
   evaluateAuthGate,
   initialSteps,
   markStep,
-  pickSlotAtLeastDaysAhead,
+  pickProductionSlot,
   safeStageLabel,
   type OfferedSlot,
   type RunAction,
