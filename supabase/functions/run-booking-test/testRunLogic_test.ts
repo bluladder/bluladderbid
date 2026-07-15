@@ -1,8 +1,15 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   APPROVED_TEST_EMAIL,
+  APPROVED_TEST_NAME,
+  APPROVED_TEST_PHONE,
+  APPROVED_TEST_ADDRESS,
   buildAuthKey,
   buildIdempotencyKey,
+  buildBookingPayload,
+  mapQuoteToServices,
+  splitCustomerName,
+  validateBookingPayload,
   evaluateAuthGate,
   initialSteps,
   markStep,
