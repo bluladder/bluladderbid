@@ -239,6 +239,8 @@ const Index = () => {
         onBookOneTime={handleBookOneTime}
         onUpgradeAndBook={handleUpgradeAndBook}
         homeSquareFootage={homeDetails.squareFootage}
+        planPhase={bundleState.phase}
+        onRetryPlan={bundleState.refetch}
       />
     );
   };
