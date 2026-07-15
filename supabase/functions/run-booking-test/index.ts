@@ -34,6 +34,7 @@ import {
   evaluateAuthGate,
   initialSteps,
   markStep,
+  markStepPass,
   pickProductionSlot,
   safeStageLabel,
   type OfferedSlot,
@@ -139,7 +140,11 @@ async function stepPass(
   // deno-lint-ignore no-explicit-any
   supabase: any, runId: string, steps: RunStep[], key: string,
 ): Promise<RunStep[]> {
-  const next = markStep(steps, key, { status: "passed", finishedAt: new Date().toISOString() });
+  // Passing a step clears any stale failure reason from a prior attempt and
+  // archives that attempt to `history`, so the UI never renders a red
+  // failure message on a currently-passed step after `Resume from safe
+  // checkpoint`.
+  const next = markStepPass(steps, key, new Date().toISOString());
   await patchRun(supabase, runId, { steps: next });
   return next;
 }
