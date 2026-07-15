@@ -81,7 +81,7 @@ describe('DateFirstCalendar — status-driven presentation', () => {
     );
     const cell = findDay(key);
     expect(cell.dataset.status).toBe('full');
-    expect(cell.disabled).toBe(true);
+    expect(cell.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(cell);
     expect(onSelectDate).not.toHaveBeenCalled();
   });
