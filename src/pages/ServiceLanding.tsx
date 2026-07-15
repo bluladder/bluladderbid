@@ -251,6 +251,7 @@ const ServiceLanding = () => {
           onDownloadPDF={handleDownloadPDF}
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={null}
+          onAdditionalServicesChange={setAdditionalServices}
         />
       );
     }
