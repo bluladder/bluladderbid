@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
+import { CompleteYourRefresh } from './CompleteYourRefresh';
+import { LiveQuoteBar } from './LiveQuoteBar';
 
 interface ServiceReviewStepProps {
   servicePrices: ServicePrices;
@@ -15,6 +17,7 @@ interface ServiceReviewStepProps {
   estimatedDuration: number;
   onProceed: () => void;
   onBack: () => void;
+  onAdditionalServicesChange?: (updater: (prev: AdditionalServices) => AdditionalServices) => void;
 }
 
 function formatPrice(price: number) {
@@ -93,6 +96,7 @@ export function ServiceReviewStep({
   estimatedDuration,
   onProceed,
   onBack,
+  onAdditionalServicesChange,
 }: ServiceReviewStepProps) {
   const subtotal = servicePrices.grandTotal;
   const finalTotal = subtotal - discountAmount;
@@ -119,6 +123,13 @@ export function ServiceReviewStep({
   
   return (
     <div className="space-y-4">
+      {/* Live sticky quote — always in view */}
+      <LiveQuoteBar
+        servicePrices={servicePrices}
+        additionalServices={additionalServices}
+        discountAmount={discountAmount}
+      />
+
       {/* Header */}
       <div className="text-center pb-2">
         <h3 className="text-lg font-semibold text-foreground">Review Your Services</h3>
@@ -270,6 +281,14 @@ export function ServiceReviewStep({
         </CardContent>
       </Card>
       
+      {/* Complete Your Exterior Refresh — one-click upsells for unselected services */}
+      {onAdditionalServicesChange && (
+        <CompleteYourRefresh
+          additionalServices={additionalServices}
+          onAdd={onAdditionalServicesChange}
+        />
+      )}
+
       {/* Notice */}
       <p className="text-xs text-center text-muted-foreground px-4">
         Prices based on information provided. Final pricing may adjust if on-site conditions differ.
