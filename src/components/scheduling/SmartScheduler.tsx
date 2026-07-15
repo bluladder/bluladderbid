@@ -481,6 +481,17 @@ export function SmartScheduler({
                     maxDate={addDays(new Date(), horizonDays)}
                     fullyBookedDays={fullyBookedDays}
                     isLoadingSlots={isLoadingDaySlots}
+                    availableSlots={rankedSlots}
+                    isLoadingAvailability={isLoadingRecommendations}
+                    availabilityUnavailable={availabilityUnavailable}
+                    onCalendarEvent={(evt) => {
+                      try {
+                        // Internal analytics only — no customer PII, no Meta.
+                        window.dispatchEvent(new CustomEvent('bluladder:calendar', { detail: evt }));
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
                   />
                   {browseDate && (
                     <div className="pt-2 border-t">
