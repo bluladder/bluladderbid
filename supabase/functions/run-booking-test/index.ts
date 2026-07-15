@@ -907,6 +907,12 @@ Deno.serve(async (req) => {
     const gate = await requireAdminOrService(req, "operations_admin");
     if (!gate.ok) return json({ error: "Not authorized" }, 403);
 
+    // Capture the caller's raw bearer token, ONLY for use as the forwarded
+    // Authorization on the cancellation call. Held in a local const, never
+    // written to the DB, never included in responses, never logged.
+    const rawBearer = getBearer(req);
+    const adminJwt = rawBearer && !isServiceRoleToken(rawBearer) ? rawBearer : null;
+
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || "prepare") as RunAction;
     let runId: string | null = body.runId ? String(body.runId) : null;
@@ -935,13 +941,26 @@ Deno.serve(async (req) => {
     }
     if (action === "execute") return await runExecute(supabase, runId);
     if (action === "duplicate") return await runDuplicate(supabase, runId);
-    if (action === "cancel_cleanup") return await runCancelCleanup(supabase, runId, gate.userId);
+    if (action === "cancel_cleanup") {
+      if (!gate.userId || !adminJwt) {
+        return json({ error: "admin_reauthentication_required" }, 401);
+      }
+      return await runCancelCleanup(supabase, runId, gate.userId, adminJwt);
+    }
     if (action === "resume") {
       const run = await loadRun(supabase, runId);
       if (!run) return json({ error: "Run not found" }, 404);
       // Safe resume only from known idempotent checkpoints.
       if (run.checkpoint === "duplicate") return await runDuplicate(supabase, runId);
-      if (run.checkpoint === "cancel_cleanup") return await runCancelCleanup(supabase, runId, gate.userId);
+      if (run.checkpoint === "cancel_cleanup") {
+        // Resume from the safe cancel_cleanup checkpoint requires a fresh
+        // authenticated operations-admin caller because the original admin
+        // JWT was intentionally never persisted.
+        if (!gate.userId || !adminJwt) {
+          return json({ error: "admin_reauthentication_required" }, 401);
+        }
+        return await runCancelCleanup(supabase, runId, gate.userId, adminJwt);
+      }
       return json({ error: "This run cannot be safely resumed" }, 409);
     }
     return json({ error: "Unknown action" }, 400);
