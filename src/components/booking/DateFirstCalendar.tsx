@@ -178,7 +178,10 @@ export function DateFirstCalendar({
     const count = info.count;
 
     const isFullyBooked = status === 'full';
-    // Fully-booked and unavailable dates are not selectable.
+    // Fully-booked and unavailable dates are not selectable, but we let a Full
+    // click reach our handler so we can log analytics + show messaging without
+    // ever calling onSelectDate. The native `disabled` attribute is reserved
+    // for truly Unavailable dates.
     const isClickable = !isDisabled && !isFullyBooked;
     const isUnavailable = isDisabled;
 
@@ -200,7 +203,7 @@ export function DateFirstCalendar({
       <button
         key={dayKey}
         onClick={handleClick}
-        disabled={!isClickable}
+        disabled={isUnavailable}
         aria-disabled={!isClickable}
         data-status={status}
         data-testid={`calendar-day-${dayKey}`}
