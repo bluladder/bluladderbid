@@ -1,0 +1,1 @@
+ALTER VIEW public.admin_marketing_funnel SET (security_invoker = true);

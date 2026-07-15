@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Calendar, Download, Check, Sparkles, Loader2, Info, HelpCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,8 @@ import { BookingFlow } from '@/components/booking/BookingFlow';
 import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
+import { deriveQuoteId, fireLead } from '@/lib/attribution/metaPixel';
+import { getOrCreateSourceSessionId } from '@/lib/attribution/attribution';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
@@ -71,6 +73,33 @@ export function OneTimeSummary({
 
   const serverDiscountAmount = quote?.discount?.amount ?? 0;
   const canBook = isFirm && typeof total === 'number';
+
+  // Fire Meta Pixel "Lead" ONLY after the canonical server quote returns firm.
+  // The event id is deterministic per canonical fingerprint, so refreshes,
+  // rerenders, and repeated identical quotes all dedupe to a single Lead.
+  const leadFiredRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isFirm || typeof total !== 'number' || !quote) return;
+    const services = Object.entries(additionalServices)
+      .filter(([, v]) => (typeof v === 'boolean' ? v : Boolean(v)))
+      .map(([k]) => k);
+    const quoteId = deriveQuoteId({
+      ruleVersion: quoteState.ruleVersion,
+      engineVersion: quoteState.engineVersion,
+      total,
+      services,
+      session: getOrCreateSourceSessionId(),
+    });
+    if (leadFiredRef.current === quoteId) return;
+    leadFiredRef.current = quoteId;
+    fireLead({
+      id: quoteId,
+      quoted_total: total,
+      service_count: services.length,
+      services_selected: services,
+      firm: true,
+    });
+  }, [isFirm, total, quote, additionalServices, quoteState.ruleVersion, quoteState.engineVersion]);
 
   // Show booking flow — only reachable with a current, firm server quote.
   if (showBookingFlow) {

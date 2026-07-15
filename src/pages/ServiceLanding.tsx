@@ -15,6 +15,7 @@ import { fromQuoteResult } from '@/lib/pricing/fromQuoteResult';
 import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
+import { useAttribution } from '@/hooks/useAttribution';
 import { 
   HomeDetails, 
   AdditionalServices, 
@@ -88,6 +89,8 @@ const ServiceLanding = () => {
   
   // Capture UTM tracking parameters for marketing attribution
   const { getStoredUtmParams } = useUtmTracking();
+  // Capture and persist first-touch/last-touch attribution + fbclid.
+  useAttribution();
   
   // Optional URL param to preselect a specific service (e.g., ?preset=roofCleaning)
   const presetParam = searchParams.get('preset') as 
