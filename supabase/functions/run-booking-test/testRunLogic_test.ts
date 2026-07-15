@@ -155,3 +155,157 @@ Deno.test("safeStageLabel formats phase + step", () => {
 Deno.test("APPROVED_TEST_EMAIL is the owner-approved test identity", () => {
   assertEquals(APPROVED_TEST_EMAIL, "blmillen@gmail.com");
 });
+// ---------------------------------------------------------------------------
+// Booking payload construction & validation
+// ---------------------------------------------------------------------------
+
+const CANONICAL_SLOT = {
+  slotId: "slot_x_0",
+  startTime: "2026-08-05T14:00:00Z",
+  endTime: "2026-08-05T16:00:00Z",
+  durationMinutes: 120,
+  __technicianId: "tech-1",
+  __isTeamJob: false,
+  __teamTechnicianIds: null,
+} as const;
+
+const CUSTOMER = {
+  name: APPROVED_TEST_NAME,
+  email: APPROVED_TEST_EMAIL,
+  phone: APPROVED_TEST_PHONE,
+  address: APPROVED_TEST_ADDRESS,
+};
+
+const IDEMP = "chat|c1|2026-08-05T14:00:00Z";
+
+Deno.test("splitCustomerName returns explicit BluLadder / Booking Test for approved identity", () => {
+  const { firstName, lastName } = splitCustomerName(APPROVED_TEST_NAME);
+  assertEquals(firstName, "BluLadder");
+  assertEquals(lastName, "Booking Test");
+});
+
+Deno.test("splitCustomerName falls back safely (never empty last name for two-word input)", () => {
+  assertEquals(splitCustomerName("Jane Doe"), { firstName: "Jane", lastName: "Doe" });
+  assertEquals(splitCustomerName("Mary Anne Smith"), { firstName: "Mary", lastName: "Anne Smith" });
+  assertEquals(splitCustomerName("Solo"), { firstName: "Solo", lastName: "Solo" });
+});
+
+Deno.test("mapQuoteToServices prefers jobberLineItems over lineItems", () => {
+  const services = mapQuoteToServices({
+    jobberLineItems: [{ name: "Window Cleaning", unitPrice: 349, description: "Exterior only" }],
+    lineItems: [{ label: "Ignored", amount: 999 }],
+  });
+  assertEquals(services, [{ name: "Window Cleaning", price: 349, description: "Exterior only" }]);
+});
+
+Deno.test("mapQuoteToServices falls back to lineItems when jobberLineItems missing", () => {
+  const services = mapQuoteToServices({
+    lineItems: [{ label: "Window Cleaning", amount: 349 }],
+  });
+  assertEquals(services, [{ name: "Window Cleaning", price: 349, description: undefined }]);
+});
+
+Deno.test("buildBookingPayload composes totals + duration from canonical quote and slot", () => {
+  const payload = buildBookingPayload({
+    quote: {
+      jobberLineItems: [{ name: "Window Cleaning", unitPrice: 349 }],
+      subtotal: 349,
+      total: 349,
+      discountAmount: 0,
+    },
+    slot: CANONICAL_SLOT,
+    customer: CUSTOMER,
+    idempotencyKey: IDEMP,
+  });
+  assertEquals(payload.customer.firstName, "BluLadder");
+  assertEquals(payload.customer.lastName, "Booking Test");
+  assertEquals(payload.durationMinutes, 120);
+  assertEquals(payload.subtotal, 349);
+  assertEquals(payload.total, 349);
+  assertEquals(payload.discountAmount, 0);
+  assertEquals(payload.services.length, 1);
+  assertEquals(payload.technicianId, "tech-1");
+  assertEquals(payload.idempotencyKey, IDEMP);
+});
+
+Deno.test("validateBookingPayload passes for a complete canonical payload", () => {
+  const payload = buildBookingPayload({
+    quote: { jobberLineItems: [{ name: "Window Cleaning", unitPrice: 349 }], subtotal: 349, total: 349, discountAmount: 0 },
+    slot: CANONICAL_SLOT,
+    customer: CUSTOMER,
+    idempotencyKey: IDEMP,
+  });
+  const { ok, missing } = validateBookingPayload(payload);
+  assertEquals(ok, true);
+  assertEquals(missing, []);
+});
+
+Deno.test("validateBookingPayload halts on missing services", () => {
+  const payload = buildBookingPayload({
+    quote: { subtotal: 349, total: 349, discountAmount: 0 },
+    slot: CANONICAL_SLOT,
+    customer: CUSTOMER,
+    idempotencyKey: IDEMP,
+  });
+  const { ok, missing } = validateBookingPayload(payload);
+  assertEquals(ok, false);
+  assertEquals(missing.includes("services"), true);
+});
+
+Deno.test("validateBookingPayload halts on invalid totals", () => {
+  const payload = buildBookingPayload({
+    quote: { jobberLineItems: [{ name: "Window Cleaning", unitPrice: 349 }] },
+    slot: CANONICAL_SLOT,
+    customer: CUSTOMER,
+    idempotencyKey: IDEMP,
+  });
+  const { ok, missing } = validateBookingPayload(payload);
+  assertEquals(ok, false);
+  assertEquals(missing.includes("subtotal"), true);
+  assertEquals(missing.includes("total"), true);
+});
+
+Deno.test("validateBookingPayload halts on missing/invalid duration", () => {
+  const payload = buildBookingPayload({
+    quote: { jobberLineItems: [{ name: "Window Cleaning", unitPrice: 349 }], subtotal: 349, total: 349, discountAmount: 0 },
+    slot: { ...CANONICAL_SLOT, durationMinutes: undefined as unknown as number },
+    customer: CUSTOMER,
+    idempotencyKey: IDEMP,
+  });
+  const { ok, missing } = validateBookingPayload(payload);
+  assertEquals(ok, false);
+  assertEquals(missing.includes("durationMinutes"), true);
+});
+
+Deno.test("validateBookingPayload halts on invalid service price", () => {
+  const payload = buildBookingPayload({
+    quote: { jobberLineItems: [{ name: "Window Cleaning", unitPrice: "oops" as unknown as number }], subtotal: 349, total: 349, discountAmount: 0 },
+    slot: CANONICAL_SLOT,
+    customer: CUSTOMER,
+    idempotencyKey: IDEMP,
+  });
+  const { ok, missing } = validateBookingPayload(payload);
+  assertEquals(ok, false);
+  assertEquals(missing.some((m) => m.endsWith(".price")), true);
+});
+
+Deno.test("validateBookingPayload halts on missing idempotency key", () => {
+  const payload = buildBookingPayload({
+    quote: { jobberLineItems: [{ name: "Window Cleaning", unitPrice: 349 }], subtotal: 349, total: 349, discountAmount: 0 },
+    slot: CANONICAL_SLOT,
+    customer: CUSTOMER,
+    idempotencyKey: "",
+  });
+  const { ok, missing } = validateBookingPayload(payload);
+  assertEquals(ok, false);
+  assertEquals(missing.includes("idempotencyKey"), true);
+});
+
+Deno.test("EXECUTE_STEPS now includes booking_payload_validation between confirmation and reservation", () => {
+  const steps = initialSteps();
+  const keys = steps.map((s) => s.key);
+  const iConfirm = keys.indexOf("explicit_confirmation");
+  const iValidate = keys.indexOf("booking_payload_validation");
+  const iReservation = keys.indexOf("reservation");
+  assertEquals(iConfirm >= 0 && iValidate === iConfirm + 1 && iReservation === iValidate + 1, true);
+});
