@@ -2,11 +2,13 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { normalizePhone, isPhoneOptedOut } from "../_shared/sms.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
+import { extractPortalToken, getActivePortalSession } from "../_shared/customerVerification.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-portal-session, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Credentials": "true",
 };
 
 // Customer self-service message preferences. Identified by the email they
@@ -59,6 +61,38 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // Require a verified portal session for anything except a bare
+    // unsubscribe (opt_out). Opt-out stays permissive so recipients can
+    // always stop messages, matching STOP-keyword norms; status disclosure
+    // and opt_in require proof that the caller owns the address.
+    const rawToken = extractPortalToken(req);
+    const session = rawToken ? await getActivePortalSession(supabase, rawToken) : null;
+    let sessionEmailMatches = false;
+    if (session) {
+      const { data: acct } = await supabase
+        .from("customer_accounts")
+        .select("customer_id")
+        .eq("id", session.customer_account_id)
+        .maybeSingle();
+      if (acct?.customer_id) {
+        const { data: sessCustomer } = await supabase
+          .from("customers")
+          .select("email")
+          .eq("id", acct.customer_id)
+          .maybeSingle();
+        if (sessCustomer?.email && sessCustomer.email.toLowerCase() === normalizedEmail) {
+          sessionEmailMatches = true;
+        }
+      }
+    }
+
+    if ((action === "status" || action === "opt_in") && !sessionEmailMatches) {
+      return new Response(
+        JSON.stringify({ error: "Verification required." }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const { data: customer } = await supabase
       .from("customers")
       .select("id, phone, email, sms_paused, email_paused")
@@ -86,6 +120,10 @@ serve(async (req) => {
     };
 
     if (!customer) {
+      // Non-enumerating response: for opt_out we silently succeed, for status
+      // we return a generic shape only when the caller has a verified session
+      // (which by definition would match a real customer — so this branch only
+      // fires for opt_out).
       return new Response(JSON.stringify({
         hasPhone: false, hasEmail: false,
         sms: { optedOut: false }, email: { paused: false }, optedOut: false,
