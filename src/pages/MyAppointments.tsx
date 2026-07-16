@@ -9,11 +9,18 @@ import { PRIMARY_PUBLIC_PHONE } from '@/config/contact';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
-const PORTAL_TOKEN_KEY = 'bl_portal_token';
-function readPortalToken(): string | null { try { return sessionStorage.getItem(PORTAL_TOKEN_KEY); } catch { return null; } }
-function writePortalToken(t: string | null) {
-  try { if (t) sessionStorage.setItem(PORTAL_TOKEN_KEY, t); else sessionStorage.removeItem(PORTAL_TOKEN_KEY); } catch { /* ignore */ }
-}
+// Memory-only portal token.
+// The frontend (bluladderbid.lovable.app) and Edge Functions (*.supabase.co) live
+// on different registrable domains, so an HttpOnly cookie set by an Edge Function
+// is a third-party cookie — silently dropped by Safari ITP, Facebook in-app
+// browsers, and increasingly Chrome. Rather than ship a config that fails for
+// real customers, we hold the raw session token ONLY in JavaScript memory for
+// the current tab. Refresh, tab close, or navigation away requires the customer
+// to verify again. Nothing is written to sessionStorage, localStorage, IndexedDB,
+// cookies, or URLs.
+let inMemoryPortalToken: string | null = null;
+function readPortalToken(): string | null { return inMemoryPortalToken; }
+function writePortalToken(t: string | null) { inMemoryPortalToken = t; }
 function portalHeaders(): Record<string, string> {
   const t = readPortalToken();
   return t ? { 'x-portal-session': t } : {};
@@ -24,7 +31,7 @@ function portalHeaders(): Record<string, string> {
 // through edge functions that validate an httpOnly session cookie. The browser
 // never touches customer, quote, or booking tables directly.
 
-type Stage = 'enter_phone' | 'enter_code' | 'signed_in';
+type Stage = 'enter_phone' | 'enter_code' | 'enter_email' | 'enter_email_code' | 'signed_in';
 
 interface PortalData {
   customer: { first_name?: string; last_name?: string; address?: string } | null;
@@ -38,11 +45,13 @@ export default function MyAppointments() {
   const [stage, setStage] = useState<Stage>('enter_phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  const [email, setEmail] = useState('');
+  const [emailCode, setEmailCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<PortalData | null>(null);
 
-  // Attempt to restore an existing session on mount.
-  useEffect(() => { void refreshPortalData(true); }, []);
+  // No persistent session — nothing to restore. In-memory token dies on refresh.
+  useEffect(() => { if (inMemoryPortalToken) void refreshPortalData(true); }, []);
 
   async function refreshPortalData(silent = false) {
     try {
@@ -105,12 +114,74 @@ export default function MyAppointments() {
     }
   }
 
+  // ---- Email OTP fallback via Supabase Auth ------------------------------
+  // Uses supabase.auth.signInWithOtp({ email }) — no password, no marketing
+  // consent. Once Supabase Auth verifies the code, we hand the resulting
+  // access token to customer-verification-email-confirm, which resolves an
+  // unambiguous internal customer match server-side and issues a portal
+  // session identical to the phone flow.
+  async function requestEmailCode() {
+    if (!email.trim()) return;
+    setLoading(true);
+    try {
+      await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { shouldCreateUser: true },
+      });
+      toast({
+        title: 'Check your email',
+        description: 'If that address is reachable, we sent a 6-digit code. It expires shortly.',
+      });
+      setStage('enter_email_code');
+    } catch {
+      // Generic — never reveal whether an account exists.
+      toast({ title: 'Check your email', description: 'If that address is reachable, we sent a code.' });
+      setStage('enter_email_code');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmEmailCode() {
+    if (!/^\d{6}$/.test(emailCode)) return;
+    setLoading(true);
+    try {
+      const { data: verify, error } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: emailCode,
+        type: 'email',
+      });
+      if (error || !verify?.session) {
+        toast({ title: 'Invalid or expired code', description: 'Please try again.', variant: 'destructive' });
+        return;
+      }
+      const { data: res } = await supabase.functions.invoke('customer-verification-email-confirm', {
+        headers: { authorization: `Bearer ${verify.session.access_token}` },
+      });
+      // Immediately drop the transient Supabase Auth session — we only used
+      // it to prove email ownership; the portal session is memory-only.
+      await supabase.auth.signOut();
+      if (res?.verified && !res?.guest) {
+        if (res.session_token) writePortalToken(res.session_token as string);
+        await refreshPortalData();
+      } else if (res?.ambiguous) {
+        toast({ title: 'Needs review', description: 'Our team was notified. Please text us so we can help.', variant: 'destructive' });
+      } else {
+        toast({ title: 'Verified', description: 'We could not find an account for that email yet.' });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function signOut() {
     await supabase.functions.invoke('customer-verification-logout', { headers: portalHeaders() });
     writePortalToken(null);
     setData(null);
     setPhone('');
     setCode('');
+    setEmail('');
+    setEmailCode('');
     setStage('enter_phone');
   }
 
@@ -134,7 +205,7 @@ export default function MyAppointments() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {stage === 'enter_phone' ? (
+            {stage === 'enter_phone' && (
               <div className="space-y-3">
                 <Label htmlFor="portal-phone">Mobile phone</Label>
                 <Input
@@ -150,11 +221,18 @@ export default function MyAppointments() {
                   {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <MessageSquare className="w-4 h-4 mr-2" />}
                   Text me a code
                 </Button>
+                <Button variant="ghost" className="w-full" onClick={() => setStage('enter_email')} disabled={loading}>
+                  Verify another way
+                </Button>
                 <p className="text-xs text-muted-foreground">
                   Message and data rates may apply. This is a one-time verification, not a marketing subscription.
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  For your security, sign-in ends when you close or refresh this tab.
+                </p>
               </div>
-            ) : (
+            )}
+            {stage === 'enter_code' && (
               <div className="space-y-3">
                 <Label htmlFor="portal-code">6-digit code</Label>
                 <Input
@@ -173,6 +251,49 @@ export default function MyAppointments() {
                 </Button>
                 <Button variant="ghost" className="w-full" onClick={() => setStage('enter_phone')} disabled={loading}>
                   Use a different number
+                </Button>
+              </div>
+            )}
+            {stage === 'enter_email' && (
+              <div className="space-y-3">
+                <Label htmlFor="portal-email">Email address</Label>
+                <Input
+                  id="portal-email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                />
+                <Button className="w-full" onClick={requestEmailCode} disabled={loading || !email.trim()}>
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
+                  Email me a secure code
+                </Button>
+                <Button variant="ghost" className="w-full" onClick={() => setStage('enter_phone')} disabled={loading}>
+                  Use phone instead
+                </Button>
+              </div>
+            )}
+            {stage === 'enter_email_code' && (
+              <div className="space-y-3">
+                <Label htmlFor="portal-email-code">6-digit code from your email</Label>
+                <Input
+                  id="portal-email-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="123456"
+                  value={emailCode}
+                  onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, ''))}
+                  disabled={loading}
+                />
+                <Button className="w-full" onClick={confirmEmailCode} disabled={loading || !/^\d{6}$/.test(emailCode)}>
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
+                  Verify
+                </Button>
+                <Button variant="ghost" className="w-full" onClick={() => setStage('enter_email')} disabled={loading}>
+                  Use a different email
                 </Button>
               </div>
             )}
