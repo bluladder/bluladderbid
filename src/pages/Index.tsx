@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { CustomerFooter } from '@/components/CustomerFooter';
@@ -70,24 +70,6 @@ const Index = () => {
   // ONLY from the deployed pricing Edge Functions (calculate-quote /
   // calculate-plan-options bundle_tiers). No local pricing math, no fallback.
   const hasServices = hasAnyServiceSelected(additionalServices);
-  // quote_started fires exactly once per session, only after a meaningful
-  // interaction (any service enabled). Preselection alone does not qualify
-  // unless the user then confirms/expands — sender-side dedup keeps this a
-  // one-shot. Preselection ships DEFAULT_ADDITIONAL_SERVICES with all flags
-  // false, so a URL like ?preselect_service=window-cleaning only fires after
-  // the customer actually enables that service in the UI.
-  useEffect(() => {
-    if (!hasServices) return;
-    const enabled: string[] = [];
-    if (additionalServices.windowCleaning) enabled.push('window-cleaning');
-    if (additionalServices.houseWash) enabled.push('house-wash');
-    if (additionalServices.drivewayCleaning?.enabled) enabled.push('driveway-cleaning');
-    if (additionalServices.gutterCleaning) enabled.push('gutter-cleaning');
-    if (additionalServices.roofCleaning) enabled.push('roof-cleaning');
-    if (additionalServices.solarPanelCleaning?.enabled) enabled.push('solar-panel-cleaning');
-    if (additionalServices.screenRepair?.enabled) enabled.push('screen-repair');
-    bridgeFireQuoteStarted({ enabledServiceSlugs: enabled });
-  }, [hasServices, additionalServices]);
   const oneTimeQuote = useServerQuoteCalculation(
     hasServices ? toQuoteInput(homeDetails, additionalServices) : null,
     { enabled: hasServices },
@@ -107,7 +89,25 @@ const Index = () => {
   };
 
   const handleAdditionalServicesChange = (updates: Partial<AdditionalServices>) => {
-    setAdditionalServices(prev => ({ ...prev, ...updates }));
+    setAdditionalServices(prev => {
+      const next = { ...prev, ...updates };
+      // quote_started fires ONLY from this user-interaction handler, not from
+      // a React effect or programmatic default state. Sender-side dedup keeps
+      // it one-shot per session. Preselection via query params does NOT flow
+      // through this handler and therefore cannot fire quote_started.
+      if (hasAnyServiceSelected(next)) {
+        const enabled: string[] = [];
+        if (next.windowCleaning) enabled.push('window-cleaning');
+        if (next.houseWash) enabled.push('house-wash');
+        if (next.drivewayCleaning?.enabled) enabled.push('driveway-cleaning');
+        if (next.gutterCleaning) enabled.push('gutter-cleaning');
+        if (next.roofCleaning) enabled.push('roof-cleaning');
+        if (next.solarPanelCleaning?.enabled) enabled.push('solar-panel-cleaning');
+        if (next.screenRepair?.enabled) enabled.push('screen-repair');
+        bridgeFireQuoteStarted({ enabledServiceSlugs: enabled });
+      }
+      return next;
+    });
   };
 
   // Tier customizations are applied SERVER-SIDE (sent to calculate-plan-options

@@ -200,19 +200,90 @@ describe('postBluLadderBidEvent', () => {
     ).toBe(false);
   });
 
-  it('merges first-touch attribution into payload without overwriting caller values', () => {
-    captureAttribution(new URLSearchParams('utm_source=meta&utm_campaign=fb_window'));
+  it('first-touch attribution wins over later caller-supplied attribution values', () => {
+    captureAttribution(
+      new URLSearchParams(
+        'utm_source=facebook&utm_medium=paid&utm_campaign=fb_window&utm_content=hero&fbclid=FB123&landing_page_slug=fb-window-cleaning-offer-bid',
+      ),
+    );
     const { win, messages } = makeFakeWindow('?embed=1', true);
     postBluLadderBidEvent(
       'quote_submitted',
-      'evt-attr',
-      { quote_id: 'q1', quote_value: 500, utm_source: 'caller_override' },
+      'evt-attr-firsttouch-wins',
+      {
+        quote_id: 'q1',
+        quote_value: 500,
+        // Caller tries to overwrite established first-touch — must be ignored.
+        utm_source: 'direct_unknown',
+        utm_campaign: 'later_campaign',
+        utm_content: 'later_content',
+        fbclid: 'LATER',
+        landing_page_slug: 'later-slug',
+      },
       { win, referrer: 'https://bluladder.com/' },
     );
     const p = (messages[0].msg as any).payload as Record<string, unknown>;
-    expect(p.utm_campaign).toBe('fb_window'); // from attribution
-    expect(p.utm_source).toBe('caller_override'); // caller wins for keys they set
+    // First-touch wins across every attribution key.
+    expect(p.utm_source).toBe('facebook');
+    expect(p.utm_medium).toBe('paid');
+    expect(p.utm_campaign).toBe('fb_window');
+    expect(p.utm_content).toBe('hero');
+    expect(p.fbclid).toBe('FB123');
+    expect(p.landing_page_slug).toBe('fb-window-cleaning-offer-bid');
+    // Event-specific caller fields remain intact.
+    expect(p.quote_id).toBe('q1');
+    expect(p.quote_value).toBe(500);
     expect(p.source_session_id).toBeDefined();
+  });
+
+  it('blank / missing stored first-touch fields may be filled by valid caller values', () => {
+    // Only utm_source stored — other attribution slots are empty.
+    captureAttribution(new URLSearchParams('utm_source=facebook'));
+    const { win, messages } = makeFakeWindow('?embed=1', true);
+    postBluLadderBidEvent(
+      'quote_submitted',
+      'evt-attr-fill-gaps',
+      {
+        quote_id: 'q2',
+        quote_value: 250,
+        // Caller may fill empty slots.
+        utm_campaign: 'caller_supplied_campaign',
+        utm_medium: 'caller_supplied_medium',
+        // But cannot overwrite the established utm_source=facebook.
+        utm_source: 'direct_unknown',
+      },
+      { win, referrer: 'https://bluladder.com/' },
+    );
+    const p = (messages[0].msg as any).payload as Record<string, unknown>;
+    expect(p.utm_source).toBe('facebook'); // first-touch wins
+    expect(p.utm_campaign).toBe('caller_supplied_campaign'); // filled gap
+    expect(p.utm_medium).toBe('caller_supplied_medium'); // filled gap
+    expect(p.quote_id).toBe('q2');
+    expect(p.quote_value).toBe(250);
+  });
+
+  it('event-specific payload keys are never touched by attribution merge', () => {
+    captureAttribution(new URLSearchParams('utm_source=facebook&utm_campaign=fb_window'));
+    const { win, messages } = makeFakeWindow('?embed=1', true);
+    postBluLadderBidEvent(
+      'booking_completed',
+      'evt-event-fields',
+      {
+        booking_id: 'b_XYZ',
+        booking_value: 750.25,
+        service_slug: 'window-cleaning',
+        service_slugs: ['window-cleaning', 'house-wash'],
+        failure_stage: 'server' as unknown as string,
+      },
+      { win, referrer: 'https://bluladder.com/' },
+    );
+    const p = (messages[0].msg as any).payload as Record<string, unknown>;
+    expect(p.booking_id).toBe('b_XYZ');
+    expect(p.booking_value).toBe(750.25);
+    expect(p.service_slug).toBe('window-cleaning');
+    expect(p.service_slugs).toEqual(['window-cleaning', 'house-wash']);
+    expect(p.utm_source).toBe('facebook');
+    expect(p.utm_campaign).toBe('fb_window');
   });
 });
 
