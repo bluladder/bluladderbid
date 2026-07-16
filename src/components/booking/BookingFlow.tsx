@@ -16,6 +16,10 @@ import { LiveQuoteBar } from './LiveQuoteBar';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
 import { readAttribution } from '@/lib/attribution/attribution';
 import { fireSchedule, fireCompleteRegistration } from '@/lib/attribution/metaPixel';
+import {
+  bridgeFireBookingCompleted,
+  bridgeFireBookingFailed,
+} from '@/lib/bridge/bluladderBidPostMessage';
 import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
@@ -473,6 +477,18 @@ export function BookingFlow({
         };
         fireSchedule(bookingForPixel);
         fireCompleteRegistration(bookingForPixel);
+        // Mirror the successful-booking signal to the marketing overlay,
+        // gated by the SAME successful-Jobber-visit condition as fireSchedule.
+        // Sender-side dedup guarantees confirmation-page refreshes and
+        // idempotent replays do not resend. This does NOT create a second
+        // Meta Schedule / CompleteRegistration event — Meta ownership stays
+        // with fireSchedule / fireCompleteRegistration.
+        bridgeFireBookingCompleted({
+          id: String(data.bookingId),
+          jobberVisitId: String(data.jobberVisitId),
+          bookedRevenue: typeof data.total === 'number' ? data.total : finalTotal,
+          serviceSlugs: servicesSelected,
+        });
       }
       
       // Track confirmation
@@ -492,6 +508,17 @@ export function BookingFlow({
         toast.error(errorMessage, { duration: 6000 });
       } else {
         toast.error('Failed to create booking. Please try again.');
+        // booking_failed fires ONLY on the terminal, authoritative failure
+        // branch — not for slot conflicts (user retries different slot) and
+        // not for transient "busy" errors (system will recover). Only a
+        // sanitized machine failure category is included; no error text,
+        // stack traces or provider bodies.
+        try {
+          bridgeFireBookingFailed({
+            attemptId: idempotencyRef.current?.key || sessionIdRef.current || 'unknown',
+            failureStage: 'server',
+          });
+        } catch { /* bridge never blocks the booking UX */ }
       }
     } finally {
       setIsSubmitting(false);
