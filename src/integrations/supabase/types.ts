@@ -2197,6 +2197,30 @@ export type Database = {
         }
         Relationships: []
       }
+      jobber_oauth_states: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          state: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          state: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          state?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       jobber_oauth_tokens: {
         Row: {
           access_token: string
@@ -3815,6 +3839,42 @@ export type Database = {
           utm_term: string | null
           visitor_at: string | null
           zip_code: string | null
+        }
+        Relationships: []
+      }
+      eligibility_rules_public: {
+        Row: {
+          conditions: Json | null
+          created_at: string | null
+          description: string | null
+          id: string | null
+          is_active: boolean | null
+          priority: number | null
+          rule_name: string | null
+          rule_type: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          conditions?: Json | null
+          created_at?: string | null
+          description?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          priority?: number | null
+          rule_name?: string | null
+          rule_type?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          conditions?: Json | null
+          created_at?: string | null
+          description?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          priority?: number | null
+          rule_name?: string | null
+          rule_type?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
