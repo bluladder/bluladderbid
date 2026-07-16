@@ -116,7 +116,8 @@ export async function evaluateEligibility(
   // Fetch all data in parallel
   const [techsRes, rulesRes, settingsRes] = await Promise.all([
     supabase.from('technicians').select('*').eq('is_active', true),
-    supabase.from('eligibility_rules').select('*').eq('is_active', true).order('priority'),
+    // Anon/public clients read from the safe view that omits internal technician IDs.
+    (supabase as any).from('eligibility_rules_public').select('*').eq('is_active', true).order('priority'),
     supabase.from('big_job_settings').select('*').eq('id', 'default').single(),
   ]);
 

@@ -52,15 +52,36 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Generate a random single-use state token and persist it tied to this admin
+    // user. The callback must present the same state or it will be rejected.
+    const stateBytes = new Uint8Array(32);
+    crypto.getRandomValues(stateBytes);
+    const state = Array.from(stateBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const admin = createClient(supabaseUrl, serviceKey);
+    const { error: stateErr } = await admin.from("jobber_oauth_states").insert({
+      state,
+      user_id: user.id,
+    });
+    if (stateErr) {
+      console.error("Failed to persist OAuth state:", stateErr);
+      return new Response(
+        JSON.stringify({ error: "Failed to start OAuth flow" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Build the OAuth authorization URL
     const redirectUri = `${supabaseUrl}/functions/v1/jobber-oauth-callback`;
     const scope = "read_clients write_clients read_jobs write_jobs read_users read_schedule write_visits";
-    
+
     const authUrl = new URL("https://api.getjobber.com/api/oauth/authorize");
     authUrl.searchParams.set("client_id", clientId);
     authUrl.searchParams.set("redirect_uri", redirectUri);
     authUrl.searchParams.set("response_type", "code");
     authUrl.searchParams.set("scope", scope);
+    authUrl.searchParams.set("state", state);
 
     return new Response(
       JSON.stringify({ authUrl: authUrl.toString() }),
