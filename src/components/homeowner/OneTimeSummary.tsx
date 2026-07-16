@@ -14,6 +14,7 @@ import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
 import { deriveQuoteId, fireLead } from '@/lib/attribution/metaPixel';
+import { bridgeFireQuoteSubmitted } from '@/lib/bridge/bluladderBidPostMessage';
 import { getOrCreateSourceSessionId, readAttribution } from '@/lib/attribution/attribution';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
@@ -154,6 +155,15 @@ export function OneTimeSummary({
       service_count: services.length,
       services_selected: services,
       firm: true,
+    });
+    // Mirror the firm-quote signal to the marketing overlay. This shares the
+    // same firm-quote gate as fireLead and is sender-side-deduped, so
+    // reopening the summary / React rerenders do not resend it. This does
+    // NOT create a second Meta Lead — Meta ownership stays with fireLead.
+    bridgeFireQuoteSubmitted({
+      id: quoteId,
+      total,
+      serviceSlugs: services,
     });
   }, [isFirm, total, quote, additionalServices, quoteState.ruleVersion, quoteState.engineVersion]);
 
