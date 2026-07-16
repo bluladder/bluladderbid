@@ -9,6 +9,16 @@ import { PRIMARY_PUBLIC_PHONE } from '@/config/contact';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+const PORTAL_TOKEN_KEY = 'bl_portal_token';
+function readPortalToken(): string | null { try { return sessionStorage.getItem(PORTAL_TOKEN_KEY); } catch { return null; } }
+function writePortalToken(t: string | null) {
+  try { if (t) sessionStorage.setItem(PORTAL_TOKEN_KEY, t); else sessionStorage.removeItem(PORTAL_TOKEN_KEY); } catch { /* ignore */ }
+}
+function portalHeaders(): Record<string, string> {
+  const t = readPortalToken();
+  return t ? { 'x-portal-session': t } : {};
+}
+
 // Passwordless customer portal — entry (phone) → OTP → portal data.
 // All OTP verification, session issuance, and portal reads happen server-side
 // through edge functions that validate an httpOnly session cookie. The browser
@@ -36,9 +46,11 @@ export default function MyAppointments() {
 
   async function refreshPortalData(silent = false) {
     try {
-      const { data: res, error } = await supabase.functions.invoke('customer-portal-data');
+      if (!readPortalToken()) return;
+      const { data: res, error } = await supabase.functions.invoke('customer-portal-data', { headers: portalHeaders() });
       if (error || !res) {
         if (!silent) toast({ title: 'Session expired', description: 'Please verify your phone again.' });
+        writePortalToken(null);
         return;
       }
       setData(res as PortalData);
@@ -72,6 +84,7 @@ export default function MyAppointments() {
         body: { phone, code },
       });
       if (res?.verified && !res?.guest) {
+        if (res.session_token) writePortalToken(res.session_token as string);
         await refreshPortalData();
       } else if (res?.verified && res?.guest) {
         toast({
@@ -93,7 +106,8 @@ export default function MyAppointments() {
   }
 
   async function signOut() {
-    await supabase.functions.invoke('customer-verification-logout');
+    await supabase.functions.invoke('customer-verification-logout', { headers: portalHeaders() });
+    writePortalToken(null);
     setData(null);
     setPhone('');
     setCode('');
