@@ -663,6 +663,7 @@ export type Database = {
           id: string
           input_snapshot: Json | null
           is_hidden: boolean
+          is_test_fixture: boolean
           jobber_job_id: string | null
           jobber_quote_id: string | null
           jobber_visit_id: string | null
@@ -709,6 +710,7 @@ export type Database = {
           id?: string
           input_snapshot?: Json | null
           is_hidden?: boolean
+          is_test_fixture?: boolean
           jobber_job_id?: string | null
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
@@ -755,6 +757,7 @@ export type Database = {
           id?: string
           input_snapshot?: Json | null
           is_hidden?: boolean
+          is_test_fixture?: boolean
           jobber_job_id?: string | null
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
@@ -1504,6 +1507,48 @@ export type Database = {
           productivity_multipliers?: Json
           singleton?: boolean
           updated_at?: string
+        }
+        Relationships: []
+      }
+      customer_access_test_authorizations: {
+        Row: {
+          authorized_by: string
+          consumed_at: string | null
+          correlation_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          idempotency_key: string
+          recipient: string
+          result_json: Json | null
+          target_id: string | null
+          test_type: string
+        }
+        Insert: {
+          authorized_by: string
+          consumed_at?: string | null
+          correlation_id?: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          idempotency_key: string
+          recipient: string
+          result_json?: Json | null
+          target_id?: string | null
+          test_type: string
+        }
+        Update: {
+          authorized_by?: string
+          consumed_at?: string | null
+          correlation_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          idempotency_key?: string
+          recipient?: string
+          result_json?: Json | null
+          target_id?: string | null
+          test_type?: string
         }
         Relationships: []
       }
@@ -3848,6 +3893,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      authorize_customer_access_test: {
+        Args: {
+          p_idempotency_key: string
+          p_recipient: string
+          p_target_id: string
+          p_test_type: string
+          p_ttl_minutes?: number
+        }
+        Returns: Json
+      }
       authorize_live_jobber_test: {
         Args: {
           p_conversation_id: string
@@ -3928,6 +3983,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      consume_customer_access_test_auth: {
+        Args: { p_idempotency_key: string; p_test_type: string }
+        Returns: Json
+      }
       consume_live_jobber_authorization: {
         Args: {
           p_conversation_id: string
@@ -3939,6 +3998,10 @@ export type Database = {
       }
       consume_staff_test_reply_auth: {
         Args: { p_channel: string; p_conversation_id: string }
+        Returns: string
+      }
+      create_customer_access_test_booking_fixture: {
+        Args: never
         Returns: string
       }
       current_pricing_version: { Args: never; Returns: number }
@@ -3976,6 +4039,10 @@ export type Database = {
           p_status: Database["public"]["Enums"]["consent_status"]
         }
         Returns: string
+      }
+      record_customer_access_test_result: {
+        Args: { p_id: string; p_result: Json }
+        Returns: undefined
       }
       record_live_jobber_authorization_result: {
         Args: { p_email: string; p_result: Json }
