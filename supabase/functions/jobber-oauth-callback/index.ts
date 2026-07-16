@@ -14,6 +14,7 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const code = url.searchParams.get("code");
     const error = url.searchParams.get("error");
+    const state = url.searchParams.get("state");
     
     // Get the frontend URL for redirects
     const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://bluladderbid.lovable.app";
@@ -27,6 +28,10 @@ Deno.serve(async (req) => {
       return Response.redirect(`${frontendUrl}/admin?jobber_error=no_code`);
     }
 
+    if (!state) {
+      return Response.redirect(`${frontendUrl}/admin?jobber_error=missing_state`);
+    }
+
     // Exchange code for tokens
     const clientId = Deno.env.get("JOBBER_CLIENT_ID");
     const clientSecret = Deno.env.get("JOBBER_CLIENT_SECRET");
@@ -37,6 +42,31 @@ Deno.serve(async (req) => {
       console.error("Missing Jobber credentials");
       return Response.redirect(`${frontendUrl}/admin?jobber_error=missing_credentials`);
     }
+
+    // Validate & consume the CSRF state token. It must exist, be unconsumed,
+    // and not expired. This prevents an attacker from feeding the callback a
+    // code they obtained by initiating their own Jobber authorize flow.
+    const supabaseStateClient = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: stateRow, error: stateErr } = await supabaseStateClient
+      .from("jobber_oauth_states")
+      .select("state, expires_at, consumed_at")
+      .eq("state", state)
+      .maybeSingle();
+    if (stateErr || !stateRow) {
+      console.error("Unknown OAuth state:", stateErr);
+      return Response.redirect(`${frontendUrl}/admin?jobber_error=invalid_state`);
+    }
+    if (stateRow.consumed_at) {
+      return Response.redirect(`${frontendUrl}/admin?jobber_error=state_already_used`);
+    }
+    if (new Date(stateRow.expires_at).getTime() < Date.now()) {
+      return Response.redirect(`${frontendUrl}/admin?jobber_error=state_expired`);
+    }
+    // Mark consumed before the token exchange so a replay cannot race.
+    await supabaseStateClient
+      .from("jobber_oauth_states")
+      .update({ consumed_at: new Date().toISOString() })
+      .eq("state", state);
 
     // Exchange authorization code for access token
     const tokenResponse = await fetch("https://api.getjobber.com/api/oauth/token", {
