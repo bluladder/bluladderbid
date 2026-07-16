@@ -148,7 +148,7 @@ serve(async (req) => {
       absolute_expires_at: absoluteExp,
     });
 
-    return new Response(JSON.stringify({ verified: true, guest: false }), {
+    return new Response(JSON.stringify({ verified: true, guest: false, session_token: token, expires_at: absoluteExp }), {
       status: 200,
       headers: {
         ...corsHeaders,
