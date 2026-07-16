@@ -483,6 +483,57 @@ export type Database = {
           },
         ]
       }
+      booking_management_tokens: {
+        Row: {
+          booking_id: string
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          last_used_at: string | null
+          revoked_at: string | null
+          token_hash: string
+          use_count: number
+        }
+        Insert: {
+          booking_id: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          token_hash: string
+          use_count?: number
+        }
+        Update: {
+          booking_id?: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          last_used_at?: string | null
+          revoked_at?: string | null
+          token_hash?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_management_tokens_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "booking_management_tokens_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       booking_step_events: {
         Row: {
           created_at: string
@@ -1446,6 +1497,222 @@ export type Database = {
           id?: string
           productivity_multipliers?: Json
           singleton?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      customer_account_match_issues: {
+        Row: {
+          candidate_customer_ids: string[]
+          created_at: string
+          id: string
+          notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          resolved_customer_id: string | null
+          status: string
+          updated_at: string
+          verified_phone: string
+        }
+        Insert: {
+          candidate_customer_ids: string[]
+          created_at?: string
+          id?: string
+          notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_customer_id?: string | null
+          status?: string
+          updated_at?: string
+          verified_phone: string
+        }
+        Update: {
+          candidate_customer_ids?: string[]
+          created_at?: string
+          id?: string
+          notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          resolved_customer_id?: string | null
+          status?: string
+          updated_at?: string
+          verified_phone?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_account_match_issues_resolved_customer_id_fkey"
+            columns: ["resolved_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_accounts: {
+        Row: {
+          created_at: string
+          customer_id: string
+          id: string
+          last_verified_at: string
+          updated_at: string
+          verified_phone: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          id?: string
+          last_verified_at?: string
+          updated_at?: string
+          verified_phone: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          id?: string
+          last_verified_at?: string
+          updated_at?: string
+          verified_phone?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_accounts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_portal_sessions: {
+        Row: {
+          absolute_expires_at: string
+          created_at: string
+          customer_account_id: string
+          id: string
+          ip_hash: string | null
+          last_seen_at: string
+          revoked_at: string | null
+          session_token_hash: string
+          user_agent_hash: string | null
+        }
+        Insert: {
+          absolute_expires_at: string
+          created_at?: string
+          customer_account_id: string
+          id?: string
+          ip_hash?: string | null
+          last_seen_at?: string
+          revoked_at?: string | null
+          session_token_hash: string
+          user_agent_hash?: string | null
+        }
+        Update: {
+          absolute_expires_at?: string
+          created_at?: string
+          customer_account_id?: string
+          id?: string
+          ip_hash?: string | null
+          last_seen_at?: string
+          revoked_at?: string | null
+          session_token_hash?: string
+          user_agent_hash?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_portal_sessions_customer_account_id_fkey"
+            columns: ["customer_account_id"]
+            isOneToOne: false
+            referencedRelation: "customer_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_verification_challenges: {
+        Row: {
+          attempts: number
+          callrail_message_id: string | null
+          correlation_id: string
+          created_at: string
+          delivery_status: string | null
+          expires_at: string
+          id: string
+          ip_hash: string | null
+          max_attempts: number
+          otp_hash: string
+          phone_hash: string
+          status: string
+          updated_at: string
+          verified_at: string | null
+        }
+        Insert: {
+          attempts?: number
+          callrail_message_id?: string | null
+          correlation_id?: string
+          created_at?: string
+          delivery_status?: string | null
+          expires_at: string
+          id?: string
+          ip_hash?: string | null
+          max_attempts?: number
+          otp_hash: string
+          phone_hash: string
+          status?: string
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Update: {
+          attempts?: number
+          callrail_message_id?: string | null
+          correlation_id?: string
+          created_at?: string
+          delivery_status?: string | null
+          expires_at?: string
+          id?: string
+          ip_hash?: string | null
+          max_attempts?: number
+          otp_hash?: string
+          phone_hash?: string
+          status?: string
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Relationships: []
+      }
+      customer_verification_config: {
+        Row: {
+          booking_link_ttl_hours: number
+          id: string
+          max_attempts: number
+          otp_ttl_seconds: number
+          per_ip_max_per_hour: number
+          per_phone_cooldown_seconds: number
+          per_phone_max_per_hour: number
+          session_absolute_seconds: number
+          session_inactivity_seconds: number
+          updated_at: string
+        }
+        Insert: {
+          booking_link_ttl_hours?: number
+          id?: string
+          max_attempts?: number
+          otp_ttl_seconds?: number
+          per_ip_max_per_hour?: number
+          per_phone_cooldown_seconds?: number
+          per_phone_max_per_hour?: number
+          session_absolute_seconds?: number
+          session_inactivity_seconds?: number
+          updated_at?: string
+        }
+        Update: {
+          booking_link_ttl_hours?: number
+          id?: string
+          max_attempts?: number
+          otp_ttl_seconds?: number
+          per_ip_max_per_hour?: number
+          per_phone_cooldown_seconds?: number
+          per_phone_max_per_hour?: number
+          session_absolute_seconds?: number
+          session_inactivity_seconds?: number
           updated_at?: string
         }
         Relationships: []
