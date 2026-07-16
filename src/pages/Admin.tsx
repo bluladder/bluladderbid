@@ -11,7 +11,8 @@ import { PricingTabContent } from '@/components/admin/PricingTabContent';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, ClipboardList, Phone, BarChart3, Users, Plug, DollarSign } from 'lucide-react';
+import { LogOut, Home, ShieldX, ClipboardList, Phone, BarChart3, Users, Plug, DollarSign, ShieldCheck } from 'lucide-react';
+import { CustomerAccessLiveTestsPanel } from '@/components/admin/security/CustomerAccessLiveTestsPanel';
 import { Link } from 'react-router-dom';
 
 export default function Admin({ initialTab }: { initialTab?: string }) {
@@ -110,7 +111,7 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
       <main className="container py-8">
         <div className="max-w-6xl mx-auto">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-6 mb-6">
+            <TabsList className="grid w-full grid-cols-7 mb-6">
               <TabsTrigger value="bookings" className="flex items-center gap-2">
                 <ClipboardList className="w-4 h-4" />
                 <span className="hidden sm:inline">Bookings</span>
@@ -134,6 +135,10 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
               <TabsTrigger value="pricing" className="flex items-center gap-2">
                 <DollarSign className="w-4 h-4" />
                 <span className="hidden sm:inline">Pricing</span>
+              </TabsTrigger>
+              <TabsTrigger value="security" className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                <span className="hidden sm:inline">Security</span>
               </TabsTrigger>
             </TabsList>
             
@@ -165,6 +170,11 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
             {/* Pricing Tab - Pricing config, scenarios, discounts */}
             <TabsContent value="pricing">
               <PricingTabContent />
+            </TabsContent>
+
+            {/* Security Tab - Customer Access live tests and future security tooling */}
+            <TabsContent value="security">
+              <CustomerAccessLiveTestsPanel />
             </TabsContent>
           </Tabs>
         </div>
