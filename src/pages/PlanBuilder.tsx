@@ -25,7 +25,8 @@ export default function PlanBuilder() {
   const [showHomeDetailsForm, setShowHomeDetailsForm] = useState(true);
   const [showCompareSheet, setShowCompareSheet] = useState(false);
   const [searchParams] = useSearchParams();
-  const isEmbedMode = searchParams.get('embed') === 'true';
+  const embedParam = searchParams.get('embed');
+  const isEmbedMode = embedParam === 'true' || embedParam === '1';
   
   const { loadSession, saveSession, isInitialized, setIsInitialized } = usePlanBuilderSession();
   

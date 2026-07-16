@@ -85,7 +85,8 @@ const ServiceLanding = () => {
   const [searchParams] = useSearchParams();
   const service = location.pathname.substring(1); // Remove leading slash
   const config = SERVICE_CONFIG[service as ServiceSlug];
-  const isEmbedMode = searchParams.get('embed') === 'true';
+  const embedParam = searchParams.get('embed');
+  const isEmbedMode = embedParam === 'true' || embedParam === '1';
   
   // Capture UTM tracking parameters for marketing attribution
   const { getStoredUtmParams } = useUtmTracking();
