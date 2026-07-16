@@ -491,6 +491,8 @@ export type Database = {
           expires_at: string
           id: string
           last_used_at: string | null
+          management_session_expires_at: string | null
+          management_session_hash: string | null
           revoked_at: string | null
           token_hash: string
           use_count: number
@@ -502,6 +504,8 @@ export type Database = {
           expires_at: string
           id?: string
           last_used_at?: string | null
+          management_session_expires_at?: string | null
+          management_session_hash?: string | null
           revoked_at?: string | null
           token_hash: string
           use_count?: number
@@ -513,6 +517,8 @@ export type Database = {
           expires_at?: string
           id?: string
           last_used_at?: string | null
+          management_session_expires_at?: string | null
+          management_session_hash?: string | null
           revoked_at?: string | null
           token_hash?: string
           use_count?: number
@@ -1512,6 +1518,7 @@ export type Database = {
           resolved_customer_id: string | null
           status: string
           updated_at: string
+          verified_email: string | null
           verified_phone: string
         }
         Insert: {
@@ -1524,6 +1531,7 @@ export type Database = {
           resolved_customer_id?: string | null
           status?: string
           updated_at?: string
+          verified_email?: string | null
           verified_phone: string
         }
         Update: {
@@ -1536,6 +1544,7 @@ export type Database = {
           resolved_customer_id?: string | null
           status?: string
           updated_at?: string
+          verified_email?: string | null
           verified_phone?: string
         }
         Relationships: [
@@ -1555,7 +1564,8 @@ export type Database = {
           id: string
           last_verified_at: string
           updated_at: string
-          verified_phone: string
+          verified_email: string | null
+          verified_phone: string | null
         }
         Insert: {
           created_at?: string
@@ -1563,7 +1573,8 @@ export type Database = {
           id?: string
           last_verified_at?: string
           updated_at?: string
-          verified_phone: string
+          verified_email?: string | null
+          verified_phone?: string | null
         }
         Update: {
           created_at?: string
@@ -1571,7 +1582,8 @@ export type Database = {
           id?: string
           last_verified_at?: string
           updated_at?: string
-          verified_phone?: string
+          verified_email?: string | null
+          verified_phone?: string | null
         }
         Relationships: [
           {
