@@ -78,7 +78,9 @@ describe('parent origin allowlist', () => {
   it('rejects wildcard-shaped strings', () => {
     expect(__internal.isValidOriginString('*')).toBe(false);
     expect(__internal.isValidOriginString('null')).toBe(false);
-    expect(__internal.isValidOriginString('https://bluladder.com/')).toBe(true);
+    // A trailing slash is not a bare origin — must be exactly the origin form.
+    expect(__internal.isValidOriginString('https://bluladder.com/')).toBe(false);
+    expect(__internal.isValidOriginString('https://bluladder.com')).toBe(true);
     expect(__internal.isValidOriginString('https://bluladder.com/path')).toBe(false);
   });
   it('a malicious parent_origin cannot bypass the allowlist even if referrer is legit', () => {
