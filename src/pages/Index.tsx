@@ -9,8 +9,6 @@ import { PlanUpsellCard } from '@/components/homeowner/PlanUpsellCard';
 import { ServicePlanSelector } from '@/components/homeowner/ServicePlanSelector';
 import { PricingSummary } from '@/components/homeowner/PricingSummary';
 import { OneTimeSummary } from '@/components/homeowner/OneTimeSummary';
-import { CustomerLookup } from '@/components/booking/CustomerLookup';
-import { PastBookings } from '@/components/booking/PastBookings';
 import { ProgressStepper, type FlowStep } from '@/components/homeowner/ProgressStepper';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { useServerBundleTiers } from '@/hooks/useServerBundleTiers';
@@ -25,7 +23,6 @@ import {
   DEFAULT_HOME_DETAILS, 
   DEFAULT_ADDITIONAL_SERVICES 
 } from '@/types/homeowner';
-import type { CustomerLookupResult, PastBooking, CustomerRecord } from '@/hooks/useCustomerLookup';
 import type { CustomerInfo } from '@/components/booking/CustomerInfoForm';
 import { toast } from 'sonner';
 
@@ -53,11 +50,12 @@ const Index = () => {
   // so the layout can widen and center it instead of cramming it in the sidebar.
   const [bookingActive, setBookingActive] = useState(false);
   
-  // Customer lookup state
-  const [showCustomerLookup, setShowCustomerLookup] = useState(true);
-  const [returningCustomer, setReturningCustomer] = useState<CustomerRecord | null>(null);
-  const [pastBookings, setPastBookings] = useState<PastBooking[]>([]);
-  const [prefillCustomerInfo, setPrefillCustomerInfo] = useState<CustomerInfo | null>(null);
+  // Stage A security lockdown: the public anonymous "look me up by email"
+  // prefill card has been retired. Anonymous callers cannot pull ANY customer
+  // history until the verified passwordless portal (Twilio Verify OTP + email
+  // fallback) lands. The public quote/booking path continues to work as an
+  // unauthenticated guest flow.
+  const prefillCustomerInfo: CustomerInfo | null = null;
 
   // Persist plan customizations across page refreshes
   const { 
@@ -114,53 +112,6 @@ const Index = () => {
     });
   };
 
-  // Handle customer found from lookup
-  const handleCustomerFound = (result: CustomerLookupResult) => {
-    setReturningCustomer(result.customer);
-    setPastBookings(result.bookings);
-    setShowCustomerLookup(false);
-    
-    // Pre-fill customer info for faster checkout
-    setPrefillCustomerInfo({
-      firstName: result.customer.firstName || '',
-      lastName: result.customer.lastName || '',
-      email: result.customer.email,
-      phone: result.customer.phone || '',
-      address: result.customer.address || '',
-    });
-    
-    toast.success(`Welcome back, ${result.customer.firstName || 'valued customer'}!`);
-  };
-
-  // Handle new customer (skip lookup)
-  const handleNewCustomer = () => {
-    setShowCustomerLookup(false);
-    setReturningCustomer(null);
-    setPastBookings([]);
-    setPrefillCustomerInfo(null);
-  };
-
-  // Handle Book Again - preload configuration
-  const handleBookAgain = (booking: PastBooking) => {
-    // Load the home details from the past booking
-    setHomeDetails(booking.homeDetails);
-    setAdditionalServices(booking.additionalServices);
-    setFlowState('one-time-booking');
-    
-    toast.success('Configuration loaded!', {
-      description: 'Your previous service settings have been applied.',
-    });
-  };
-
-  // Handle building a new quote from past bookings view
-  const handleNewQuote = () => {
-    // Keep customer info but let them build fresh
-    setHomeDetails(DEFAULT_HOME_DETAILS);
-    setAdditionalServices(DEFAULT_ADDITIONAL_SERVICES);
-    setFlowState('selecting');
-    setSelectedTier('better');
-  };
-
   // Handle book one-time
   const handleBookOneTime = () => {
     setFlowState('one-time-booking');
@@ -193,9 +144,6 @@ const Index = () => {
   const handleBackToSelection = () => {
     setFlowState('selecting');
   };
-
-  // Show past bookings view for returning customers with booking history
-  const showPastBookingsView = returningCustomer && pastBookings.length > 0 && flowState === 'selecting';
 
   // Map flow state to progress step
   const currentProgressStep = useMemo<FlowStep>(() => {
@@ -278,43 +226,18 @@ const Index = () => {
 
           
 
-          {/* Progress Stepper (shown after customer lookup) */}
-          {!showCustomerLookup && !showPastBookingsView && (
-            <div className="animate-fade-in">
-              <ProgressStepper currentStep={currentProgressStep} />
-            </div>
-          )}
+          <div className="animate-fade-in">
+            <ProgressStepper currentStep={currentProgressStep} />
+          </div>
 
-          {/* Customer Lookup (shown initially) */}
-          {showCustomerLookup && (
-            <div className="max-w-md mx-auto">
-              <CustomerLookup
-                onCustomerFound={handleCustomerFound}
-                onNewCustomer={handleNewCustomer}
-              />
-            </div>
-          )}
-
-          {/* Past Bookings View (for returning customers) */}
-          {showPastBookingsView && (
-            <div className="max-w-lg mx-auto">
-              <PastBookings
-                customer={returningCustomer}
-                bookings={pastBookings}
-                onBookAgain={handleBookAgain}
-                onNewQuote={handleNewQuote}
-              />
-            </div>
-          )}
-
-          {/* Main Content (shown after lookup or for new customers) */}
-          {!showCustomerLookup && !showPastBookingsView && (
+          {/* Public guest flow — no anonymous customer history is loaded. */}
+          {true && (
             <>
               {/* Home Details Form - Always visible */}
               <HomeDetailsForm 
                 homeDetails={homeDetails} 
                 onChange={handleHomeDetailsChange}
-                formattedAddress={prefillCustomerInfo?.address || returningCustomer?.address || ''}
+                formattedAddress={''}
               />
               
 
