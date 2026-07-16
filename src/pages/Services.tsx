@@ -62,7 +62,8 @@ const SERVICES = [
 
 const Services = () => {
   const [searchParams] = useSearchParams();
-  const isEmbedMode = searchParams.get('embed') === 'true';
+  const embedParam = searchParams.get('embed');
+  const isEmbedMode = embedParam === 'true' || embedParam === '1';
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,7 +93,7 @@ const Services = () => {
               return (
                 <Link
                   key={service.slug}
-                  to={`/${service.slug}${isEmbedMode ? '?embed=true' : ''}`}
+                  to={`/${service.slug}${isEmbedMode ? `?embed=${embedParam}` : ''}`}
                   className="group relative overflow-hidden rounded-2xl border border-border bg-card hover:border-primary/40 hover:shadow-lg transition-all duration-300"
                 >
                   {/* Gradient accent bar */}
@@ -133,7 +134,7 @@ const Services = () => {
                 <p className="text-sm text-muted-foreground">Bundle and save with our service plans.</p>
               </div>
               <Link
-                to={isEmbedMode ? '/?embed=true' : '/'}
+                to={isEmbedMode ? `/?embed=${embedParam}` : '/'}
                 className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors whitespace-nowrap"
               >
                 Build Your Bundle

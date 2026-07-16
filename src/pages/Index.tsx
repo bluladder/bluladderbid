@@ -28,7 +28,8 @@ import { toast } from 'sonner';
 
 const Index = () => {
   const [searchParams] = useSearchParams();
-  const isEmbedMode = searchParams.get('embed') === 'true';
+  const embedParam = searchParams.get('embed');
+  const isEmbedMode = embedParam === 'true' || embedParam === '1';
   
   // Capture UTM tracking parameters for marketing attribution
   const { getStoredUtmParams } = useUtmTracking();
