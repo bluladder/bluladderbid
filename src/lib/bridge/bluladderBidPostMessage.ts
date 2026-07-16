@@ -272,27 +272,36 @@ function sanitizePayload(payload: Record<string, unknown>): Record<string, unkno
 /* -------------------------- Attribution merge ------------------------- */
 
 /**
- * Merge first-touch attribution + source_session_id into the payload
- * WITHOUT letting caller values overwrite first-touch values.
+ * Merge first-touch attribution + source_session_id into the payload.
+ *
+ * PRECEDENCE: for attribution-scoped keys ONLY, the STORED first-touch value
+ * wins over any later caller-supplied value. This preserves original paid /
+ * campaign / QR / typed attribution against later `direct_unknown` or blank
+ * overwrites. Event-specific keys (quote_id, booking_id, quote_value,
+ * booking_value, service_slug, service_slugs, failure_stage, error_code) are
+ * NEVER touched here and continue to come from the event caller.
  */
 function mergeFirstTouch(payload: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...payload };
   try {
     const attribution = readAttribution();
     const first = attribution.first_touch ?? {};
-    const inject = (key: string, value: unknown) => {
+    // First-touch WINS: overwrite any caller-supplied attribution value with
+    // the stored first-touch value when the stored value is a non-blank
+    // string. Blank / missing stored values leave the caller-supplied value
+    // in place, so genuinely-new attribution can still populate empty slots.
+    const firstTouchWins = (key: string, value: unknown) => {
       if (value === undefined || value === null || value === '') return;
-      if (out[key] !== undefined && out[key] !== null && out[key] !== '') return;
       out[key] = value;
     };
-    inject('source_session_id', attribution.source_session_id);
-    inject('utm_source', first.utm_source);
-    inject('utm_medium', first.utm_medium);
-    inject('utm_campaign', first.utm_campaign);
-    inject('utm_content', first.utm_content);
-    inject('utm_term', first.utm_term);
-    inject('fbclid', first.fbclid ?? attribution.fbclid);
-    inject('landing_page_slug', first.landing_page_slug ?? attribution.landing_page_slug);
+    firstTouchWins('source_session_id', attribution.source_session_id);
+    firstTouchWins('utm_source', first.utm_source);
+    firstTouchWins('utm_medium', first.utm_medium);
+    firstTouchWins('utm_campaign', first.utm_campaign);
+    firstTouchWins('utm_content', first.utm_content);
+    firstTouchWins('utm_term', first.utm_term);
+    firstTouchWins('fbclid', first.fbclid ?? attribution.fbclid);
+    firstTouchWins('landing_page_slug', first.landing_page_slug ?? attribution.landing_page_slug);
   } catch {
     /* attribution is best-effort; never block */
   }
