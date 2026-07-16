@@ -17,6 +17,8 @@ import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput'
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
 import { useAttribution } from '@/hooks/useAttribution';
+import { bridgeFireQuoteStarted } from '@/lib/bridge/bluladderBidPostMessage';
+import { useEffect as useReactEffect } from 'react';
 import { 
   HomeDetails, 
   AdditionalServices, 
@@ -69,6 +71,24 @@ const Index = () => {
   // ONLY from the deployed pricing Edge Functions (calculate-quote /
   // calculate-plan-options bundle_tiers). No local pricing math, no fallback.
   const hasServices = hasAnyServiceSelected(additionalServices);
+  // quote_started fires exactly once per session, only after a meaningful
+  // interaction (any service enabled). Preselection alone does not qualify
+  // unless the user then confirms/expands — sender-side dedup keeps this a
+  // one-shot. Preselection ships DEFAULT_ADDITIONAL_SERVICES with all flags
+  // false, so a URL like ?preselect_service=window-cleaning only fires after
+  // the customer actually enables that service in the UI.
+  useReactEffect(() => {
+    if (!hasServices) return;
+    const enabled: string[] = [];
+    if (additionalServices.windowCleaning) enabled.push('window-cleaning');
+    if (additionalServices.houseWash) enabled.push('house-wash');
+    if (additionalServices.drivewayCleaning?.enabled) enabled.push('driveway-cleaning');
+    if (additionalServices.gutterCleaning) enabled.push('gutter-cleaning');
+    if (additionalServices.roofCleaning) enabled.push('roof-cleaning');
+    if (additionalServices.solarPanelCleaning?.enabled) enabled.push('solar-panel-cleaning');
+    if (additionalServices.screenRepair?.enabled) enabled.push('screen-repair');
+    bridgeFireQuoteStarted({ enabledServiceSlugs: enabled });
+  }, [hasServices, additionalServices]);
   const oneTimeQuote = useServerQuoteCalculation(
     hasServices ? toQuoteInput(homeDetails, additionalServices) : null,
     { enabled: hasServices },
