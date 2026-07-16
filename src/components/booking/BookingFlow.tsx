@@ -515,9 +515,7 @@ export function BookingFlow({
         // stack traces or provider bodies.
         try {
           bridgeFireBookingFailed({
-            attemptId: (typeof (window as unknown as { __lastBookingIdempotencyKey?: string }).__lastBookingIdempotencyKey === 'string'
-              ? (window as unknown as { __lastBookingIdempotencyKey?: string }).__lastBookingIdempotencyKey!
-              : sessionIdRef.current) || 'unknown',
+            attemptId: idempotencyRef.current?.key || sessionIdRef.current || 'unknown',
             failureStage: 'server',
           });
         } catch { /* bridge never blocks the booking UX */ }
