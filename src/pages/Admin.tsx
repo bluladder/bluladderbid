@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LogOut, Home, ShieldX, ClipboardList, Phone, BarChart3, Users, Plug, DollarSign, ShieldCheck } from 'lucide-react';
 import { CustomerAccessLiveTestsPanel } from '@/components/admin/security/CustomerAccessLiveTestsPanel';
+import { SecurityErrorBoundary } from '@/components/admin/security/SecurityErrorBoundary';
 import { Link } from 'react-router-dom';
 
 export default function Admin({ initialTab }: { initialTab?: string }) {
@@ -174,7 +175,9 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
 
             {/* Security Tab - Customer Access live tests and future security tooling */}
             <TabsContent value="security">
-              <CustomerAccessLiveTestsPanel />
+              <SecurityErrorBoundary>
+                <CustomerAccessLiveTestsPanel />
+              </SecurityErrorBoundary>
             </TabsContent>
           </Tabs>
         </div>
