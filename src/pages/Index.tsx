@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { CustomerFooter } from '@/components/CustomerFooter';
@@ -18,7 +18,6 @@ import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
 import { useAttribution } from '@/hooks/useAttribution';
 import { bridgeFireQuoteStarted } from '@/lib/bridge/bluladderBidPostMessage';
-import { useEffect as useReactEffect } from 'react';
 import { 
   HomeDetails, 
   AdditionalServices, 
@@ -77,7 +76,7 @@ const Index = () => {
   // one-shot. Preselection ships DEFAULT_ADDITIONAL_SERVICES with all flags
   // false, so a URL like ?preselect_service=window-cleaning only fires after
   // the customer actually enables that service in the UI.
-  useReactEffect(() => {
+  useEffect(() => {
     if (!hasServices) return;
     const enabled: string[] = [];
     if (additionalServices.windowCleaning) enabled.push('window-cleaning');
