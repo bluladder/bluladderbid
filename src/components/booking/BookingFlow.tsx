@@ -508,6 +508,19 @@ export function BookingFlow({
         toast.error(errorMessage, { duration: 6000 });
       } else {
         toast.error('Failed to create booking. Please try again.');
+        // booking_failed fires ONLY on the terminal, authoritative failure
+        // branch — not for slot conflicts (user retries different slot) and
+        // not for transient "busy" errors (system will recover). Only a
+        // sanitized machine failure category is included; no error text,
+        // stack traces or provider bodies.
+        try {
+          bridgeFireBookingFailed({
+            attemptId: (typeof (window as unknown as { __lastBookingIdempotencyKey?: string }).__lastBookingIdempotencyKey === 'string'
+              ? (window as unknown as { __lastBookingIdempotencyKey?: string }).__lastBookingIdempotencyKey!
+              : sessionIdRef.current) || 'unknown',
+            failureStage: 'server',
+          });
+        } catch { /* bridge never blocks the booking UX */ }
       }
     } finally {
       setIsSubmitting(false);
