@@ -1294,6 +1294,28 @@ Deno.serve(async (req) => {
           console.warn("attribution link failed:", (e as Error).message);
         }
       }
+
+      // Resolve and persist the originating quote_id so booking_completed can
+      // scope the abandoned/decline-nurture stop to THIS specific quote
+      // journey. Best-effort: an admin/manual booking without a quote leaves
+      // quote_id null and the stop simply matches nothing (fail-safe).
+      try {
+        if (sessionForLink) {
+          const { data: linkedQuote } = await supabase
+            .from("quotes")
+            .select("id")
+            .eq("source_session_id", sessionForLink)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (linkedQuote?.id) {
+            await supabase.from("bookings").update({ quote_id: linkedQuote.id }).eq("id", bookingRecord.id);
+            (bookingRecord as Record<string, unknown>).quote_id = linkedQuote.id;
+          }
+        }
+      } catch (e) {
+        console.warn("quote_id link failed:", (e as Error).message);
+      }
     }
 
     const successPayload = {
