@@ -593,7 +593,7 @@ export function buildDeclineFeedbackLine(declineReason: string | null | undefine
 export function buildCancellationFeedbackLine(reason: string | null | undefined): string {
   const r = typeof reason === "string" ? reason.trim() : "";
   if (!r) return "We hope to see you again soon.";
-  return "Thanks for letting us know — we appreciate it.";
+  return "Thanks for letting us know - we appreciate it.";
 }
 
 // ---------------------------------------------------------------------------
