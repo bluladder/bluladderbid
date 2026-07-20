@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.resend-webhook]
 verify_jwt = false
+
+[functions.admin-diagnostics]
+verify_jwt = false

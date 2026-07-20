@@ -6,6 +6,7 @@ import {
   type VisitDeleteResult,
 } from "../_shared/jobberCancellation.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
+import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -382,7 +383,7 @@ Deno.serve(async (req) => {
       try {
         const visitId = typedBooking.jobber_visit_id ?? bookingId;
         const newStart = body.newSlot?.startTime ?? "";
-        const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+        const APP_URL = getAppUrl();
         const manageLink = `${APP_URL}/my-appointments`;
         const bookingLink = `${APP_URL}/`;
         const bookingVersion = Number((result as Record<string, unknown>).bookingVersion ?? typedBooking.booking_version ?? 1);

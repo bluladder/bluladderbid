@@ -7,6 +7,7 @@ import { getMirrorFreshness } from "../_shared/scheduleFreshness.ts";
 import { calculateQuote, type QuoteInput } from "../_shared/pricingEngine.ts";
 import { loadPricing } from "../_shared/loadPricing.ts";
 import { sendBookingConfirmationEmails } from "../_shared/bookingEmails.ts";
+import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1430,7 +1431,7 @@ Deno.serve(async (req) => {
       const serviceNames = Array.isArray(booking.services)
         ? booking.services.map((s: any) => s?.name ?? s?.service ?? s).filter(Boolean) as string[]
         : [];
-      const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+      const APP_URL = getAppUrl();
       const manageLink = `${APP_URL}/my-appointments`;
 
       await emitCampaignEvent({

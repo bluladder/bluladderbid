@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,7 +18,7 @@ Deno.serve(async (req) => {
     const state = url.searchParams.get("state");
     
     // Get the frontend URL for redirects
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://bluladderbid.lovable.app";
+    const frontendUrl = getAppUrl();
     
     if (error) {
       console.error("OAuth error:", error);
@@ -122,7 +123,7 @@ Deno.serve(async (req) => {
     
   } catch (error) {
     console.error("OAuth callback error:", error);
-    const frontendUrl = Deno.env.get("FRONTEND_URL") || "https://bluladderbid.lovable.app";
+    const frontendUrl = getAppUrl();
     return Response.redirect(`${frontendUrl}/admin?jobber_error=unknown`);
   }
 });

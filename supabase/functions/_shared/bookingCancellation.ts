@@ -15,6 +15,7 @@
 // the reconciliation branches can be unit-tested without a live client.
 // ============================================================================
 import { emitCampaignEvent, type SupabaseLike } from "./campaignEmitter.ts";
+import { getAppUrl } from "./appUrl.ts";
 
 // Sources allowed on the authoritative booking row. Never widen without also
 // widening the audit narrative on cancellation_source.
@@ -154,7 +155,7 @@ export async function finalizeBookingCancellation(
 
   // Emit canonical event unless explicitly suppressed.
   if (!input.suppressCustomerConfirmation) {
-    const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+    const APP_URL = getAppUrl();
     const serviceNames = Array.isArray(booking.services_json)
       ? (booking.services_json as Array<{ name?: string }>).map((s) => s?.name).filter(Boolean) as string[]
       : [];

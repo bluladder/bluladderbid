@@ -12,6 +12,7 @@ import {
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
+import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,7 +20,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+const APP_URL = getAppUrl();
 
 // First retry happens ~5 min after a transient failure; the queue processor
 // applies the full backoff schedule on subsequent attempts.

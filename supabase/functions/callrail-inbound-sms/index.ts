@@ -20,11 +20,24 @@ serve(async (req) => {
   }
 
   // Verify the request actually came from CallRail. We require a shared secret
-  // token (configured in the CallRail webhook URL as `?token=...` or sent as the
-  // `x-webhook-token` header). Without this, anyone could forge STOP/START
+  // token (configured in the CallRail webhook URL as `?token=...` or sent as
+  // the `x-webhook-token` header). Without this, anyone could forge STOP/START
   // payloads to silently opt any phone number out of notifications.
+  //
+  // In production we FAIL CLOSED if the secret is not configured. Preview/dev
+  // environments (no DENO_DEPLOYMENT_ID and APP_ENV != "production") may run
+  // without a secret so local tests do not require a live CallRail account.
   const expectedToken = Deno.env.get("CALLRAIL_WEBHOOK_SECRET");
-  if (expectedToken) {
+  const isProduction =
+    !!Deno.env.get("DENO_DEPLOYMENT_ID") || Deno.env.get("APP_ENV") === "production";
+  if (!expectedToken) {
+    if (isProduction) {
+      console.error("callrail-inbound-sms: CALLRAIL_WEBHOOK_SECRET missing in production — refusing request");
+      return new Response(JSON.stringify({ error: "Webhook not configured" }), {
+        status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  } else {
     const url = new URL(req.url);
     const providedToken =
       req.headers.get("x-webhook-token") ||

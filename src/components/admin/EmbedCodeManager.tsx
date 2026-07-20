@@ -21,7 +21,9 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
-const BASE_URL = 'https://bluladderbid.lovable.app';
+// Canonical customer-facing production domain — customer embeds must
+// resolve to bid.bluladder.com and never a Lovable preview host.
+const BASE_URL = 'https://bid.bluladder.com';
 
 const SERVICE_PAGES = [
   { slug: 'home', label: 'Main Quote Page', description: 'Full service selector with all options' },

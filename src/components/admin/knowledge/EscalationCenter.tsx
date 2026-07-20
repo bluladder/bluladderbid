@@ -106,7 +106,7 @@ export function EscalationCenter() {
                 <label className="text-xs text-muted-foreground">Dashboard base URL (in alert)</label>
                 <Input
                   value={settings.dashboard_base_url ?? ''}
-                  placeholder="https://bluladderbid.lovable.app/admin"
+                  placeholder="https://bid.bluladder.com/admin"
                   onChange={(e) => setSettings({ ...settings, dashboard_base_url: e.target.value })}
                   onBlur={() => saveSettings({ dashboard_base_url: settings.dashboard_base_url })}
                 />
