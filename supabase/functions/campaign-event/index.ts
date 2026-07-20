@@ -321,7 +321,7 @@ serve(async (req) => {
     const metaQuoteId = typeof (meta as Record<string, unknown>).quote_id === "string"
       ? String((meta as Record<string, unknown>).quote_id)
       : null;
-    const primaryLink = safeLink(metaLink, metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
+    const linkFallback = metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL;
     const totalRaw = (meta as Record<string, unknown>).total;
     const totalNum = typeof totalRaw === "number" ? totalRaw : Number(totalRaw);
     const totalStr = Number.isFinite(totalNum) && totalNum > 0
@@ -386,7 +386,7 @@ serve(async (req) => {
       last_name: lastName,
       name: `${firstName} ${lastName}`.trim() || firstName,
       service: serviceLabel,
-      link: primaryLink,
+      link: safeLink(metaLink, linkFallback),
       total: totalStr,
       feedback_line: feedbackLine,
       // Booking-confirmation merge fields
