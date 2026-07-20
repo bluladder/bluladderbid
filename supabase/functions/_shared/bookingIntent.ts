@@ -80,10 +80,12 @@ export function classifyInboundIntent(body: string | null | undefined): InboundI
   const raw = (body ?? "").toString();
   if (!raw.trim()) return { kind: "other" };
 
-  // 1) Compliance keywords — always win, must be first word.
+  // 1) STOP/HELP compliance keywords — always win, must be first word.
+  //    START ("yes", "subscribe", etc.) is deferred until after booking
+  //    intent so multi-word booking phrases like "yes, let's do it" are
+  //    not mis-classified as an opt-in.
   const first = firstWord(raw);
   if (STOP_FIRST_WORD.has(first)) return { kind: "stop" };
-  if (START_FIRST_WORD.has(first)) return { kind: "start" };
   if (HELP_FIRST_WORD.has(first)) return { kind: "help" };
 
   // 2) Escalation categories — check before booking so "someone damaged my
@@ -97,7 +99,12 @@ export function classifyInboundIntent(body: string | null | undefined): InboundI
     if (rx.test(raw)) return { kind: "booking" };
   }
 
-  // 4) Fall through — normal reply, let AI handle it.
+  // 4) START keywords (opt-in re-subscribe) — only after booking so single
+  //    word "yes" still classifies as start, but "yes, let's do it" is
+  //    routed as booking.
+  if (START_FIRST_WORD.has(first)) return { kind: "start" };
+
+  // 5) Fall through — normal reply, let AI handle it.
   return { kind: "other" };
 }
 
