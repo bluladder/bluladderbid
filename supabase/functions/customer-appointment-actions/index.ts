@@ -400,6 +400,26 @@ async function handleReschedule(
     throw new Error("newSlot is required for reschedule action");
   }
 
+  // Guard: cannot reschedule a cancelled booking.
+  if (booking.status === 'cancelled') {
+    throw new Error("This booking has been cancelled and can no longer be rescheduled.");
+  }
+
+  // No-op guard: if the caller submitted the same slot the booking already
+  // holds, do not bump the version or emit a duplicate confirmation.
+  if (booking.scheduled_start === newSlot.startTime && booking.scheduled_end === newSlot.endTime) {
+    return {
+      action: 'reschedule',
+      noop: true,
+      previousStart: booking.scheduled_start,
+      previousEnd: booking.scheduled_end,
+      newStart: newSlot.startTime,
+      newEnd: newSlot.endTime,
+      bookingVersion: Number(booking.booking_version ?? 1),
+      jobberSynced: false,
+    };
+  }
+
   console.log(`[Reschedule] Moving booking ${booking.reference_number} from ${booking.scheduled_start} to ${newSlot.startTime}`);
 
   // Get technician Jobber user IDs
@@ -417,6 +437,20 @@ async function handleReschedule(
   const jobberUserIds = techList.map(t => t.jobber_user_id);
   const technicianNames = techList.map(t => t.name).join(" + ");
 
+  // Preferred authoritative write order:
+  //   1. Validate & (implicitly) reserve the requested slot (caller responsibility)
+  //   2. Update the Jobber visit  ← Jobber remains the visit system of record
+  //   3. Persist local schedule + atomically bump booking_version
+  //   4. Update local busy-block mirror (old-slot release)
+  //   5. Emit `booking_rescheduled` (caller does this after this returns)
+  //
+  // Failure modes:
+  //   * Jobber update fails → throw; local row + booking_version untouched;
+  //     no confirmation event is emitted (caller only emits on success).
+  //   * Local update fails after Jobber succeeded → throw; a webhook replay
+  //     from Jobber will reconcile via the same idempotency key so no
+  //     duplicate confirmation is ever emitted.
+  //
   // Update in Jobber if we have a visit ID
   let jobberSynced = false;
   if (booking.jobber_visit_id) {
@@ -456,19 +490,43 @@ async function handleReschedule(
     console.log(`[Reschedule] Jobber visit updated successfully`);
   }
 
-  // Update local database
-  const { error: updateError } = await supabase
+  // Atomic booking-version bump with optimistic concurrency: the UPDATE only
+  // fires when booking_version still matches what we read. A concurrent
+  // reschedule race therefore fails one caller instead of silently overwriting.
+  const currentVersion = Number(booking.booking_version ?? 1);
+  const nextVersion = currentVersion + 1;
+  const rescheduleReason = typeof body.rescheduleReason === "string"
+    ? body.rescheduleReason.slice(0, 120) : null;
+  const rescheduleNotes = typeof body.rescheduleNotes === "string"
+    ? body.rescheduleNotes.slice(0, 500) : null;
+  const { data: updated, error: updateError } = await supabase
     .from("bookings")
     .update({
       scheduled_start: newSlot.startTime,
       scheduled_end: newSlot.endTime,
       technician_id: newSlot.technicianId,
+      previous_scheduled_start: booking.scheduled_start,
+      previous_scheduled_end: booking.scheduled_end,
+      rescheduled_at: new Date().toISOString(),
+      reschedule_source: 'customer_portal',
+      reschedule_reason: rescheduleReason,
+      reschedule_notes: rescheduleNotes,
+      booking_version: nextVersion,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", booking.id);
+    .eq("id", booking.id)
+    .eq("booking_version", currentVersion)
+    .select("id, booking_version")
+    .maybeSingle();
 
   if (updateError) {
     throw new Error(`Database update failed: ${updateError.message}`);
+  }
+  if (!updated) {
+    // Concurrent reschedule won the race — do NOT retry or overwrite. The
+    // other caller's confirmation event is authoritative. Caller must skip
+    // emitting a confirmation for this attempt.
+    throw new Error("Booking was updated concurrently. Please refresh and try again.");
   }
 
   // Update local busy blocks if they exist
@@ -490,6 +548,9 @@ async function handleReschedule(
     previousEnd: booking.scheduled_end,
     newStart: newSlot.startTime,
     newEnd: newSlot.endTime,
+    bookingVersion: nextVersion,
+    quoteId: booking.quote_id ?? null,
+    servicesJson: booking.services_json,
     technicianName: technicianNames,
     jobberSynced,
   };
