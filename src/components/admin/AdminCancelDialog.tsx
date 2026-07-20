@@ -71,6 +71,8 @@ export function AdminCancelDialog({
           isAdminOverride: true,
           adminUserId,
           reason,
+          cancellationReason: reason ? 'admin_action' : null,
+          cancellationNotes: reason || null,
         },
       });
 
