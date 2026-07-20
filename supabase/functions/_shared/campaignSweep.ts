@@ -44,6 +44,70 @@ export const CRITICAL_EVENTS = [
   "manual_staff_takeover",
 ] as const;
 
+// Bounded work for the follow-up completion sweep. Small enough to never
+// delay normal queue processing; unfinished enrollments continue on the
+// next cron tick.
+export const FOLLOW_UP_COMPLETION_BATCH_SIZE = 25;
+
+// Idempotency key for the once-per-enrollment lifecycle transition. Keyed on
+// the enrollment id + campaign version so a re-run of the sweep cannot
+// double-emit and a bumped campaign version can produce a fresh (rare) event.
+export function followUpCompletionIdempotencyKey(
+  enrollmentId: string,
+  campaignVersion: number | null | undefined,
+): string {
+  const v = Number.isFinite(Number(campaignVersion)) ? Number(campaignVersion) : 0;
+  return `quote_follow_up_completed:${enrollmentId}:v${v}`;
+}
+
+export interface FollowUpEnrollmentRow {
+  id: string;
+  customer_id: string | null;
+  campaign_id: string;
+  campaign_version: number | null;
+  event_name: string | null;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  conversation_id: string | null;
+  campaign_event_id: string | null;
+  suppressed?: boolean | null;
+}
+
+export interface FollowUpEligibilityInput {
+  totalMessages: number;
+  pendingMessages: number;
+  processingMessages: number;
+  latestSendAtMs: number | null;
+  nowMs: number;
+  hasBooking: boolean;
+  optedOut: boolean;
+  staffTakeover: boolean;
+  suppressed: boolean;
+  marketingConsentGranted: boolean;
+  newerEnrollmentExists: boolean;
+  enrollmentStatus: string;
+}
+
+// Pure eligibility gate for follow-up completion. Every exclusion reason is
+// explicit. Exported for unit tests so the safeguard matrix is provable.
+export function evaluateFollowUpCompletion(
+  i: FollowUpEligibilityInput,
+): AbandonmentDecision {
+  if (i.enrollmentStatus !== "active") return { eligible: false, reason: "enrollment_not_active" };
+  if (i.totalMessages === 0) return { eligible: false, reason: "no_scheduled_messages" };
+  if (i.pendingMessages > 0 || i.processingMessages > 0) return { eligible: false, reason: "messages_still_scheduled" };
+  if (i.latestSendAtMs === null) return { eligible: false, reason: "no_final_send_at" };
+  if (i.nowMs < i.latestSendAtMs) return { eligible: false, reason: "before_final_send_at" };
+  if (i.hasBooking) return { eligible: false, reason: "booking_completed" };
+  if (i.optedOut) return { eligible: false, reason: "opted_out" };
+  if (i.staffTakeover) return { eligible: false, reason: "staff_takeover" };
+  if (i.suppressed) return { eligible: false, reason: "suppressed" };
+  if (!i.marketingConsentGranted) return { eligible: false, reason: "no_marketing_consent" };
+  if (i.newerEnrollmentExists) return { eligible: false, reason: "superseded_by_newer_enrollment" };
+  return { eligible: true, reason: "eligible" };
+}
+
 export function isCriticalEvent(name: string): boolean {
   return (CRITICAL_EVENTS as readonly string[]).includes(name);
 }
