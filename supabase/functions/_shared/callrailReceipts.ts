@@ -62,21 +62,6 @@ export async function recordInboundReceipt(
   throw error ?? new Error("receipt_insert_failed");
 }
 
-export async function markProcessing(supabase: Supa, id: string) {
-  await supabase
-    .from("callrail_inbound_events")
-    .update({
-      status: "processing",
-      last_attempted_at: new Date().toISOString(),
-      attempts: (await supabase.rpc as unknown) // no-op placeholder
-        ? undefined
-        : undefined,
-    })
-    // atomic attempts++
-    .eq("id", id);
-  await supabase.rpc("noop_touch_row").catch(() => {});
-}
-
 /**
  * Atomically increment attempts and set status/error metadata. Uses a
  * lightweight two-step update because we don't rely on a SQL function for
