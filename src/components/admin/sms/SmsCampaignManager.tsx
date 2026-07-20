@@ -28,6 +28,7 @@ import {
   type EditorCampaign, type EditorStep, type CampaignStatus, type Channel, type ConsentType,
 } from '@/lib/campaigns/campaignModel';
 import { CAMPAIGN_TEMPLATES } from '@/lib/campaigns/campaignTemplates';
+import { NurtureBackfillPanel } from './NurtureBackfillPanel';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as unknown as { from: (t: string) => any };
@@ -410,6 +411,10 @@ export function SmsCampaignManager() {
           )}
         </CardContent>
       </Card>
+
+      {/* Operations-admin backfill for historical quote_follow_up_completed
+          events. Uses the canonical campaign-event pipeline only. */}
+      <NurtureBackfillPanel />
 
       {/* Editor dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
