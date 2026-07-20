@@ -73,6 +73,69 @@ export function abandonmentIdempotencyKey(convo: Pick<AbandonmentConvo, "id" | "
   return `quote_abandoned:${convo.id}:${abandonmentVersionTag(convo)}:1`;
 }
 
+// ---------------------------------------------------------------------------
+// Persisted-quote (public.quotes) abandonment helpers.
+//
+// A firm persisted quote qualifies for `quote_abandoned` when ALL hold:
+//   * a real quote id exists (row scanned by definition),
+//   * status is one of the firm/held statuses (saved/emailed/viewed/pending),
+//   * a positive numeric total exists,
+//   * converted_booking_id is null (not booked),
+//   * superseded_by is null (not replaced by a newer version),
+//   * customer contact info (email or phone) exists,
+//   * inactivity delay elapsed since last_activity_at,
+//   * abandonment_emitted_version != current versionTag.
+//
+// Kept pure so it can be unit-tested directly and re-used by admin previews.
+// ---------------------------------------------------------------------------
+export interface PersistedQuoteRow {
+  id: string;
+  status: string | null;
+  total: number | string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  customer_id: string | null;
+  pricing_rule_version: number | null;
+  last_activity_at: string;
+  converted_booking_id: string | null;
+  superseded_by: string | null;
+  abandonment_emitted_version: string | null;
+  services_json: Record<string, unknown> | null;
+  source_session_id: string | null;
+  utm_params_json: Record<string, unknown> | null;
+  attribution: Record<string, unknown> | null;
+}
+
+const FIRM_QUOTE_STATUSES = new Set(["saved", "emailed", "viewed", "pending"]);
+
+export function persistedQuoteVersionTag(q: Pick<PersistedQuoteRow, "pricing_rule_version">): string {
+  return `v${q.pricing_rule_version ?? 0}`;
+}
+
+export function persistedQuoteIdempotencyKey(q: Pick<PersistedQuoteRow, "id" | "pricing_rule_version">): string {
+  return `quote_abandoned:${q.id}:${persistedQuoteVersionTag(q)}:1`;
+}
+
+export function evaluatePersistedQuoteAbandonment(
+  q: PersistedQuoteRow,
+  nowMs: number,
+  delayMinutes: number,
+): AbandonmentDecision {
+  if (!FIRM_QUOTE_STATUSES.has(String(q.status ?? ""))) return { eligible: false, reason: "no_firm_quote" };
+  if (q.converted_booking_id) return { eligible: false, reason: "booking_completed" };
+  if (q.superseded_by) return { eligible: false, reason: "superseded" };
+  const totalNum = typeof q.total === "number" ? q.total : Number(q.total);
+  if (!Number.isFinite(totalNum) || totalNum <= 0) return { eligible: false, reason: "no_positive_total" };
+  if (!q.customer_email && !q.customer_phone) return { eligible: false, reason: "no_contact_info" };
+  const lastMs = new Date(q.last_activity_at).getTime();
+  if (!Number.isFinite(lastMs)) return { eligible: false, reason: "invalid_activity_ts" };
+  if (nowMs - lastMs < delayMinutes * 60_000) return { eligible: false, reason: "within_delay" };
+  if (q.abandonment_emitted_version === persistedQuoteVersionTag(q)) {
+    return { eligible: false, reason: "already_emitted" };
+  }
+  return { eligible: true, reason: "eligible" };
+}
+
 export interface AbandonmentDecision {
   eligible: boolean;
   reason: string;
