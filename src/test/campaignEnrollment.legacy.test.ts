@@ -98,7 +98,9 @@ describe("campaign-event is the only enrollment path", () => {
 
   it("reminders stop scope only targets appointment/booking lifecycle campaigns", () => {
     // F3 assertion: reminders scope must not stop unrelated (e.g. abandoned) campaigns.
-    const remindersMatch = campaignEvent.match(/scope === "reminders"\)\s*campaignFilter\s*=\s*\[[^\]]+\]/);
+    // The scope->campaign filter now lives in `campaignFilterForScope`, an
+    // exported pure helper. Match the return statement for "reminders".
+    const remindersMatch = campaignEvent.match(/scope === "reminders"\)\s*return\s*\[[^\]]+\]/);
     expect(remindersMatch).not.toBeNull();
     const list = remindersMatch![0];
     expect(list).toMatch(/appointment_scheduled/);
