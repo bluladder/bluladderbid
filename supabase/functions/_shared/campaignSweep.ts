@@ -9,6 +9,7 @@
 // abandonmentIdempotencyKey) carry no I/O so they are directly unit-testable.
 // ============================================================================
 import { emitCampaignEvent, type SupabaseLike } from "./campaignEmitter.ts";
+import { hasLifecycleBlockingBooking } from "./lifecycleBookingCheck.ts";
 
 // Dedicated inactivity threshold for firm-quote abandonment. This is the
 // SINGLE SOURCE OF TRUTH for "how long a firm quote must sit idle before it
@@ -562,15 +563,23 @@ export async function runFollowUpCompletionSweep(
     // recording the transition. A lead that booked, opted out, replied into
     // staff follow-up, revoked marketing consent, became suppressed, or has
     // a newer follow-up enrollment must NEVER transition.
-    let hasBooking = false;
-    if (enr.customer_id) {
-      const { count } = await (supabase as any)
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("customer_id", enr.customer_id)
-        .neq("status", "cancelled");
-      hasBooking = (count ?? 0) > 0;
+    // Read the source event metadata first so the booking check can be scoped
+    // to the source-quote lifecycle (not customer-lifetime). A repeat customer
+    // with a completed historical job before the source quote must remain
+    // eligible; only bookings tied to THIS quote / lifecycle should block.
+    let originalMeta: Record<string, unknown> = {};
+    if (enr.campaign_event_id) {
+      const { data: ev } = await (supabase as any)
+        .from("campaign_events").select("metadata").eq("id", enr.campaign_event_id).maybeSingle();
+      originalMeta = (ev?.metadata as Record<string, unknown>) ?? {};
     }
+    const sourceQuoteId = (originalMeta.quote_id as string | null | undefined) ?? null;
+    const lifecycleAnchorIso = (enr as { created_at: string }).created_at ?? null;
+    const hasBooking = await hasLifecycleBlockingBooking(supabase, {
+      customerId: enr.customer_id,
+      quoteId: sourceQuoteId,
+      anchorIso: lifecycleAnchorIso,
+    });
     let optedOut = false;
     if (enr.phone) {
       const { data: opt } = await (supabase as any)
@@ -635,16 +644,9 @@ export async function runFollowUpCompletionSweep(
       continue;
     }
 
-    // Read original quote_id + attribution from the campaign_event that
-    // originally created this enrollment so the transition preserves
-    // first-touch context for the destination campaign.
-    let originalMeta: Record<string, unknown> = {};
-    if (enr.campaign_event_id) {
-      const { data: ev } = await (supabase as any)
-        .from("campaign_events").select("metadata").eq("id", enr.campaign_event_id).maybeSingle();
-      originalMeta = (ev?.metadata as Record<string, unknown>) ?? {};
-    }
-
+    // originalMeta was already read above so the booking safeguard could scope
+    // itself to the source-quote lifecycle. Reuse it verbatim here to preserve
+    // first-touch context on the emitted completion event.
     const idempotencyKey = followUpCompletionIdempotencyKey(enr.id, enr.campaign_version);
     const emit = await emitCampaignEvent({
       eventName: "quote_follow_up_completed",
