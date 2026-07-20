@@ -140,17 +140,36 @@ serve(async (req) => {
         if (newValues.subtotal) updateData.subtotal = newValues.subtotal;
         if (newValues.total) updateData.total = newValues.total;
       } else if (confirmation.change_type === 'cancelled') {
-        updateData.status = 'cancelled';
+        // Route customer-confirmation-driven cancellations through the
+        // canonical helper so version/slot/emit semantics stay consistent
+        // with the portal/admin/webhook paths.
+        try {
+          const { finalizeBookingCancellation } = await import("../_shared/bookingCancellation.ts");
+          const outcome = await finalizeBookingCancellation(supabase, {
+            bookingId,
+            source: "customer_confirmation",
+            reason: "customer_confirmed_cancellation",
+            jobberOutcome: "reconciled",
+          });
+          console.log("[HandleConfirmation] canonical cancel outcome", outcome);
+        } catch (e) {
+          console.error("[HandleConfirmation] canonical cancel failed:", e instanceof Error ? e.message : e);
+        }
+        // Skip the local UPDATE below — the helper already set authoritative
+        // fields (status, version, slot release, cancelled_at, etc).
+        updateData.__handled_by_canonical__ = true;
       }
 
-      // Update booking
-      const { error: updateError } = await supabase
-        .from('bookings')
-        .update(updateData)
-        .eq('id', bookingId);
+      // Only run the local UPDATE for non-canonical change types.
+      if (!(updateData as Record<string, unknown>).__handled_by_canonical__) {
+        const { error: updateError } = await supabase
+          .from('bookings')
+          .update(updateData)
+          .eq('id', bookingId);
 
-      if (updateError) {
-        throw new Error(`Failed to update booking: ${updateError.message}`);
+        if (updateError) {
+          throw new Error(`Failed to update booking: ${updateError.message}`);
+        }
       }
 
       // Log audit entry
