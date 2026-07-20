@@ -22,6 +22,9 @@ interface ActionRequest {
     technicianId: string;
     technicianIds?: string[]; // For team bookings
   };
+  // Optional structured operational metadata for a reschedule.
+  rescheduleReason?: string | null;
+  rescheduleNotes?: string | null;
   // For modify services
   newServices?: Array<{ name: string; price: number }>;
   newSubtotal?: number;
@@ -45,6 +48,8 @@ interface BookingRecord {
   jobber_visit_id: string | null;
   jobber_job_id: string | null;
   customer_id: string;
+  booking_version?: number | null;
+  quote_id?: string | null;
   customer?: { email: string };
 }
 
@@ -197,6 +202,8 @@ Deno.serve(async (req) => {
         jobber_visit_id,
         jobber_job_id,
         customer_id,
+        booking_version,
+        quote_id,
         customer:customers(email)
       `)
       .eq("id", bookingId)
@@ -302,10 +309,20 @@ Deno.serve(async (req) => {
     // "your appointment is cancelled" message.
     const cancelFreshlyConfirmed =
       action === 'cancel' && result.status === 'cancelled';
+    // A reschedule no-op (customer submitted the same slot) must not emit a
+    // confirmation event or send a "your appointment has been rescheduled" SMS.
+    const rescheduleFreshlyConfirmed =
+      action === 'reschedule' && !result.noop;
     const smsEvent =
-      action === 'reschedule' ? 'appointment_rescheduled' :
+      rescheduleFreshlyConfirmed ? 'appointment_rescheduled' :
       cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
-    if (smsEvent) {
+    // Canonical campaign event name for Phase 2B. `appointment_rescheduled` is
+    // retained ONLY as the legacy send-sms/reminders trigger name to preserve
+    // transactional SMS delivery until the seeded Campaign B is activated.
+    const campaignEvent =
+      rescheduleFreshlyConfirmed ? 'booking_rescheduled' :
+      cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
+    if (smsEvent && campaignEvent) {
       try {
         fetch(`${supabaseUrl}/functions/v1/send-sms`, {
           method: "POST",
@@ -319,30 +336,54 @@ Deno.serve(async (req) => {
         console.warn("[CustomerAction] SMS dispatch error:", smsErr);
       }
 
-      // Campaign lifecycle event — emitted ONLY after Jobber confirmed the change
-      // (reschedule reached here on success; cancellation only when freshly
-      // confirmed). appointment_cancelled STOPs future reminder sequences; a
-      // needs_attention cancellation returns earlier and never emits.
+      // Campaign lifecycle event — emitted ONLY after Jobber confirmed the
+      // change AND local persistence + booking_version bump succeeded (the
+      // handler throws on either failure and we never reach this point).
+      // `booking_rescheduled` idempotency is keyed on booking_id + new
+      // booking_version so retries and webhook replays never duplicate.
       try {
         const visitId = typedBooking.jobber_visit_id ?? bookingId;
         const newStart = body.newSlot?.startTime ?? "";
-        const idempotencyKey = smsEvent === 'appointment_rescheduled'
-          ? `appointment_rescheduled:${visitId}:${newStart}`
+        const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+        const manageLink = `${APP_URL}/my-appointments`;
+        const bookingVersion = Number((result as Record<string, unknown>).bookingVersion ?? typedBooking.booking_version ?? 1);
+        const serviceNames = Array.isArray(typedBooking.services_json)
+          ? typedBooking.services_json.map((s) => s?.name).filter(Boolean) as string[] : [];
+        const idempotencyKey = campaignEvent === 'booking_rescheduled'
+          ? `booking_rescheduled:${bookingId}:v${bookingVersion}`
           : `appointment_cancelled:${visitId}`;
         await emitCampaignEvent({
-          eventName: smsEvent,
+          eventName: campaignEvent,
           idempotencyKey,
           email: typedBooking.customer?.email ?? null,
           customerId: typedBooking.customer_id,
           source: "customer-appointment-actions",
           recoverySupabase: serviceClient,
-          subject: smsEvent === 'appointment_rescheduled' ? "Appointment rescheduled" : "Appointment cancelled",
-          metadata: {
+          subject: campaignEvent === 'booking_rescheduled' ? "Appointment rescheduled" : "Appointment cancelled",
+          metadata: campaignEvent === 'booking_rescheduled' ? {
+            booking_id: bookingId,
+            booking_version: bookingVersion,
+            quote_id: (result as Record<string, unknown>).quoteId ?? typedBooking.quote_id ?? null,
+            jobber_visit_id: typedBooking.jobber_visit_id ?? null,
+            booking_status: 'rescheduled',
+            appointment_date: newStart || null,
+            previous_appointment_date: typedBooking.scheduled_start,
+            arrival_window: null,
+            previous_arrival_window: null,
+            service: serviceNames[0] ?? "your service",
+            service_names: serviceNames,
+            service_types: serviceNames,
+            service_address: (typedBooking.home_details_json as Record<string, unknown> | null)?.address ?? "",
+            booking_total: typedBooking.total,
+            manage_link: manageLink,
+            reschedule_link: manageLink,
+            cancel_link: manageLink,
+            reschedule_reason: (body.rescheduleReason ?? null),
+          } : {
             booking_id: bookingId,
             jobber_visit_id: typedBooking.jobber_visit_id ?? null,
             previous_start: typedBooking.scheduled_start,
-            new_start: smsEvent === 'appointment_rescheduled' ? (body.newSlot?.startTime ?? null) : null,
-            booking_status: smsEvent === 'appointment_rescheduled' ? 'rescheduled' : 'cancelled',
+            booking_status: 'cancelled',
           },
         });
       } catch (emitErr) {
@@ -393,6 +434,26 @@ async function handleReschedule(
     throw new Error("newSlot is required for reschedule action");
   }
 
+  // Guard: cannot reschedule a cancelled booking.
+  if (booking.status === 'cancelled') {
+    throw new Error("This booking has been cancelled and can no longer be rescheduled.");
+  }
+
+  // No-op guard: if the caller submitted the same slot the booking already
+  // holds, do not bump the version or emit a duplicate confirmation.
+  if (booking.scheduled_start === newSlot.startTime && booking.scheduled_end === newSlot.endTime) {
+    return {
+      action: 'reschedule',
+      noop: true,
+      previousStart: booking.scheduled_start,
+      previousEnd: booking.scheduled_end,
+      newStart: newSlot.startTime,
+      newEnd: newSlot.endTime,
+      bookingVersion: Number(booking.booking_version ?? 1),
+      jobberSynced: false,
+    };
+  }
+
   console.log(`[Reschedule] Moving booking ${booking.reference_number} from ${booking.scheduled_start} to ${newSlot.startTime}`);
 
   // Get technician Jobber user IDs
@@ -410,6 +471,20 @@ async function handleReschedule(
   const jobberUserIds = techList.map(t => t.jobber_user_id);
   const technicianNames = techList.map(t => t.name).join(" + ");
 
+  // Preferred authoritative write order:
+  //   1. Validate & (implicitly) reserve the requested slot (caller responsibility)
+  //   2. Update the Jobber visit  ← Jobber remains the visit system of record
+  //   3. Persist local schedule + atomically bump booking_version
+  //   4. Update local busy-block mirror (old-slot release)
+  //   5. Emit `booking_rescheduled` (caller does this after this returns)
+  //
+  // Failure modes:
+  //   * Jobber update fails → throw; local row + booking_version untouched;
+  //     no confirmation event is emitted (caller only emits on success).
+  //   * Local update fails after Jobber succeeded → throw; a webhook replay
+  //     from Jobber will reconcile via the same idempotency key so no
+  //     duplicate confirmation is ever emitted.
+  //
   // Update in Jobber if we have a visit ID
   let jobberSynced = false;
   if (booking.jobber_visit_id) {
@@ -449,19 +524,43 @@ async function handleReschedule(
     console.log(`[Reschedule] Jobber visit updated successfully`);
   }
 
-  // Update local database
-  const { error: updateError } = await supabase
+  // Atomic booking-version bump with optimistic concurrency: the UPDATE only
+  // fires when booking_version still matches what we read. A concurrent
+  // reschedule race therefore fails one caller instead of silently overwriting.
+  const currentVersion = Number(booking.booking_version ?? 1);
+  const nextVersion = currentVersion + 1;
+  const rescheduleReason = typeof body.rescheduleReason === "string"
+    ? body.rescheduleReason.slice(0, 120) : null;
+  const rescheduleNotes = typeof body.rescheduleNotes === "string"
+    ? body.rescheduleNotes.slice(0, 500) : null;
+  const { data: updated, error: updateError } = await supabase
     .from("bookings")
     .update({
       scheduled_start: newSlot.startTime,
       scheduled_end: newSlot.endTime,
       technician_id: newSlot.technicianId,
+      previous_scheduled_start: booking.scheduled_start,
+      previous_scheduled_end: booking.scheduled_end,
+      rescheduled_at: new Date().toISOString(),
+      reschedule_source: 'customer_portal',
+      reschedule_reason: rescheduleReason,
+      reschedule_notes: rescheduleNotes,
+      booking_version: nextVersion,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", booking.id);
+    .eq("id", booking.id)
+    .eq("booking_version", currentVersion)
+    .select("id, booking_version")
+    .maybeSingle();
 
   if (updateError) {
     throw new Error(`Database update failed: ${updateError.message}`);
+  }
+  if (!updated) {
+    // Concurrent reschedule won the race — do NOT retry or overwrite. The
+    // other caller's confirmation event is authoritative. Caller must skip
+    // emitting a confirmation for this attempt.
+    throw new Error("Booking was updated concurrently. Please refresh and try again.");
   }
 
   // Update local busy blocks if they exist
@@ -483,6 +582,9 @@ async function handleReschedule(
     previousEnd: booking.scheduled_end,
     newStart: newSlot.startTime,
     newEnd: newSlot.endTime,
+    bookingVersion: nextVersion,
+    quoteId: booking.quote_id ?? null,
+    servicesJson: booking.services_json,
     technicianName: technicianNames,
     jobberSynced,
   };

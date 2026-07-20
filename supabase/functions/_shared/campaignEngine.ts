@@ -23,6 +23,8 @@ export const ALLOWED_EVENTS = [
   "booking_completed",
   "recurring_plan_created",
   "appointment_rescheduled",
+  "booking_reschedule_requested",
+  "booking_rescheduled",
   "appointment_cancelled",
   "customer_replied",
   "consent_granted",
@@ -44,6 +46,10 @@ export const STOP_EVENTS: Record<string, { reason: string; scope: "all" | "aband
   customer_replied: { reason: "customer_replied", scope: "all" },
   consent_revoked: { reason: "consent_revoked", scope: "all" },
   appointment_cancelled: { reason: "appointment_cancelled", scope: "reminders" },
+  // A confirmed reschedule supersedes prior confirmations + reminders for the
+  // SAME booking. Booking-version scoping in campaign-event narrows this so
+  // unrelated bookings for the same customer are never affected.
+  booking_rescheduled: { reason: "booking_rescheduled", scope: "reminders" },
   manual_staff_takeover: { reason: "manual_staff_takeover", scope: "all" },
 };
 

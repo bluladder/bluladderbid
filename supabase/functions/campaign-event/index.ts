@@ -198,7 +198,20 @@ serve(async (req) => {
     const stopQuoteId = typeof (meta as any)?.quote_id === "string" && (meta as any).quote_id
       ? String((meta as any).quote_id)
       : null;
-    stopped = await applyStop(supabase, customerId, email, phone, stop.reason, stop.scope, stopQuoteId);
+    // Booking-version scoping: for reschedule/cancel events, only stop
+    // enrollments tied to the SAME booking id AND strictly older booking
+    // versions. This lets a v1→v2 reschedule cancel the v1 confirmation+
+    // reminders without touching v2 (the new confirmation about to be sent).
+    const stopBookingId = typeof (meta as any)?.booking_id === "string" && (meta as any).booking_id
+      ? String((meta as any).booking_id)
+      : null;
+    const stopBookingVersion = Number.isFinite(Number((meta as any)?.booking_version))
+      ? Number((meta as any).booking_version)
+      : null;
+    stopped = await applyStop(
+      supabase, customerId, email, phone, stop.reason, stop.scope,
+      stopQuoteId, stopBookingId, stopBookingVersion,
+    );
   }
 
   // ---- Suppression (test identity / non-prod / global switch) ----
@@ -274,12 +287,19 @@ serve(async (req) => {
 
     // Create enrollment (snapshot version + steps for historical immutability).
     const snapshot = { version: c.version, required_consent: required, steps };
+    const enrollmentBookingId = typeof (meta as Record<string, unknown>).booking_id === "string"
+      ? String((meta as Record<string, unknown>).booking_id) : null;
+    const enrollmentBookingVersionRaw = (meta as Record<string, unknown>).booking_version;
+    const enrollmentBookingVersion = Number.isFinite(Number(enrollmentBookingVersionRaw))
+      ? Number(enrollmentBookingVersionRaw) : null;
     const { data: enr, error: enrErr } = await supabase.from("campaign_enrollments").insert({
       customer_id: customerId, campaign_id: c.id, campaign_event_id: eventId,
       campaign_version: c.version, campaign_snapshot: snapshot, event_name: eventName,
       conversation_id: body.conversation_id ?? null, email, phone,
       status: "active", reason: aud.reasons.join("; "),
       suppressed: suppression.suppressed, suppressed_reason: suppression.suppressed ? suppression.reason : null,
+      booking_id: enrollmentBookingId,
+      booking_version: enrollmentBookingVersion,
     }).select("id").single();
     if (enrErr || !enr) {
       decisions.push({ campaignId: c.id, campaignName: c.name, outcome: "skipped_duplicate", reason: "Concurrent enrollment race" });
@@ -301,7 +321,7 @@ serve(async (req) => {
     const metaQuoteId = typeof (meta as Record<string, unknown>).quote_id === "string"
       ? String((meta as Record<string, unknown>).quote_id)
       : null;
-    const primaryLink = metaLink || (metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
+    const linkFallback = metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL;
     const totalRaw = (meta as Record<string, unknown>).total;
     const totalNum = typeof totalRaw === "number" ? totalRaw : Number(totalRaw);
     const totalStr = Number.isFinite(totalNum) && totalNum > 0
@@ -338,12 +358,35 @@ serve(async (req) => {
     const manageLink = safeLink((meta as Record<string, unknown>).manage_link, `${APP_URL}/my-appointments`);
     const rescheduleLink = safeLink((meta as Record<string, unknown>).reschedule_link, manageLink);
     const cancelLink = safeLink((meta as Record<string, unknown>).cancel_link, manageLink);
+    // Reschedule-specific merge vars (Phase 2B). Missing values render as
+    // safe empty strings — templates that reference them never emit
+    // "undefined", "null", or malformed "confirmed for ." sentences.
+    const previousBookingDate = formatAppointmentDate(
+      typeof (meta as Record<string, unknown>).previous_appointment_date === "string"
+        ? String((meta as Record<string, unknown>).previous_appointment_date)
+        : null,
+    );
+    const previousArrivalWindow = typeof (meta as Record<string, unknown>).previous_arrival_window === "string"
+      ? String((meta as Record<string, unknown>).previous_arrival_window).trim()
+      : "";
+    const previousAppointmentWhen = buildAppointmentWhen(previousBookingDate, previousArrivalWindow);
+    const requestedBookingDate = formatAppointmentDate(
+      typeof (meta as Record<string, unknown>).requested_appointment_date === "string"
+        ? String((meta as Record<string, unknown>).requested_appointment_date)
+        : null,
+    );
+    const requestedArrivalWindow = typeof (meta as Record<string, unknown>).requested_arrival_window === "string"
+      ? String((meta as Record<string, unknown>).requested_arrival_window).trim()
+      : "";
+    const rescheduleReason = typeof (meta as Record<string, unknown>).reschedule_reason === "string"
+      ? String((meta as Record<string, unknown>).reschedule_reason).trim()
+      : "";
     const vars: Record<string, string> = {
       first_name: firstName,
       last_name: lastName,
       name: `${firstName} ${lastName}`.trim() || firstName,
       service: serviceLabel,
-      link: primaryLink,
+      link: safeLink(metaLink, linkFallback),
       total: totalStr,
       feedback_line: feedbackLine,
       // Booking-confirmation merge fields
@@ -357,6 +400,13 @@ serve(async (req) => {
       manage_link: manageLink,
       reschedule_link: rescheduleLink,
       cancel_link: cancelLink,
+      // Reschedule merge fields (Phase 2B)
+      previous_appointment_date: previousBookingDate,
+      previous_arrival_window: previousArrivalWindow,
+      previous_appointment_when: previousAppointmentWhen,
+      requested_appointment_date: requestedBookingDate,
+      requested_arrival_window: requestedArrivalWindow,
+      reschedule_reason: rescheduleReason,
     };
     const now = Date.now();
     const rows = usableSteps.map((s) => ({
@@ -416,12 +466,14 @@ async function applyStop(
   reason: string,
   scope: "all" | "abandoned" | "reminders",
   quoteId: string | null = null,
+  bookingId: string | null = null,
+  bookingVersion: number | null = null,
 ): Promise<number> {
   // Determine which campaigns are in scope by event kind.
   const campaignFilter = campaignFilterForScope(scope);
 
   const query = supabase.from("campaign_enrollments")
-    .select("id, campaign_id, event_name, campaign_event_id")
+    .select("id, campaign_id, event_name, campaign_event_id, booking_id, booking_version")
     .eq("customer_id", customerId).eq("status", "active");
   const { data: enrollments } = await query;
   const inScope = filterEnrollmentsByScope(enrollments ?? [], campaignFilter);
@@ -429,7 +481,14 @@ async function applyStop(
   const { data: events } = quoteId && eventIds.length
     ? await supabase.from("campaign_events").select("id, metadata").in("id", eventIds)
     : { data: [] as any[] };
-  const targets = filterEnrollmentsByQuoteJourney(inScope, events ?? [], quoteId);
+  let targets = filterEnrollmentsByQuoteJourney(inScope, events ?? [], quoteId);
+  // Booking-version scoping: only supersede enrollments whose booking_id
+  // matches AND whose booking_version is strictly older than the incoming
+  // event's booking_version. When no booking_id is supplied, keep the legacy
+  // reminder-scope behavior (customer-wide within scope).
+  if (bookingId) {
+    targets = filterEnrollmentsByObsoleteBookingVersion(targets, bookingId, bookingVersion);
+  }
   if (!targets.length) return 0;
 
   const ids = targets.map((t: any) => t.id);
@@ -438,6 +497,21 @@ async function applyStop(
   await supabase.from("sms_messages").update({ status: "cancelled", error: `Stopped: ${reason}`, next_retry_at: null })
     .in("enrollment_id", ids).eq("status", "pending");
   return ids.length;
+}
+
+// deno-lint-ignore no-explicit-any
+export function filterEnrollmentsByObsoleteBookingVersion(
+  enrollments: any[],
+  bookingId: string,
+  newVersion: number | null,
+): any[] {
+  return enrollments.filter((e) => {
+    if (!e.booking_id || String(e.booking_id) !== bookingId) return false;
+    if (newVersion === null || !Number.isFinite(newVersion)) return true;
+    const ev = Number(e.booking_version);
+    if (!Number.isFinite(ev)) return true; // legacy row w/o version — supersede
+    return ev < newVersion;
+  });
 }
 
 // ---- Pure helpers exported for unit tests ---------------------------------
@@ -450,7 +524,18 @@ export function campaignFilterForScope(
   // Journey scoping via quote_id keeps this narrow — an unrelated quote for
   // the same customer is not stopped.
   if (scope === "abandoned") return ["quote_abandoned", "quote_declined"];
-  if (scope === "reminders") return ["appointment_rescheduled", "appointment_scheduled", "booking_completed"];
+  // "reminders" covers every campaign whose enrollment is tied to a specific
+  // booking's schedule. When a booking is rescheduled or cancelled, prior
+  // pending confirmations + reminder sequences for that booking must be
+  // superseded. Booking-version scoping (see applyStop) keeps unrelated
+  // bookings for the same customer untouched.
+  if (scope === "reminders") return [
+    "appointment_rescheduled",
+    "appointment_scheduled",
+    "booking_completed",
+    "booking_rescheduled",
+    "booking_reschedule_requested",
+  ];
   return null;
 }
 
