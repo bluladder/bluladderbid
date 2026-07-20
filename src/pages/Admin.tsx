@@ -16,6 +16,7 @@ import { CustomerAccessLiveTestsPanel } from '@/components/admin/security/Custom
 import { SecurityErrorBoundary } from '@/components/admin/security/SecurityErrorBoundary';
 import { ConversationsTabContent } from '@/components/admin/conversations/ConversationsTabContent';
 import { OpsHealthPanel } from '@/components/admin/ops/OpsHealthPanel';
+import { OpsAlertsPanel } from '@/components/admin/ops/OpsAlertsPanel';
 import { Link } from 'react-router-dom';
 
 export default function Admin({ initialTab }: { initialTab?: string }) {
@@ -155,7 +156,10 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
             
             {/* Ops Tab - Read-only operational health snapshot */}
             <TabsContent value="ops">
-              <OpsHealthPanel />
+              <div className="space-y-6">
+                <OpsHealthPanel />
+                <OpsAlertsPanel />
+              </div>
             </TabsContent>
 
             {/* Conversations Tab - Unified inbox across chat, SMS, email, campaigns */}
