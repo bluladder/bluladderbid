@@ -90,6 +90,29 @@ export function CustomerAccessLiveTestsPanel() {
     return () => { mounted = false; };
   }, []);
 
+  // Precompute the SMTP-unknown alert BEFORE any early return so React hook
+  // order is stable across the loading / permission-denied branches.
+  const smtpUnknown = useMemo(() => (
+    <Alert>
+      <Info className="w-4 h-4" />
+      <AlertTitle>Custom SMTP readiness: unknown — manual verification required</AlertTitle>
+      <AlertDescription className="space-y-1 text-sm">
+        <p>Supabase Auth SMTP settings are not readable from this admin surface.</p>
+        <p>In Cloud → Users → Auth Settings, confirm:</p>
+        <ul className="list-disc ml-5">
+          <li>Custom SMTP is enabled (not the built-in demonstration mailer)</li>
+          <li>Sender name is <strong>BluLadder Secure Access</strong></li>
+          <li>Sender address is <strong>alerts@admin.bluladder.com</strong></li>
+          <li><code>admin.bluladder.com</code> is verified</li>
+        </ul>
+        <label className="flex items-center gap-2 pt-2">
+          <Checkbox checked={smtpConfirmed} onCheckedChange={(v) => setSmtpConfirmed(v === true)} />
+          <span>I have visually verified the above in Cloud → Users → Auth Settings.</span>
+        </label>
+      </AlertDescription>
+    </Alert>
+  ), [smtpConfirmed]);
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground">
@@ -173,27 +196,6 @@ export function CustomerAccessLiveTestsPanel() {
   const smsState = states.sms_otp;
   const emailState = states.email_otp;
   const linkState = states.booking_link_sms;
-
-  const smtpUnknown = useMemo(() => (
-    <Alert>
-      <Info className="w-4 h-4" />
-      <AlertTitle>Custom SMTP readiness: unknown — manual verification required</AlertTitle>
-      <AlertDescription className="space-y-1 text-sm">
-        <p>Supabase Auth SMTP settings are not readable from this admin surface.</p>
-        <p>In Cloud → Users → Auth Settings, confirm:</p>
-        <ul className="list-disc ml-5">
-          <li>Custom SMTP is enabled (not the built-in demonstration mailer)</li>
-          <li>Sender name is <strong>BluLadder Secure Access</strong></li>
-          <li>Sender address is <strong>alerts@admin.bluladder.com</strong></li>
-          <li><code>admin.bluladder.com</code> is verified</li>
-        </ul>
-        <label className="flex items-center gap-2 pt-2">
-          <Checkbox checked={smtpConfirmed} onCheckedChange={(v) => setSmtpConfirmed(v === true)} />
-          <span>I have visually verified the above in Cloud → Users → Auth Settings.</span>
-        </label>
-      </AlertDescription>
-    </Alert>
-  ), [smtpConfirmed]);
 
   return (
     <div className="space-y-6">
