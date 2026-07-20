@@ -432,10 +432,7 @@ export function SmartScheduler({
               {browseMode === 'day' ? (
                 <div
                   className="space-y-3"
-                  {...useSwipe({
-                    onSwipeLeft: () => navigateDay('next'),
-                    onSwipeRight: () => navigateDay('prev'),
-                  })}
+                  {...daySwipeHandlers}
                 >
                   <div className="flex items-center justify-between">
                     <Button
