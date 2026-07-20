@@ -216,6 +216,20 @@ serve(async (req) => {
     );
   }
 
+  // ---- PAUSE events: defer (do not terminate) active enrollments -----------
+  // customer_replied means the customer is actively conversing with the AI.
+  // We pause active nurture enrollments for the configured window and let the
+  // queue/sweep auto-resume from the next unsent step if no permanent stop
+  // condition has occurred in the meantime. Any incoming permanent STOP event
+  // (booking, opt-out, decline, takeover, ...) processed above still wins.
+  const pause = PAUSE_EVENTS[eventName];
+  let paused = 0;
+  if (pause && !body.simulate && customerId) {
+    paused = await applyPause(
+      supabase, customerId, pause.reason, pause.durationMs,
+    );
+  }
+
   // ---- Suppression (test identity / non-prod / global switch) ----
   const suppression = await checkSuppression(supabase, { email, phone });
 
