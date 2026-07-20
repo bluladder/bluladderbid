@@ -312,15 +312,11 @@ serve(async (req) => {
     const serviceLabel = Array.isArray(ctx.serviceTypes) && ctx.serviceTypes.length
       ? ctx.serviceTypes.join(", ")
       : "your service";
-    // Feedback-aware acknowledgment line. When the caller supplied a
-    // structured decline_reason we thank the customer for the feedback and
-    // never ask again; when we have no reason we invite a brief note.
-    const declineReasonRaw = typeof (meta as Record<string, unknown>).decline_reason === "string"
-      ? String((meta as Record<string, unknown>).decline_reason).trim()
-      : "";
-    const feedbackLine = declineReasonRaw
-      ? "Thanks for that feedback — it really helps us improve."
-      : "If you have a moment, reply with a quick note about what didn't fit — it helps us improve.";
+    const feedbackLine = buildDeclineFeedbackLine(
+      typeof (meta as Record<string, unknown>).decline_reason === "string"
+        ? String((meta as Record<string, unknown>).decline_reason)
+        : null,
+    );
     const vars: Record<string, string> = {
       first_name: firstName,
       last_name: lastName,
