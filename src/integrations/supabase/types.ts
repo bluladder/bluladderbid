@@ -2704,6 +2704,12 @@ export type Database = {
           customer_id: string | null
           customer_name: string | null
           customer_phone: string | null
+          decline_notes: string | null
+          decline_reason: string | null
+          decline_source: string | null
+          decline_version: number | null
+          declined_at: string | null
+          declined_by: string | null
           discount_amount: number | null
           discount_code: string | null
           discount_snapshot: Json | null
@@ -2745,6 +2751,12 @@ export type Database = {
           customer_id?: string | null
           customer_name?: string | null
           customer_phone?: string | null
+          decline_notes?: string | null
+          decline_reason?: string | null
+          decline_source?: string | null
+          decline_version?: number | null
+          declined_at?: string | null
+          declined_by?: string | null
           discount_amount?: number | null
           discount_code?: string | null
           discount_snapshot?: Json | null
@@ -2786,6 +2798,12 @@ export type Database = {
           customer_id?: string | null
           customer_name?: string | null
           customer_phone?: string | null
+          decline_notes?: string | null
+          decline_reason?: string | null
+          decline_source?: string | null
+          decline_version?: number | null
+          declined_at?: string | null
+          declined_by?: string | null
           discount_amount?: number | null
           discount_code?: string | null
           discount_snapshot?: Json | null

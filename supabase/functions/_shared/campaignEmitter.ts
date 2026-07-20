@@ -25,6 +25,7 @@ const CRITICAL_EVENTS = new Set([
   "customer_replied",
   "consent_revoked",
   "manual_staff_takeover",
+  "quote_declined",
 ]);
 
 const DEFAULT_TIMEOUT_MS = 5000;

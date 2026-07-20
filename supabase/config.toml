@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.email-diagnostics]
 verify_jwt = false
+
+[functions.quote-decline]
+verify_jwt = false
