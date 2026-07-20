@@ -4,7 +4,7 @@
 // unknown fields, caps all string lengths, refuses PII, never accepts revenue.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { rateLimit } from "../_shared/rateLimit.ts";
+import { rateLimit, sharedRateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
