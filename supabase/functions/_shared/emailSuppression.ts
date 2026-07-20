@@ -69,19 +69,31 @@ export async function recordSuppression(opts: {
   const supabase = serviceClient();
   if (!supabase) return { ok: false, error: "no_service_client" };
   try {
-    const { error } = await supabase
+    const { data: existing } = await supabase
       .from("email_suppressions")
-      .upsert(
-        {
-          email,
-          reason: opts.reason,
-          source: opts.source ?? "resend",
-          provider_event_id: opts.providerEventId ?? null,
-          notes: opts.notes ?? null,
-        },
-        { onConflict: "email" },
-      );
-    if (error) return { ok: false, error: error.message };
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+    const payload = {
+      email,
+      reason: opts.reason,
+      source: opts.source ?? "resend",
+      provider_event_id: opts.providerEventId ?? null,
+      notes: opts.notes ?? null,
+    };
+    if (existing?.id) {
+      const { error } = await supabase
+        .from("email_suppressions")
+        .update(payload)
+        .eq("id", existing.id);
+      if (error) return { ok: false, error: error.message };
+    } else {
+      const { error } = await supabase.from("email_suppressions").insert(payload);
+      // Ignore unique-violation races (23505) — a concurrent insert already recorded it.
+      if (error && !String(error.message).includes("duplicate")) {
+        return { ok: false, error: error.message };
+      }
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
