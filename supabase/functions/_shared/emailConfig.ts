@@ -24,6 +24,8 @@ const GATEWAY_BASE = "https://connector-gateway.lovable.dev/resend";
 const RESEND_EMAILS_URL = `${GATEWAY_BASE}/emails`;
 const RESEND_DOMAINS_URL = `${GATEWAY_BASE}/domains`;
 
+import { isEmailSuppressed, recordSuppression, normalizeEmailAddr } from "./emailSuppression.ts";
+
 /** Auth headers for the connector gateway (Lovable key + connection key). */
 function gatewayHeaders(extra?: Record<string, string>): Record<string, string> {
   const lovableKey = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -68,7 +70,8 @@ export type EmailFailureCategory =
   | "rate_limited" // Resend is throttling
   | "sandbox_restricted" // test-domain / onboarding recipient restriction
   | "provider_rejected" // any other Resend rejection
-  | "network_error"; // request never reached Resend
+  | "network_error" // request never reached Resend
+  | "suppressed"; // recipient is on the suppression list
 
 export interface EmailFailure {
   category: EmailFailureCategory;
@@ -141,6 +144,23 @@ export async function sendEmail(opts: {
     };
   }
 
+  // Suppression gate — the recipient has bounced/complained/unsubscribed before.
+  // NEVER attempt delivery again; return a classified, non-retryable failure.
+  const normalizedTo = normalizeEmailAddr(opts.to);
+  if (normalizedTo) {
+    const s = await isEmailSuppressed(normalizedTo);
+    if (s.suppressed) {
+      return {
+        ok: false, providerMessageId: null, ...base, httpStatus: null, reachedProvider: false,
+        failure: {
+          category: "suppressed",
+          message: `Recipient is on the email suppression list (${s.reason}).`,
+          retryable: false, reachedProvider: false, httpStatus: null,
+        },
+      };
+    }
+  }
+
   let resp: Response;
   try {
     resp = await fetch(RESEND_EMAILS_URL, {
@@ -169,6 +189,16 @@ export async function sendEmail(opts: {
 
   const text = await resp.text().catch(() => "");
   const failure = classifyResendFailure(resp.status, text);
+  // Terminal recipient rejections auto-add to the suppression list so retries
+  // can't hammer a known-bad address across restarts.
+  if (failure.category === "invalid_recipient" && normalizedTo) {
+    await recordSuppression({
+      email: normalizedTo,
+      reason: "invalid",
+      source: "resend-send",
+      notes: text.slice(0, 500),
+    }).catch(() => { /* best-effort */ });
+  }
   return { ok: false, providerMessageId: null, ...base, httpStatus: resp.status, reachedProvider: true, failure };
 }
 

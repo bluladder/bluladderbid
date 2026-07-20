@@ -2204,6 +2204,39 @@ export type Database = {
           },
         ]
       }
+      email_suppressions: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          notes: string | null
+          provider_event_id: string | null
+          reason: string
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          notes?: string | null
+          provider_event_id?: string | null
+          reason: string
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          notes?: string | null
+          provider_event_id?: string | null
+          reason?: string
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       embed_presets: {
         Row: {
           created_at: string
