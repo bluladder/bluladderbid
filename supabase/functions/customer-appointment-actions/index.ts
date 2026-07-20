@@ -320,12 +320,14 @@ Deno.serve(async (req) => {
     const smsEvent =
       rescheduleFreshlyConfirmed ? 'appointment_rescheduled' :
       cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
-    // Canonical campaign event name for Phase 2B. `appointment_rescheduled` is
-    // retained ONLY as the legacy send-sms/reminders trigger name to preserve
-    // transactional SMS delivery until the seeded Campaign B is activated.
+    // Canonical campaign event names for Phase 2B/2C. The `appointment_*`
+    // legacy names remain ONLY as the send-sms/reminders transactional trigger
+    // to preserve delivery until the seeded confirmation campaigns are
+    // activated. `booking_cancelled` is the canonical lifecycle event fed to
+    // the campaign engine after Jobber confirmed the removal.
     const campaignEvent =
       rescheduleFreshlyConfirmed ? 'booking_rescheduled' :
-      cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
+      cancelFreshlyConfirmed ? 'booking_cancelled' : null;
     if (smsEvent && campaignEvent) {
       try {
         fetch(`${supabaseUrl}/functions/v1/send-sms`, {
@@ -350,12 +352,19 @@ Deno.serve(async (req) => {
         const newStart = body.newSlot?.startTime ?? "";
         const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
         const manageLink = `${APP_URL}/my-appointments`;
+        const bookingLink = `${APP_URL}/`;
         const bookingVersion = Number((result as Record<string, unknown>).bookingVersion ?? typedBooking.booking_version ?? 1);
         const serviceNames = Array.isArray(typedBooking.services_json)
           ? typedBooking.services_json.map((s) => s?.name).filter(Boolean) as string[] : [];
-        const idempotencyKey = campaignEvent === 'booking_rescheduled'
-          ? `booking_rescheduled:${bookingId}:v${bookingVersion}`
-          : `appointment_cancelled:${visitId}`;
+        const cancelledVersion = Number(
+          (result as Record<string, unknown>).cancellationLifecycleVersion ??
+          typedBooking.booking_version ?? 1,
+        );
+        const idempotencyKey =
+          campaignEvent === 'booking_rescheduled'
+            ? `booking_rescheduled:${bookingId}:v${bookingVersion}`
+            : `booking_cancelled:${bookingId}:v${cancelledVersion}`;
+        const serviceAddress = (typedBooking.home_details_json as Record<string, unknown> | null)?.address ?? "";
         await emitCampaignEvent({
           eventName: campaignEvent,
           idempotencyKey,
@@ -363,7 +372,10 @@ Deno.serve(async (req) => {
           customerId: typedBooking.customer_id,
           source: "customer-appointment-actions",
           recoverySupabase: serviceClient,
-          subject: campaignEvent === 'booking_rescheduled' ? "Appointment rescheduled" : "Appointment cancelled",
+          subject:
+            campaignEvent === 'booking_rescheduled'
+              ? "Appointment rescheduled"
+              : "Appointment cancelled",
           metadata: campaignEvent === 'booking_rescheduled' ? {
             booking_id: bookingId,
             booking_version: bookingVersion,
@@ -377,17 +389,30 @@ Deno.serve(async (req) => {
             service: serviceNames[0] ?? "your service",
             service_names: serviceNames,
             service_types: serviceNames,
-            service_address: (typedBooking.home_details_json as Record<string, unknown> | null)?.address ?? "",
+            service_address: serviceAddress,
             booking_total: typedBooking.total,
             manage_link: manageLink,
             reschedule_link: manageLink,
             cancel_link: manageLink,
             reschedule_reason: (body.rescheduleReason ?? null),
           } : {
+            // booking_cancelled — journey-scoped stop for reminders/reschedule
+            // requests tied to this booking + version, plus safe merge fields.
             booking_id: bookingId,
+            booking_version: cancelledVersion,
+            quote_id: typedBooking.quote_id ?? null,
             jobber_visit_id: typedBooking.jobber_visit_id ?? null,
-            previous_start: typedBooking.scheduled_start,
             booking_status: 'cancelled',
+            previous_appointment_date: typedBooking.scheduled_start,
+            previous_arrival_window: null,
+            service: serviceNames[0] ?? "your service",
+            service_names: serviceNames,
+            service_types: serviceNames,
+            service_address: serviceAddress,
+            booking_total: typedBooking.total,
+            cancellation_reason: (body.cancellationReason ?? null),
+            manage_link: manageLink,
+            booking_link: bookingLink,
           },
         });
       } catch (emitErr) {
