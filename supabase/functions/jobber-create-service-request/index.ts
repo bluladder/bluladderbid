@@ -40,7 +40,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Emit booking_completed for a successfully recorded recurring plan quote.
+// Emit recurring_plan_created for a successfully recorded recurring plan quote.
+// A recurring plan generates a Jobber QUOTE — not a confirmed appointment — so
+// this uses its own event rather than booking_completed. It still STOPs any
+// abandoned/decline-nurture that was targeting the same quote journey.
 // Idempotent on the local quote id so retries never duplicate the event.
 async function emitBookingCompleted(
   supabase: SupabaseClient,
@@ -52,13 +55,13 @@ async function emitBookingCompleted(
 ): Promise<void> {
   try {
     await emitCampaignEvent({
-      eventName: "booking_completed",
-      idempotencyKey: `booking_completed:${quoteId}`,
+      eventName: "recurring_plan_created",
+      idempotencyKey: `recurring_plan_created:${quoteId}`,
       email: customer.email ?? null,
       phone: customer.phone ?? null,
       customerId,
       source: "jobber-create-service-request",
-      subject: "Recurring plan booking completed",
+      subject: "Recurring plan quote created",
       recoverySupabase: supabase,
       metadata: {
         booking_status: "recurring_quote_created",
@@ -69,7 +72,7 @@ async function emitBookingCompleted(
       },
     });
   } catch (e) {
-    console.warn("booking_completed (recurring) emit failed:", e);
+    console.warn("recurring_plan_created emit failed:", e);
   }
 }
 
