@@ -1,6 +1,6 @@
 import { assertEquals } from "https://deno.land/std@0.190.0/testing/asserts.ts";
 import {
-  isAllowedEvent, matchesAudience, consentSatisfies, ALLOWED_EVENTS, STOP_EVENTS,
+  isAllowedEvent, matchesAudience, consentSatisfies, ALLOWED_EVENTS, STOP_EVENTS, PAUSE_EVENTS,
 } from "./campaignEngine.ts";
 
 Deno.test("only allowlisted event names are accepted", () => {
@@ -64,7 +64,7 @@ Deno.test("multiple conditions use AND semantics", () => {
 
 Deno.test("stop events map to scopes", () => {
   assertEquals(STOP_EVENTS.booking_completed.scope, "abandoned");
-  assertEquals(STOP_EVENTS.customer_replied.scope, "all");
+  assertEquals(PAUSE_EVENTS.customer_replied.scope, "all");
   assertEquals(STOP_EVENTS.appointment_cancelled.scope, "reminders");
   assertEquals(STOP_EVENTS.consent_revoked.scope, "all");
   assertEquals(STOP_EVENTS.manual_staff_takeover.scope, "all");
