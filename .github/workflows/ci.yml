@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint · typecheck · test · build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Unit tests (vitest)
+        run: bun run test
+
+      - name: Production build
+        run: bun run build
+
+  edge-functions:
+    name: Edge functions (deno fmt · lint · test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Deno format check
+        run: deno fmt --check supabase/functions
+        continue-on-error: true
+
+      - name: Deno lint
+        run: deno lint supabase/functions
+        continue-on-error: true
+
+      - name: Deno tests
+        run: deno test --allow-all --no-check supabase/functions/_shared
+
+  campaigns-inactive-guard:
+    name: Campaigns inactive guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if a migration sets campaigns.status = 'active'
+        run: |
+          set -e
+          if grep -RniE "campaigns\b.*status[[:space:]]*=[[:space:]]*'active'" supabase/migrations 2>/dev/null; then
+            echo "::error::A migration activates a campaign. Campaign activation must be done via the admin UI, not migrations."
+            exit 1
+          fi
+          echo "OK: no campaign activation found in migrations."
