@@ -321,7 +321,7 @@ serve(async (req) => {
     const metaQuoteId = typeof (meta as Record<string, unknown>).quote_id === "string"
       ? String((meta as Record<string, unknown>).quote_id)
       : null;
-    const primaryLink = metaLink || (metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
+    const primaryLink = safeLink(metaLink, metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
     const totalRaw = (meta as Record<string, unknown>).total;
     const totalNum = typeof totalRaw === "number" ? totalRaw : Number(totalRaw);
     const totalStr = Number.isFinite(totalNum) && totalNum > 0
