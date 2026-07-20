@@ -358,7 +358,25 @@ serve(async (req) => {
     const metaQuoteId = typeof (meta as Record<string, unknown>).quote_id === "string"
       ? String((meta as Record<string, unknown>).quote_id)
       : null;
-    const linkFallback = metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL;
+    // Never fall back to a bare /quote/<uuid> — that URL would leak PII on
+    // any visitor because QuoteView requires a valid resume token. If there
+    // is no pre-minted quote_url in metadata and we do have a quote id, mint
+    // a fresh scoped token at enrollment time. Older links that expire before
+    // the campaign fires roll into customer verification.
+    let linkFallback = APP_URL;
+    if (!metaLink && metaQuoteId) {
+      try {
+        const { mintResumeUrl } = await import("../_shared/resumeLink.ts");
+        linkFallback = await mintResumeUrl(supabase, metaQuoteId, {
+          reason: `campaign:${c.name ?? c.id}`,
+          // Generous TTL for late-firing campaign steps; expired tokens
+          // route the customer into verification, they do not silently 404.
+          ttlHours: 24 * 400,
+        });
+      } catch (_e) {
+        linkFallback = APP_URL;
+      }
+    }
     const totalRaw = (meta as Record<string, unknown>).total;
     const totalNum = typeof totalRaw === "number" ? totalRaw : Number(totalRaw);
     const totalStr = Number.isFinite(totalNum) && totalNum > 0
