@@ -339,7 +339,8 @@ serve(async (req) => {
     try {
       const callrail = getCallRailConfig();
       const result = await routeInboundSmsToOrchestrator({
-        supabase, phoneE164: phone, userMessage: content, providerMessageId,
+        // deno-lint-ignore no-explicit-any
+        supabase: supabase as any, phoneE164: phone, userMessage: content, providerMessageId,
       });
       aiAction = "ai_replied";
       if (callrail && result.reply) {
