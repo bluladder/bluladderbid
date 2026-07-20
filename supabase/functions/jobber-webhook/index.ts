@@ -547,11 +547,29 @@ Deno.serve(async (req) => {
         console.log(`[Webhook] 🗑️ Visit cancelled/deleted`);
         await markBusyBlockCancelled(supabase, parsedEvent.itemId);
         result = { action: 'cancel' };
-        
-        await supabase
-          .from("bookings")
-          .update({ status: "cancelled" })
-          .eq("jobber_visit_id", parsedEvent.itemId);
+
+        // Route through the canonical cancellation helper so every
+        // authoritative path (customer/admin/webhook/reconciliation) shares
+        // versioning, slot release, and lifecycle event emission. Idempotent
+        // for replays: an already-cancelled booking is a no-op.
+        try {
+          const { finalizeBookingCancellation } = await import("../_shared/bookingCancellation.ts");
+          const { data: b } = await supabase
+            .from("bookings")
+            .select("id")
+            .eq("jobber_visit_id", parsedEvent.itemId)
+            .maybeSingle();
+          if (b?.id) {
+            await finalizeBookingCancellation(supabase, {
+              bookingId: b.id,
+              source: "jobber_webhook",
+              jobberOutcome: "confirmed",
+              reason: "jobber_visit_cancelled",
+            });
+          }
+        } catch (e) {
+          console.error("[Webhook] canonical cancellation failed:", e instanceof Error ? e.message : e);
+        }
         break;
       }
 
@@ -587,11 +605,24 @@ Deno.serve(async (req) => {
           .from("jobber_busy_blocks")
           .update({ status: 'cancelled', updated_at: new Date().toISOString() })
           .eq("jobber_job_id", parsedEvent.itemId);
-        
-        await supabase
-          .from("bookings")
-          .update({ status: "cancelled" })
-          .eq("jobber_job_id", parsedEvent.itemId);
+
+        try {
+          const { finalizeBookingCancellation } = await import("../_shared/bookingCancellation.ts");
+          const { data: rows } = await supabase
+            .from("bookings")
+            .select("id")
+            .eq("jobber_job_id", parsedEvent.itemId);
+          for (const row of rows ?? []) {
+            await finalizeBookingCancellation(supabase, {
+              bookingId: (row as { id: string }).id,
+              source: "jobber_webhook",
+              jobberOutcome: "confirmed",
+              reason: "jobber_job_cancelled",
+            });
+          }
+        } catch (e) {
+          console.error("[Webhook] canonical cancellation (job) failed:", e instanceof Error ? e.message : e);
+        }
         result = { action: 'job_cancel' };
         break;
       }

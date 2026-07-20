@@ -329,17 +329,49 @@ Deno.serve(async (req) => {
       rescheduleFreshlyConfirmed ? 'booking_rescheduled' :
       cancelFreshlyConfirmed ? 'booking_cancelled' : null;
     if (smsEvent && campaignEvent) {
+      // Migration gate: once the canonical `booking_cancelled` / `booking_rescheduled`
+      // campaign is ACTIVE with an sms step, it becomes the sole owner of
+      // customer acknowledgment for that lifecycle event. We check at
+      // fire-time so activation flips ownership without a code deploy and
+      // duplicate delivery is structurally impossible.
+      let legacySmsAllowed = true;
       try {
-        fetch(`${supabaseUrl}/functions/v1/send-sms`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({ eventType: smsEvent, bookingId }),
-        }).catch((e) => console.warn("[CustomerAction] SMS dispatch failed:", e));
-      } catch (smsErr) {
-        console.warn("[CustomerAction] SMS dispatch error:", smsErr);
+        const canonicalEvent = campaignEvent; // booking_cancelled | booking_rescheduled
+        const { data: activeCampaigns } = await serviceClient
+          .from("sms_campaigns")
+          .select("id")
+          .eq("event_name", canonicalEvent)
+          .eq("active", true)
+          .eq("status", "active");
+        if (activeCampaigns && activeCampaigns.length > 0) {
+          const ids = activeCampaigns.map((c: { id: string }) => c.id);
+          const { data: liveSteps } = await serviceClient
+            .from("sms_campaign_steps")
+            .select("id")
+            .in("campaign_id", ids)
+            .eq("channel", "sms")
+            .eq("active", true)
+            .limit(1);
+          if (liveSteps && liveSteps.length > 0) legacySmsAllowed = false;
+        }
+      } catch (gateErr) {
+        console.warn("[CustomerAction] migration-gate check failed, defaulting to legacy path:", gateErr);
+      }
+      if (legacySmsAllowed) {
+        try {
+          fetch(`${supabaseUrl}/functions/v1/send-sms`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ eventType: smsEvent, bookingId }),
+          }).catch((e) => console.warn("[CustomerAction] SMS dispatch failed:", e));
+        } catch (smsErr) {
+          console.warn("[CustomerAction] SMS dispatch error:", smsErr);
+        }
+      } else {
+        console.log(`[CustomerAction] Legacy ${smsEvent} SMS suppressed — canonical ${campaignEvent} campaign owns delivery`);
       }
 
       // Campaign lifecycle event — emitted ONLY after Jobber confirmed the
