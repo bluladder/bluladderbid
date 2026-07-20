@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { normalizePhone, classifyInbound, getCallRailConfig, sendCallRailSms } from "../_shared/sms.ts";
 import { classifyInboundIntent, renderBookingAutoReply } from "../_shared/bookingIntent.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
+import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -99,8 +100,18 @@ serve(async (req) => {
     const nowIso = new Date().toISOString();
 
     // Higher-fidelity intent classifier used for BOOK-IT / escalation routing.
-    // Compliance keywords still short-circuit below via `intent` (STOP/START).
     const richIntent = classifyInboundIntent(content);
+
+    // Compliance precedence (authoritative): STOP/HELP > escalation > booking >
+    // START > other. The legacy `classifyInbound()` treats a bare "yes" (or any
+    // reply starting with "yes") as START, which mis-classifies natural booking
+    // replies like "yes, let's do it" as an opt-in. We use richIntent as the
+    // authoritative decision for STOP/START handling; the legacy intent is
+    // preserved only as metadata on the customer_replied event.
+    const complianceIntent: "stop" | "start" | null =
+      richIntent.kind === "stop" ? "stop"
+      : richIntent.kind === "start" ? "start"
+      : null;
 
     // customer_replied — one event per inbound message. The idempotency key is
     // the CallRail/provider message id (fallback: phone+content hash) so replayed
@@ -130,7 +141,7 @@ serve(async (req) => {
     // event is already allowlisted as a STOP scope=all, so it halts campaign
     // and AI automation and preserves the transcript for a human.
     if (
-      intent !== "stop" && intent !== "start" &&
+      complianceIntent === null &&
       richIntent.kind === "escalation"
     ) {
       try {
@@ -159,13 +170,13 @@ serve(async (req) => {
     // Compliance keywords (STOP/START) and escalation categories short-
     // circuit before this block runs.
     if (
-      intent !== "stop" && intent !== "start" &&
+      complianceIntent === null &&
       richIntent.kind === "booking"
     ) {
       try {
         // Best-effort: find the most recent quote associated with this
         // phone. Falls back to a generic quotes landing if none exists.
-        const appUrl = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+        const appUrl = getAppUrl();
         let quoteLink = `${appUrl}/quote`;
         let firstName: string | null = null;
 
@@ -207,7 +218,7 @@ serve(async (req) => {
       }
     }
 
-    if (intent === "stop") {
+    if (complianceIntent === "stop") {
       await supabase.from("sms_opt_outs").upsert({
         phone,
         opted_out: true,
@@ -229,7 +240,7 @@ serve(async (req) => {
       });
     }
 
-    if (intent === "start") {
+    if (complianceIntent === "start") {
       await supabase.from("sms_opt_outs").upsert({
         phone,
         opted_out: false,

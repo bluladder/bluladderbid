@@ -24,7 +24,13 @@ import {
 } from "./conversationState.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-3-flash-preview";
+// Canonical scheduling/orchestrator model. Configurable via env so we don't
+// silently ship a hard-coded preview model to production. Falls back to a
+// currently-supported model rather than an unknown id.
+const DEFAULT_MODEL = "google/gemini-3.5-flash";
+export const ORCHESTRATOR_MODEL: string =
+  Deno.env.get("AI_SCHEDULING_MODEL") || DEFAULT_MODEL;
+export const ORCHESTRATOR_PROMPT_VERSION = "orchestrator/2026-07-20";
 const MAX_TOOL_STEPS = 6;
 
 export interface OrchestratorInput {
@@ -157,7 +163,7 @@ async function callModel(messages: any[], tools: any[]): Promise<any> {
   const resp = await fetch(AI_GATEWAY, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, messages, tools, stream: false }),
+    body: JSON.stringify({ model: ORCHESTRATOR_MODEL, messages, tools, stream: false }),
   });
   if (resp.status === 429) return { __rateLimited: true };
   if (resp.status === 402) return { __creditsExhausted: true };
@@ -307,7 +313,7 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
 function persistFacts(supabase: SupabaseClient, conversationId: string, facts: ConversationFacts, state: string) {
   const c = facts.contact ?? {};
   const update: Record<string, unknown> = {
-    facts: facts as any,
+    facts: { ...facts, aiModel: ORCHESTRATOR_MODEL, aiPromptVersion: ORCHESTRATOR_PROMPT_VERSION } as any,
     conversation_state: state,
     selected_slot_id: facts.selectedSlotId ?? null,
     last_activity_at: new Date().toISOString(),
