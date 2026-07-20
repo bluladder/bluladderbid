@@ -22,6 +22,9 @@ interface ActionRequest {
     technicianId: string;
     technicianIds?: string[]; // For team bookings
   };
+  // Optional structured operational metadata for a reschedule.
+  rescheduleReason?: string | null;
+  rescheduleNotes?: string | null;
   // For modify services
   newServices?: Array<{ name: string; price: number }>;
   newSubtotal?: number;
@@ -45,6 +48,8 @@ interface BookingRecord {
   jobber_visit_id: string | null;
   jobber_job_id: string | null;
   customer_id: string;
+  booking_version?: number | null;
+  quote_id?: string | null;
   customer?: { email: string };
 }
 
