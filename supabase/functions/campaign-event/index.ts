@@ -190,7 +190,15 @@ serve(async (req) => {
   const stop = STOP_EVENTS[eventName];
   let stopped = 0;
   if (stop && !body.simulate && customerId) {
-    stopped = await applyStop(supabase, customerId, email, phone, stop.reason, stop.scope);
+    // Narrow the stop to the specific quote journey when the incoming event
+    // carries a durable quote_id (e.g. quote_declined for Quote A must not
+    // stop pending abandonment follow-up for Quote B belonging to the same
+    // customer). When no quote_id is provided, fall back to the legacy
+    // customer-wide stop for that scope.
+    const stopQuoteId = typeof (meta as any)?.quote_id === "string" && (meta as any).quote_id
+      ? String((meta as any).quote_id)
+      : null;
+    stopped = await applyStop(supabase, customerId, email, phone, stop.reason, stop.scope, stopQuoteId);
   }
 
   // ---- Suppression (test identity / non-prod / global switch) ----
@@ -304,6 +312,15 @@ serve(async (req) => {
     const serviceLabel = Array.isArray(ctx.serviceTypes) && ctx.serviceTypes.length
       ? ctx.serviceTypes.join(", ")
       : "your service";
+    // Feedback-aware acknowledgment line. When the caller supplied a
+    // structured decline_reason we thank the customer for the feedback and
+    // never ask again; when we have no reason we invite a brief note.
+    const declineReasonRaw = typeof (meta as Record<string, unknown>).decline_reason === "string"
+      ? String((meta as Record<string, unknown>).decline_reason).trim()
+      : "";
+    const feedbackLine = declineReasonRaw
+      ? "Thanks for that feedback — it really helps us improve."
+      : "If you have a moment, reply with a quick note about what didn't fit — it helps us improve.";
     const vars: Record<string, string> = {
       first_name: firstName,
       last_name: lastName,
@@ -311,6 +328,7 @@ serve(async (req) => {
       service: serviceLabel,
       link: safeLink,
       total: totalStr,
+      feedback_line: feedbackLine,
     };
     const now = Date.now();
     const rows = usableSteps.map((s) => ({
