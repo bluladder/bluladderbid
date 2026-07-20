@@ -21,10 +21,11 @@ Deno.test("routing: ordinary question does NOT trip compliance or escalation", (
   assert(rich.kind !== "stop" && rich.kind !== "start" && rich.kind !== "escalation");
 });
 
-Deno.test("routing: legacy classifier still flags bare YES as start (documented)", () => {
-  // The legacy first-word classifier is intentionally retained as metadata
-  // only. Authoritative decisions come from classifyInboundIntent.
-  assertEquals(classifyInbound("YES"), "start");
-  const rich = classifyInboundIntent("yes, let's do it");
-  assertEquals(rich.kind, "booking");
+Deno.test("routing: bare YES is no longer START — conversational fall-through", () => {
+  // Compliance precedence: only explicit START/UNSTOP/SUBSCRIBE/OPT-IN
+  // commands re-subscribe. Bare "yes" is conversational.
+  assertEquals(classifyInbound("YES"), null);
+  assertEquals(classifyInboundIntent("YES").kind, "other");
+  assertEquals(classifyInboundIntent("yes, let's do it").kind, "booking");
+  assertEquals(classifyInboundIntent("START").kind, "start");
 });
