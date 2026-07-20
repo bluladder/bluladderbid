@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { normalizePhone, isPhoneOptedOut } from "../_shared/sms.ts";
-import { rateLimit } from "../_shared/rateLimit.ts";
+import { rateLimit, sharedRateLimit } from "../_shared/rateLimit.ts";
 import { extractPortalToken, getActivePortalSession } from "../_shared/customerVerification.ts";
 
 const corsHeaders = {
@@ -24,6 +24,17 @@ serve(async (req) => {
   // customers by guessing email addresses.
   const rl = rateLimit(req, { limit: 6, windowMs: 60_000 });
   if (!rl.allowed) {
+    return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
+      status: 429,
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" },
+    });
+  }
+  const shared = await sharedRateLimit(req, {
+    key: "manage-sms-optout",
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!shared.allowed) {
     return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
       status: 429,
       headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" },
