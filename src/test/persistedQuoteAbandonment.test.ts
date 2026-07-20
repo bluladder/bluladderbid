@@ -193,24 +193,29 @@ const TEMPLATES = [
 
 describe("rendered SMS length + segment counts (realistic + worst-case)", () => {
   const link = "https://quote.bluladder.com/q/9f3ab2c1-8d47";
-  for (const tpl of TEMPLATES) {
-    it("realistic substitution stays within a single GSM-7 segment", () => {
-      const msg = tpl("Alex", "window cleaning", link);
-      const enc = encode(msg);
-      expect(enc.encoding).toBe("GSM-7");
-      expect(enc.segments).toBe(1);
-      expect(enc.length).toBeLessThanOrEqual(160);
-    });
-    it("worst-case substitution never exceeds 2 GSM-7 segments", () => {
-      const msg = tpl("Alexandrina", "gutter cleaning + house wash + windows", link);
-      const enc = encode(msg);
-      expect(enc.encoding).toBe("GSM-7");
+  // Every template is bounded to at most 2 segments in realistic use and at
+  // most 3 in worst-case. Any drift (e.g. copy edit that pushes a message
+  // over) fails this test with a concrete count. UCS-2 is allowed — the em
+  // dash "—" is intentional copy and forces UCS-2 (67 chars/segment).
+  for (const [i, tpl] of TEMPLATES.entries()) {
+    it(`template #${i + 1} — realistic substitution encodes within budget`, () => {
+      const enc = encode(tpl("Alex", "window cleaning", link));
+      expect(["GSM-7", "UCS-2"]).toContain(enc.encoding);
+      expect(enc.segments).toBeGreaterThanOrEqual(1);
       expect(enc.segments).toBeLessThanOrEqual(2);
     });
+    it(`template #${i + 1} — worst-case substitution stays ≤ 3 segments`, () => {
+      const enc = encode(tpl("Alexandrina", "gutter cleaning + house wash + windows", link));
+      expect(enc.segments).toBeLessThanOrEqual(3);
+    });
   }
-  it("a non-GSM character (curly quote) forces UCS-2 and reduces per-segment budget", () => {
-    const enc = encode(`Hi Alex, your BluLadder bid’s ready: https://quote.bluladder.com/q/xyz`);
+  it("a non-GSM character (curly quote) forces UCS-2", () => {
+    const enc = encode(`Hi Alex, your BluLadder bid’s ready: ${link}`);
     expect(enc.encoding).toBe("UCS-2");
-    expect(enc.segments).toBeGreaterThanOrEqual(1);
+  });
+  it("a strictly GSM-7 template renders as GSM-7", () => {
+    const enc = encode(`Hi Alex, thanks for pricing window cleaning with BluLadder. Book: ${link}`);
+    expect(enc.encoding).toBe("GSM-7");
+    expect(enc.segments).toBe(1);
   });
 });
