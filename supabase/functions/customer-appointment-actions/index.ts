@@ -273,6 +273,7 @@ Deno.serve(async (req) => {
           typedBooking,
           isVerifiedAdmin ? 'admin' : 'customer',
           callerUserId,
+          body,
         );
         break;
       default:
