@@ -4,6 +4,7 @@ import { normalizePhone, classifyInbound, getCallRailConfig, sendCallRailSms } f
 import { classifyInboundIntent, renderBookingAutoReply } from "../_shared/bookingIntent.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
+import { routeInboundSmsToOrchestrator, SMS_REPLY_MAX_CHARS } from "../_shared/smsOrchestrator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -256,7 +257,45 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ ok: true, action: "logged" }), {
+    // ===== Conversational routing =====================================
+    // Any inbound that survived compliance (STOP/START/HELP) and escalation
+    // gates — including booking-intent replies that the auto-reply above
+    // acknowledged — is routed through the canonical AI orchestrator so the
+    // customer can actually converse over SMS. If CallRail isn't configured
+    // (dev/preview), we still run the orchestrator so tests can assert
+    // routing, but we do not attempt to send.
+    let aiAction: string = "logged";
+    try {
+      const callrail = getCallRailConfig();
+      const result = await routeInboundSmsToOrchestrator({
+        supabase, phoneE164: phone, userMessage: content, providerMessageId,
+      });
+      aiAction = "ai_replied";
+      if (callrail && result.reply) {
+        // BOOK-IT branch above already sent one segment with the resume link;
+        // avoid double-texting for the same inbound.
+        const alreadySentBookIt =
+          complianceIntent === null && richIntent.kind === "booking";
+        if (!alreadySentBookIt) {
+          const send = await sendCallRailSms(callrail, phone, result.reply.slice(0, SMS_REPLY_MAX_CHARS));
+          await supabase.from("sms_messages").insert({
+            to_number: phone,
+            body: result.reply,
+            message_kind: "ai_conversation",
+            status: send.ok ? "sent" : "failed",
+            provider_message_id: send.messageId ?? null,
+            error: send.ok ? null : send.error ?? null,
+            sent_at: send.ok ? new Date().toISOString() : null,
+          });
+          aiAction = send.ok ? "ai_replied" : "ai_reply_failed";
+        }
+      }
+    } catch (e) {
+      console.error("SMS orchestrator route failed:", e);
+      aiAction = "ai_error";
+    }
+
+    return new Response(JSON.stringify({ ok: true, action: aiAction }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
