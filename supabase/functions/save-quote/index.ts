@@ -186,7 +186,8 @@ serve(async (req) => {
   const services_json: Record<string, unknown> = {
     services: body.services,
     lineItems: body.lineItems ?? null,
-    mode: body.mode ?? "one_time",
+    mode: quoteType === "recurring_plan" ? "plan" : "one_time",
+    quote_type: quoteType,
     ...(body.planSnapshot ?? {}),
   };
   const home_details_json = body.homeDetails ?? {};
@@ -214,8 +215,11 @@ serve(async (req) => {
     customer_phone: body.phone ?? null,
     services_json,
     home_details_json,
-    subtotal: body.subtotal,
-    total: body.total,
+    subtotal: auth.subtotal,
+    total: auth.total,
+    quote_type: quoteType,
+    authoritative_snapshot: authoritative.snapshot,
+    line_item_snapshot: auth.lineItems,
     status,
     expires_at: expiresAtIso,
     saved_at: nowIso,
@@ -223,8 +227,8 @@ serve(async (req) => {
     source_session_id: sessionId,
     utm_params_json: body.utmParams ?? null,
     attribution: body.attribution ?? null,
-    pricing_engine_version: body.engineVersion ?? null,
-    pricing_rule_version: body.ruleVersion ?? null,
+    pricing_engine_version: authoritative.engineVersion,
+    pricing_rule_version: authoritative.ruleVersion,
   };
   if (action === "email") payload.emailed_at = nowIso;
 
