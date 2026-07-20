@@ -309,10 +309,20 @@ Deno.serve(async (req) => {
     // "your appointment is cancelled" message.
     const cancelFreshlyConfirmed =
       action === 'cancel' && result.status === 'cancelled';
+    // A reschedule no-op (customer submitted the same slot) must not emit a
+    // confirmation event or send a "your appointment has been rescheduled" SMS.
+    const rescheduleFreshlyConfirmed =
+      action === 'reschedule' && !result.noop;
     const smsEvent =
-      action === 'reschedule' ? 'appointment_rescheduled' :
+      rescheduleFreshlyConfirmed ? 'appointment_rescheduled' :
       cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
-    if (smsEvent) {
+    // Canonical campaign event name for Phase 2B. `appointment_rescheduled` is
+    // retained ONLY as the legacy send-sms/reminders trigger name to preserve
+    // transactional SMS delivery until the seeded Campaign B is activated.
+    const campaignEvent =
+      rescheduleFreshlyConfirmed ? 'booking_rescheduled' :
+      cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
+    if (smsEvent && campaignEvent) {
       try {
         fetch(`${supabaseUrl}/functions/v1/send-sms`, {
           method: "POST",
@@ -326,30 +336,54 @@ Deno.serve(async (req) => {
         console.warn("[CustomerAction] SMS dispatch error:", smsErr);
       }
 
-      // Campaign lifecycle event — emitted ONLY after Jobber confirmed the change
-      // (reschedule reached here on success; cancellation only when freshly
-      // confirmed). appointment_cancelled STOPs future reminder sequences; a
-      // needs_attention cancellation returns earlier and never emits.
+      // Campaign lifecycle event — emitted ONLY after Jobber confirmed the
+      // change AND local persistence + booking_version bump succeeded (the
+      // handler throws on either failure and we never reach this point).
+      // `booking_rescheduled` idempotency is keyed on booking_id + new
+      // booking_version so retries and webhook replays never duplicate.
       try {
         const visitId = typedBooking.jobber_visit_id ?? bookingId;
         const newStart = body.newSlot?.startTime ?? "";
-        const idempotencyKey = smsEvent === 'appointment_rescheduled'
-          ? `appointment_rescheduled:${visitId}:${newStart}`
+        const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+        const manageLink = `${APP_URL}/my-appointments`;
+        const bookingVersion = Number((result as Record<string, unknown>).bookingVersion ?? typedBooking.booking_version ?? 1);
+        const serviceNames = Array.isArray(typedBooking.services_json)
+          ? typedBooking.services_json.map((s) => s?.name).filter(Boolean) as string[] : [];
+        const idempotencyKey = campaignEvent === 'booking_rescheduled'
+          ? `booking_rescheduled:${bookingId}:v${bookingVersion}`
           : `appointment_cancelled:${visitId}`;
         await emitCampaignEvent({
-          eventName: smsEvent,
+          eventName: campaignEvent,
           idempotencyKey,
           email: typedBooking.customer?.email ?? null,
           customerId: typedBooking.customer_id,
           source: "customer-appointment-actions",
           recoverySupabase: serviceClient,
-          subject: smsEvent === 'appointment_rescheduled' ? "Appointment rescheduled" : "Appointment cancelled",
-          metadata: {
+          subject: campaignEvent === 'booking_rescheduled' ? "Appointment rescheduled" : "Appointment cancelled",
+          metadata: campaignEvent === 'booking_rescheduled' ? {
+            booking_id: bookingId,
+            booking_version: bookingVersion,
+            quote_id: (result as Record<string, unknown>).quoteId ?? typedBooking.quote_id ?? null,
+            jobber_visit_id: typedBooking.jobber_visit_id ?? null,
+            booking_status: 'rescheduled',
+            appointment_date: newStart || null,
+            previous_appointment_date: typedBooking.scheduled_start,
+            arrival_window: null,
+            previous_arrival_window: null,
+            service: serviceNames[0] ?? "your service",
+            service_names: serviceNames,
+            service_types: serviceNames,
+            service_address: (typedBooking.home_details_json as Record<string, unknown> | null)?.address ?? "",
+            booking_total: typedBooking.total,
+            manage_link: manageLink,
+            reschedule_link: manageLink,
+            cancel_link: manageLink,
+            reschedule_reason: (body.rescheduleReason ?? null),
+          } : {
             booking_id: bookingId,
             jobber_visit_id: typedBooking.jobber_visit_id ?? null,
             previous_start: typedBooking.scheduled_start,
-            new_start: smsEvent === 'appointment_rescheduled' ? (body.newSlot?.startTime ?? null) : null,
-            booking_status: smsEvent === 'appointment_rescheduled' ? 'rescheduled' : 'cancelled',
+            booking_status: 'cancelled',
           },
         });
       } catch (emitErr) {
