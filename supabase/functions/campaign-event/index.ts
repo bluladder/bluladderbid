@@ -11,6 +11,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { renderTemplate, isPhoneOptedOut } from "../_shared/sms.ts";
 import {
+import { getAppUrl } from "../_shared/appUrl.ts";
   isAllowedEvent, matchesAudience, consentSatisfies, STOP_EVENTS,
   checkSuppression, normalizeEmail, normalizePhoneE164,
   type ConsentType, type EnrollDecision, type AudienceContext,
@@ -333,7 +334,7 @@ serve(async (req) => {
     //
     // Merge fields resolved server-side. Missing values render safely (empty
     // string via renderTemplate) so no template can print "undefined" or "null".
-    const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+    const APP_URL = getAppUrl();
     const metaLink = typeof (meta as Record<string, unknown>).quote_url === "string"
       ? String((meta as Record<string, unknown>).quote_url)
       : typeof (meta as Record<string, unknown>).link === "string"

@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { sendEmail } from "../_shared/emailConfig.ts";
+import { getAppUrl } from "../_shared/appUrl.ts";
 
 
 const corsHeaders = {
@@ -24,7 +25,7 @@ interface NotificationRequest {
   confirmationExpiryHours?: number;
 }
 
-const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+const APP_URL = getAppUrl();
 
 function formatPrice(price: number): string {
   return new Intl.NumberFormat('en-US', {

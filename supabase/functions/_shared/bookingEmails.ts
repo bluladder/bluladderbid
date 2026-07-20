@@ -18,10 +18,11 @@
 // ============================================================================
 import { sendEmail } from "./emailConfig.ts";
 import { checkSuppression } from "./suppression.ts";
+import { getAppUrl } from "./appUrl.ts";
 
 const CUSTOMER_HELP_SMS = "(469) 747-2877";
 const OFFICE_REPLY = "info@bluladder.com";
-const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+const APP_URL = getAppUrl();
 
 function getOwnerRecipient(): string {
   return (Deno.env.get("OWNER_NOTIFICATION_EMAIL") || "ben@bluladder.com").trim();
