@@ -494,3 +494,223 @@ export async function recoverPendingCampaignEvents(
   }
   return res;
 }
+
+// ---------------------------------------------------------------------------
+// runFollowUpCompletionSweep — end-of-sequence lifecycle transition.
+//
+// Finds enrollments on campaigns marked `is_terminal_phase = true` whose
+// scheduled messages have all been resolved (sent/cancelled/failed) and whose
+// last scheduled send time has already passed. For each, rechecks the
+// authoritative safeguards (booking, opt-out, staff takeover, marketing
+// consent, suppression, no newer follow-up enrollment supersedes this one),
+// marks the enrollment `completed`, and emits `quote_follow_up_completed`
+// through the canonical campaignEmitter → campaign-event boundary.
+//
+// Emit is idempotent (see followUpCompletionIdempotencyKey) so a re-run of
+// the sweep cannot double-enroll into the post-12-month long-term nurture.
+// Runs inside process-sms-queue AFTER normal delivery so it never delays
+// sends, and its bounded batch keeps a single tick fast.
+// ---------------------------------------------------------------------------
+export async function runFollowUpCompletionSweep(
+  supabase: SupabaseLike,
+  opts: { batchSize?: number; nowMs?: number } = {},
+): Promise<SweepResult> {
+  const batchSize = opts.batchSize ?? FOLLOW_UP_COMPLETION_BATCH_SIZE;
+  const nowMs = opts.nowMs ?? Date.now();
+  const result: SweepResult = { scanned: 0, emitted: 0, skipped: 0, reasons: {} };
+
+  // Which campaigns are terminal phases? Cached in-memory per invocation.
+  const { data: terminalCamps } = await (supabase as any)
+    .from("sms_campaigns")
+    .select("id")
+    .eq("is_terminal_phase", true);
+  const terminalIds: string[] = ((terminalCamps ?? []) as { id: string }[]).map((c) => c.id);
+  if (!terminalIds.length) return result;
+
+  // Oldest-first active enrollments on those campaigns.
+  const { data: enrollments } = await (supabase as any)
+    .from("campaign_enrollments")
+    .select("id, customer_id, campaign_id, campaign_version, event_name, email, phone, status, conversation_id, campaign_event_id, suppressed, created_at")
+    .eq("status", "active")
+    .in("campaign_id", terminalIds)
+    .order("created_at", { ascending: true })
+    .limit(batchSize);
+
+  for (const enr of ((enrollments ?? []) as (FollowUpEnrollmentRow & { created_at: string })[])) {
+    result.scanned++;
+
+    // Message-state check. We only advance if every queued message for this
+    // enrollment has already been resolved (sent/cancelled/failed) AND the
+    // last scheduled send-time has passed. This guarantees no in-flight
+    // marketing send can race with completion.
+    const { data: msgs } = await (supabase as any)
+      .from("sms_messages")
+      .select("status, send_at")
+      .eq("enrollment_id", enr.id);
+    const rows = (msgs ?? []) as { status: string; send_at: string | null }[];
+    let pending = 0, processing = 0, latest: number | null = null;
+    for (const m of rows) {
+      if (m.status === "pending") pending++;
+      if (m.status === "processing") processing++;
+      if (m.send_at) {
+        const t = new Date(m.send_at).getTime();
+        if (Number.isFinite(t)) latest = latest === null ? t : Math.max(latest, t);
+      }
+    }
+
+    // Safeguards — recheck against authoritative sources immediately before
+    // recording the transition. A lead that booked, opted out, replied into
+    // staff follow-up, revoked marketing consent, became suppressed, or has
+    // a newer follow-up enrollment must NEVER transition.
+    let hasBooking = false;
+    if (enr.customer_id) {
+      const { count } = await (supabase as any)
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("customer_id", enr.customer_id)
+        .neq("status", "cancelled");
+      hasBooking = (count ?? 0) > 0;
+    }
+    let optedOut = false;
+    if (enr.phone) {
+      const { data: opt } = await (supabase as any)
+        .from("sms_optouts").select("phone").eq("phone", enr.phone).maybeSingle();
+      optedOut = !!opt;
+    }
+    let staffTakeover = false;
+    if (enr.conversation_id) {
+      const { data: convo } = await (supabase as any)
+        .from("chat_conversations").select("staff_takeover_at, campaign_status")
+        .eq("id", enr.conversation_id).maybeSingle();
+      staffTakeover = !!(convo && (convo.staff_takeover_at || convo.campaign_status === "customer_replied"));
+    }
+    const suppression = await checkSuppressionSafe(supabase, { email: enr.email, phone: enr.phone });
+    // Marketing consent on either channel qualifies the identity for the
+    // long-term nurture destination. The destination campaign's own consent
+    // gate re-checks at enrollment time, but blocking here avoids emitting a
+    // pointless "eligible" event we know will fail consent later.
+    const marketingGranted = await hasMarketingConsent(supabase, enr.email, enr.phone);
+    // Newer follow-up? A more recent enrollment for the same customer on any
+    // quote_abandoned campaign means this journey has been superseded.
+    let newerEnrollmentExists = false;
+    if (enr.customer_id) {
+      const { data: newer } = await (supabase as any)
+        .from("campaign_enrollments")
+        .select("id, created_at")
+        .eq("customer_id", enr.customer_id)
+        .eq("event_name", "quote_abandoned")
+        .neq("id", enr.id)
+        .gt("created_at", (enr as { created_at: string }).created_at)
+        .limit(1);
+      newerEnrollmentExists = !!(newer && newer.length);
+    }
+
+    const decision = evaluateFollowUpCompletion({
+      totalMessages: rows.length,
+      pendingMessages: pending,
+      processingMessages: processing,
+      latestSendAtMs: latest,
+      nowMs,
+      hasBooking,
+      optedOut,
+      staffTakeover,
+      suppressed: suppression,
+      marketingConsentGranted: marketingGranted,
+      newerEnrollmentExists,
+      enrollmentStatus: enr.status,
+    });
+    if (!decision.eligible) {
+      result.skipped++;
+      result.reasons[decision.reason] = (result.reasons[decision.reason] ?? 0) + 1;
+      // For terminal states that can never resolve to eligible without an
+      // enrollment reset (booking, opt-out, takeover, no consent, superseded)
+      // we still stop the enrollment so it doesn't linger as "active".
+      if (["booking_completed", "opted_out", "staff_takeover", "no_marketing_consent", "superseded_by_newer_enrollment", "suppressed"].includes(decision.reason)) {
+        await (supabase as any).from("campaign_enrollments").update({
+          status: "stopped",
+          stopped_reason: decision.reason,
+          stopped_at: new Date().toISOString(),
+        }).eq("id", enr.id);
+      }
+      continue;
+    }
+
+    // Read original quote_id + attribution from the campaign_event that
+    // originally created this enrollment so the transition preserves
+    // first-touch context for the destination campaign.
+    let originalMeta: Record<string, unknown> = {};
+    if (enr.campaign_event_id) {
+      const { data: ev } = await (supabase as any)
+        .from("campaign_events").select("metadata").eq("id", enr.campaign_event_id).maybeSingle();
+      originalMeta = (ev?.metadata as Record<string, unknown>) ?? {};
+    }
+
+    const idempotencyKey = followUpCompletionIdempotencyKey(enr.id, enr.campaign_version);
+    const emit = await emitCampaignEvent({
+      eventName: "quote_follow_up_completed",
+      idempotencyKey,
+      email: enr.email,
+      phone: enr.phone,
+      customerId: enr.customer_id,
+      conversationId: enr.conversation_id,
+      source: "follow-up-completion-sweep",
+      subject: "Unbooked quote follow-up sequence completed",
+      metadata: {
+        quote_id: originalMeta.quote_id ?? null,
+        original_event_id: enr.campaign_event_id,
+        source_campaign_id: enr.campaign_id,
+        source_campaign_version: enr.campaign_version,
+        source_event_name: enr.event_name,
+        source_enrollment_id: enr.id,
+        final_send_at: latest ? new Date(latest).toISOString() : null,
+        completed_at: new Date(nowMs).toISOString(),
+        attribution: originalMeta.attribution ?? null,
+        utm_params_json: originalMeta.utm_params_json ?? null,
+        service_types: Array.isArray(originalMeta.service_types) ? originalMeta.service_types : [],
+        pricing_rule_version: originalMeta.pricing_rule_version ?? null,
+      },
+      recoverySupabase: supabase,
+    });
+
+    if (emit.ok || (emit.body as { idempotent?: boolean })?.idempotent) {
+      await (supabase as any).from("campaign_enrollments").update({
+        status: "completed",
+        stopped_reason: "completed_12_month_sequence",
+        stopped_at: new Date(nowMs).toISOString(),
+      }).eq("id", enr.id).eq("status", "active");
+      result.emitted++;
+    } else {
+      result.skipped++;
+      result.reasons["emit_failed"] = (result.reasons["emit_failed"] ?? 0) + 1;
+    }
+  }
+
+  return result;
+}
+
+// deno-lint-ignore no-explicit-any
+async function checkSuppressionSafe(supabase: any, target: { email: string | null; phone: string | null }): Promise<boolean> {
+  try {
+    const mod = await import("./suppression.ts");
+    const r = await mod.checkSuppression(supabase, target);
+    return !!r.suppressed;
+  } catch {
+    return false;
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+async function hasMarketingConsent(supabase: any, email: string | null, phone: string | null): Promise<boolean> {
+  const or: string[] = [];
+  if (email) or.push(`email.eq.${email}`);
+  if (phone) or.push(`phone.eq.${phone}`);
+  if (!or.length) return false;
+  const { data } = await supabase
+    .from("communication_consent")
+    .select("consent_type")
+    .eq("status", "granted")
+    .eq("consent_type", "marketing")
+    .or(or.join(","))
+    .limit(1);
+  return !!(data && data.length);
+}
