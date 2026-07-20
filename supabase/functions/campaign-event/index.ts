@@ -547,6 +547,46 @@ async function applyStop(
   return ids.length;
 }
 
+// Pause every currently-active enrollment for this customer for `durationMs`.
+// Unlike applyStop this does NOT cancel pending queued messages — those stay
+// queued and are deferred by the queue processor while paused, then delivered
+// after the pause window elapses (unless a permanent stop condition fires in
+// the interim). Idempotent: extending the pause always pushes paused_until
+// FURTHER out (never earlier), so repeated inbound replies keep the window
+// open the full 72h from the last reply.
+// deno-lint-ignore no-explicit-any
+async function applyPause(
+  supabase: any,
+  customerId: string,
+  reason: string,
+  durationMs: number,
+): Promise<number> {
+  const now = new Date();
+  const until = new Date(now.getTime() + durationMs);
+  const { data: active } = await supabase
+    .from("campaign_enrollments")
+    .select("id, paused_until")
+    .eq("customer_id", customerId)
+    .in("status", ["active", "paused"]);
+  const targets: string[] = [];
+  for (const e of (active ?? []) as { id: string; paused_until: string | null }[]) {
+    const cur = e.paused_until ? new Date(e.paused_until).getTime() : 0;
+    if (cur >= until.getTime()) continue;
+    targets.push(e.id);
+  }
+  if (!targets.length) return 0;
+  await supabase.from("campaign_enrollments").update({
+    status: "paused",
+    paused_at: now.toISOString(),
+    paused_until: until.toISOString(),
+    reason,
+  }).in("id", targets);
+  // Defer any already-queued pending sends until the pause window elapses.
+  await supabase.from("sms_messages").update({ send_at: until.toISOString(), next_retry_at: until.toISOString() })
+    .in("enrollment_id", targets).eq("status", "pending").lt("send_at", until.toISOString());
+  return targets.length;
+}
+
 // deno-lint-ignore no-explicit-any
 export function filterEnrollmentsByObsoleteBookingVersion(
   enrollments: any[],
