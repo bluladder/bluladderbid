@@ -4,7 +4,7 @@
 // unknown fields, caps all string lengths, refuses PII, never accepts revenue.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { rateLimit } from "../_shared/rateLimit.ts";
+import { rateLimit, sharedRateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,6 +57,12 @@ Deno.serve(async (req) => {
 
   const rl = rateLimit(req, { limit: 30, windowMs: 60_000 });
   if (!rl.allowed) return json({ error: "rate_limited" }, 429);
+  const shared = await sharedRateLimit(req, {
+    key: "attribution-ingest",
+    limit: 120,
+    windowMs: 60_000,
+  });
+  if (!shared.allowed) return json({ error: "rate_limited" }, 429);
 
   let body: Record<string, unknown>;
   try {

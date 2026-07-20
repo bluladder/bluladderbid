@@ -3094,6 +3094,30 @@ export type Database = {
           },
         ]
       }
+      rate_limit_buckets: {
+        Row: {
+          bucket_key: string
+          count: number
+          updated_at: string
+          window_ms: number
+          window_start: string
+        }
+        Insert: {
+          bucket_key: string
+          count?: number
+          updated_at?: string
+          window_ms: number
+          window_start: string
+        }
+        Update: {
+          bucket_key?: string
+          count?: number
+          updated_at?: string
+          window_ms?: number
+          window_start?: string
+        }
+        Relationships: []
+      }
       saved_scenarios: {
         Row: {
           additional_services: Json
@@ -4253,6 +4277,14 @@ export type Database = {
       can_edit_crew_rules: { Args: never; Returns: boolean }
       can_manage_schedule_blocks: { Args: never; Returns: boolean }
       can_override_bookings: { Args: never; Returns: boolean }
+      check_and_increment_rate_limit: {
+        Args: { _key: string; _limit: number; _window_ms: number }
+        Returns: {
+          allowed: boolean
+          current_count: number
+          reset_at: string
+        }[]
+      }
       claim_due_sms: {
         Args: { p_limit?: number }
         Returns: {

@@ -7,6 +7,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { verifyReplyToken, tokenFromAddress } from "../_shared/emailReplyToken.ts";
+import { sharedRateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,6 +45,15 @@ serve(async (req) => {
   let diff = 0;
   for (let i = 0; i < expected.length; i++) diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
   if (diff !== 0) return j({ error: "unauthorized" }, 401);
+
+  // Volume cap even for authenticated Resend callers — protects against
+  // duplicate storms or a leaked webhook secret.
+  const shared = await sharedRateLimit(req, {
+    key: "inbound-email",
+    limit: 300,
+    windowMs: 60_000,
+  });
+  if (!shared.allowed) return j({ error: "rate_limited" }, 429);
 
   const payload = await req.json().catch(() => ({})) as Record<string, unknown>;
   const data = (payload?.data ?? payload) as Record<string, unknown>;
