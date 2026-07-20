@@ -54,7 +54,9 @@ serve(async (req) => {
   const quoteId = (body.quote_id || "").trim();
   const reason = (body.reason || "").trim();
   const email = (body.email || "").trim().toLowerCase() || null;
-  const notes = typeof body.notes === "string" ? body.notes.slice(0, 2000) : null;
+  // Server-side hard length cap — never trust the client UI limit alone.
+  const NOTES_MAX = 1000;
+  const notes = typeof body.notes === "string" ? body.notes.slice(0, NOTES_MAX) : null;
   const source = (body.source || "customer_quote_view").slice(0, 64);
 
   if (!quoteId) return json(400, { error: "quote_id is required" });
@@ -67,7 +69,7 @@ serve(async (req) => {
 
   const { data: quote, error: qErr } = await supabase
     .from("quotes")
-    .select("id, status, customer_id, customer_email, customer_phone, pricing_rule_version, declined_at")
+    .select("id, status, customer_id, customer_email, customer_phone, pricing_rule_version, declined_at, converted_booking_id")
     .eq("id", quoteId)
     .maybeSingle();
   if (qErr) return json(500, { error: "lookup_failed" });
@@ -81,8 +83,10 @@ serve(async (req) => {
     return json(403, { error: "forbidden" });
   }
 
-  // Terminal statuses that we won't overwrite.
-  if (quote.status === "converted") {
+  // Terminal booked/converted states we refuse to overwrite. Both the status
+  // sentinel and the converted_booking_id link count as "already booked" so
+  // late-arriving decline clicks never race with a confirmed booking.
+  if (quote.status === "converted" || quote.converted_booking_id) {
     return json(409, { error: "already_booked" });
   }
 
