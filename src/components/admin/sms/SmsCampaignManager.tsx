@@ -164,6 +164,7 @@ export function SmsCampaignManager() {
   const [editing, setEditing] = useState<DbCampaign | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmActivate, setConfirmActivate] = useState<DbCampaign | null>(null);
+  const [confirmName, setConfirmName] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -566,7 +567,7 @@ export function SmsCampaignManager() {
       </Dialog>
 
       {/* Activation confirmation */}
-      <Dialog open={!!confirmActivate} onOpenChange={(o) => !o && setConfirmActivate(null)}>
+      <Dialog open={!!confirmActivate} onOpenChange={(o) => { if (!o) { setConfirmActivate(null); setConfirmName(''); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Activate campaign?</DialogTitle>
@@ -579,11 +580,25 @@ export function SmsCampaignManager() {
             <div className="text-sm space-y-1">
               <p><strong>Audience:</strong> {summarizeAudience(confirmActivate.audience_conditions)}</p>
               <p><strong>Consent required:</strong> {CONSENT_LABELS[confirmActivate.required_consent ?? 'transactional']}</p>
+              <div className="pt-3 space-y-1">
+                <Label className="text-xs">Type the campaign name to confirm:</Label>
+                <Input
+                  value={confirmName}
+                  onChange={(e) => setConfirmName(e.target.value)}
+                  placeholder={confirmActivate.name}
+                  autoFocus
+                />
+              </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmActivate(null)}>Cancel</Button>
-            <Button onClick={confirmAndActivate}>Confirm activation</Button>
+            <Button variant="outline" onClick={() => { setConfirmActivate(null); setConfirmName(''); }}>Cancel</Button>
+            <Button
+              onClick={() => { confirmAndActivate(); setConfirmName(''); }}
+              disabled={!confirmActivate || confirmName.trim() !== confirmActivate.name.trim()}
+            >
+              Confirm activation
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
