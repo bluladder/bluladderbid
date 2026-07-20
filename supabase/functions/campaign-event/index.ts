@@ -453,3 +453,57 @@ export function buildDeclineFeedbackLine(declineReason: string | null | undefine
     ? "Thanks for that feedback — it really helps us improve."
     : "If you have a moment, reply with a quick note about what didn't fit — it helps us improve.";
 }
+
+// ---------------------------------------------------------------------------
+// Booking-confirmation merge helpers. Pure and exported so tests can lock in
+// the exact rendering guarantees (America/Chicago timezone, DST safety, safe
+// fallbacks when arrival window / total are missing, no "undefined"/"$0").
+// ---------------------------------------------------------------------------
+
+/** Formats a booking's scheduled_start into "Tuesday, July 21" (America/Chicago). */
+export function formatAppointmentDate(iso: string | null | undefined, tz = "America/Chicago"): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, weekday: "long", month: "long", day: "numeric",
+    }).format(d);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Combines date + arrival window into one clean human sentence so templates
+ * can say "confirmed for {{appointment_when}}." without producing awkward
+ * output like "confirmed for ." or "during ." when a window is missing.
+ */
+export function buildAppointmentWhen(dateStr: string, arrivalWindow: string | null | undefined): string {
+  const window = typeof arrivalWindow === "string" ? arrivalWindow.trim() : "";
+  if (!dateStr && !window) return "";
+  if (!dateStr) return window;
+  if (!window) return dateStr;
+  return `${dateStr} during ${window}`;
+}
+
+/** Formats an authoritative booking total. Returns "" (not "$0") when missing. */
+export function formatBookingTotal(raw: unknown): string {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(n);
+}
+
+/** Sanitises manage/reschedule/cancel URLs — must be absolute http(s). */
+export function safeLink(raw: unknown, fallback: string): string {
+  if (typeof raw !== "string") return fallback;
+  const t = raw.trim();
+  if (!/^https?:\/\//i.test(t)) return fallback;
+  return t;
+}
+
+/** First line of a multi-line service address ("123 Main St"). */
+export function shortServiceAddress(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  return raw.split(",")[0]?.trim() ?? "";
+}
