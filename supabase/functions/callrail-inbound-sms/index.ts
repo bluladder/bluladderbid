@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { normalizePhone, classifyInbound } from "../_shared/sms.ts";
+import { normalizePhone, classifyInbound, getCallRailConfig, sendCallRailSms } from "../_shared/sms.ts";
+import { classifyInboundIntent, renderBookingAutoReply } from "../_shared/bookingIntent.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 
 const corsHeaders = {
@@ -97,6 +98,10 @@ serve(async (req) => {
     const intent = classifyInbound(content);
     const nowIso = new Date().toISOString();
 
+    // Higher-fidelity intent classifier used for BOOK-IT / escalation routing.
+    // Compliance keywords still short-circuit below via `intent` (STOP/START).
+    const richIntent = classifyInboundIntent(content);
+
     // customer_replied — one event per inbound message. The idempotency key is
     // the CallRail/provider message id (fallback: phone+content hash) so replayed
     // webhooks never create duplicate events. The campaign engine applies the
@@ -117,6 +122,89 @@ serve(async (req) => {
       });
     } catch (e) {
       console.error("customer_replied emit failed:", e);
+    }
+
+    // ===== Escalation routing (compliance/booking take precedence below) =====
+    // Complaints, damage/safety, billing disputes, and explicit human requests
+    // route to manual staff takeover instead of the AI-assisted path. This
+    // event is already allowlisted as a STOP scope=all, so it halts campaign
+    // and AI automation and preserves the transcript for a human.
+    if (
+      intent !== "stop" && intent !== "start" &&
+      richIntent.kind === "escalation"
+    ) {
+      try {
+        await emitCampaignEvent({
+          eventName: "manual_staff_takeover",
+          idempotencyKey: `manual_staff_takeover:${providerMessageId}`,
+          phone,
+          source: "callrail",
+          subject: `Inbound reply escalation: ${richIntent.category}`,
+          recoverySupabase: supabase,
+          metadata: {
+            reason: richIntent.category,
+            provider_message_id: providerMessageId,
+            inbound_preview: (content || "").slice(0, 200),
+          },
+        });
+      } catch (e) {
+        console.error("manual_staff_takeover emit failed:", e);
+      }
+    }
+
+    // ===== BOOK-IT auto-reply =========================================
+    // Booking-intent replies get an automatic acknowledgement pointing at
+    // the customer's most recent quote. No slot is ever chosen from an
+    // ambiguous "book it" — the customer picks a specific time on the web.
+    // Compliance keywords (STOP/START) and escalation categories short-
+    // circuit before this block runs.
+    if (
+      intent !== "stop" && intent !== "start" &&
+      richIntent.kind === "booking"
+    ) {
+      try {
+        // Best-effort: find the most recent quote associated with this
+        // phone. Falls back to a generic quotes landing if none exists.
+        const appUrl = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+        let quoteLink = `${appUrl}/quote`;
+        let firstName: string | null = null;
+
+        const { data: customer } = await supabase
+          .from("customers")
+          .select("id, first_name")
+          .eq("phone", phone)
+          .maybeSingle();
+        if (customer) {
+          firstName = customer.first_name ?? null;
+          const { data: quote } = await supabase
+            .from("quotes")
+            .select("id, updated_at")
+            .eq("customer_id", customer.id)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (quote?.id) quoteLink = `${appUrl}/quote/${quote.id}`;
+        }
+
+        const callrail = getCallRailConfig();
+        if (callrail) {
+          const reply = renderBookingAutoReply({ firstName, quoteLink });
+          const result = await sendCallRailSms(callrail, phone, reply);
+          await supabase.from("sms_messages").insert({
+            to_number: phone,
+            body: reply,
+            message_kind: "auto_reply_booking_intent",
+            status: result.ok ? "sent" : "failed",
+            provider_message_id: result.messageId ?? null,
+            error: result.ok ? null : result.error ?? null,
+            sent_at: result.ok ? new Date().toISOString() : null,
+          });
+        } else {
+          console.warn("BOOK-IT reply skipped: CallRail not configured");
+        }
+      } catch (e) {
+        console.error("BOOK-IT auto-reply failed:", e);
+      }
     }
 
     if (intent === "stop") {
