@@ -5,6 +5,7 @@ import { classifyInboundIntent, renderBookingAutoReply } from "../_shared/bookin
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
 import { routeInboundSmsToOrchestrator, SMS_REPLY_MAX_CHARS } from "../_shared/smsOrchestrator.ts";
+import { sharedRateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +36,19 @@ serve(async (req) => {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+  }
+
+  // Cap volume even for a valid-token caller — a leaked secret shouldn't allow
+  // a flood that fans out into AI orchestrator calls.
+  const shared = await sharedRateLimit(req, {
+    key: "callrail-inbound-sms",
+    limit: 300,
+    windowMs: 60_000,
+  });
+  if (!shared.allowed) {
+    return new Response(JSON.stringify({ error: "rate_limited" }), {
+      status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" },
+    });
   }
 
   const supabase = createClient(
