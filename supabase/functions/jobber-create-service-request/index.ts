@@ -488,8 +488,10 @@ Deno.serve(async (req) => {
 
     await supabase.from("quotes").update({ jobber_quote_id: jobberQuoteId }).eq("id", quoteId);
 
-    // booking_completed — the recurring plan quote was successfully created.
-    // Idempotent on the local quote id; STOPs abandoned-quote nurture.
+    // recurring_plan_created — the recurring plan quote was successfully
+    // created. Idempotent on the local quote id; STOPs the same-quote
+    // abandoned/decline nurture but does NOT masquerade as a confirmed
+    // appointment.
     await emitBookingCompleted(supabase, quoteId, dbCustomer.id, customer, option, false);
 
     return json({
