@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Calendar, CheckCircle2, ArrowRight, CreditCard, 
-  Home, Clock, Share2, Copy, FileText, AlertCircle
+  Home, Clock, Share2, Copy, FileText, AlertCircle, XCircle
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
+import { DeclineQuoteDialog } from '@/components/quote/DeclineQuoteDialog';
 
 interface QuoteService {
   id: string;
@@ -61,6 +62,7 @@ export default function QuoteView() {
   const [quote, setQuote] = useState<QuoteData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [declineOpen, setDeclineOpen] = useState(false);
   
   useEffect(() => {
     if (!id) return;
@@ -141,6 +143,9 @@ export default function QuoteView() {
   const { services, payment, paymentStructure } = servicesData;
   
   const isExpired = quote.expires_at && new Date(quote.expires_at) < new Date();
+  const isDeclined = quote.status === 'declined';
+  const isConverted = quote.status === 'converted';
+  const canDecline = !isExpired && !isDeclined && !isConverted;
   
   return (
     <div className="min-h-screen bg-background">
@@ -162,6 +167,12 @@ export default function QuoteView() {
             <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-destructive/10 text-destructive text-sm">
               <AlertCircle className="w-4 h-4" />
               This quote has expired
+            </div>
+          )}
+          {isDeclined && (
+            <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-muted text-muted-foreground text-sm">
+              <XCircle className="w-4 h-4" />
+              You declined this bid. No further reminders will be sent.
             </div>
           )}
         </div>
@@ -298,7 +309,7 @@ export default function QuoteView() {
                 
                 {/* Actions */}
                 <div className="space-y-2">
-                  {!isExpired && (
+                  {!isExpired && !isDeclined && (
                     <Button className="w-full btn-primary" size="lg" asChild>
                       <Link to="/plan-builder">Accept & Start Service</Link>
                     </Button>
@@ -312,6 +323,17 @@ export default function QuoteView() {
                     <Copy className="w-4 h-4 mr-2" />
                     Copy Quote Link
                   </Button>
+
+                  {canDecline && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeclineOpen(true)}
+                    >
+                      Not interested? Decline this bid
+                    </Button>
+                  )}
                 </div>
                 
                 <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
@@ -336,6 +358,13 @@ export default function QuoteView() {
           </Button>
         </div>
       </div>
+      <DeclineQuoteDialog
+        open={declineOpen}
+        onOpenChange={setDeclineOpen}
+        quoteId={quote.id}
+        emailOnFile={quote.customer_email}
+        onDeclined={() => setQuote((q) => (q ? { ...q, status: 'declined' } : q))}
+      />
     </div>
   );
 }
