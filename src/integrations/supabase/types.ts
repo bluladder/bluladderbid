@@ -2944,11 +2944,69 @@ export type Database = {
         }
         Relationships: []
       }
+      quote_resume_tokens: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          issued_reason: string | null
+          last_used_at: string | null
+          purpose: string
+          quote_id: string
+          revoked_at: string | null
+          token_hash: string
+          use_count: number
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          issued_reason?: string | null
+          last_used_at?: string | null
+          purpose?: string
+          quote_id: string
+          revoked_at?: string | null
+          token_hash: string
+          use_count?: number
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          issued_reason?: string | null
+          last_used_at?: string | null
+          purpose?: string
+          quote_id?: string
+          revoked_at?: string | null
+          token_hash?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_resume_tokens_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["quote_id"]
+          },
+          {
+            foreignKeyName: "quote_resume_tokens_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       quotes: {
         Row: {
           abandonment_emitted_version: string | null
           abandonment_swept_at: string | null
           attribution: Json | null
+          authoritative_snapshot: Json | null
           confirmed_at: string | null
           converted_at: string | null
           converted_booking_id: string | null
@@ -2979,6 +3037,7 @@ export type Database = {
           pricing_engine_version: string | null
           pricing_rule_version: number | null
           quote_completion_seconds: number | null
+          quote_type: string | null
           saved_at: string | null
           services_json: Json
           session_id: string | null
@@ -2996,6 +3055,7 @@ export type Database = {
           abandonment_emitted_version?: string | null
           abandonment_swept_at?: string | null
           attribution?: Json | null
+          authoritative_snapshot?: Json | null
           confirmed_at?: string | null
           converted_at?: string | null
           converted_booking_id?: string | null
@@ -3026,6 +3086,7 @@ export type Database = {
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
           quote_completion_seconds?: number | null
+          quote_type?: string | null
           saved_at?: string | null
           services_json: Json
           session_id?: string | null
@@ -3043,6 +3104,7 @@ export type Database = {
           abandonment_emitted_version?: string | null
           abandonment_swept_at?: string | null
           attribution?: Json | null
+          authoritative_snapshot?: Json | null
           confirmed_at?: string | null
           converted_at?: string | null
           converted_booking_id?: string | null
@@ -3073,6 +3135,7 @@ export type Database = {
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
           quote_completion_seconds?: number | null
+          quote_type?: string | null
           saved_at?: string | null
           services_json?: Json
           session_id?: string | null
