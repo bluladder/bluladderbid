@@ -690,6 +690,7 @@ async function handleCancel(
   booking: BookingRecord,
   source: 'customer' | 'admin' | 'system',
   actorId: string | null,
+  body: ActionRequest,
 ): Promise<Record<string, unknown>> {
   console.log(`[Cancel] Requested by ${source} for booking ${booking.reference_number} (status=${booking.status})`);
 
@@ -751,21 +752,48 @@ async function handleCancel(
   // interpretation.outcome is 'confirmed' or 'already_gone' — both mean the
   // visit is gone from Jobber, so it is safe to synchronize local state.
   const nowIso = new Date().toISOString();
+  const cancellationReason = typeof body.cancellationReason === 'string'
+    ? body.cancellationReason.slice(0, 120) : null;
+  const cancellationNotes = typeof body.cancellationNotes === 'string'
+    ? body.cancellationNotes.slice(0, 500) : null;
+  const currentVersion = Number(booking.booking_version ?? 1);
+  const nextVersion = currentVersion + 1;
+  // Only stamp cancelled_by when we have a real auth uuid (customer or admin).
+  // The 'system' source can pass a null actor.
+  const actorUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actorId ?? '')
+    ? actorId : null;
 
-  // 5) Mark local booking cancelled with audit metadata.
-  const { error: updateError } = await supabase
+  // 5) Mark local booking cancelled atomically with optimistic concurrency on
+  // booking_version so a concurrent reschedule cannot silently overwrite the
+  // cancellation (and vice versa).
+  const { data: updated, error: updateError } = await supabase
     .from("bookings")
     .update({
       status: 'cancelled',
       cancelled_at: nowIso,
       cancellation_source: source,
+      cancellation_reason: cancellationReason,
+      cancellation_notes: cancellationNotes,
+      cancelled_by: actorUuid,
+      cancellation_lifecycle_version: nextVersion,
+      jobber_cancellation_status: interpretation.outcome,
+      slot_released_at: nowIso,
+      booking_version: nextVersion,
       cancellation_needs_attention_reason: null,
       updated_at: nowIso,
     })
-    .eq("id", booking.id);
+    .eq("id", booking.id)
+    .eq("booking_version", currentVersion)
+    .select("id, booking_version")
+    .maybeSingle();
 
   if (updateError) {
     throw new Error(`Database update failed: ${updateError.message}`);
+  }
+  if (!updated) {
+    // A concurrent write won the race — do NOT emit a confirmation for this
+    // attempt. A retry can pick up whichever state now exists.
+    throw new Error("Booking was updated concurrently. Please refresh and try again.");
   }
 
   // 6) Mark mirrored schedule blocks cancelled (keep rows for audit) so the
@@ -797,6 +825,10 @@ async function handleCancel(
     idempotentAlreadyGone: interpretation.outcome === 'already_gone',
     cancelledAt: nowIso,
     cancellationSource: source,
+    cancellationReason,
+    cancellationLifecycleVersion: nextVersion,
+    bookingVersion: nextVersion,
+    jobberCancellationStatus: interpretation.outcome,
     previousStart: booking.scheduled_start,
   };
 }
