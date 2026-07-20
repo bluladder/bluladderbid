@@ -11,10 +11,11 @@ import { PricingTabContent } from '@/components/admin/PricingTabContent';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, ClipboardList, Phone, BarChart3, Users, Plug, DollarSign, ShieldCheck, MessageSquare } from 'lucide-react';
+import { LogOut, Home, ShieldX, ClipboardList, Phone, BarChart3, Users, Plug, DollarSign, ShieldCheck, MessageSquare, Activity } from 'lucide-react';
 import { CustomerAccessLiveTestsPanel } from '@/components/admin/security/CustomerAccessLiveTestsPanel';
 import { SecurityErrorBoundary } from '@/components/admin/security/SecurityErrorBoundary';
 import { ConversationsTabContent } from '@/components/admin/conversations/ConversationsTabContent';
+import { OpsHealthPanel } from '@/components/admin/ops/OpsHealthPanel';
 import { Link } from 'react-router-dom';
 
 export default function Admin({ initialTab }: { initialTab?: string }) {
@@ -113,7 +114,11 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
       <main className="container py-8">
         <div className="max-w-6xl mx-auto">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-8 mb-6">
+            <TabsList className="grid w-full grid-cols-9 mb-6">
+              <TabsTrigger value="ops" className="flex items-center gap-2">
+                <Activity className="w-4 h-4" />
+                <span className="hidden sm:inline">Ops</span>
+              </TabsTrigger>
               <TabsTrigger value="conversations" className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
                 <span className="hidden sm:inline">Conversations</span>
@@ -148,6 +153,11 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
               </TabsTrigger>
             </TabsList>
             
+            {/* Ops Tab - Read-only operational health snapshot */}
+            <TabsContent value="ops">
+              <OpsHealthPanel />
+            </TabsContent>
+
             {/* Conversations Tab - Unified inbox across chat, SMS, email, campaigns */}
             <TabsContent value="conversations">
               <ConversationsTabContent />
