@@ -99,17 +99,25 @@ function ConversationDetail({
   const [acting, setActing] = useState(false);
 
   useEffect(() => {
-    if (!conversationId) { setTimeline([]); return; }
+    if (!conversationId || !row) { setTimeline([]); return; }
     (async () => {
       const [chats, smses, inbound] = await Promise.all([
         supabase.from("chat_messages")
           .select("id, role, content, created_at")
           .eq("conversation_id", conversationId)
           .order("created_at", { ascending: true }),
-        supabase.from("sms_messages")
-          .select("id, body, status, channel, message_kind, error, sent_at, created_at, subject")
-          .order("created_at", { ascending: true })
-          .limit(200),
+        row.prospect_phone
+          ? supabase.from("sms_messages")
+              .select("id, body, status, channel, message_kind, error, sent_at, created_at, subject, to_number, to_email")
+              .or(
+                [
+                  `to_number.eq.${row.prospect_phone}`,
+                  row.prospect_email ? `to_email.eq.${row.prospect_email}` : "",
+                ].filter(Boolean).join(","),
+              )
+              .order("created_at", { ascending: true })
+              .limit(200)
+          : Promise.resolve({ data: [] as any[] }),
         supabase.from("email_inbound_messages")
           .select("id, from_email, subject, text_body, received_at")
           .eq("conversation_id", conversationId)
