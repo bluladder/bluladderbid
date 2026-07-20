@@ -281,10 +281,36 @@ serve(async (req) => {
     // Schedule messages. Delivery-time suppression/consent recheck is
     // authoritative in process-sms-queue, so suppressed identities produce
     // "would have sent" rows without any external delivery.
+    //
+    // Merge fields resolved server-side. Missing values render safely (empty
+    // string via renderTemplate) so no template can print "undefined" or "null".
+    const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+    const metaLink = typeof (meta as Record<string, unknown>).quote_url === "string"
+      ? String((meta as Record<string, unknown>).quote_url)
+      : typeof (meta as Record<string, unknown>).link === "string"
+        ? String((meta as Record<string, unknown>).link)
+        : null;
+    const metaQuoteId = typeof (meta as Record<string, unknown>).quote_id === "string"
+      ? String((meta as Record<string, unknown>).quote_id)
+      : null;
+    const safeLink = metaLink || (metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
+    const totalRaw = (meta as Record<string, unknown>).total;
+    const totalNum = typeof totalRaw === "number" ? totalRaw : Number(totalRaw);
+    const totalStr = Number.isFinite(totalNum) && totalNum > 0
+      ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(totalNum)
+      : "";
+    const firstName = (cust?.first_name as string) || "there";
+    const lastName = (cust?.last_name as string) || "";
+    const serviceLabel = Array.isArray(ctx.serviceTypes) && ctx.serviceTypes.length
+      ? ctx.serviceTypes.join(", ")
+      : "your service";
     const vars: Record<string, string> = {
-      first_name: (cust?.first_name as string) || "there",
-      last_name: (cust?.last_name as string) || "",
-      service: Array.isArray(ctx.serviceTypes) ? ctx.serviceTypes.join(", ") : "",
+      first_name: firstName,
+      last_name: lastName,
+      name: `${firstName} ${lastName}`.trim() || firstName,
+      service: serviceLabel,
+      link: safeLink,
+      total: totalStr,
     };
     const now = Date.now();
     const rows = usableSteps.map((s) => ({
