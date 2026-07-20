@@ -62,7 +62,8 @@ describe("runFollowUpCompletionSweep — wiring and boundaries", () => {
   it("is wired into process-sms-queue AFTER normal delivery", () => {
     expect(queue).toMatch(/runFollowUpCompletionSweep/);
     const claimIdx = queue.indexOf("claim_due_sms");
-    const sweepIdx = queue.indexOf("runFollowUpCompletionSweep");
+    // Skip the import declaration and locate the invocation site.
+    const sweepIdx = queue.indexOf("await runFollowUpCompletionSweep");
     expect(sweepIdx).toBeGreaterThan(claimIdx);
   });
   it("does not introduce a second scheduler or parallel queue", () => {
