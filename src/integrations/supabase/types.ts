@@ -1068,6 +1068,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           paused_at: string | null
+          paused_until: string | null
           phone: string | null
           reason: string | null
           status: string
@@ -1095,6 +1096,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           paused_at?: string | null
+          paused_until?: string | null
           phone?: string | null
           reason?: string | null
           status?: string
@@ -1122,6 +1124,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           paused_at?: string | null
+          paused_until?: string | null
           phone?: string | null
           reason?: string | null
           status?: string
