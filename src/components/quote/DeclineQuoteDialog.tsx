@@ -30,10 +30,11 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   quoteId: string;
   emailOnFile: string | null;
+  resumeToken?: string | null;
   onDeclined?: () => void;
 }
 
-export function DeclineQuoteDialog({ open, onOpenChange, quoteId, emailOnFile, onDeclined }: Props) {
+export function DeclineQuoteDialog({ open, onOpenChange, quoteId, emailOnFile, resumeToken, onDeclined }: Props) {
   const [reason, setReason] = useState<Reason | "">("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -52,6 +53,7 @@ export function DeclineQuoteDialog({ open, onOpenChange, quoteId, emailOnFile, o
         body: {
           quote_id: quoteId,
           email: emailOnFile,
+          resume_token: resumeToken ?? null,
           reason,
           notes: notes.trim() || null,
           source: "customer_quote_view",
