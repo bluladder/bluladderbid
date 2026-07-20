@@ -11,6 +11,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { sendEmail } from "../_shared/emailConfig.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
+import { computeAuthoritativeQuote } from "../_shared/authoritativeQuote.ts";
+import { mintQuoteResumeToken, revokeQuoteResumeTokens } from "../_shared/quoteResumeTokens.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +24,7 @@ const corsHeaders = {
 interface Body {
   action: "save" | "email";
   mode?: "one_time" | "plan";
+  quoteType?: "one_time" | "recurring_plan";
   email: string;
   firstName?: string | null;
   lastName?: string | null;
@@ -30,6 +33,7 @@ interface Body {
   subtotal: number;
   services: Array<{ name: string; amount?: number }>;
   homeDetails: Record<string, unknown>;
+  additionalServices?: Record<string, unknown>;
   sourceSessionId?: string | null;
   utmParams?: Record<string, unknown> | null;
   attribution?: Record<string, unknown> | null;
@@ -37,6 +41,9 @@ interface Body {
   engineVersion?: string | null;
   lineItems?: unknown;
   planSnapshot?: Record<string, unknown> | null;
+  planScenario?: Record<string, unknown> | null;
+  discount?: { code?: string } | null;
+  promotion?: { id?: string; windowCount?: number } | null;
 }
 
 function json(status: number, body: unknown) {
@@ -85,11 +92,61 @@ serve(async (req) => {
     return json(400, { error: "Add at least one service before saving this bid." });
   }
   const action: "save" | "email" = body.action === "email" ? "email" : "save";
+  // Explicit discriminator. Fall back to the legacy `mode` for older callers,
+  // but persist the canonical `quote_type` on the row so downstream code can
+  // choose renderers without inferring from services_json shape.
+  const quoteType: "one_time" | "recurring_plan" =
+    body.quoteType === "recurring_plan" || body.mode === "plan"
+      ? "recurring_plan"
+      : "one_time";
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // -------------------------------------------------------------------------
+  // SERVER-AUTHORITATIVE RECALCULATION.
+  // Every dollar figure that ends up on the quote row is recomputed here from
+  // the live pricing_config through the canonical engine — never from what
+  // the browser posted. `total`/`subtotal`/`services[].amount` on `body` are
+  // used ONLY to detect tampering and to decide whether to accept the save.
+  // -------------------------------------------------------------------------
+  const authoritative = await computeAuthoritativeQuote(supabase, {
+    quoteType,
+    homeDetails: body.homeDetails as unknown as Parameters<typeof computeAuthoritativeQuote>[1]["homeDetails"],
+    additionalServices: (body.additionalServices ?? {}) as unknown as Parameters<typeof computeAuthoritativeQuote>[1]["additionalServices"],
+    discount: body.discount ?? null,
+    promotion: body.promotion ?? null,
+    planScenario: (body.planScenario ?? null) as Parameters<typeof computeAuthoritativeQuote>[1]["planScenario"],
+    clientDisplay: {
+      total: body.total,
+      subtotal: body.subtotal,
+      annualTotal: (body.planSnapshot as { payment?: { annualTotal?: number } } | null)?.payment?.annualTotal,
+      monthlyPayment: (body.planSnapshot as { payment?: { monthlyPayment?: number } } | null)?.payment?.monthlyPayment,
+      downPayment: (body.planSnapshot as { payment?: { downPayment?: number } } | null)?.payment?.downPayment,
+    },
+  });
+  if (!authoritative.ok) {
+    // Distinguish tamper detection (pricing_mismatch / invalid_plan) from
+    // transient/data problems so the client can render the right message.
+    const status = authoritative.status === "pricing_unavailable" ? 503
+      : authoritative.status === "missing_information" ? 400
+      : authoritative.status === "pricing_mismatch" ? 409
+      : authoritative.status === "invalid_plan" ? 422
+      : authoritative.status === "manual_review_required" ? 422
+      : 400;
+    return json(status, {
+      error: authoritative.message,
+      status: authoritative.status,
+      // Never echo the client-submitted total back — surface only the safe
+      // authoritative value if we have one, so the UI can re-render.
+      serverTotal: authoritative.status === "pricing_mismatch"
+        ? (authoritative.detail?.serverTotal ?? authoritative.detail?.serverAnnual ?? null)
+        : null,
+    });
+  }
+  const auth = authoritative.authoritative;
 
   // 1) Find or create the customer by email.
   let customerId: string | null = null;
@@ -129,7 +186,8 @@ serve(async (req) => {
   const services_json: Record<string, unknown> = {
     services: body.services,
     lineItems: body.lineItems ?? null,
-    mode: body.mode ?? "one_time",
+    mode: quoteType === "recurring_plan" ? "plan" : "one_time",
+    quote_type: quoteType,
     ...(body.planSnapshot ?? {}),
   };
   const home_details_json = body.homeDetails ?? {};
@@ -157,8 +215,11 @@ serve(async (req) => {
     customer_phone: body.phone ?? null,
     services_json,
     home_details_json,
-    subtotal: body.subtotal,
-    total: body.total,
+    subtotal: auth.subtotal,
+    total: auth.total,
+    quote_type: quoteType,
+    authoritative_snapshot: authoritative.snapshot,
+    line_item_snapshot: auth.lineItems,
     status,
     expires_at: expiresAtIso,
     saved_at: nowIso,
@@ -166,8 +227,8 @@ serve(async (req) => {
     source_session_id: sessionId,
     utm_params_json: body.utmParams ?? null,
     attribution: body.attribution ?? null,
-    pricing_engine_version: body.engineVersion ?? null,
-    pricing_rule_version: body.ruleVersion ?? null,
+    pricing_engine_version: authoritative.engineVersion,
+    pricing_rule_version: authoritative.ruleVersion,
   };
   if (action === "email") payload.emailed_at = nowIso;
 
@@ -201,6 +262,11 @@ serve(async (req) => {
         await supabase.from("quotes")
           .update({ superseded_by: quoteId, superseded_at: nowIso })
           .in("id", olderIds);
+        // Revoke resume tokens on superseded quotes so stale links stop
+        // working the moment a newer authoritative quote exists.
+        for (const oid of olderIds) {
+          await revokeQuoteResumeTokens(supabase, oid);
+        }
         // Stop pending quote_abandoned enrollments tied to those older quotes
         // and cancel their unsent messages. Historical enrollment rows are
         // preserved (status='stopped', reason='superseded_by_newer_quote').
@@ -242,7 +308,16 @@ serve(async (req) => {
     }
   }
 
-  const quoteUrl = `${getAppUrl()}/quote/${quoteId}`;
+  // Mint a fresh, single-quote resume token. Only the hash is stored; the raw
+  // token is embedded in the URL below and never persisted anywhere else. If
+  // this newly saved quote superseded older ones above, revoke their tokens
+  // so stale links stop working immediately.
+  const minted = await mintQuoteResumeToken(supabase, quoteId!, {
+    ttlHours: 24 * 30,
+    issuedReason: action === "email" ? "save_quote_email" : "save_quote",
+    appUrl: getAppUrl(),
+  });
+  const quoteUrl = minted?.resumeUrl ?? `${getAppUrl()}/quote/${quoteId}`;
 
   // 3) Optional email send. Failure here still returns the saved quote.
   let emailStatus: "sent" | "skipped" | "failed" = "skipped";
