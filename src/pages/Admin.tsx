@@ -17,6 +17,7 @@ import { SecurityErrorBoundary } from '@/components/admin/security/SecurityError
 import { ConversationsTabContent } from '@/components/admin/conversations/ConversationsTabContent';
 import { OpsHealthPanel } from '@/components/admin/ops/OpsHealthPanel';
 import { OpsAlertsPanel } from '@/components/admin/ops/OpsAlertsPanel';
+import { EmailSuppressionsPanel } from '@/components/admin/ops/EmailSuppressionsPanel';
 import { Link } from 'react-router-dom';
 
 export default function Admin({ initialTab }: { initialTab?: string }) {
@@ -159,6 +160,7 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
               <div className="space-y-6">
                 <OpsHealthPanel />
                 <OpsAlertsPanel />
+                <EmailSuppressionsPanel />
               </div>
             </TabsContent>
 
