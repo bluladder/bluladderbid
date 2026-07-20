@@ -225,8 +225,7 @@ serve(async (req) => {
           if (!callRail) {
             result = { ...result, error: "callrail_not_configured" };
           } else {
-            const origin = Deno.env.get("PUBLIC_SITE_URL") ??
-              "https://bluladderbid.lovable.app";
+            const origin = Deno.env.get("PUBLIC_SITE_URL") ?? getAppUrl();
             const url = `${origin}/manage-booking?t=${bootstrap}`;
             const smsBody =
               `BluLadder: manage booking ${booking.reference_number}. Link expires in 48h: ${url}`;
