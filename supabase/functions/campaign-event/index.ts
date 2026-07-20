@@ -535,6 +535,9 @@ export function campaignFilterForScope(
     "booking_completed",
     "booking_rescheduled",
     "booking_reschedule_requested",
+    "booking_cancelled",
+    "booking_cancellation_requested",
+    "appointment_cancelled",
   ];
   return null;
 }
