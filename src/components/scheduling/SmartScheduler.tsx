@@ -227,6 +227,13 @@ export function SmartScheduler({
     fetchDaySlots(target);
   };
 
+  // Call the hook at the top level of the component so React's hook order
+  // is stable across renders (rules-of-hooks).
+  const daySwipeHandlers = useSwipe({
+    onSwipeLeft: () => navigateDay('next'),
+    onSwipeRight: () => navigateDay('prev'),
+  });
+
   const formattedDaySlots: TimeSlot[] = useMemo(
     () =>
       daySlots
@@ -425,10 +432,7 @@ export function SmartScheduler({
               {browseMode === 'day' ? (
                 <div
                   className="space-y-3"
-                  {...useSwipe({
-                    onSwipeLeft: () => navigateDay('next'),
-                    onSwipeRight: () => navigateDay('prev'),
-                  })}
+                  {...daySwipeHandlers}
                 >
                   <div className="flex items-center justify-between">
                     <Button

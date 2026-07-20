@@ -64,7 +64,8 @@ describe("campaign-event merge-field resolution", () => {
     // Service falls back to a natural phrase, not empty.
     expect(campaignEvent).toMatch(/"your service"/);
     // Link falls back to the site root when neither metadata link nor quote id is present.
-    expect(campaignEvent).toMatch(/const APP_URL = Deno\.env\.get\("APP_URL"\)/);
+    // APP_URL is resolved through the shared getAppUrl() helper.
+    expect(campaignEvent).toMatch(/const APP_URL = getAppUrl\(\)/);
   });
   it("renders $0 as empty rather than a misleading 'total'", () => {
     expect(campaignEvent).toMatch(/Number\.isFinite\(totalNum\) && totalNum > 0/);
