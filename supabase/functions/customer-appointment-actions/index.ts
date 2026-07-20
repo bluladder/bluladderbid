@@ -54,8 +54,6 @@ interface BookingRecord {
   booking_version?: number | null;
   quote_id?: string | null;
   customer?: { email: string };
-  // Home / address details snapshot on the booking (used to build merge vars).
-  home_details_json?: Record<string, unknown> | null;
 }
 
 const LOCKOUT_HOURS = 48;
