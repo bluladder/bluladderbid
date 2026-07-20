@@ -15,6 +15,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { requireAdminOrService } from "../_shared/auth.ts";
+import { verifyResumeToken } from "../_shared/quoteResumeTokens.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,6 +40,7 @@ const ALLOWED_REASONS = new Set([
 interface Body {
   quote_id?: string;
   email?: string | null;
+  resume_token?: string | null;
   reason?: string;
   notes?: string | null;
   source?: string | null;
@@ -54,6 +56,9 @@ serve(async (req) => {
   const quoteId = (body.quote_id || "").trim();
   const reason = (body.reason || "").trim();
   const email = (body.email || "").trim().toLowerCase() || null;
+  const resumeToken = typeof body.resume_token === "string" && body.resume_token
+    ? body.resume_token
+    : null;
   // Server-side hard length cap — never trust the client UI limit alone.
   const NOTES_MAX = 1000;
   const notes = typeof body.notes === "string" ? body.notes.slice(0, NOTES_MAX) : null;
@@ -75,11 +80,17 @@ serve(async (req) => {
   if (qErr) return json(500, { error: "lookup_failed" });
   if (!quote) return json(404, { error: "quote_not_found" });
 
-  // Authorization: admin/service OR matching email on the quote.
+  // Authorization: admin/service OR matching email on the quote OR a valid
+  // resume token for this quote (same trust model as opening the quote link).
   const authz = await requireAdminOrService(req);
   const emailOnFile = (quote.customer_email || "").trim().toLowerCase();
   const emailMatches = !!email && !!emailOnFile && email === emailOnFile;
-  if (!authz.ok && !emailMatches) {
+  let tokenMatches = false;
+  if (!authz.ok && !emailMatches && resumeToken) {
+    const verified = await verifyResumeToken(supabase, quoteId, resumeToken);
+    tokenMatches = !!verified.ok;
+  }
+  if (!authz.ok && !emailMatches && !tokenMatches) {
     return json(403, { error: "forbidden" });
   }
 
@@ -104,7 +115,7 @@ serve(async (req) => {
       declined_at: nowIso,
       decline_reason: reason,
       decline_notes: notes,
-      decline_source: authz.ok && !emailMatches ? "admin" : source,
+      decline_source: authz.ok && !emailMatches && !tokenMatches ? "admin" : source,
       decline_version: quote.pricing_rule_version ?? null,
       declined_by: authz.userId ?? null,
       last_activity_at: nowIso,

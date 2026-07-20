@@ -260,6 +260,11 @@ export function useServicePlanBuilder() {
     setIsSaving(true);
     try {
       const enabledServices = services.filter(s => s.enabled);
+      // Rebuild the exact scenario used to price the CURRENT option so the
+      // server can re-run the authoritative plan pricing and match it against
+      // the client display totals. Without this, save-quote recomputes with
+      // an empty scenario and rejects the save as invalid_plan/zero.
+      const scenario = toScenario('current', selections, homeDetails);
       const servicesJson = {
         type: '12-month-plan',
         engineVersion: current.engineVersion,
@@ -299,6 +304,7 @@ export function useServicePlanBuilder() {
         body: {
           action: 'save',
           mode: 'plan',
+          quoteType: 'recurring_plan',
           email: customer.email,
           firstName: customer.firstName,
           lastName: customer.lastName,
@@ -307,6 +313,8 @@ export function useServicePlanBuilder() {
           subtotal: payment.annualTotal,
           services: enabledServices.map(s => ({ name: s.name, amount: s.annualTotal })),
           homeDetails: homeDetailsJson,
+          additionalServices: scenario.additionalServices,
+          planScenario: scenario,
           ruleVersion: current.ruleVersion,
           engineVersion: current.engineVersion,
           lineItems: current.lineItems,
@@ -324,7 +332,7 @@ export function useServicePlanBuilder() {
     } finally {
       setIsSaving(false);
     }
-  }, [isSaving, current, services, payment, homeDetails, customer]);
+  }, [isSaving, current, services, selections, payment, homeDetails, customer]);
 
   const isValid = useMemo(() => {
     const hasServices = services.some(s => s.enabled);
