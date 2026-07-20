@@ -412,7 +412,12 @@ async function applyStop(
 export function campaignFilterForScope(
   scope: "all" | "abandoned" | "reminders",
 ): string[] | null {
-  if (scope === "abandoned") return ["quote_abandoned"];
+  // "abandoned" now includes quote_declined-triggered win-back journeys so a
+  // confirmed booking (or recurring plan quote acceptance) for the SAME quote
+  // stops both the abandonment nurture AND the decline win-back nurture.
+  // Journey scoping via quote_id keeps this narrow — an unrelated quote for
+  // the same customer is not stopped.
+  if (scope === "abandoned") return ["quote_abandoned", "quote_declined"];
   if (scope === "reminders") return ["appointment_rescheduled", "appointment_scheduled", "booking_completed"];
   return null;
 }
