@@ -1,6 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import type { Json } from '@/integrations/supabase/types';
 import type {
   ServicePlanHomeDetails,
   ServicePlanService,
