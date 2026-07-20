@@ -71,6 +71,16 @@ interface BookingRequest {
   sessionId?: string;
 }
 
+// Booking from a resumed quote: caller passes the stored quote id and the
+// total the customer just explicitly confirmed. If the server recomputes a
+// materially different total (pricing rules updated, promotion expired, etc.)
+// the booking is refused with a typed `requires_reconfirmation` result so the
+// UI can present the new total and require a new explicit confirmation.
+interface ResumedQuoteFields {
+  resumedQuoteId?: string;
+  confirmedTotal?: number;
+}
+
 // Simple address parser - extracts components from a single-line address
 function parseAddress(address: string): {
   street1: string;
