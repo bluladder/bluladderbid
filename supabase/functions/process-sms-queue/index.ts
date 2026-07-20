@@ -102,6 +102,22 @@ serve(async (req) => {
   const config = getCallRailConfig();
   const resendKey = Deno.env.get("RESEND_API_KEY");
 
+  // Global launch controls: delivery kill-switch. When on, don't claim or
+  // send any queued campaign messages. Rows stay 'pending' and will send
+  // once the pause is lifted. Non-campaign transactional writes bypass this
+  // processor entirely, so operational SMS/email is unaffected.
+  const { data: launchControls } = await supabase
+    .from("campaign_launch_controls")
+    .select("delivery_paused")
+    .eq("id", 1)
+    .maybeSingle();
+  if (launchControls?.delivery_paused) {
+    return new Response(
+      JSON.stringify({ paused: true, sent: 0, failed: 0, message: "Campaign delivery globally paused" }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
   // Atomically claim a batch of due messages. The RPC marks each row as
   // 'processing' under a row lock (SKIP LOCKED) so overlapping runs — now that
   // the queue fires every minute — can never grab or send the same message

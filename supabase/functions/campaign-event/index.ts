@@ -238,7 +238,28 @@ serve(async (req) => {
 
   const decisions: EnrollDecision[] = [];
 
+  // ---- Global launch controls: enrollment kill-switch --------------------
+  // When enrollment is globally paused, skip creating any new enrollments.
+  // STOP events above have already processed (opt-outs / cancellations must
+  // always take effect even while paused). Suppression + consent gates below
+  // still apply as usual once the pause is lifted.
+  const { data: launchControls } = await supabase
+    .from("campaign_launch_controls")
+    .select("enrollment_paused")
+    .eq("id", 1)
+    .maybeSingle();
+  const enrollmentPaused = !!launchControls?.enrollment_paused;
+
   for (const c of campaigns as any[]) {
+    if (enrollmentPaused) {
+      decisions.push({
+        campaignId: c.id,
+        campaignName: c.name,
+        outcome: "not_enrolled",
+        reason: "Enrollment globally paused (campaign launch controls)",
+      });
+      continue;
+    }
     const required: ConsentType = (c.required_consent as ConsentType) ?? "transactional";
 
     // Audience
