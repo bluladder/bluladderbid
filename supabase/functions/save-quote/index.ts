@@ -11,6 +11,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { sendEmail } from "../_shared/emailConfig.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
+import { computeAuthoritativeQuote } from "../_shared/authoritativeQuote.ts";
+import { mintQuoteResumeToken, revokeQuoteResumeTokens } from "../_shared/quoteResumeTokens.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +24,7 @@ const corsHeaders = {
 interface Body {
   action: "save" | "email";
   mode?: "one_time" | "plan";
+  quoteType?: "one_time" | "recurring_plan";
   email: string;
   firstName?: string | null;
   lastName?: string | null;
@@ -30,6 +33,7 @@ interface Body {
   subtotal: number;
   services: Array<{ name: string; amount?: number }>;
   homeDetails: Record<string, unknown>;
+  additionalServices?: Record<string, unknown>;
   sourceSessionId?: string | null;
   utmParams?: Record<string, unknown> | null;
   attribution?: Record<string, unknown> | null;
@@ -37,6 +41,9 @@ interface Body {
   engineVersion?: string | null;
   lineItems?: unknown;
   planSnapshot?: Record<string, unknown> | null;
+  planScenario?: Record<string, unknown> | null;
+  discount?: { code?: string } | null;
+  promotion?: { id?: string; windowCount?: number } | null;
 }
 
 function json(status: number, body: unknown) {
