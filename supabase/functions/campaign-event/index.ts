@@ -301,7 +301,7 @@ serve(async (req) => {
     const metaQuoteId = typeof (meta as Record<string, unknown>).quote_id === "string"
       ? String((meta as Record<string, unknown>).quote_id)
       : null;
-    const safeLink = metaLink || (metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
+    const primaryLink = metaLink || (metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
     const totalRaw = (meta as Record<string, unknown>).total;
     const totalNum = typeof totalRaw === "number" ? totalRaw : Number(totalRaw);
     const totalStr = Number.isFinite(totalNum) && totalNum > 0
@@ -317,14 +317,46 @@ serve(async (req) => {
         ? String((meta as Record<string, unknown>).decline_reason)
         : null,
     );
+    // Booking-confirmation vars (Phase 2A). Missing values render as safe empty
+    // strings — never "undefined", "null", "$0", or malformed sentences.
+    const bookingDate = formatAppointmentDate(
+      typeof (meta as Record<string, unknown>).appointment_date === "string"
+        ? String((meta as Record<string, unknown>).appointment_date)
+        : null,
+    );
+    const arrivalWindow = typeof (meta as Record<string, unknown>).arrival_window === "string"
+      ? String((meta as Record<string, unknown>).arrival_window).trim()
+      : "";
+    const appointmentWhen = buildAppointmentWhen(bookingDate, arrivalWindow);
+    const serviceAddress = typeof (meta as Record<string, unknown>).service_address === "string"
+      ? String((meta as Record<string, unknown>).service_address)
+      : "";
+    const serviceNamesMeta = Array.isArray((meta as Record<string, unknown>).service_names)
+      ? ((meta as Record<string, unknown>).service_names as unknown[]).map(String).filter(Boolean).join(", ")
+      : "";
+    const bookingTotalStr = formatBookingTotal((meta as Record<string, unknown>).booking_total);
+    const manageLink = safeLink((meta as Record<string, unknown>).manage_link, `${APP_URL}/my-appointments`);
+    const rescheduleLink = safeLink((meta as Record<string, unknown>).reschedule_link, manageLink);
+    const cancelLink = safeLink((meta as Record<string, unknown>).cancel_link, manageLink);
     const vars: Record<string, string> = {
       first_name: firstName,
       last_name: lastName,
       name: `${firstName} ${lastName}`.trim() || firstName,
       service: serviceLabel,
-      link: safeLink,
+      link: primaryLink,
       total: totalStr,
       feedback_line: feedbackLine,
+      // Booking-confirmation merge fields
+      appointment_date: bookingDate,
+      arrival_window: arrivalWindow,
+      appointment_when: appointmentWhen,
+      service_names: serviceNamesMeta || serviceLabel,
+      service_address: serviceAddress,
+      service_address_short: shortServiceAddress(serviceAddress),
+      booking_total: bookingTotalStr,
+      manage_link: manageLink,
+      reschedule_link: rescheduleLink,
+      cancel_link: cancelLink,
     };
     const now = Date.now();
     const rows = usableSteps.map((s) => ({
