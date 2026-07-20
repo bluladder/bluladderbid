@@ -220,3 +220,119 @@ describe("campaign-event ingress remains the SOLE enrollment writer", () => {
     expect(campaignEvent).toMatch(/isAllowedEvent/);
   });
 });
+
+// ---- 5. Fixed-clock inactivity-boundary tests ---------------------------
+// The production predicate in evaluatePersistedQuoteAbandonment is:
+//   if (nowMs - lastMs < delayMinutes * 60_000) return { within_delay };
+// i.e. NOT eligible iff (now - last_activity) is STRICTLY LESS THAN 5min.
+// That means eligibility uses an INCLUSIVE boundary at exactly 5m: the
+// quote becomes eligible the instant `now - last_activity >= 300000ms`.
+function isEligibleByInactivity(lastActivityMs: number, nowMs: number, delayMinutes = 5): boolean {
+  // Mirror of the exact operator used in supabase/functions/_shared/campaignSweep.ts.
+  return !(nowMs - lastActivityMs < delayMinutes * 60_000);
+}
+
+describe("inactivity boundary — fixed-clock tests at 4:59 / 5:00 / 5:00+1ms / 6:00", () => {
+  const T0 = Date.parse("2026-07-20T12:00:00.000Z");
+  it("t + 4m59s → NOT eligible (within_delay)", () => {
+    expect(isEligibleByInactivity(T0, T0 + (4 * 60_000 + 59_000))).toBe(false);
+  });
+  it("t + 5m exactly → eligible (inclusive boundary)", () => {
+    expect(isEligibleByInactivity(T0, T0 + 5 * 60_000)).toBe(true);
+  });
+  it("t + 5m + 1ms → eligible", () => {
+    expect(isEligibleByInactivity(T0, T0 + 5 * 60_000 + 1)).toBe(true);
+  });
+  it("t + 6m → eligible", () => {
+    expect(isEligibleByInactivity(T0, T0 + 6 * 60_000)).toBe(true);
+  });
+  it("source uses strict `<` for the exclusion clause (inclusive `>=` for eligibility)", () => {
+    // Guard against silent regressions that would flip the operator to `<=`
+    // (which would push eligibility past the 5m mark).
+    expect(sweep).toMatch(/nowMs\s*-\s*lastMs\s*<\s*delayMinutes\s*\*\s*60_000/);
+  });
+});
+
+// ---- 6. Queue-row vs send-time channel gating ---------------------------
+// The engine filters campaign steps by consent per channel, so ONLY steps
+// whose channel has consent produce sms_messages rows. Presence of the
+// contact channel itself is NOT checked at queue time: a step with
+// channel=sms writes `to_number: phone` even if `phone` is null, and
+// process-sms-queue rejects null/opted-out/paused/suppressed recipients at
+// send time. This matrix documents both layers explicitly.
+type Step = { channel: "sms" | "email" };
+type ChannelScenario = {
+  label: string;
+  phone: string | null;
+  email: string | null;
+  smsConsent: boolean;
+  emailConsent: boolean;
+  smsOptOut?: boolean;
+  emailSuppressed?: boolean;
+  suppressedIdentity?: boolean; // test identity / global suppression switch
+};
+
+function queueRows(steps: Step[], s: ChannelScenario) {
+  // Mirror of campaign-event/index.ts step filtering + row shape.
+  const usable = steps.filter((st) => (st.channel === "sms" ? s.smsConsent : s.emailConsent));
+  return usable.map((st) => ({
+    channel: st.channel,
+    to_number: st.channel === "sms" ? s.phone : null,
+    to_email: st.channel === "email" ? s.email : null,
+  }));
+}
+
+function sendOutcome(row: { channel: "sms" | "email"; to_number: string | null; to_email: string | null }, s: ChannelScenario): "sent" | "suppressed" {
+  // Mirror of process-sms-queue send-time gates (checkSuppression + missing
+  // channel + opt-out/suppression). Any gate → "suppressed" ("would-have-sent" row).
+  if (s.suppressedIdentity) return "suppressed";
+  if (row.channel === "email") {
+    if (!row.to_email || s.emailSuppressed) return "suppressed";
+    return "sent";
+  }
+  if (!row.to_number || s.smsOptOut) return "suppressed";
+  return "sent";
+}
+
+describe("queue-time vs send-time channel gating matrix", () => {
+  const P1_STEPS: Step[] = [{ channel: "sms" }, { channel: "email" }];
+
+  const cases: Array<{ s: ChannelScenario; expectRows: number; expectSent: number }> = [
+    // 1. Email only
+    { s: { label: "email only", phone: null, email: "a@x.com", smsConsent: true, emailConsent: true }, expectRows: 2, expectSent: 1 },
+    // 2. Phone only
+    { s: { label: "phone only", phone: "+15551234567", email: null, smsConsent: true, emailConsent: true }, expectRows: 2, expectSent: 1 },
+    // 3. Both channels
+    { s: { label: "both channels", phone: "+15551234567", email: "a@x.com", smsConsent: true, emailConsent: true }, expectRows: 2, expectSent: 2 },
+    // 4. No usable contact — engine still queues rows for consented channels;
+    //    send-time drops them (null recipient). "Suppressed" here = would-have-sent.
+    { s: { label: "no channel", phone: null, email: null, smsConsent: true, emailConsent: true }, expectRows: 2, expectSent: 0 },
+    // 5. SMS opt-out — queue row created; send-time cancels.
+    { s: { label: "sms opt-out", phone: "+15551234567", email: "a@x.com", smsConsent: true, emailConsent: true, smsOptOut: true }, expectRows: 2, expectSent: 1 },
+    // 6. Email suppressed — queue row created; send-time cancels.
+    { s: { label: "email suppressed", phone: "+15551234567", email: "a@x.com", smsConsent: true, emailConsent: true, emailSuppressed: true }, expectRows: 2, expectSent: 1 },
+    // 7. Requested-follow-up only → treat as SMS+email consent for Phase 1.
+    { s: { label: "requested_follow_up only", phone: "+15551234567", email: "a@x.com", smsConsent: true, emailConsent: true }, expectRows: 2, expectSent: 2 },
+    // 8. Marketing consent (both channels) — same for Phase 1 steps.
+    { s: { label: "marketing consent", phone: "+15551234567", email: "a@x.com", smsConsent: true, emailConsent: true }, expectRows: 2, expectSent: 2 },
+    // 9. No qualifying consent → engine filters both steps out → zero rows.
+    { s: { label: "no consent", phone: "+15551234567", email: "a@x.com", smsConsent: false, emailConsent: false }, expectRows: 0, expectSent: 0 },
+  ];
+
+  for (const c of cases) {
+    it(`${c.s.label}: rows=${c.expectRows}, sent=${c.expectSent}`, () => {
+      const rows = queueRows(P1_STEPS, c.s);
+      expect(rows.length).toBe(c.expectRows);
+      const sent = rows.filter((r) => sendOutcome(r, c.s) === "sent").length;
+      expect(sent).toBe(c.expectSent);
+    });
+  }
+
+  it("send-time gates are still wired in process-sms-queue", () => {
+    const queue = read("supabase/functions/process-sms-queue/index.ts");
+    expect(queue).toMatch(/checkSuppression/);
+    expect(queue).toMatch(/isPhoneOptedOut/);
+    expect(queue).toMatch(/if \(!msg\.to_email\)/);
+    expect(queue).toMatch(/getCustomerPause/);
+  });
+});
