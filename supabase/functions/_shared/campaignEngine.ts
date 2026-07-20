@@ -50,7 +50,6 @@ export const STOP_EVENTS: Record<string, { reason: string; scope: "all" | "aband
   booking_completed: { reason: "booking_completed", scope: "abandoned" },
   recurring_plan_created: { reason: "recurring_plan_created", scope: "abandoned" },
   quote_declined: { reason: "quote_declined", scope: "abandoned" },
-  customer_replied: { reason: "customer_replied", scope: "all" },
   consent_revoked: { reason: "consent_revoked", scope: "all" },
   appointment_cancelled: { reason: "appointment_cancelled", scope: "reminders" },
   // A confirmed reschedule supersedes prior confirmations + reminders for the
@@ -64,6 +63,25 @@ export const STOP_EVENTS: Record<string, { reason: string; scope: "all" | "aband
   booking_cancelled: { reason: "booking_cancelled", scope: "reminders" },
   manual_staff_takeover: { reason: "manual_staff_takeover", scope: "all" },
 };
+
+// Events that PAUSE (not permanently stop) active enrollments. When the
+// customer engages the AI, we defer future nurture messages for a controlled
+// window and auto-resume from the next unsent step if — and only if — no
+// permanent stop condition (booking, opt-out, revoked consent, decline,
+// suppression, human takeover, newer quote supersession, escalation) has
+// occurred in the meantime. Permanent stop conditions above always win.
+export const PAUSE_EVENTS: Record<string, { reason: string; scope: "all" | "abandoned" | "reminders"; durationMs: number }> = {
+  // 72 hours of active-conversation quiet time before nurture resumes.
+  customer_replied: {
+    reason: "customer_replied_ai_conversation",
+    scope: "all",
+    durationMs: 72 * 60 * 60 * 1000,
+  },
+};
+
+export const AUTO_RESUME_PAUSE_REASONS = new Set(
+  Object.values(PAUSE_EVENTS).map((p) => p.reason),
+);
 
 export type ConsentType = "transactional" | "requested_follow_up" | "marketing";
 
