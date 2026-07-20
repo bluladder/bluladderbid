@@ -671,6 +671,8 @@ export type Database = {
           line_item_snapshot: Json | null
           meta_events_fired: Json
           notes: string | null
+          previous_scheduled_end: string | null
+          previous_scheduled_start: string | null
           pricing_engine_version: string | null
           pricing_override_by: string | null
           pricing_override_reason: string | null
@@ -678,6 +680,10 @@ export type Database = {
           quote_id: string | null
           quote_to_booking_seconds: number | null
           reference_number: string
+          reschedule_notes: string | null
+          reschedule_reason: string | null
+          reschedule_source: string | null
+          rescheduled_at: string | null
           scheduled_end: string | null
           scheduled_start: string | null
           services_json: Json
@@ -720,6 +726,8 @@ export type Database = {
           line_item_snapshot?: Json | null
           meta_events_fired?: Json
           notes?: string | null
+          previous_scheduled_end?: string | null
+          previous_scheduled_start?: string | null
           pricing_engine_version?: string | null
           pricing_override_by?: string | null
           pricing_override_reason?: string | null
@@ -727,6 +735,10 @@ export type Database = {
           quote_id?: string | null
           quote_to_booking_seconds?: number | null
           reference_number: string
+          reschedule_notes?: string | null
+          reschedule_reason?: string | null
+          reschedule_source?: string | null
+          rescheduled_at?: string | null
           scheduled_end?: string | null
           scheduled_start?: string | null
           services_json: Json
@@ -769,6 +781,8 @@ export type Database = {
           line_item_snapshot?: Json | null
           meta_events_fired?: Json
           notes?: string | null
+          previous_scheduled_end?: string | null
+          previous_scheduled_start?: string | null
           pricing_engine_version?: string | null
           pricing_override_by?: string | null
           pricing_override_reason?: string | null
@@ -776,6 +790,10 @@ export type Database = {
           quote_id?: string | null
           quote_to_booking_seconds?: number | null
           reference_number?: string
+          reschedule_notes?: string | null
+          reschedule_reason?: string | null
+          reschedule_source?: string | null
+          rescheduled_at?: string | null
           scheduled_end?: string | null
           scheduled_start?: string | null
           services_json?: Json
@@ -1015,6 +1033,8 @@ export type Database = {
       }
       campaign_enrollments: {
         Row: {
+          booking_id: string | null
+          booking_version: number | null
           campaign_event_id: string | null
           campaign_id: string
           campaign_snapshot: Json | null
@@ -1040,6 +1060,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          booking_id?: string | null
+          booking_version?: number | null
           campaign_event_id?: string | null
           campaign_id: string
           campaign_snapshot?: Json | null
@@ -1065,6 +1087,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          booking_id?: string | null
+          booking_version?: number | null
           campaign_event_id?: string | null
           campaign_id?: string
           campaign_snapshot?: Json | null
