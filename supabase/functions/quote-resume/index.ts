@@ -219,12 +219,12 @@ serve(async (req) => {
 
   // Best-effort viewed transition (never blocks). Constant-shape success.
   if (row.status === "pending" || row.status === "emailed" || row.status === "saved") {
-    supabase
-      .from("quotes")
-      .update({ viewed_at: new Date().toISOString(), status: row.status === "pending" ? "viewed" : row.status })
-      .eq("id", quoteId)
-      .then(() => {})
-      .catch(() => {});
+    try {
+      await supabase
+        .from("quotes")
+        .update({ viewed_at: new Date().toISOString(), status: row.status === "pending" ? "viewed" : row.status })
+        .eq("id", quoteId);
+    } catch (_e) { /* non-blocking */ }
   }
 
   const dto = buildDto(row);
