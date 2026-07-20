@@ -585,6 +585,17 @@ export function buildDeclineFeedbackLine(declineReason: string | null | undefine
     : "If you have a moment, reply with a quick note about what didn't fit — it helps us improve.";
 }
 
+/**
+ * Cancellation feedback line — one warm sentence acknowledging the reason
+ * category if provided, otherwise a neutral fallback. Never leaks raw reason
+ * text into the customer-facing message.
+ */
+export function buildCancellationFeedbackLine(reason: string | null | undefined): string {
+  const r = typeof reason === "string" ? reason.trim() : "";
+  if (!r) return "We hope to see you again soon.";
+  return "Thanks for letting us know — we appreciate it.";
+}
+
 // ---------------------------------------------------------------------------
 // Booking-confirmation merge helpers. Pure and exported so tests can lock in
 // the exact rendering guarantees (America/Chicago timezone, DST safety, safe
