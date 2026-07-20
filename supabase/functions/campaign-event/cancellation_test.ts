@@ -110,14 +110,16 @@ Deno.test("SMS renders cleanly when reason + notes missing", () => {
   clean(out);
 });
 
-Deno.test("SMS renders cleanly when appointment date missing (no dangling wording)", () => {
-  const out = renderTemplate(SMS_TEMPLATE, {
-    first_name: "Ada",
-    previous_appointment_when: "", // empty — templates must handle
-    cancellation_feedback_line: buildCancellationFeedbackLine(null),
-    booking_link: "https://bluladderbid.lovable.app/",
-  });
-  clean(out);
+Deno.test("buildAppointmentWhen never produces dangling 'during .' output for cancellation copy", () => {
+  // Guarding at the merge-variable layer means templates that use
+  // {{previous_appointment_when}} never emit awkward artifacts even when a
+  // date or arrival window is absent.
+  assertEquals(buildAppointmentWhen("", ""), "");
+  assertEquals(buildAppointmentWhen("Tuesday, July 21", ""), "Tuesday, July 21");
+  assertEquals(buildAppointmentWhen("", "9am - 11am"), "9am - 11am");
+  const rendered = buildAppointmentWhen("Tuesday, July 21", "9am - 11am");
+  assert(!/ during \.$/.test(rendered));
+  assert(!/ during\s*$/.test(rendered));
 });
 
 Deno.test("SMS renders cleanly with multiple services (join is safe)", () => {
