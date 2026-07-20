@@ -192,10 +192,10 @@ serve(async (req) => {
     for (const to of targets) {
       const sup = await checkSuppression(sb, { email: to });
       if (sup.suppressed) { results[to] = `suppressed:${sup.reason ?? "unknown"}`; continue; }
-      const r = await sendEmail({ to, subject: "BluLadder Ops Digest — last 24h", html, text, fromNameOverride: "BluLadder Ops" });
+      const r = await sendEmail({ to, subject: "BluLadder Ops Digest — last 24h", html, fromNameOverride: "BluLadder Ops" });
       results[to] = r.ok ? "sent" : (r.failure?.message ?? "failed");
     }
-    return j({ metrics_summary: { quotes: metrics.quotesToday, bookings: metrics.bookingsToday, alerts: alerts.length }, results });
+    return j({ metrics_summary: { quotes: metrics.quotesToday, bookings: metrics.bookingsToday, alerts: alerts.length }, digest_preview: text.slice(0, 400), results });
   }
 
   return j({ error: "invalid_mode" }, 400);
