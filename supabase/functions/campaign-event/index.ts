@@ -287,12 +287,19 @@ serve(async (req) => {
 
     // Create enrollment (snapshot version + steps for historical immutability).
     const snapshot = { version: c.version, required_consent: required, steps };
+    const enrollmentBookingId = typeof (meta as Record<string, unknown>).booking_id === "string"
+      ? String((meta as Record<string, unknown>).booking_id) : null;
+    const enrollmentBookingVersionRaw = (meta as Record<string, unknown>).booking_version;
+    const enrollmentBookingVersion = Number.isFinite(Number(enrollmentBookingVersionRaw))
+      ? Number(enrollmentBookingVersionRaw) : null;
     const { data: enr, error: enrErr } = await supabase.from("campaign_enrollments").insert({
       customer_id: customerId, campaign_id: c.id, campaign_event_id: eventId,
       campaign_version: c.version, campaign_snapshot: snapshot, event_name: eventName,
       conversation_id: body.conversation_id ?? null, email, phone,
       status: "active", reason: aud.reasons.join("; "),
       suppressed: suppression.suppressed, suppressed_reason: suppression.suppressed ? suppression.reason : null,
+      booking_id: enrollmentBookingId,
+      booking_version: enrollmentBookingVersion,
     }).select("id").single();
     if (enrErr || !enr) {
       decisions.push({ campaignId: c.id, campaignName: c.name, outcome: "skipped_duplicate", reason: "Concurrent enrollment race" });
