@@ -28,6 +28,7 @@ const campaignEvent = read("supabase/functions/campaign-event/index.ts");
 const replayFn = read("supabase/functions/campaign-transition-replay/index.ts");
 const replayLib = read("supabase/functions/_shared/campaignTransitionReplay.ts");
 const sweep = read("supabase/functions/_shared/campaignSweep.ts");
+const lifecycleLib = read("supabase/functions/_shared/lifecycleBookingCheck.ts");
 
 describe("original-key replay is NOT the historical backfill mechanism", () => {
   it("campaign-event returns the ORIGINAL stored decisions when the same key is reposted", () => {
@@ -77,7 +78,10 @@ describe("eligibility checks + preserved audit fields", () => {
     expect(replayFn).toMatch(/isPhoneOptedOut/);
     expect(replayFn).toMatch(/checkSuppression/);
     expect(replayFn).toMatch(/consent_type.*marketing|marketing.*consent_type/);
-    expect(replayFn).toMatch(/\.from\(["']bookings["']\)/);
+    // Booking check is delegated to the shared source-lifecycle-scoped
+    // helper; the raw `.from("bookings")` call lives in that helper.
+    expect(replayFn).toMatch(/hasLifecycleBlockingBooking/);
+    expect(lifecycleLib).toMatch(/\.from\(["']bookings["']\)/);
     expect(replayFn).toMatch(/staff_takeover_at/);
     expect(replayFn).toMatch(/\.in\(["']event_name["'][\s\S]*?quote_calculated[\s\S]*?quote_abandoned/);
   });
@@ -125,10 +129,37 @@ describe("empty-campaign activation guard (existing validateActivation)", () => 
 });
 
 describe("future automatic enrollment continues via the canonical path", () => {
+  // (regression suite for booking-scope correction lives below)
   it("quote_follow_up_completed is allowlisted and emitted by the completion sweep, not the backfill", () => {
     expect(sweep).toMatch(/quote_follow_up_completed/);
     expect(sweep).toMatch(/emitCampaignEvent/);
     // Sanity: the sweep is unchanged by this correction.
     expect(sweep).toMatch(/runFollowUpCompletionSweep/);
+  });
+});
+
+describe("booking exclusion is source-lifecycle-scoped, not customer-lifetime-wide", () => {
+  it("replay resolves the source enrollment anchor and source quote_id before checking bookings", () => {
+    expect(replayFn).toMatch(/source_enrollment_id/);
+    expect(replayFn).toMatch(/campaign_enrollments[\s\S]{0,120}created_at/);
+    expect(replayFn).toMatch(/quoteId:\s*sourceQuoteId/);
+    expect(replayFn).toMatch(/anchorIso/);
+  });
+  it("sweep passes the enrollment created_at anchor + source quote id to the helper", () => {
+    expect(sweep).toMatch(/hasLifecycleBlockingBooking/);
+    expect(sweep).toMatch(/sourceQuoteId/);
+    expect(sweep).toMatch(/lifecycleAnchorIso/);
+  });
+  it("neither call site uses the old lifetime-wide bookings count", () => {
+    expect(replayFn).not.toMatch(/from\(["']bookings["']\)[\s\S]{0,200}count:\s*["']exact["']/);
+    expect(sweep).not.toMatch(/from\(["']bookings["']\)[\s\S]{0,200}count:\s*["']exact["']/);
+  });
+  it("cancelled bookings are excluded at the DB layer", () => {
+    expect(lifecycleLib).toMatch(/\.neq\(["']status["'],\s*["']cancelled["']\)/);
+  });
+  it("authoritative statuses are declared in the shared helper", () => {
+    for (const s of ["confirmed", "scheduled", "in_progress", "completed", "pending_confirmation"]) {
+      expect(lifecycleLib).toContain(s);
+    }
   });
 });

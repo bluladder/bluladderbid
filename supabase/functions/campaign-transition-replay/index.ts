@@ -22,6 +22,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { isPhoneOptedOut } from "../_shared/sms.ts";
 import { checkSuppression } from "../_shared/campaignEngine.ts";
+import { hasLifecycleBlockingBooking } from "../_shared/lifecycleBookingCheck.ts";
 import {
   backfillReplayIdempotencyKey,
   buildReplayMetadata,
@@ -110,14 +111,31 @@ serve(async (req) => {
       alreadyEnrolled = !!enr;
     }
 
-    // Booking check — any non-cancelled booking excludes the customer.
-    let hasBooking = false;
-    if (raw.customer_id) {
-      const { count } = await supabase.from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("customer_id", raw.customer_id).neq("status", "cancelled");
-      hasBooking = (count ?? 0) > 0;
+    // Booking check — SOURCE-LIFECYCLE-SCOPED, not customer-lifetime-wide.
+    // Lifetime scope would permanently disqualify repeat customers with a
+    // completed historical job predating the source quote. A booking blocks
+    // only when it is tied to the source quote or is an authoritative Jobber
+    // booking created at/after the source lifecycle anchor.
+    //
+    // Anchor priority: source enrollment's created_at (the moment the
+    // abandoned-quote journey began) → falls back to the completion event's
+    // processed_at (the end of the 12-month sequence) if we cannot resolve
+    // the source enrollment.
+    const sourceEnrollmentId = (meta.source_enrollment_id as string | null) ?? null;
+    const sourceQuoteId = (meta.quote_id as string | null) ?? null;
+    let anchorIso: string | null = null;
+    if (sourceEnrollmentId) {
+      const { data: srcEnr } = await supabase
+        .from("campaign_enrollments")
+        .select("created_at").eq("id", sourceEnrollmentId).maybeSingle();
+      anchorIso = (srcEnr?.created_at as string | null) ?? null;
     }
+    if (!anchorIso) anchorIso = raw.processed_at;
+    const hasBooking = await hasLifecycleBlockingBooking(supabase, {
+      customerId: raw.customer_id,
+      quoteId: sourceQuoteId,
+      anchorIso,
+    });
 
     // Marketing consent (SMS OR email) — destination requires marketing consent.
     let marketingConsent = false;
