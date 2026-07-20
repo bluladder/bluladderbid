@@ -984,6 +984,72 @@ export type Database = {
         }
         Relationships: []
       }
+      callrail_inbound_events: {
+        Row: {
+          attempts: number
+          conversation_id: string | null
+          created_at: string
+          customer_id: string | null
+          event_type: string
+          from_phone: string | null
+          id: string
+          last_attempted_at: string | null
+          last_error_category: string | null
+          last_error_detail: string | null
+          next_attempt_at: string | null
+          payload_safe: Json
+          processed_at: string | null
+          provider_message_id: string
+          received_at: string
+          sms_message_id: string | null
+          status: string
+          to_phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          event_type?: string
+          from_phone?: string | null
+          id?: string
+          last_attempted_at?: string | null
+          last_error_category?: string | null
+          last_error_detail?: string | null
+          next_attempt_at?: string | null
+          payload_safe?: Json
+          processed_at?: string | null
+          provider_message_id: string
+          received_at?: string
+          sms_message_id?: string | null
+          status?: string
+          to_phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          event_type?: string
+          from_phone?: string | null
+          id?: string
+          last_attempted_at?: string | null
+          last_error_category?: string | null
+          last_error_detail?: string | null
+          next_attempt_at?: string | null
+          payload_safe?: Json
+          processed_at?: string | null
+          provider_message_id?: string
+          received_at?: string
+          sms_message_id?: string | null
+          status?: string
+          to_phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       campaign_audit_log: {
         Row: {
           actor_id: string | null
