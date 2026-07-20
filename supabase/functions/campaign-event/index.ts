@@ -199,7 +199,10 @@ serve(async (req) => {
   // ---- Enrolling: find active campaigns whose trigger matches this event ----
   const { data: campaignsRaw } = await supabase
     .from("sms_campaigns")
-    .select("id, name, active, version, event_name, trigger_event, required_consent, audience_conditions, reentry_enabled, reentry_cooldown_hours, effective_start, effective_end, sms_campaign_steps(id, step_order, delay_hours, body_template, subject, channel, active)")
+    // NOTE: sms_campaigns.trigger_event is legacy/deprecated — enrollment is
+    // driven exclusively by event_name. The column is left in the schema for
+    // now; a future cleanup migration can drop it once confirmed unused.
+    .select("id, name, active, version, event_name, required_consent, audience_conditions, reentry_enabled, reentry_cooldown_hours, effective_start, effective_end, sms_campaign_steps(id, step_order, delay_hours, body_template, subject, channel, active)")
     .eq("active", true)
     .eq("event_name", eventName);
 
