@@ -292,33 +292,33 @@ export function useServicePlanBuilder() {
         },
       };
 
-      const { data, error } = await supabase
-        .from('quotes')
-        .insert({
-          customer_name: `${customer.firstName} ${customer.lastName}`.trim(),
-          customer_email: customer.email,
-          customer_phone: customer.phone,
-          services_json: servicesJson as unknown as Json,
-          home_details_json: homeDetailsJson as unknown as Json,
-          subtotal: payment.annualTotal,
+      // Route ALL persistence through the server-controlled save-quote function
+      // so plan-builder quotes get the same quote_calculated emission,
+      // abandonment tracking, supersede handling and idempotency guarantees as
+      // one-time quotes. Direct client-side inserts into `quotes` are retired.
+      const { data, error } = await supabase.functions.invoke('save-quote', {
+        body: {
+          action: 'save',
+          mode: 'plan',
+          email: customer.email,
+          firstName: customer.firstName,
+          lastName: customer.lastName,
+          phone: customer.phone,
           total: payment.annualTotal,
-          status: 'pending',
-        })
-        .select('id')
-        .single();
-
+          subtotal: payment.annualTotal,
+          services: enabledServices.map(s => ({ name: s.name, amount: s.annualTotal })),
+          homeDetails: homeDetailsJson,
+          ruleVersion: current.ruleVersion,
+          engineVersion: current.engineVersion,
+          lineItems: current.lineItems,
+          planSnapshot: servicesJson,
+        },
+      });
       if (error) throw error;
-      setSavedQuoteId(data.id);
-
-      // Legacy `quote_created` send-sms path was retired — that eventType is no
-      // longer accepted by the canonical campaign engine (ALLOWED_EVENTS uses
-      // `quote_calculated`). Emission for this plan-builder path is a follow-up
-      // (see docs/future-campaign-channel-extension.md — the same pattern
-      // applies: route this insert through a server function that emits
-      // `quote_calculated` via emitCampaignEvent, deterministic key on
-      // quote id + pricing version). Do NOT re-add a client-side emit here.
-
-      return data.id;
+      const quoteId = (data as { quoteId?: string } | null)?.quoteId ?? null;
+      if (!quoteId) throw new Error('save-quote returned no quoteId');
+      setSavedQuoteId(quoteId);
+      return quoteId;
     } catch (error) {
       console.error('Error saving quote:', error);
       return null;
