@@ -198,7 +198,20 @@ serve(async (req) => {
     const stopQuoteId = typeof (meta as any)?.quote_id === "string" && (meta as any).quote_id
       ? String((meta as any).quote_id)
       : null;
-    stopped = await applyStop(supabase, customerId, email, phone, stop.reason, stop.scope, stopQuoteId);
+    // Booking-version scoping: for reschedule/cancel events, only stop
+    // enrollments tied to the SAME booking id AND strictly older booking
+    // versions. This lets a v1→v2 reschedule cancel the v1 confirmation+
+    // reminders without touching v2 (the new confirmation about to be sent).
+    const stopBookingId = typeof (meta as any)?.booking_id === "string" && (meta as any).booking_id
+      ? String((meta as any).booking_id)
+      : null;
+    const stopBookingVersion = Number.isFinite(Number((meta as any)?.booking_version))
+      ? Number((meta as any).booking_version)
+      : null;
+    stopped = await applyStop(
+      supabase, customerId, email, phone, stop.reason, stop.scope,
+      stopQuoteId, stopBookingId, stopBookingVersion,
+    );
   }
 
   // ---- Suppression (test identity / non-prod / global switch) ----
