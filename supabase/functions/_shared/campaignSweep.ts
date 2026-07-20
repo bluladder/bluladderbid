@@ -271,6 +271,100 @@ export async function runAbandonmentSweep(
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// runPersistedQuoteAbandonmentSweep — scans public.quotes for firm, unbooked,
+// non-superseded persisted quotes whose inactivity delay has elapsed, and
+// emits `quote_abandoned` via emitCampaignEvent for each eligible row. Runs
+// inside process-sms-queue AFTER the chat sweep and AFTER normal queue work,
+// bounded by RECOVERY_BATCH_SIZE so it never delays deliveries.
+// ---------------------------------------------------------------------------
+export async function runPersistedQuoteAbandonmentSweep(
+  supabase: SupabaseLike,
+  opts: { batchSize?: number; nowMs?: number } = {},
+): Promise<SweepResult> {
+  const batchSize = opts.batchSize ?? ABANDONMENT_BATCH_SIZE;
+  const nowMs = opts.nowMs ?? Date.now();
+  const result: SweepResult = { scanned: 0, emitted: 0, skipped: 0, reasons: {} };
+
+  const { data: camps } = await supabase
+    .from("sms_campaigns")
+    .select("abandonment_delay_minutes")
+    .eq("event_name", "quote_abandoned");
+  const delayMinutes = computeEffectiveAbandonmentDelay(
+    (camps ?? []).map((c: { abandonment_delay_minutes: number | null }) => c.abandonment_delay_minutes),
+  );
+  const cutoffIso = new Date(nowMs - delayMinutes * 60_000).toISOString();
+
+  const { data: candidates } = await supabase
+    .from("quotes")
+    .select("id, status, total, customer_email, customer_phone, customer_id, pricing_rule_version, last_activity_at, converted_booking_id, superseded_by, abandonment_emitted_version, services_json, source_session_id, utm_params_json, attribution")
+    .is("converted_booking_id", null)
+    .is("superseded_by", null)
+    .in("status", ["saved", "emailed", "viewed", "pending"])
+    .lt("last_activity_at", cutoffIso)
+    .order("last_activity_at", { ascending: true })
+    .limit(batchSize);
+
+  for (const row of (candidates ?? []) as PersistedQuoteRow[]) {
+    result.scanned++;
+
+    // Re-read immediately before emit so a booking/supersede/reply/consent
+    // change since the batch fetch excludes it.
+    const { data: fresh } = await supabase
+      .from("quotes")
+      .select("id, status, total, customer_email, customer_phone, customer_id, pricing_rule_version, last_activity_at, converted_booking_id, superseded_by, abandonment_emitted_version, services_json, source_session_id, utm_params_json, attribution")
+      .eq("id", row.id)
+      .maybeSingle();
+    if (!fresh) { result.skipped++; result.reasons["vanished"] = (result.reasons["vanished"] ?? 0) + 1; continue; }
+
+    const q = fresh as PersistedQuoteRow;
+    const decision = evaluatePersistedQuoteAbandonment(q, Date.now(), delayMinutes);
+    if (!decision.eligible) {
+      result.skipped++;
+      result.reasons[decision.reason] = (result.reasons[decision.reason] ?? 0) + 1;
+      continue;
+    }
+
+    const totalNum = typeof q.total === "number" ? q.total : Number(q.total);
+    const svc = q.services_json && typeof q.services_json === "object" ? q.services_json as Record<string, unknown> : {};
+    const svcArr = Array.isArray((svc as any).services)
+      ? ((svc as any).services as Array<{ name?: string }>).map((s) => s?.name).filter((n): n is string => !!n)
+      : [];
+
+    const versionTag = persistedQuoteVersionTag(q);
+    const emit = await emitCampaignEvent({
+      eventName: "quote_abandoned",
+      idempotencyKey: persistedQuoteIdempotencyKey(q),
+      email: q.customer_email ?? null,
+      phone: q.customer_phone ?? null,
+      customerId: q.customer_id ?? null,
+      source: "persisted-quote-abandonment-sweep",
+      subject: "Persisted quote abandoned",
+      metadata: {
+        lead_source: "website_quote",
+        quote_status: "firm",
+        quote_id: q.id,
+        pricing_rule_version: q.pricing_rule_version ?? null,
+        service_types: svcArr,
+        total: Number.isFinite(totalNum) ? totalNum : null,
+        abandonment_window: 1,
+      },
+    });
+
+    if (emit.ok || (emit.body as any)?.idempotent) {
+      await supabase.from("quotes")
+        .update({ abandonment_emitted_version: versionTag, abandonment_swept_at: new Date().toISOString() })
+        .eq("id", q.id);
+      result.emitted++;
+    } else {
+      result.skipped++;
+      result.reasons["emit_failed"] = (result.reasons["emit_failed"] ?? 0) + 1;
+    }
+  }
+
+  return result;
+}
+
 export interface RecoveryResult {
   recovered: number;
   failed: number;
