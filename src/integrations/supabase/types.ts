@@ -987,6 +987,8 @@ export type Database = {
       callrail_inbound_events: {
         Row: {
           attempts: number
+          claim_token: string | null
+          claimed_at: string | null
           conversation_id: string | null
           created_at: string
           customer_id: string | null
@@ -1001,6 +1003,9 @@ export type Database = {
           processed_at: string | null
           provider_message_id: string
           received_at: string
+          replay_count: number
+          replay_requested_at: string | null
+          replay_requested_by: string | null
           sms_message_id: string | null
           status: string
           to_phone: string | null
@@ -1008,6 +1013,8 @@ export type Database = {
         }
         Insert: {
           attempts?: number
+          claim_token?: string | null
+          claimed_at?: string | null
           conversation_id?: string | null
           created_at?: string
           customer_id?: string | null
@@ -1022,6 +1029,9 @@ export type Database = {
           processed_at?: string | null
           provider_message_id: string
           received_at?: string
+          replay_count?: number
+          replay_requested_at?: string | null
+          replay_requested_by?: string | null
           sms_message_id?: string | null
           status?: string
           to_phone?: string | null
@@ -1029,6 +1039,8 @@ export type Database = {
         }
         Update: {
           attempts?: number
+          claim_token?: string | null
+          claimed_at?: string | null
           conversation_id?: string | null
           created_at?: string
           customer_id?: string | null
@@ -1043,6 +1055,9 @@ export type Database = {
           processed_at?: string | null
           provider_message_id?: string
           received_at?: string
+          replay_count?: number
+          replay_requested_at?: string | null
+          replay_requested_by?: string | null
           sms_message_id?: string | null
           status?: string
           to_phone?: string | null
@@ -4442,6 +4457,20 @@ export type Database = {
           allowed: boolean
           current_count: number
           reset_at: string
+        }[]
+      }
+      claim_callrail_event_for_replay: {
+        Args: { _actor: string; _id: string }
+        Returns: {
+          id: string
+          prior_status: string
+          provider_message_id: string
+        }[]
+      }
+      claim_due_callrail_retries: {
+        Args: { _limit: number }
+        Returns: {
+          id: string
         }[]
       }
       claim_due_sms: {

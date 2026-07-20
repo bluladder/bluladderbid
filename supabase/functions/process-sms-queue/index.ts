@@ -5,6 +5,7 @@ import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { runAbandonmentSweep, recoverPendingCampaignEvents, runPersistedQuoteAbandonmentSweep, runFollowUpCompletionSweep } from "../_shared/campaignSweep.ts";
 import { getSenderConfig } from "../_shared/emailConfig.ts";
+import { processDueCallRailRetries } from "../_shared/callrailEventProcessor.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -296,6 +297,7 @@ serve(async (req) => {
   let recovery: unknown = null;
   let persistedAbandonment: unknown = null;
   let followUpCompletion: unknown = null;
+  let callrailRetries: unknown = null;
   try {
     recovery = await recoverPendingCampaignEvents(supabase);
   } catch (e) {
@@ -316,8 +318,17 @@ serve(async (req) => {
   } catch (e) {
     console.error("runFollowUpCompletionSweep error:", e instanceof Error ? e.message : e);
   }
+  try {
+    // Automatic CallRail durable-receipt retry sweep. Reuses this cron; a
+    // bounded batch of due retry_pending rows is claimed atomically via
+    // SELECT ... FOR UPDATE SKIP LOCKED so two workers cannot pick up the
+    // same event.
+    callrailRetries = await processDueCallRailRetries(supabase, 25);
+  } catch (e) {
+    console.error("processDueCallRailRetries error:", e instanceof Error ? e.message : e);
+  }
 
-  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery, followUpCompletion }), {
+  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery, followUpCompletion, callrailRetries }), {
     status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });

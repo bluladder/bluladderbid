@@ -17,6 +17,8 @@ interface Diag {
     processed_count: number;
     last_processed_at: string | null;
     oldest_unprocessed_received_at: string | null;
+    next_retry_at?: string | null;
+    auto_retries_enabled?: boolean;
   };
 }
 interface EventRow {
@@ -27,6 +29,11 @@ interface EventRow {
   from_phone: string | null;
   received_at: string;
   last_error_category: string | null;
+  last_attempted_at?: string | null;
+  next_attempt_at?: string | null;
+  replay_count?: number | null;
+  replay_requested_by?: string | null;
+  replay_requested_at?: string | null;
 }
 
 // Compact ops panel showing CallRail durability + diagnostics. Never renders
@@ -41,7 +48,7 @@ export function CallRailDurabilityPanel() {
     if (data) setDiag(data as Diag);
     const { data: events } = await supabase
       .from('callrail_inbound_events')
-      .select('id, provider_message_id, status, attempts, from_phone, received_at, last_error_category')
+      .select('id, provider_message_id, status, attempts, from_phone, received_at, last_error_category, last_attempted_at, next_attempt_at, replay_count, replay_requested_by, replay_requested_at')
       .in('status', ['received', 'retry_pending', 'failed'])
       .order('received_at', { ascending: false })
       .limit(25);
@@ -102,8 +109,15 @@ export function CallRailDurabilityPanel() {
               <div className="text-2xl font-semibold">{dur.processed_count}</div>
             </div>
             <div className="col-span-2 md:col-span-4 text-xs text-muted-foreground">
-              Last successful inbound: {dur.last_processed_at ?? '—'} · Oldest unprocessed:{' '}
-              {dur.oldest_unprocessed_received_at ?? '—'}
+              Retries are automatic — the message-queue cron sweeps due
+              retry_pending rows and processes them through the same pipeline
+              as the initial webhook. Manual replay is available for
+              dead-lettered rows or for verifying processed events.
+              <div className="mt-1">
+                Last successful inbound: {dur.last_processed_at ?? '—'} ·
+                Oldest unprocessed: {dur.oldest_unprocessed_received_at ?? '—'} ·
+                Next automatic retry: {dur.next_retry_at ?? '—'}
+              </div>
             </div>
           </div>
         )}
@@ -120,6 +134,19 @@ export function CallRailDurabilityPanel() {
                     from {r.from_phone ?? 'unknown'} · {new Date(r.received_at).toLocaleString()} ·
                     attempts {r.attempts}
                     {r.last_error_category && <> · <span className="text-destructive">{r.last_error_category}</span></>}
+                  </div>
+                  <div className="text-muted-foreground">
+                    {r.last_attempted_at && <>last attempt {new Date(r.last_attempted_at).toLocaleString()} · </>}
+                    {r.next_attempt_at
+                      ? <>next auto-retry {new Date(r.next_attempt_at).toLocaleString()}</>
+                      : r.status === 'failed'
+                        ? <>auto-retries exhausted — manual replay available</>
+                        : <>awaiting first processing</>}
+                    {(r.replay_count ?? 0) > 0 && (
+                      <> · replays {r.replay_count}
+                        {r.replay_requested_at && <> (last {new Date(r.replay_requested_at).toLocaleString()})</>}
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
