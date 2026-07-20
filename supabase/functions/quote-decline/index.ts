@@ -115,7 +115,7 @@ serve(async (req) => {
       declined_at: nowIso,
       decline_reason: reason,
       decline_notes: notes,
-      decline_source: authz.ok && !emailMatches ? "admin" : source,
+      decline_source: authz.ok && !emailMatches && !tokenMatches ? "admin" : source,
       decline_version: quote.pricing_rule_version ?? null,
       declined_by: authz.userId ?? null,
       last_activity_at: nowIso,
