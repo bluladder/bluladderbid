@@ -11,6 +11,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, AlertTriangle, Calendar, Clock, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
@@ -49,6 +58,10 @@ export function CancelDialog({
   adminUserId,
 }: CancelDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Structured reason category (never free-text-only) so the campaign engine
+  // can reason about the cancellation without leaking raw customer text.
+  const [reason, setReason] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
 
   const handleConfirm = async () => {
     setIsSubmitting(true);
@@ -60,6 +73,8 @@ export function CancelDialog({
           bookingId: appointment.id,
           isAdminOverride,
           adminUserId,
+          cancellationReason: reason || null,
+          cancellationNotes: notes.trim() ? notes.trim().slice(0, 500) : null,
         },
       });
 
