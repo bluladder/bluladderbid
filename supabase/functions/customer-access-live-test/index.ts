@@ -14,6 +14,7 @@ import {
   normalizePhone,
 } from "../_shared/sms.ts";
 import {
+import { getAppUrl } from "../_shared/appUrl.ts";
   sha256Hex,
   generateOtp,
   generateSessionToken,
