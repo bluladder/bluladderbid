@@ -159,11 +159,30 @@ serve(async (req) => {
     if (msg.enrollment_id) {
       const { data: enr } = await supabase
         .from("campaign_enrollments")
-        .select("status, campaign_id, email, phone, campaign:sms_campaigns(active, required_consent)")
+        .select("id, status, campaign_id, paused_until, email, phone, campaign:sms_campaigns(active, required_consent)")
         .eq("id", msg.enrollment_id)
         .maybeSingle();
       const camp = (enr?.campaign as { active?: boolean; required_consent?: string } | null) ?? null;
-      if (!enr || enr.status !== "active") {
+      // Auto-resume: a paused enrollment whose paused_until has elapsed is
+      // reactivated in place (unless a permanent stop condition fired since —
+      // those flip status to "stopped", never "paused", and are handled by
+      // the fall-through below). If paused_until is still in the future, we
+      // simply defer this message and process it later.
+      if (enr && enr.status === "paused") {
+        const until = enr.paused_until ? new Date(enr.paused_until as string).getTime() : 0;
+        const now = Date.now();
+        if (until && until > now) {
+          const iso = new Date(until).toISOString();
+          await supabase.from("sms_messages").update({
+            send_at: iso, next_retry_at: iso, error: "Deferred: enrollment paused (active AI conversation)",
+          }).eq("id", msg.id);
+          continue;
+        }
+        // Ripe — auto-resume before delivering.
+        await supabase.from("campaign_enrollments").update({
+          status: "active", paused_until: null,
+        }).eq("id", enr.id).eq("status", "paused");
+      } else if (!enr || enr.status !== "active") {
         await supabase.from("sms_messages").update({
           status: "cancelled", error: `Enrollment not active (${enr?.status ?? "missing"})`, next_retry_at: null,
         }).eq("id", msg.id);
