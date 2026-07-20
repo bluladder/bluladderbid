@@ -313,12 +313,10 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
 function persistFacts(supabase: SupabaseClient, conversationId: string, facts: ConversationFacts, state: string) {
   const c = facts.contact ?? {};
   const update: Record<string, unknown> = {
-    facts: facts as any,
+    facts: { ...facts, aiModel: ORCHESTRATOR_MODEL, aiPromptVersion: ORCHESTRATOR_PROMPT_VERSION } as any,
     conversation_state: state,
     selected_slot_id: facts.selectedSlotId ?? null,
     last_activity_at: new Date().toISOString(),
-    ai_model: ORCHESTRATOR_MODEL,
-    ai_prompt_version: ORCHESTRATOR_PROMPT_VERSION,
   };
   // Mirror captured contact into the canonical prospect_* columns (used by the
   // booking tool, consent recording and the admin dashboard). Never overwrite
