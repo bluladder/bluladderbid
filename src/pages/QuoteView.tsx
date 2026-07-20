@@ -381,6 +381,7 @@ export default function QuoteView() {
         onOpenChange={setDeclineOpen}
         quoteId={quote.quoteId}
         emailOnFile={null}
+        resumeToken={resumeToken}
         onDeclined={() => setQuote((q) => (q ? { ...q, status: 'declined', isDeclined: true } : q))}
       />
     </div>
