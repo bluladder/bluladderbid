@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { rateLimit } from "../_shared/rateLimit.ts";
+import { rateLimit, sharedRateLimit } from "../_shared/rateLimit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,6 +28,19 @@ serve(async (req) => {
   // Defensive throttle even though the response body carries no PII.
   const rl = rateLimit(req, { limit: 12, windowMs: 60_000 });
   if (!rl.allowed) {
+    return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
+      status: 429,
+      headers: { "Content-Type": "application/json", "Retry-After": "60", ...corsHeaders },
+    });
+  }
+  // Shared, cross-instance limiter — stops distributed enumeration attempts
+  // that would slip past a single instance's in-memory window.
+  const shared = await sharedRateLimit(req, {
+    key: "customer-lookup",
+    limit: 30,
+    windowMs: 60_000,
+  });
+  if (!shared.allowed) {
     return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
       status: 429,
       headers: { "Content-Type": "application/json", "Retry-After": "60", ...corsHeaders },
