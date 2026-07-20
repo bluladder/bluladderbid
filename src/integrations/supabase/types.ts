@@ -2693,6 +2693,8 @@ export type Database = {
       }
       quotes: {
         Row: {
+          abandonment_emitted_version: string | null
+          abandonment_swept_at: string | null
           attribution: Json | null
           confirmed_at: string | null
           converted_at: string | null
@@ -2713,6 +2715,7 @@ export type Database = {
           idempotency_key: string | null
           input_snapshot: Json | null
           jobber_quote_id: string | null
+          last_activity_at: string
           line_item_snapshot: Json | null
           pricing_engine_version: string | null
           pricing_rule_version: number | null
@@ -2723,12 +2726,16 @@ export type Database = {
           source_session_id: string | null
           status: Database["public"]["Enums"]["quote_status"]
           subtotal: number
+          superseded_at: string | null
+          superseded_by: string | null
           total: number
           updated_at: string
           utm_params_json: Json | null
           viewed_at: string | null
         }
         Insert: {
+          abandonment_emitted_version?: string | null
+          abandonment_swept_at?: string | null
           attribution?: Json | null
           confirmed_at?: string | null
           converted_at?: string | null
@@ -2749,6 +2756,7 @@ export type Database = {
           idempotency_key?: string | null
           input_snapshot?: Json | null
           jobber_quote_id?: string | null
+          last_activity_at?: string
           line_item_snapshot?: Json | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
@@ -2759,12 +2767,16 @@ export type Database = {
           source_session_id?: string | null
           status?: Database["public"]["Enums"]["quote_status"]
           subtotal: number
+          superseded_at?: string | null
+          superseded_by?: string | null
           total: number
           updated_at?: string
           utm_params_json?: Json | null
           viewed_at?: string | null
         }
         Update: {
+          abandonment_emitted_version?: string | null
+          abandonment_swept_at?: string | null
           attribution?: Json | null
           confirmed_at?: string | null
           converted_at?: string | null
@@ -2785,6 +2797,7 @@ export type Database = {
           idempotency_key?: string | null
           input_snapshot?: Json | null
           jobber_quote_id?: string | null
+          last_activity_at?: string
           line_item_snapshot?: Json | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
@@ -2795,6 +2808,8 @@ export type Database = {
           source_session_id?: string | null
           status?: Database["public"]["Enums"]["quote_status"]
           subtotal?: number
+          superseded_at?: string | null
+          superseded_by?: string | null
           total?: number
           updated_at?: string
           utm_params_json?: Json | null
@@ -2820,6 +2835,20 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotes_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["quote_id"]
+          },
+          {
+            foreignKeyName: "quotes_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "quotes"
             referencedColumns: ["id"]
           },
         ]
