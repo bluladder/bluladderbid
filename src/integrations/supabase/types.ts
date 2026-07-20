@@ -649,6 +649,7 @@ export type Database = {
           booked_services: Json | null
           booked_subtotal: number | null
           booking_completed_at: string | null
+          booking_version: number
           cancellation_needs_attention_reason: string | null
           cancellation_source: string | null
           cancelled_at: string | null
@@ -674,6 +675,7 @@ export type Database = {
           pricing_override_by: string | null
           pricing_override_reason: string | null
           pricing_rule_version: number | null
+          quote_id: string | null
           quote_to_booking_seconds: number | null
           reference_number: string
           scheduled_end: string | null
@@ -696,6 +698,7 @@ export type Database = {
           booked_services?: Json | null
           booked_subtotal?: number | null
           booking_completed_at?: string | null
+          booking_version?: number
           cancellation_needs_attention_reason?: string | null
           cancellation_source?: string | null
           cancelled_at?: string | null
@@ -721,6 +724,7 @@ export type Database = {
           pricing_override_by?: string | null
           pricing_override_reason?: string | null
           pricing_rule_version?: number | null
+          quote_id?: string | null
           quote_to_booking_seconds?: number | null
           reference_number: string
           scheduled_end?: string | null
@@ -743,6 +747,7 @@ export type Database = {
           booked_services?: Json | null
           booked_subtotal?: number | null
           booking_completed_at?: string | null
+          booking_version?: number
           cancellation_needs_attention_reason?: string | null
           cancellation_source?: string | null
           cancelled_at?: string | null
@@ -768,6 +773,7 @@ export type Database = {
           pricing_override_by?: string | null
           pricing_override_reason?: string | null
           pricing_rule_version?: number | null
+          quote_id?: string | null
           quote_to_booking_seconds?: number | null
           reference_number?: string
           scheduled_end?: string | null
@@ -787,6 +793,20 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["quote_id"]
+          },
+          {
+            foreignKeyName: "bookings_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
             referencedColumns: ["id"]
           },
           {

@@ -1294,6 +1294,28 @@ Deno.serve(async (req) => {
           console.warn("attribution link failed:", (e as Error).message);
         }
       }
+
+      // Resolve and persist the originating quote_id so booking_completed can
+      // scope the abandoned/decline-nurture stop to THIS specific quote
+      // journey. Best-effort: an admin/manual booking without a quote leaves
+      // quote_id null and the stop simply matches nothing (fail-safe).
+      try {
+        if (sessionForLink) {
+          const { data: linkedQuote } = await supabase
+            .from("quotes")
+            .select("id")
+            .eq("source_session_id", sessionForLink)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (linkedQuote?.id) {
+            await supabase.from("bookings").update({ quote_id: linkedQuote.id }).eq("id", bookingRecord.id);
+            (bookingRecord as Record<string, unknown>).quote_id = linkedQuote.id;
+          }
+        }
+      } catch (e) {
+        console.warn("quote_id link failed:", (e as Error).message);
+      }
     }
 
     const successPayload = {
@@ -1396,12 +1418,24 @@ Deno.serve(async (req) => {
 
     // booking_completed — emitted ONLY after a confirmed Jobber visit exists
     // (the needs_attention / visit-creation-failed paths above return earlier).
-    // Idempotency is keyed on the booking id so retries never duplicate. This is
-    // a STOP event for abandoned-quote nurture in the campaign engine.
+    // Idempotency is keyed on booking id + booking_version so a genuine
+    // reschedule that bumps the version emits a fresh confirmation, while a
+    // simple metadata refresh does not. This is a STOP event for the
+    // abandoned/decline-nurture on the specific quote journey.
     try {
+      const bookingIdForKey = bookingRecord?.id ?? jobberVisitId;
+      const bookingVersion = Number((bookingRecord as Record<string, unknown> | null)?.booking_version ?? 1);
+      const linkedQuoteId = (bookingRecord as Record<string, unknown> | null)?.quote_id as string | undefined;
+      const sessionId = booking.attribution?.source_session_id ?? booking.sourceSessionId ?? null;
+      const serviceNames = Array.isArray(booking.services)
+        ? booking.services.map((s: any) => s?.name ?? s?.service ?? s).filter(Boolean) as string[]
+        : [];
+      const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
+      const manageLink = `${APP_URL}/my-appointments`;
+
       await emitCampaignEvent({
         eventName: "booking_completed",
-        idempotencyKey: `booking_completed:${bookingRecord?.id ?? jobberVisitId}`,
+        idempotencyKey: `booking_completed:${bookingIdForKey}:v${bookingVersion}`,
         email: booking.customer?.email ?? null,
         phone: booking.customer?.phone ?? null,
         customerId: customer.id,
@@ -1411,10 +1445,20 @@ Deno.serve(async (req) => {
         metadata: {
           booking_status: "scheduled",
           booking_id: bookingRecord?.id ?? null,
+          booking_version: bookingVersion,
+          quote_id: linkedQuoteId ?? null,
+          source_session_id: sessionId,
           jobber_visit_id: jobberVisitId,
-          service_types: Array.isArray(booking.services)
-            ? booking.services.map((s: any) => s?.name ?? s?.service ?? s).filter(Boolean)
-            : [],
+          appointment_date: booking.scheduledStart,
+          arrival_window: null, // BluLadder does not currently expose an authoritative arrival window; safe empty
+          service: serviceNames[0] ?? "your service",
+          service_names: serviceNames,
+          service_types: serviceNames,
+          service_address: booking.customer?.address ?? "",
+          booking_total: booking.total,
+          manage_link: manageLink,
+          reschedule_link: manageLink,
+          cancel_link: manageLink,
         },
       });
     } catch (e) {

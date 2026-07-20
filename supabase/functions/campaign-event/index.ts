@@ -301,7 +301,7 @@ serve(async (req) => {
     const metaQuoteId = typeof (meta as Record<string, unknown>).quote_id === "string"
       ? String((meta as Record<string, unknown>).quote_id)
       : null;
-    const safeLink = metaLink || (metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
+    const primaryLink = metaLink || (metaQuoteId ? `${APP_URL}/quote/${metaQuoteId}` : APP_URL);
     const totalRaw = (meta as Record<string, unknown>).total;
     const totalNum = typeof totalRaw === "number" ? totalRaw : Number(totalRaw);
     const totalStr = Number.isFinite(totalNum) && totalNum > 0
@@ -317,14 +317,46 @@ serve(async (req) => {
         ? String((meta as Record<string, unknown>).decline_reason)
         : null,
     );
+    // Booking-confirmation vars (Phase 2A). Missing values render as safe empty
+    // strings — never "undefined", "null", "$0", or malformed sentences.
+    const bookingDate = formatAppointmentDate(
+      typeof (meta as Record<string, unknown>).appointment_date === "string"
+        ? String((meta as Record<string, unknown>).appointment_date)
+        : null,
+    );
+    const arrivalWindow = typeof (meta as Record<string, unknown>).arrival_window === "string"
+      ? String((meta as Record<string, unknown>).arrival_window).trim()
+      : "";
+    const appointmentWhen = buildAppointmentWhen(bookingDate, arrivalWindow);
+    const serviceAddress = typeof (meta as Record<string, unknown>).service_address === "string"
+      ? String((meta as Record<string, unknown>).service_address)
+      : "";
+    const serviceNamesMeta = Array.isArray((meta as Record<string, unknown>).service_names)
+      ? ((meta as Record<string, unknown>).service_names as unknown[]).map(String).filter(Boolean).join(", ")
+      : "";
+    const bookingTotalStr = formatBookingTotal((meta as Record<string, unknown>).booking_total);
+    const manageLink = safeLink((meta as Record<string, unknown>).manage_link, `${APP_URL}/my-appointments`);
+    const rescheduleLink = safeLink((meta as Record<string, unknown>).reschedule_link, manageLink);
+    const cancelLink = safeLink((meta as Record<string, unknown>).cancel_link, manageLink);
     const vars: Record<string, string> = {
       first_name: firstName,
       last_name: lastName,
       name: `${firstName} ${lastName}`.trim() || firstName,
       service: serviceLabel,
-      link: safeLink,
+      link: primaryLink,
       total: totalStr,
       feedback_line: feedbackLine,
+      // Booking-confirmation merge fields
+      appointment_date: bookingDate,
+      arrival_window: arrivalWindow,
+      appointment_when: appointmentWhen,
+      service_names: serviceNamesMeta || serviceLabel,
+      service_address: serviceAddress,
+      service_address_short: shortServiceAddress(serviceAddress),
+      booking_total: bookingTotalStr,
+      manage_link: manageLink,
+      reschedule_link: rescheduleLink,
+      cancel_link: cancelLink,
     };
     const now = Date.now();
     const rows = usableSteps.map((s) => ({
@@ -412,7 +444,12 @@ async function applyStop(
 export function campaignFilterForScope(
   scope: "all" | "abandoned" | "reminders",
 ): string[] | null {
-  if (scope === "abandoned") return ["quote_abandoned"];
+  // "abandoned" now includes quote_declined-triggered win-back journeys so a
+  // confirmed booking (or recurring plan quote acceptance) for the SAME quote
+  // stops both the abandonment nurture AND the decline win-back nurture.
+  // Journey scoping via quote_id keeps this narrow — an unrelated quote for
+  // the same customer is not stopped.
+  if (scope === "abandoned") return ["quote_abandoned", "quote_declined"];
   if (scope === "reminders") return ["appointment_rescheduled", "appointment_scheduled", "booking_completed"];
   return null;
 }
@@ -447,4 +484,60 @@ export function buildDeclineFeedbackLine(declineReason: string | null | undefine
   return r
     ? "Thanks for that feedback — it really helps us improve."
     : "If you have a moment, reply with a quick note about what didn't fit — it helps us improve.";
+}
+
+// ---------------------------------------------------------------------------
+// Booking-confirmation merge helpers. Pure and exported so tests can lock in
+// the exact rendering guarantees (America/Chicago timezone, DST safety, safe
+// fallbacks when arrival window / total are missing, no "undefined"/"$0").
+// ---------------------------------------------------------------------------
+
+/** Formats a booking's scheduled_start into "Tuesday, July 21" (America/Chicago). */
+export function formatAppointmentDate(iso: string | null | undefined, tz = "America/Chicago"): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, weekday: "long", month: "long", day: "numeric",
+    }).format(d);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Combines date + arrival window into one clean human sentence so templates
+ * can say "confirmed for {{appointment_when}}." without producing awkward
+ * output like "confirmed for ." or "during ." when a window is missing.
+ */
+export function buildAppointmentWhen(dateStr: string, arrivalWindow: string | null | undefined): string {
+  const window = typeof arrivalWindow === "string" ? arrivalWindow.trim() : "";
+  if (!dateStr && !window) return "";
+  if (!dateStr) return window;
+  if (!window) return dateStr;
+  return `${dateStr} during ${window}`;
+}
+
+/** Formats an authoritative booking total. Returns "" (not "$0") when missing. */
+export function formatBookingTotal(raw: unknown): string {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0,
+  }).format(n);
+}
+
+/** Sanitises manage/reschedule/cancel URLs — must be absolute http(s). */
+export function safeLink(raw: unknown, fallback: string): string {
+  if (typeof raw !== "string") return fallback;
+  const t = raw.trim();
+  if (!/^https?:\/\//i.test(t)) return fallback;
+  return t;
+}
+
+/** First line of a multi-line service address ("123 Main St"). */
+export function shortServiceAddress(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  return raw.split(",")[0]?.trim() ?? "";
 }

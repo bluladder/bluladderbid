@@ -20,6 +20,7 @@ export type SupabaseLike = { from: (table: string) => any };
 
 const CRITICAL_EVENTS = new Set([
   "booking_completed",
+  "recurring_plan_created",
   "appointment_rescheduled",
   "appointment_cancelled",
   "customer_replied",

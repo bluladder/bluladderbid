@@ -21,6 +21,7 @@ export const ALLOWED_EVENTS = [
   "quote_abandoned",
   "quote_declined",
   "booking_completed",
+  "recurring_plan_created",
   "appointment_rescheduled",
   "appointment_cancelled",
   "customer_replied",
@@ -38,6 +39,7 @@ export function isAllowedEvent(name: unknown): name is CampaignEvent {
 // Maps an incoming event to the campaign kinds it terminates.
 export const STOP_EVENTS: Record<string, { reason: string; scope: "all" | "abandoned" | "reminders" }> = {
   booking_completed: { reason: "booking_completed", scope: "abandoned" },
+  recurring_plan_created: { reason: "recurring_plan_created", scope: "abandoned" },
   quote_declined: { reason: "quote_declined", scope: "abandoned" },
   customer_replied: { reason: "customer_replied", scope: "all" },
   consent_revoked: { reason: "consent_revoked", scope: "all" },
