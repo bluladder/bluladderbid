@@ -13,6 +13,7 @@ import { renderTemplate, isPhoneOptedOut } from "../_shared/sms.ts";
 import {
 import { getAppUrl } from "../_shared/appUrl.ts";
   isAllowedEvent, matchesAudience, consentSatisfies, STOP_EVENTS,
+  PAUSE_EVENTS,
   checkSuppression, normalizeEmail, normalizePhoneE164,
   type ConsentType, type EnrollDecision, type AudienceContext,
 } from "../_shared/campaignEngine.ts";
