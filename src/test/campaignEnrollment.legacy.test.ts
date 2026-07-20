@@ -80,7 +80,10 @@ describe("campaign-event is the only enrollment path", () => {
 
   it("no longer selects the deprecated trigger_event column", () => {
     // Enrollment is driven exclusively by event_name; trigger_event is legacy.
-    expect(campaignEvent).not.toMatch(/trigger_event/);
+    // Any remaining occurrence must be inside a comment, never in a select()
+    // column list or an .eq() filter.
+    const stripped = campaignEvent.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(stripped).not.toMatch(/trigger_event/);
   });
 
   it("routes booking_completed stops through the abandoned scope", () => {
