@@ -32,6 +32,11 @@ export const ALLOWED_EVENTS = [
   "consent_granted",
   "consent_revoked",
   "manual_staff_takeover",
+  // Fired exactly once when the terminal phase of a multi-phase follow-up
+  // sequence (e.g. Unbooked Quote Follow-Up 12-Month) finishes without a
+  // booking. Owned by runFollowUpCompletionSweep. Consumers must require
+  // marketing consent and pass through canonical suppression/opt-out gates.
+  "quote_follow_up_completed",
 ] as const;
 export type CampaignEvent = (typeof ALLOWED_EVENTS)[number];
 

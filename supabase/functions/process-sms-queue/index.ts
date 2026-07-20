@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut, getCustomerPause } from "../_shared/sms.ts";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
-import { runAbandonmentSweep, recoverPendingCampaignEvents, runPersistedQuoteAbandonmentSweep } from "../_shared/campaignSweep.ts";
+import { runAbandonmentSweep, recoverPendingCampaignEvents, runPersistedQuoteAbandonmentSweep, runFollowUpCompletionSweep } from "../_shared/campaignSweep.ts";
 import { getSenderConfig } from "../_shared/emailConfig.ts";
 
 const corsHeaders = {
@@ -260,6 +260,7 @@ serve(async (req) => {
   let abandonment: unknown = null;
   let recovery: unknown = null;
   let persistedAbandonment: unknown = null;
+  let followUpCompletion: unknown = null;
   try {
     recovery = await recoverPendingCampaignEvents(supabase);
   } catch (e) {
@@ -275,8 +276,13 @@ serve(async (req) => {
   } catch (e) {
     console.error("runPersistedQuoteAbandonmentSweep error:", e instanceof Error ? e.message : e);
   }
+  try {
+    followUpCompletion = await runFollowUpCompletionSweep(supabase);
+  } catch (e) {
+    console.error("runFollowUpCompletionSweep error:", e instanceof Error ? e.message : e);
+  }
 
-  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery }), {
+  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery, followUpCompletion }), {
     status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });
