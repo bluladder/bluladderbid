@@ -358,6 +358,29 @@ serve(async (req) => {
     const manageLink = safeLink((meta as Record<string, unknown>).manage_link, `${APP_URL}/my-appointments`);
     const rescheduleLink = safeLink((meta as Record<string, unknown>).reschedule_link, manageLink);
     const cancelLink = safeLink((meta as Record<string, unknown>).cancel_link, manageLink);
+    // Reschedule-specific merge vars (Phase 2B). Missing values render as
+    // safe empty strings — templates that reference them never emit
+    // "undefined", "null", or malformed "confirmed for ." sentences.
+    const previousBookingDate = formatAppointmentDate(
+      typeof (meta as Record<string, unknown>).previous_appointment_date === "string"
+        ? String((meta as Record<string, unknown>).previous_appointment_date)
+        : null,
+    );
+    const previousArrivalWindow = typeof (meta as Record<string, unknown>).previous_arrival_window === "string"
+      ? String((meta as Record<string, unknown>).previous_arrival_window).trim()
+      : "";
+    const previousAppointmentWhen = buildAppointmentWhen(previousBookingDate, previousArrivalWindow);
+    const requestedBookingDate = formatAppointmentDate(
+      typeof (meta as Record<string, unknown>).requested_appointment_date === "string"
+        ? String((meta as Record<string, unknown>).requested_appointment_date)
+        : null,
+    );
+    const requestedArrivalWindow = typeof (meta as Record<string, unknown>).requested_arrival_window === "string"
+      ? String((meta as Record<string, unknown>).requested_arrival_window).trim()
+      : "";
+    const rescheduleReason = typeof (meta as Record<string, unknown>).reschedule_reason === "string"
+      ? String((meta as Record<string, unknown>).reschedule_reason).trim()
+      : "";
     const vars: Record<string, string> = {
       first_name: firstName,
       last_name: lastName,
@@ -377,6 +400,13 @@ serve(async (req) => {
       manage_link: manageLink,
       reschedule_link: rescheduleLink,
       cancel_link: cancelLink,
+      // Reschedule merge fields (Phase 2B)
+      previous_appointment_date: previousBookingDate,
+      previous_arrival_window: previousArrivalWindow,
+      previous_appointment_when: previousAppointmentWhen,
+      requested_appointment_date: requestedBookingDate,
+      requested_arrival_window: requestedArrivalWindow,
+      reschedule_reason: rescheduleReason,
     };
     const now = Date.now();
     const rows = usableSteps.map((s) => ({
