@@ -73,6 +73,69 @@ export function abandonmentIdempotencyKey(convo: Pick<AbandonmentConvo, "id" | "
   return `quote_abandoned:${convo.id}:${abandonmentVersionTag(convo)}:1`;
 }
 
+// ---------------------------------------------------------------------------
+// Persisted-quote (public.quotes) abandonment helpers.
+//
+// A firm persisted quote qualifies for `quote_abandoned` when ALL hold:
+//   * a real quote id exists (row scanned by definition),
+//   * status is one of the firm/held statuses (saved/emailed/viewed/pending),
+//   * a positive numeric total exists,
+//   * converted_booking_id is null (not booked),
+//   * superseded_by is null (not replaced by a newer version),
+//   * customer contact info (email or phone) exists,
+//   * inactivity delay elapsed since last_activity_at,
+//   * abandonment_emitted_version != current versionTag.
+//
+// Kept pure so it can be unit-tested directly and re-used by admin previews.
+// ---------------------------------------------------------------------------
+export interface PersistedQuoteRow {
+  id: string;
+  status: string | null;
+  total: number | string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  customer_id: string | null;
+  pricing_rule_version: number | null;
+  last_activity_at: string;
+  converted_booking_id: string | null;
+  superseded_by: string | null;
+  abandonment_emitted_version: string | null;
+  services_json: Record<string, unknown> | null;
+  source_session_id: string | null;
+  utm_params_json: Record<string, unknown> | null;
+  attribution: Record<string, unknown> | null;
+}
+
+const FIRM_QUOTE_STATUSES = new Set(["saved", "emailed", "viewed", "pending"]);
+
+export function persistedQuoteVersionTag(q: Pick<PersistedQuoteRow, "pricing_rule_version">): string {
+  return `v${q.pricing_rule_version ?? 0}`;
+}
+
+export function persistedQuoteIdempotencyKey(q: Pick<PersistedQuoteRow, "id" | "pricing_rule_version">): string {
+  return `quote_abandoned:${q.id}:${persistedQuoteVersionTag(q)}:1`;
+}
+
+export function evaluatePersistedQuoteAbandonment(
+  q: PersistedQuoteRow,
+  nowMs: number,
+  delayMinutes: number,
+): AbandonmentDecision {
+  if (!FIRM_QUOTE_STATUSES.has(String(q.status ?? ""))) return { eligible: false, reason: "no_firm_quote" };
+  if (q.converted_booking_id) return { eligible: false, reason: "booking_completed" };
+  if (q.superseded_by) return { eligible: false, reason: "superseded" };
+  const totalNum = typeof q.total === "number" ? q.total : Number(q.total);
+  if (!Number.isFinite(totalNum) || totalNum <= 0) return { eligible: false, reason: "no_positive_total" };
+  if (!q.customer_email && !q.customer_phone) return { eligible: false, reason: "no_contact_info" };
+  const lastMs = new Date(q.last_activity_at).getTime();
+  if (!Number.isFinite(lastMs)) return { eligible: false, reason: "invalid_activity_ts" };
+  if (nowMs - lastMs < delayMinutes * 60_000) return { eligible: false, reason: "within_delay" };
+  if (q.abandonment_emitted_version === persistedQuoteVersionTag(q)) {
+    return { eligible: false, reason: "already_emitted" };
+  }
+  return { eligible: true, reason: "eligible" };
+}
+
 export interface AbandonmentDecision {
   eligible: boolean;
   reason: string;
@@ -198,6 +261,100 @@ export async function runAbandonmentSweep(
       await supabase.from("chat_conversations")
         .update({ abandonment_emitted_version: versionTag, abandonment_swept_at: new Date().toISOString() })
         .eq("id", fresh.id);
+      result.emitted++;
+    } else {
+      result.skipped++;
+      result.reasons["emit_failed"] = (result.reasons["emit_failed"] ?? 0) + 1;
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// runPersistedQuoteAbandonmentSweep — scans public.quotes for firm, unbooked,
+// non-superseded persisted quotes whose inactivity delay has elapsed, and
+// emits `quote_abandoned` via emitCampaignEvent for each eligible row. Runs
+// inside process-sms-queue AFTER the chat sweep and AFTER normal queue work,
+// bounded by RECOVERY_BATCH_SIZE so it never delays deliveries.
+// ---------------------------------------------------------------------------
+export async function runPersistedQuoteAbandonmentSweep(
+  supabase: SupabaseLike,
+  opts: { batchSize?: number; nowMs?: number } = {},
+): Promise<SweepResult> {
+  const batchSize = opts.batchSize ?? ABANDONMENT_BATCH_SIZE;
+  const nowMs = opts.nowMs ?? Date.now();
+  const result: SweepResult = { scanned: 0, emitted: 0, skipped: 0, reasons: {} };
+
+  const { data: camps } = await supabase
+    .from("sms_campaigns")
+    .select("abandonment_delay_minutes")
+    .eq("event_name", "quote_abandoned");
+  const delayMinutes = computeEffectiveAbandonmentDelay(
+    (camps ?? []).map((c: { abandonment_delay_minutes: number | null }) => c.abandonment_delay_minutes),
+  );
+  const cutoffIso = new Date(nowMs - delayMinutes * 60_000).toISOString();
+
+  const { data: candidates } = await supabase
+    .from("quotes")
+    .select("id, status, total, customer_email, customer_phone, customer_id, pricing_rule_version, last_activity_at, converted_booking_id, superseded_by, abandonment_emitted_version, services_json, source_session_id, utm_params_json, attribution")
+    .is("converted_booking_id", null)
+    .is("superseded_by", null)
+    .in("status", ["saved", "emailed", "viewed", "pending"])
+    .lt("last_activity_at", cutoffIso)
+    .order("last_activity_at", { ascending: true })
+    .limit(batchSize);
+
+  for (const row of (candidates ?? []) as PersistedQuoteRow[]) {
+    result.scanned++;
+
+    // Re-read immediately before emit so a booking/supersede/reply/consent
+    // change since the batch fetch excludes it.
+    const { data: fresh } = await supabase
+      .from("quotes")
+      .select("id, status, total, customer_email, customer_phone, customer_id, pricing_rule_version, last_activity_at, converted_booking_id, superseded_by, abandonment_emitted_version, services_json, source_session_id, utm_params_json, attribution")
+      .eq("id", row.id)
+      .maybeSingle();
+    if (!fresh) { result.skipped++; result.reasons["vanished"] = (result.reasons["vanished"] ?? 0) + 1; continue; }
+
+    const q = fresh as PersistedQuoteRow;
+    const decision = evaluatePersistedQuoteAbandonment(q, Date.now(), delayMinutes);
+    if (!decision.eligible) {
+      result.skipped++;
+      result.reasons[decision.reason] = (result.reasons[decision.reason] ?? 0) + 1;
+      continue;
+    }
+
+    const totalNum = typeof q.total === "number" ? q.total : Number(q.total);
+    const svc = q.services_json && typeof q.services_json === "object" ? q.services_json as Record<string, unknown> : {};
+    const svcArr = Array.isArray((svc as any).services)
+      ? ((svc as any).services as Array<{ name?: string }>).map((s) => s?.name).filter((n): n is string => !!n)
+      : [];
+
+    const versionTag = persistedQuoteVersionTag(q);
+    const emit = await emitCampaignEvent({
+      eventName: "quote_abandoned",
+      idempotencyKey: persistedQuoteIdempotencyKey(q),
+      email: q.customer_email ?? null,
+      phone: q.customer_phone ?? null,
+      customerId: q.customer_id ?? null,
+      source: "persisted-quote-abandonment-sweep",
+      subject: "Persisted quote abandoned",
+      metadata: {
+        lead_source: "website_quote",
+        quote_status: "firm",
+        quote_id: q.id,
+        pricing_rule_version: q.pricing_rule_version ?? null,
+        service_types: svcArr,
+        total: Number.isFinite(totalNum) ? totalNum : null,
+        abandonment_window: 1,
+      },
+    });
+
+    if (emit.ok || (emit.body as any)?.idempotent) {
+      await supabase.from("quotes")
+        .update({ abandonment_emitted_version: versionTag, abandonment_swept_at: new Date().toISOString() })
+        .eq("id", q.id);
       result.emitted++;
     } else {
       result.skipped++;

@@ -21,6 +21,7 @@ const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
 
 interface Body {
   action: "save" | "email";
+  mode?: "one_time" | "plan";
   email: string;
   firstName?: string | null;
   lastName?: string | null;
@@ -35,6 +36,7 @@ interface Body {
   ruleVersion?: number | null;
   engineVersion?: string | null;
   lineItems?: unknown;
+  planSnapshot?: Record<string, unknown> | null;
 }
 
 function json(status: number, body: unknown) {
@@ -124,7 +126,12 @@ serve(async (req) => {
   const nowIso = new Date().toISOString();
   const expiresAtIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  const services_json = { services: body.services, lineItems: body.lineItems ?? null };
+  const services_json: Record<string, unknown> = {
+    services: body.services,
+    lineItems: body.lineItems ?? null,
+    mode: body.mode ?? "one_time",
+    ...(body.planSnapshot ?? {}),
+  };
   const home_details_json = body.homeDetails ?? {};
 
   // 2) Look up an existing saved/emailed quote for this session+customer.
@@ -155,6 +162,7 @@ serve(async (req) => {
     status,
     expires_at: expiresAtIso,
     saved_at: nowIso,
+    last_activity_at: nowIso,
     source_session_id: sessionId,
     utm_params_json: body.utmParams ?? null,
     attribution: body.attribution ?? null,
@@ -174,6 +182,45 @@ serve(async (req) => {
       .single();
     if (error || !inserted) return json(500, { error: "Could not save the bid." });
     quoteId = inserted.id;
+
+    // Supersede any older unbooked, non-superseded firm quotes for the same
+    // (customer + session) so they no longer produce competing abandonment
+    // events. Historical rows are preserved (superseded_by / superseded_at).
+    if (sessionId && customerId) {
+      const { data: olderRows } = await supabase
+        .from("quotes")
+        .select("id")
+        .eq("customer_id", customerId)
+        .eq("source_session_id", sessionId)
+        .in("status", ["saved", "emailed", "viewed", "pending"])
+        .is("converted_booking_id", null)
+        .is("superseded_by", null)
+        .neq("id", quoteId);
+      const olderIds = (olderRows ?? []).map((r: { id: string }) => r.id);
+      if (olderIds.length) {
+        await supabase.from("quotes")
+          .update({ superseded_by: quoteId, superseded_at: nowIso })
+          .in("id", olderIds);
+        // Stop pending quote_abandoned enrollments tied to those older quotes
+        // and cancel their unsent messages. Historical enrollment rows are
+        // preserved (status='stopped', reason='superseded_by_newer_quote').
+        const { data: enrs } = await supabase
+          .from("campaign_enrollments")
+          .select("id")
+          .eq("customer_id", customerId)
+          .eq("event_name", "quote_abandoned")
+          .eq("status", "active");
+        const enrIds = (enrs ?? []).map((r: { id: string }) => r.id);
+        if (enrIds.length) {
+          await supabase.from("campaign_enrollments")
+            .update({ status: "stopped", stopped_reason: "superseded_by_newer_quote", stopped_at: nowIso })
+            .in("id", enrIds);
+          await supabase.from("sms_messages")
+            .update({ status: "cancelled", error: "Stopped: superseded_by_newer_quote", next_retry_at: null })
+            .in("enrollment_id", enrIds).eq("status", "pending");
+        }
+      }
+    }
   }
 
   const quoteUrl = `${APP_URL}/quote/${quoteId}`;

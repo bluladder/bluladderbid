@@ -36,9 +36,13 @@ describe("save-quote server-side firm-quote emitter", () => {
   it("emits the canonical firm-quote event (never reintroduces legacy names)", () => {
     expect(saveQuote).toMatch(/eventName:\s*["']quote_calculated["']/);
     expect(saveQuote).not.toMatch(/eventName:\s*["']quote_created["']/);
-    // No direct queue/enrollment writes from this function.
-    expect(saveQuote).not.toMatch(/from\(["']campaign_enrollments["']/);
-    expect(saveQuote).not.toMatch(/from\(["']sms_messages["']\)[\s\S]{0,120}\.insert/);
+    // save-quote never CREATES enrollments or queue rows directly — the
+    // canonical campaign engine is the only path that inserts. It MAY stop
+    // older enrollments and cancel their pending queue rows when a newer
+    // version of the same quote supersedes them.
+    expect(saveQuote).not.toMatch(/from\(["']campaign_enrollments["']\)[\s\S]{0,120}\.insert\(/);
+    expect(saveQuote).not.toMatch(/from\(["']sms_messages["']\)[\s\S]{0,120}\.insert\(/);
+    expect(saveQuote).toMatch(/stopped_reason:\s*["']superseded_by_newer_quote["']/);
   });
   it("uses a deterministic idempotency key tied to quote id + pricing rule version", () => {
     expect(saveQuote).toMatch(/idempotencyKey:\s*`quote_calculated:\$\{quoteId\}:v\$\{body\.ruleVersion \?\? 0\}`/);
