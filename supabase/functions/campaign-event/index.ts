@@ -381,6 +381,13 @@ serve(async (req) => {
     const rescheduleReason = typeof (meta as Record<string, unknown>).reschedule_reason === "string"
       ? String((meta as Record<string, unknown>).reschedule_reason).trim()
       : "";
+    // Cancellation-specific merge vars (Phase 2C). Missing values render as
+    // safe empty strings — templates that reference them never emit
+    // "undefined", "null", or malformed sentences.
+    const cancellationReasonRaw = typeof (meta as Record<string, unknown>).cancellation_reason === "string"
+      ? String((meta as Record<string, unknown>).cancellation_reason).trim() : "";
+    const cancellationFeedbackLine = buildCancellationFeedbackLine(cancellationReasonRaw || null);
+    const bookingLink = safeLink((meta as Record<string, unknown>).booking_link, `${APP_URL}/`);
     const vars: Record<string, string> = {
       first_name: firstName,
       last_name: lastName,
@@ -407,6 +414,10 @@ serve(async (req) => {
       requested_appointment_date: requestedBookingDate,
       requested_arrival_window: requestedArrivalWindow,
       reschedule_reason: rescheduleReason,
+      // Cancellation merge fields (Phase 2C)
+      cancellation_reason: cancellationReasonRaw,
+      cancellation_feedback_line: cancellationFeedbackLine,
+      booking_link: bookingLink,
     };
     const now = Date.now();
     const rows = usableSteps.map((s) => ({
