@@ -429,12 +429,14 @@ async function applyStop(
   reason: string,
   scope: "all" | "abandoned" | "reminders",
   quoteId: string | null = null,
+  bookingId: string | null = null,
+  bookingVersion: number | null = null,
 ): Promise<number> {
   // Determine which campaigns are in scope by event kind.
   const campaignFilter = campaignFilterForScope(scope);
 
   const query = supabase.from("campaign_enrollments")
-    .select("id, campaign_id, event_name, campaign_event_id")
+    .select("id, campaign_id, event_name, campaign_event_id, booking_id, booking_version")
     .eq("customer_id", customerId).eq("status", "active");
   const { data: enrollments } = await query;
   const inScope = filterEnrollmentsByScope(enrollments ?? [], campaignFilter);
@@ -442,7 +444,14 @@ async function applyStop(
   const { data: events } = quoteId && eventIds.length
     ? await supabase.from("campaign_events").select("id, metadata").in("id", eventIds)
     : { data: [] as any[] };
-  const targets = filterEnrollmentsByQuoteJourney(inScope, events ?? [], quoteId);
+  let targets = filterEnrollmentsByQuoteJourney(inScope, events ?? [], quoteId);
+  // Booking-version scoping: only supersede enrollments whose booking_id
+  // matches AND whose booking_version is strictly older than the incoming
+  // event's booking_version. When no booking_id is supplied, keep the legacy
+  // reminder-scope behavior (customer-wide within scope).
+  if (bookingId) {
+    targets = filterEnrollmentsByObsoleteBookingVersion(targets, bookingId, bookingVersion);
+  }
   if (!targets.length) return 0;
 
   const ids = targets.map((t: any) => t.id);
@@ -451,6 +460,21 @@ async function applyStop(
   await supabase.from("sms_messages").update({ status: "cancelled", error: `Stopped: ${reason}`, next_retry_at: null })
     .in("enrollment_id", ids).eq("status", "pending");
   return ids.length;
+}
+
+// deno-lint-ignore no-explicit-any
+export function filterEnrollmentsByObsoleteBookingVersion(
+  enrollments: any[],
+  bookingId: string,
+  newVersion: number | null,
+): any[] {
+  return enrollments.filter((e) => {
+    if (!e.booking_id || String(e.booking_id) !== bookingId) return false;
+    if (newVersion === null || !Number.isFinite(newVersion)) return true;
+    const ev = Number(e.booking_version);
+    if (!Number.isFinite(ev)) return true; // legacy row w/o version — supersede
+    return ev < newVersion;
+  });
 }
 
 // ---- Pure helpers exported for unit tests ---------------------------------
