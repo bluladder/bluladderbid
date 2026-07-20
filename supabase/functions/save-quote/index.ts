@@ -303,7 +303,16 @@ serve(async (req) => {
     }
   }
 
-  const quoteUrl = `${getAppUrl()}/quote/${quoteId}`;
+  // Mint a fresh, single-quote resume token. Only the hash is stored; the raw
+  // token is embedded in the URL below and never persisted anywhere else. If
+  // this newly saved quote superseded older ones above, revoke their tokens
+  // so stale links stop working immediately.
+  const minted = await mintQuoteResumeToken(supabase, quoteId!, {
+    ttlHours: 24 * 30,
+    issuedReason: action === "email" ? "save_quote_email" : "save_quote",
+    appUrl: getAppUrl(),
+  });
+  const quoteUrl = minted?.resumeUrl ?? `${getAppUrl()}/quote/${quoteId}`;
 
   // 3) Optional email send. Failure here still returns the saved quote.
   let emailStatus: "sent" | "skipped" | "failed" = "skipped";
