@@ -22,7 +22,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const jwt = getBearer(req);
   const admin = await verifyAdmin(jwt);
-  if (!admin.ok) {
+  if (!admin) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
