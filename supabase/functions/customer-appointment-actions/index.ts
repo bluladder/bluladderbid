@@ -25,6 +25,9 @@ interface ActionRequest {
   // Optional structured operational metadata for a reschedule.
   rescheduleReason?: string | null;
   rescheduleNotes?: string | null;
+  // Optional structured operational metadata for a cancellation.
+  cancellationReason?: string | null;
+  cancellationNotes?: string | null;
   // For modify services
   newServices?: Array<{ name: string; price: number }>;
   newSubtotal?: number;
@@ -51,6 +54,8 @@ interface BookingRecord {
   booking_version?: number | null;
   quote_id?: string | null;
   customer?: { email: string };
+  // Home / address details snapshot on the booking (used to build merge vars).
+  home_details_json?: Record<string, unknown> | null;
 }
 
 const LOCKOUT_HOURS = 48;
