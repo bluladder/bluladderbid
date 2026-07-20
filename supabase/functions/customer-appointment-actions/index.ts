@@ -202,6 +202,8 @@ Deno.serve(async (req) => {
         jobber_visit_id,
         jobber_job_id,
         customer_id,
+        booking_version,
+        quote_id,
         customer:customers(email)
       `)
       .eq("id", bookingId)
