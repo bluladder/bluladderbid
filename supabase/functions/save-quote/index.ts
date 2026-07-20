@@ -92,11 +92,61 @@ serve(async (req) => {
     return json(400, { error: "Add at least one service before saving this bid." });
   }
   const action: "save" | "email" = body.action === "email" ? "email" : "save";
+  // Explicit discriminator. Fall back to the legacy `mode` for older callers,
+  // but persist the canonical `quote_type` on the row so downstream code can
+  // choose renderers without inferring from services_json shape.
+  const quoteType: "one_time" | "recurring_plan" =
+    body.quoteType === "recurring_plan" || body.mode === "plan"
+      ? "recurring_plan"
+      : "one_time";
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // -------------------------------------------------------------------------
+  // SERVER-AUTHORITATIVE RECALCULATION.
+  // Every dollar figure that ends up on the quote row is recomputed here from
+  // the live pricing_config through the canonical engine — never from what
+  // the browser posted. `total`/`subtotal`/`services[].amount` on `body` are
+  // used ONLY to detect tampering and to decide whether to accept the save.
+  // -------------------------------------------------------------------------
+  const authoritative = await computeAuthoritativeQuote(supabase, {
+    quoteType,
+    homeDetails: body.homeDetails as unknown as Parameters<typeof computeAuthoritativeQuote>[1]["homeDetails"],
+    additionalServices: (body.additionalServices ?? {}) as unknown as Parameters<typeof computeAuthoritativeQuote>[1]["additionalServices"],
+    discount: body.discount ?? null,
+    promotion: body.promotion ?? null,
+    planScenario: (body.planScenario ?? null) as Parameters<typeof computeAuthoritativeQuote>[1]["planScenario"],
+    clientDisplay: {
+      total: body.total,
+      subtotal: body.subtotal,
+      annualTotal: (body.planSnapshot as { payment?: { annualTotal?: number } } | null)?.payment?.annualTotal,
+      monthlyPayment: (body.planSnapshot as { payment?: { monthlyPayment?: number } } | null)?.payment?.monthlyPayment,
+      downPayment: (body.planSnapshot as { payment?: { downPayment?: number } } | null)?.payment?.downPayment,
+    },
+  });
+  if (!authoritative.ok) {
+    // Distinguish tamper detection (pricing_mismatch / invalid_plan) from
+    // transient/data problems so the client can render the right message.
+    const status = authoritative.status === "pricing_unavailable" ? 503
+      : authoritative.status === "missing_information" ? 400
+      : authoritative.status === "pricing_mismatch" ? 409
+      : authoritative.status === "invalid_plan" ? 422
+      : authoritative.status === "manual_review_required" ? 422
+      : 400;
+    return json(status, {
+      error: authoritative.message,
+      status: authoritative.status,
+      // Never echo the client-submitted total back — surface only the safe
+      // authoritative value if we have one, so the UI can re-render.
+      serverTotal: authoritative.status === "pricing_mismatch"
+        ? (authoritative.detail?.serverTotal ?? authoritative.detail?.serverAnnual ?? null)
+        : null,
+    });
+  }
+  const auth = authoritative.authoritative;
 
   // 1) Find or create the customer by email.
   let customerId: string | null = null;
