@@ -262,6 +262,11 @@ serve(async (req) => {
         await supabase.from("quotes")
           .update({ superseded_by: quoteId, superseded_at: nowIso })
           .in("id", olderIds);
+        // Revoke resume tokens on superseded quotes so stale links stop
+        // working the moment a newer authoritative quote exists.
+        for (const oid of olderIds) {
+          await revokeQuoteResumeTokens(supabase, oid);
+        }
         // Stop pending quote_abandoned enrollments tied to those older quotes
         // and cancel their unsent messages. Historical enrollment rows are
         // preserved (status='stopped', reason='superseded_by_newer_quote').
