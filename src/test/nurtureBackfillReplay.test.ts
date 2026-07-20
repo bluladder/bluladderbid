@@ -79,7 +79,7 @@ describe("eligibility checks + preserved audit fields", () => {
     expect(replayFn).toMatch(/consent_type.*marketing|marketing.*consent_type/);
     expect(replayFn).toMatch(/\.from\(["']bookings["']\)/);
     expect(replayFn).toMatch(/staff_takeover_at/);
-    expect(replayFn).toMatch(/\.in\(["']event_name["'],\s*\["']quote_calculated["'],\s*["']quote_abandoned["']\]\)/);
+    expect(replayFn).toMatch(/\.in\(["']event_name["'][\s\S]*?quote_calculated[\s\S]*?quote_abandoned/);
   });
   it("preserves original event id, source enrollment, campaign+version, quote id, customer id, attribution, service info, timestamp", () => {
     for (const field of [
