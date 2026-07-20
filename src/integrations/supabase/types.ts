@@ -2076,6 +2076,134 @@ export type Database = {
           },
         ]
       }
+      email_inbound_messages: {
+        Row: {
+          booking_id: string | null
+          conversation_id: string | null
+          created_at: string
+          from_email: string
+          html_body: string | null
+          id: string
+          processed_at: string | null
+          processing_error: string | null
+          provider: string
+          provider_message_id: string | null
+          quote_id: string | null
+          raw_payload: Json
+          received_at: string
+          reply_token: string | null
+          subject: string | null
+          suppressed: boolean
+          text_body: string | null
+          to_email: string
+        }
+        Insert: {
+          booking_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          from_email: string
+          html_body?: string | null
+          id?: string
+          processed_at?: string | null
+          processing_error?: string | null
+          provider?: string
+          provider_message_id?: string | null
+          quote_id?: string | null
+          raw_payload?: Json
+          received_at?: string
+          reply_token?: string | null
+          subject?: string | null
+          suppressed?: boolean
+          text_body?: string | null
+          to_email: string
+        }
+        Update: {
+          booking_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          from_email?: string
+          html_body?: string | null
+          id?: string
+          processed_at?: string | null
+          processing_error?: string | null
+          provider?: string
+          provider_message_id?: string | null
+          quote_id?: string | null
+          raw_payload?: Json
+          received_at?: string
+          reply_token?: string | null
+          subject?: string | null
+          suppressed?: boolean
+          text_body?: string | null
+          to_email?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_inbound_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_inbound_messages_reply_token_fkey"
+            columns: ["reply_token"]
+            isOneToOne: false
+            referencedRelation: "email_reply_tokens"
+            referencedColumns: ["token"]
+          },
+        ]
+      }
+      email_reply_tokens: {
+        Row: {
+          booking_id: string | null
+          conversation_id: string | null
+          created_at: string
+          customer_id: string | null
+          expires_at: string
+          metadata: Json
+          purpose: string
+          quote_id: string | null
+          recipient_email: string
+          revoked_at: string | null
+          token: string
+        }
+        Insert: {
+          booking_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          expires_at?: string
+          metadata?: Json
+          purpose: string
+          quote_id?: string | null
+          recipient_email: string
+          revoked_at?: string | null
+          token: string
+        }
+        Update: {
+          booking_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          expires_at?: string
+          metadata?: Json
+          purpose?: string
+          quote_id?: string | null
+          recipient_email?: string
+          revoked_at?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_reply_tokens_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       embed_presets: {
         Row: {
           created_at: string
