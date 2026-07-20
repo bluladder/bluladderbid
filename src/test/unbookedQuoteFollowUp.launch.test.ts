@@ -183,7 +183,10 @@ const REALISTIC_LINK = "https://quote.bluladder.com/q/9f3ab2c1";
 const WORSTCASE_LINK = "https://quote.bluladder.com/q/9f3ab2c1-8d47-4b3e-9a20-6b1e2c9a71fd";
 
 function render(body: string, s: { first_name: string; service: string; link: string }): string {
-  return body.replaceAll("{{first_name}}", s.first_name).replaceAll("{{service}}", s.service).replaceAll("{{link}}", s.link);
+  return body
+    .replace(/\{\{first_name\}\}/g, s.first_name)
+    .replace(/\{\{service\}\}/g, s.service)
+    .replace(/\{\{link\}\}/g, s.link);
 }
 
 describe("rendered SMS encoding — every seeded template, production link", () => {
