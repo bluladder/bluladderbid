@@ -107,8 +107,11 @@ export function formatApptDate(iso: string | null | undefined): { date: string; 
 const STOP_KEYWORDS = new Set([
   "stop", "stopall", "unsubscribe", "cancel", "end", "quit", "optout", "opt-out",
 ]);
+// Explicit opt-in commands only. Bare "yes" is intentionally excluded — see
+// _shared/bookingIntent.ts. This keeps the legacy classifier from silently
+// re-subscribing customers who reply "Yes, Tuesday works".
 const START_KEYWORDS = new Set([
-  "start", "unstop", "yes", "subscribe", "optin", "opt-in",
+  "start", "unstop", "subscribe", "optin", "opt-in",
 ]);
 
 /** Returns "stop", "start", or null based on the first word of an inbound message body. */
