@@ -10,7 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 // Memory-only portal token.
-// The frontend (bluladderbid.lovable.app) and Edge Functions (*.supabase.co) live
+// The customer frontend (bid.bluladder.com) and Edge Functions (*.supabase.co) live
 // on different registrable domains, so an HttpOnly cookie set by an Edge Function
 // is a third-party cookie — silently dropped by Safari ITP, Facebook in-app
 // browsers, and increasingly Chrome. Rather than ship a config that fails for

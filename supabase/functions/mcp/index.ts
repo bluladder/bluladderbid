@@ -98,7 +98,7 @@ var get_pricing_info_default = defineTool2({
 // src/lib/mcp/tools/get-booking-link.ts
 import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@0.20.1";
 import { z as z2 } from "npm:zod@^3.25.76";
-var APP_URL = "https://bluladderbid.lovable.app";
+var APP_URL = "https://bid.bluladder.com";
 var SERVICE_KEYS = [
   "window_cleaning",
   "gutter_cleaning",

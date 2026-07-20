@@ -1,7 +1,9 @@
 import { defineTool } from "@lovable.dev/mcp-js";
 import { z } from "zod";
 
-const APP_URL = "https://bluladderbid.lovable.app";
+// Canonical customer-facing production domain. All booking links must resolve
+// to bid.bluladder.com — Lovable preview hosts are never sent to customers.
+const APP_URL = "https://bid.bluladder.com";
 
 const SERVICE_KEYS = [
   "window_cleaning",
