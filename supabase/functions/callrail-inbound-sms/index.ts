@@ -270,7 +270,12 @@ serve(async (req) => {
             .order("updated_at", { ascending: false })
             .limit(1)
             .maybeSingle();
-          if (quote?.id) quoteLink = `${appUrl}/quote/${quote.id}`;
+          if (quote?.id) {
+            // Mint a fresh opaque resume URL at reply-time so the customer
+            // never receives a bare /quote/<uuid> that would leak PII.
+            const { mintResumeUrl } = await import("../_shared/resumeLink.ts");
+            quoteLink = await mintResumeUrl(supabase, quote.id, { reason: "callrail_book_it_reply" });
+          }
         }
 
         const callrail = getCallRailConfig();

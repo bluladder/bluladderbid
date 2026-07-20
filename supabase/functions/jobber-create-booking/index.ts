@@ -71,6 +71,16 @@ interface BookingRequest {
   sessionId?: string;
 }
 
+// Booking from a resumed quote: caller passes the stored quote id and the
+// total the customer just explicitly confirmed. If the server recomputes a
+// materially different total (pricing rules updated, promotion expired, etc.)
+// the booking is refused with a typed `requires_reconfirmation` result so the
+// UI can present the new total and require a new explicit confirmation.
+interface ResumedQuoteFields {
+  resumedQuoteId?: string;
+  confirmedTotal?: number;
+}
+
 // Simple address parser - extracts components from a single-line address
 function parseAddress(address: string): {
   street1: string;
@@ -419,6 +429,40 @@ Deno.serve(async (req) => {
             }
             const serverTotal = engineResult.total;
             const clientTotal = Number(booking.total);
+            // ---- Resumed-quote revalidation gate ----
+            // If this booking is created from a stored quote link, refuse to
+            // silently rewrite the price. Require an explicit reconfirmation
+            // against the fresh authoritative total before any Jobber writes.
+            const resumedQuoteId = (booking as unknown as ResumedQuoteFields).resumedQuoteId;
+            const confirmedTotal = Number(
+              (booking as unknown as ResumedQuoteFields).confirmedTotal ?? NaN,
+            );
+            if (resumedQuoteId && Number.isFinite(confirmedTotal)) {
+              const drift = Math.abs(serverTotal - confirmedTotal);
+              const pct = serverTotal > 0 ? drift / serverTotal : 1;
+              if (drift > 2 && pct > 0.02) {
+                return new Response(
+                  JSON.stringify({
+                    status: "requires_reconfirmation",
+                    reason: "pricing_refreshed",
+                    resumedQuoteId,
+                    authoritative: {
+                      total: serverTotal,
+                      subtotal: engineResult.subtotal,
+                      lineItems: engineResult.lineItems.map((li) => ({
+                        label: li.label,
+                        amount: li.amount,
+                      })),
+                      promotion: engineResult.promotion ?? null,
+                      discount: engineResult.discount ?? null,
+                    },
+                    message:
+                      "Pricing was refreshed since this quote was saved. Please review the updated total before confirming.",
+                  }),
+                  { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+                );
+              }
+            }
             // For promotions the Jobber line items MUST reconcile exactly with the
             // server result, so always rebuild from the engine when a promotion is
             // applied (in addition to the normal tamper/stale guard).

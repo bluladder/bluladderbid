@@ -237,8 +237,13 @@ serve(async (req) => {
         firstName = ((q.customer_name as string) || "").trim().split(/\s+/)[0] || firstName;
         vars.service = serviceNames(q.services_json);
         vars.total = formatPrice(q.total);
-        vars.quote_link = `${APP_URL}/quote/${quoteId}`;
-        vars.link = `${APP_URL}/quote/${quoteId}`;
+        // Mint a fresh, opaque resume URL at send-time. The raw token is
+        // only present in the outbound message body — never stored in queue
+        // rows as a bare /quote/<uuid> that would expose PII to any visitor.
+        const { mintResumeUrl } = await import("../_shared/resumeLink.ts");
+        const resumeUrl = await mintResumeUrl(supabase, quoteId, { reason: "send_sms_transactional" });
+        vars.quote_link = resumeUrl;
+        vars.link = resumeUrl;
       }
     }
 
