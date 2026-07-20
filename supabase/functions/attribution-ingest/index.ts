@@ -57,6 +57,12 @@ Deno.serve(async (req) => {
 
   const rl = rateLimit(req, { limit: 30, windowMs: 60_000 });
   if (!rl.allowed) return json({ error: "rate_limited" }, 429);
+  const shared = await sharedRateLimit(req, {
+    key: "attribution-ingest",
+    limit: 120,
+    windowMs: 60_000,
+  });
+  if (!shared.allowed) return json({ error: "rate_limited" }, 429);
 
   let body: Record<string, unknown>;
   try {
