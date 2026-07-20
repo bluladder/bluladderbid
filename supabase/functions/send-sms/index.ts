@@ -325,64 +325,16 @@ serve(async (req) => {
       }
     }
 
-    // ---- 2) Enroll active follow-up campaigns for this event ----
-    let scheduledCount = 0;
-    const { data: campaigns } = await supabase
-      .from("sms_campaigns")
-      .select("id, sms_campaign_steps(id, step_order, delay_hours, body_template, subject, channel, active)")
-      .eq("trigger_event", eventType)
-      .eq("active", true);
-
-    if (campaigns) {
-      const now = Date.now();
-      const rows: Record<string, unknown>[] = [];
-      for (const c of campaigns as Array<{ id: string; sms_campaign_steps: Array<{ id: string; delay_hours: number; body_template: string; subject: string | null; channel: string; active: boolean }> }>) {
-        for (const step of c.sms_campaign_steps || []) {
-          if (!step.active) continue;
-          const sendAt = new Date(now + Number(step.delay_hours) * 3600 * 1000).toISOString();
-          if (step.channel === "email") {
-            if (!email || pause.email_paused) continue;
-            rows.push({
-              to_email: email,
-              channel: "email",
-              subject: renderTemplate(step.subject ?? "", vars),
-              body: renderTemplate(step.body_template, vars),
-              message_kind: "campaign",
-              status: "pending",
-              booking_id: bookingId ?? null,
-              quote_id: quoteId ?? null,
-              campaign_id: c.id,
-              campaign_step_id: step.id,
-              send_at: sendAt,
-            });
-          } else {
-            if (!toNorm || smsSuppressed) continue;
-            rows.push({
-              to_number: toNorm,
-              channel: "sms",
-              body: renderTemplate(step.body_template, vars),
-              message_kind: "campaign",
-              status: "pending",
-              booking_id: bookingId ?? null,
-              quote_id: quoteId ?? null,
-              campaign_id: c.id,
-              campaign_step_id: step.id,
-              send_at: sendAt,
-            });
-          }
-        }
-      }
-      if (rows.length) {
-        const { error: insErr, count } = await supabase.from("sms_messages").insert(rows, { count: "exact" });
-        if (!insErr) scheduledCount = count ?? rows.length;
-      }
-    }
-
+    // NOTE: send-sms is transactional-only. It intentionally does NOT enroll
+    // leads in follow-up campaigns or schedule campaign steps — that path is
+    // owned exclusively by the canonical campaign-event function, reached via
+    // emitCampaignEvent(). Callers that need follow-up automation must emit
+    // an allowlisted campaign lifecycle event separately.
     return new Response(JSON.stringify({
       success: true,
       transactionalSent,
       transactionalError,
-      scheduledFollowUps: scheduledCount,
+      scheduledFollowUps: 0,
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
     console.error("send-sms error:", error);
