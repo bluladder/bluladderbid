@@ -3343,6 +3343,7 @@ export type Database = {
           effective_start: string | null
           event_name: string | null
           id: string
+          is_terminal_phase: boolean
           lifecycle_status:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
@@ -3367,6 +3368,7 @@ export type Database = {
           effective_start?: string | null
           event_name?: string | null
           id?: string
+          is_terminal_phase?: boolean
           lifecycle_status?:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
@@ -3393,6 +3395,7 @@ export type Database = {
           effective_start?: string | null
           event_name?: string | null
           id?: string
+          is_terminal_phase?: boolean
           lifecycle_status?:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
