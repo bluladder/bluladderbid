@@ -523,7 +523,9 @@ export function buildAppointmentWhen(dateStr: string, arrivalWindow: string | nu
 export function formatBookingTotal(raw: unknown): string {
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isFinite(n) || n <= 0) return "";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0,
+  }).format(n);
 }
 
 /** Sanitises manage/reschedule/cancel URLs — must be absolute http(s). */
