@@ -381,6 +381,13 @@ serve(async (req) => {
     const rescheduleReason = typeof (meta as Record<string, unknown>).reschedule_reason === "string"
       ? String((meta as Record<string, unknown>).reschedule_reason).trim()
       : "";
+    // Cancellation-specific merge vars (Phase 2C). Missing values render as
+    // safe empty strings — templates that reference them never emit
+    // "undefined", "null", or malformed sentences.
+    const cancellationReasonRaw = typeof (meta as Record<string, unknown>).cancellation_reason === "string"
+      ? String((meta as Record<string, unknown>).cancellation_reason).trim() : "";
+    const cancellationFeedbackLine = buildCancellationFeedbackLine(cancellationReasonRaw || null);
+    const bookingLink = safeLink((meta as Record<string, unknown>).booking_link, `${APP_URL}/`);
     const vars: Record<string, string> = {
       first_name: firstName,
       last_name: lastName,
@@ -407,6 +414,10 @@ serve(async (req) => {
       requested_appointment_date: requestedBookingDate,
       requested_arrival_window: requestedArrivalWindow,
       reschedule_reason: rescheduleReason,
+      // Cancellation merge fields (Phase 2C)
+      cancellation_reason: cancellationReasonRaw,
+      cancellation_feedback_line: cancellationFeedbackLine,
+      booking_link: bookingLink,
     };
     const now = Date.now();
     const rows = usableSteps.map((s) => ({
@@ -535,6 +546,9 @@ export function campaignFilterForScope(
     "booking_completed",
     "booking_rescheduled",
     "booking_reschedule_requested",
+    "booking_cancelled",
+    "booking_cancellation_requested",
+    "appointment_cancelled",
   ];
   return null;
 }
@@ -569,6 +583,17 @@ export function buildDeclineFeedbackLine(declineReason: string | null | undefine
   return r
     ? "Thanks for that feedback — it really helps us improve."
     : "If you have a moment, reply with a quick note about what didn't fit — it helps us improve.";
+}
+
+/**
+ * Cancellation feedback line — one warm sentence acknowledging the reason
+ * category if provided, otherwise a neutral fallback. Never leaks raw reason
+ * text into the customer-facing message.
+ */
+export function buildCancellationFeedbackLine(reason: string | null | undefined): string {
+  const r = typeof reason === "string" ? reason.trim() : "";
+  if (!r) return "We hope to see you again soon.";
+  return "Thanks for letting us know — we appreciate it.";
 }
 
 // ---------------------------------------------------------------------------

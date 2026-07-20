@@ -650,9 +650,13 @@ export type Database = {
           booked_subtotal: number | null
           booking_completed_at: string | null
           booking_version: number
+          cancellation_lifecycle_version: number | null
           cancellation_needs_attention_reason: string | null
+          cancellation_notes: string | null
+          cancellation_reason: string | null
           cancellation_source: string | null
           cancelled_at: string | null
+          cancelled_by: string | null
           completed_at: string | null
           created_at: string
           customer_id: string
@@ -665,6 +669,7 @@ export type Database = {
           input_snapshot: Json | null
           is_hidden: boolean
           is_test_fixture: boolean
+          jobber_cancellation_status: string | null
           jobber_job_id: string | null
           jobber_quote_id: string | null
           jobber_visit_id: string | null
@@ -687,6 +692,7 @@ export type Database = {
           scheduled_end: string | null
           scheduled_start: string | null
           services_json: Json
+          slot_released_at: string | null
           source_session_id: string | null
           status: Database["public"]["Enums"]["booking_status"]
           subtotal: number
@@ -705,9 +711,13 @@ export type Database = {
           booked_subtotal?: number | null
           booking_completed_at?: string | null
           booking_version?: number
+          cancellation_lifecycle_version?: number | null
           cancellation_needs_attention_reason?: string | null
+          cancellation_notes?: string | null
+          cancellation_reason?: string | null
           cancellation_source?: string | null
           cancelled_at?: string | null
+          cancelled_by?: string | null
           completed_at?: string | null
           created_at?: string
           customer_id: string
@@ -720,6 +730,7 @@ export type Database = {
           input_snapshot?: Json | null
           is_hidden?: boolean
           is_test_fixture?: boolean
+          jobber_cancellation_status?: string | null
           jobber_job_id?: string | null
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
@@ -742,6 +753,7 @@ export type Database = {
           scheduled_end?: string | null
           scheduled_start?: string | null
           services_json: Json
+          slot_released_at?: string | null
           source_session_id?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           subtotal: number
@@ -760,9 +772,13 @@ export type Database = {
           booked_subtotal?: number | null
           booking_completed_at?: string | null
           booking_version?: number
+          cancellation_lifecycle_version?: number | null
           cancellation_needs_attention_reason?: string | null
+          cancellation_notes?: string | null
+          cancellation_reason?: string | null
           cancellation_source?: string | null
           cancelled_at?: string | null
+          cancelled_by?: string | null
           completed_at?: string | null
           created_at?: string
           customer_id?: string
@@ -775,6 +791,7 @@ export type Database = {
           input_snapshot?: Json | null
           is_hidden?: boolean
           is_test_fixture?: boolean
+          jobber_cancellation_status?: string | null
           jobber_job_id?: string | null
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
@@ -797,6 +814,7 @@ export type Database = {
           scheduled_end?: string | null
           scheduled_start?: string | null
           services_json?: Json
+          slot_released_at?: string | null
           source_session_id?: string | null
           status?: Database["public"]["Enums"]["booking_status"]
           subtotal?: number

@@ -25,6 +25,9 @@ interface ActionRequest {
   // Optional structured operational metadata for a reschedule.
   rescheduleReason?: string | null;
   rescheduleNotes?: string | null;
+  // Optional structured operational metadata for a cancellation.
+  cancellationReason?: string | null;
+  cancellationNotes?: string | null;
   // For modify services
   newServices?: Array<{ name: string; price: number }>;
   newSubtotal?: number;
@@ -270,6 +273,7 @@ Deno.serve(async (req) => {
           typedBooking,
           isVerifiedAdmin ? 'admin' : 'customer',
           callerUserId,
+          body,
         );
         break;
       default:
@@ -316,12 +320,14 @@ Deno.serve(async (req) => {
     const smsEvent =
       rescheduleFreshlyConfirmed ? 'appointment_rescheduled' :
       cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
-    // Canonical campaign event name for Phase 2B. `appointment_rescheduled` is
-    // retained ONLY as the legacy send-sms/reminders trigger name to preserve
-    // transactional SMS delivery until the seeded Campaign B is activated.
+    // Canonical campaign event names for Phase 2B/2C. The `appointment_*`
+    // legacy names remain ONLY as the send-sms/reminders transactional trigger
+    // to preserve delivery until the seeded confirmation campaigns are
+    // activated. `booking_cancelled` is the canonical lifecycle event fed to
+    // the campaign engine after Jobber confirmed the removal.
     const campaignEvent =
       rescheduleFreshlyConfirmed ? 'booking_rescheduled' :
-      cancelFreshlyConfirmed ? 'appointment_cancelled' : null;
+      cancelFreshlyConfirmed ? 'booking_cancelled' : null;
     if (smsEvent && campaignEvent) {
       try {
         fetch(`${supabaseUrl}/functions/v1/send-sms`, {
@@ -346,12 +352,19 @@ Deno.serve(async (req) => {
         const newStart = body.newSlot?.startTime ?? "";
         const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
         const manageLink = `${APP_URL}/my-appointments`;
+        const bookingLink = `${APP_URL}/`;
         const bookingVersion = Number((result as Record<string, unknown>).bookingVersion ?? typedBooking.booking_version ?? 1);
         const serviceNames = Array.isArray(typedBooking.services_json)
           ? typedBooking.services_json.map((s) => s?.name).filter(Boolean) as string[] : [];
-        const idempotencyKey = campaignEvent === 'booking_rescheduled'
-          ? `booking_rescheduled:${bookingId}:v${bookingVersion}`
-          : `appointment_cancelled:${visitId}`;
+        const cancelledVersion = Number(
+          (result as Record<string, unknown>).cancellationLifecycleVersion ??
+          typedBooking.booking_version ?? 1,
+        );
+        const idempotencyKey =
+          campaignEvent === 'booking_rescheduled'
+            ? `booking_rescheduled:${bookingId}:v${bookingVersion}`
+            : `booking_cancelled:${bookingId}:v${cancelledVersion}`;
+        const serviceAddress = (typedBooking.home_details_json as Record<string, unknown> | null)?.address ?? "";
         await emitCampaignEvent({
           eventName: campaignEvent,
           idempotencyKey,
@@ -359,7 +372,10 @@ Deno.serve(async (req) => {
           customerId: typedBooking.customer_id,
           source: "customer-appointment-actions",
           recoverySupabase: serviceClient,
-          subject: campaignEvent === 'booking_rescheduled' ? "Appointment rescheduled" : "Appointment cancelled",
+          subject:
+            campaignEvent === 'booking_rescheduled'
+              ? "Appointment rescheduled"
+              : "Appointment cancelled",
           metadata: campaignEvent === 'booking_rescheduled' ? {
             booking_id: bookingId,
             booking_version: bookingVersion,
@@ -373,17 +389,30 @@ Deno.serve(async (req) => {
             service: serviceNames[0] ?? "your service",
             service_names: serviceNames,
             service_types: serviceNames,
-            service_address: (typedBooking.home_details_json as Record<string, unknown> | null)?.address ?? "",
+            service_address: serviceAddress,
             booking_total: typedBooking.total,
             manage_link: manageLink,
             reschedule_link: manageLink,
             cancel_link: manageLink,
             reschedule_reason: (body.rescheduleReason ?? null),
           } : {
+            // booking_cancelled — journey-scoped stop for reminders/reschedule
+            // requests tied to this booking + version, plus safe merge fields.
             booking_id: bookingId,
+            booking_version: cancelledVersion,
+            quote_id: typedBooking.quote_id ?? null,
             jobber_visit_id: typedBooking.jobber_visit_id ?? null,
-            previous_start: typedBooking.scheduled_start,
             booking_status: 'cancelled',
+            previous_appointment_date: typedBooking.scheduled_start,
+            previous_arrival_window: null,
+            service: serviceNames[0] ?? "your service",
+            service_names: serviceNames,
+            service_types: serviceNames,
+            service_address: serviceAddress,
+            booking_total: typedBooking.total,
+            cancellation_reason: (body.cancellationReason ?? null),
+            manage_link: manageLink,
+            booking_link: bookingLink,
           },
         });
       } catch (emitErr) {
@@ -661,6 +690,7 @@ async function handleCancel(
   booking: BookingRecord,
   source: 'customer' | 'admin' | 'system',
   actorId: string | null,
+  body: ActionRequest,
 ): Promise<Record<string, unknown>> {
   console.log(`[Cancel] Requested by ${source} for booking ${booking.reference_number} (status=${booking.status})`);
 
@@ -722,21 +752,48 @@ async function handleCancel(
   // interpretation.outcome is 'confirmed' or 'already_gone' — both mean the
   // visit is gone from Jobber, so it is safe to synchronize local state.
   const nowIso = new Date().toISOString();
+  const cancellationReason = typeof body.cancellationReason === 'string'
+    ? body.cancellationReason.slice(0, 120) : null;
+  const cancellationNotes = typeof body.cancellationNotes === 'string'
+    ? body.cancellationNotes.slice(0, 500) : null;
+  const currentVersion = Number(booking.booking_version ?? 1);
+  const nextVersion = currentVersion + 1;
+  // Only stamp cancelled_by when we have a real auth uuid (customer or admin).
+  // The 'system' source can pass a null actor.
+  const actorUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actorId ?? '')
+    ? actorId : null;
 
-  // 5) Mark local booking cancelled with audit metadata.
-  const { error: updateError } = await supabase
+  // 5) Mark local booking cancelled atomically with optimistic concurrency on
+  // booking_version so a concurrent reschedule cannot silently overwrite the
+  // cancellation (and vice versa).
+  const { data: updated, error: updateError } = await supabase
     .from("bookings")
     .update({
       status: 'cancelled',
       cancelled_at: nowIso,
       cancellation_source: source,
+      cancellation_reason: cancellationReason,
+      cancellation_notes: cancellationNotes,
+      cancelled_by: actorUuid,
+      cancellation_lifecycle_version: nextVersion,
+      jobber_cancellation_status: interpretation.outcome,
+      slot_released_at: nowIso,
+      booking_version: nextVersion,
       cancellation_needs_attention_reason: null,
       updated_at: nowIso,
     })
-    .eq("id", booking.id);
+    .eq("id", booking.id)
+    .eq("booking_version", currentVersion)
+    .select("id, booking_version")
+    .maybeSingle();
 
   if (updateError) {
     throw new Error(`Database update failed: ${updateError.message}`);
+  }
+  if (!updated) {
+    // A concurrent write won the race — do NOT emit a confirmation for this
+    // attempt. A retry can pick up whichever state now exists.
+    throw new Error("Booking was updated concurrently. Please refresh and try again.");
   }
 
   // 6) Mark mirrored schedule blocks cancelled (keep rows for audit) so the
@@ -768,6 +825,10 @@ async function handleCancel(
     idempotentAlreadyGone: interpretation.outcome === 'already_gone',
     cancelledAt: nowIso,
     cancellationSource: source,
+    cancellationReason,
+    cancellationLifecycleVersion: nextVersion,
+    bookingVersion: nextVersion,
+    jobberCancellationStatus: interpretation.outcome,
     previousStart: booking.scheduled_start,
   };
 }

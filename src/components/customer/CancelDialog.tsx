@@ -11,6 +11,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, AlertTriangle, Calendar, Clock, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
@@ -49,6 +58,10 @@ export function CancelDialog({
   adminUserId,
 }: CancelDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Structured reason category (never free-text-only) so the campaign engine
+  // can reason about the cancellation without leaking raw customer text.
+  const [reason, setReason] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
 
   const handleConfirm = async () => {
     setIsSubmitting(true);
@@ -60,6 +73,8 @@ export function CancelDialog({
           bookingId: appointment.id,
           isAdminOverride,
           adminUserId,
+          cancellationReason: reason || null,
+          cancellationNotes: notes.trim() ? notes.trim().slice(0, 500) : null,
         },
       });
 
@@ -130,6 +145,31 @@ export function CancelDialog({
                   <DollarSign className="w-4 h-4 text-muted-foreground" />
                   <span>{formatPrice(appointment.total)}</span>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="cancel-reason">Reason for cancelling (optional)</Label>
+                <Select value={reason || '__none__'} onValueChange={(v) => setReason(v === '__none__' ? '' : v)}>
+                  <SelectTrigger id="cancel-reason">
+                    <SelectValue placeholder="Choose a reason" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Prefer not to say</SelectItem>
+                    <SelectItem value="schedule_conflict">Schedule conflict</SelectItem>
+                    <SelectItem value="no_longer_needed">No longer need the service</SelectItem>
+                    <SelectItem value="price">Price</SelectItem>
+                    <SelectItem value="booking_mistake">Booking mistake</SelectItem>
+                    <SelectItem value="rebooking_later">Will rebook later</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Textarea
+                  id="cancel-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value.slice(0, 500))}
+                  placeholder="Anything else you'd like us to know? (optional)"
+                  rows={2}
+                />
               </div>
 
               <Alert variant="destructive">
