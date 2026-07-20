@@ -10,10 +10,16 @@ import {
 import { renderTemplate } from "../_shared/sms.ts";
 import { STOP_EVENTS, ALLOWED_EVENTS } from "../_shared/campaignEngine.ts";
 
-Deno.test("STOP scope for quote_declined is 'abandoned' and only quote_abandoned kinds", () => {
+Deno.test("STOP scope for quote_declined is 'abandoned' and covers both abandonment and decline win-back", () => {
   assertEquals(STOP_EVENTS.quote_declined.scope, "abandoned");
-  assertEquals(campaignFilterForScope("abandoned"), ["quote_abandoned"]);
+  // Phase 2A: booking_completed and recurring_plan_created must also stop the
+  // decline win-back, so the 'abandoned' filter now includes quote_declined.
+  assertEquals(campaignFilterForScope("abandoned"), ["quote_abandoned", "quote_declined"]);
   assert((ALLOWED_EVENTS as readonly string[]).includes("quote_declined"));
+  assert((ALLOWED_EVENTS as readonly string[]).includes("booking_completed"));
+  assert((ALLOWED_EVENTS as readonly string[]).includes("recurring_plan_created"));
+  assertEquals(STOP_EVENTS.booking_completed.scope, "abandoned");
+  assertEquals(STOP_EVENTS.recurring_plan_created.scope, "abandoned");
 });
 
 Deno.test("filterEnrollmentsByQuoteJourney stops only the matching quote_id", () => {
