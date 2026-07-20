@@ -18,8 +18,10 @@ describe("quote decline path coverage", () => {
 
   it("QuoteView mounts the DeclineQuoteDialog and gates on status", () => {
     expect(quoteView).toMatch(/DeclineQuoteDialog/);
-    expect(quoteView).toMatch(/status === 'declined'/);
-    expect(quoteView).toMatch(/status === 'converted'/);
+    // QuoteView reads normalized status flags off its DTO rather than
+    // comparing raw status strings inline.
+    expect(quoteView).toMatch(/isDeclined/);
+    expect(quoteView).toMatch(/isConverted/);
   });
 
   it("origins share the same route contract", () => {
