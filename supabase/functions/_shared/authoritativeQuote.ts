@@ -161,9 +161,7 @@ export async function computeAuthoritativeQuote(
     if (q.status !== "firm") {
       return {
         ok: false,
-        status: q.status === "pricing_unavailable" ? "pricing_unavailable"
-          : q.status === "missing_information" ? "missing_information"
-          : "manual_review_required",
+        status: q.status === "missing_information" ? "missing_information" : "manual_review_required",
         message: q.explanation || "Quote could not be firm-priced.",
         detail: { missing: q.missing, manualReviewReasons: q.manualReviewReasons },
       };
