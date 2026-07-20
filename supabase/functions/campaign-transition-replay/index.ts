@@ -211,20 +211,9 @@ serve(async (req) => {
       replay_event_id: (outJson as { event_id?: string })?.event_id,
     });
 
-    // Audit trail linking the replay to the source event.
-    await supabase.from("campaign_audit_log").insert({
-      action: "nurture_backfill_replay",
-      actor_id: authz.userId ?? null,
-      subject_type: "campaign_event",
-      subject_id: raw.id,
-      metadata: {
-        destination_campaign_id: dest.id,
-        destination_campaign_version: dest.version,
-        replay_idempotency_key: replayKey,
-        replay_event_id: (outJson as { event_id?: string })?.event_id ?? null,
-        result: outJson,
-      },
-    });
+    // Replay relationship is preserved on the destination event's metadata
+    // via buildReplayMetadata (see the `replay` block). The audit trail lives
+    // in campaign_events; no second audit surface is introduced here.
   }
 
   return json({
