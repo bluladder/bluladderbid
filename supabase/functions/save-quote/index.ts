@@ -10,6 +10,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { sendEmail } from "../_shared/emailConfig.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
+import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,7 +18,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const APP_URL = Deno.env.get("APP_URL") || "https://bluladderbid.lovable.app";
 
 interface Body {
   action: "save" | "email";
@@ -242,7 +242,7 @@ serve(async (req) => {
     }
   }
 
-  const quoteUrl = `${APP_URL}/quote/${quoteId}`;
+  const quoteUrl = `${getAppUrl()}/quote/${quoteId}`;
 
   // 3) Optional email send. Failure here still returns the saved quote.
   let emailStatus: "sent" | "skipped" | "failed" = "skipped";
