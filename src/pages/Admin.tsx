@@ -18,6 +18,7 @@ import { ConversationsTabContent } from '@/components/admin/conversations/Conver
 import { OpsHealthPanel } from '@/components/admin/ops/OpsHealthPanel';
 import { OpsAlertsPanel } from '@/components/admin/ops/OpsAlertsPanel';
 import { EmailSuppressionsPanel } from '@/components/admin/ops/EmailSuppressionsPanel';
+import { CampaignLaunchControlsPanel } from '@/components/admin/ops/CampaignLaunchControlsPanel';
 import { Link } from 'react-router-dom';
 
 export default function Admin({ initialTab }: { initialTab?: string }) {
@@ -160,6 +161,7 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
               <div className="space-y-6">
                 <OpsHealthPanel />
                 <OpsAlertsPanel />
+                <CampaignLaunchControlsPanel />
                 <EmailSuppressionsPanel />
               </div>
             </TabsContent>
