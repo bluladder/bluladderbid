@@ -9,6 +9,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { sendEmail } from "../_shared/emailConfig.ts";
+import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -192,6 +193,42 @@ serve(async (req) => {
       }),
     });
     emailStatus = res.ok ? "sent" : "failed";
+  }
+
+  // 4) Emit the canonical firm-quote event so first-touch attribution and
+  // downstream campaigns (audience matching, consent, suppression, idempotency)
+  // are handled by the SINGLE campaign engine. This never inserts enrollments
+  // or queue rows directly — campaign-event owns that. Idempotency key is tied
+  // to the quote id + pricing rule version so the same firm quote at the same
+  // pricing version can only enter once.
+  //
+  // Not fired before a firm server-authoritative quote exists (this is after
+  // the quotes-row insert succeeded with a positive total), not fired from
+  // React rendering, and no customer PII beyond the identifiers required for
+  // server-side resolution is carried in metadata.
+  try {
+    await emitCampaignEvent({
+      eventName: "quote_calculated",
+      idempotencyKey: `quote_calculated:${quoteId}:v${body.ruleVersion ?? 0}`,
+      email,
+      phone: body.phone ?? null,
+      customerId,
+      source: "save-quote",
+      subject: action === "email" ? "Quote emailed" : "Quote saved",
+      recoverySupabase: supabase,
+      metadata: {
+        lead_source: "website_quote",
+        quote_status: "firm",
+        quote_id: quoteId,
+        quote_url: quoteUrl,
+        pricing_rule_version: body.ruleVersion ?? null,
+        pricing_engine_version: body.engineVersion ?? null,
+        total: body.total,
+        service_types: (body.services ?? []).map((s) => s?.name).filter(Boolean),
+      },
+    });
+  } catch (e) {
+    console.warn("save-quote: quote_calculated emit failed:", e instanceof Error ? e.message : e);
   }
 
   return json(200, { quoteId, quoteUrl, expiresAt: expiresAtIso, status, emailStatus });

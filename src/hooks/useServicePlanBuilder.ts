@@ -310,9 +310,13 @@ export function useServicePlanBuilder() {
       if (error) throw error;
       setSavedQuoteId(data.id);
 
-      supabase.functions.invoke('send-sms', {
-        body: { eventType: 'quote_created', quoteId: data.id },
-      }).catch((e) => console.warn('Quote SMS dispatch failed:', e));
+      // Legacy `quote_created` send-sms path was retired — that eventType is no
+      // longer accepted by the canonical campaign engine (ALLOWED_EVENTS uses
+      // `quote_calculated`). Emission for this plan-builder path is a follow-up
+      // (see docs/future-campaign-channel-extension.md — the same pattern
+      // applies: route this insert through a server function that emits
+      // `quote_calculated` via emitCampaignEvent, deterministic key on
+      // quote id + pricing version). Do NOT re-add a client-side emit here.
 
       return data.id;
     } catch (error) {
