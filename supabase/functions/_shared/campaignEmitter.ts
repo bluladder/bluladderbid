@@ -25,6 +25,8 @@ const CRITICAL_EVENTS = new Set([
   "booking_reschedule_requested",
   "booking_rescheduled",
   "appointment_cancelled",
+  "booking_cancellation_requested",
+  "booking_cancelled",
   "customer_replied",
   "consent_revoked",
   "manual_staff_takeover",
