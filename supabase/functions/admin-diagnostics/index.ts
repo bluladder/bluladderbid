@@ -64,6 +64,14 @@ serve(async (req) => {
     .order("received_at", { ascending: true })
     .limit(1)
     .maybeSingle();
+  const { data: nextRetry } = await supabase
+    .from("callrail_inbound_events")
+    .select("next_attempt_at")
+    .eq("status", "retry_pending")
+    .not("next_attempt_at", "is", null)
+    .order("next_attempt_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   const body = {
     app_url: getAppUrl(),
@@ -83,6 +91,8 @@ serve(async (req) => {
       processed_count: processed,
       last_processed_at: lastProcessed?.processed_at ?? null,
       oldest_unprocessed_received_at: oldestUnprocessed?.received_at ?? null,
+      next_retry_at: nextRetry?.next_attempt_at ?? null,
+      auto_retries_enabled: true,
     },
     generated_at: new Date().toISOString(),
   };
