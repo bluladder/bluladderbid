@@ -387,15 +387,40 @@ async function applyStop(
   phone: string | null,
   reason: string,
   scope: "all" | "abandoned" | "reminders",
+  quoteId: string | null = null,
 ): Promise<number> {
   // Determine which campaigns are in scope by event kind.
   let campaignFilter: string[] | null = null;
   if (scope === "abandoned") campaignFilter = ["quote_abandoned"];
   if (scope === "reminders") campaignFilter = ["appointment_rescheduled", "appointment_scheduled", "booking_completed"];
 
-  let query = supabase.from("campaign_enrollments").select("id, campaign_id, event_name").eq("customer_id", customerId).eq("status", "active");
+  let query = supabase.from("campaign_enrollments")
+    .select("id, campaign_id, event_name, campaign_event_id")
+    .eq("customer_id", customerId).eq("status", "active");
   const { data: enrollments } = await query;
-  const targets = (enrollments ?? []).filter((e: any) => !campaignFilter || campaignFilter.includes(e.event_name));
+  let targets = (enrollments ?? []).filter((e: any) => !campaignFilter || campaignFilter.includes(e.event_name));
+
+  // Journey scoping: when the caller supplied a quote_id, only stop
+  // enrollments whose originating campaign event referenced that same
+  // quote_id. This prevents a decline on Quote A from silently killing an
+  // independent abandonment sequence for Quote B on the same customer.
+  if (quoteId && targets.length) {
+    const eventIds = Array.from(new Set(targets.map((t: any) => t.campaign_event_id).filter(Boolean)));
+    if (eventIds.length) {
+      const { data: events } = await supabase.from("campaign_events")
+        .select("id, metadata").in("id", eventIds);
+      const matching = new Set(
+        (events ?? [])
+          .filter((e: any) => e?.metadata && String(e.metadata.quote_id ?? "") === quoteId)
+          .map((e: any) => e.id),
+      );
+      targets = targets.filter((t: any) => t.campaign_event_id && matching.has(t.campaign_event_id));
+    } else {
+      // No enrollment carries a campaign_event_id we can bind to a quote,
+      // so we cannot safely prove journey ownership — stop nothing.
+      targets = [];
+    }
+  }
   if (!targets.length) return 0;
 
   const ids = targets.map((t: any) => t.id);
