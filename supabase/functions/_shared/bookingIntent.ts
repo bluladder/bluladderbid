@@ -40,9 +40,18 @@ export type EscalationCategory =
 const STOP_FIRST_WORD = new Set([
   "stop", "stopall", "unsubscribe", "cancel", "end", "quit", "optout", "opt-out",
 ]);
+// START keywords MUST be explicit opt-in commands. A bare "yes" is NOT a
+// START — customers routinely reply "yes" as a conversational or booking
+// confirmation ("Yes, Tuesday works"). Only unambiguous opt-in tokens count.
 const START_FIRST_WORD = new Set([
-  "start", "unstop", "yes", "subscribe", "optin", "opt-in",
+  "start", "unstop", "subscribe", "optin", "opt-in",
 ]);
+// Multi-token explicit opt-in phrases, checked as whole-message matches so
+// "opt in" (two words) still counts while "yes, book it" does not.
+const START_PHRASES: RegExp[] = [
+  /^\s*opt\s*[- ]?in\s*$/i,
+  /^\s*re[- ]?subscribe\s*$/i,
+];
 const HELP_FIRST_WORD = new Set(["help", "info"]);
 
 // Booking-intent phrases. Kept small on purpose — ambiguous replies must fall
@@ -80,31 +89,31 @@ export function classifyInboundIntent(body: string | null | undefined): InboundI
   const raw = (body ?? "").toString();
   if (!raw.trim()) return { kind: "other" };
 
-  // 1) STOP/HELP compliance keywords — always win, must be first word.
-  //    START ("yes", "subscribe", etc.) is deferred until after booking
-  //    intent so multi-word booking phrases like "yes, let's do it" are
-  //    not mis-classified as an opt-in.
+  // Precedence (authoritative):
+  //   1. STOP       — always wins, first-word.
+  //   2. HELP       — deterministic, never sent to AI.
+  //   3. START      — explicit opt-in commands only (never bare "yes").
+  //   4. Escalation — damage/complaint/billing/human request.
+  //   5. Booking    — allowlisted booking phrases.
+  //   6. Other      — conversational, routed to AI.
   const first = firstWord(raw);
   if (STOP_FIRST_WORD.has(first)) return { kind: "stop" };
   if (HELP_FIRST_WORD.has(first)) return { kind: "help" };
+  if (START_FIRST_WORD.has(first)) return { kind: "start" };
+  for (const rx of START_PHRASES) if (rx.test(raw)) return { kind: "start" };
 
-  // 2) Escalation categories — check before booking so "someone damaged my
-  //    window, please book it" is treated as damage_or_safety, not booking.
+  // Escalation categories — check before booking so "someone damaged my
+  // window, please book it" is treated as damage_or_safety, not booking.
   for (const { category, pattern } of ESCALATION_PATTERNS) {
     if (pattern.test(raw)) return { kind: "escalation", category };
   }
 
-  // 3) Booking intent.
+  // Booking intent.
   for (const rx of BOOKING_PHRASES) {
     if (rx.test(raw)) return { kind: "booking" };
   }
 
-  // 4) START keywords (opt-in re-subscribe) — only after booking so single
-  //    word "yes" still classifies as start, but "yes, let's do it" is
-  //    routed as booking.
-  if (START_FIRST_WORD.has(first)) return { kind: "start" };
-
-  // 5) Fall through — normal reply, let AI handle it.
+  // Fall through — normal reply, let AI handle it.
   return { kind: "other" };
 }
 
