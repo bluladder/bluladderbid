@@ -11,12 +11,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { renderTemplate, isPhoneOptedOut } from "../_shared/sms.ts";
 import {
-import { getAppUrl } from "../_shared/appUrl.ts";
   isAllowedEvent, matchesAudience, consentSatisfies, STOP_EVENTS,
   PAUSE_EVENTS,
   checkSuppression, normalizeEmail, normalizePhoneE164,
   type ConsentType, type EnrollDecision, type AudienceContext,
 } from "../_shared/campaignEngine.ts";
+import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
