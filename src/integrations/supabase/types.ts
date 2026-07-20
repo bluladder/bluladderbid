@@ -1218,6 +1218,33 @@ export type Database = {
           },
         ]
       }
+      campaign_launch_controls: {
+        Row: {
+          delivery_paused: boolean
+          enrollment_paused: boolean
+          id: number
+          note: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          delivery_paused?: boolean
+          enrollment_paused?: boolean
+          id?: number
+          note?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          delivery_paused?: boolean
+          enrollment_paused?: boolean
+          id?: number
+          note?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       chat_conversations: {
         Row: {
           abandonment_emitted_version: string | null
