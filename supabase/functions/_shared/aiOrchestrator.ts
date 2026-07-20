@@ -37,7 +37,7 @@ export interface OrchestratorInput {
   supabase: SupabaseClient;
   conversationId: string;
   sessionToken: string;
-  channel: "web" | "voice";
+  channel: "web" | "voice" | "sms";
   history: { role: "user" | "assistant"; content: string }[];
   userMessage: string;
 }

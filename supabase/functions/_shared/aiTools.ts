@@ -100,7 +100,7 @@ export interface ToolContext {
   supabase: SupabaseClient;
   conversationId: string;
   sessionToken: string;
-  channel: "web" | "voice";
+  channel: "web" | "voice" | "sms";
 }
 
 function svc(): SupabaseClient {
