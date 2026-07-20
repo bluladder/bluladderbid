@@ -450,7 +450,18 @@ export function campaignFilterForScope(
   // Journey scoping via quote_id keeps this narrow — an unrelated quote for
   // the same customer is not stopped.
   if (scope === "abandoned") return ["quote_abandoned", "quote_declined"];
-  if (scope === "reminders") return ["appointment_rescheduled", "appointment_scheduled", "booking_completed"];
+  // "reminders" covers every campaign whose enrollment is tied to a specific
+  // booking's schedule. When a booking is rescheduled or cancelled, prior
+  // pending confirmations + reminder sequences for that booking must be
+  // superseded. Booking-version scoping (see applyStop) keeps unrelated
+  // bookings for the same customer untouched.
+  if (scope === "reminders") return [
+    "appointment_rescheduled",
+    "appointment_scheduled",
+    "booking_completed",
+    "booking_rescheduled",
+    "booking_reschedule_requested",
+  ];
   return null;
 }
 
