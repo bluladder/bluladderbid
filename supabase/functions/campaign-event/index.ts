@@ -390,37 +390,18 @@ async function applyStop(
   quoteId: string | null = null,
 ): Promise<number> {
   // Determine which campaigns are in scope by event kind.
-  let campaignFilter: string[] | null = null;
-  if (scope === "abandoned") campaignFilter = ["quote_abandoned"];
-  if (scope === "reminders") campaignFilter = ["appointment_rescheduled", "appointment_scheduled", "booking_completed"];
+  const campaignFilter = campaignFilterForScope(scope);
 
-  let query = supabase.from("campaign_enrollments")
+  const query = supabase.from("campaign_enrollments")
     .select("id, campaign_id, event_name, campaign_event_id")
     .eq("customer_id", customerId).eq("status", "active");
   const { data: enrollments } = await query;
-  let targets = (enrollments ?? []).filter((e: any) => !campaignFilter || campaignFilter.includes(e.event_name));
-
-  // Journey scoping: when the caller supplied a quote_id, only stop
-  // enrollments whose originating campaign event referenced that same
-  // quote_id. This prevents a decline on Quote A from silently killing an
-  // independent abandonment sequence for Quote B on the same customer.
-  if (quoteId && targets.length) {
-    const eventIds = Array.from(new Set(targets.map((t: any) => t.campaign_event_id).filter(Boolean)));
-    if (eventIds.length) {
-      const { data: events } = await supabase.from("campaign_events")
-        .select("id, metadata").in("id", eventIds);
-      const matching = new Set(
-        (events ?? [])
-          .filter((e: any) => e?.metadata && String(e.metadata.quote_id ?? "") === quoteId)
-          .map((e: any) => e.id),
-      );
-      targets = targets.filter((t: any) => t.campaign_event_id && matching.has(t.campaign_event_id));
-    } else {
-      // No enrollment carries a campaign_event_id we can bind to a quote,
-      // so we cannot safely prove journey ownership — stop nothing.
-      targets = [];
-    }
-  }
+  const inScope = filterEnrollmentsByScope(enrollments ?? [], campaignFilter);
+  const eventIds = Array.from(new Set(inScope.map((t: any) => t.campaign_event_id).filter(Boolean)));
+  const { data: events } = quoteId && eventIds.length
+    ? await supabase.from("campaign_events").select("id, metadata").in("id", eventIds)
+    : { data: [] as any[] };
+  const targets = filterEnrollmentsByQuoteJourney(inScope, events ?? [], quoteId);
   if (!targets.length) return 0;
 
   const ids = targets.map((t: any) => t.id);
@@ -429,4 +410,45 @@ async function applyStop(
   await supabase.from("sms_messages").update({ status: "cancelled", error: `Stopped: ${reason}`, next_retry_at: null })
     .in("enrollment_id", ids).eq("status", "pending");
   return ids.length;
+}
+
+// ---- Pure helpers exported for unit tests ---------------------------------
+export function campaignFilterForScope(
+  scope: "all" | "abandoned" | "reminders",
+): string[] | null {
+  if (scope === "abandoned") return ["quote_abandoned"];
+  if (scope === "reminders") return ["appointment_rescheduled", "appointment_scheduled", "booking_completed"];
+  return null;
+}
+
+// deno-lint-ignore no-explicit-any
+export function filterEnrollmentsByScope(enrollments: any[], campaignFilter: string[] | null): any[] {
+  if (!campaignFilter) return enrollments;
+  return enrollments.filter((e) => campaignFilter.includes(e.event_name));
+}
+
+// Journey scoping: when a quoteId is supplied, only stop enrollments whose
+// originating campaign event carried the same quote_id in its metadata.
+// If nothing binds an enrollment to that quote, stop nothing rather than
+// risk killing an independent journey.
+// deno-lint-ignore no-explicit-any
+export function filterEnrollmentsByQuoteJourney(
+  enrollments: any[],
+  events: any[],
+  quoteId: string | null,
+): any[] {
+  if (!quoteId) return enrollments;
+  const matching = new Set(
+    (events ?? [])
+      .filter((e) => e && e.metadata && String(e.metadata.quote_id ?? "") === quoteId)
+      .map((e) => e.id),
+  );
+  return enrollments.filter((e) => e.campaign_event_id && matching.has(e.campaign_event_id));
+}
+
+export function buildDeclineFeedbackLine(declineReason: string | null | undefined): string {
+  const r = typeof declineReason === "string" ? declineReason.trim() : "";
+  return r
+    ? "Thanks for that feedback — it really helps us improve."
+    : "If you have a moment, reply with a quick note about what didn't fit — it helps us improve.";
 }
