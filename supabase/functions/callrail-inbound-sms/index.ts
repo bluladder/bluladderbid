@@ -6,6 +6,10 @@ import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
 import { routeInboundSmsToOrchestrator, SMS_REPLY_MAX_CHARS } from "../_shared/smsOrchestrator.ts";
 import { sharedRateLimit } from "../_shared/rateLimit.ts";
+import {
+  recordInboundReceipt, markAttempt, markProcessed,
+  classifyError, isTransient, nextAttemptAt, MAX_ATTEMPTS, safePayloadSnapshot,
+} from "../_shared/callrailReceipts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,12 +97,17 @@ serve(async (req) => {
       return null;
     };
 
+    // Snapshot only structural fields for durable receipt — never headers or
+    // auth tokens. This is what admin ops replay reads from.
+    const payloadSafe = safePayloadSnapshot(payload);
+
     // The customer's number is the "from" on an inbound message.
     const rawPhone = pick(
       "customer_phone_number", "customer_number", "from", "from_number", "phone_number",
     );
     const content = pick("content", "message", "body", "text", "sms_body") || "";
     const direction = (pick("direction") || "inbound").toLowerCase();
+    const toRawPhone = pick("company_phone_number", "tracking_number", "to", "to_number");
 
     const phone = normalizePhone(rawPhone);
     if (!phone) {
@@ -115,20 +124,11 @@ serve(async (req) => {
       });
     }
 
-    // Log the inbound reply for visibility in the message log.
-    await supabase.from("sms_messages").insert({
-      to_number: phone,
-      body: content || "(empty)",
-      message_kind: "inbound",
-      status: "inbound",
-      sent_at: new Date().toISOString(),
-    });
-
-    const intent = classifyInbound(content);
     const nowIso = new Date().toISOString();
 
     // Higher-fidelity intent classifier used for BOOK-IT / escalation routing.
     const richIntent = classifyInboundIntent(content);
+    const intent = classifyInbound(content);
 
     // Compliance precedence (authoritative): STOP/HELP > escalation > booking >
     // START > other. The legacy `classifyInbound()` treats a bare "yes" (or any
@@ -149,6 +149,54 @@ serve(async (req) => {
     const providerMessageId =
       pick("message_id", "id", "sms_id", "resource_id", "call_id") ||
       `${phone}:${nowIso.slice(0, 16)}:${(content || "").slice(0, 40)}`;
+
+    // ---------------------------------------------------------------------
+    // Durable receipt: persist the provider event BEFORE any side effects.
+    // The unique constraint on provider_message_id is the single source of
+    // truth for idempotency — a duplicate delivery short-circuits with a
+    // safe idempotent ack and NEVER re-runs downstream logic (AI reply,
+    // campaign event, opt-out toggle, booking auto-reply).
+    // ---------------------------------------------------------------------
+    let receiptId: string;
+    try {
+      const { receipt, duplicate } = await recordInboundReceipt(supabase, {
+        providerMessageId,
+        fromPhone: phone,
+        toPhone: normalizePhone(toRawPhone) ?? toRawPhone ?? null,
+        payloadSafe: { ...payloadSafe, direction, normalized_phone: phone },
+      });
+      receiptId = receipt.id;
+      if (duplicate) {
+        console.log(`inbound-sms: duplicate provider_message_id ${providerMessageId} — idempotent ack`);
+        return new Response(
+          JSON.stringify({ ok: true, action: "duplicate", status: receipt.status }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    } catch (e) {
+      // If the receipt insert itself fails we cannot safely ack the event —
+      // return 500 so CallRail retries and the event eventually persists.
+      console.error("callrail-inbound-sms: receipt persist failed", e);
+      return new Response(JSON.stringify({ error: "receipt_failed" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Log the inbound reply for visibility in the message log. We do this
+    // AFTER durable receipt so a duplicate never inserts a second row.
+    const { data: inboundRow } = await supabase.from("sms_messages").insert({
+      to_number: phone,
+      body: content || "(empty)",
+      message_kind: "inbound",
+      status: "inbound",
+      sent_at: nowIso,
+      provider_message_id: providerMessageId,
+    }).select("id").maybeSingle();
+    const inboundSmsId = (inboundRow?.id as string | undefined) ?? null;
+
+    // Wrap the rest of processing so any thrown error lands the event in a
+    // retry/dead-letter state instead of a silent 200.
+    const runProcessing = async () => {
     try {
       await emitCampaignEvent({
         eventName: "customer_replied",
@@ -263,9 +311,7 @@ serve(async (req) => {
         .eq("status", "pending");
 
       console.log(`inbound-sms: opted OUT ${phone}`);
-      return new Response(JSON.stringify({ ok: true, action: "opted_out" }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return { action: "opted_out" };
     }
 
     if (complianceIntent === "start") {
@@ -279,9 +325,7 @@ serve(async (req) => {
       }, { onConflict: "phone" });
 
       console.log(`inbound-sms: opted IN ${phone}`);
-      return new Response(JSON.stringify({ ok: true, action: "opted_in" }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return { action: "opted_in" };
     }
 
     // ===== Conversational routing =====================================
@@ -320,11 +364,42 @@ serve(async (req) => {
     } catch (e) {
       console.error("SMS orchestrator route failed:", e);
       aiAction = "ai_error";
+      throw e;
     }
 
-    return new Response(JSON.stringify({ ok: true, action: aiAction }), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return { action: aiAction };
+    };
+
+    try {
+      const result = await runProcessing();
+      await markProcessed(supabase, receiptId, { smsMessageId: inboundSmsId });
+      return new Response(JSON.stringify({ ok: true, ...result }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (procErr) {
+      const { category, detail } = classifyError(procErr);
+      // Read current attempts to decide retry vs dead-letter.
+      const { data: cur } = await supabase
+        .from("callrail_inbound_events")
+        .select("attempts")
+        .eq("id", receiptId)
+        .maybeSingle();
+      const attemptsAfter = ((cur?.attempts as number | undefined) ?? 0) + 1;
+      const canRetry = isTransient(category) && attemptsAfter < MAX_ATTEMPTS;
+      await markAttempt(supabase, receiptId, {
+        status: canRetry ? "retry_pending" : "failed",
+        last_error_category: category,
+        last_error_detail: detail,
+        next_attempt_at: canRetry ? nextAttemptAt(attemptsAfter) : null,
+        sms_message_id: inboundSmsId,
+      });
+      // Always 200 to CallRail — retries happen off the durable receipt via
+      // ops replay / scheduled sweep, not by asking the provider to redeliver.
+      return new Response(
+        JSON.stringify({ ok: false, action: canRetry ? "retry_pending" : "failed", category }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
   } catch (error) {
     console.error("callrail-inbound-sms error:", error);
     // Always 200 so the webhook provider does not retry-storm.
