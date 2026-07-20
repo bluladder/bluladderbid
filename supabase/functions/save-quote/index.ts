@@ -204,13 +204,32 @@ serve(async (req) => {
         // Stop pending quote_abandoned enrollments tied to those older quotes
         // and cancel their unsent messages. Historical enrollment rows are
         // preserved (status='stopped', reason='superseded_by_newer_quote').
-        const { data: enrs } = await supabase
-          .from("campaign_enrollments")
-          .select("id")
+        //
+        // SCOPE: only enrollments whose triggering campaign_event.metadata
+        // references one of the older quote ids are stopped. Enrollments from
+        // OTHER quote journeys for the same customer are left untouched.
+        const { data: evs } = await supabase
+          .from("campaign_events")
+          .select("id, metadata")
           .eq("customer_id", customerId)
-          .eq("event_name", "quote_abandoned")
-          .eq("status", "active");
-        const enrIds = (enrs ?? []).map((r: { id: string }) => r.id);
+          .eq("event_name", "quote_abandoned");
+        const matchingEventIds = (evs ?? [])
+          .filter((e: { metadata: Record<string, unknown> | null }) => {
+            const qid = e.metadata && typeof e.metadata === "object" ? (e.metadata as Record<string, unknown>).quote_id : null;
+            return typeof qid === "string" && olderIds.includes(qid);
+          })
+          .map((e: { id: string }) => e.id);
+        let enrIds: string[] = [];
+        if (matchingEventIds.length) {
+          const { data: enrs } = await supabase
+            .from("campaign_enrollments")
+            .select("id")
+            .eq("customer_id", customerId)
+            .eq("event_name", "quote_abandoned")
+            .eq("status", "active")
+            .in("campaign_event_id", matchingEventIds);
+          enrIds = (enrs ?? []).map((r: { id: string }) => r.id);
+        }
         if (enrIds.length) {
           await supabase.from("campaign_enrollments")
             .update({ status: "stopped", stopped_reason: "superseded_by_newer_quote", stopped_at: nowIso })

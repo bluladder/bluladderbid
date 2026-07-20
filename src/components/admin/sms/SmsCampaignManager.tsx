@@ -101,7 +101,7 @@ function StepRow({
             </SelectContent>
           </Select>
           <Clock className="w-3.5 h-3.5 text-muted-foreground ml-1" />
-          <Label className="text-xs">Delay (hrs)</Label>
+          <Label className="text-xs" title="Hours after this enrollment starts, not hours after the quote was created. Abandonment inactivity is a separate, fixed threshold.">Delay after enrollment (hrs)</Label>
           <Input type="number" min={0} defaultValue={step.delay_hours} className="h-8 w-20"
             onBlur={(e) => onUpdate(step.id, { delay_hours: Number(e.target.value) })} />
         </div>
@@ -145,6 +145,11 @@ function StepRow({
         <div className="rounded-md border bg-background p-2 text-xs">
           {step.channel === 'email' && subject && <p className="font-medium">{previewTemplate(subject)}</p>}
           <p className="whitespace-pre-wrap text-muted-foreground">{previewTemplate(body)}</p>
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            Timing: quote inactivity threshold + delay after enrollment. The
+            first message becomes sendable when both have elapsed, subject to
+            the one-minute queue cadence.
+          </p>
         </div>
       )}
     </div>

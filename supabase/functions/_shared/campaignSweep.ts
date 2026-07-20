@@ -10,8 +10,20 @@
 // ============================================================================
 import { emitCampaignEvent, type SupabaseLike } from "./campaignEmitter.ts";
 
-// Fallback delay used only when no quote_abandoned campaign configures one.
-export const DEFAULT_ABANDONMENT_DELAY_MINUTES = 1440; // 24h
+// Dedicated inactivity threshold for firm-quote abandonment. This is the
+// SINGLE SOURCE OF TRUTH for "how long a firm quote must sit idle before it
+// counts as abandoned." It is deliberately NOT derived from campaign step
+// delays so that editing campaign copy/timing in the admin cannot silently
+// redefine what qualifies as an abandoned quote. Configurable via env.
+export const ABANDONMENT_INACTIVITY_MINUTES = (() => {
+  const raw = (globalThis as { Deno?: { env?: { get(k: string): string | undefined } } })
+    .Deno?.env?.get?.("ABANDONMENT_INACTIVITY_MINUTES");
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 5;
+})();
+// Legacy export retained so campaign-event and admin previews that reference
+// the old constant continue to compile. Both point at the same threshold.
+export const DEFAULT_ABANDONMENT_DELAY_MINUTES = ABANDONMENT_INACTIVITY_MINUTES;
 
 // Bounded per-invocation work. Small enough to never delay normal SMS/email
 // queue processing (which runs first) and to keep each cron tick fast; oldest
@@ -286,13 +298,9 @@ export async function runPersistedQuoteAbandonmentSweep(
   const nowMs = opts.nowMs ?? Date.now();
   const result: SweepResult = { scanned: 0, emitted: 0, skipped: 0, reasons: {} };
 
-  const { data: camps } = await supabase
-    .from("sms_campaigns")
-    .select("abandonment_delay_minutes")
-    .eq("event_name", "quote_abandoned");
-  const delayMinutes = computeEffectiveAbandonmentDelay(
-    (camps ?? []).map((c: { abandonment_delay_minutes: number | null }) => c.abandonment_delay_minutes),
-  );
+  // Fixed inactivity threshold — NOT min(campaign step delays). Admin edits to
+  // campaign copy or step timing cannot change what qualifies as abandoned.
+  const delayMinutes = ABANDONMENT_INACTIVITY_MINUTES;
   const cutoffIso = new Date(nowMs - delayMinutes * 60_000).toISOString();
 
   const { data: candidates } = await supabase
