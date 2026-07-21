@@ -564,6 +564,7 @@ export function IntentFirstServiceSelector({
                 </div>
               </CollapsibleContent>
             </Collapsible>
+            )}
           </div>
     </ServiceCard>
   );
