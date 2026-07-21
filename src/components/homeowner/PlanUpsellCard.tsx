@@ -219,7 +219,7 @@ export function PlanUpsellCard({
         <div className="bg-gradient-to-r from-primary to-accent py-2 px-4">
           <div className="flex items-center justify-center gap-2 text-primary-foreground text-sm font-semibold">
             <Star className="w-4 h-4 fill-current" />
-            Or, put this on autopilot and save
+            Recommended: 4 seasonal visits (2 exterior + 2 inside & out)
             <Star className="w-4 h-4 fill-current" />
           </div>
         </div>
