@@ -127,7 +127,12 @@ export function BookingFlow({
     
     // Window Cleaning - only include if explicitly selected in additionalServices
     if (additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0) {
-      const windowType = homeDetails.windowCleaningType === 'both' ? 'Interior & Exterior' : 'Exterior Only';
+      const windowType =
+        homeDetails.windowCleaningType === 'both'
+          ? 'Full Service — Interior & Exterior'
+          : homeDetails.windowCleaningType === 'promo_99'
+            ? '$99 Special — 10 Exterior Windows'
+            : 'Exterior Only';
       const condition = homeDetails.condition === 'heavy' ? 'Heavy Cleaning' : 'Maintenance Clean';
       
       if (servicePrices.exteriorWindows > 0) {
