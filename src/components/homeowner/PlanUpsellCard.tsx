@@ -51,9 +51,11 @@ export function PlanUpsellCard({
   // minimum, so we label it clearly to avoid it reading as a final quote.
   const isEstimate = !homeSquareFootage || homeSquareFootage <= 0;
   
-  // Default to "better" tier as recommended. When bundles are unavailable this
-  // is intentionally undefined — we fail closed below rather than render $0.
-  const recommendedBundle = bundles.find(b => b.tier === 'better') || bundles[1];
+  // Default to "best" tier as recommended: 4 seasonal window visits — 2 exterior
+  // only + 2 inside & out — matches the plan we actively upsell. When bundles
+  // are unavailable this is intentionally undefined — we fail closed rather
+  // than render $0.
+  const recommendedBundle = bundles.find(b => b.tier === 'best') || bundles[bundles.length - 1];
   const currentBundle = selectedTier
     ? bundles.find(b => b.tier === selectedTier) || recommendedBundle
     : recommendedBundle;
@@ -217,7 +219,7 @@ export function PlanUpsellCard({
         <div className="bg-gradient-to-r from-primary to-accent py-2 px-4">
           <div className="flex items-center justify-center gap-2 text-primary-foreground text-sm font-semibold">
             <Star className="w-4 h-4 fill-current" />
-            Or, put this on autopilot and save
+            Recommended: 4 seasonal visits (2 exterior + 2 inside & out)
             <Star className="w-4 h-4 fill-current" />
           </div>
         </div>
@@ -286,7 +288,7 @@ export function PlanUpsellCard({
               <div className="space-y-3">
                 {bundles.map((bundle) => {
                   const isSelected = selectedTier === bundle.tier;
-                  const isRecommended = bundle.tier === 'better';
+                  const isRecommended = bundle.tier === 'best';
                   
                   // Calculate this bundle's payment structure
                   const bundleDeposit = Math.round(bundle.annualTotal * 0.20);
