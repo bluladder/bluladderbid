@@ -17,6 +17,7 @@ import { PressureWashingAreaCard } from './PressureWashingAreaCard';
 import { GutterAddonsCard } from './GutterAddonsCard';
 import { HouseWashDetailsCard } from './HouseWashDetailsCard';
 import { RoofPitchSelector } from './RoofPitchSelector';
+import type { WindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 
 interface IntentFirstServiceSelectorProps {
   services: AdditionalServices;
@@ -25,6 +26,8 @@ interface IntentFirstServiceSelectorProps {
   onChange: (updates: Partial<AdditionalServices>) => void;
   onHomeDetailsChange: (updates: Partial<HomeDetails>) => void;
   featuredService?: 'windowCleaning' | 'gutterCleaning' | 'houseWash' | 'roofCleaning' | 'drivewayCleaning' | 'pressureWashing' | 'solarPanelCleaning' | 'screenRepair';
+  /** Active $99 window promo config from admin. When null, the promo option is hidden entirely. */
+  windowPromo?: WindowPromoConfig | null;
 }
 
 function formatPrice(price: number) {
