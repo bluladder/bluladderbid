@@ -1669,9 +1669,12 @@ export function computeBundleTiers(
     const bundleDiscountFrac = config.bundleDiscount ?? 0;
     const included = config.includedServices ?? [];
     const perServiceFreqs = config.includedServiceFrequencies ?? {};
+    // Legacy defaults: only gutter_cleaning multiplied by additionalServicesFrequency,
+    // everything else is 1x/year unless the config explicitly overrides.
     const freqFor = (key: string) => {
       const raw = perServiceFreqs[key];
-      return typeof raw === "number" && raw > 0 ? raw : addFreq;
+      if (typeof raw === "number" && raw > 0) return raw;
+      return key === "gutter_cleaning" ? addFreq : 1;
     };
 
     const exteriorCost = bases.exteriorWindows * exteriorFreq;
