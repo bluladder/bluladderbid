@@ -1819,8 +1819,10 @@ export function computeBundleTiers(
     if (t.tier === "better" || t.tier === "best") {
       features.push("Priority scheduling");
     }
-    if (t.tier === "best") {
-      features.push("Free touch-ups between visits");
+    if (t.tier === "good") {
+      features.push("10-day rain guarantee — free touch-ups within 10 days of service");
+    } else {
+      features.push("Unlimited window touch-ups between visits");
     }
     if (bundleDiscountFrac > 0) {
       features.push(`${Math.round(bundleDiscountFrac * 100)}% bundle discount`);
