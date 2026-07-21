@@ -479,7 +479,8 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     const toolCalls = choice.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
       await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
-      return { reply: choice.content || "How can I help with your exterior cleaning today?", toolEvents, events, state };
+      const safe = guardConfirmedLanguage(choice.content || "How can I help with your exterior cleaning today?", facts, railBooked);
+      return { reply: safe, toolEvents, events, state };
     }
 
     messages.push({ role: "assistant", content: choice.content || "", tool_calls: toolCalls });
