@@ -42,28 +42,28 @@ Deno.test("queued beats failed when both present (recorded, not failed)", () => 
 Deno.test("AI cannot claim delivery while only created/queued", () => {
   for (const st of ["created", "queued", "suppressed", "no_recipient_configured"] as const) {
     assertEquals(isConfirmedDelivered(st), false);
-    const msg = customerEscalationMessage(st, "urgent", "(866) 242-2583");
+    const msg = customerEscalationMessage(st, "urgent", "(469) 747-2877");
     assertEquals(/i've recorded your request/i.test(msg), true);
     assertEquals(/sent an? .*alert/i.test(msg), false);
   }
 });
 
 Deno.test("failed delivery produces the fallback-number language", () => {
-  const msg = customerEscalationMessage("delivery_failed", "high", "(866) 242-2583");
+  const msg = customerEscalationMessage("delivery_failed", "high", "(469) 747-2877");
   assertEquals(msg.includes("unable to confirm"), true);
-  assertEquals(msg.includes("(866) 242-2583"), true);
+  assertEquals(msg.includes("(469) 747-2877"), true);
 });
 
 Deno.test("urgent language only when severity is urgent", () => {
-  const urgent = customerEscalationMessage("sms_sent", "urgent", "(866) 242-2583");
-  const high = customerEscalationMessage("sms_sent", "high", "(866) 242-2583");
+  const urgent = customerEscalationMessage("sms_sent", "urgent", "(469) 747-2877");
+  const high = customerEscalationMessage("sms_sent", "high", "(469) 747-2877");
   assertEquals(/urgent/i.test(urgent), true);
   assertEquals(/urgent/i.test(high), false);
 });
 
 Deno.test("office number always the approved public fallback, never ResponsiBid", () => {
   for (const st of ["created", "delivery_failed", "sms_sent"] as const) {
-    const msg = customerEscalationMessage(st, "normal", "(866) 242-2583");
+    const msg = customerEscalationMessage(st, "normal", "(469) 747-2877");
     assertEquals(msg.includes("469) 242-6556"), false);
   }
 });
