@@ -389,8 +389,10 @@ export function IntentFirstServiceSelector({
                 </label>
               </RadioGroup>
             </div>
-            
-            {/* Advanced Window Details */}
+            )}
+
+            {/* Advanced Window Details — hidden for the flat-price $99 promo */}
+            {!isPromoSelected && (
             <Collapsible 
               open={homeDetails.showAdvanced} 
               onOpenChange={(open) => onHomeDetailsChange({ showAdvanced: open })}
