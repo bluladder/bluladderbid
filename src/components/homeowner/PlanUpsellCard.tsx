@@ -51,9 +51,11 @@ export function PlanUpsellCard({
   // minimum, so we label it clearly to avoid it reading as a final quote.
   const isEstimate = !homeSquareFootage || homeSquareFootage <= 0;
   
-  // Default to "better" tier as recommended. When bundles are unavailable this
-  // is intentionally undefined — we fail closed below rather than render $0.
-  const recommendedBundle = bundles.find(b => b.tier === 'better') || bundles[1];
+  // Default to "best" tier as recommended: 4 seasonal window visits — 2 exterior
+  // only + 2 inside & out — matches the plan we actively upsell. When bundles
+  // are unavailable this is intentionally undefined — we fail closed rather
+  // than render $0.
+  const recommendedBundle = bundles.find(b => b.tier === 'best') || bundles[bundles.length - 1];
   const currentBundle = selectedTier
     ? bundles.find(b => b.tier === selectedTier) || recommendedBundle
     : recommendedBundle;
