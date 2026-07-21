@@ -185,6 +185,7 @@ export function OneTimeSummary({
         discountAmount={serverDiscountAmount}
         onCancel={() => setShowBookingFlow(false)}
         prefillCustomerInfo={prefillCustomerInfo}
+        promotion={promoRequest}
         onAdditionalServicesChange={onAdditionalServicesChange}
       />
     );
