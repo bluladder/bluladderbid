@@ -109,6 +109,14 @@ export interface BundleConfigEntry {
   interiorWindowFrequency?: number;
   additionalServicesFrequency?: number;
   includedServices?: string[];
+  /**
+   * Optional per-service frequency overrides (per-year) for services listed in
+   * `includedServices`. When a service key is present here it takes precedence
+   * over `additionalServicesFrequency`. Supported keys:
+   * "gutter_cleaning" | "house_wash" | "roof_cleaning" |
+   * "driveway_cleaning" | "pressure_washing".
+   */
+  includedServiceFrequencies?: Record<string, number>;
 }
 
 /**
