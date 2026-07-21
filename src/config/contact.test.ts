@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PHONE_FALLBACK, PRIMARY_PUBLIC_PHONE } from './contact';
 
 describe('contact config phone mapping', () => {
-  it('primary public number is the approved 866 number', () => {
+  it('primary public number is the approved 469 CallRail number', () => {
     expect(PRIMARY_PUBLIC_PHONE.e164).toBe('+14697472877');
     expect(PRIMARY_PUBLIC_PHONE.isPublic).toBe(true);
   });
