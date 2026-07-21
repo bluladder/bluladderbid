@@ -225,6 +225,13 @@ const Index = () => {
         onSelectTier={handleTierSelect}
         onBookOneTime={handleBookOneTime}
         onUpgradeAndBook={handleUpgradeAndBook}
+        homeDetails={homeDetails}
+        onCustomizePlan={(tier, customization) => {
+          setTierCustomization(tier, customization);
+          toast.success(`${tier.charAt(0).toUpperCase() + tier.slice(1)} plan customized!`, {
+            description: 'Your preferences have been saved.',
+          });
+        }}
         homeSquareFootage={homeDetails.squareFootage}
         planPhase={bundleState.phase}
         onRetryPlan={bundleState.refetch}
