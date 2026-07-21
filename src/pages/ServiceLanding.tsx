@@ -13,6 +13,7 @@ import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { useServerBundleTiers } from '@/hooks/useServerBundleTiers';
 import { fromQuoteResult } from '@/lib/pricing/fromQuoteResult';
 import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
+import { useWindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
 import { useAttribution } from '@/hooks/useAttribution';
@@ -163,8 +164,13 @@ const ServiceLanding = () => {
   // AUTHORITATIVE pricing — one-time totals AND the Good/Better/Best tiers come
   // ONLY from the deployed pricing Edge Functions. No local pricing math.
   const hasServices = hasAnyServiceSelected(additionalServices);
+  const { promo: windowPromo } = useWindowPromoConfig();
+  const promoRequest =
+    windowPromo && homeDetails.windowCleaningType === 'promo_99'
+      ? { id: windowPromo.promoId, windowCount: windowPromo.maxWindows }
+      : null;
   const oneTimeQuote = useServerQuoteCalculation(
-    hasServices ? toQuoteInput(homeDetails, additionalServices) : null,
+    hasServices ? toQuoteInput(homeDetails, additionalServices, null, promoRequest) : null,
     { enabled: hasServices },
   );
   const servicePrices = useMemo(
@@ -348,6 +354,7 @@ const ServiceLanding = () => {
                   onChange={handleAdditionalServicesChange}
                   onHomeDetailsChange={handleHomeDetailsChange}
                   featuredService={config.preSelectService}
+                  windowPromo={windowPromo}
                 />
               )}
               
