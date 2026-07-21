@@ -170,9 +170,21 @@ export function DateFirstCalendar({
     // Fail-closed while loading OR when availability could not be verified:
     // do NOT paint everything as open. We still let the user tap a work-day
     // date to trigger a per-day load (existing behavior).
-    const info: DateStatusInfo = availabilityUnavailable
+    let info: DateStatusInfo = availabilityUnavailable
       ? { status: isDisabled ? 'unavailable' : 'unknown' }
       : (dateStatusMap[dayKey] ?? { status: isDisabled ? 'unavailable' : 'unknown' });
+
+    // Once availability has finished loading (and is verifiable), a work-day
+    // date with no slot data means the server returned no bookable times —
+    // present it as Full/No times, not as a neutral "open-looking" cell.
+    if (
+      info.status === 'unknown' &&
+      !isDisabled &&
+      !isLoadingAvailability &&
+      !availabilityUnavailable
+    ) {
+      info = { status: 'full', count: 0 };
+    }
 
     const status: CalendarDateStatus = info.status;
     const count = info.count;
@@ -278,7 +290,7 @@ export function DateFirstCalendar({
         )}
         {!isSelected && !isUnavailable && status === 'full' && (
           <span className="text-[10px] font-semibold text-muted-foreground mt-0.5 leading-none">
-            Full
+            No times
           </span>
         )}
 
