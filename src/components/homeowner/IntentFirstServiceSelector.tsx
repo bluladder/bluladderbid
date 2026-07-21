@@ -257,8 +257,9 @@ export function IntentFirstServiceSelector({
               <RadioGroup
                 value={homeDetails.windowCleaningType}
                 onValueChange={(v) => onHomeDetailsChange({ windowCleaningType: v as HomeDetails['windowCleaningType'] })}
-                className="grid gap-2 sm:grid-cols-2"
+                className="space-y-2"
               >
+                <div className="grid gap-2 sm:grid-cols-2">
                 <label
                   htmlFor="type-exterior"
                   className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
@@ -287,14 +288,16 @@ export function IntentFirstServiceSelector({
                     <div className="text-xs text-muted-foreground">Complete clean</div>
                   </div>
                 </label>
-              </RadioGroup>
+                </div>
 
-              {/* $99 promo option — only when active in admin. Visually distinct
-                  from the standard two options so its terms are unmissable. */}
-              {promoActive && (
+                {/* $99 promo option — only when active in admin. Visually
+                    distinct from the standard two options so its terms are
+                    unmissable. Sits inside the RadioGroup so state stays in
+                    sync via `value`. */}
+                {promoActive && (
                 <label
                   htmlFor="type-promo-99"
-                  className={`block mt-2 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                  className={`block p-3 rounded-lg border-2 cursor-pointer transition-all ${
                     isPromoSelected
                       ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/30 ring-2 ring-amber-500/30'
                       : 'border-amber-400/60 bg-amber-50/50 dark:bg-amber-950/10 hover:border-amber-500'
@@ -305,8 +308,6 @@ export function IntentFirstServiceSelector({
                       value="promo_99"
                       id="type-promo-99"
                       className="mt-0.5"
-                      checked={isPromoSelected}
-                      onClick={() => onHomeDetailsChange({ windowCleaningType: 'promo_99' })}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -325,7 +326,8 @@ export function IntentFirstServiceSelector({
                     </div>
                   </div>
                 </label>
-              )}
+                )}
+              </RadioGroup>
 
               {/* Complimentary services note — hidden for the promo since screens
                   are explicitly excluded from the $99 offer. */}
