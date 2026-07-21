@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap, AlertCircle, Loader2 } from 'lucide-react';
+import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap, AlertCircle, Loader2, SlidersHorizontal } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,8 @@ interface PlanUpsellCardProps {
   onSelectTier: (tier: 'good' | 'better' | 'best') => void;
   onBookOneTime: () => void;
   onUpgradeAndBook: () => void;
+  /** Optional handler to open the customize drawer for the selected tier. */
+  onCustomizePlan?: (tier: 'good' | 'better' | 'best') => void;
   /** Used to show whether the displayed price is a starting estimate. */
   homeSquareFootage?: number;
   /** Live server-authoritative plan phase; drives fail-closed behavior. */
@@ -41,6 +43,7 @@ export function PlanUpsellCard({
   onSelectTier,
   onBookOneTime,
   onUpgradeAndBook,
+  onCustomizePlan,
   homeSquareFootage,
   planPhase,
   onRetryPlan,
@@ -275,6 +278,20 @@ export function PlanUpsellCard({
             <RefreshCw className="w-5 h-5 mr-2" />
             Upgrade & Book on Autopilot
           </Button>
+
+          {onCustomizePlan && (
+            <Button
+              className="w-full h-11 text-sm mb-4"
+              variant="ghost"
+              onClick={() => currentBundle && onCustomizePlan(currentBundle.tier)}
+              disabled={!hasValidPlan}
+              aria-disabled={!hasValidPlan}
+              data-testid="plan-customize-cta"
+            >
+              <SlidersHorizontal className="w-4 h-4 mr-2" />
+              Customize plan
+            </Button>
+          )}
 
           {/* See All Plans - MOVED DIRECTLY BELOW CTA. Only when a valid plan exists. */}
           {hasValidPlan && (
