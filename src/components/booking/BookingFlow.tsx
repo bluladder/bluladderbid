@@ -35,6 +35,12 @@ interface BookingFlowProps {
   onCancel: () => void;
   prefillCustomerInfo?: CustomerInfo | null;
   /**
+   * Optional promotion snapshot (e.g. the $99 window offer). Forwarded to the
+   * server so `jobber-create-booking` re-computes the authoritative total via
+   * the promotion branch instead of the standard per-sqft pricing.
+   */
+  promotion?: { id: string; windowCount: number } | null;
+  /**
    * Allow the customer to add services from within the booking flow
    * (upsell surfaces). Presentation-only: the pricing engine still computes
    * the actual amount. If omitted, upsell surfaces render nothing.
@@ -72,6 +78,7 @@ export function BookingFlow({
   discountAmount = 0,
   onCancel,
   prefillCustomerInfo,
+  promotion,
   onAdditionalServicesChange,
 }: BookingFlowProps) {
   const [step, setStep] = useState<BookingStep>('review');
