@@ -172,7 +172,9 @@ Deno.serve(async (req) => {
         loadedBundle.pricing,
         loadedBundle.ruleVersion,
       );
-      return json({ status: "ok", mode: "bundle_tiers", ...tiersResult }, 200);
+      // NOTE: spread must come BEFORE status so `status: "ok"` is not
+      // overwritten by the engine's inner status (e.g. "firm").
+      return json({ mode: "bundle_tiers", ...tiersResult, status: "ok" }, 200);
     }
 
     const rawScenarios = (body as Record<string, unknown>).scenarios;
