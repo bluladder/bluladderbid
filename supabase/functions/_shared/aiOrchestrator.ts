@@ -13,6 +13,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runTool, TOOL_DEFINITIONS, type ToolContext } from "./aiTools.ts";
 import { getPhoneByPurpose } from "./phoneConfig.ts";
+import { classifyInboundIntent } from "./bookingIntent.ts";
 import {
   type ConversationFacts,
   computeState,
@@ -32,6 +33,68 @@ export const ORCHESTRATOR_MODEL: string =
   Deno.env.get("AI_SCHEDULING_MODEL") || DEFAULT_MODEL;
 export const ORCHESTRATOR_PROMPT_VERSION = "orchestrator/2026-07-20";
 const MAX_TOOL_STEPS = 6;
+
+// ---------------------------------------------------------------------------
+// Deterministic post-yes booking rail.
+//
+// The model is not permitted to conclude "your appointment is confirmed" on
+// its own. When the customer's reply classifies as a booking-confirm intent
+// AND we are in awaiting_booking_confirmation AND we can identify a SINGLE
+// specific slot the assistant just presented, we execute
+// create_bluladder_booking ourselves before the reply is generated. The model
+// then composes the reply grounded in the real tool status, which closes the
+// hallucinated-confirmation failure mode without changing tool contracts.
+// ---------------------------------------------------------------------------
+const CONFIRMED_LANGUAGE = [
+  /\b(you'?re|you are)\s+(all\s+)?(booked|scheduled|confirmed)\b/i,
+  /\bappointment\s+(is\s+)?(booked|confirmed|scheduled|set)\b/i,
+  /\b(booking|reservation)\s+(is\s+)?(confirmed|complete[d]?)\b/i,
+  /\bwe(?:'ve| have)\s+booked\b/i,
+  /\ball\s+set\s+for\b/i,
+  /\bsee you (on|then)\b/i,
+];
+
+export function textAssertsConfirmed(text: string | null | undefined): boolean {
+  const t = (text ?? "").toString();
+  if (!t.trim()) return false;
+  return CONFIRMED_LANGUAGE.some((rx) => rx.test(t));
+}
+
+export async function resolveUnambiguousOfferedSlot(
+  supabase: SupabaseClient,
+  conversationId: string,
+  facts: ConversationFacts,
+  history: { role: "user" | "assistant"; content: string }[],
+): Promise<string | null> {
+  // 1) If a slot is already selected and still valid, use it.
+  if (facts.selectedSlotId && (facts.availability?.offeredSlotIds ?? []).includes(facts.selectedSlotId)) {
+    return facts.selectedSlotId;
+  }
+  // Pull the latest availability tool_result to access displayTime/startTime.
+  const { data: toolMsgs } = await supabase
+    .from("chat_messages")
+    .select("tool_result")
+    .eq("conversation_id", conversationId)
+    .eq("tool_name", "get_bluladder_availability")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const latest = toolMsgs?.[0]?.tool_result as { offered?: any[] } | undefined;
+  const offered = Array.isArray(latest?.offered) ? latest!.offered! : [];
+  if (offered.length === 0) return null;
+  // 2) Exactly one time was on the table — unambiguous.
+  if (offered.length === 1 && offered[0]?.slotId) return String(offered[0].slotId);
+  // 3) The assistant's most recent message mentions exactly one of the offered
+  //    displayTimes. Anything else (multiple hits, no hit) stays ambiguous and
+  //    we defer to the model to ask which time.
+  const lastAssistant = [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  if (!lastAssistant.trim()) return null;
+  const hits = offered.filter((s) => {
+    const dt = (s?.displayTime ?? "").toString().trim();
+    return dt && lastAssistant.toLowerCase().includes(dt.toLowerCase());
+  });
+  if (hits.length === 1 && hits[0]?.slotId) return String(hits[0].slotId);
+  return null;
+}
 
 export interface OrchestratorInput {
   supabase: SupabaseClient;
@@ -362,6 +425,44 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   const toolEvents: { tool: string; result: any }[] = [];
   const events: string[] = [];
 
+  // ---- Deterministic post-yes rail (pre-model) --------------------------
+  // Fire ONLY when the user's message is an explicit booking-confirm intent,
+  // the state machine already parked us at awaiting_booking_confirmation, and
+  // we can pin a single specific slot to what the assistant just offered.
+  // Otherwise we fall through and let the model disambiguate.
+  const intent = classifyInboundIntent(userMessage);
+  let railBooked = false;
+  if (intent.kind === "booking" && state === "awaiting_booking_confirmation") {
+    const slotId = await resolveUnambiguousOfferedSlot(supabase, conversationId, facts, history);
+    if (slotId) {
+      const args = { confirmed: true, slotId } as Record<string, unknown>;
+      const result = await runTool("create_bluladder_booking", toolCtx, args);
+      toolEvents.push({ tool: "create_bluladder_booking", result });
+      if (result && typeof result === "object" && "event" in result && (result as any).event) {
+        events.push((result as any).event);
+      }
+      const patch = factPatchFromTool("create_bluladder_booking", args, result, facts);
+      facts = mergeFacts(facts, patch);
+      state = computeState(facts);
+      await persistFacts(supabase, conversationId, facts, state);
+      railBooked = (result as any)?.status === "confirmed";
+      // Give the model a system-scoped ground truth so its reply is anchored
+      // in the real tool status, not a hallucinated confirmation.
+      messages.push({
+        role: "system",
+        content: [
+          "DETERMINISTIC BOOKING RAIL:",
+          `The customer confirmed and create_bluladder_booking was already executed server-side for slotId=${slotId}.`,
+          `Tool result: ${JSON.stringify(result)}.`,
+          "You MUST NOT call create_bluladder_booking again.",
+          `Only tell the customer the appointment is confirmed if status is exactly "confirmed" (currently: ${(result as any)?.status ?? "unknown"}).`,
+          "If status is not \"confirmed\", relay the tool's message plainly and offer next steps — never claim the booking is complete.",
+        ].join(" "),
+      });
+    }
+  }
+  // -----------------------------------------------------------------------
+
   for (let step = 0; step < MAX_TOOL_STEPS; step++) {
     // Only expose tools the deterministic state permits right now.
     const allowed = new Set(allowedToolsForState(state));
@@ -378,7 +479,8 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     const toolCalls = choice.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
       await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
-      return { reply: choice.content || "How can I help with your exterior cleaning today?", toolEvents, events, state };
+      const safe = guardConfirmedLanguage(choice.content || "How can I help with your exterior cleaning today?", facts, railBooked);
+      return { reply: safe, toolEvents, events, state };
     }
 
     messages.push({ role: "assistant", content: choice.content || "", tool_calls: toolCalls });
@@ -422,9 +524,20 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   const allowed = new Set(allowedToolsForState(state));
   const tools = TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name as any));
   const data = await callModel(messages, tools);
-  const reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
+  let reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
+  reply = guardConfirmedLanguage(reply, facts, railBooked);
   await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
   return { reply, toolEvents, events, state };
+}
+
+// Post-hoc safety net: never emit assistant text that asserts a confirmed
+// booking unless the booking tool actually returned status="confirmed" (which
+// promotes facts.bookingStatus to "confirmed"). Applies even when the rail
+// didn't fire — this is the class-of-failure guard.
+export function guardConfirmedLanguage(reply: string, facts: ConversationFacts, railBooked: boolean): string {
+  if (!textAssertsConfirmed(reply)) return reply;
+  if (facts.bookingStatus === "confirmed" || railBooked) return reply;
+  return "Thanks for confirming — I'm finalizing that appointment now. I'll send a confirmation as soon as it's locked in. If you don't hear back within a few minutes, reply here and I'll pull in a teammate.";
 }
 
 // Refresh the admin summary only when we reached a milestone state that differs
