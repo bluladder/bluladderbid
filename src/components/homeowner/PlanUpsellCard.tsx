@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap, AlertCircle, Loader2 } from 'lucide-react';
+import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap, AlertCircle, Loader2, SlidersHorizontal } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import type { BundleTier, ServicePrices, AdditionalServices } from '@/types/homeowner';
+import type { BundleTier, ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
+import { PlanCustomizeDrawer, type PlanCustomization } from './PlanCustomizeDrawer';
 
 interface PlanUpsellCardProps {
   oneTimeTotal: number;
@@ -16,6 +17,14 @@ interface PlanUpsellCardProps {
   onSelectTier: (tier: 'good' | 'better' | 'best') => void;
   onBookOneTime: () => void;
   onUpgradeAndBook: () => void;
+  /**
+   * Optional handler invoked when the customer saves changes in the customize
+   * drawer. When provided along with `homeDetails`, PlanUpsellCard renders an
+   * inline "Customize plan" button that opens the drawer.
+   */
+  onCustomizePlan?: (tier: 'good' | 'better' | 'best', customization: PlanCustomization) => void;
+  /** Home details are required by the customize drawer for live pricing. */
+  homeDetails?: HomeDetails;
   /** Used to show whether the displayed price is a starting estimate. */
   homeSquareFootage?: number;
   /** Live server-authoritative plan phase; drives fail-closed behavior. */
@@ -41,6 +50,8 @@ export function PlanUpsellCard({
   onSelectTier,
   onBookOneTime,
   onUpgradeAndBook,
+  onCustomizePlan,
+  homeDetails,
   homeSquareFootage,
   planPhase,
   onRetryPlan,
@@ -275,6 +286,31 @@ export function PlanUpsellCard({
             <RefreshCw className="w-5 h-5 mr-2" />
             Upgrade & Book on Autopilot
           </Button>
+
+          {onCustomizePlan && homeDetails && hasValidPlan && currentBundle && (
+            <PlanCustomizeDrawer
+              bundle={currentBundle}
+              baseExteriorPrice={servicePrices.exteriorWindows}
+              baseInteriorPrice={servicePrices.interiorWindows}
+              servicePrices={{
+                gutterCleaning: servicePrices.gutterCleaning,
+                houseWash: servicePrices.houseWash,
+                roofCleaning: servicePrices.roofCleaning,
+              }}
+              homeDetails={homeDetails}
+              additionalServices={additionalServices}
+              onCustomize={(customization) => onCustomizePlan(currentBundle.tier, customization)}
+            >
+              <Button
+                className="w-full h-11 text-sm mb-4"
+                variant="ghost"
+                data-testid="plan-customize-cta"
+              >
+                <SlidersHorizontal className="w-4 h-4 mr-2" />
+                Customize plan
+              </Button>
+            </PlanCustomizeDrawer>
+          )}
 
           {/* See All Plans - MOVED DIRECTLY BELOW CTA. Only when a valid plan exists. */}
           {hasValidPlan && (

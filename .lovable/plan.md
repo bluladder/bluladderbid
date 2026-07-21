@@ -1,43 +1,92 @@
-## What we're building
 
-A third option under "Service Type" in the window-cleaning card:
+## Goal
 
-- **Exterior Only** — outside windows (unchanged)
-- **Full Service — Inside + Outside** — complete clean (renamed)
-- **$99 Special — 10 Exterior Windows** — flat $99, screens NOT included, screens must be removed before arrival
+Redefine the three Service Plans to match your spec, surface a prominent **Customize plan** button, and add the touchup‑guarantee language for each tier.
 
-The complimentary-screens green box stays under the first two options only. The $99 card carries its own visually distinct notice (amber/warning tone) making the "no screens / remove before arrival" terms unmissable.
+## 1. New plan compositions
 
-## Behavior when the $99 special is selected
+| Tier | Ext windows | Int windows | Gutter | House wash | Driveway | Pressure wash | Roof |
+|---|---|---|---|---|---|---|---|
+| **Good** | 4x/yr | 1x/yr (bundled with one exterior visit) | — | — | — | — | — |
+| **Better** | 4x/yr | 2x/yr | 1x/yr | — | 1x/yr | — | — |
+| **Best** | 2x/yr | 4x/yr | 2x/yr | 1x/yr | 1x/yr | 1x/yr | — |
 
-- Window-cleaning line becomes a flat $99 via the existing `window_promo_99` promotion in the pricing engine (already fully implemented server-side, including limits, dates, and Jobber snapshot).
-- Additional services (gutters, house wash, etc.) still price normally alongside it.
-- Interior, screens, tracks, condition upgrades, and advanced window details are hidden/disabled while the promo is selected — the promo is a fixed offer.
-- If the admin toggle for the promo is off, the option is hidden entirely (fail-closed). No fake $99 ever shown when inactive.
+The pricing engine today only supports gutter/house wash/roof as *included* services and only a single `additionalServicesFrequency` shared by all of them. Best (gutter 2x vs driveway 1x, pressure 1x) and Better (driveway inclusion) need per‑service frequencies.
 
-## Files to change (frontend only, no schema changes)
+## 2. Touchup guarantee copy
 
-1. `src/types/homeowner.ts` — extend `windowCleaningType` union to include `'promo_99'`.
-2. `src/components/homeowner/IntentFirstServiceSelector.tsx`
-   - Rename "Inside + Outside" → "Full Service — Inside + Outside".
-   - Add third radio card: "$99 Special — 10 Exterior Windows".
-   - Move the green complimentary-screens box so it only renders for `exterior` or `both`.
-   - Render distinct amber notice under the promo card: "Screens NOT included · Please remove screens before we arrive · Up to 10 standard exterior windows".
-   - Hide Window Condition + Advanced Window Details when promo selected.
-3. `src/pages/Index.tsx` (and `ServiceLanding.tsx` if it also owns pricing state)
-   - Read the `window_promo_99` config from `pricing_config` (already loaded for pricing).
-   - When `windowCleaningType === 'promo_99'`, pass `promotion: { id: promoId, windowCount: 10 }` into the pricing engine and into `save-quote`.
-   - Hide the promo option in the selector when the config is missing / inactive / out of effective window.
-4. `src/components/booking/ServiceReviewStep.tsx` and `BookingFlow.tsx` — display "$99 Special (10 Exterior Windows)" label instead of "Exterior Only" when promo is selected.
-5. Small unit test in `src/lib/pricing/engine.promotion.test.ts` covering the UI-driven selection payload (`windowCleaningType === 'promo_99'` → engine yields flat $99).
+- **Good** feature line: `10-day rain guarantee — free touch-ups within 10 days of service`
+- **Better** feature line: `Unlimited window touch-ups between visits`
+- **Best** feature line: `Unlimited window touch-ups between visits` (replaces the existing "Free touch-ups between visits")
 
-## Guardrails preserved
+Copy only — no pricing effect.
 
-- Pricing math stays server-authoritative via `authoritativeQuote` — no client can invent a $99 price; the engine rejects the promotion if the admin config is inactive or missing.
-- Promotion snapshot (id, version, prep instructions) travels into the saved quote and Jobber notes exactly as it does today for admin-applied promos.
-- Zero changes to database schema, RLS, or edge functions.
+## 3. Prominent Customize button
+
+Add a **Customize plan** button directly in `PlanUpsellCard` (the card most customers see first), next to *Upgrade & Book on Autopilot*. It opens the existing `PlanCustomizeDrawer` for the currently selected tier. The customize button on the full `ServicePlanSelector` grid remains.
+
+## Technical details
+
+**A. Engine changes (`src/lib/pricing/engine.ts` + mirror in `supabase/functions/_shared/pricingEngine.ts`)**
+
+Extend `BundleConfigEntry` with optional per‑service overrides:
+
+```ts
+includedServiceFrequencies?: Record<
+  "gutter_cleaning" | "house_wash" | "driveway_cleaning" | "pressure_washing" | "roof_cleaning",
+  number
+>
+```
+
+In the tier build loop:
+- Move driveway/pressure into the *included* branch when they appear in `includedServices`, priced at their per‑service frequency (default 1). Otherwise keep them as addons — no behavior change for tiers that don't include them.
+- Read gutter/house wash/roof frequencies from `includedServiceFrequencies` when present; fall back to today's `additionalServicesFrequency`. This is a superset — old configs behave identically.
+- The included list is authored from `includedServices` regardless of whether the customer selected the service one-time, so plan preview shows the plan composition (already true for gutter/house wash today; extend to driveway/pressure).
+
+**B. DB migration — update `pricing_config.bundle_config`**
+
+```json
+{
+  "good":   { "exteriorWindowFrequency": 4, "interiorWindowFrequency": 1,
+              "includedServices": [], "additionalServicesFrequency": 1,
+              "label": "Core Window Care",
+              "description": "4 exterior window visits per year, one includes interior — with a 10-day rain guarantee." },
+  "better": { "exteriorWindowFrequency": 4, "interiorWindowFrequency": 2,
+              "includedServices": ["gutter_cleaning","driveway_cleaning"],
+              "includedServiceFrequencies": { "gutter_cleaning": 1, "driveway_cleaning": 1 },
+              "label": "Windows + Curb Appeal",
+              "description": "Full year of window care plus gutter and driveway cleaning, with unlimited touch-ups." },
+  "best":   { "exteriorWindowFrequency": 2, "interiorWindowFrequency": 4,
+              "includedServices": ["gutter_cleaning","house_wash","driveway_cleaning","pressure_washing"],
+              "includedServiceFrequencies": { "gutter_cleaning": 2, "house_wash": 1, "driveway_cleaning": 1, "pressure_washing": 1 },
+              "label": "Total Home Care",
+              "description": "Frequent interior + exterior windows, gutters twice a year, plus house wash, driveway and pressure washing." }
+}
+```
+
+Discounts (`bundleDiscount`, `addonDiscount`) are unchanged. `bundle_rules.alwaysAddonServices` stays as-is (driveway/pressure remain addons for tiers that don't include them).
+
+**C. Features list (engine)**
+
+After existing feature lines, append per-tier guarantee copy:
+
+- `good`: push `10-day rain guarantee — free touch-ups within 10 days of service`
+- `better`, `best`: push `Unlimited window touch-ups between visits`
+- Remove the existing `if (tier === "best") push "Free touch-ups between visits"` line so wording is consistent.
+
+**D. UI — `src/components/homeowner/PlanUpsellCard.tsx`**
+
+- Add `onCustomize?: (tier) => void` prop.
+- Render a secondary `Customize plan` button under `Upgrade & Book on Autopilot`, disabled when `!hasValidPlan`, calling `onCustomize(currentBundle.tier)`.
+- Wire it from `src/pages/Index.tsx` and `src/pages/ServiceLanding.tsx` to open the existing `PlanCustomizeDrawer` for the current tier (both pages already own `setTierCustomization`).
+
+**E. Tests**
+
+- Extend `src/lib/pricing/engine.planOptions.test.ts` / `engine.bundleParity.test.ts` snapshots for the new compositions (Best now includes driveway 1x + pressure 1x, Better includes driveway 1x).
+- Update `src/components/homeowner/PlanUpsellCard.failClosed.test.tsx` if it asserts feature copy.
 
 ## Out of scope
 
-- No changes to campaigns, SMS, email, or Jobber sync.
-- No new admin UI (the existing `PromotionManager` already controls activation).
+- Payment schedule, deposit %, installments — unchanged.
+- The `alwaysAddonServices` list — unchanged.
+- One-time quote pricing — unchanged.
