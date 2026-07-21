@@ -1671,7 +1671,8 @@ export function computeBundleTiers(
     const perServiceFreqs = config.includedServiceFrequencies ?? {};
     const freqFor = (key: string) => {
       const raw = perServiceFreqs[key];
-      return typeof raw === "number" && raw > 0 ? raw : addFreq;
+      if (typeof raw === "number" && raw > 0) return raw;
+      return key === "gutter_cleaning" ? addFreq : 1;
     };
 
     const exteriorCost = bases.exteriorWindows * exteriorFreq;
