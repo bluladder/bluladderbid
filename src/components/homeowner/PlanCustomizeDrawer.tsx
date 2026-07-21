@@ -60,15 +60,15 @@ const FREQUENCY_LABELS: Record<number, string> = {
 const TIER_FREQUENCY_LIMITS = {
   good: {
     exterior: { min: 1, max: 4 },
-    interior: { min: 0, max: 0 },
+    interior: { min: 0, max: 1 },
   },
   better: {
     exterior: { min: 2, max: 4 },
     interior: { min: 1, max: 2 },
   },
   best: {
-    exterior: { min: 3, max: 4 },
-    interior: { min: 2, max: 2 },
+    exterior: { min: 2, max: 4 },
+    interior: { min: 2, max: 4 },
   },
 };
 
