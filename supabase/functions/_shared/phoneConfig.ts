@@ -21,7 +21,7 @@ export interface PhoneEntry {
 }
 
 export const PHONE_FALLBACK: Record<PhonePurpose, PhoneEntry> = {
-  primary_public: { purpose: "primary_public", e164: "+18662422583", display: "(866) 242-2583", label: "BluLadder", isPublic: true },
+  primary_public: { purpose: "primary_public", e164: "+14697472877", display: "(469) 747-2877", label: "BluLadder", isPublic: true },
   app_ai: { purpose: "app_ai", e164: "+14697472877", display: "(469) 747-2877", label: "BluLadder Bid", isPublic: false },
   responsibid: { purpose: "responsibid", e164: "+14692426556", display: "(469) 242-6556", label: "ResponsiBid", isPublic: false },
   escalation_sender: { purpose: "escalation_sender", e164: "+14697472877", display: "(469) 747-2877", label: "BluLadder Bid", isPublic: false },
