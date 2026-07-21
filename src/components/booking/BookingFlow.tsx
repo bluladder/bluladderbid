@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Check, Clock, MapPin, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
+import { cn } from '@/lib/utils';
 import { TimeSlotPicker, type TimeSlot } from './TimeSlotPicker';
 import { CustomerInfoForm, type CustomerInfo } from './CustomerInfoForm';
 import { BookingConfirmation } from './BookingConfirmation';
