@@ -3,7 +3,7 @@
 export interface HomeDetails {
   squareFootage: number;
   stories: 1 | 2 | 3;
-  windowCleaningType: 'exterior' | 'both';
+  windowCleaningType: 'exterior' | 'both' | 'promo_99';
   condition: 'maintenance' | 'heavy';
   
   // Advanced window details

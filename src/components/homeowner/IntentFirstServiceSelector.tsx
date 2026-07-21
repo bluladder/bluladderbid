@@ -17,6 +17,7 @@ import { PressureWashingAreaCard } from './PressureWashingAreaCard';
 import { GutterAddonsCard } from './GutterAddonsCard';
 import { HouseWashDetailsCard } from './HouseWashDetailsCard';
 import { RoofPitchSelector } from './RoofPitchSelector';
+import type { WindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 
 interface IntentFirstServiceSelectorProps {
   services: AdditionalServices;
@@ -25,6 +26,8 @@ interface IntentFirstServiceSelectorProps {
   onChange: (updates: Partial<AdditionalServices>) => void;
   onHomeDetailsChange: (updates: Partial<HomeDetails>) => void;
   featuredService?: 'windowCleaning' | 'gutterCleaning' | 'houseWash' | 'roofCleaning' | 'drivewayCleaning' | 'pressureWashing' | 'solarPanelCleaning' | 'screenRepair';
+  /** Active $99 window promo config from admin. When null, the promo option is hidden entirely. */
+  windowPromo?: WindowPromoConfig | null;
 }
 
 function formatPrice(price: number) {
@@ -203,12 +206,16 @@ export function IntentFirstServiceSelector({
   homeDetails,
   onChange,
   onHomeDetailsChange,
-  featuredService
+  featuredService,
+  windowPromo
 }: IntentFirstServiceSelectorProps) {
   const [windowExpanded, setWindowExpanded] = useState(true);
 
   // Helper to check if a service is featured
   const isFeatured = (serviceId: string) => featuredService === serviceId;
+
+  const promoActive = !!windowPromo;
+  const isPromoSelected = promoActive && homeDetails.windowCleaningType === 'promo_99';
 
   // Define service order - featured service goes first
   const serviceOrder: string[] = [
@@ -249,9 +256,10 @@ export function IntentFirstServiceSelector({
               <Label className="text-sm font-medium">Service Type</Label>
               <RadioGroup
                 value={homeDetails.windowCleaningType}
-                onValueChange={(v) => onHomeDetailsChange({ windowCleaningType: v as 'exterior' | 'both' })}
-                className="grid gap-2 sm:grid-cols-2"
+                onValueChange={(v) => onHomeDetailsChange({ windowCleaningType: v as HomeDetails['windowCleaningType'] })}
+                className="space-y-2"
               >
+                <div className="grid gap-2 sm:grid-cols-2">
                 <label
                   htmlFor="type-exterior"
                   className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
@@ -276,13 +284,54 @@ export function IntentFirstServiceSelector({
                 >
                   <RadioGroupItem value="both" id="type-both" />
                   <div>
-                    <div className="font-medium text-sm">Inside + Outside</div>
+                    <div className="font-medium text-sm">Full Service — Inside + Outside</div>
                     <div className="text-xs text-muted-foreground">Complete clean</div>
                   </div>
                 </label>
+                </div>
+
+                {/* $99 promo option — only when active in admin. Visually
+                    distinct from the standard two options so its terms are
+                    unmissable. Sits inside the RadioGroup so state stays in
+                    sync via `value`. */}
+                {promoActive && (
+                <label
+                  htmlFor="type-promo-99"
+                  className={`block p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                    isPromoSelected
+                      ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/30 ring-2 ring-amber-500/30'
+                      : 'border-amber-400/60 bg-amber-50/50 dark:bg-amber-950/10 hover:border-amber-500'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <RadioGroupItem
+                      value="promo_99"
+                      id="type-promo-99"
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm text-amber-900 dark:text-amber-100">
+                          $99 Special — 10 Exterior Windows
+                        </span>
+                        <span className="inline-flex items-center rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                          Limited Promo
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-100/80 space-y-0.5">
+                        <p className="font-medium">Flat ${windowPromo!.flatPrice} for up to {windowPromo!.maxWindows} standard exterior windows.</p>
+                        <p><strong>Screens NOT included.</strong> Screens must be removed before we arrive.</p>
+                        <p>Interior windows, tracks, and sills are not included.</p>
+                      </div>
+                    </div>
+                  </div>
+                </label>
+                )}
               </RadioGroup>
-              
-              {/* Complimentary services note - more detailed */}
+
+              {/* Complimentary services note — hidden for the promo since screens
+                  are explicitly excluded from the $99 offer. */}
+              {!isPromoSelected && (
               <div className="flex items-start gap-2 p-2.5 rounded-md bg-success/10 border border-success/20">
                 <ShieldCheck className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
                 <div className="text-xs">
@@ -300,9 +349,11 @@ export function IntentFirstServiceSelector({
                   </p>
                 </div>
               </div>
+              )}
             </div>
             
-            {/* Window Condition */}
+            {/* Window Condition — hidden for the flat-price $99 promo */}
+            {!isPromoSelected && (
             <div className="space-y-2">
               <Label className="text-sm font-medium">Window Condition</Label>
               <RadioGroup
@@ -340,8 +391,10 @@ export function IntentFirstServiceSelector({
                 </label>
               </RadioGroup>
             </div>
-            
-            {/* Advanced Window Details */}
+            )}
+
+            {/* Advanced Window Details — hidden for the flat-price $99 promo */}
+            {!isPromoSelected && (
             <Collapsible 
               open={homeDetails.showAdvanced} 
               onOpenChange={(open) => onHomeDetailsChange({ showAdvanced: open })}
@@ -513,6 +566,7 @@ export function IntentFirstServiceSelector({
                 </div>
               </CollapsibleContent>
             </Collapsible>
+            )}
           </div>
     </ServiceCard>
   );

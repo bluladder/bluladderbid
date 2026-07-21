@@ -12,12 +12,26 @@ export function toQuoteInput(
   homeDetails: HomeDetails,
   additionalServices: AdditionalServices,
   discount?: ValidatedDiscount | null,
+  promotion?: { id: string; windowCount: number } | null,
 ): QuoteInput {
+  // When the customer explicitly selects the $99 promo option in the window
+  // card, translate it into a canonical PromotionRequest. The engine's
+  // promotion branch is authoritative and returns a flat total.
+  const effectivePromotion =
+    promotion && promotion.id
+      ? promotion
+      : homeDetails.windowCleaningType === 'promo_99'
+        ? null // caller must supply the promo id — never fabricate one
+        : null;
   return {
     homeDetails: {
       squareFootage: homeDetails.squareFootage,
       stories: homeDetails.stories,
-      windowCleaningType: homeDetails.windowCleaningType,
+      // The engine only understands 'exterior' | 'both'. When the promo is
+      // selected, the promotion branch handles pricing exclusively; we still
+      // pass 'exterior' so any non-promo path stays sane.
+      windowCleaningType:
+        homeDetails.windowCleaningType === 'promo_99' ? 'exterior' : homeDetails.windowCleaningType,
       condition: homeDetails.condition,
       showAdvanced: homeDetails.showAdvanced,
       hardWaterStains: homeDetails.hardWaterStains,
@@ -48,6 +62,7 @@ export function toQuoteInput(
     // ignores any client-supplied type/value, so an invalid/expired code can
     // never alter the authoritative total.
     discount: discount ? { type: discount.type, value: discount.value, code: discount.code } : null,
+    promotion: effectivePromotion,
   };
 }
 

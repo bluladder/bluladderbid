@@ -13,6 +13,7 @@ import { BookingFlow } from '@/components/booking/BookingFlow';
 import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
+import { useWindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 import { deriveQuoteId, fireLead } from '@/lib/attribution/metaPixel';
 import { bridgeFireQuoteSubmitted } from '@/lib/bridge/bluladderBidPostMessage';
 import { getOrCreateSourceSessionId, readAttribution } from '@/lib/attribution/attribution';
@@ -76,8 +77,13 @@ export function OneTimeSummary({
   // AUTHORITATIVE pricing — every dollar shown here comes from the deployed
   // calculate-quote Edge Function. No local pricing math or fallback estimate.
   const hasServices = hasAnyServiceSelected(additionalServices);
+  const { promo: windowPromo } = useWindowPromoConfig();
+  const promoRequest =
+    windowPromo && homeDetails.windowCleaningType === 'promo_99'
+      ? { id: windowPromo.promoId, windowCount: windowPromo.maxWindows }
+      : null;
   const quoteState = useServerQuoteCalculation(
-    hasServices ? toQuoteInput(homeDetails, additionalServices, appliedDiscount) : null,
+    hasServices ? toQuoteInput(homeDetails, additionalServices, appliedDiscount, promoRequest) : null,
     { enabled: hasServices },
   );
   const { quote, total, isFirm, loading, isMissingInfo, isManualReview, isUnavailable } = quoteState;
@@ -113,6 +119,7 @@ export function OneTimeSummary({
           ruleVersion: quoteState.ruleVersion,
           engineVersion: quoteState.engineVersion,
           lineItems: quote.lineItems,
+          promotion: promoRequest,
         },
       });
       if (error) throw error;
