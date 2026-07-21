@@ -17,6 +17,7 @@ import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput'
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
 import { useAttribution } from '@/hooks/useAttribution';
+import { useWindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 import { bridgeFireQuoteStarted } from '@/lib/bridge/bluladderBidPostMessage';
 import { 
   HomeDetails, 
@@ -70,8 +71,13 @@ const Index = () => {
   // ONLY from the deployed pricing Edge Functions (calculate-quote /
   // calculate-plan-options bundle_tiers). No local pricing math, no fallback.
   const hasServices = hasAnyServiceSelected(additionalServices);
+  const { promo: windowPromo } = useWindowPromoConfig();
+  const promoRequest =
+    windowPromo && homeDetails.windowCleaningType === 'promo_99'
+      ? { id: windowPromo.promoId, windowCount: windowPromo.maxWindows }
+      : null;
   const oneTimeQuote = useServerQuoteCalculation(
-    hasServices ? toQuoteInput(homeDetails, additionalServices) : null,
+    hasServices ? toQuoteInput(homeDetails, additionalServices, null, promoRequest) : null,
     { enabled: hasServices },
   );
   const servicePrices = useMemo(
@@ -295,6 +301,7 @@ const Index = () => {
                       homeDetails={homeDetails}
                       onChange={handleAdditionalServicesChange}
                       onHomeDetailsChange={handleHomeDetailsChange}
+                      windowPromo={windowPromo}
                     />
                   )}
                   
