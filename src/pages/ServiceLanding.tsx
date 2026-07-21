@@ -293,6 +293,10 @@ const ServiceLanding = () => {
         onSelectTier={handleTierSelect}
         onBookOneTime={handleBookOneTime}
         onUpgradeAndBook={handleUpgradeAndBook}
+        homeDetails={homeDetails}
+        onCustomizePlan={(tier, customization) => {
+          setTierCustomization(tier, customization);
+        }}
         homeSquareFootage={homeDetails.squareFootage}
       />
     );
