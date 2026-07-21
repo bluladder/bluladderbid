@@ -206,12 +206,16 @@ export function IntentFirstServiceSelector({
   homeDetails,
   onChange,
   onHomeDetailsChange,
-  featuredService
+  featuredService,
+  windowPromo
 }: IntentFirstServiceSelectorProps) {
   const [windowExpanded, setWindowExpanded] = useState(true);
 
   // Helper to check if a service is featured
   const isFeatured = (serviceId: string) => featuredService === serviceId;
+
+  const promoActive = !!windowPromo;
+  const isPromoSelected = promoActive && homeDetails.windowCleaningType === 'promo_99';
 
   // Define service order - featured service goes first
   const serviceOrder: string[] = [
