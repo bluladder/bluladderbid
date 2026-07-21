@@ -669,12 +669,24 @@ export function BookingFlow({
             customerAddress={customerInfo.address}
             customerName={[customerInfo.firstName, customerInfo.lastName].filter(Boolean).join(' ').trim() || undefined}
           />
-          
+
+          {/* Inline upsell — rendered ABOVE the sticky CTA so the sticky footer
+              stays compact and never overlaps calendar content. */}
+          {selectedSlot && onAdditionalServicesChange && (
+            <CompleteYourRefresh
+              additionalServices={additionalServices}
+              onAdd={onAdditionalServicesChange}
+              title="Before we reserve your appointment…"
+              subtitle="One last look — add anything you'd like handled during this same visit."
+              variant="compact"
+            />
+          )}
+
           {/* Fixed CTA area with appointment summary */}
-          <div className="sticky bottom-0 pt-4 pb-2 bg-gradient-to-t from-background via-background to-transparent -mx-4 px-4">
+          <div className="sticky bottom-0 pt-4 pb-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-t border-border/60 -mx-4 px-4">
             {/* Selected Appointment Summary - visible when slot is selected */}
             {selectedSlot && (
-              <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20">
+              <div className="mb-3 p-3 rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20">
                 <div className="flex items-center gap-2 mb-2">
                   <Check className="w-4 h-4 text-primary" />
                   <span className="text-sm font-medium text-primary">Your Appointment</span>
@@ -697,27 +709,29 @@ export function BookingFlow({
                     <span className="font-medium">~{Math.round(selectedSlot.durationMinutes / 60 * 10) / 10} hrs</span>
                   </div>
                 </div>
-                
-                {/* Terms acknowledgement (required before booking) */}
-                <div className="mt-3 pt-3 border-t border-primary/10">
-                  <BookingTermsAck
-                    accepted={confirmationChecked}
-                    onAcceptedChange={setConfirmationChecked}
-                  />
-                </div>
               </div>
             )}
 
-            {/* Final "Before we reserve your appointment..." upsell — inline, no popup */}
-            {selectedSlot && onAdditionalServicesChange && (
-              <div className="mb-4">
-                <CompleteYourRefresh
-                  additionalServices={additionalServices}
-                  onAdd={onAdditionalServicesChange}
-                  title="Before we reserve your appointment…"
-                  subtitle="One last look — add anything you'd like handled during this same visit."
-                  variant="compact"
+            {/* Terms acknowledgement — its own row directly above the CTA so
+                customers can't miss the required step that unlocks the button. */}
+            {selectedSlot && (
+              <div
+                className={cn(
+                  'mb-3 p-3 rounded-lg border transition-colors',
+                  confirmationChecked
+                    ? 'bg-success/5 border-success/30'
+                    : 'bg-warning/5 border-warning/40',
+                )}
+              >
+                <BookingTermsAck
+                  accepted={confirmationChecked}
+                  onAcceptedChange={setConfirmationChecked}
                 />
+                {!confirmationChecked && (
+                  <p className="text-[11px] text-warning-foreground/80 mt-2 pl-6">
+                    Check the box above to enable the booking button.
+                  </p>
+                )}
               </div>
             )}
 
