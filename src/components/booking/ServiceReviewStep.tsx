@@ -285,7 +285,29 @@ export function ServiceReviewStep({
         </CardContent>
       </Card>
       
-      {/* Complete Your Exterior Refresh — one-click upsells for unselected services */}
+      {/* Primary scheduling actions appear immediately after the quote so the
+          customer can approve and pick a time without scrolling past add-ons. */}
+      <div className="space-y-3 pt-1">
+        <Button
+          onClick={onProceed}
+          className="w-full h-12 text-base font-semibold shadow-md"
+          size="lg"
+        >
+          Continue to Schedule
+          <ArrowRight className="w-4 h-4 ml-2" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          onClick={onBack}
+          className="w-full text-muted-foreground h-9 text-sm"
+        >
+          Edit Services
+        </Button>
+      </div>
+
+      {/* Complete Your Exterior Refresh — one-click upsells for unselected services.
+          Now placed below the primary CTA so it enhances but never blocks scheduling. */}
       {onAdditionalServicesChange && (
         <CompleteYourRefresh
           additionalServices={additionalServices}
@@ -297,26 +319,6 @@ export function ServiceReviewStep({
       <p className="text-xs text-center text-muted-foreground px-4">
         Prices based on information provided. Final pricing may adjust if on-site conditions differ.
       </p>
-      
-      {/* Actions - improved button hierarchy */}
-      <div className="space-y-3 pt-2">
-        <Button 
-          onClick={onProceed}
-          className="w-full h-12 text-base font-semibold shadow-md"
-          size="lg"
-        >
-          Continue to Schedule
-          <ArrowRight className="w-4 h-4 ml-2" />
-        </Button>
-        
-        <Button 
-          variant="ghost" 
-          onClick={onBack}
-          className="w-full text-muted-foreground h-9 text-sm"
-        >
-          Edit Services
-        </Button>
-      </div>
     </div>
   );
 }

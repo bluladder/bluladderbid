@@ -1,9 +1,11 @@
-import { Plus, Check, Sparkles, Home, Droplets, Trees, Sun, PanelTop, Grid3x3 } from 'lucide-react';
+import { Plus, Check, Sparkles, Home, Droplets, Trees, Sun, PanelTop, Grid3x3, Waves } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { AdditionalServices } from '@/types/homeowner';
 
 // Presentation-only anchor prices — used strictly as "starting from" marketing anchors.
 // Actual booking price is always driven by the canonical pricing engine once selected.
+// Ordered by conversion priority: top 5 recommended services appear first so the
+// compact/default review view can surface them without overwhelming scroll.
 const UPSELL_CATALOG = [
   {
     key: 'houseWash',
@@ -15,6 +17,15 @@ const UPSELL_CATALOG = [
     sellingCopy: 'Since we\'re already at your home — most customers add this.',
   },
   {
+    key: 'gutterCleaning',
+    name: 'Gutter Cleaning',
+    benefit: 'Prevent water damage and clogged downspouts with a full flush-out.',
+    from: 149,
+    Icon: Trees,
+    gradient: 'from-emerald-400/25 via-green-400/15 to-teal-500/10',
+    sellingCopy: 'One of our most popular add-ons.',
+  },
+  {
     key: 'drivewayCleaning',
     name: 'Driveway Cleaning',
     benefit: 'Lift oil stains and years of grime from your concrete or pavers.',
@@ -24,13 +35,22 @@ const UPSELL_CATALOG = [
     sellingCopy: 'Instant curb-appeal boost.',
   },
   {
-    key: 'gutterCleaning',
-    name: 'Gutter Cleaning',
-    benefit: 'Prevent water damage and clogged downspouts with a full flush-out.',
+    key: 'pressureWashing',
+    name: 'Pressure Washing',
+    benefit: 'Refresh patios, walkways, and porches — restore that fresh look.',
     from: 149,
-    Icon: Trees,
-    gradient: 'from-emerald-400/25 via-green-400/15 to-teal-500/10',
-    sellingCopy: 'One of our most popular add-ons.',
+    Icon: Waves,
+    gradient: 'from-blue-400/25 via-cyan-400/15 to-sky-500/10',
+    sellingCopy: 'Pairs perfectly with driveway cleaning.',
+  },
+  {
+    key: 'windowCleaning',
+    name: 'Window Cleaning',
+    benefit: 'Streak-free inside and out — see the difference instantly.',
+    from: 189,
+    Icon: Droplets,
+    gradient: 'from-cyan-400/25 via-sky-400/15 to-indigo-400/10',
+    sellingCopy: 'A BluLadder favorite.',
   },
   {
     key: 'roofCleaning',
@@ -59,15 +79,6 @@ const UPSELL_CATALOG = [
     gradient: 'from-purple-400/25 via-fuchsia-400/15 to-pink-400/10',
     sellingCopy: 'Convenient — no separate trip needed.',
   },
-  {
-    key: 'windowCleaning',
-    name: 'Window Cleaning',
-    benefit: 'Streak-free inside and out — see the difference instantly.',
-    from: 189,
-    Icon: Droplets,
-    gradient: 'from-cyan-400/25 via-sky-400/15 to-indigo-400/10',
-    sellingCopy: 'A BluLadder favorite.',
-  },
 ] as const;
 
 type UpsellKey = typeof UPSELL_CATALOG[number]['key'];
@@ -79,6 +90,7 @@ function isSelected(services: AdditionalServices, key: UpsellKey): boolean {
     case 'gutterCleaning': return services.gutterCleaning;
     case 'roofCleaning': return services.roofCleaning;
     case 'drivewayCleaning': return services.drivewayCleaning.enabled;
+    case 'pressureWashing': return services.pressureWashing.enabled;
     case 'solarPanelCleaning': return services.solarPanelCleaning.enabled;
     case 'screenRepair': return services.screenRepair.enabled;
   }
@@ -92,6 +104,8 @@ function enableService(prev: AdditionalServices, key: UpsellKey): AdditionalServ
     case 'roofCleaning': return { ...prev, roofCleaning: true };
     case 'drivewayCleaning':
       return { ...prev, drivewayCleaning: { ...prev.drivewayCleaning, enabled: true } };
+    case 'pressureWashing':
+      return { ...prev, pressureWashing: { ...prev.pressureWashing, enabled: true } };
     case 'solarPanelCleaning':
       return { ...prev, solarPanelCleaning: { ...prev.solarPanelCleaning, enabled: true } };
     case 'screenRepair':
@@ -105,6 +119,8 @@ interface CompleteYourRefreshProps {
   title?: string;
   subtitle?: string;
   variant?: 'full' | 'compact';
+  /** When set, limits the number of cards shown (default: 5 for the top row). */
+  maxItems?: number;
 }
 
 /**
@@ -119,6 +135,7 @@ export function CompleteYourRefresh({
   title = 'Complete Your Exterior Refresh',
   subtitle = "Since we're already coming out — most customers add one of these.",
   variant = 'full',
+  maxItems = 5,
 }: CompleteYourRefreshProps) {
   const missing = UPSELL_CATALOG.filter((s) => !isSelected(additionalServices, s.key));
   if (missing.length === 0) {
@@ -137,7 +154,7 @@ export function CompleteYourRefresh({
     );
   }
 
-  const items = variant === 'compact' ? missing.slice(0, 3) : missing;
+  const items = variant === 'compact' ? missing.slice(0, 3) : missing.slice(0, maxItems);
 
   return (
     <section
@@ -154,9 +171,11 @@ export function CompleteYourRefresh({
         </div>
       </header>
 
-      {/* Mobile: horizontal snap scroll; sm+: 2-col grid so nothing feels overwhelming. */}
+      {/* Mobile: horizontal snap scroll keeps things one-row and thumb-friendly.
+          sm+: 3-col grid so the top recommended add-ons fit above the fold and
+          the customer doesn't scroll past a wall of cards to reach scheduling. */}
       <div
-        className="flex sm:grid sm:grid-cols-2 gap-3 overflow-x-auto sm:overflow-visible -mx-4 sm:mx-0 px-4 sm:px-0 snap-x snap-mandatory sm:snap-none pb-1"
+        className="flex sm:grid sm:grid-cols-3 gap-2 sm:gap-3 overflow-x-auto sm:overflow-visible -mx-4 sm:mx-0 px-4 sm:px-0 snap-x snap-mandatory sm:snap-none pb-1"
         role="list"
       >
         {items.map((item) => {
@@ -165,37 +184,37 @@ export function CompleteYourRefresh({
             <div
               key={item.key}
               role="listitem"
-              className="group relative flex flex-col shrink-0 w-[85%] sm:w-auto snap-start rounded-lg border border-border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+              className="group relative flex flex-col shrink-0 w-[75%] sm:w-auto snap-start rounded-lg border border-border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow"
             >
-              {/* "Photo" placeholder tile — premium gradient with service icon */}
+              {/* Compact icon tile — smaller than the old "photo" tile so five cards
+                  fit comfortably in one row without dominating the review page. */}
               <div
-                className={`relative h-24 sm:h-28 w-full bg-gradient-to-br ${item.gradient} flex items-center justify-center`}
+                className={`relative h-14 sm:h-16 w-full bg-gradient-to-br ${item.gradient} flex items-center justify-center`}
                 aria-hidden="true"
               >
-                <Icon className="w-10 h-10 text-foreground/70" strokeWidth={1.5} />
-                <span className="absolute top-2 left-2 text-[10px] uppercase tracking-wider font-semibold text-foreground/60 bg-background/70 backdrop-blur px-2 py-0.5 rounded-full">
+                <Icon className="w-6 h-6 text-foreground/70" strokeWidth={1.5} />
+                <span className="absolute top-1.5 left-1.5 text-[9px] uppercase tracking-wider font-semibold text-foreground/60 bg-background/70 backdrop-blur px-1.5 py-0.5 rounded-full">
                   Add-on
                 </span>
               </div>
 
-              <div className="p-3 flex flex-col gap-2 flex-1">
+              <div className="p-2.5 flex flex-col gap-1.5 flex-1">
                 <div>
                   <h4 className="text-sm font-semibold text-foreground leading-tight">{item.name}</h4>
-                  <p className="text-xs text-muted-foreground leading-snug mt-1 line-clamp-2">
+                  <p className="text-[11px] text-muted-foreground leading-snug mt-0.5 line-clamp-2">
                     {item.benefit}
                   </p>
                 </div>
-                <p className="text-[11px] text-primary/80 italic leading-snug">{item.sellingCopy}</p>
                 <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-[11px] text-muted-foreground">
                     From <span className="font-bold text-foreground">${item.from}</span>
                   </span>
                   <Button
                     size="sm"
                     onClick={() => onAdd((prev) => enableService(prev, item.key))}
-                    className="h-8 px-3 text-xs font-semibold gap-1"
+                    className="h-7 px-2.5 text-xs font-semibold gap-1"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-3 h-3" />
                     Add
                   </Button>
                 </div>
