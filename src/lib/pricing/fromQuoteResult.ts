@@ -41,6 +41,11 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
   if (!quote) return { ...DEFAULT_SERVICE_PRICES };
 
   const win = byKey(quote, 'window_cleaning');
+  // Promotional window offers (e.g. window_promo_99) surface as a distinct
+  // line item from the engine. For the legacy display shape we treat the
+  // promo as the window-cleaning selection so downstream UI gates that check
+  // `windowCleaningTotal > 0` render the row and include it in the booking.
+  const winPromo = byKey(quote, 'window_promo_99');
   const house = byKey(quote, 'house_wash');
   const gutter = byKey(quote, 'gutter_cleaning');
   const roof = byKey(quote, 'roof_cleaning');
@@ -49,7 +54,8 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
   const solar = byKey(quote, 'solar_panel_cleaning');
   const screen = byKey(quote, 'screen_repair');
 
-  const windowCleaningTotal = comp(win, 'windowCleaningTotal');
+  const windowPromoAmount = winPromo?.amount ?? 0;
+  const windowCleaningTotal = comp(win, 'windowCleaningTotal') || windowPromoAmount;
   const drivewayCleaning = driveway?.amount ?? 0;
   const pressureWashing = comp(pressure, 'pressureWashingTotal') || (pressure?.amount ?? 0);
   const gutterCleaningTotal = comp(gutter, 'gutterCleaningTotal') || (gutter?.amount ?? 0);
@@ -64,7 +70,7 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
 
   return {
     // Window cleaning (server components)
-    exteriorWindows: comp(win, 'exteriorWindows'),
+    exteriorWindows: comp(win, 'exteriorWindows') || windowPromoAmount,
     interiorWindows: comp(win, 'interiorWindows'),
     hardWaterAddon: comp(win, 'hardWaterAddon'),
     frenchPanesAddon: comp(win, 'frenchPanesAddon'),
