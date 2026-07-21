@@ -288,7 +288,7 @@ export function PlanUpsellCard({
               <div className="space-y-3">
                 {bundles.map((bundle) => {
                   const isSelected = selectedTier === bundle.tier;
-                  const isRecommended = bundle.tier === 'better';
+                  const isRecommended = bundle.tier === 'best';
                   
                   // Calculate this bundle's payment structure
                   const bundleDeposit = Math.round(bundle.annualTotal * 0.20);
