@@ -88,7 +88,7 @@ export function customerEscalationMessage(
   severity: string,
   officeDisplay: string,
 ): string {
-  const office = (officeDisplay && officeDisplay.trim()) || "(866) 242-2583";
+  const office = (officeDisplay && officeDisplay.trim()) || "(469) 747-2877";
 
   if (isConfirmedDelivered(state)) {
     if (severity === "urgent") {

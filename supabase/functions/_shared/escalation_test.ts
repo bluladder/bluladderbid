@@ -4,7 +4,7 @@ import { buildAlertMessage, SEVERITY_RANK } from "./escalation.ts";
 Deno.test("alert message includes safe fields only", () => {
   const msg = buildAlertMessage(
     { category: "complaint", severity: "high", prospectName: "Sam", prospectPhone: "+14690000000", summary: "Unhappy with streaks" },
-    "(866) 242-2583",
+    "(469) 747-2877",
     "Open the dashboard.",
   );
   assertEquals(msg.includes("BluLadder AI escalation"), true);

@@ -12,9 +12,9 @@ const emptyClient = {
   },
 } as any;
 
-Deno.test("primary_public resolves to the approved 866 number", async () => {
+Deno.test("primary_public resolves to the approved 469 CallRail number", async () => {
   const p = await getPhoneByPurpose(emptyClient, "primary_public");
-  assertEquals(p.e164, "+18662422583");
+  assertEquals(p.e164, "+14697472877");
   assertEquals(p.isPublic, true);
 });
 

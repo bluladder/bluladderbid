@@ -27,8 +27,11 @@ export interface PhoneEntry {
 export const PHONE_FALLBACK: Record<PhonePurpose, PhoneEntry> = {
   primary_public: {
     purpose: 'primary_public',
-    e164: '+18662422583',
-    display: '(866) 242-2583',
+    // Customer-facing primary number. We publish the dedicated CallRail number
+    // (also used for texting + voice AI) so every customer touchpoint shares a
+    // single line. Do NOT reintroduce the 866 vanity number in public copy.
+    e164: '+14697472877',
+    display: '(469) 747-2877',
     label: 'BluLadder',
     isPublic: true,
   },
