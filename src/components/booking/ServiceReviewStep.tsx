@@ -173,7 +173,11 @@ export function ServiceReviewStep({
                     <div>
                       <span className="font-medium text-sm">Window Cleaning</span>
                       <p className="text-xs text-muted-foreground">
-                        {homeDetails.windowCleaningType === 'both' ? 'Interior & Exterior' : 'Exterior Only'}
+                        {homeDetails.windowCleaningType === 'both'
+                          ? 'Full Service — Interior & Exterior'
+                          : homeDetails.windowCleaningType === 'promo_99'
+                            ? '$99 Special — 10 Exterior Windows'
+                            : 'Exterior Only'}
                         {homeDetails.condition === 'heavy' ? ' • Deep Clean' : ''}
                       </p>
                     </div>
