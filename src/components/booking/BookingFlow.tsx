@@ -375,6 +375,13 @@ export function BookingFlow({
         sessionId: sessionIdRef.current,
       };
 
+      // Forward the promotion so the server takes the authoritative promotion
+      // branch when recomputing (otherwise a $99 promo quote would be rejected
+      // by the tamper/stale guard against normal per-sqft pricing).
+      if (promotion && promotion.id) {
+        (bookingBody as Record<string, unknown>).promotion = promotion;
+      }
+
       // Attach full attribution snapshot so the server can persist it on the
       // booking row (revenue is still computed exclusively server-side).
       try {
