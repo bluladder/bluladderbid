@@ -54,13 +54,13 @@ const CONFIRMED_LANGUAGE = [
   /\bsee you (on|then)\b/i,
 ];
 
-function textAssertsConfirmed(text: string | null | undefined): boolean {
+export function textAssertsConfirmed(text: string | null | undefined): boolean {
   const t = (text ?? "").toString();
   if (!t.trim()) return false;
   return CONFIRMED_LANGUAGE.some((rx) => rx.test(t));
 }
 
-async function resolveUnambiguousOfferedSlot(
+export async function resolveUnambiguousOfferedSlot(
   supabase: SupabaseClient,
   conversationId: string,
   facts: ConversationFacts,
@@ -534,7 +534,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
 // booking unless the booking tool actually returned status="confirmed" (which
 // promotes facts.bookingStatus to "confirmed"). Applies even when the rail
 // didn't fire — this is the class-of-failure guard.
-function guardConfirmedLanguage(reply: string, facts: ConversationFacts, railBooked: boolean): string {
+export function guardConfirmedLanguage(reply: string, facts: ConversationFacts, railBooked: boolean): string {
   if (!textAssertsConfirmed(reply)) return reply;
   if (facts.bookingStatus === "confirmed" || railBooked) return reply;
   return "Thanks for confirming — I'm finalizing that appointment now. I'll send a confirmation as soon as it's locked in. If you don't hear back within a few minutes, reply here and I'll pull in a teammate.";
