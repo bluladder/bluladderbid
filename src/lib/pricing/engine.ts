@@ -1668,6 +1668,11 @@ export function computeBundleTiers(
     const addonDiscount = config.addonDiscount ?? 0;
     const bundleDiscountFrac = config.bundleDiscount ?? 0;
     const included = config.includedServices ?? [];
+    const perServiceFreqs = config.includedServiceFrequencies ?? {};
+    const freqFor = (key: string) => {
+      const raw = perServiceFreqs[key];
+      return typeof raw === "number" && raw > 0 ? raw : addFreq;
+    };
 
     const exteriorCost = bases.exteriorWindows * exteriorFreq;
     const interiorCost = bases.interiorWindows * interiorFreq;
@@ -1680,29 +1685,44 @@ export function computeBundleTiers(
     const baseServices: string[] = [];
 
     if (included.includes("gutter_cleaning") && svc.gutterCleaning) {
-      baseServicesCost += bases.gutterCleaning * addFreq;
-      includedServices.push(`Gutter Cleaning (${addFreq}x/year)`);
+      const f = freqFor("gutter_cleaning");
+      baseServicesCost += bases.gutterCleaning * f;
+      includedServices.push(`Gutter Cleaning (${f}x/year)`);
       baseServices.push("gutter_cleaning");
     }
     if (included.includes("house_wash") && svc.houseWash) {
-      baseServicesCost += bases.houseWash;
-      includedServices.push("House Wash");
+      const f = freqFor("house_wash");
+      baseServicesCost += bases.houseWash * f;
+      includedServices.push(f > 1 ? `House Wash (${f}x/year)` : "House Wash");
       baseServices.push("house_wash");
     }
     if (roofBaseTiers.includes(tier) && svc.roofCleaning) {
-      baseServicesCost += bases.roofCleaning;
-      includedServices.push("Roof Cleaning");
+      const f = freqFor("roof_cleaning");
+      baseServicesCost += bases.roofCleaning * f;
+      includedServices.push(f > 1 ? `Roof Cleaning (${f}x/year)` : "Roof Cleaning");
       baseServices.push("roof_cleaning");
+    }
+    if (included.includes("driveway_cleaning") && svc.drivewayCleaning?.enabled) {
+      const f = freqFor("driveway_cleaning");
+      baseServicesCost += bases.drivewayCleaning * f;
+      includedServices.push(f > 1 ? `Driveway Cleaning (${f}x/year)` : "Driveway Cleaning");
+      baseServices.push("driveway_cleaning");
+    }
+    if (included.includes("pressure_washing") && svc.pressureWashing?.enabled) {
+      const f = freqFor("pressure_washing");
+      baseServicesCost += bases.pressureWashing * f;
+      includedServices.push(f > 1 ? `Pressure Washing (${f}x/year)` : "Pressure Washing");
+      baseServices.push("pressure_washing");
     }
 
     let addonsCost = 0;
     const addonsList: string[] = [];
 
-    if (svc.drivewayCleaning?.enabled) {
+    if (!included.includes("driveway_cleaning") && svc.drivewayCleaning?.enabled) {
       addonsCost += bases.drivewayCleaning * (1 - addonDiscount);
       addonsList.push("Driveway Cleaning");
     }
-    if (svc.pressureWashing?.enabled) {
+    if (!included.includes("pressure_washing") && svc.pressureWashing?.enabled) {
       addonsCost += bases.pressureWashing * (1 - addonDiscount);
       addonsList.push("Pressure Washing");
     }
@@ -1725,8 +1745,8 @@ export function computeBundleTiers(
     const monthlyPayment = Math.round(annualTotal / 12);
 
     const fullPriceAddons =
-      (svc.drivewayCleaning?.enabled ? bases.drivewayCleaning : 0) +
-      (svc.pressureWashing?.enabled ? bases.pressureWashing : 0) +
+      (!included.includes("driveway_cleaning") && svc.drivewayCleaning?.enabled ? bases.drivewayCleaning : 0) +
+      (!included.includes("pressure_washing") && svc.pressureWashing?.enabled ? bases.pressureWashing : 0) +
       (!included.includes("gutter_cleaning") && svc.gutterCleaning
         ? bases.gutterCleaning * addFreq
         : 0) +
@@ -1742,8 +1762,8 @@ export function computeBundleTiers(
       individualTotal > 0 ? Math.round((savings / individualTotal) * 100) : 0;
 
     const availableAddons = [
-      "driveway_cleaning",
-      "pressure_washing",
+      ...(!included.includes("driveway_cleaning") ? ["driveway_cleaning"] : []),
+      ...(!included.includes("pressure_washing") ? ["pressure_washing"] : []),
       ...(!included.includes("gutter_cleaning") ? ["gutter_cleaning"] : []),
       ...(!included.includes("house_wash") ? ["house_wash"] : []),
       ...(!roofBaseTiers.includes(tier) ? ["roof_cleaning"] : []),
