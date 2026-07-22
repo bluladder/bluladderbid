@@ -833,6 +833,14 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   let state = computeState(facts, channel);
   const priorState: string = row?.conversation_state ?? "new";
 
+  // Phase 4C-β.4A — window scope classification runs on every turn when
+  // window cleaning is (or is about to be) an active service. The classifier
+  // is a pure function; results are persisted into the canonical Quote
+  // Session (never a duplicate voice-only store).
+  const windowIntent: WindowIntentPatch = classifyWindowIntent(userMessage, {
+    activeServices: facts.services,
+  });
+
   // Staff has taken over — the AI stays silent/deferential and takes no action.
   if (state === "staff_takeover") {
     return {
