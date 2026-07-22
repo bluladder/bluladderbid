@@ -1,119 +1,89 @@
+# Sales Engine Consolidation Plan — Step-to-Module Map
 
-# Phase 4C — Call-Center Workflow Router v1
+Goal: one Sales Engine, consumed by voice / web / future chat / future SMS, with zero duplicated business rules. Below, each numbered step from the objective maps to authoritative modules, missing capabilities, and duplicates slated for retirement.
 
-Scope-limited to the single launch workflow: **Residential window-cleaning quote → canonical price → real availability → booking**. Every other workflow (`cancel_or_reschedule`, `general_inquiry`, commercial bid, etc.) is stubbed as `handoff_or_out_of_scope` so the architecture can grow without a rewrite.
+## 1. Determine requested service(s)
 
-## Guiding rules
+- **Authoritative:** `src/components/homeowner/IntentFirstServiceSelector.tsx` (canonical service catalog + intent labels) and `src/lib/pricing/engine.ts` service keys.
+- **Missing:** A headless service-intent resolver usable outside React. Extract a shared `resolveServiceIntent(input)` helper in `src/lib/pricing/` (or `_shared/services/`) that both the web selector and the voice `factExtractor` call.
+- **Retire eventually:** `supabase/functions/_shared/workflow/windowIntent.ts` classification logic — collapse into the shared resolver.
 
-- Reuse everything sound. Do not rebuild the pricing engine, availability mirror, Jobber client, booking handler, customer/property model, SMS/email, auth, or reservation guards.
-- LLM produces natural-language wording only. All sequencing, field-completion, tool selection, and terminal actions are deterministic code.
-- One canonical `quote_sessions` row per call. Reloaded from DB **before every next-action decision**. No re-parsing of transcript for state.
-- No pricing values change. No CallRail/Vapi provisioning changes. No transfer changes. Voice booking stays in dry-run.
+## 2. Collect only required info for an authoritative quote
 
-## Repository reuse audit (draft — will be finalized in the completion report)
+- **Authoritative:** `src/lib/pricing/engine.ts` (defines required inputs per service) + `calculate-quote` edge function (server-side re-validation) + `src/components/booking/BookingStepper.tsx` / `HomeDetailsForm.tsx` (canonical question ordering).
+- **Missing:** A machine-readable `SERVICE_INTAKE_MANIFEST` derived from the pricing engine — one exported map `{ service → required fields, in ask-order }`. Voice reads this instead of maintaining its own list.
+- **Retire eventually:** `supabase/functions/_shared/workflow/intakeSchemas.ts` and the parallel readiness logic inside `quoteSession.ts`.
 
-- **Preserve unchanged:** `pricingEngine.ts`, `quoteSession.ts` schema + persistence helpers, `jobberClient.ts`, `availability_cache` + `useSmartAvailability`, `aiTools.ts` tool contracts, `authoritativeQuote.ts`, `bookingPreparation.ts`, `phoneConfig.ts`, `emailConfig.ts`, `serviceArea.ts`.
-- **Adapt (thin edits):** `voiceAdapter.ts` (route through new controller), `conversationState.ts` (repurpose as data source, not sequencer), `windowIntent.ts` (used by extractor only), `buildMarker.ts` (new id + flags).
-- **Replace as authoritative sequencer:** the prompt-directive path inside `aiOrchestrator.ts`. The orchestrator stays as an LLM-wording utility; sequencing moves to the new controller.
+## 3. Generate the quote via canonical engine
 
-## New modules
+- **Authoritative:** `supabase/functions/calculate-quote` (HTTP boundary) wrapping `_shared/pricingEngine.ts` (which mirrors `src/lib/pricing/engine.ts`).
+- **Missing:** Nothing structural. Voice controller must call `calculate-quote` directly rather than reconstructing prices.
+- **Retire eventually:** `supabase/functions/_shared/workflow/partialWindowPricing.ts` ($10/side rule) — move into `_shared/pricingEngine.ts` as a first-class partial-window branch so no channel invents pricing.
+
+## 4. Evaluate one complementary service (auto)
+
+- **Authoritative:** `src/hooks/usePricingConfig.ts` + engine's bundle definitions in `src/lib/pricing/engine.ts` (already knows Window ↔ House Wash pairing via bundle tests in `engine.bundleParity.test.ts`).
+- **Missing:** A pure `suggestComplementaryService(quoteInput, quoteResult)` helper in `src/lib/pricing/` that returns `{ service, addlInputsRequired: [] }`. Returns nothing if additional questions are required. Currently the pairing logic is implicit in UI upsell components (`PlanUpsellCard.tsx`, `CompleteYourRefresh.tsx`).
+- **Retire eventually:** Duplicated upsell selection heuristics inside `PlanUpsellCard.tsx` and `CompleteYourRefresh.tsx` — both should call the shared suggester.
+
+## 5. Auto-price the complementary service + approved bundle promo (single offer)
+
+- **Authoritative:** `_shared/pricingEngine.ts` (bundle math already exists; validated by `engine.bundleParity.test.ts`) + admin-managed promotion config consumed by `calculate-quote` (`input.promotion`).
+- **Missing:** A `buildComplementaryOffer(session)` orchestration function that: (a) runs the suggester from step 4, (b) calls `calculate-quote` a second time with both services + eligible bundle promo, (c) returns a single `Offer` struct (delta price, bundle savings, promo id). Must fail-closed if the promo is not admin-approved for that combo.
+- **Retire eventually:** Ad-hoc "recommended add-on" price math in voice `aiOrchestrator.ts`.
+
+## 6. Attempt to schedule immediately
+
+- **Authoritative:** `supabase/functions/jobber-availability` (real-time slots via local mirror) + `src/hooks/useSmartAvailability.ts` + `_shared/slotOffer.ts` (canonical offered-slot ledger) + `src/components/booking/DateFirstCalendar.tsx` for web.
+- **Missing:** A channel-neutral `offerNextSlots(session, { count: 2-3 })` wrapper around `jobber-availability` + `slotOffer.ts` that voice and future SMS both call. Today voice parses transcripts to reconstruct offered slots.
+- **Retire eventually:** Transcript-scanning slot inference inside `aiOrchestrator.ts` post-yes rail.
+
+## 7. Customer accepts → normal Jobber booking
+
+- **Authoritative:** Existing booking handler (`_shared/bookingPreparation.ts` + Jobber client + `create-jobber-booking` edge function) + `slotOffer.ts` reservation guards + `_shared/bookingEmails.ts` for confirmations.
+- **Missing:** Nothing new — voice controller invokes the same booking edge function with the reserved `slotOffer` id. Voice remains dry-run until beta exit.
+- **Retire eventually:** No duplicates identified; keep as-is.
+
+## 8. Hesitation / price objection → approved incentive only
+
+- **Authoritative:** Admin-managed promotion config (same table `calculate-quote` re-validates) + `_shared/availabilityEngine` (gap/route-density signals already used for slot scoring).
+- **Missing:** A server-side `evaluateIncentiveEligibility(session, reason)` in `_shared/incentives/` that returns an approved incentive **only** when: (a) an active admin promo matches the objection reason (route-gap, same-week fill, off-peak), (b) the slot ranker in `_shared/availabilityEngine` confirms the operational reason is real, (c) the incentive was pre-authorized (no free-form values). Returns `null` otherwise. The AI never sees a knob — it either receives an incentive object to speak or it does not.
+- **Retire eventually:** Any hard-coded discount language in prompts; ensure `aiOrchestrator.ts` cannot narrate a discount unless this function returned one.
+
+## 9. Still no booking → existing proposal / follow-up pipeline
+
+- **Authoritative:** `supabase/functions/save-quote` (persists version, mints resume token, supersedes older versions), `_shared/bookingEmails.ts` / Resend email templates, `send-sms` orchestrator, `_shared/campaignEngine.ts` + `campaign-event` (enrolls unbooked-quote follow-up sequence).
+- **Missing:** A single `finalizeSalesSession(session, outcome: "unbooked")` in `_shared/salesEngine/` that: calls `save-quote` with the canonical quote result, triggers the resume-link email/SMS through existing templates, and emits the `quote_saved` campaign event exactly once. Voice today has no path into this pipeline.
+- **Retire eventually:** Any voice-side quote persistence in `quoteSession.ts` that does not go through `save-quote` — `quote_sessions` stays as the live-conversation working copy, but the authoritative saved artifact must always be a `save-quote` row.
+
+## Cross-cutting proposal: `_shared/salesEngine/`
+
+Create one edge-shared package that composes the modules above:
 
 ```text
-supabase/functions/_shared/
-  workflow/
-    workflowRouter.ts        # classifies inbound intent → workflow id
-    workflowSession.ts       # thin wrapper over quote_sessions with reload-before-decide
-    factExtractor.ts         # LLM-assisted structured extraction (JSON only, no wording)
-    customerResolver.ts      # find-or-create customer + property, immutable ids
-    workflows/
-      residentialQuote.ts    # deterministic FSM: intake → price → availability → book
-      handoffPlaceholder.ts  # every other workflow, safely escalates
-    intakeSchemas.ts         # required-field manifests per workflow branch
-    speak.ts                 # LLM wording utility (never chooses next action)
-    workflowController.ts    # single entry: next(action) + apply(customerUtterance)
-  workflow_test/             # unit tests for controller + resolver + extractor
+supabase/functions/_shared/salesEngine/
+  serviceIntent.ts        # thin re-export of src/lib/pricing resolver
+  intakeManifest.ts       # derived from pricingEngine
+  priceQuote.ts           # wraps calculate-quote
+  complementaryOffer.ts   # steps 4 + 5
+  scheduleOffer.ts        # step 6 (jobber-availability + slotOffer)
+  bookNow.ts              # step 7
+  incentive.ts            # step 8
+  finalize.ts             # step 9 (save-quote + campaigns)
+  index.ts                # runSalesTurn(session, utterance, channel)
 ```
 
-Voice adapter change: `runVoiceAdapterStream` calls `workflowController.turn({...})` instead of `runOrchestrator` for supported workflows. Unsupported flows fall back to today's orchestrator so we do not regress existing web/SMS behavior.
+Voice `workflowController.runTurn` becomes a ~30-line adapter over `runSalesTurn`. Web booking flow keeps its React UI but delegates pricing/scheduling calls to the same helpers, ensuring one code path.
 
-## Deterministic residential-quote FSM
+## Suggested execution order (for a later approval)
 
-States (owned by `workflows/residentialQuote.ts`):
+1. Extract `SERVICE_INTAKE_MANIFEST` + retire `intakeSchemas.ts` (steps 1–2).
+2. Move partial-window pricing into the canonical engine (step 3).
+3. Build `complementaryOffer.ts` + retire ad-hoc upsell math (steps 4–5).
+4. Route voice slot offers through `slotOffer.ts` via `scheduleOffer.ts` (step 6).
+5. Wire voice booking to existing `create-jobber-booking` (step 7, still dry-run).
+6. Add `incentive.ts` guarded by admin promo config + availability signals (step 8).
+7. Add `finalize.ts` bridging voice unbooked outcomes to `save-quote` + campaigns (step 9).
+8. Collapse `workflowController` onto `runSalesTurn`; delete the parallel voice-only business logic.
 
-```text
-identify_service → confirm_scope → collect_sqft → collect_sides → collect_stories
-  → (optional) collect_city_for_serviceability
-  → calculate_price → speak_price
-  → offer_scheduling → collect_address → fetch_availability → offer_slots
-  → confirm_slot → dry_run_book (voice) | real_book (web/sms) → confirm_result
-```
-
-Rules:
-- `nextAction()` returns one typed action; controller executes it, persists, reloads, and only then asks LLM for wording.
-- `hasUsableFact(field, session)` gates every ask. Normalized equivalents (`outside only`/`exterior only`/`just outsides` → `outside_only`) resolve before the check.
-- City is **not** on the pricing critical path. Serviceability runs `Promise.race` with a 400 ms budget; on miss it defers to before-booking and the controller advances to price immediately.
-- Pricing invocation is automatic the instant the required-field manifest is satisfied. Result is persisted; state advances to `speak_price` without an intervening LLM turn.
-- Corrections update only affected fields; downstream cached quote/availability are invalidated by version bump.
-- Interruptions (insurance, hours, service area questions) route to `speak.answer(question)` then re-enter `nextAction()` from the reloaded session — progress is never lost.
-
-## Customer Resolver
-
-- Input: any of `{ phone, email, name, address }` captured so far.
-- Match order: phone (E.164 hash) → email hash → address canonical hash. All matches must be exact; ambiguous matches escalate rather than merge.
-- Idempotent: repeated calls in the same session return the same `customer_id` + `property_id`.
-- No mutation until the caller confirms; only reads until `resolveAndCommit()` is invoked before booking.
-
-## Voice pipeline
-
-- Adapter is unchanged for auth/CORS/streaming.
-- New: fast acknowledgement token stream (< 300 ms) while controller runs, so there is no silent gap.
-- Any operation > 3 s: emit a filler acknowledgement and continue with the next non-blocking step.
-- Latency instrumentation: extractor, persist, reload, controller, price, availability, total.
-
-## Tests
-
-Local Deno unit tests:
-- `workflowRouter.test.ts` — intent classification (new_quote, schedule_service, cancel_or_reschedule, general_inquiry, out_of_scope).
-- `residentialQuote.fsm.test.ts` — every transition, correction, interruption, duplicate-prevention.
-- `customerResolver.test.ts` — new customer, existing by phone, existing by email, address match, ambiguous → escalate.
-- `hasUsableFact.test.ts` — normalization + never-repeat.
-
-Integration harness (drives the **real** deployed-shape code, not mocks of the failing layer):
-- `residentialQuoteToBooking.integration.test.ts` — 6-turn script from the failure spec, plus interruption + correction + duplicate-prevention. Uses a real Supabase test schema and a stub Jobber client that records but does not call.
-
-Deployed synthetic (executed by me since the shared secret is available):
-- Authenticated multi-request POST sequence against `voice-llm-adapter` using one stable `x-bluladder-session-id`. Asserts one `quote_sessions` row, no repeated question, canonical price spoken, dry-run booking recorded.
-
-## Deployment sequence
-
-1. Typecheck (`tsgo`).
-2. Full Deno test suite.
-3. Vitest suite.
-4. Pricing parity tests (`engine.parity`, `engine.bundleParity`).
-5. Integration harness.
-6. Deploy: `voice-llm-adapter`, `ai-chat` (kept in sync for shared code), plus any function importing the new modules.
-7. Deployed synthetic workflow test.
-8. Update `BUILD_ID` = `voice-adapter-4C-call-center-workflow-v1`.
-9. Flags: `deterministicWorkflowRouter`, `customerResolver`, `quoteToBookingWorkflow`, `canonicalPricing`, `deployedMultiTurnWorkflowTest`, `voiceBookingDryRun` — all `true`.
-
-## Explicit non-goals for this phase
-
-- No new pricing values or formulas.
-- No commercial pricing, no partial-window wording changes beyond what already ships.
-- No CallRail routing, provisioning, or transfer configuration changes.
-- No production booking. Voice remains dry-run.
-- No new SMS sends. No call to Ben's cell.
-- Existing web chat and SMS orchestration paths remain intact; only voice is switched to the new controller in this phase. Web/SMS migration to the controller is a follow-up phase, gated on this one's synthetic pass.
-
-## What the completion report will contain
-
-The 34-item report specified in your message, with concrete evidence for each item (file diffs, test output, deployed synthetic transcript with PII scrubbed, latency numbers, pricing-parity diff, build marker verified via `/diagnostics`).
-
-## Execution plan across turns
-
-1. **Turn A (forensics + skeleton):** sanitized root-cause report for `019f8a84-…` from our side; scaffold `workflow/` modules with types + tests but no behavior wired in.
-2. **Turn B (controller + resolver):** implement `residentialQuote.ts`, `customerResolver.ts`, `factExtractor.ts`, `hasUsableFact`, unit tests green.
-3. **Turn C (adapter wiring + integration harness):** switch `voiceAdapter` to controller for supported workflows; integration harness passes locally.
-4. **Turn D (deploy + synthetic):** deploy, run deployed multi-request synthetic, produce the full completion report and READY / NOT READY status.
-
-Approve this scope and I'll start with Turn A.
+Each step is independently testable against existing parity suites (`engine.parity`, `engine.bundleParity`, campaign guard tests, availability integration tests).
