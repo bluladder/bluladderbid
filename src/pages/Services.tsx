@@ -96,14 +96,6 @@ const Services = () => {
                   {/* Subtle bottom gradient so descender text stays crisp */}
                   <div className="absolute inset-0 bg-gradient-to-t from-white/60 via-white/20 to-transparent" aria-hidden="true" />
 
-                  {/* Icon */}
-                  <img
-                    src={service.icon}
-                    alt=""
-                    aria-hidden="true"
-                    className="absolute top-4 right-4 w-16 h-16 object-contain drop-shadow-sm group-hover:scale-110 transition-transform duration-300"
-                  />
-
                   {/* Content */}
                   <div className="relative p-6 space-y-2">
                     <h2 className="text-2xl font-display font-bold text-primary">
