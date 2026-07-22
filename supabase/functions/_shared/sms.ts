@@ -1,6 +1,7 @@
 // Shared SMS helpers: CallRail sending, phone normalization, template rendering.
 
 const CALLRAIL_API_BASE = "https://api.callrail.com/v3";
+const APPROVED_CALLRAIL_SENDER_NUMBER = "+14697472877";
 
 /** Normalize a US/Canada phone number to E.164 (+1XXXXXXXXXX). Returns null if invalid. */
 export function normalizePhone(raw: string | null | undefined): string | null {
@@ -25,8 +26,15 @@ export function getCallRailConfig(): CallRailConfig | null {
   const apiKey = Deno.env.get("CALLRAIL_API_KEY");
   const accountId = Deno.env.get("CALLRAIL_ACCOUNT_ID");
   const companyId = Deno.env.get("CALLRAIL_COMPANY_ID");
-  const senderNumber = Deno.env.get("CALLRAIL_SENDER_NUMBER");
-  if (!apiKey || !accountId || !companyId || !senderNumber) return null;
+  const configuredSender = normalizePhone(Deno.env.get("CALLRAIL_SENDER_NUMBER"));
+  if (!apiKey || !accountId || !companyId) return null;
+
+  // BluLadder Bid must send customer-facing SMS from the approved CallRail line.
+  // If the environment secret is stale/missing, fail safe to the canonical line
+  // instead of silently sending from a retired or non-public tracking number.
+  const senderNumber = configuredSender === APPROVED_CALLRAIL_SENDER_NUMBER
+    ? configuredSender
+    : APPROVED_CALLRAIL_SENDER_NUMBER;
   return { apiKey, accountId, companyId, senderNumber };
 }
 
@@ -34,6 +42,8 @@ export interface SendResult {
   ok: boolean;
   messageId?: string;
   error?: string;
+  providerStatus?: number;
+  providerResponseKind?: string;
 }
 
 /** Send a single SMS through CallRail's Send-a-Text-Message endpoint. */
@@ -65,17 +75,20 @@ export async function sendCallRailSms(
 
     const text = await res.text();
     if (!res.ok) {
-      return { ok: false, error: `CallRail ${res.status}: ${text}` };
+      return { ok: false, error: `CallRail ${res.status}: ${text}`, providerStatus: res.status };
     }
 
     let messageId: string | undefined;
+    let providerResponseKind = "unknown";
     try {
       const json = JSON.parse(text);
-      messageId = json?.id ?? json?.message_id ?? undefined;
+      providerResponseKind = Array.isArray(json) ? "array" : typeof json;
+      messageId = json?.message?.id ?? json?.text_message?.id ?? json?.id ?? json?.message_id ?? undefined;
     } catch {
       // non-JSON success response; ignore
+      providerResponseKind = "text";
     }
-    return { ok: true, messageId };
+    return { ok: true, messageId, providerStatus: res.status, providerResponseKind };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
