@@ -22,6 +22,7 @@ import {
   mergeFacts,
   quoteInputsKey,
   stateDirective,
+  isQuoteEstimatedOrFirm,
 } from "./conversationState.ts";
 import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
 import { lookupServiceCity } from "./serviceArea.ts";
