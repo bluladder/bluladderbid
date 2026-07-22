@@ -471,16 +471,47 @@ export function OneTimeSummary({
             Download Quote PDF
           </Button>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" onClick={() => setSaveDialogAction('save')} disabled={!canBook}>
-              <Bookmark className="w-4 h-4 mr-2" />
-              Save this bid
+          {/* Secondary quote actions — Book Now above stays primary. Compact
+              labels with truncation guards so they never wrap or clip. */}
+          <div className="grid grid-cols-3 gap-2" data-testid="secondary-quote-actions">
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-w-0 whitespace-nowrap"
+              onClick={() => setSaveDialogAction('save')}
+              disabled={!canBook}
+            >
+              <Bookmark className="w-4 h-4 mr-1.5 shrink-0" />
+              <span className="truncate">Save</span>
             </Button>
-            <Button variant="outline" onClick={() => setSaveDialogAction('email')} disabled={!canBook}>
-              <Mail className="w-4 h-4 mr-2" />
-              Email me this bid
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-w-0 whitespace-nowrap"
+              onClick={() => setSaveDialogAction('email')}
+              disabled={!canBook}
+            >
+              <Mail className="w-4 h-4 mr-1.5 shrink-0" />
+              <span className="truncate">Email</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-w-0 whitespace-nowrap"
+              onClick={() => setSaveDialogAction('text')}
+              disabled={!canBook}
+            >
+              <MessageSquare className="w-4 h-4 mr-1.5 shrink-0" />
+              <span className="truncate">Text</span>
             </Button>
           </div>
+          {deliveryStatus && (
+            <p className="text-xs text-center text-success" data-testid="delivery-success">
+              {deliveryStatus.channel === 'email'
+                ? `Bid emailed to ${deliveryStatus.masked}.`
+                : `Bid texted to ${deliveryStatus.masked}.`}
+            </p>
+          )}
           {savedQuoteUrl && (
             <p className="text-xs text-center text-muted-foreground">
               Bid saved. <a href={savedQuoteUrl} className="underline text-primary">View your saved bid</a> — held for 30 days.
@@ -493,10 +524,13 @@ export function OneTimeSummary({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {saveDialogAction === 'email' ? 'Email me this bid' : 'Save this bid'}
+              {saveDialogAction === 'email' ? 'Email me this bid'
+                : saveDialogAction === 'text' ? 'Text me this bid'
+                : 'Save this bid'}
             </DialogTitle>
             <DialogDescription>
               We'll hold this exact price for 30 days. No payment or commitment.
+              {saveDialogAction === 'text' && ' We\u2019ll text a secure link — reply STOP to opt out anytime.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -506,14 +540,43 @@ export function OneTimeSummary({
             </div>
             <div>
               <Label htmlFor="save-email">Email</Label>
-              <Input id="save-email" type="email" value={saveEmail} onChange={(e) => setSaveEmail(e.target.value)} placeholder="you@example.com" autoFocus />
+              <Input
+                id="save-email"
+                type="email"
+                value={saveEmail}
+                onChange={(e) => setSaveEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoFocus={saveDialogAction !== 'text'}
+              />
             </div>
+            {saveDialogAction === 'text' && (
+              <div>
+                <Label htmlFor="save-phone">Mobile number</Label>
+                <Input
+                  id="save-phone"
+                  type="tel"
+                  inputMode="tel"
+                  value={savePhone}
+                  onChange={(e) => setSavePhone(e.target.value)}
+                  placeholder="(469) 555-0123"
+                  autoFocus
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Msg & data rates may apply. Reply STOP to opt out.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setSaveDialogAction(null)} disabled={saveSubmitting}>Cancel</Button>
-            <Button onClick={handleSaveOrEmail} disabled={saveSubmitting || !saveEmail}>
+            <Button
+              onClick={handleDelivery}
+              disabled={saveSubmitting || !saveEmail || (saveDialogAction === 'text' && !savePhone)}
+            >
               {saveSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              {saveDialogAction === 'email' ? 'Email me the bid' : 'Save my bid'}
+              {saveDialogAction === 'email' ? 'Email me the bid'
+                : saveDialogAction === 'text' ? 'Text me the bid'
+                : 'Save my bid'}
             </Button>
           </DialogFooter>
         </DialogContent>
