@@ -8,12 +8,6 @@ import houseImg from '@/assets/services/house-wash.webp.asset.json';
 import roofImg from '@/assets/services/roof-cleaning.png.asset.json';
 import drivewayImg from '@/assets/services/driveway-cleaning.png.asset.json';
 import pressureImg from '@/assets/services/pressure-washing.jpeg.asset.json';
-import windowIcon from '@/assets/services/icon-window-cleaning.png.asset.json';
-import gutterIcon from '@/assets/services/icon-gutter-cleaning.png.asset.json';
-import houseIcon from '@/assets/services/icon-house-washing.png.asset.json';
-import roofIcon from '@/assets/services/icon-roof-washing.png.asset.json';
-import drivewayIcon from '@/assets/services/icon-driveway-cleaning.png.asset.json';
-import pressureIcon from '@/assets/services/icon-pressure-washing.png.asset.json';
 
 const SERVICES = [
   {
