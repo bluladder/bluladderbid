@@ -1730,6 +1730,68 @@ export type Database = {
           },
         ]
       }
+      conversation_reviews: {
+        Row: {
+          admin_notes: string | null
+          assigned_admin: string | null
+          booking_state: string | null
+          conversation_id: string
+          created_at: string
+          id: string
+          model_version: string | null
+          outcome: string | null
+          prompt_version: string | null
+          quote_state: string | null
+          signal_details: Json
+          signals: string[]
+          status: string
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          assigned_admin?: string | null
+          booking_state?: string | null
+          conversation_id: string
+          created_at?: string
+          id?: string
+          model_version?: string | null
+          outcome?: string | null
+          prompt_version?: string | null
+          quote_state?: string | null
+          signal_details?: Json
+          signals?: string[]
+          status?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          admin_notes?: string | null
+          assigned_admin?: string | null
+          booking_state?: string | null
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          model_version?: string | null
+          outcome?: string | null
+          prompt_version?: string | null
+          quote_state?: string | null
+          signal_details?: Json
+          signals?: string[]
+          status?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_reviews_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crew_config: {
         Row: {
           created_at: string
@@ -2733,11 +2795,19 @@ export type Database = {
       }
       knowledge_gaps: {
         Row: {
+          approved_answer_version: number | null
+          approved_at: string | null
+          approved_by: string | null
           category: string | null
+          channel: string | null
           conversation_count: number
+          conversion_outcome: string | null
           created_at: string
+          exact_question: string | null
           example_wording: string | null
           first_seen_at: string
+          grouping_confidence: number
+          grouping_key: string
           handoff_count: number
           id: string
           internal_notes: string | null
@@ -2748,14 +2818,23 @@ export type Database = {
           related_knowledge_id: string | null
           service: string | null
           status: string
+          suggested_answer: string | null
           updated_at: string
         }
         Insert: {
+          approved_answer_version?: number | null
+          approved_at?: string | null
+          approved_by?: string | null
           category?: string | null
+          channel?: string | null
           conversation_count?: number
+          conversion_outcome?: string | null
           created_at?: string
+          exact_question?: string | null
           example_wording?: string | null
           first_seen_at?: string
+          grouping_confidence?: number
+          grouping_key: string
           handoff_count?: number
           id?: string
           internal_notes?: string | null
@@ -2766,14 +2845,23 @@ export type Database = {
           related_knowledge_id?: string | null
           service?: string | null
           status?: string
+          suggested_answer?: string | null
           updated_at?: string
         }
         Update: {
+          approved_answer_version?: number | null
+          approved_at?: string | null
+          approved_by?: string | null
           category?: string | null
+          channel?: string | null
           conversation_count?: number
+          conversion_outcome?: string | null
           created_at?: string
+          exact_question?: string | null
           example_wording?: string | null
           first_seen_at?: string
+          grouping_confidence?: number
+          grouping_key?: string
           handoff_count?: number
           id?: string
           internal_notes?: string | null
@@ -2784,6 +2872,7 @@ export type Database = {
           related_knowledge_id?: string | null
           service?: string | null
           status?: string
+          suggested_answer?: string | null
           updated_at?: string
         }
         Relationships: [
