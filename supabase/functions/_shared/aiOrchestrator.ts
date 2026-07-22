@@ -539,7 +539,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
 
   const system = await buildSystemPrompt(supabase, state, facts);
   const messages: any[] = [
-    { role: "system", content: system },
+    { role: "system", content: channel === "voice" ? `${system}\n\n${VOICE_RESPONSE_CONTRACT}` : system },
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: userMessage },
   ];
