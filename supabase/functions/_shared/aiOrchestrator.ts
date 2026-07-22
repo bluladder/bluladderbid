@@ -582,6 +582,21 @@ function isRoughQuoteIntent(text: string): boolean {
   return /\b(rough|ballpark|approx(?:imate|imately)?|estimate|quote|price|cost|how much)\b/i.test(text);
 }
 
+/** Regression guard for call 019f8b20-...: once we already have a current
+ *  firm/estimated quote, the voice rough-quote rail must NOT re-fire and
+ *  re-speak the price on unrelated turns like "when are you available?".
+ *  Only re-enter when the customer explicitly asks about price/quote again.
+ *  Corrections to pricing inputs invalidate the quote upstream (mergeFacts),
+ *  so this predicate naturally lets the rail re-run in that case. */
+export function shouldSkipRoughQuoteReplay(
+  facts: ConversationFacts,
+  userMessage: string,
+): boolean {
+  if (!isQuoteEstimatedOrFirm(facts)) return false;
+  const asksAgain = /\b(price|quote|estimate|cost|how much|remind|again)\b/i.test(userMessage ?? "");
+  return !asksAgain;
+}
+
 export function inferVoiceRoughQuotePatch(
   userMessage: string,
   history: { role: "user" | "assistant"; content: string }[],
