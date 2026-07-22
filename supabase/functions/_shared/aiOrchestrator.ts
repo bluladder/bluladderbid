@@ -315,6 +315,18 @@ async function buildSystemPrompt(
     "",
     stateDirective(state as any, facts, channel),
   );
+  if ((facts.services ?? []).includes("windowCleaning")) {
+    sections.push(
+      "",
+      "WINDOW CLEANING SCOPE DIRECTIVE:",
+      "- Classify every window-cleaning request into one of three scopes: residential whole-home, residential partial (specific windows or areas), or commercial custom bid.",
+      "- When intent is unclear, ask: \"" + WINDOW_SCOPE_QUESTION + "\"",
+      "- When you need inside-vs-outside, ALWAYS ask: \"" + WINDOW_SIDES_QUESTION + "\" — never ask a bare \"exterior only?\" question.",
+      "- Partial requests use per-window pricing at $10 per cleaned side (outside-only = $10 per window; inside and outside = $20 per window). NEVER apply whole-home square-footage pricing to a partial request. If unusual access, storm windows, hard-water restoration, heavy paint, or another nonstandard condition is present, qualify the price and flag for review rather than inventing an adjustment. Qualifier line: \"" + PARTIAL_PRICING_QUALIFIER + "\"",
+      "- Commercial requests (storefront, office, restaurant, church, school, warehouse, apartment common area, HOA, property management, business location) receive a custom bid, NOT an automated price. After enough scope is captured, respond: \"" + COMMERCIAL_HANDOFF_LINE + "\" Persist preferred contact method(s) and then ask only for the details required by the selected method. Never promise a specific response time.",
+      "- Never re-ask a question when a usable value already exists in the Quote Session. Corrections update only the affected facts.",
+    );
+  }
   return sections.join("\n");
 }
 
