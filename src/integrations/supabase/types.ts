@@ -1951,7 +1951,7 @@ export type Database = {
           status: string
           updated_at: string
           verified_email: string | null
-          verified_phone: string
+          verified_phone: string | null
         }
         Insert: {
           candidate_customer_ids: string[]
@@ -1964,7 +1964,7 @@ export type Database = {
           status?: string
           updated_at?: string
           verified_email?: string | null
-          verified_phone: string
+          verified_phone?: string | null
         }
         Update: {
           candidate_customer_ids?: string[]
@@ -1977,7 +1977,7 @@ export type Database = {
           status?: string
           updated_at?: string
           verified_email?: string | null
-          verified_phone?: string
+          verified_phone?: string | null
         }
         Relationships: [
           {
