@@ -188,8 +188,9 @@ export function computeState(f: ConversationFacts, channel?: "web" | "voice" | "
   const hasServices = (f.services ?? []).length > 0;
   if (!hasServices) return f.address || f.serviceArea ? "identifying_need" : "new";
 
-  if (channel === "voice" && !isQuoteCurrent(f)) {
-    return "voice_rough_quote";
+  if (channel === "voice") {
+    if (!isQuoteCurrent(f)) return "voice_rough_quote";
+    if (isQuoteEstimatedOrFirm(f) && !hasContact(f)) return "quote_ready";
   }
 
   if (!f.address) return "collecting_address";
@@ -366,7 +367,11 @@ export function stateDirective(
       lines.push("This needs manual review. Use request_manual_quote and collect details. Do NOT give a firm price.");
       break;
     case "quote_ready":
-      lines.push("Present the quote from the tool. To move toward booking, collect the customer's name and email.");
+      if (channel === "voice") {
+        lines.push("Present the quote from the tool, then ask whether the caller wants to check appointment availability. Do not collect name, email, or phone here. Collect the full street address only after they want availability or booking.");
+      } else {
+        lines.push("Present the quote from the tool. To move toward booking, collect the customer's name and email.");
+      }
       break;
     case "checking_availability":
       lines.push("Call get_bluladder_availability. Only offer times the tool returns.");
