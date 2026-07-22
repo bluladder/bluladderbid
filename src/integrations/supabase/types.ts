@@ -3770,6 +3770,7 @@ export type Database = {
           business_hours_only: boolean
           campaign_id: string
           channel: string
+          content_config: Json
           created_at: string
           delay_hours: number
           id: string
@@ -3784,6 +3785,7 @@ export type Database = {
           business_hours_only?: boolean
           campaign_id: string
           channel?: string
+          content_config?: Json
           created_at?: string
           delay_hours?: number
           id?: string
@@ -3798,6 +3800,7 @@ export type Database = {
           business_hours_only?: boolean
           campaign_id?: string
           channel?: string
+          content_config?: Json
           created_at?: string
           delay_hours?: number
           id?: string
@@ -3827,6 +3830,7 @@ export type Database = {
           effective_end: string | null
           effective_start: string | null
           event_name: string | null
+          historical_backfill_enabled: boolean
           id: string
           is_terminal_phase: boolean
           lifecycle_status:
@@ -3852,6 +3856,7 @@ export type Database = {
           effective_end?: string | null
           effective_start?: string | null
           event_name?: string | null
+          historical_backfill_enabled?: boolean
           id?: string
           is_terminal_phase?: boolean
           lifecycle_status?:
@@ -3879,6 +3884,7 @@ export type Database = {
           effective_end?: string | null
           effective_start?: string | null
           event_name?: string | null
+          historical_backfill_enabled?: boolean
           id?: string
           is_terminal_phase?: boolean
           lifecycle_status?:
