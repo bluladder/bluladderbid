@@ -14,6 +14,7 @@
 export type ConversationState =
   | "new"
   | "identifying_need"
+  | "voice_rough_quote"
   | "collecting_address"
   | "validating_service_area"
   | "collecting_property_details"
@@ -86,6 +87,11 @@ export interface ConversationFacts {
   staffTakeover?: boolean;
   resolved?: boolean;
   lastError?: string | null;
+  roughQuote?: {
+    intent?: boolean;
+    city?: string;
+    cityStatus?: "normal_service_city" | "unknown_or_outside" | "lookup_unavailable";
+  };
 }
 
 const MANUAL_REVIEW_STATES = ["manual_review_required"];
@@ -166,7 +172,7 @@ export function isManualReview(f: ConversationFacts): boolean {
 // computeState — the single source of truth for "where are we".
 // Terminal / override states win first, then the linear journey.
 // ---------------------------------------------------------------------------
-export function computeState(f: ConversationFacts): ConversationState {
+export function computeState(f: ConversationFacts, channel?: "web" | "voice" | "sms"): ConversationState {
   if (f.staffTakeover) return "staff_takeover";
   if (f.resolved) return "resolved";
   if (f.bookingStatus === "confirmed") return "booked";
@@ -181,6 +187,10 @@ export function computeState(f: ConversationFacts): ConversationState {
 
   const hasServices = (f.services ?? []).length > 0;
   if (!hasServices) return f.address || f.serviceArea ? "identifying_need" : "new";
+
+  if (channel === "voice" && !isQuoteCurrent(f)) {
+    return "voice_rough_quote";
+  }
 
   if (!f.address) return "collecting_address";
   if (!f.serviceArea) return "validating_service_area";
@@ -234,6 +244,7 @@ export function allowedToolsForState(
 ): ToolName[] {
   const base: Record<ConversationState, ToolName[]> = {
     new: ["validate_service_area", "request_manual_quote"],
+    voice_rough_quote: ["calculate_bluladder_quote", "request_manual_quote"],
     // calculate_bluladder_quote is permitted here so the model can RECORD the
     // requested service(s) once known — services are only persisted by that tool,
     // and computeState cannot advance past identifying_need until they exist.
@@ -260,7 +271,7 @@ export function allowedToolsForState(
     error_recovery: ["validate_service_area", "calculate_bluladder_quote", "get_bluladder_availability", "request_manual_quote"],
   };
   const set = new Set<ToolName>([...(base[state] ?? []), ...ALWAYS_ALLOWED]);
-  if (channel === "voice" && VOICE_EARLY_QUOTE_STATES.includes(state)) {
+  if (channel === "voice" && (state === "voice_rough_quote" || VOICE_EARLY_QUOTE_STATES.includes(state))) {
     set.add("calculate_bluladder_quote");
   }
   return [...set];
@@ -320,6 +331,11 @@ export function stateDirective(
     case "identifying_need":
       lines.push(
         "As soon as you know which service(s) the customer wants, call calculate_bluladder_quote with the services list (plus any property details you already have) — this records the service(s) and returns either a price or the exact missing details to ask for. If you don't yet have the address, get it and validate the service area first.",
+      );
+      break;
+    case "voice_rough_quote":
+      lines.push(
+        "VOICE ROUGH QUOTE MODE: address collection, service-area validation, customer lookup, contact collection, availability, booking, and callback intake must NOT interrupt the rough quote. Ask exactly one missing canonical pricing question at a time. For exterior window cleaning, collect approximate square footage, exterior-only versus full-service inside-and-out, stories, and lightweight city context. Do not ask for window count. Once those inputs are present, call calculate_bluladder_quote immediately. Use canonical/default pricing assumptions only; never invent pricing values. After stating the tool price, ask whether the caller wants to check appointment availability; collect the full street address only after they say yes to availability or booking.",
       );
       break;
     case "collecting_address":

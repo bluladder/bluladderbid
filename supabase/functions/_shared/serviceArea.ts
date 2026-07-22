@@ -36,6 +36,11 @@ export interface ServiceAreaResult {
   customerMessage: string;
 }
 
+export interface ServiceCityLookupResult {
+  city: string;
+  status: "normal_service_city" | "unknown_or_outside" | "lookup_unavailable";
+}
+
 interface AreaConfig {
   allowedCities: string[];
   manualReviewCounties: string[];
@@ -59,6 +64,20 @@ async function loadConfig(supabase: SupabaseClient): Promise<AreaConfig | null> 
     manualReviewCounties: (Array.isArray(data.manual_review_counties) ? data.manual_review_counties : []).map((c: string) => norm(c)),
     stateCode: norm(data.state_code || "TX"),
     outOfAreaMessage: data.out_of_area_message || "I can pass your details to the team to confirm eligibility.",
+  };
+}
+
+export async function lookupServiceCity(
+  supabase: SupabaseClient,
+  rawCity: string,
+): Promise<ServiceCityLookupResult> {
+  const city = (rawCity || "").trim().replace(/\s+/g, " ");
+  if (!city) return { city, status: "unknown_or_outside" };
+  const config = await loadConfig(supabase);
+  if (!config) return { city, status: "lookup_unavailable" };
+  return {
+    city,
+    status: config.allowedCities.includes(norm(city)) ? "normal_service_city" : "unknown_or_outside",
   };
 }
 

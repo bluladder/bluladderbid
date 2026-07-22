@@ -24,6 +24,7 @@ import {
   stateDirective,
 } from "./conversationState.ts";
 import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
+import { lookupServiceCity } from "./serviceArea.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
@@ -500,7 +501,205 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
   }
 }
 
-function persistFacts(supabase: SupabaseClient, conversationId: string, facts: ConversationFacts, state: string) {
+function parseNumberWord(s: string): number | undefined {
+  const map: Record<string, number> = { one: 1, two: 2, three: 3 };
+  return map[s.toLowerCase()];
+}
+
+function parseSquareFootage(text: string): number | undefined {
+  const t = text.toLowerCase();
+  const m = t.match(/\b(?:around|about|roughly|approximately)?\s*([1-9][0-9]{2,4}(?:,[0-9]{3})?)\s*(?:sq\.?\s*ft\.?|square\s*feet|square\s*foot|sf)\b/i)
+    || t.match(/\b([1-9](?:,[0-9]{3}|[0-9]{3}))\b/);
+  if (!m) return undefined;
+  const n = Number(String(m[1]).replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function parseStories(text: string): number | undefined {
+  const t = text.toLowerCase();
+  const numeric = t.match(/\b([123])\s*(?:story|stories|storey|storeys)\b/i);
+  if (numeric) return Number(numeric[1]);
+  const word = t.match(/\b(one|two|three)[ -]?(?:story|stories|storey|storeys)\b/i);
+  return word ? parseNumberWord(word[1]) : undefined;
+}
+
+function parseWindowType(text: string): string | undefined {
+  const t = text.toLowerCase();
+  if (/\b(exterior|outside)\s*(?:only)?\b/.test(t) && !/inside\s*(?:and|&)\s*out(?:side)?/i.test(t)) return "exterior";
+  if (/\b(full\s*service|inside\s*(?:and|&)\s*out(?:side)?|interior\s*(?:and|&)\s*exterior|both)\b/i.test(t)) return "both";
+  return undefined;
+}
+
+function parseServices(text: string): string[] | undefined {
+  const t = text.toLowerCase();
+  const services = new Set<string>();
+  if (/\bwindow(?:s)?\b/.test(t)) services.add("window_cleaning");
+  if (/\bhouse\s*wash|soft\s*wash\b/.test(t)) services.add("house_wash");
+  if (/\bgutter(?:s)?\b/.test(t)) services.add("gutter_cleaning");
+  if (/\broof\b/.test(t)) services.add("roof_cleaning");
+  if (/\bdriveway\b/.test(t)) services.add("driveway_cleaning");
+  if (/\bpressure\s*wash|power\s*wash\b/.test(t)) services.add("pressure_washing");
+  return services.size ? [...services] : undefined;
+}
+
+function parseLikelyCity(text: string, history: { role: "user" | "assistant"; content: string }[]): string | undefined {
+  const t = text.trim();
+  if (!t || /\d/.test(t) || t.length > 40) return undefined;
+  const explicit = text.match(/\b(?:in|city is|property is in)\s+([A-Za-z][A-Za-z .'-]{1,38})\b/i);
+  if (explicit) return explicit[1].trim().replace(/[.?!,]+$/, "");
+  const lastAssistant = [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  if (/\bwhat city\b|\bcity is the property\b|\bwhich city\b/i.test(lastAssistant)) {
+    return t.replace(/[.?!,]+$/, "");
+  }
+  return undefined;
+}
+
+function isRoughQuoteIntent(text: string): boolean {
+  return /\b(rough|ballpark|approx(?:imate|imately)?|estimate|quote|price|cost|how much)\b/i.test(text);
+}
+
+export function inferVoiceRoughQuotePatch(
+  userMessage: string,
+  history: { role: "user" | "assistant"; content: string }[],
+  facts: ConversationFacts,
+): Partial<ConversationFacts> {
+  const patch: Partial<ConversationFacts> = {};
+  const services = parseServices(userMessage);
+  if (services) patch.services = services;
+  const squareFootage = parseSquareFootage(userMessage);
+  const stories = parseStories(userMessage);
+  const windowCleaningType = parseWindowType(userMessage);
+  if (squareFootage || stories || windowCleaningType) {
+    patch.property = {
+      ...(squareFootage ? { squareFootage } : {}),
+      ...(stories ? { stories } : {}),
+      ...(windowCleaningType ? { windowCleaningType } : {}),
+    };
+  }
+  const city = parseLikelyCity(userMessage, history);
+  if (city) patch.roughQuote = { ...(facts.roughQuote ?? {}), intent: true, city };
+  if (isRoughQuoteIntent(userMessage) || facts.roughQuote?.intent) {
+    patch.roughQuote = { ...(facts.roughQuote ?? {}), ...(patch.roughQuote ?? {}), intent: true };
+  }
+  return patch;
+}
+
+function requiredVoiceQuoteQuestion(facts: ConversationFacts): string | null {
+  const services = facts.services ?? [];
+  if (services.length === 0) return "Sure — which exterior cleaning service would you like a rough price for?";
+  if (services.includes("window_cleaning")) {
+    const p = facts.property ?? {};
+    if (!p.squareFootage) return "Sure. About how large is the home in square feet?";
+    if (!p.windowCleaningType) return "Is that exterior only, or inside and outside?";
+    if (!p.stories) return "Is it a one-story or two-story home?";
+    if (!facts.roughQuote?.city) return "What city is the property in?";
+    return null;
+  }
+  const p = facts.property ?? {};
+  if (!p.squareFootage && services.some((s) => ["house_wash", "gutter_cleaning", "roof_cleaning"].includes(s))) {
+    return "About how large is the home in square feet?";
+  }
+  if (!p.stories && services.some((s) => ["house_wash", "gutter_cleaning", "roof_cleaning"].includes(s))) {
+    return "Is it a one-story or two-story home?";
+  }
+  return null;
+}
+
+function voiceQuoteArgs(facts: ConversationFacts): Record<string, unknown> {
+  const p = facts.property ?? {};
+  return {
+    services: facts.services ?? [],
+    squareFootage: p.squareFootage,
+    stories: p.stories,
+    windowCleaningType: p.windowCleaningType,
+    condition: p.condition,
+    roofType: p.roofType,
+    roofSeverity: p.roofSeverity,
+    drivewaySqft: p.drivewaySqft,
+    drivewaySurface: p.drivewaySurface,
+    pressureWashSqft: p.pressureWashSqft,
+    pressureWashSurface: p.pressureWashSurface,
+    discountCode: facts.discountCode ?? undefined,
+  };
+}
+
+function describeWindowAssumptions(facts: ConversationFacts): string {
+  const p = facts.property ?? {};
+  const sqft = p.squareFootage ? `roughly ${p.squareFootage.toLocaleString()}-square-foot` : "roughly sized";
+  const stories = p.stories ? `${p.stories}-story` : "standard";
+  const type = p.windowCleaningType === "both" ? "full-service inside-and-out window cleaning" : "exterior-only window cleaning";
+  return `a ${sqft}, ${stories} home with ${type} and standard access`;
+}
+
+function priceFromResult(result: any): number | null {
+  const n = Number(result?.total);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+async function runVoiceRoughQuoteRail(args: {
+  supabase: SupabaseClient;
+  toolCtx: ToolContext;
+  conversationId: string;
+  sessionToken: string;
+  facts: ConversationFacts;
+  state: string;
+  history: { role: "user" | "assistant"; content: string }[];
+}): Promise<OrchestratorResult | null> {
+  let { facts, state } = args;
+  if (state !== "voice_rough_quote" && !facts.roughQuote?.intent) return null;
+
+  if (facts.roughQuote?.city && !facts.roughQuote.cityStatus) {
+    const lookup = await lookupServiceCity(args.supabase, facts.roughQuote.city);
+    facts = mergeFacts(facts, { roughQuote: { ...facts.roughQuote, city: lookup.city, cityStatus: lookup.status } });
+    state = computeState(facts, "voice");
+    await persistFacts(args.supabase, args.conversationId, facts, state, { sessionToken: args.sessionToken, channel: "voice" });
+  }
+
+  const question = requiredVoiceQuoteQuestion(facts);
+  if (question) {
+    await persistFacts(args.supabase, args.conversationId, facts, state, { sessionToken: args.sessionToken, channel: "voice" });
+    return finalize({ reply: question, toolEvents: [], events: ["voice_rough_quote_question"], state, channel: "voice", facts, railBooked: false });
+  }
+
+  const toolArgs = voiceQuoteArgs(facts);
+  const result = await runTool("calculate_bluladder_quote", args.toolCtx, toolArgs);
+  const toolEvents = [{ tool: "calculate_bluladder_quote", result }];
+  let nextFacts = mergeFacts(facts, factPatchFromTool("calculate_bluladder_quote", toolArgs, result, facts));
+  const nextState = computeState(nextFacts, "voice");
+  await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, { sessionToken: args.sessionToken, channel: "voice" });
+
+  if ((result as any)?.status === "missing_information") {
+    const missing = Array.isArray((result as any).missingQuestions) ? (result as any).missingQuestions[0] : null;
+    const reply = missing ? `I need one more detail to price that accurately: ${missing}` : "I need one more detail to price that accurately.";
+    return finalize({ reply, toolEvents, events: ["quote_missing_information"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
+  }
+  if ((result as any)?.status === "manual_review_required") {
+    const reply = (result as any).customerExplanation || "That one needs a quick manual review before we quote it accurately.";
+    return finalize({ reply, toolEvents, events: ["quote_manual_review"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
+  }
+  const total = priceFromResult(result);
+  if (!total) {
+    const reply = (result as any)?.customerExplanation || "I couldn't calculate that quote just now.";
+    return finalize({ reply, toolEvents, events: ["quote_calculation_failed"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
+  }
+
+  const city = facts.roughQuote?.city;
+  const cityStatus = facts.roughQuote?.cityStatus;
+  const cityPhrase = city ? ` in ${city}` : "";
+  const serviceability = cityStatus === "normal_service_city"
+    ? ""
+    : " Exact service availability will need confirmation before booking.";
+  const reply = `Based on ${describeWindowAssumptions(facts)}${cityPhrase}, the rough price is approximately $${Math.round(total)}.${serviceability} Would you like to check appointment availability?`;
+  return finalize({ reply, toolEvents, events: ["quote_calculated", "voice_rough_quote_ready"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
+}
+
+function persistFacts(
+  supabase: SupabaseClient,
+  conversationId: string,
+  facts: ConversationFacts,
+  state: string,
+  opts?: { sessionToken?: string; channel?: "web" | "voice" | "sms" },
+) {
   const c = facts.contact ?? {};
   const update: Record<string, unknown> = {
     facts: { ...facts, aiModel: ORCHESTRATOR_MODEL, aiPromptVersion: ORCHESTRATOR_PROMPT_VERSION } as any,
@@ -514,6 +713,11 @@ function persistFacts(supabase: SupabaseClient, conversationId: string, facts: C
   if (c.name) update.prospect_name = c.name;
   if (c.email) update.prospect_email = c.email;
   if (c.phone) update.prospect_phone = c.phone;
+  if (opts?.channel === "voice") {
+    return supabase
+      .from("chat_conversations")
+      .upsert({ id: conversationId, session_token: opts.sessionToken || conversationId, channel: "voice", ...update }, { onConflict: "id" });
+  }
   return supabase
     .from("chat_conversations")
     .update(update)
@@ -530,7 +734,13 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     .maybeSingle();
 
   let facts = factsFromRow(row);
-  let state = computeState(facts);
+  if (channel === "voice") {
+    const inferred = inferVoiceRoughQuotePatch(userMessage, history, facts);
+    if (Object.keys(inferred).length > 0) {
+      facts = mergeFacts(facts, inferred);
+    }
+  }
+  let state = computeState(facts, channel);
   const priorState: string = row?.conversation_state ?? "new";
 
   // Staff has taken over — the AI stays silent/deferential and takes no action.
@@ -553,6 +763,11 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   const toolEvents: { tool: string; result: any }[] = [];
   const events: string[] = [];
 
+  const roughQuoteRail = channel === "voice"
+    ? await runVoiceRoughQuoteRail({ supabase, toolCtx, conversationId, sessionToken, facts, state, history })
+    : null;
+  if (roughQuoteRail) return roughQuoteRail;
+
   // ---- Deterministic post-yes rail (pre-model) --------------------------
   // Fire ONLY when the user's message is an explicit booking-confirm intent,
   // the state machine already parked us at awaiting_booking_confirmation, and
@@ -571,8 +786,8 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       }
       const patch = factPatchFromTool("create_bluladder_booking", args, result, facts);
       facts = mergeFacts(facts, patch);
-      state = computeState(facts);
-      await persistFacts(supabase, conversationId, facts, state);
+      state = computeState(facts, channel);
+      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel });
       railBooked = (result as any)?.status === "confirmed";
       // Give the model a system-scoped ground truth so its reply is anchored
       // in the real tool status, not a hallucinated confirmation.
@@ -642,8 +857,8 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       // automatically invalidate downstream quote/availability/slot.
       const patch = factPatchFromTool(name, args, result, facts);
       facts = mergeFacts(facts, patch);
-      state = computeState(facts);
-      await persistFacts(supabase, conversationId, facts, state);
+      state = computeState(facts, channel);
+      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel });
 
       messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result) });
     }
