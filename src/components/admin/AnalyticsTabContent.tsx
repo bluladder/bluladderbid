@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { TrendingUp, Users, Target, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, Users, Target, ChevronDown, ChevronUp, LineChart } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MarketingAnalytics } from './MarketingAnalytics';
 import { CrewUtilizationAnalytics } from './CrewUtilizationAnalytics';
+import { ConversionAnalyticsPanel } from './analytics/ConversionAnalyticsPanel';
 
 export function AnalyticsTabContent() {
   const [activeSection, setActiveSection] = useState('marketing');
@@ -30,6 +31,14 @@ export function AnalyticsTabContent() {
               <Users className="w-3.5 h-3.5 mr-1.5" />
               Crew Utilization
             </Badge>
+            <Badge
+              variant={activeSection === 'conversion' ? 'default' : 'outline'}
+              className="cursor-pointer px-3 py-1.5"
+              onClick={() => setActiveSection('conversion')}
+            >
+              <LineChart className="w-3.5 h-3.5 mr-1.5" />
+              Conversion Analytics
+            </Badge>
           </div>
         </CardContent>
       </Card>
@@ -42,6 +51,11 @@ export function AnalyticsTabContent() {
       {/* Crew Utilization */}
       {activeSection === 'crew' && (
         <CrewUtilizationAnalytics />
+      )}
+
+      {/* Conversion Analytics — funnel, outcomes, reviews, gaps, model comparison */}
+      {activeSection === 'conversion' && (
+        <ConversionAnalyticsPanel />
       )}
     </div>
   );
