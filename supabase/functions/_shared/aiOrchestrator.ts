@@ -26,6 +26,16 @@ import {
 import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
 import { lookupServiceCity } from "./serviceArea.ts";
 import { findOrCreateForConversation as findOrCreateQuoteSession, syncFromFacts as syncQuoteSession } from "./quoteSession.ts";
+import { mergeFields as mergeSessionFields, changeWindowScope, type QuoteSessionFields } from "./quoteSession.ts";
+import {
+  classifyWindowIntent,
+  WINDOW_SIDES_QUESTION,
+  WINDOW_SCOPE_QUESTION,
+  COMMERCIAL_HANDOFF_LINE,
+  PARTIAL_PRICING_QUALIFIER,
+  type WindowIntentPatch,
+} from "./windowIntent.ts";
+import { computePartialWindowPrice } from "./partialWindowPricing.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
