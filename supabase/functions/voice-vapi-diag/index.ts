@@ -96,7 +96,10 @@ Deno.serve(async (req) => {
       pstnFieldsAbsent: !((j as any)?.phoneNumber || (j as any)?.phoneNumberId || (j as any)?.customer?.number),
       cost: typeof (j as any)?.cost === "number" ? (j as any).cost : null,
     };
-    const pm = (j as any)?.performanceMetrics ?? (j as any)?.analysis?.performanceMetrics ?? null;
+    const pm = (j as any)?.performanceMetrics
+      ?? (j as any)?.artifact?.performanceMetrics
+      ?? (j as any)?.analysis?.performanceMetrics
+      ?? null;
     return new Response(JSON.stringify({
       status: r.status,
       structural,
