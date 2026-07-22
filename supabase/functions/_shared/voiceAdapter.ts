@@ -192,6 +192,52 @@ export interface VoiceStreamArgs {
   emit: (ev: VoiceStreamEvent) => void | boolean | Promise<void | boolean>;
 }
 
+export async function ensureVoiceConversation(args: {
+  supabase: SupabaseClient;
+  request: ParsedAdapterRequest;
+  conversationId?: string;
+  sessionToken?: string;
+}): Promise<{ conversationId: string; sessionToken: string }> {
+  const { supabase, request } = args;
+  const sessionToken = args.sessionToken || request.sessionId;
+
+  if (args.conversationId) {
+    const { data: existing } = await supabase
+      .from("chat_conversations")
+      .select("id, session_token")
+      .eq("id", args.conversationId)
+      .maybeSingle();
+    if (existing?.id) return { conversationId: existing.id, sessionToken: existing.session_token || sessionToken };
+
+    const { data: inserted } = await supabase
+      .from("chat_conversations")
+      .insert({ id: args.conversationId, session_token: sessionToken, channel: "voice" })
+      .select("id, session_token")
+      .single();
+    if (inserted?.id) return { conversationId: inserted.id, sessionToken: inserted.session_token || sessionToken };
+    return { conversationId: args.conversationId, sessionToken };
+  }
+
+  const { data: existing } = await supabase
+    .from("chat_conversations")
+    .select("id, session_token")
+    .eq("session_token", sessionToken)
+    .eq("channel", "voice")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return { conversationId: existing.id, sessionToken: existing.session_token || sessionToken };
+
+  const { data: inserted } = await supabase
+    .from("chat_conversations")
+    .insert({ session_token: sessionToken, channel: "voice" })
+    .select("id, session_token")
+    .single();
+  if (inserted?.id) return { conversationId: inserted.id, sessionToken: inserted.session_token || sessionToken };
+
+  return { conversationId: request.sessionId, sessionToken };
+}
+
 /** True streaming voice run.
  *
  *  Fast knowledge lane: streams model tokens directly, emitting text_delta
@@ -210,8 +256,9 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
   ackEmitted: boolean;
 }> {
   const { supabase, request, emit } = args;
-  const conversationId = args.conversationId || request.sessionId;
-  const sessionToken = args.sessionToken || "";
+  const identity = await ensureVoiceConversation(args);
+  const conversationId = identity.conversationId;
+  const sessionToken = identity.sessionToken;
   const clock = makeClock();
   const t0 = clock.mark();
   const timings: VoiceLatencyEvent["t"] = { requestReceived: 0 };
@@ -413,8 +460,9 @@ export async function runVoiceAdapter(args: {
   sessionToken?: string;
 }): Promise<AdapterCompletion> {
   const { supabase, request } = args;
-  const conversationId = args.conversationId || request.sessionId;
-  const sessionToken = args.sessionToken || "";
+  const identity = await ensureVoiceConversation(args);
+  const conversationId = identity.conversationId;
+  const sessionToken = identity.sessionToken;
   // Build history from all but the final user message; pass the final user
   // message separately per the orchestrator contract.
   const nonSystem = request.messages.filter((m) => m.role !== "system" && m.role !== "tool");

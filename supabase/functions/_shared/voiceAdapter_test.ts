@@ -7,6 +7,7 @@ import {
   mapDispositionToAction,
   parseAdapterRequest,
   MAX_ADAPTER_REQUEST_BYTES,
+  ensureVoiceConversation,
   type AdapterCompletion,
 } from "./voiceAdapter.ts";
 import {
@@ -96,6 +97,55 @@ Deno.test("parseAdapterRequest: caller-supplied session id is preferred", async 
   if (!parsed.ok) return;
   assertEquals(parsed.value.sessionId, "call-1234");
   assertEquals(parsed.value.sessionIdIsSynthetic, false);
+});
+
+Deno.test("ensureVoiceConversation: reuses existing voice conversation by session token", async () => {
+  let inserted = false;
+  const supabase: any = {
+    from(table: string) {
+      assertEquals(table, "chat_conversations");
+      return {
+        select() { return this; },
+        eq() { return this; },
+        order() { return this; },
+        limit() { return this; },
+        maybeSingle: async () => ({ data: { id: "conv_existing", session_token: "call-1234" }, error: null }),
+        insert() { inserted = true; return this; },
+        single: async () => ({ data: null, error: null }),
+      };
+    },
+  };
+  const parsed = await parseAdapterRequest(makeReq(basicGreetingRequest, { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "call-1234" } }));
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+  const got = await ensureVoiceConversation({ supabase, request: parsed.value });
+  assertEquals(got.conversationId, "conv_existing");
+  assertEquals(got.sessionToken, "call-1234");
+  assertEquals(inserted, false);
+});
+
+Deno.test("ensureVoiceConversation: inserts a voice conversation for new sessions", async () => {
+  let insertedBody: any = null;
+  const supabase: any = {
+    from(table: string) {
+      assertEquals(table, "chat_conversations");
+      return {
+        select() { return this; },
+        eq() { return this; },
+        order() { return this; },
+        limit() { return this; },
+        maybeSingle: async () => ({ data: null, error: null }),
+        insert(body: any) { insertedBody = body; return this; },
+        single: async () => ({ data: { id: "conv_new", session_token: insertedBody.session_token }, error: null }),
+      };
+    },
+  };
+  const parsed = await parseAdapterRequest(makeReq(basicGreetingRequest, { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "call-new" } }));
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+  const got = await ensureVoiceConversation({ supabase, request: parsed.value });
+  assertEquals(got.conversationId, "conv_new");
+  assertEquals(insertedBody, { session_token: "call-new", channel: "voice" });
 });
 
 Deno.test("mapDispositionToAction: covers all nine voice dispositions", () => {

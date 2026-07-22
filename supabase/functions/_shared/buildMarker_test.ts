@@ -1,10 +1,16 @@
 // Deno tests: build marker present in safe diagnostics, never in spoken content.
 import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { BUILD_ID } from "./buildMarker.ts";
+import { BUILD_FEATURES, BUILD_ID } from "./buildMarker.ts";
 import { buildNonStreamingResponse, type AdapterCompletion } from "./voiceAdapter.ts";
 
 Deno.test("BUILD_ID is a non-empty stable string", () => {
   assert(typeof BUILD_ID === "string" && BUILD_ID.length > 0);
+});
+
+Deno.test("BUILD_FEATURES exposes address-free voice rough quote marker", () => {
+  assertEquals(BUILD_FEATURES.voiceEarlyQuote, true);
+  assertEquals(BUILD_FEATURES.voiceAddressFreeRoughQuote, true);
+  assertEquals(BUILD_FEATURES.voiceBookingDryRun, true);
 });
 
 Deno.test("buildNonStreamingResponse: buildId is in bluladder diagnostics", async () => {

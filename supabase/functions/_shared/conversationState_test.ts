@@ -31,26 +31,42 @@ Deno.test("new conversation with nothing collected", () => {
 Deno.test("voice channel: rough quote allowed before address, booking still gated", () => {
   const f: ConversationFacts = { services: ["window_cleaning"] };
   const state = computeState(f);
+  const voiceState = computeState(f, "voice");
   assertEquals(state, "collecting_address");
+  assertEquals(voiceState, "voice_rough_quote");
   // Web/SMS: quote tool NOT allowed until address + eligibility.
   assert(!isToolAllowed(state, "calculate_bluladder_quote"));
   assert(!isToolAllowed(state, "calculate_bluladder_quote", "web"));
+  assert(!isToolAllowed(state, "calculate_bluladder_quote", "sms"));
   // Voice beta: rough quote allowed pre-address.
-  assert(isToolAllowed(state, "calculate_bluladder_quote", "voice"));
+  assert(isToolAllowed(voiceState, "calculate_bluladder_quote", "voice"));
   // Booking + availability remain locked on the voice channel too.
-  assert(!isToolAllowed(state, "create_bluladder_booking", "voice"));
-  assert(!isToolAllowed(state, "get_bluladder_availability", "voice"));
-  // validate_service_area still available on both channels for eligibility.
-  assert(allowedToolsForState(state, "voice").includes("validate_service_area"));
+  assert(!isToolAllowed(voiceState, "create_bluladder_booking", "voice"));
+  assert(!isToolAllowed(voiceState, "get_bluladder_availability", "voice"));
+  // Full address validation is deliberately excluded from rough quote mode.
+  assert(!allowedToolsForState(voiceState, "voice").includes("validate_service_area"));
 });
 
 Deno.test("voice channel: rough quote allowed during service-area validation", () => {
   const f: ConversationFacts = { services: ["window_cleaning"], address: "any" };
   const state = computeState(f);
   assertEquals(state, "validating_service_area");
+  assertEquals(computeState(f, "voice"), "voice_rough_quote");
   assert(!isToolAllowed(state, "calculate_bluladder_quote", "web"));
-  assert(isToolAllowed(state, "calculate_bluladder_quote", "voice"));
-  assert(!isToolAllowed(state, "create_bluladder_booking", "voice"));
+  assert(!isToolAllowed(state, "calculate_bluladder_quote", "sms"));
+  assert(isToolAllowed(computeState(f, "voice"), "calculate_bluladder_quote", "voice"));
+  assert(!isToolAllowed(computeState(f, "voice"), "create_bluladder_booking", "voice"));
+});
+
+Deno.test("voice channel: completed rough quote asks availability before full address", () => {
+  const f: ConversationFacts = {
+    services: ["window_cleaning"],
+    property: { squareFootage: 2000, stories: 2, windowCleaningType: "exterior" },
+    roughQuote: { intent: true, city: "McKinney", cityStatus: "normal_service_city" },
+  };
+  const q = { ...f, quote: { status: "firm", firm: true, total: 249, inputsKey: quoteInputsKey(f) } } as ConversationFacts;
+  assertEquals(computeState(q, "voice"), "quote_ready");
+  assert(!isToolAllowed("quote_ready", "get_bluladder_availability", "voice"));
 });
 
 Deno.test("state follows the required order", () => {
