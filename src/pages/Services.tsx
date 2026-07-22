@@ -1,62 +1,50 @@
 import { Link, useSearchParams } from 'react-router-dom';
-import { Sparkles, Droplets, Home, TreeDeciduous, Sun, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { CustomerFooter } from '@/components/CustomerFooter';
+import windowImg from '@/assets/services/window-cleaning.jpg.asset.json';
+import gutterImg from '@/assets/services/gutter-cleaning.jpeg.asset.json';
+import houseImg from '@/assets/services/house-wash.webp.asset.json';
+import roofImg from '@/assets/services/roof-cleaning.png.asset.json';
+import drivewayImg from '@/assets/services/driveway-cleaning.png.asset.json';
+import pressureImg from '@/assets/services/pressure-washing.jpeg.asset.json';
 
 const SERVICES = [
   {
     slug: 'window-cleaning',
     title: 'Window Cleaning',
     description: 'Crystal clear views inside and out. Professional cleaning for all window types.',
-    icon: Sparkles,
-    color: 'from-sky-500 to-cyan-400',
-    bgLight: 'bg-sky-50',
-    iconColor: 'text-sky-500',
+    image: windowImg.url,
   },
   {
     slug: 'gutter-cleaning',
     title: 'Gutter Cleaning',
     description: 'Protect your home from water damage with thorough gutter and downspout cleaning.',
-    icon: Home,
-    color: 'from-amber-500 to-orange-400',
-    bgLight: 'bg-amber-50',
-    iconColor: 'text-amber-500',
+    image: gutterImg.url,
   },
   {
     slug: 'house-wash',
     title: 'House Washing',
     description: 'Restore your home\'s curb appeal with our safe soft wash technique.',
-    icon: Droplets,
-    color: 'from-emerald-500 to-teal-400',
-    bgLight: 'bg-emerald-50',
-    iconColor: 'text-emerald-500',
+    image: houseImg.url,
   },
   {
     slug: 'roof-cleaning',
     title: 'Roof Cleaning',
     description: 'Remove algae, moss, and debris to extend your roof\'s lifespan.',
-    icon: TreeDeciduous,
-    color: 'from-slate-600 to-zinc-500',
-    bgLight: 'bg-slate-50',
-    iconColor: 'text-slate-600',
+    image: roofImg.url,
   },
   {
     slug: 'driveway-cleaning',
     title: 'Driveway Cleaning',
     description: 'Make your driveway look brand new with professional pressure washing.',
-    icon: Sun,
-    color: 'from-violet-500 to-purple-400',
-    bgLight: 'bg-violet-50',
-    iconColor: 'text-violet-500',
+    image: drivewayImg.url,
   },
   {
     slug: 'pressure-washing',
     title: 'Pressure Washing',
     description: 'Power away dirt and grime from patios, decks, walkways, and more.',
-    icon: Droplets,
-    color: 'from-blue-500 to-indigo-400',
-    bgLight: 'bg-blue-50',
-    iconColor: 'text-blue-500',
+    image: pressureImg.url,
   },
 ];
 
@@ -89,34 +77,32 @@ const Services = () => {
         <div className="max-w-5xl mx-auto">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {SERVICES.map((service) => {
-              const Icon = service.icon;
               return (
                 <Link
                   key={service.slug}
                   to={`/${service.slug}${isEmbedMode ? `?embed=${embedParam}` : ''}`}
-                  className="group relative overflow-hidden rounded-2xl border border-border bg-card hover:border-primary/40 hover:shadow-lg transition-all duration-300"
+                  className="group relative overflow-hidden rounded-2xl border border-border bg-card hover:border-primary/40 hover:shadow-xl transition-all duration-300 min-h-[280px] flex flex-col justify-end"
                 >
-                  {/* Gradient accent bar */}
-                  <div className={`h-1.5 bg-gradient-to-r ${service.color}`} />
-                  
-                  <div className="p-6 space-y-4">
-                    {/* Icon */}
-                    <div className={`w-14 h-14 rounded-xl ${service.bgLight} flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon className={`w-7 h-7 ${service.iconColor}`} />
-                    </div>
-                    
-                    {/* Content */}
-                    <div className="space-y-2">
-                      <h2 className="text-xl font-semibold text-foreground group-hover:text-primary transition-colors">
-                        {service.title}
-                      </h2>
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {service.description}
-                      </p>
-                    </div>
-                    
-                    {/* CTA */}
-                    <div className="flex items-center gap-2 text-sm font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  {/* Background photo */}
+                  <img
+                    src={service.image}
+                    alt=""
+                    aria-hidden="true"
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                  {/* Legibility gradient — darker at bottom where text sits */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/10" aria-hidden="true" />
+
+                  {/* Content */}
+                  <div className="relative p-6 space-y-2 text-white">
+                    <h2 className="text-2xl font-display font-bold drop-shadow-md">
+                      {service.title}
+                    </h2>
+                    <p className="text-sm text-white/90 line-clamp-2 drop-shadow">
+                      {service.description}
+                    </p>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-white pt-1">
                       <span>Get Pricing</span>
                       <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>
