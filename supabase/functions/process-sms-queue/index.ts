@@ -6,6 +6,7 @@ import { checkSuppression } from "../_shared/suppression.ts";
 import { runAbandonmentSweep, recoverPendingCampaignEvents, runPersistedQuoteAbandonmentSweep, runFollowUpCompletionSweep } from "../_shared/campaignSweep.ts";
 import { getSenderConfig } from "../_shared/emailConfig.ts";
 import { processDueCallRailRetries } from "../_shared/callrailEventProcessor.ts";
+import { runPostServiceEducationSweep, runMaintenanceOpportunitySweep } from "../_shared/postServiceSweeps.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -298,6 +299,8 @@ serve(async (req) => {
   let persistedAbandonment: unknown = null;
   let followUpCompletion: unknown = null;
   let callrailRetries: unknown = null;
+  let postServiceEducation: unknown = null;
+  let maintenanceOpportunity: unknown = null;
   try {
     recovery = await recoverPendingCampaignEvents(supabase);
   } catch (e) {
@@ -327,8 +330,21 @@ serve(async (req) => {
   } catch (e) {
     console.error("processDueCallRailRetries error:", e instanceof Error ? e.message : e);
   }
+  try {
+    // Slice C: post-service education + maintenance rebooking sweeps.
+    // Both emit campaign events only; no live delivery unless a matching
+    // campaign is active. Bounded and safe to run alongside other sweeps.
+    postServiceEducation = await runPostServiceEducationSweep(supabase);
+  } catch (e) {
+    console.error("runPostServiceEducationSweep error:", e instanceof Error ? e.message : e);
+  }
+  try {
+    maintenanceOpportunity = await runMaintenanceOpportunitySweep(supabase);
+  } catch (e) {
+    console.error("runMaintenanceOpportunitySweep error:", e instanceof Error ? e.message : e);
+  }
 
-  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery, followUpCompletion, callrailRetries }), {
+  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery, followUpCompletion, callrailRetries, postServiceEducation, maintenanceOpportunity }), {
     status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });

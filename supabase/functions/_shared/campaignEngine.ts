@@ -37,6 +37,11 @@ export const ALLOWED_EVENTS = [
   // booking. Owned by runFollowUpCompletionSweep. Consumers must require
   // marketing consent and pass through canonical suppression/opt-out gates.
   "quote_follow_up_completed",
+  // Post-service lifecycle events (Slice C). Not linked to an active
+  // campaign yet — the engine accepts them so audit rows exist and future
+  // draft campaigns can enroll off them without another allowlist change.
+  "service_completed",
+  "maintenance_due",
 ] as const;
 export type CampaignEvent = (typeof ALLOWED_EVENTS)[number];
 
