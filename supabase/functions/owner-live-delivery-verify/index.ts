@@ -28,6 +28,24 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { normalizeEmail, normalizePhoneE164 } from "../_shared/suppression.ts";
+import { mintQuoteResumeToken } from "../_shared/quoteResumeTokens.ts";
+
+// Coerce a raw owner-controlled phone secret to canonical US E.164. Handles
+// the specific misformat this harness saw in production: a leading `+`
+// followed by exactly 10 digits (missing the `1` country code), which
+// normalizePhoneE164 will pass through unchanged and CallRail then rejects
+// as a non-US recipient (country code `46` etc.).
+function coerceUsE164(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  if (/^\+1\d{10}$/.test(trimmed)) return trimmed;
+  // `+` + 10 digits → assume dropped US country code.
+  if (/^\+\d{10}$/.test(trimmed)) return `+1${trimmed.slice(1)}`;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return null;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -85,12 +103,96 @@ serve(async (req) => {
   const rawEmail = Deno.env.get("OWNER_TEST_EMAIL") ?? "";
   const rawPhone = Deno.env.get("OWNER_TEST_SMS_NUMBER") ?? "";
   const email = normalizeEmail(rawEmail);
-  const phone = normalizePhoneE164(rawPhone);
+  const phone = coerceUsE164(rawPhone);
   if (!email) return json({ error: "OWNER_TEST_EMAIL is not configured or invalid" }, 400);
-  if (!phone) return json({ error: "OWNER_TEST_SMS_NUMBER is not configured or invalid" }, 400);
+  if (!phone || !/^\+1\d{10}$/.test(phone)) {
+    return json({ error: "OWNER_TEST_SMS_NUMBER did not coerce to a US E.164 recipient" }, 400);
+  }
+  const rawPhoneCoerced = phone !== normalizePhoneE164(rawPhone);
 
   const maskedEmail = maskEmail(email);
   const maskedPhone = maskPhone(phone);
+
+  // -------- Replacement-SMS mode --------------------------------------------
+  // Reuses an existing quote created by the initial run; corrects the stored
+  // phone; issues ONE SMS via the canonical send-sms path; then mints two
+  // probe resume tokens and calls quote-resume for each so both channel
+  // links are proven to resolve to the same current quote.
+  let modeBody: { replacementSmsForQuoteId?: string } = {};
+  try { modeBody = await req.clone().json(); } catch { /* ignore */ }
+  if (modeBody.replacementSmsForQuoteId) {
+    const quoteId = modeBody.replacementSmsForQuoteId;
+    const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+
+    // Correct the stored phone so send-sms picks up the fixed value.
+    const { error: updErr } = await supabase.from("quotes")
+      .update({ customer_phone: phone }).eq("id", quoteId);
+    if (updErr) return json({ error: "Failed to correct stored phone", details: updErr.message }, 500);
+
+    const beforeSms = new Date().toISOString();
+    const smsResp = await callFn("send-sms", { eventType: "quote_created", quoteId });
+
+    const { data: latestSms } = await supabase.from("sms_messages")
+      .select("id, status, error, callrail_message_id, message_kind, created_at, sent_at, attempts")
+      .eq("quote_id", quoteId).eq("message_kind", "transactional")
+      .gte("created_at", beforeSms)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+    // Probe both channels' resume machinery. The raw email token minted
+    // during the initial save-quote email send is unrecoverable by design
+    // (only its SHA-256 is persisted). A fresh probe token proves the
+    // endpoint resolves the same quote_id — the property both channel
+    // links rely on.
+    const smsProbe = await mintQuoteResumeToken(supabase, quoteId, {
+      appUrl: Deno.env.get("APP_URL") ?? "https://quote.bluladder.com",
+      issuedReason: "owner_verify_sms_link_probe",
+    });
+    const emailProbe = await mintQuoteResumeToken(supabase, quoteId, {
+      appUrl: Deno.env.get("APP_URL") ?? "https://quote.bluladder.com",
+      issuedReason: "owner_verify_email_link_probe",
+    });
+    const resolveProbe = async (probe: { resumeUrl: string; token: string } | null) => {
+      if (!probe) return { ok: false, reason: "mint_failed" };
+      const r = await fetch(`${SUPABASE_URL}/functions/v1/quote-resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY },
+        body: JSON.stringify({ quoteId, token: probe.token }),
+      });
+      let j: Record<string, unknown> = {};
+      try { j = await r.json(); } catch { /* ignore */ }
+      return {
+        httpStatus: r.status,
+        ok: j.ok === true,
+        resolvedQuoteId: (j as { quoteId?: string }).quoteId ?? null,
+        matchesQuote: (j as { quoteId?: string }).quoteId === quoteId,
+        urlHostPath: probe.resumeUrl.replace(/\?.*$/, ""),
+      };
+    };
+    const [smsResolve, emailResolve] = await Promise.all([resolveProbe(smsProbe), resolveProbe(emailProbe)]);
+
+    return json({
+      mode: "replacementSms",
+      quoteId,
+      masked: { phone: maskedPhone },
+      coercedFromDroppedCountryCode: rawPhoneCoerced,
+      sms: {
+        dispatchResponse: smsResp.json,
+        row: latestSms,
+      },
+      links: {
+        sms: smsResolve,
+        email: {
+          ...emailResolve,
+          note: "The raw token minted during the initial email send is unrecoverable (SHA-256-only storage). This probe uses a fresh token issued to the SAME quote_id, proving the email link's resolution path.",
+        },
+        bothResolveToSameCurrentQuote:
+          smsResolve.ok && emailResolve.ok &&
+          smsResolve.resolvedQuoteId === quoteId &&
+          emailResolve.resolvedQuoteId === quoteId,
+      },
+    });
+  }
+  // -------- End replacement-SMS mode ----------------------------------------
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
