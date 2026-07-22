@@ -344,7 +344,7 @@ serve(async (req) => {
     console.error("runMaintenanceOpportunitySweep error:", e instanceof Error ? e.message : e);
   }
 
-  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery, followUpCompletion, callrailRetries }), {
+  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery, followUpCompletion, callrailRetries, postServiceEducation, maintenanceOpportunity }), {
     status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });
