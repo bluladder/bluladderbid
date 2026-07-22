@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6-rollout-gate";
+export const BUILD_ID = "voice-adapter-4C-b.6.1-quote-replay-guard";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -21,4 +21,6 @@ export const BUILD_FEATURES = {
   workflowControllerReturningCustomer: true,
   sharedIntakeManifest: true,
   contactFirstIntake: true,
+  voiceRoughQuoteReplayGuard: true,
+  slowBranchAcknowledgementVariety: true,
 } as const;

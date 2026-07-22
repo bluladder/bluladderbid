@@ -55,19 +55,41 @@ Deno.test("full path: ambiguous fails closed", () => {
   if (r.type === "full_orchestrator") assertEquals(r.reason, "ambiguous");
 });
 
-Deno.test("slowBranchAcknowledgement: pricing", () => {
-  const ack = slowBranchAcknowledgement("pricing_intent");
-  assert(ack && /check/i.test(ack));
+Deno.test("slowBranchAcknowledgement: pricing returns a non-empty phrase", () => {
+  const ack = slowBranchAcknowledgement("pricing_intent", 0);
+  assert(ack && ack.length > 0);
 });
 
-Deno.test("slowBranchAcknowledgement: availability", () => {
-  const ack = slowBranchAcknowledgement("availability_intent");
-  assert(ack && /schedule/i.test(ack));
+Deno.test("slowBranchAcknowledgement: availability mentions schedule/calendar/opens", () => {
+  const ack = slowBranchAcknowledgement("availability_intent", 0);
+  assert(ack && /schedule|calendar|open|availability/i.test(ack));
 });
 
-Deno.test("slowBranchAcknowledgement: booking", () => {
-  const ack = slowBranchAcknowledgement("booking_intent");
-  assert(ack && /help/i.test(ack));
+Deno.test("slowBranchAcknowledgement: booking returns a non-empty phrase", () => {
+  const ack = slowBranchAcknowledgement("booking_intent", 0);
+  assert(ack && ack.length > 0);
+});
+
+Deno.test("slowBranchAcknowledgement: variety — different pickIndex yields >=2 distinct phrases per pool", () => {
+  for (const reason of ["pricing_intent", "availability_intent", "address_or_customer_intent"] as const) {
+    const seen = new Set<string>();
+    for (let i = 0; i < 12; i++) seen.add(String(slowBranchAcknowledgement(reason, i)));
+    assert(seen.size >= 2, `expected variety for ${reason}, got ${[...seen].join(" | ")}`);
+  }
+});
+
+Deno.test("slowBranchAcknowledgement: no pool repeats the exact 'Let me check on that for you.' pre-fix string", () => {
+  const banned = /^Let me check on that for you\.?$/i;
+  for (const reason of [
+    "pricing_intent","availability_intent","booking_intent",
+    "address_or_customer_intent","recurring_plan_intent","transfer_or_callback_intent",
+    "ambiguous","too_long",
+  ] as const) {
+    for (let i = 0; i < 8; i++) {
+      const ack = slowBranchAcknowledgement(reason, i);
+      assert(!ack || !banned.test(ack), `banned phrase for ${reason}: ${ack}`);
+    }
+  }
 });
 
 Deno.test("stripVoiceControlTags removes flush and break tags", () => {
