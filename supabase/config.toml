@@ -107,3 +107,9 @@ verify_jwt = false
 # can call it without a Supabase session.
 [functions.voice-llm-adapter]
 verify_jwt = false
+
+# Isolated Vapi server-event receiver (Phase 4C-β). Auth is enforced in-code
+# via the X-Vapi-Secret shared credential; leave verify_jwt disabled so the
+# provider can post server events without a Supabase session.
+[functions.voice-vapi-events]
+verify_jwt = false
