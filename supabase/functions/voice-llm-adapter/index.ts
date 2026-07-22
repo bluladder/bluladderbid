@@ -1,31 +1,18 @@
 // ============================================================================
-// voice-llm-adapter — OpenAI-compatible /v1/chat/completions endpoint for the
-// BluLadder inbound voice beta.
+// voice-llm-adapter — OpenAI-compatible /v1/chat/completions endpoint.
 //
-// This function is provider-independent. Any telephony vendor (Vapi, LiveKit,
-// etc.) that speaks the OpenAI custom-LLM contract can point their custom-LLM
-// at this endpoint. Business logic remains inside runOrchestrator().
-//
-// The function:
-//   - accepts POST only
-//   - rejects unsupported content types
-//   - enforces a small request-size cap
-//   - authenticates via `Authorization: Bearer <VOICE_LLM_ADAPTER_SHARED_SECRET>`
-//   - refuses to run in production if the secret is missing
-//   - never logs the Authorization header, PII, or full transcripts
-//   - streams or non-streams a valid OpenAI response
-//   - terminates SSE with `data: [DONE]\n\n`
-//
-// It does NOT: perform live provider transfers, connect to any Vapi API,
-// persist transcripts or call events, or make routing decisions.
+// True streaming: fast knowledge lane streams model tokens as they arrive.
+// Slow business lane emits a deterministic acknowledgement immediately, then
+// runs the authoritative orchestrator. Non-streaming callers keep working.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildNonStreamingResponse,
-  buildStreamingResponse,
   parseAdapterRequest,
   runVoiceAdapter,
+  runVoiceAdapterStream,
   type AdapterRequestError,
+  type VoiceStreamEvent,
 } from "../_shared/voiceAdapter.ts";
 
 const corsHeaders = {
@@ -36,8 +23,7 @@ const corsHeaders = {
 
 function jsonError(status: number, code: string): Response {
   return new Response(JSON.stringify({ error: { code } }), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
@@ -73,43 +59,78 @@ Deno.serve(async (req) => {
 
   const secret = Deno.env.get("VOICE_LLM_ADAPTER_SHARED_SECRET");
   if (!secret) {
-    // Fail closed in production; return 500 so a misconfiguration is loud.
-    // In non-production we still refuse so tests exercise the same code path.
     console.warn("voice-llm-adapter: shared secret not configured");
     return jsonError(500, isProduction() ? "shared_secret_missing_production" : "shared_secret_missing");
   }
-  if (!checkBearer(req, secret)) {
-    return jsonError(401, "unauthorized");
-  }
+  if (!checkBearer(req, secret)) return jsonError(401, "unauthorized");
 
   const parsed = await parseAdapterRequest(req);
   if (!parsed.ok) return jsonError(errorStatus(parsed.error), parsed.error.kind);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey) {
-    return jsonError(500, "supabase_env_missing");
-  }
+  if (!supabaseUrl || !serviceKey) return jsonError(500, "supabase_env_missing");
   const supabase = createClient(supabaseUrl, serviceKey);
+  const model = parsed.value.model || "bluladder-voice-adapter";
 
-  const completion = await runVoiceAdapter({
-    supabase,
-    request: parsed.value,
+  // Non-streaming: preserve existing behavior for provider fallbacks/tests.
+  if (!parsed.value.stream) {
+    const completion = await runVoiceAdapter({ supabase, request: parsed.value });
+    console.log(JSON.stringify({
+      at: "voice-llm-adapter", stream: false, action: completion.action.kind,
+      state: completion.orchestrator.state ?? null, replyLen: completion.content.length,
+    }));
+    return buildNonStreamingResponse(model, completion);
+  }
+
+  // Streaming: assemble OpenAI-compatible chat.completion.chunk SSE frames as
+  // adapter events arrive.
+  const encoder = new TextEncoder();
+  const id = `chatcmpl-${crypto.randomUUID()}`;
+  const created = Math.floor(Date.now() / 1000);
+
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const write = (obj: unknown) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      let closed = false;
+      const emit = (ev: VoiceStreamEvent) => {
+        if (closed) return false;
+        try {
+          if (ev.type === "role_delta") {
+            write({ id, object: "chat.completion.chunk", created, model,
+              choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+          } else if (ev.type === "text_delta") {
+            write({ id, object: "chat.completion.chunk", created, model,
+              choices: [{ index: 0, delta: { content: ev.text }, finish_reason: null }] });
+          }
+          // Other event types are internal — no SSE frame.
+        } catch { /* transport closed */ }
+      };
+      try {
+        const result = await runVoiceAdapterStream({ supabase, request: parsed.value, emit });
+        write({ id, object: "chat.completion.chunk", created, model,
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          bluladder: { action: result.action, state: result.orchestrator.state ?? null, route: result.route.type } });
+      } catch (_e) {
+        write({ id, object: "chat.completion.chunk", created, model,
+          choices: [{ index: 0, delta: { content: "Sorry, I hit a snag." }, finish_reason: "stop" }],
+          bluladder: { action: { kind: "safe_failure", reasonCode: "adapter_exception" } } });
+      } finally {
+        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        closed = true;
+        controller.close();
+      }
+    },
   });
 
-  // Structured, PII-free log line. Never log the Authorization header, full
-  // phone numbers, addresses, or the full transcript.
-  console.log(JSON.stringify({
-    at: "voice-llm-adapter",
-    sessionSynthetic: parsed.value.sessionIdIsSynthetic,
-    stream: parsed.value.stream,
-    action: completion.action.kind,
-    state: completion.orchestrator.state ?? null,
-    replyLen: completion.content.length,
-  }));
-
-  const model = parsed.value.model || "bluladder-voice-adapter";
-  return parsed.value.stream
-    ? buildStreamingResponse(model, completion)
-    : buildNonStreamingResponse(model, completion);
+  return new Response(body, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+    },
+  });
 });
