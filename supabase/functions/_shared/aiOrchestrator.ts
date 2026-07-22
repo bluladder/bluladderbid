@@ -447,6 +447,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     return {
       reply: "A member of our team is looking after your request now and will reply here shortly.",
       toolEvents: [], events: [], state,
+      voice: channel === "voice" ? { type: "graceful_end", reason: "staff_takeover" } : null,
     };
   }
 
@@ -516,7 +517,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     if (!toolCalls || toolCalls.length === 0) {
       await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
       const safe = guardConfirmedLanguage(choice.content || "How can I help with your exterior cleaning today?", facts, railBooked);
-      return { reply: safe, toolEvents, events, state };
+      return finalize({ reply: safe, toolEvents, events, state, channel, facts, railBooked });
     }
 
     messages.push({ role: "assistant", content: choice.content || "", tool_calls: toolCalls });
@@ -563,7 +564,66 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   let reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
   reply = guardConfirmedLanguage(reply, facts, railBooked);
   await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
-  return { reply, toolEvents, events, state };
+  return finalize({ reply, toolEvents, events, state, channel, facts, railBooked });
+}
+
+// Attach the optional voice disposition only when the caller asked for the
+// voice channel. Non-voice channels get `voice: null` so callers can
+// distinguish "absent because non-voice" from "voice channel, no disposition."
+function finalize(args: {
+  reply: string;
+  toolEvents: OrchestratorResult["toolEvents"];
+  events: string[];
+  state: string;
+  channel: OrchestratorInput["channel"];
+  facts: ConversationFacts;
+  railBooked: boolean;
+}): OrchestratorResult {
+  const base: OrchestratorResult = {
+    reply: args.reply,
+    toolEvents: args.toolEvents,
+    events: args.events,
+    state: args.state,
+  };
+  if (args.channel !== "voice") {
+    base.voice = null;
+    return base;
+  }
+  base.voice = deriveVoiceDisposition({
+    state: args.state,
+    facts: args.facts,
+    railBooked: args.railBooked,
+    toolEvents: args.toolEvents,
+  });
+  return base;
+}
+
+// Provider-independent mapping from server-authoritative state/facts to a
+// voice disposition. The model never selects the disposition; the state
+// machine and tool results do. Fails closed to `safe_failure` on unexpected
+// input rather than defaulting to "speak" with hallucinated confidence.
+export function deriveVoiceDisposition(input: {
+  state: string;
+  facts: ConversationFacts;
+  railBooked: boolean;
+  toolEvents: { tool: string; result: any }[];
+}): VoiceDisposition {
+  const { state, facts, railBooked, toolEvents } = input;
+  if (facts.bookingStatus === "confirmed" || railBooked) return { type: "tool_result_speak" };
+  if (facts.callbackRequested) return { type: "callback_confirmed" };
+  if (state === "manual_review" || facts.quote?.status === "manual_review_required") {
+    return { type: "uncertain_pricing", reason: facts.manualReviewReason ?? undefined };
+  }
+  if (state === "checking_availability" || state === "awaiting_booking_confirmation") {
+    return { type: "tool_result_speak" };
+  }
+  if (state === "error_recovery") {
+    return { type: "safe_failure", reasonCode: facts.lastError ?? "orchestrator_error_recovery" };
+  }
+  if (toolEvents.some((e) => e.tool === "escalate_to_human")) {
+    return { type: "transfer_human", reason: "orchestrator_escalation" };
+  }
+  return { type: "speak" };
 }
 
 // Post-hoc safety net: never emit assistant text that asserts a confirmed
