@@ -332,12 +332,16 @@ export function PlanUpsellCard({
                 {bundles.map((bundle) => {
                   const isSelected = selectedTier === bundle.tier;
                   const isRecommended = bundle.tier === 'best';
-                  
-                  // Calculate this bundle's payment structure
-                  const bundleDeposit = Math.round(bundle.annualTotal * 0.20);
-                  const bundleRemaining = bundle.annualTotal - bundleDeposit;
-                  const bundleMonthly = Math.round(bundleRemaining / 11);
-                  
+
+                  // Reconciled payment breakdown for this bundle so the row
+                  // never contradicts the selected-plan summary below.
+                  const bundleBreakdown = computePlanPaymentBreakdown({
+                    annualTotal: bundle.annualTotal,
+                    authoritativeSavings: bundle.savings,
+                    comparisonTotal: oneTimeTotal * (bundle.windowFrequency || 2),
+                  });
+                  if (!bundleBreakdown) return null;
+
                   return (
                     <div
                       key={bundle.tier}
@@ -377,10 +381,13 @@ export function PlanUpsellCard({
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold">{formatPrice(bundleMonthly)}/mo</div>
-                          {bundle.savings > 0 && (
+                          <div className="font-bold">{formatPrice(bundleBreakdown.depositAmount)} today</div>
+                          <div className="text-xs text-muted-foreground">
+                            then {formatPrice(bundleBreakdown.monthlyPayment)} × {bundleBreakdown.remainingPayments} mo
+                          </div>
+                          {bundleBreakdown.savings > 0 && (
                             <div className="text-xs text-success">
-                              Save {formatPrice(bundle.savings)}
+                              Save {formatPrice(bundleBreakdown.savings)}/yr
                             </div>
                           )}
                         </div>
