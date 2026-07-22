@@ -1,111 +1,119 @@
 
-# Phase 4C-β.4A — Window Scope Classification & Progressive Branching
+# Phase 4C — Call-Center Workflow Router v1
 
-This is a large, high-risk change (touches pricing, orchestrator, DB, voice, tests). Below is the plan I'd like your approval on before I start editing files. It's structured so pricing parity, CallRail, and Vapi provisioning are provably untouched.
+Scope-limited to the single launch workflow: **Residential window-cleaning quote → canonical price → real availability → booking**. Every other workflow (`cancel_or_reschedule`, `general_inquiry`, commercial bid, etc.) is stubbed as `handoff_or_out_of_scope` so the architecture can grow without a rewrite.
 
-## Branch classification model
+## Guiding rules
 
-Add a canonical classifier in `_shared/windowIntent.ts` with pure functions:
-- `classifyWindowIntent(utterance, priorFacts)` → `{ customerType, windowCleaningScope, windowCleaningSides?, windowCount?, areas?, commercialSignals? }`
-- Keyword lists for commercial (storefront, office, church, warehouse, apartment common area, property-management…), partial ("only", "just", "a few", "N windows", "front/back/upstairs/patio"), whole-home ("all", "whole house", "my windows").
-- Terminology normalizer scoped to `services.includes("windowCleaning")`:
-  - "outside only", "exterior only", "outside glass only", "just the outsides" → `outside_only`
-  - "inside and outside", "both sides", "full service", "interior and exterior" → `inside_and_outside`
-- Never interprets "exterior only" globally; only when window cleaning is the active service.
+- Reuse everything sound. Do not rebuild the pricing engine, availability mirror, Jobber client, booking handler, customer/property model, SMS/email, auth, or reservation guards.
+- LLM produces natural-language wording only. All sequencing, field-completion, tool selection, and terminal actions are deterministic code.
+- One canonical `quote_sessions` row per call. Reloaded from DB **before every next-action decision**. No re-parsing of transcript for state.
+- No pricing values change. No CallRail/Vapi provisioning changes. No transfer changes. Voice booking stays in dry-run.
 
-## Quote Session schema extension
+## Repository reuse audit (draft — will be finalized in the completion report)
 
-Migration adds these fields (as jsonb columns on `quote_sessions`, or nested inside existing `fields` jsonb — I'll use `fields` jsonb to avoid duplicate storage and keep parity guarantees):
-- `customerType`: 'residential' | 'commercial' | 'unknown'
-- `windowCleaningScope`: 'whole_home' | 'partial' | 'commercial_custom'
-- `windowCleaningSides`: 'outside_only' | 'inside_and_outside'
-- `windowCount`, `partialAreas`, `partialAccessNotes`
-- `commercialPropertyType`, `commercialLocations[]`, `commercialFrequency`, `commercialScopeNotes`
-- `preferredContactMethods[]`, `humanPricingRequired`, `bidRequestStatus`
+- **Preserve unchanged:** `pricingEngine.ts`, `quoteSession.ts` schema + persistence helpers, `jobberClient.ts`, `availability_cache` + `useSmartAvailability`, `aiTools.ts` tool contracts, `authoritativeQuote.ts`, `bookingPreparation.ts`, `phoneConfig.ts`, `emailConfig.ts`, `serviceArea.ts`.
+- **Adapt (thin edits):** `voiceAdapter.ts` (route through new controller), `conversationState.ts` (repurpose as data source, not sequencer), `windowIntent.ts` (used by extractor only), `buildMarker.ts` (new id + flags).
+- **Replace as authoritative sequencer:** the prompt-directive path inside `aiOrchestrator.ts`. The orchestrator stays as an LLM-wording utility; sequencing moves to the new controller.
 
-Add DB column `bid_request_status text` and `human_pricing_required bool` for admin queries; everything else lives inside `fields` jsonb. Update `computeRequired` / `nextQuestion` / `mergeFields` to branch on scope.
+## New modules
 
-## Partial-window pricing rule
-
-Add a canonical helper `computePartialWindowPrice({ windowCount, sides })` in `src/lib/pricing/partialWindow.ts` (shared with edge via a mirrored `supabase/functions/_shared/partialWindowPricing.ts` — same formula, one source of truth doc):
+```text
+supabase/functions/_shared/
+  workflow/
+    workflowRouter.ts        # classifies inbound intent → workflow id
+    workflowSession.ts       # thin wrapper over quote_sessions with reload-before-decide
+    factExtractor.ts         # LLM-assisted structured extraction (JSON only, no wording)
+    customerResolver.ts      # find-or-create customer + property, immutable ids
+    workflows/
+      residentialQuote.ts    # deterministic FSM: intake → price → availability → book
+      handoffPlaceholder.ts  # every other workflow, safely escalates
+    intakeSchemas.ts         # required-field manifests per workflow branch
+    speak.ts                 # LLM wording utility (never chooses next action)
+    workflowController.ts    # single entry: next(action) + apply(customerUtterance)
+  workflow_test/             # unit tests for controller + resolver + extractor
 ```
-sidesMultiplier = sides === 'inside_and_outside' ? 2 : 1
-price = windowCount * sidesMultiplier * 10
+
+Voice adapter change: `runVoiceAdapterStream` calls `workflowController.turn({...})` instead of `runOrchestrator` for supported workflows. Unsupported flows fall back to today's orchestrator so we do not regress existing web/SMS behavior.
+
+## Deterministic residential-quote FSM
+
+States (owned by `workflows/residentialQuote.ts`):
+
+```text
+identify_service → confirm_scope → collect_sqft → collect_sides → collect_stories
+  → (optional) collect_city_for_serviceability
+  → calculate_price → speak_price
+  → offer_scheduling → collect_address → fetch_availability → offer_slots
+  → confirm_slot → dry_run_book (voice) | real_book (web/sms) → confirm_result
 ```
-- Never applied when `windowCleaningScope !== 'partial'`.
-- Whole-home path calls the existing pricing engine unchanged (parity tests must stay green).
-- Rule versioned as `partial_window_v1` and stored on the session.
 
-## Orchestrator changes (`aiOrchestrator.ts`)
+Rules:
+- `nextAction()` returns one typed action; controller executes it, persists, reloads, and only then asks LLM for wording.
+- `hasUsableFact(field, session)` gates every ask. Normalized equivalents (`outside only`/`exterior only`/`just outsides` → `outside_only`) resolve before the check.
+- City is **not** on the pricing critical path. Serviceability runs `Promise.race` with a 400 ms budget; on miss it defers to before-booking and the controller advances to price immediately.
+- Pricing invocation is automatic the instant the required-field manifest is satisfied. Result is persisted; state advances to `speak_price` without an intervening LLM turn.
+- Corrections update only affected fields; downstream cached quote/availability are invalidated by version bump.
+- Interruptions (insurance, hours, service area questions) route to `speak.answer(question)` then re-enter `nextAction()` from the reloaded session — progress is never lost.
 
-- Before asking window questions, run `classifyWindowIntent` on latest utterance and merge results into the session via existing `persistFacts` → `syncFromFacts`.
-- Replace ambiguous "exterior only?" prompt with: "For the window cleaning, do you want the outside surfaces only, or both inside and outside?"
-- Route:
-  - `commercial_custom` → collect commercial facts, respond with Ben-review copy, ask for preferred contact method, then ask only for details for that method.
-  - `partial` → collect windowCount + sides + area + access; compute price via `computePartialWindowPrice`; store on session; qualify with the "smaller jobs at $10 per window side" line.
-  - `whole_home` → unchanged canonical engine path.
-- Scope-change handling: if scope flips whole_home ↔ partial, invalidate only price/sqft-dependent fields, preserve address/contact/notes/history.
-- Question-repetition guard: `nextQuestion()` skips any field already `captured|verified|corrected|derived`.
+## Customer Resolver
 
-## Address behavior
+- Input: any of `{ phone, email, name, address }` captured so far.
+- Match order: phone (E.164 hash) → email hash → address canonical hash. All matches must be exact; ambiguous matches escalate rather than merge.
+- Idempotent: repeated calls in the same session return the same `customer_id` + `property_id`.
+- No mutation until the caller confirms; only reads until `resolveAndCommit()` is invoked before booking.
 
-- Persist address as soon as captured; do not re-ask.
-- Serviceability validation runs async; does not block progressive collection.
-- Existing voice rough-quote rail already bypasses address; extend guard to whole-home window flow so slow validation never re-prompts.
+## Voice pipeline
 
-## Commercial multi-location
-
-`fields.commercialLocations` is `Array<{ address, propertyType?, windowsEstimate?, stories?, sides?, frequency?, accessNotes?, notes? }>`. Orchestrator merges rather than flattening to a note.
-
-## Response format for commercial
-
-After scope is sufficient, assistant says: "Thanks. I've saved the scope and locations. We'll prepare a custom bid, and Ben will reach out with the price. What's the best way to contact you: text, email, or a phone call?" — then persists `preferredContactMethods` and asks only for the matching contact details. Sets `bid_request_status = 'commercial_bid_requested'`, `human_pricing_required = true`.
+- Adapter is unchanged for auth/CORS/streaming.
+- New: fast acknowledgement token stream (< 300 ms) while controller runs, so there is no silent gap.
+- Any operation > 3 s: emit a filler acknowledgement and continue with the next non-blocking step.
+- Latency instrumentation: extractor, persist, reload, controller, price, availability, total.
 
 ## Tests
 
-New / extended:
-- `_shared/windowIntent_test.ts` — classification, terminology normalization, "exterior only" scoped only to window cleaning, commercial keywords, partial keywords, ambiguity handling.
-- `_shared/partialWindowPricing_test.ts` — 1×outside=$10, 1×both=$20, 5×outside=$50, 5×both=$100, no-sqft-path.
-- `_shared/quoteSession_test.ts` — extend: scope flip preserves address/contact, invalidates only dependent fields; multi-location persistence; contact-preference gating; question non-repetition.
-- `_shared/aiOrchestrator_test.ts` — voice/web/sms all mutate same session id; commercial path never invokes residential pricing tool; window question wording asserted.
-- `src/lib/pricing/engine.parity.test.ts` — leave untouched; must still pass to prove whole-home parity.
-- Voice booking-blocked-in-beta assertion in `voiceAdapter` test remains green.
+Local Deno unit tests:
+- `workflowRouter.test.ts` — intent classification (new_quote, schedule_service, cancel_or_reschedule, general_inquiry, out_of_scope).
+- `residentialQuote.fsm.test.ts` — every transition, correction, interruption, duplicate-prevention.
+- `customerResolver.test.ts` — new customer, existing by phone, existing by email, address match, ambiguous → escalate.
+- `hasUsableFact.test.ts` — normalization + never-repeat.
 
-## Deployment
+Integration harness (drives the **real** deployed-shape code, not mocks of the failing layer):
+- `residentialQuoteToBooking.integration.test.ts` — 6-turn script from the failure spec, plus interruption + correction + duplicate-prevention. Uses a real Supabase test schema and a stub Jobber client that records but does not call.
 
-- Migration: adds `bid_request_status`, `human_pricing_required` columns + indexes; extends jsonb usage (no destructive changes).
-- Redeploy `voice-llm-adapter` and any other edge functions importing changed shared modules.
-- Bump `BUILD_ID` → `voice-adapter-4C-b.4A-window-scope-classification`.
-- Add flags: `progressiveQuoteSession`, `windowScopeClassification`, `partialWindowPricing`, `commercialCustomBidIntake` — all `true`.
-- Verify 401 on unauthenticated POST to `voice-llm-adapter` unchanged.
-- No CallRail / Vapi provisioning / transfer changes. No production booking. No call to Ben's cell.
+Deployed synthetic (executed by me since the shared secret is available):
+- Authenticated multi-request POST sequence against `voice-llm-adapter` using one stable `x-bluladder-session-id`. Asserts one `quote_sessions` row, no repeated question, canonical price spoken, dry-run booking recorded.
 
-## Files I plan to add / edit
+## Deployment sequence
 
-Add:
-- `supabase/functions/_shared/windowIntent.ts` + `_test.ts`
-- `supabase/functions/_shared/partialWindowPricing.ts` + `_test.ts`
-- `src/lib/pricing/partialWindow.ts` + `.test.ts` (client mirror; single formula documented)
-
-Edit:
-- `supabase/functions/_shared/quoteSession.ts` (+ `_test.ts`) — new fields, scope-aware `computeRequired`, `nextQuestion`, scope-flip invalidation, multi-location merge.
-- `supabase/functions/_shared/aiOrchestrator.ts` — pre-question classification, branch dispatch, wording change, commercial contact-method flow.
-- `supabase/functions/_shared/conversationState.ts` — allow partial/commercial tool sets under voice + web + sms.
-- `supabase/functions/_shared/buildMarker.ts` — new BUILD_ID + flags.
-- `supabase/functions/_shared/buildMarker_test.ts` — assert new flags.
-- Migration for new columns.
+1. Typecheck (`tsgo`).
+2. Full Deno test suite.
+3. Vitest suite.
+4. Pricing parity tests (`engine.parity`, `engine.bundleParity`).
+5. Integration harness.
+6. Deploy: `voice-llm-adapter`, `ai-chat` (kept in sync for shared code), plus any function importing the new modules.
+7. Deployed synthetic workflow test.
+8. Update `BUILD_ID` = `voice-adapter-4C-call-center-workflow-v1`.
+9. Flags: `deterministicWorkflowRouter`, `customerResolver`, `quoteToBookingWorkflow`, `canonicalPricing`, `deployedMultiTurnWorkflowTest`, `voiceBookingDryRun` — all `true`.
 
 ## Explicit non-goals for this phase
 
-- No changes to whole-home window pricing values or formulas.
-- No changes to any other service's pricing.
-- No SMS sends, no unsolicited outreach.
-- No dropped-call SMS workflow beyond ensuring facts are structured for later use.
-- No CallRail routing changes, no phone provisioning, no transfer config, no call to Ben.
-- Voice production booking remains blocked.
+- No new pricing values or formulas.
+- No commercial pricing, no partial-window wording changes beyond what already ships.
+- No CallRail routing, provisioning, or transfer configuration changes.
+- No production booking. Voice remains dry-run.
+- No new SMS sends. No call to Ben's cell.
+- Existing web chat and SMS orchestration paths remain intact; only voice is switched to the new controller in this phase. Web/SMS migration to the controller is a follow-up phase, gated on this one's synthetic pass.
 
-## Completion report I will return
+## What the completion report will contain
 
-Branch classification architecture, files changed, whole-home behavior confirmation, partial behavior + exact pricing, terminology normalization, commercial intake behavior, multi-location support, contact preference behavior, schema changes, persistence behavior, non-repetition safeguards, pricing parity result, typecheck result, full Deno result, Vitest result, deploy result, new build marker, diagnostic flags, and explicit confirmations (no pricing changes elsewhere, no CallRail change, no provisioning, no transfer config, no call to Ben, no production booking). Final status: READY FOR WINDOW-SCOPE PROGRESSIVE TEST or NOT READY with blocker.
+The 34-item report specified in your message, with concrete evidence for each item (file diffs, test output, deployed synthetic transcript with PII scrubbed, latency numbers, pricing-parity diff, build marker verified via `/diagnostics`).
 
-Approve and I'll execute end-to-end.
+## Execution plan across turns
+
+1. **Turn A (forensics + skeleton):** sanitized root-cause report for `019f8a84-…` from our side; scaffold `workflow/` modules with types + tests but no behavior wired in.
+2. **Turn B (controller + resolver):** implement `residentialQuote.ts`, `customerResolver.ts`, `factExtractor.ts`, `hasUsableFact`, unit tests green.
+3. **Turn C (adapter wiring + integration harness):** switch `voiceAdapter` to controller for supported workflows; integration harness passes locally.
+4. **Turn D (deploy + synthetic):** deploy, run deployed multi-request synthetic, produce the full completion report and READY / NOT READY status.
+
+Approve this scope and I'll start with Turn A.
