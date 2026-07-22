@@ -101,3 +101,9 @@ verify_jwt = false
 
 [functions.quote-resume]
 verify_jwt = false
+
+# Voice/LLM adapter. Provider-independent OpenAI-compatible endpoint. Auth is
+# enforced in-code by a Bearer secret; leave verify_jwt disabled so the vendor
+# can call it without a Supabase session.
+[functions.voice-llm-adapter]
+verify_jwt = false
