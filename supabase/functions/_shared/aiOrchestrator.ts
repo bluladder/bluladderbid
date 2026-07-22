@@ -887,7 +887,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       const patch = factPatchFromTool("create_bluladder_booking", args, result, facts);
       facts = mergeFacts(facts, patch);
       state = computeState(facts, channel);
-      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel });
+      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel, windowIntent });
       railBooked = (result as any)?.status === "confirmed";
       // Give the model a system-scoped ground truth so its reply is anchored
       // in the real tool status, not a hallucinated confirmation.
@@ -958,7 +958,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       const patch = factPatchFromTool(name, args, result, facts);
       facts = mergeFacts(facts, patch);
       state = computeState(facts, channel);
-      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel });
+      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel, windowIntent });
 
       messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result) });
     }
