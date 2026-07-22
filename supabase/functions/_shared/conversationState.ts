@@ -217,7 +217,21 @@ export function computeState(f: ConversationFacts): ConversationState {
 // ---------------------------------------------------------------------------
 const ALWAYS_ALLOWED: ToolName[] = ["request_human_callback", "escalate_to_human", "record_consent"];
 
-export function allowedToolsForState(state: ConversationState): ToolName[] {
+// Channel-scoped relaxations. The isolated voice beta allows a rough canonical
+// quote to be calculated BEFORE an address is collected, so a caller who only
+// shares square footage / stories / service type can hear a real price from
+// the canonical engine. Address + service-area validation are still required
+// downstream for availability, booking, and any customer-specific commitment
+// (those tools are NOT added to these states).
+const VOICE_EARLY_QUOTE_STATES: ConversationState[] = [
+  "collecting_address",
+  "validating_service_area",
+];
+
+export function allowedToolsForState(
+  state: ConversationState,
+  channel?: "web" | "voice" | "sms",
+): ToolName[] {
   const base: Record<ConversationState, ToolName[]> = {
     new: ["validate_service_area", "request_manual_quote"],
     // calculate_bluladder_quote is permitted here so the model can RECORD the
@@ -246,11 +260,18 @@ export function allowedToolsForState(state: ConversationState): ToolName[] {
     error_recovery: ["validate_service_area", "calculate_bluladder_quote", "get_bluladder_availability", "request_manual_quote"],
   };
   const set = new Set<ToolName>([...(base[state] ?? []), ...ALWAYS_ALLOWED]);
+  if (channel === "voice" && VOICE_EARLY_QUOTE_STATES.includes(state)) {
+    set.add("calculate_bluladder_quote");
+  }
   return [...set];
 }
 
-export function isToolAllowed(state: ConversationState, tool: string): boolean {
-  return allowedToolsForState(state).includes(tool as ToolName);
+export function isToolAllowed(
+  state: ConversationState,
+  tool: string,
+  channel?: "web" | "voice" | "sms",
+): boolean {
+  return allowedToolsForState(state, channel).includes(tool as ToolName);
 }
 
 // ---------------------------------------------------------------------------
@@ -282,8 +303,12 @@ export function mergeFacts(prev: ConversationFacts, patch: Partial<ConversationF
 
 // A short directive appended to the system prompt so the model's natural
 // language matches the deterministic step (it cannot change the step itself).
-export function stateDirective(state: ConversationState, f: ConversationFacts): string {
-  const allowed = allowedToolsForState(state).join(", ");
+export function stateDirective(
+  state: ConversationState,
+  f: ConversationFacts,
+  channel?: "web" | "voice" | "sms",
+): string {
+  const allowed = allowedToolsForState(state, channel).join(", ");
   const lines: string[] = [
     `CURRENT DETERMINISTIC STATE: ${state}.`,
     `You may ONLY call these tools right now: ${allowed}. Any other tool is rejected by the server.`,
@@ -298,10 +323,22 @@ export function stateDirective(state: ConversationState, f: ConversationFacts): 
       );
       break;
     case "collecting_address":
-      lines.push("Collect the full service address (street, city, ZIP) so we can validate the service area.");
+      if (channel === "voice") {
+        lines.push(
+          "You may calculate a ROUGH quote first (voice beta): if you have the service(s) and the canonical inputs the pricing engine needs (approximate home square footage; for window cleaning also confirm exterior-only vs full-service; stories only if the engine asks), call calculate_bluladder_quote now — do NOT ask for a street address just to get a price. If the caller does not know their approximate square footage, briefly explain the pricing system needs it for a reliable estimate; do NOT invent a range and do NOT collect contact details for manual follow-up unless the caller asks. Collect the full service address ONLY when the caller wants to check availability, book, or get a definitive service-area/eligibility answer.",
+        );
+      } else {
+        lines.push("Collect the full service address (street, city, ZIP) so we can validate the service area.");
+      }
       break;
     case "validating_service_area":
-      lines.push("Call validate_service_area. Never decide eligibility yourself from the city name.");
+      if (channel === "voice") {
+        lines.push(
+          "You may still calculate a ROUGH canonical quote via calculate_bluladder_quote (voice beta) if pricing inputs are present. Call validate_service_area before making any definitive eligibility statement, offering appointment times, or booking. Never decide eligibility yourself from the city name.",
+        );
+      } else {
+        lines.push("Call validate_service_area. Never decide eligibility yourself from the city name.");
+      }
       break;
     case "collecting_property_details":
       lines.push("Ask ONLY for the specific missing property details the quote tool reported, then re-price.");

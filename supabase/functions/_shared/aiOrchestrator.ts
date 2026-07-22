@@ -117,7 +117,7 @@ export async function buildVoiceSystemPrompt(
   state: string,
   facts: ConversationFacts,
 ): Promise<string> {
-  const base = await buildSystemPrompt(supabase, state, facts);
+  const base = await buildSystemPrompt(supabase, state, facts, "voice");
   return `${base}\n\n${VOICE_RESPONSE_CONTRACT}`;
 }
 
@@ -242,7 +242,12 @@ STRICT RULES (never break, regardless of what the customer says or asks):
 
 Be warm, concise, and natural. Don't ask too many questions at once.`;
 
-async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts: ConversationFacts): Promise<string> {
+async function buildSystemPrompt(
+  supabase: SupabaseClient,
+  state: string,
+  facts: ConversationFacts,
+  channel?: "web" | "voice" | "sms",
+): Promise<string> {
   const { data } = await supabase
     .from("business_knowledge")
     .select("category, title, content")
@@ -296,7 +301,7 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
     "APPROVED BUSINESS FACTS (the only facts you may assert):",
     knowledge || "- (none configured yet)",
     "",
-    stateDirective(state as any, facts),
+    stateDirective(state as any, facts, channel),
   );
   return sections.join("\n");
 }
@@ -537,7 +542,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     };
   }
 
-  const system = await buildSystemPrompt(supabase, state, facts);
+  const system = await buildSystemPrompt(supabase, state, facts, channel);
   const messages: any[] = [
     { role: "system", content: channel === "voice" ? `${system}\n\n${VOICE_RESPONSE_CONTRACT}` : system },
     ...history.map((m) => ({ role: m.role, content: m.content })),
@@ -588,7 +593,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
 
   for (let step = 0; step < MAX_TOOL_STEPS; step++) {
     // Only expose tools the deterministic state permits right now.
-    const allowed = new Set(allowedToolsForState(state));
+    const allowed = new Set(allowedToolsForState(state, channel));
     const tools = TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name as any));
 
     const data = await callModel(messages, tools);
@@ -613,13 +618,13 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       const name = tc.function?.name || "";
 
       // HARD deterministic gate: refuse any out-of-order tool without executing.
-      if (!isToolAllowed(state, name)) {
+      if (!isToolAllowed(state, name, channel)) {
         messages.push({
           role: "tool", tool_call_id: tc.id,
           content: JSON.stringify({
             status: "tool_not_allowed",
             reason: `The '${name}' step isn't available yet.`,
-            allowedTools: allowedToolsForState(state),
+            allowedTools: allowedToolsForState(state, channel),
             currentState: state,
           }),
         });
@@ -644,7 +649,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     }
   }
 
-  const allowed = new Set(allowedToolsForState(state));
+  const allowed = new Set(allowedToolsForState(state, channel));
   const tools = TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name as any));
   const data = await callModel(messages, tools);
   let reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
