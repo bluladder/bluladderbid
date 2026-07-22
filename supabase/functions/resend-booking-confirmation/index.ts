@@ -49,7 +49,7 @@ serve(async (req) => {
   const { data: bk, error } = await supabase
     .from("bookings")
     .select(
-      "id, reference_number, scheduled_start, scheduled_end, total, subtotal, discount_amount, discount_code, jobber_visit_id, jobber_job_id, duration_minutes, technician_name, services_json, customer_id",
+      "id, reference_number, scheduled_start, scheduled_end, total, subtotal, discount_amount, discount_code, jobber_visit_id, jobber_job_id, duration_minutes, technician_id, services_json, customer_id",
     )
     .eq("id", bookingId)
     .maybeSingle();
@@ -92,7 +92,7 @@ serve(async (req) => {
     discountAmount: Number(bk.discount_amount ?? 0),
     discountCode: (bk.discount_code as string) ?? null,
     total: Number(bk.total ?? 0),
-    technicianName: (bk.technician_name as string) ?? "BluLadder Service Team",
+    technicianName: "BluLadder Service Team",
     durationMinutes: (bk.duration_minutes as number) ?? null,
     customer: {
       firstName: c.first_name ?? "",
