@@ -54,7 +54,8 @@ serve(async (req) => {
     .eq("id", bookingId)
     .maybeSingle();
   if (error || !bk) {
-    return new Response(JSON.stringify({ error: "Booking not found" }), {
+    console.error("resend-booking-confirmation lookup failed", { bookingId, error, bk });
+    return new Response(JSON.stringify({ error: "Booking not found", detail: error?.message ?? null }), {
       status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
