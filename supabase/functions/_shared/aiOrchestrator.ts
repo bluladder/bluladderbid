@@ -112,7 +112,30 @@ export interface OrchestratorResult {
   events: string[];
   state?: string;
   error?: string;
+  /**
+   * Optional, voice-only disposition. Absent (or null) for non-voice channels.
+   * The voice adapter maps this to a provider-independent adapter action; the
+   * language model never picks the disposition on its own.
+   *
+   * transfer_human means only "BluLadder's authoritative orchestrator has
+   * approved an attempt to transfer this call." The destination is resolved
+   * separately from secure server-side configuration.
+   */
+  voice?: VoiceDisposition | null;
 }
+
+// Provider-independent voice disposition. Discriminated union — do NOT collapse
+// into loosely related booleans. New cases must be added deliberately here.
+export type VoiceDisposition =
+  | { type: "speak" }
+  | { type: "tool_result_speak" }
+  | { type: "transfer_human"; reason?: string }
+  | { type: "callback_confirmed"; callbackRequestId?: string }
+  | { type: "graceful_end"; reason?: string }
+  | { type: "safe_failure"; reasonCode: string }
+  | { type: "uncertain_pricing"; reason?: string }
+  | { type: "uncertain_scheduling"; reason?: string }
+  | { type: "post_call_sms_handoff"; reason?: string };
 
 const BASE_PROMPT = `You are BluLadder's friendly, professional website assistant for a home exterior cleaning company.
 
