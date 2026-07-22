@@ -15,42 +15,36 @@ const SERVICES = [
     title: 'Window Cleaning',
     description: 'Crystal clear views inside and out. Professional cleaning for all window types.',
     image: windowImg.url,
-    icon: windowIcon.url,
   },
   {
     slug: 'gutter-cleaning',
     title: 'Gutter Cleaning',
     description: 'Protect your home from water damage with thorough gutter and downspout cleaning.',
     image: gutterImg.url,
-    icon: gutterIcon.url,
   },
   {
     slug: 'house-wash',
     title: 'House Washing',
     description: 'Restore your home\'s curb appeal with our safe soft wash technique.',
     image: houseImg.url,
-    icon: houseIcon.url,
   },
   {
     slug: 'roof-cleaning',
     title: 'Roof Cleaning',
     description: 'Remove algae, moss, and debris to extend your roof\'s lifespan.',
     image: roofImg.url,
-    icon: roofIcon.url,
   },
   {
     slug: 'driveway-cleaning',
     title: 'Driveway Cleaning',
     description: 'Make your driveway look brand new with professional pressure washing.',
     image: drivewayImg.url,
-    icon: drivewayIcon.url,
   },
   {
     slug: 'pressure-washing',
     title: 'Pressure Washing',
     description: 'Power away dirt and grime from patios, decks, walkways, and more.',
     image: pressureImg.url,
-    icon: pressureIcon.url,
   },
 ];
 
