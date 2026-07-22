@@ -8,6 +8,12 @@ import houseImg from '@/assets/services/house-wash.webp.asset.json';
 import roofImg from '@/assets/services/roof-cleaning.png.asset.json';
 import drivewayImg from '@/assets/services/driveway-cleaning.png.asset.json';
 import pressureImg from '@/assets/services/pressure-washing.jpeg.asset.json';
+import windowIcon from '@/assets/services/icon-window-cleaning.png.asset.json';
+import gutterIcon from '@/assets/services/icon-gutter-cleaning.png.asset.json';
+import houseIcon from '@/assets/services/icon-house-washing.png.asset.json';
+import roofIcon from '@/assets/services/icon-roof-washing.png.asset.json';
+import drivewayIcon from '@/assets/services/icon-driveway-cleaning.png.asset.json';
+import pressureIcon from '@/assets/services/icon-pressure-washing.png.asset.json';
 
 const SERVICES = [
   {
@@ -15,36 +21,42 @@ const SERVICES = [
     title: 'Window Cleaning',
     description: 'Crystal clear views inside and out. Professional cleaning for all window types.',
     image: windowImg.url,
+    icon: windowIcon.url,
   },
   {
     slug: 'gutter-cleaning',
     title: 'Gutter Cleaning',
     description: 'Protect your home from water damage with thorough gutter and downspout cleaning.',
     image: gutterImg.url,
+    icon: gutterIcon.url,
   },
   {
     slug: 'house-wash',
     title: 'House Washing',
     description: 'Restore your home\'s curb appeal with our safe soft wash technique.',
     image: houseImg.url,
+    icon: houseIcon.url,
   },
   {
     slug: 'roof-cleaning',
     title: 'Roof Cleaning',
     description: 'Remove algae, moss, and debris to extend your roof\'s lifespan.',
     image: roofImg.url,
+    icon: roofIcon.url,
   },
   {
     slug: 'driveway-cleaning',
     title: 'Driveway Cleaning',
     description: 'Make your driveway look brand new with professional pressure washing.',
     image: drivewayImg.url,
+    icon: drivewayIcon.url,
   },
   {
     slug: 'pressure-washing',
     title: 'Pressure Washing',
     description: 'Power away dirt and grime from patios, decks, walkways, and more.',
     image: pressureImg.url,
+    icon: pressureIcon.url,
   },
 ];
 
@@ -89,20 +101,30 @@ const Services = () => {
                     alt=""
                     aria-hidden="true"
                     loading="lazy"
-                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 opacity-60 group-hover:opacity-75"
                   />
-                  {/* Legibility gradient — darker at bottom where text sits */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/10" aria-hidden="true" />
+                  {/* Light wash — brightens photo and gives bold text solid legibility */}
+                  <div className="absolute inset-0 bg-white/55 group-hover:bg-white/40 transition-colors" aria-hidden="true" />
+                  {/* Subtle bottom gradient so descender text stays crisp */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-white/60 via-white/20 to-transparent" aria-hidden="true" />
+
+                  {/* Icon */}
+                  <img
+                    src={service.icon}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute top-4 right-4 w-16 h-16 object-contain drop-shadow-sm group-hover:scale-110 transition-transform duration-300"
+                  />
 
                   {/* Content */}
-                  <div className="relative p-6 space-y-2 text-white">
-                    <h2 className="text-2xl font-display font-bold drop-shadow-md">
+                  <div className="relative p-6 space-y-2">
+                    <h2 className="text-2xl font-display font-bold text-primary">
                       {service.title}
                     </h2>
-                    <p className="text-sm text-white/90 line-clamp-2 drop-shadow">
+                    <p className="text-sm font-medium text-foreground/90 line-clamp-2">
                       {service.description}
                     </p>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-white pt-1">
+                    <div className="flex items-center gap-2 text-sm font-bold text-primary pt-1">
                       <span>Get Pricing</span>
                       <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                     </div>
