@@ -2075,6 +2075,7 @@ export type Database = {
         Row: {
           attempts: number
           callrail_message_id: string | null
+          channel: string
           correlation_id: string
           created_at: string
           delivery_status: string | null
@@ -2084,13 +2085,22 @@ export type Database = {
           max_attempts: number
           otp_hash: string
           phone_hash: string
+          provider: string | null
+          provider_accepted_at: string | null
+          provider_conversation_id: string | null
+          provider_message_id: string | null
+          provider_response_kind: string | null
+          provider_status: string | null
+          recipient_hint: string | null
           status: string
           updated_at: string
+          usable_until: string | null
           verified_at: string | null
         }
         Insert: {
           attempts?: number
           callrail_message_id?: string | null
+          channel?: string
           correlation_id?: string
           created_at?: string
           delivery_status?: string | null
@@ -2100,13 +2110,22 @@ export type Database = {
           max_attempts?: number
           otp_hash: string
           phone_hash: string
+          provider?: string | null
+          provider_accepted_at?: string | null
+          provider_conversation_id?: string | null
+          provider_message_id?: string | null
+          provider_response_kind?: string | null
+          provider_status?: string | null
+          recipient_hint?: string | null
           status?: string
           updated_at?: string
+          usable_until?: string | null
           verified_at?: string | null
         }
         Update: {
           attempts?: number
           callrail_message_id?: string | null
+          channel?: string
           correlation_id?: string
           created_at?: string
           delivery_status?: string | null
@@ -2116,8 +2135,16 @@ export type Database = {
           max_attempts?: number
           otp_hash?: string
           phone_hash?: string
+          provider?: string | null
+          provider_accepted_at?: string | null
+          provider_conversation_id?: string | null
+          provider_message_id?: string | null
+          provider_response_kind?: string | null
+          provider_status?: string | null
+          recipient_hint?: string | null
           status?: string
           updated_at?: string
+          usable_until?: string | null
           verified_at?: string | null
         }
         Relationships: []
@@ -4294,6 +4321,12 @@ export type Database = {
           max_attempts: number
           message_kind: string
           next_retry_at: string | null
+          provider: string | null
+          provider_accepted_at: string | null
+          provider_conversation_id: string | null
+          provider_message_id: string | null
+          provider_response_kind: string | null
+          provider_status: string | null
           quote_id: string | null
           send_at: string
           sent_at: string | null
@@ -4321,6 +4354,12 @@ export type Database = {
           max_attempts?: number
           message_kind?: string
           next_retry_at?: string | null
+          provider?: string | null
+          provider_accepted_at?: string | null
+          provider_conversation_id?: string | null
+          provider_message_id?: string | null
+          provider_response_kind?: string | null
+          provider_status?: string | null
           quote_id?: string | null
           send_at?: string
           sent_at?: string | null
@@ -4348,6 +4387,12 @@ export type Database = {
           max_attempts?: number
           message_kind?: string
           next_retry_at?: string | null
+          provider?: string | null
+          provider_accepted_at?: string | null
+          provider_conversation_id?: string | null
+          provider_message_id?: string | null
+          provider_response_kind?: string | null
+          provider_status?: string | null
           quote_id?: string | null
           send_at?: string
           sent_at?: string | null
@@ -5029,6 +5074,12 @@ export type Database = {
           max_attempts: number
           message_kind: string
           next_retry_at: string | null
+          provider: string | null
+          provider_accepted_at: string | null
+          provider_conversation_id: string | null
+          provider_message_id: string | null
+          provider_response_kind: string | null
+          provider_status: string | null
           quote_id: string | null
           send_at: string
           sent_at: string | null
