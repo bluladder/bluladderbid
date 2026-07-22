@@ -211,7 +211,7 @@ serve(async (req) => {
   const { data: row, error } = await supabase
     .from("quotes")
     .select(
-      "id, customer_name, quote_type, home_details_json, services_json, authoritative_snapshot, total, subtotal, status, created_at, expires_at",
+      "id, customer_name, customer_email, customer_phone, quote_type, home_details_json, services_json, authoritative_snapshot, total, subtotal, status, created_at, expires_at, source_session_id",
     )
     .eq("id", quoteId)
     .maybeSingle();
@@ -228,5 +228,53 @@ serve(async (req) => {
   }
 
   const dto = buildDto(row);
-  return json(200, { ok: true, quote: dto });
+
+  // Hydration payload — returned ONLY on a valid token match. Allows the
+  // resume booking screen to re-open the saved proposal without asking the
+  // customer to re-enter anything. The token proves the caller controls
+  // this quote's link; we do not include cross-customer or admin data.
+  const services = (row.services_json ?? {}) as Record<string, unknown>;
+  const home = (row.home_details_json ?? {}) as Record<string, unknown>;
+  // Look up an existing booking for this quote so already-booked links skip
+  // scheduling entirely.
+  let booking: {
+    id: string;
+    referenceNumber: string | null;
+    scheduledStart: string | null;
+    scheduledEnd: string | null;
+    status: string | null;
+  } | null = null;
+  try {
+    const { data: b } = await supabase
+      .from("bookings")
+      .select("id, reference_number, scheduled_start, scheduled_end, status")
+      .eq("quote_id", quoteId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (b?.id) {
+      booking = {
+        id: b.id,
+        referenceNumber: b.reference_number ?? null,
+        scheduledStart: b.scheduled_start ?? null,
+        scheduledEnd: b.scheduled_end ?? null,
+        status: b.status ?? null,
+      };
+    }
+  } catch (_e) { /* non-blocking */ }
+
+  const [firstName, ...restName] = ((row.customer_name as string | null) ?? "").trim().split(/\s+/).filter(Boolean);
+  const hydration = {
+    customer: {
+      firstName: firstName || null,
+      lastName: restName.length ? restName.join(" ") : null,
+      email: (row.customer_email as string | null) ?? null,
+      phone: (row.customer_phone as string | null) ?? null,
+    },
+    homeDetails: home,
+    additionalServices: (services.additionalServices ?? null) as Record<string, unknown> | null,
+    sourceSessionId: (row.source_session_id as string | null) ?? null,
+  };
+
+  return json(200, { ok: true, quote: dto, hydration, booking });
 });
