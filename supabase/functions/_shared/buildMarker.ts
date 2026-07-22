@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.5-shared-intake-manifest";
+export const BUILD_ID = "voice-adapter-4C-b.6-rollout-gate";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -16,7 +16,9 @@ export const BUILD_FEATURES = {
   partialWindowPricing: true,
   commercialCustomBidIntake: true,
   stableVoiceSessionId: true,
-  useWorkflowController: false,
+  useWorkflowController: "gated" as const,
+  workflowControllerCallerIdConfirmation: true,
+  workflowControllerReturningCustomer: true,
   sharedIntakeManifest: true,
   contactFirstIntake: true,
 } as const;
