@@ -12,7 +12,7 @@
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runTool, TOOL_DEFINITIONS, type ToolContext } from "./aiTools.ts";
-import { getPhoneByPurpose } from "./phoneConfig.ts";
+import { getPhoneByPurpose, RETIRED_PHONE_NUMBERS } from "./phoneConfig.ts";
 import { classifyInboundIntent } from "./bookingIntent.ts";
 import {
   type ConversationFacts,
@@ -112,7 +112,30 @@ export interface OrchestratorResult {
   events: string[];
   state?: string;
   error?: string;
+  /**
+   * Optional, voice-only disposition. Absent (or null) for non-voice channels.
+   * The voice adapter maps this to a provider-independent adapter action; the
+   * language model never picks the disposition on its own.
+   *
+   * transfer_human means only "BluLadder's authoritative orchestrator has
+   * approved an attempt to transfer this call." The destination is resolved
+   * separately from secure server-side configuration.
+   */
+  voice?: VoiceDisposition | null;
 }
+
+// Provider-independent voice disposition. Discriminated union — do NOT collapse
+// into loosely related booleans. New cases must be added deliberately here.
+export type VoiceDisposition =
+  | { type: "speak" }
+  | { type: "tool_result_speak" }
+  | { type: "transfer_human"; reason?: string }
+  | { type: "callback_confirmed"; callbackRequestId?: string }
+  | { type: "graceful_end"; reason?: string }
+  | { type: "safe_failure"; reasonCode: string }
+  | { type: "uncertain_pricing"; reason?: string }
+  | { type: "uncertain_scheduling"; reason?: string }
+  | { type: "post_call_sms_handoff"; reason?: string };
 
 const BASE_PROMPT = `You are BluLadder's friendly, professional website assistant for a home exterior cleaning company.
 
@@ -142,14 +165,14 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
     .order("sort_order");
   // Centralized, purpose-based contact number (never hard-coded in prompts).
   const office = await getPhoneByPurpose(supabase, "primary_public");
-  const responsibid = await getPhoneByPurpose(supabase, "responsibid");
-  // Defense-in-depth: even if a knowledge row still contains a non-public number
-  // (e.g. the ResponsiBid integration number), redact it so it can never be
-  // surfaced to a customer. The office number is injected via the directive.
+  // Defense-in-depth: even if a knowledge row still contains a retired number
+  // (e.g. the former ResponsiBid integration line), redact it so it can never
+  // be surfaced to a customer. The office number is injected via the directive.
   const redact = (s: string): string => {
     let out = s;
-    for (const bad of [responsibid.e164, responsibid.display]) {
-      if (bad) out = out.split(bad).join("[the BluLadder office number]");
+    for (const r of RETIRED_PHONE_NUMBERS) {
+      if (r.e164) out = out.split(r.e164).join("[the BluLadder office number]");
+      if (r.display) out = out.split(r.display).join("[the BluLadder office number]");
     }
     return out;
   };
@@ -424,6 +447,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     return {
       reply: "A member of our team is looking after your request now and will reply here shortly.",
       toolEvents: [], events: [], state,
+      voice: channel === "voice" ? { type: "graceful_end", reason: "staff_takeover" } : null,
     };
   }
 
@@ -493,7 +517,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     if (!toolCalls || toolCalls.length === 0) {
       await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
       const safe = guardConfirmedLanguage(choice.content || "How can I help with your exterior cleaning today?", facts, railBooked);
-      return { reply: safe, toolEvents, events, state };
+      return finalize({ reply: safe, toolEvents, events, state, channel, facts, railBooked });
     }
 
     messages.push({ role: "assistant", content: choice.content || "", tool_calls: toolCalls });
@@ -540,7 +564,66 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   let reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
   reply = guardConfirmedLanguage(reply, facts, railBooked);
   await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
-  return { reply, toolEvents, events, state };
+  return finalize({ reply, toolEvents, events, state, channel, facts, railBooked });
+}
+
+// Attach the optional voice disposition only when the caller asked for the
+// voice channel. Non-voice channels get `voice: null` so callers can
+// distinguish "absent because non-voice" from "voice channel, no disposition."
+function finalize(args: {
+  reply: string;
+  toolEvents: OrchestratorResult["toolEvents"];
+  events: string[];
+  state: string;
+  channel: OrchestratorInput["channel"];
+  facts: ConversationFacts;
+  railBooked: boolean;
+}): OrchestratorResult {
+  const base: OrchestratorResult = {
+    reply: args.reply,
+    toolEvents: args.toolEvents,
+    events: args.events,
+    state: args.state,
+  };
+  if (args.channel !== "voice") {
+    base.voice = null;
+    return base;
+  }
+  base.voice = deriveVoiceDisposition({
+    state: args.state,
+    facts: args.facts,
+    railBooked: args.railBooked,
+    toolEvents: args.toolEvents,
+  });
+  return base;
+}
+
+// Provider-independent mapping from server-authoritative state/facts to a
+// voice disposition. The model never selects the disposition; the state
+// machine and tool results do. Fails closed to `safe_failure` on unexpected
+// input rather than defaulting to "speak" with hallucinated confidence.
+export function deriveVoiceDisposition(input: {
+  state: string;
+  facts: ConversationFacts;
+  railBooked: boolean;
+  toolEvents: { tool: string; result: any }[];
+}): VoiceDisposition {
+  const { state, facts, railBooked, toolEvents } = input;
+  if (facts.bookingStatus === "confirmed" || railBooked) return { type: "tool_result_speak" };
+  if (facts.callbackRequested) return { type: "callback_confirmed" };
+  if (state === "manual_review" || facts.quote?.status === "manual_review_required") {
+    return { type: "uncertain_pricing", reason: facts.manualReviewReason ?? undefined };
+  }
+  if (state === "checking_availability" || state === "awaiting_booking_confirmation") {
+    return { type: "tool_result_speak" };
+  }
+  if (state === "error_recovery") {
+    return { type: "safe_failure", reasonCode: facts.lastError ?? "orchestrator_error_recovery" };
+  }
+  if (toolEvents.some((e) => e.tool === "escalate_to_human")) {
+    return { type: "transfer_human", reason: "orchestrator_escalation" };
+  }
+  return { type: "speak" };
 }
 
 // Post-hoc safety net: never emit assistant text that asserts a confirmed
