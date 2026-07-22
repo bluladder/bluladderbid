@@ -15,6 +15,15 @@ import {
   type VoiceStreamEvent,
 } from "../_shared/voiceAdapter.ts";
 import { BUILD_ID, BUILD_FEATURES } from "../_shared/buildMarker.ts";
+import {
+  selectRoute,
+  rolloutLogPayload,
+} from "../_shared/workflow/rolloutRoute.ts";
+import {
+  runControllerTurn,
+  persistControllerPatch,
+} from "../_shared/workflow/workflowController.ts";
+import { ensureVoiceConversation } from "../_shared/voiceAdapter.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -84,11 +93,74 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceKey);
   const model = parsed.value.model || "bluladder-voice-adapter";
 
+  // ---- Rollout gate ------------------------------------------------------
+  const decision = selectRoute({
+    syntheticTestHeader: req.headers.get("x-bluladder-synthetic-test"),
+    callerIdE164: parsed.value.callerIdE164,
+    env: {
+      enabled: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ENABLED"),
+      allowlist: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST"),
+      testSecret: Deno.env.get("VOICE_WORKFLOW_TEST_SECRET"),
+    },
+  });
+  try {
+    console.log(JSON.stringify(await rolloutLogPayload(decision, parsed.value.callerIdE164)));
+  } catch { /* never throw from telemetry */ }
+
+  if (decision.route === "controller") {
+    // Preface turn: caller-ID confirmation / returning-customer resolution /
+    // pre-pricing FSM asks. Post-pricing actions fall through to the legacy
+    // orchestrator so the real production tools remain the source of truth
+    // for pricing, availability, and booking.
+    try {
+      const identity = await ensureVoiceConversation({ supabase, request: parsed.value });
+      // Reconstruct history + last utterance the same way the legacy adapter does.
+      const nonSystem = parsed.value.messages.filter((m) => m.role !== "system" && m.role !== "tool");
+      let lastUserIdx = -1;
+      for (let i = nonSystem.length - 1; i >= 0; i--) if (nonSystem[i].role === "user") { lastUserIdx = i; break; }
+      const history = lastUserIdx >= 0
+        ? nonSystem.slice(0, lastUserIdx).map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+        : [];
+      const userMessage = lastUserIdx >= 0 ? nonSystem[lastUserIdx].content : "";
+      const turn = await runControllerTurn({
+        supabase,
+        conversationId: identity.conversationId,
+        channel: "voice",
+        utterance: userMessage,
+        history,
+        callerIdE164: parsed.value.callerIdE164,
+      });
+      await persistControllerPatch(supabase, turn.sessionId, turn.sessionPatch);
+      if (turn.pre.kind !== "delegate_legacy") {
+        const spoken = turn.pre.spoken;
+        const completion = {
+          content: spoken,
+          action: { kind: "speak" as const },
+          orchestrator: {
+            reply: spoken,
+            toolEvents: [],
+            events: ["workflow_controller"],
+            state: "workflow_controller" as const,
+            voice: { type: "speak" as const },
+          },
+        };
+        console.log(JSON.stringify({
+          at: "voice-llm-adapter", buildId: BUILD_ID, route: "controller",
+          preKind: turn.pre.kind, replyLen: spoken.length,
+        }));
+        return buildNonStreamingResponse(model, completion);
+      }
+      // Fall through to legacy for pricing / scheduling / booking.
+    } catch (e) {
+      console.warn("controller turn failed; falling back to legacy:", (e as Error).message);
+    }
+  }
+
   // Non-streaming: preserve existing behavior for provider fallbacks/tests.
   if (!parsed.value.stream) {
     const completion = await runVoiceAdapter({ supabase, request: parsed.value });
     console.log(JSON.stringify({
-      at: "voice-llm-adapter", buildId: BUILD_ID, stream: false, action: completion.action.kind,
+      at: "voice-llm-adapter", buildId: BUILD_ID, route: decision.route, stream: false, action: completion.action.kind,
       state: completion.orchestrator.state ?? null, replyLen: completion.content.length,
     }));
     return buildNonStreamingResponse(model, completion);
