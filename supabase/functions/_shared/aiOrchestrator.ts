@@ -172,20 +172,24 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
   // about weather, delays, or reschedules.
   const weather = await loadWeatherStatus(supabase);
   const weatherDirective = renderWeatherDirective(weather);
-  return [
+  const sections: string[] = [
     BASE_PROMPT,
     "",
     `TODAY'S DATE (America/Chicago): ${todayCentral}. Always reason about availability and appointment dates relative to this date. Never assume a different current date.`,
     "",
     `CONTACT DIRECTIVE: BluLadder's office number is ${office.display}. This is the ONLY phone number you may give a customer (for "call our office", human escalation, complaints, or scheduling help). Never share any other number.`,
     "",
-    weatherDirective ? weatherDirective : "",
-    weatherDirective ? "" : "",
+  ];
+  if (weatherDirective) {
+    sections.push(weatherDirective, "");
+  }
+  sections.push(
     "APPROVED BUSINESS FACTS (the only facts you may assert):",
     knowledge || "- (none configured yet)",
     "",
     stateDirective(state as any, facts),
-  ].filter((line) => line !== null).join("\n");
+  );
+  return sections.join("\n");
 }
 
 // Milestone states worth (re)summarizing for the admin dashboard. We do NOT
