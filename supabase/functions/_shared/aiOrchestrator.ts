@@ -752,21 +752,23 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     };
   }
 
+  const toolCtx: ToolContext = { supabase, conversationId, sessionToken, channel };
+  const toolEvents: { tool: string; result: any }[] = [];
+  const events: string[] = [];
+
+  // Voice rough-quote rail runs before any model prompt is constructed, so the
+  // address/service-area directive can never preempt the address-free quote.
+  const roughQuoteRail = channel === "voice"
+    ? await runVoiceRoughQuoteRail({ supabase, toolCtx, conversationId, sessionToken, facts, state, history })
+    : null;
+  if (roughQuoteRail) return roughQuoteRail;
+
   const system = await buildSystemPrompt(supabase, state, facts, channel);
   const messages: any[] = [
     { role: "system", content: channel === "voice" ? `${system}\n\n${VOICE_RESPONSE_CONTRACT}` : system },
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: userMessage },
   ];
-
-  const toolCtx: ToolContext = { supabase, conversationId, sessionToken, channel };
-  const toolEvents: { tool: string; result: any }[] = [];
-  const events: string[] = [];
-
-  const roughQuoteRail = channel === "voice"
-    ? await runVoiceRoughQuoteRail({ supabase, toolCtx, conversationId, sessionToken, facts, state, history })
-    : null;
-  if (roughQuoteRail) return roughQuoteRail;
 
   // ---- Deterministic post-yes rail (pre-model) --------------------------
   // Fire ONLY when the user's message is an explicit booking-confirm intent,
