@@ -86,7 +86,7 @@ serve(async (req) => {
   if (body.cancelSmsMessageId) {
     const { data } = await supabase
       .from("sms_messages")
-      .select("id, quote_id, message_kind, status, error, callrail_message_id, next_retry_at, attempts, created_at, phone_e164, to_phone, phone, recipient_phone")
+      .select("id, quote_id, message_kind, status, error, callrail_message_id, next_retry_at, attempts, created_at")
       .eq("id", body.cancelSmsMessageId)
       .maybeSingle();
     smsRow = (data as Record<string, unknown>) ?? null;
@@ -97,7 +97,7 @@ serve(async (req) => {
     if (q?.id) {
       const { data } = await supabase
         .from("sms_messages")
-        .select("id, quote_id, message_kind, status, error, callrail_message_id, next_retry_at, attempts, created_at, phone_e164, to_phone, phone, recipient_phone")
+        .select("id, quote_id, message_kind, status, error, callrail_message_id, next_retry_at, attempts, created_at")
         .eq("quote_id", q.id).eq("message_kind", "transactional")
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       smsRow = (data as Record<string, unknown>) ?? null;
@@ -114,14 +114,7 @@ serve(async (req) => {
     cancelResult = smsRow ? `no_action (status=${smsRow.status})` : "no_matching_row";
   }
 
-  // Mask any phone-shaped fields on the row before returning.
-  const maskedSmsRow = smsRow ? {
-    ...smsRow,
-    phone_e164: smsRow.phone_e164 ? maskPhone(String(smsRow.phone_e164)) : null,
-    to_phone: smsRow.to_phone ? maskPhone(String(smsRow.to_phone)) : null,
-    phone: smsRow.phone ? maskPhone(String(smsRow.phone)) : null,
-    recipient_phone: smsRow.recipient_phone ? maskPhone(String(smsRow.recipient_phone)) : null,
-  } : null;
+  const maskedSmsRow = smsRow; // no phone columns on this table
 
   return j({
     secret: {
