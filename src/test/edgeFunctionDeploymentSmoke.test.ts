@@ -34,6 +34,15 @@ const CRITICAL_FUNCTIONS = [
   // so the mirror aged past the freshness threshold and every quote saw the
   // "Live scheduling is temporarily unavailable" fallback. Guard the deploy.
   'jobber-autosync',
+  // `quote-resume` powers every secure resume link emailed/texted after a
+  // saved bid; when it's missing from the deployment every link 404s and the
+  // customer can't reopen their quote.
+  'quote-resume',
+  // `campaign-event` is the canonical lifecycle-event sink invoked by
+  // `save-quote` (quote_calculated) and every downstream flow. A missing
+  // deployment silently breaks attribution + follow-up enrollment even though
+  // the browser save succeeds.
+  'campaign-event',
 ] as const;
 
 const enabled = process.env.RUN_EDGE_SMOKE === '1';
