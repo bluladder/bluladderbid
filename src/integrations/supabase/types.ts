@@ -674,6 +674,7 @@ export type Database = {
           jobber_quote_id: string | null
           jobber_visit_id: string | null
           line_item_snapshot: Json | null
+          maintenance_last_notified_at: string | null
           meta_events_fired: Json
           notes: string | null
           prep_email_sent_at: string | null
@@ -692,6 +693,7 @@ export type Database = {
           rescheduled_at: string | null
           scheduled_end: string | null
           scheduled_start: string | null
+          service_completed_at: string | null
           services_json: Json
           slot_released_at: string | null
           source_session_id: string | null
@@ -736,6 +738,7 @@ export type Database = {
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
           line_item_snapshot?: Json | null
+          maintenance_last_notified_at?: string | null
           meta_events_fired?: Json
           notes?: string | null
           prep_email_sent_at?: string | null
@@ -754,6 +757,7 @@ export type Database = {
           rescheduled_at?: string | null
           scheduled_end?: string | null
           scheduled_start?: string | null
+          service_completed_at?: string | null
           services_json: Json
           slot_released_at?: string | null
           source_session_id?: string | null
@@ -798,6 +802,7 @@ export type Database = {
           jobber_quote_id?: string | null
           jobber_visit_id?: string | null
           line_item_snapshot?: Json | null
+          maintenance_last_notified_at?: string | null
           meta_events_fired?: Json
           notes?: string | null
           prep_email_sent_at?: string | null
@@ -816,6 +821,7 @@ export type Database = {
           rescheduled_at?: string | null
           scheduled_end?: string | null
           scheduled_start?: string | null
+          service_completed_at?: string | null
           services_json?: Json
           slot_released_at?: string | null
           source_session_id?: string | null
@@ -3547,6 +3553,84 @@ export type Database = {
         }
         Relationships: []
       }
+      service_education_content: {
+        Row: {
+          body: string
+          channel: string
+          created_at: string
+          display_name: string
+          id: string
+          is_active: boolean
+          send_after_days: number
+          service_key: string
+          sort_order: number
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          channel?: string
+          created_at?: string
+          display_name: string
+          id?: string
+          is_active?: boolean
+          send_after_days?: number
+          service_key: string
+          sort_order?: number
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          channel?: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          is_active?: boolean
+          send_after_days?: number
+          service_key?: string
+          sort_order?: number
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      service_maintenance_intervals: {
+        Row: {
+          advisory: string | null
+          created_at: string
+          display_name: string
+          id: string
+          interval_days: number
+          is_active: boolean
+          service_key: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          advisory?: string | null
+          created_at?: string
+          display_name: string
+          id?: string
+          interval_days: number
+          is_active?: boolean
+          service_key: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          advisory?: string | null
+          created_at?: string
+          display_name?: string
+          id?: string
+          interval_days?: number
+          is_active?: boolean
+          service_key?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       service_preparation_config: {
         Row: {
           created_at: string
@@ -4314,6 +4398,39 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      weather_status: {
+        Row: {
+          advisory_message: string | null
+          created_at: string
+          id: string
+          internal_note: string | null
+          singleton: boolean
+          status: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          advisory_message?: string | null
+          created_at?: string
+          id?: string
+          internal_note?: string | null
+          singleton?: boolean
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          advisory_message?: string | null
+          created_at?: string
+          id?: string
+          internal_note?: string | null
+          singleton?: boolean
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: []
       }
