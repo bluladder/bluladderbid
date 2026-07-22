@@ -99,6 +99,35 @@ Deno.test("parseAdapterRequest: caller-supplied session id is preferred", async 
   assertEquals(parsed.value.sessionIdIsSynthetic, false);
 });
 
+Deno.test("parseAdapterRequest: Vapi body.call.id becomes stable session id", async () => {
+  const req = makeReq({ ...basicGreetingRequest, call: { id: "abc-123-vapi" } });
+  const parsed = await parseAdapterRequest(req);
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+  assertEquals(parsed.value.sessionId, "vapi_call:abc-123-vapi");
+  assertEquals(parsed.value.sessionIdIsSynthetic, false);
+});
+
+Deno.test("parseAdapterRequest: header overrides body.call.id", async () => {
+  const req = makeReq(
+    { ...basicGreetingRequest, call: { id: "abc-123-vapi" } },
+    { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "override-1" } },
+  );
+  const parsed = await parseAdapterRequest(req);
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+  assertEquals(parsed.value.sessionId, "override-1");
+});
+
+Deno.test("parseAdapterRequest: two turns from same Vapi call share sessionId", async () => {
+  const a = await parseAdapterRequest(makeReq({ ...basicGreetingRequest, call: { id: "same-call" } }));
+  const b = await parseAdapterRequest(makeReq({ ...basicGreetingRequest, call: { id: "same-call" } }));
+  assert(a.ok && b.ok);
+  if (!a.ok || !b.ok) return;
+  assertEquals(a.value.sessionId, b.value.sessionId);
+  assertEquals(a.value.sessionIdIsSynthetic, false);
+});
+
 Deno.test("ensureVoiceConversation: reuses existing voice conversation by session token", async () => {
   let inserted = false;
   const supabase: any = {
