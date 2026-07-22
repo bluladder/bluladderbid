@@ -10,7 +10,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { OneTimeSummary } from './OneTimeSummary';
 import { DEFAULT_ADDITIONAL_SERVICES } from '@/types/homeowner';
 import type { ServicePrices, HomeDetails, AdditionalServices } from '@/types/homeowner';
@@ -107,10 +106,9 @@ describe('OneTimeSummary — email + text delivery', () => {
       error: null,
     });
     renderSummary();
-    const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: /^email$/i }));
-    await user.type(screen.getByLabelText(/email/i), 'jane.doe@example.com');
-    await user.click(screen.getByRole('button', { name: /email me the bid/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^email$/i }));
+    fireEvent.change(await screen.findByLabelText(/email/i), { target: { value: 'jane.doe@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /email me the bid/i }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
     expect(invokeMock.mock.calls[0][0]).toBe('save-quote');
     expect(invokeMock.mock.calls[0][1].body.action).toBe('email');
@@ -122,11 +120,10 @@ describe('OneTimeSummary — email + text delivery', () => {
       .mockResolvedValueOnce({ data: { quoteId: 'q-42', quoteUrl: 'https://x/r' }, error: null })
       .mockResolvedValueOnce({ data: { success: true }, error: null });
     renderSummary();
-    const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: /^text$/i }));
-    await user.type(screen.getByLabelText(/email/i), 'jane@example.com');
-    await user.type(screen.getByLabelText(/mobile number/i), '(469) 747-2877');
-    await user.click(screen.getByRole('button', { name: /text me the bid/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
+    fireEvent.change(await screen.findByLabelText(/email/i), { target: { value: 'jane@example.com' } });
+    fireEvent.change(screen.getByLabelText(/mobile number/i), { target: { value: '(469) 747-2877' } });
+    fireEvent.click(screen.getByRole('button', { name: /text me the bid/i }));
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
     expect(invokeMock.mock.calls[0][0]).toBe('save-quote');
@@ -142,8 +139,8 @@ describe('OneTimeSummary — email + text delivery', () => {
 
     // Retry to the same normalized number — no additional invokes.
     invokeMock.mockClear();
-    await user.click(screen.getByRole('button', { name: /^text$/i }));
-    await user.click(screen.getByRole('button', { name: /text me the bid/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /text me the bid/i }));
     await waitFor(() => {
       // dialog closes without any new invoke
       expect(invokeMock).not.toHaveBeenCalled();
