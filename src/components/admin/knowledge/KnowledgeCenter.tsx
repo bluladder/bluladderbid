@@ -4,6 +4,7 @@ import { KnowledgeManager } from './KnowledgeManager';
 import { KnowledgeGapsView } from './KnowledgeGapsView';
 import { SystemHealthView } from './SystemHealthView';
 import { EscalationCenter } from './EscalationCenter';
+import { ServicePreparationPanel } from './ServicePreparationPanel';
 
 export function KnowledgeCenter({ onOpenAiConversations }: { onOpenAiConversations?: () => void }) {
   return (
@@ -11,12 +12,14 @@ export function KnowledgeCenter({ onOpenAiConversations }: { onOpenAiConversatio
       <TabsList className="flex-wrap h-auto">
         <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
         <TabsTrigger value="gaps">Knowledge Gaps</TabsTrigger>
+        <TabsTrigger value="prep">Service Preparation</TabsTrigger>
         <TabsTrigger value="health">System Health</TabsTrigger>
         <TabsTrigger value="escalations">Escalations</TabsTrigger>
         <TabsTrigger value="phones">Phone Numbers</TabsTrigger>
       </TabsList>
       <TabsContent value="knowledge"><KnowledgeManager /></TabsContent>
       <TabsContent value="gaps"><KnowledgeGapsView /></TabsContent>
+      <TabsContent value="prep"><ServicePreparationPanel /></TabsContent>
       <TabsContent value="health"><SystemHealthView onOpenAiConversations={onOpenAiConversations} /></TabsContent>
       <TabsContent value="escalations"><EscalationCenter /></TabsContent>
       <TabsContent value="phones"><PhoneNumbersManager /></TabsContent>

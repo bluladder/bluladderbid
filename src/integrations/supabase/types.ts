@@ -676,6 +676,7 @@ export type Database = {
           line_item_snapshot: Json | null
           meta_events_fired: Json
           notes: string | null
+          prep_email_sent_at: string | null
           previous_scheduled_end: string | null
           previous_scheduled_start: string | null
           pricing_engine_version: string | null
@@ -737,6 +738,7 @@ export type Database = {
           line_item_snapshot?: Json | null
           meta_events_fired?: Json
           notes?: string | null
+          prep_email_sent_at?: string | null
           previous_scheduled_end?: string | null
           previous_scheduled_start?: string | null
           pricing_engine_version?: string | null
@@ -798,6 +800,7 @@ export type Database = {
           line_item_snapshot?: Json | null
           meta_events_fired?: Json
           notes?: string | null
+          prep_email_sent_at?: string | null
           previous_scheduled_end?: string | null
           previous_scheduled_start?: string | null
           pricing_engine_version?: string | null
@@ -3541,6 +3544,45 @@ export type Database = {
           singleton?: boolean
           state_code?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      service_preparation_config: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+          instructions: Json
+          is_active: boolean
+          notes: string | null
+          service_key: string
+          sort_order: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          id?: string
+          instructions?: Json
+          is_active?: boolean
+          notes?: string | null
+          service_key: string
+          sort_order?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+          instructions?: Json
+          is_active?: boolean
+          notes?: string | null
+          service_key?: string
+          sort_order?: number
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: []
       }
