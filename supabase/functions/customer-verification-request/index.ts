@@ -23,6 +23,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const OTP_GRACE_SECONDS = 20 * 60;
+
 // Generic success response — never leaks whether a customer exists.
 const GENERIC_OK = { status: "ok", message: "If that phone is reachable, you will receive a code shortly." };
 
@@ -91,6 +93,7 @@ serve(async (req) => {
     const otp = generateOtp();
     const otpHash = await sha256Hex(otp);
     const expiresAt = new Date(now + cfg.otp_ttl_seconds * 1000).toISOString();
+    const usableUntil = new Date(now + (cfg.otp_ttl_seconds + OTP_GRACE_SECONDS) * 1000).toISOString();
 
     const { data: challenge, error: chErr } = await supabase
       .from("customer_verification_challenges")
@@ -100,7 +103,10 @@ serve(async (req) => {
         expires_at: expiresAt,
         max_attempts: cfg.max_attempts,
         ip_hash: ipHash,
+        channel: "sms",
+        provider: "callrail",
         delivery_status: "queued",
+        usable_until: usableUntil,
       })
       .select("id, correlation_id")
       .single();
@@ -122,11 +128,16 @@ serve(async (req) => {
     }
 
     const smsBody = `Your BluLadder verification code is ${otp}. It expires in ${Math.round(cfg.otp_ttl_seconds / 60)} minutes. Do not share this code.`;
-    // Idempotency key ties the send to the challenge, preventing accidental duplicate sends.
     const result = await sendCallRailSms(config, phone, smsBody);
+    const acceptedAt = result.ok ? new Date().toISOString() : null;
     await supabase.from("customer_verification_challenges").update({
       callrail_message_id: result.messageId ?? null,
-      delivery_status: result.ok ? "sent" : "delivery_failed",
+      provider_conversation_id: result.conversationId ?? null,
+      provider_message_id: result.messageId ?? null,
+      provider_status: result.providerMessageStatus ?? (result.ok ? "accepted" : "rejected"),
+      provider_response_kind: result.providerResponseKind ?? null,
+      provider_accepted_at: acceptedAt,
+      delivery_status: result.ok ? "accepted" : "delivery_failed",
     }).eq("id", challenge.id);
 
     // Also record in sms_messages for the operator audit trail.
@@ -134,10 +145,17 @@ serve(async (req) => {
       to_number: phone,
       body: smsBody,
       message_kind: "verification",
-      status: result.ok ? "sent" : "failed",
-      sent_at: result.ok ? new Date().toISOString() : null,
+      status: result.ok ? "accepted" : "failed",
+      sent_at: acceptedAt,
       callrail_message_id: result.messageId ?? null,
+      provider: "callrail",
+      provider_conversation_id: result.conversationId ?? null,
+      provider_message_id: result.messageId ?? null,
+      provider_status: result.providerMessageStatus ?? (result.ok ? "accepted" : "rejected"),
+      provider_response_kind: result.providerResponseKind ?? null,
+      provider_accepted_at: acceptedAt,
       error: result.ok ? null : (result.error ?? "send failed"),
+      attempts: 1,
     });
 
     return respond();
