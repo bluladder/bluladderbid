@@ -79,7 +79,14 @@ serve(async (req) => {
 
     // Opt-out or test-identity suppression — record the attempt but never send.
     const optedOut = await isPhoneOptedOut(supabase, phone);
-    const testSup = await checkSuppression(supabase, { phone });
+    // Portal OTP is an explicit user-initiated verification challenge with
+    // rate limiting + short expiry already enforced above. Allowlisted for
+    // protected test identities so owners can log into their own portal.
+    const testSup = await checkSuppression(
+      supabase,
+      { phone },
+      { purpose: "verification" },
+    );
 
     const otp = generateOtp();
     const otpHash = await sha256Hex(otp);

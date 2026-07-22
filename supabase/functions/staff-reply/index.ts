@@ -128,7 +128,14 @@ Deno.serve(async (req) => {
 
   // Test-identity / global suppression gate. A single-use, short-lived,
   // operations-admin authorization may allow exactly one real send.
-  const suppression = await checkSuppression(supabase, channel === "sms" ? { phone: to } : { email: to });
+  // Staff replies are direct responses to an inbound customer message on this
+  // conversation — a callback/"contact us" confirmation. Allowlisted so a
+  // protected test identity can receive their own requested reply.
+  const suppression = await checkSuppression(
+    supabase,
+    channel === "sms" ? { phone: to } : { email: to },
+    { purpose: "contact_request_received" },
+  );
   if (suppression.suppressed) {
     let authorizedId: string | null = null;
     if (useTestAuthorization && !isService) {
