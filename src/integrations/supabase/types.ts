@@ -124,6 +124,30 @@ export type Database = {
           },
         ]
       }
+      analytics_config: {
+        Row: {
+          created_at: string
+          id: boolean
+          inactivity_threshold_minutes: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: boolean
+          inactivity_threshold_minutes?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: boolean
+          inactivity_threshold_minutes?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       attribution_events: {
         Row: {
           booking_id: string | null
@@ -1652,6 +1676,56 @@ export type Database = {
             columns: ["consent_id"]
             isOneToOne: false
             referencedRelation: "communication_consent"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_outcomes: {
+        Row: {
+          classified_at: string
+          classifier_version: string
+          confidence: number
+          conversation_id: string
+          created_at: string
+          deterministic: boolean
+          evidence: Json
+          inactivity_threshold_minutes_used: number
+          outcome: string
+          reason: string
+          updated_at: string
+        }
+        Insert: {
+          classified_at?: string
+          classifier_version: string
+          confidence?: number
+          conversation_id: string
+          created_at?: string
+          deterministic?: boolean
+          evidence?: Json
+          inactivity_threshold_minutes_used: number
+          outcome: string
+          reason: string
+          updated_at?: string
+        }
+        Update: {
+          classified_at?: string
+          classifier_version?: string
+          confidence?: number
+          conversation_id?: string
+          created_at?: string
+          deterministic?: boolean
+          evidence?: Json
+          inactivity_threshold_minutes_used?: number
+          outcome?: string
+          reason?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_outcomes_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "chat_conversations"
             referencedColumns: ["id"]
           },
         ]
