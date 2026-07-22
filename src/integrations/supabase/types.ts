@@ -1390,6 +1390,7 @@ export type Database = {
           prospect_name: string | null
           prospect_phone: string | null
           quote_result: Json | null
+          quote_session_id: string | null
           resolved: boolean
           selected_slot_id: string | null
           service_address: string | null
@@ -1432,6 +1433,7 @@ export type Database = {
           prospect_name?: string | null
           prospect_phone?: string | null
           quote_result?: Json | null
+          quote_session_id?: string | null
           resolved?: boolean
           selected_slot_id?: string | null
           service_address?: string | null
@@ -1474,6 +1476,7 @@ export type Database = {
           prospect_name?: string | null
           prospect_phone?: string | null
           quote_result?: Json | null
+          quote_session_id?: string | null
           resolved?: boolean
           selected_slot_id?: string | null
           service_address?: string | null
@@ -3253,6 +3256,66 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      quote_sessions: {
+        Row: {
+          booking_ready: boolean
+          channel: string
+          conversation_ids: string[]
+          created_at: string
+          customer_id: string | null
+          email_normalized: string | null
+          expires_at: string | null
+          field_status: Json
+          fields: Json
+          id: string
+          last_step: string | null
+          phone_e164: string | null
+          quote_id: string | null
+          quote_status: string
+          required_remaining: string[]
+          resume_token_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          booking_ready?: boolean
+          channel: string
+          conversation_ids?: string[]
+          created_at?: string
+          customer_id?: string | null
+          email_normalized?: string | null
+          expires_at?: string | null
+          field_status?: Json
+          fields?: Json
+          id?: string
+          last_step?: string | null
+          phone_e164?: string | null
+          quote_id?: string | null
+          quote_status?: string
+          required_remaining?: string[]
+          resume_token_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          booking_ready?: boolean
+          channel?: string
+          conversation_ids?: string[]
+          created_at?: string
+          customer_id?: string | null
+          email_normalized?: string | null
+          expires_at?: string | null
+          field_status?: Json
+          fields?: Json
+          id?: string
+          last_step?: string | null
+          phone_e164?: string | null
+          quote_id?: string | null
+          quote_status?: string
+          required_remaining?: string[]
+          resume_token_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       quotes: {
         Row: {
