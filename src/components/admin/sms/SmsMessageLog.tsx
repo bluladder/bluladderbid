@@ -25,7 +25,7 @@ interface SmsMessage {
   channel: 'sms' | 'email' | null;
   subject: string | null;
   body: string;
-  status: 'pending' | 'sent' | 'failed' | 'cancelled' | 'inbound';
+  status: 'pending' | 'accepted' | 'sent' | 'failed' | 'cancelled' | 'inbound';
   message_kind: string | null;
   send_at: string | null;
   sent_at: string | null;
