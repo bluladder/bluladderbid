@@ -98,9 +98,9 @@ Deno.serve(async (req) => {
     syntheticTestHeader: req.headers.get("x-bluladder-synthetic-test"),
     callerIdE164: parsed.value.callerIdE164,
     env: {
-      enabled: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ENABLED"),
-      allowlist: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST"),
-      testSecret: Deno.env.get("VOICE_WORKFLOW_TEST_SECRET"),
+      enabled: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ENABLED") ?? null,
+      allowlist: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST") ?? null,
+      testSecret: Deno.env.get("VOICE_WORKFLOW_TEST_SECRET") ?? null,
     },
   });
   try {
