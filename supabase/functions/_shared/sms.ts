@@ -40,10 +40,40 @@ export function getCallRailConfig(): CallRailConfig | null {
 
 export interface SendResult {
   ok: boolean;
+  /** CallRail returns the text conversation/thread id as the top-level `id`. */
+  conversationId?: string;
+  /** Message-specific id from the latest outgoing item, when CallRail includes it. */
   messageId?: string;
   error?: string;
   providerStatus?: number;
   providerResponseKind?: string;
+  providerMessageStatus?: string;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
+}
+
+// CallRail's Send-a-Text endpoint returns a conversation object. Its top-level
+// `id` is NOT a per-send message id — it stays the same for later texts in the
+// same conversation. When available, the actual newest outbound message id is in
+// `recent_messages[0].id` or `messages[0].id`; otherwise we persist only the
+// conversation id and mark the send as provider-accepted, not delivered.
+// deno-lint-ignore no-explicit-any
+function parseCallRailTextResponse(json: any): {
+  conversationId?: string;
+  messageId?: string;
+  providerMessageStatus?: string;
+} {
+  const conversationId = asString(json?.id ?? json?.conversation_id ?? json?.sms_thread_id ?? json?.thread_id);
+  const messageCandidates = [
+    ...(Array.isArray(json?.recent_messages) ? json.recent_messages : []),
+    ...(Array.isArray(json?.messages) ? json.messages : []),
+  ];
+  const outgoing = messageCandidates.find((m) => String(m?.direction ?? "").toLowerCase() === "outgoing") ?? messageCandidates[0];
+  const messageId = asString(outgoing?.id ?? json?.message?.id ?? json?.text_message?.id ?? json?.message_id);
+  const providerMessageStatus = asString(outgoing?.status ?? json?.status);
+  return { conversationId, messageId, providerMessageStatus };
 }
 
 /** Send a single SMS through CallRail's Send-a-Text-Message endpoint. */
@@ -78,17 +108,22 @@ export async function sendCallRailSms(
       return { ok: false, error: `CallRail ${res.status}: ${text}`, providerStatus: res.status };
     }
 
+    let conversationId: string | undefined;
     let messageId: string | undefined;
+    let providerMessageStatus: string | undefined;
     let providerResponseKind = "unknown";
     try {
       const json = JSON.parse(text);
       providerResponseKind = Array.isArray(json) ? "array" : typeof json;
-      messageId = json?.message?.id ?? json?.text_message?.id ?? json?.id ?? json?.message_id ?? undefined;
+      const parsed = parseCallRailTextResponse(json);
+      conversationId = parsed.conversationId;
+      messageId = parsed.messageId;
+      providerMessageStatus = parsed.providerMessageStatus;
     } catch {
       // non-JSON success response; ignore
       providerResponseKind = "text";
     }
-    return { ok: true, messageId, providerStatus: res.status, providerResponseKind };
+    return { ok: true, conversationId, messageId, providerStatus: res.status, providerResponseKind, providerMessageStatus };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
