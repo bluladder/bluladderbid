@@ -46,7 +46,7 @@ const MAX_FAST_LEN = 220;
 // full orchestrator. We do NOT try to be clever — clever == unsafe.
 const FORCE_FULL_PATTERNS: { rx: RegExp; reason: FullReason }[] = [
   { rx: /\b(price|pricing|cost|quote|estimate|how much|charge|charges|fee|fees|deposit|invoice)\b/i, reason: "pricing_intent" },
-  { rx: /\b(discount|promo|promotion|coupon|special|deal|sale|offer)\b/i, reason: "promotion_intent" },
+  { rx: /\b(discount|promo|promotion|coupon|special deal|sale price)\b/i, reason: "promotion_intent" },
   { rx: /\b(plan|subscription|recurring|maintenance plan|quarterly|monthly)\b/i, reason: "recurring_plan_intent" },
   { rx: /\b(book|booking|schedule|reschedule|cancel|appointment|available|availability|opening|time slot|slot|when can|next available|next opening)\b/i, reason: "availability_intent" },
   { rx: /\b(yes,? book|go ahead and book|confirm(?:ed)? (?:the )?booking|book it)\b/i, reason: "booking_intent" },
