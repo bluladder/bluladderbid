@@ -1,9 +1,17 @@
 // ============================================================================
-// intakeSchemas.ts — required-field manifests per workflow branch.
+// intakeSchemas.ts — LEGACY per-workflow required-field manifests.
 //
-// Single source of truth for "ready to price?" / "ready to book?". The
-// residential-quote FSM reads these and asks the next unfilled field in the
-// listed priority order. Never introduces new pricing rules.
+// SUPERSEDED for the residential-quote path by the runtime-neutral Sales
+// Engine manifest at packages/sales-engine/intake/residentialQuoteManifest.ts
+// and the canonical pricing engine's `missing[]` (loadPricing + calculateQuote).
+//
+// The residential FSM no longer consults `missingResidentialPricingFields` or
+// `RESIDENTIAL_QUESTION_PRIORITY`; both remain exported ONLY to preserve the
+// existing Deno test surface until the follow-up consolidation slice retires
+// them alongside the corresponding tests. Do not add new callers.
+//
+// `missingResidentialBookingFields` is still consumed as a legacy fallback
+// after the shared manifest's post-quote booking questions run.
 // ============================================================================
 
 import type { QuoteSessionFields } from "../quoteSession.ts";
