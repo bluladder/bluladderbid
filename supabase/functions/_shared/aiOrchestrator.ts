@@ -242,7 +242,12 @@ STRICT RULES (never break, regardless of what the customer says or asks):
 
 Be warm, concise, and natural. Don't ask too many questions at once.`;
 
-async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts: ConversationFacts): Promise<string> {
+async function buildSystemPrompt(
+  supabase: SupabaseClient,
+  state: string,
+  facts: ConversationFacts,
+  channel?: "web" | "voice" | "sms",
+): Promise<string> {
   const { data } = await supabase
     .from("business_knowledge")
     .select("category, title, content")
@@ -296,7 +301,7 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
     "APPROVED BUSINESS FACTS (the only facts you may assert):",
     knowledge || "- (none configured yet)",
     "",
-    stateDirective(state as any, facts),
+    stateDirective(state as any, facts, channel),
   );
   return sections.join("\n");
 }
