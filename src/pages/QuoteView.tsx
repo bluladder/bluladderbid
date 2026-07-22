@@ -340,7 +340,9 @@ export default function QuoteView() {
                 <div className="space-y-2">
                   {!quote.isExpired && !quote.isDeclined && (
                     <Button className="w-full btn-primary" size="lg" asChild>
-                      <Link to="/plan-builder">Accept &amp; Book</Link>
+                      <Link to={`/quote/${quote.quoteId}/book?resume=${encodeURIComponent(resumeToken)}`}>
+                        Accept &amp; Book
+                      </Link>
                     </Button>
                   )}
                   <Button variant="outline" className="w-full" onClick={handleCopyLink}>

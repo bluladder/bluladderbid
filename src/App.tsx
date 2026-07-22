@@ -9,6 +9,7 @@ import Services from "./pages/Services";
 import ServiceLanding from "./pages/ServiceLanding";
 import PlanBuilder from "./pages/PlanBuilder";
 import QuoteView from "./pages/QuoteView";
+import QuoteBookingView from "./pages/QuoteBookingView";
 import MyAppointments from "./pages/MyAppointments";
 import ConfirmChange from "./pages/ConfirmChange";
 import MessagePreferences from "./pages/MessagePreferences";
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/services" element={<Services />} />
           <Route path="/plan-builder" element={<PlanBuilder />} />
           <Route path="/quote/:id" element={<QuoteView />} />
+          <Route path="/quote/:id/book" element={<QuoteBookingView />} />
           <Route path="/my-appointments" element={<MyAppointments />} />
           <Route path="/confirm-change" element={<ConfirmChange />} />
           <Route path="/preferences" element={<MessagePreferences />} />

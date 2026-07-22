@@ -211,7 +211,7 @@ serve(async (req) => {
   const { data: row, error } = await supabase
     .from("quotes")
     .select(
-      "id, customer_name, quote_type, home_details_json, services_json, authoritative_snapshot, total, subtotal, status, created_at, expires_at",
+      "id, customer_name, customer_email, customer_phone, quote_type, home_details_json, services_json, authoritative_snapshot, total, subtotal, status, created_at, expires_at, source_session_id",
     )
     .eq("id", quoteId)
     .maybeSingle();
@@ -228,5 +228,99 @@ serve(async (req) => {
   }
 
   const dto = buildDto(row);
-  return json(200, { ok: true, quote: dto });
+
+  // Hydration payload — returned ONLY on a valid token match. Allows the
+  // resume booking screen to re-open the saved proposal without asking the
+  // customer to re-enter anything. The token proves the caller controls
+  // this quote's link; we do not include cross-customer or admin data.
+  const services = (row.services_json ?? {}) as Record<string, unknown>;
+  const home = (row.home_details_json ?? {}) as Record<string, unknown>;
+
+  // Older saved quotes (before the additionalServices persistence patch)
+  // don't store an explicit additionalServices blob. Reconstruct the minimum
+  // selection from the persisted line items so the resume screen doesn't
+  // land the customer with every service toggled off.
+  function inferAdditionalServices(): Record<string, unknown> {
+    const acc: Record<string, unknown> = {};
+    const nameSources: string[] = [];
+    const svcs = services.services;
+    if (Array.isArray(svcs)) {
+      for (const s of svcs) {
+        const n = (s as { name?: unknown })?.name;
+        if (typeof n === "string") nameSources.push(n.toLowerCase());
+      }
+    }
+    const lis = services.lineItems;
+    if (Array.isArray(lis)) {
+      for (const li of lis) {
+        const l = (li as { label?: unknown; key?: unknown })?.label;
+        const k = (li as { label?: unknown; key?: unknown })?.key;
+        if (typeof l === "string") nameSources.push(l.toLowerCase());
+        if (typeof k === "string") nameSources.push(k.toLowerCase());
+      }
+    }
+    const has = (needle: string) => nameSources.some((n) => n.includes(needle));
+    acc.windowCleaning = has("window");
+    acc.gutterCleaning = has("gutter");
+    acc.houseWash = has("house wash") || has("house_wash");
+    acc.roofCleaning = has("roof");
+    acc.drivewayCleaning = { enabled: has("driveway"), sqft: 800, surfaceType: "concrete" };
+    acc.pressureWashing = {
+      enabled: has("pressure") && !has("driveway"),
+      surfaceType: "concrete",
+      frontPorch: { enabled: false, sqft: 100, surfaceType: "concrete" },
+      backPatio: { enabled: false, sqft: 300, surfaceType: "concrete" },
+      poolDeck: { enabled: false, sqft: 600, surfaceType: "concrete" },
+      walkways: { enabled: false, sqft: 200, surfaceType: "concrete" },
+    };
+    return acc;
+  }
+
+  const storedAdditional = services.additionalServices as Record<string, unknown> | undefined | null;
+  const additionalServices = storedAdditional && typeof storedAdditional === "object"
+    ? storedAdditional
+    : inferAdditionalServices();
+
+  // Look up an existing booking for this quote so already-booked links skip
+  // scheduling entirely.
+  let booking: {
+    id: string;
+    referenceNumber: string | null;
+    scheduledStart: string | null;
+    scheduledEnd: string | null;
+    status: string | null;
+  } | null = null;
+  try {
+    const { data: b } = await supabase
+      .from("bookings")
+      .select("id, reference_number, scheduled_start, scheduled_end, status")
+      .eq("quote_id", quoteId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (b?.id) {
+      booking = {
+        id: b.id,
+        referenceNumber: b.reference_number ?? null,
+        scheduledStart: b.scheduled_start ?? null,
+        scheduledEnd: b.scheduled_end ?? null,
+        status: b.status ?? null,
+      };
+    }
+  } catch (_e) { /* non-blocking */ }
+
+  const [firstName, ...restName] = ((row.customer_name as string | null) ?? "").trim().split(/\s+/).filter(Boolean);
+  const hydration = {
+    customer: {
+      firstName: firstName || null,
+      lastName: restName.length ? restName.join(" ") : null,
+      email: (row.customer_email as string | null) ?? null,
+      phone: (row.customer_phone as string | null) ?? null,
+    },
+    homeDetails: home,
+    additionalServices,
+    sourceSessionId: (row.source_session_id as string | null) ?? null,
+  };
+
+  return json(200, { ok: true, quote: dto, hydration, booking });
 });
