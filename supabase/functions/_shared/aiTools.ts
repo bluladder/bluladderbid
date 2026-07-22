@@ -376,6 +376,17 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
 // TOOL: create_bluladder_booking — explicit confirmation + prior slot required.
 // ---------------------------------------------------------------------------
 async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>) {
+  // Phase 4C-β voice-beta dry-run safeguard. The isolated voice test is not
+  // authorized to write real Jobber bookings. Enforced server-side (prompt
+  // language alone is not sufficient). Web and SMS channels are untouched.
+  if (ctx.channel === "voice") {
+    return {
+      status: "voice_beta_dry_run",
+      simulated: true,
+      message:
+        "Booking isn't available on this voice test line yet — the team will confirm through our normal contact options.",
+    };
+  }
   if (args.confirmed !== true) {
     return { status: "not_confirmed", message: "The customer must explicitly confirm before booking." };
   }
