@@ -317,7 +317,6 @@ export function EvergreenNurtureAdminPanel() {
               <DialogDescription>{previewSubject}</DialogDescription>
             </DialogHeader>
             <div className="border rounded-md p-4 bg-background max-h-[60vh] overflow-auto">
-              {/* eslint-disable-next-line react/no-danger */}
               <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
             </div>
           </DialogContent>
