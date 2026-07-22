@@ -47,6 +47,14 @@ const CRITICAL_FUNCTIONS = [
   // Resend. If it 404s, delivery status on every quote email stays stuck at
   // `accepted` and hard-bounced addresses never enter the suppression list.
   'resend-webhook',
+  // `jobber-create-booking` is the terminal step of every customer booking.
+  // When it 404s the UI surfaces the generic "Failed to create booking" toast
+  // with no diagnostic. Guard it against deployment drift.
+  'jobber-create-booking',
+  // `send-sms` powers the customer "Text me this bid" delivery and every
+  // transactional SMS. A missing deployment silently breaks Text bid and
+  // every downstream lifecycle SMS. Guard it against deployment drift.
+  'send-sms',
 ] as const;
 
 const enabled = process.env.RUN_EDGE_SMOKE === '1';
