@@ -287,8 +287,21 @@ serve(async (req) => {
     let emailSent = false;
     let emailError: string | undefined;
 
-    // System-test suppression, checked immediately before delivery.
-    const notifySuppression = await checkSuppression(supabase, { email: customerEmail });
+    // System-test suppression, checked immediately before delivery. Map the
+    // booking lifecycle event to a canonical transactional purpose so a
+    // protected test identity can still receive their own booking updates.
+    const purpose =
+      eventType === "scheduled" ? "booking_confirmed"
+      : eventType === "cancelled" ? "booking_cancelled"
+      : eventType === "rescheduled" || eventType === "services_modified" ||
+        eventType === "price_changed" || eventType === "tech_reassigned"
+        ? "booking_updated"
+        : undefined;
+    const notifySuppression = await checkSuppression(
+      supabase,
+      { email: customerEmail },
+      purpose ? { purpose } : undefined,
+    );
 
     // Send email if notifying customer, Resend is configured, and not suppressed
     if (notifyCustomer && resendApiKey && !notifySuppression.suppressed) {

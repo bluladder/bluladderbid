@@ -275,7 +275,14 @@ async function sendOne(
     return r;
   }
 
-  const sup = await checkSuppression(supabase, { email: recipient });
+  // Booking confirmation email is triggered by a real Jobber visit creation —
+  // a specific customer event. This is on the transactional allowlist for
+  // protected test identities. Applies to both customer and owner recipients.
+  const sup = await checkSuppression(
+    supabase,
+    { email: recipient },
+    { purpose: "booking_confirmed" },
+  );
   if (sup.suppressed) {
     const isTest = sup.reason === "test_identity";
     const r: ChannelResult = {
