@@ -86,27 +86,71 @@ export function classifyVoiceRoute(userMessage: string): VoiceRoute {
 
 /** Human-readable acknowledgement (spoken) for a genuinely slow branch. The
  *  language model is NOT permitted to invent acknowledgement timing — the
- *  adapter picks these deterministic phrases. Each is one short sentence. */
-export function slowBranchAcknowledgement(reason: FullReason): string | null {
+ *  adapter picks these deterministic phrases. Each is one short sentence.
+ *
+ *  Variety: each intent has a small pool of natural phrases. Rotation is
+ *  seeded from the caller-provided `pickIndex` so tests are deterministic
+ *  while live traffic gets conversational variety across turns. */
+const ACK_POOLS: Record<string, string[]> = {
+  pricing_intent: [
+    "Absolutely — let me pull that up.",
+    "Sure, let's take a look.",
+    "Okay, one moment while I price that.",
+    "Happy to — give me just a second.",
+  ],
+  availability_intent: [
+    "Sure, let's take a look at the schedule.",
+    "Absolutely — checking the calendar now.",
+    "Okay, one moment while I pull availability.",
+    "Let me see what we have open.",
+  ],
+  booking_intent: [
+    "Great — let's get that booked.",
+    "Absolutely, pulling up the next steps.",
+    "Sure thing, one moment.",
+  ],
+  address_or_customer_intent: [
+    "One moment while I pull that up.",
+    "Sure, let me look that up.",
+    "Okay, checking now.",
+  ],
+  default: [
+    "Give me just a moment.",
+    "One moment please.",
+    "Sure, one sec.",
+  ],
+};
+
+function poolFor(reason: FullReason): string[] {
   switch (reason) {
     case "pricing_intent":
     case "quote_intent":
     case "promotion_intent":
-      return "Absolutely — let me check that for you.";
+      return ACK_POOLS.pricing_intent;
     case "availability_intent":
-      return "Let me check the schedule for you.";
+      return ACK_POOLS.availability_intent;
     case "booking_intent":
-      return "I can help with that. Let me pull up the next steps.";
+      return ACK_POOLS.booking_intent;
     case "address_or_customer_intent":
-      return "One moment while I check that.";
+      return ACK_POOLS.address_or_customer_intent;
     case "recurring_plan_intent":
     case "transfer_or_callback_intent":
     case "ambiguous":
     case "too_long":
-      return "Give me just a moment.";
+      return ACK_POOLS.default;
     default:
-      return null;
+      return [];
   }
+}
+
+export function slowBranchAcknowledgement(
+  reason: FullReason,
+  pickIndex: number = Math.floor(Math.random() * 1000),
+): string | null {
+  const pool = poolFor(reason);
+  if (pool.length === 0) return null;
+  const idx = ((pickIndex % pool.length) + pool.length) % pool.length;
+  return pool[idx];
 }
 
 /** The Vapi voice pipeline honors `<flush />` (and `<break time=...ms />`) to
