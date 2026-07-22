@@ -20,14 +20,17 @@ import {
   missingResidentialBookingFields,
 } from "../intakeSchemas.ts";
 import type { WorkflowAction, RequiredField } from "../types.ts";
-// Runtime-neutral Sales Engine shared contract — see packages/sales-engine/README.md
+// Runtime-neutral Sales Engine shared contract — see packages/sales-engine/README.md.
+// The edge-function bundler cannot reach out of the supabase/ tree, so we ship
+// a mirror at supabase/functions/_shared/salesEngine/. Keep the two in sync;
+// the packages/ copy remains the source of truth for web/tests.
 import {
   RESIDENTIAL_INTAKE_BY_ID,
   RESIDENTIAL_INTAKE_PRIORITY,
   fieldsForEngineMissing,
   nextResidentialQuestion,
   type ResidentialIntakeFieldId,
-} from "../../../../../packages/sales-engine/intake/residentialQuoteManifest.ts";
+} from "../../salesEngine/residentialQuoteManifest.ts";
 
 function ask(field: ResidentialIntakeFieldId): WorkflowAction {
   const spec = RESIDENTIAL_INTAKE_BY_ID[field];
