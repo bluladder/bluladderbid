@@ -1,4 +1,5 @@
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors'
+import { verifyAdmin, getBearer } from '../_shared/auth.ts'
 
 // Admin diagnostic: fetch raw CallRail data for a specific outbound message /
 // conversation so we can read failure_reason / carrier response fields that
@@ -19,8 +20,8 @@ async function cr(path: string, key: string) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const provided = req.headers.get('x-cron-secret') ?? '';
-  if (!provided || provided !== (Deno.env.get('CRON_SECRET') ?? '')) {
+  const admin = await verifyAdmin(getBearer(req));
+  if (!admin) {
     return new Response(JSON.stringify({ error: 'unauthorized' }), {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
