@@ -109,7 +109,17 @@ export async function* streamKnowledgeReply(
 
 export function voiceResponseContract(): string { return VOICE_RESPONSE_CONTRACT; }
 
-export { buildSystemPrompt as _buildSystemPromptForVoice };
+/** Voice-channel system prompt = the regular authoritative system prompt plus
+ *  the voice response-contract addendum. Callers use this for the fast-path
+ *  streaming knowledge lane so it stays anchored to the SAME approved facts. */
+export async function buildVoiceSystemPrompt(
+  supabase: SupabaseClient,
+  state: string,
+  facts: ConversationFacts,
+): Promise<string> {
+  const base = await buildSystemPrompt(supabase, state, facts);
+  return `${base}\n\n${VOICE_RESPONSE_CONTRACT}`;
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic post-yes booking rail.
