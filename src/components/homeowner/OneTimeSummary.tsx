@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Calendar, Download, Check, Sparkles, Loader2, Info, HelpCircle, Bookmark, Mail } from 'lucide-react';
+import { Calendar, Download, Check, Sparkles, Loader2, Info, HelpCircle, Bookmark, Mail, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -43,6 +43,27 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
+// Local helpers — SMS destination normalization + PII masking for success UI.
+// Kept in-file to avoid growing the shared surface for a single delivery flow.
+function normalizePhoneForBid(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = String(raw).replace(/\D+/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return null;
+}
+function maskPhone(e164: string): string {
+  const digits = e164.replace(/\D+/g, '').slice(-10);
+  if (digits.length !== 10) return '••• ••• ••••';
+  return `(${digits.slice(0, 3)}) •••-${digits.slice(6)}`;
+}
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@');
+  if (!user || !domain) return '•••@•••';
+  const head = user.slice(0, Math.min(2, user.length));
+  return `${head}${'•'.repeat(Math.max(1, user.length - head.length))}@${domain}`;
+}
+
 /** Human-readable prompts for the fields the pricing engine says are missing. */
 const MISSING_LABELS: Record<string, string> = {
   squareFootage: 'Enter your home square footage',
@@ -62,11 +83,16 @@ export function OneTimeSummary({
 }: OneTimeSummaryProps) {
   const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
   const [showBookingFlow, setShowBookingFlow] = useState(false);
-  const [saveDialogAction, setSaveDialogAction] = useState<null | 'save' | 'email'>(null);
+  const [saveDialogAction, setSaveDialogAction] = useState<null | 'save' | 'email' | 'text'>(null);
   const [saveEmail, setSaveEmail] = useState(prefillCustomerInfo?.email ?? '');
   const [saveFirstName, setSaveFirstName] = useState(prefillCustomerInfo?.firstName ?? '');
+  const [savePhone, setSavePhone] = useState(prefillCustomerInfo?.phone ?? '');
   const [saveSubmitting, setSaveSubmitting] = useState(false);
   const [savedQuoteUrl, setSavedQuoteUrl] = useState<string | null>(null);
+  const [deliveryStatus, setDeliveryStatus] = useState<null | { channel: 'email' | 'text'; masked: string }>(null);
+  // Idempotency guard: remember exact (channel, normalized destination) pairs
+  // already delivered for this quote so retries don't fire duplicate sends.
+  const [deliveredKeys, setDeliveredKeys] = useState<Set<string>>(() => new Set());
 
   // Let the page know whether the booking flow is taking over the view.
   useEffect(() => {
@@ -91,24 +117,51 @@ export function OneTimeSummary({
   const serverDiscountAmount = quote?.discount?.amount ?? 0;
   const canBook = isFirm && typeof total === 'number';
 
-  const handleSaveOrEmail = async () => {
+  const handleDelivery = async () => {
     if (!saveDialogAction || !quote || typeof total !== 'number') return;
     const email = saveEmail.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       toast.error('Please enter a valid email address.');
       return;
     }
+    // For SMS delivery we require a mobile number; validate before persisting.
+    let normalizedPhone: string | null = null;
+    if (saveDialogAction === 'text') {
+      normalizedPhone = normalizePhoneForBid(savePhone);
+      if (!normalizedPhone) {
+        toast.error('Please enter a valid 10-digit mobile number.');
+        return;
+      }
+    }
+
+    const dedupeKey =
+      saveDialogAction === 'text' ? `text:${normalizedPhone}`
+      : saveDialogAction === 'email' ? `email:${email}`
+      : null;
+    if (dedupeKey && deliveredKeys.has(dedupeKey)) {
+      // Same destination already delivered for this quote — no duplicate send.
+      toast.info(saveDialogAction === 'text'
+        ? 'Bid already texted to that number.'
+        : 'Bid already emailed to that address.');
+      setSaveDialogAction(null);
+      return;
+    }
+
     setSaveSubmitting(true);
     try {
       const attribution = readAttribution();
       const services = quote.lineItems.map((li) => ({ key: li.key, name: li.label, amount: li.amount }));
+      // 'text' action reuses the save persistence path so we get the SAME
+      // quote row + resume token as email; SMS delivery is a follow-up
+      // invocation of the existing transactional sender.
+      const saveAction: 'save' | 'email' = saveDialogAction === 'email' ? 'email' : 'save';
       const { data, error } = await supabase.functions.invoke('save-quote', {
         body: {
-          action: saveDialogAction,
+          action: saveAction,
           email,
           firstName: saveFirstName || prefillCustomerInfo?.firstName || null,
           lastName: prefillCustomerInfo?.lastName || null,
-          phone: prefillCustomerInfo?.phone || null,
+          phone: normalizedPhone || prefillCustomerInfo?.phone || null,
           total,
           subtotal: quote.subtotal,
           services,
@@ -123,16 +176,33 @@ export function OneTimeSummary({
         },
       });
       if (error) throw error;
-      const resp = data as { quoteUrl?: string; emailStatus?: string } | null;
+      const resp = data as { quoteId?: string; quoteUrl?: string; emailStatus?: string } | null;
       setSavedQuoteUrl(resp?.quoteUrl ?? null);
-      if (saveDialogAction === 'email') {
-        toast.success(resp?.emailStatus === 'sent' ? 'Bid emailed — check your inbox.' : 'Bid saved. Email couldn\u2019t be sent right now, but your link is safe.');
+
+      if (saveDialogAction === 'text' && resp?.quoteId && normalizedPhone) {
+        const { error: smsErr } = await supabase.functions.invoke('send-sms', {
+          body: { eventType: 'quote_created', quoteId: resp.quoteId },
+        });
+        if (smsErr) throw smsErr;
+        const masked = maskPhone(normalizedPhone);
+        setDeliveryStatus({ channel: 'text', masked });
+        setDeliveredKeys((prev) => new Set(prev).add(dedupeKey!));
+        toast.success(`Bid texted to ${masked}.`);
+      } else if (saveDialogAction === 'email') {
+        const masked = maskEmail(email);
+        if (resp?.emailStatus === 'sent') {
+          setDeliveryStatus({ channel: 'email', masked });
+          setDeliveredKeys((prev) => new Set(prev).add(dedupeKey!));
+          toast.success(`Bid emailed to ${masked}.`);
+        } else {
+          toast.error('Bid saved, but the email didn’t go through. Please retry or use a different address.');
+        }
       } else {
         toast.success('Bid saved for 30 days.');
       }
       setSaveDialogAction(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Something went wrong saving this bid.');
+      toast.error(e instanceof Error ? e.message : 'Something went wrong sending this bid. Please retry.');
     } finally {
       setSaveSubmitting(false);
     }
@@ -401,16 +471,47 @@ export function OneTimeSummary({
             Download Quote PDF
           </Button>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" onClick={() => setSaveDialogAction('save')} disabled={!canBook}>
-              <Bookmark className="w-4 h-4 mr-2" />
-              Save this bid
+          {/* Secondary quote actions — Book Now above stays primary. Compact
+              labels with truncation guards so they never wrap or clip. */}
+          <div className="grid grid-cols-3 gap-2" data-testid="secondary-quote-actions">
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-w-0 whitespace-nowrap"
+              onClick={() => setSaveDialogAction('save')}
+              disabled={!canBook}
+            >
+              <Bookmark className="w-4 h-4 mr-1.5 shrink-0" />
+              <span className="truncate">Save</span>
             </Button>
-            <Button variant="outline" onClick={() => setSaveDialogAction('email')} disabled={!canBook}>
-              <Mail className="w-4 h-4 mr-2" />
-              Email me this bid
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-w-0 whitespace-nowrap"
+              onClick={() => setSaveDialogAction('email')}
+              disabled={!canBook}
+            >
+              <Mail className="w-4 h-4 mr-1.5 shrink-0" />
+              <span className="truncate">Email</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-w-0 whitespace-nowrap"
+              onClick={() => setSaveDialogAction('text')}
+              disabled={!canBook}
+            >
+              <MessageSquare className="w-4 h-4 mr-1.5 shrink-0" />
+              <span className="truncate">Text</span>
             </Button>
           </div>
+          {deliveryStatus && (
+            <p className="text-xs text-center text-success" data-testid="delivery-success">
+              {deliveryStatus.channel === 'email'
+                ? `Bid emailed to ${deliveryStatus.masked}.`
+                : `Bid texted to ${deliveryStatus.masked}.`}
+            </p>
+          )}
           {savedQuoteUrl && (
             <p className="text-xs text-center text-muted-foreground">
               Bid saved. <a href={savedQuoteUrl} className="underline text-primary">View your saved bid</a> — held for 30 days.
@@ -423,10 +524,13 @@ export function OneTimeSummary({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {saveDialogAction === 'email' ? 'Email me this bid' : 'Save this bid'}
+              {saveDialogAction === 'email' ? 'Email me this bid'
+                : saveDialogAction === 'text' ? 'Text me this bid'
+                : 'Save this bid'}
             </DialogTitle>
             <DialogDescription>
               We'll hold this exact price for 30 days. No payment or commitment.
+              {saveDialogAction === 'text' && ' We\u2019ll text a secure link — reply STOP to opt out anytime.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -436,14 +540,43 @@ export function OneTimeSummary({
             </div>
             <div>
               <Label htmlFor="save-email">Email</Label>
-              <Input id="save-email" type="email" value={saveEmail} onChange={(e) => setSaveEmail(e.target.value)} placeholder="you@example.com" autoFocus />
+              <Input
+                id="save-email"
+                type="email"
+                value={saveEmail}
+                onChange={(e) => setSaveEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoFocus={saveDialogAction !== 'text'}
+              />
             </div>
+            {saveDialogAction === 'text' && (
+              <div>
+                <Label htmlFor="save-phone">Mobile number</Label>
+                <Input
+                  id="save-phone"
+                  type="tel"
+                  inputMode="tel"
+                  value={savePhone}
+                  onChange={(e) => setSavePhone(e.target.value)}
+                  placeholder="(469) 555-0123"
+                  autoFocus
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Msg & data rates may apply. Reply STOP to opt out.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setSaveDialogAction(null)} disabled={saveSubmitting}>Cancel</Button>
-            <Button onClick={handleSaveOrEmail} disabled={saveSubmitting || !saveEmail}>
+            <Button
+              onClick={handleDelivery}
+              disabled={saveSubmitting || !saveEmail || (saveDialogAction === 'text' && !savePhone)}
+            >
               {saveSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              {saveDialogAction === 'email' ? 'Email me the bid' : 'Save my bid'}
+              {saveDialogAction === 'email' ? 'Email me the bid'
+                : saveDialogAction === 'text' ? 'Text me the bid'
+                : 'Save my bid'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { BundleTier, ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import { PlanCustomizeDrawer, type PlanCustomization } from './PlanCustomizeDrawer';
+import { computePlanPaymentBreakdown } from '@/lib/pricing/planPaymentBreakdown';
 
 interface PlanUpsellCardProps {
   oneTimeTotal: number;
@@ -71,12 +72,20 @@ export function PlanUpsellCard({
     ? bundles.find(b => b.tier === selectedTier) || recommendedBundle
     : recommendedBundle;
 
-  // A plan is only displayable when the server returned a real, non-zero
-  // annual total AND a real non-zero monthly amount. Zero-dollar plans must
-  // never render, be selectable, or be bookable.
-  const hasValidPlan = !!currentBundle
-    && currentBundle.annualTotal > 0
-    && Math.round((currentBundle.annualTotal - Math.round(currentBundle.annualTotal * 0.20)) / 11) > 0;
+  // Derive a fully reconciled 20%-deposit + 11-monthly-installment schedule
+  // from the AUTHORITATIVE annual total. Zero-dollar plans must never render,
+  // be selectable, or be bookable.
+  const annualOneTimeValue = currentBundle
+    ? oneTimeTotal * (currentBundle.windowFrequency || 2)
+    : 0;
+  const breakdown = currentBundle
+    ? computePlanPaymentBreakdown({
+        annualTotal: currentBundle.annualTotal,
+        authoritativeSavings: currentBundle.savings,
+        comparisonTotal: annualOneTimeValue,
+      })
+    : null;
+  const hasValidPlan = !!currentBundle && !!breakdown;
   
   // Count enabled services based on selection state
   const enabledServices = [
@@ -87,15 +96,13 @@ export function PlanUpsellCard({
     additionalServices.drivewayCleaning.enabled,
     additionalServices.pressureWashing.enabled,
   ].filter(Boolean).length;
-  
-  // Calculate annual value if they booked one-time multiple times
-  const annualOneTimeValue = hasValidPlan ? oneTimeTotal * (currentBundle!.windowFrequency || 2) : 0;
-  const annualSavings = hasValidPlan ? annualOneTimeValue - currentBundle!.annualTotal : 0;
 
-  // Calculate monthly payment structure (20% deposit + 11 monthly payments)
-  const deposit = hasValidPlan ? Math.round(currentBundle!.annualTotal * 0.20) : 0;
-  const remainingBalance = hasValidPlan ? currentBundle!.annualTotal - deposit : 0;
-  const monthlyPayment = hasValidPlan ? Math.round(remainingBalance / 11) : 0;
+  // Reconciled figures from the shared breakdown helper.
+  const deposit = breakdown?.depositAmount ?? 0;
+  const monthlyPayment = breakdown?.monthlyPayment ?? 0;
+  const annualSavings = breakdown?.savings ?? 0;
+  const annualTotal = breakdown?.annualTotal ?? 0;
+  const remainingPayments = breakdown?.remainingPayments ?? 11;
   
   if (!hasServices) {
     return (
@@ -325,12 +332,16 @@ export function PlanUpsellCard({
                 {bundles.map((bundle) => {
                   const isSelected = selectedTier === bundle.tier;
                   const isRecommended = bundle.tier === 'best';
-                  
-                  // Calculate this bundle's payment structure
-                  const bundleDeposit = Math.round(bundle.annualTotal * 0.20);
-                  const bundleRemaining = bundle.annualTotal - bundleDeposit;
-                  const bundleMonthly = Math.round(bundleRemaining / 11);
-                  
+
+                  // Reconciled payment breakdown for this bundle so the row
+                  // never contradicts the selected-plan summary below.
+                  const bundleBreakdown = computePlanPaymentBreakdown({
+                    annualTotal: bundle.annualTotal,
+                    authoritativeSavings: bundle.savings,
+                    comparisonTotal: oneTimeTotal * (bundle.windowFrequency || 2),
+                  });
+                  if (!bundleBreakdown) return null;
+
                   return (
                     <div
                       key={bundle.tier}
@@ -370,10 +381,13 @@ export function PlanUpsellCard({
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold">{formatPrice(bundleMonthly)}/mo</div>
-                          {bundle.savings > 0 && (
+                          <div className="font-bold">{formatPrice(bundleBreakdown.depositAmount)} today</div>
+                          <div className="text-xs text-muted-foreground">
+                            then {formatPrice(bundleBreakdown.monthlyPayment)} × {bundleBreakdown.remainingPayments} mo
+                          </div>
+                          {bundleBreakdown.savings > 0 && (
                             <div className="text-xs text-success">
-                              Save {formatPrice(bundle.savings)}
+                              Save {formatPrice(bundleBreakdown.savings)}/yr
                             </div>
                           )}
                         </div>
@@ -399,30 +413,56 @@ export function PlanUpsellCard({
               }`}>
                 {currentBundle?.name || 'Better'} Plan
               </Badge>
-              <span className="text-sm font-medium text-primary">
-                {formatPrice(currentBundle.annualTotal)}/year
+              <span className="text-sm font-medium text-primary" data-testid="plan-annual-total">
+                {formatPrice(annualTotal)} total / year
               </span>
             </div>
-            
-            <div className="flex items-baseline justify-center gap-2 mb-2">
-              <span className="text-3xl font-bold price-display text-foreground">
-                {formatPrice(monthlyPayment)}
-              </span>
-              <span className="text-muted-foreground">/month</span>
-            </div>
-            
+
+            {/* Prominent annual savings. */}
             {annualSavings > 0 && (
-              <div className="savings-badge mb-3 inline-flex">
-                Save {formatPrice(annualSavings)} vs one-time
+              <div
+                className="savings-badge mb-3 inline-flex"
+                data-testid="plan-annual-savings"
+              >
+                Save {formatPrice(annualSavings)}/yr vs equivalent one-time visits
               </div>
             )}
-            
-            {/* Monthly Pricing Clarity */}
-            <div className="flex items-start gap-2 p-2 rounded-md bg-muted/50 border border-border mb-3">
-              <CreditCard className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground">
-                20% deposit today ({formatPrice(deposit)}), remaining balance split into 11 monthly payments
-              </p>
+
+            {/* Exact payment schedule — deposit due today + 11 monthly payments
+                that reconcile to the authoritative annual total. */}
+            <div className="rounded-md border border-primary/20 bg-background/60 p-3 mb-3 space-y-2">
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Due today</span>
+                <span
+                  className="text-2xl font-bold price-display text-foreground"
+                  data-testid="plan-due-today"
+                >
+                  {formatPrice(deposit)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Then {remainingPayments} monthly payments of
+                </span>
+                <span
+                  className="text-lg font-semibold text-foreground"
+                  data-testid="plan-monthly-payment"
+                >
+                  {formatPrice(monthlyPayment)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between pt-2 border-t border-border">
+                <span className="text-sm text-muted-foreground">Annual plan total</span>
+                <span className="text-sm font-semibold text-foreground">
+                  {formatPrice(annualTotal)}
+                </span>
+              </div>
+              <div className="flex items-start gap-2 pt-1">
+                <CreditCard className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  20% due today, then {remainingPayments} equal monthly installments — cancel or change anytime before the next visit.
+                </p>
+              </div>
             </div>
             
             {/* What's included */}
