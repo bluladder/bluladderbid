@@ -117,7 +117,7 @@ export async function buildVoiceSystemPrompt(
   state: string,
   facts: ConversationFacts,
 ): Promise<string> {
-  const base = await buildSystemPrompt(supabase, state, facts);
+  const base = await buildSystemPrompt(supabase, state, facts, "voice");
   return `${base}\n\n${VOICE_RESPONSE_CONTRACT}`;
 }
 
