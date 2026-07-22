@@ -74,6 +74,14 @@ export function decideResidentialQuoteAction(
   const preQuote = nextResidentialQuestion({
     captured,
     engineMissing: engineMissingForIntake,
+    // Intake parity with BluLadder Bid web: residential window cleaning must
+    // capture window condition before pricing. The canonical engine treats
+    // condition as an optional modifier (no `missing[]` token), so we inject
+    // it here via `additionallyRequired` instead of creating a voice-only
+    // required-field list.
+    additionallyRequired: wantsResidentialWindow(session)
+      ? ["windowCleaningCondition"]
+      : [],
   });
   if (preQuote) return ask(preQuote.id);
 
@@ -103,4 +111,20 @@ export function decideResidentialQuoteAction(
   }
 
   return { kind: "offer_scheduling" };
+}
+
+function wantsResidentialWindow(session: QuoteSession): boolean {
+  const services = session.fields.services ?? [];
+  const isWindow = services.some(
+    (s) => s === "windowCleaning" || s === "window_cleaning",
+  );
+  if (!isWindow) return false;
+  // Only whole-home / unspecified residential intake needs the condition
+  // modifier. Commercial custom bids and per-window partials do not price
+  // through the residential modifier path.
+  const scope = session.fields.windowCleaningScope;
+  if (scope === "commercial_custom" || scope === "partial") return false;
+  const customerType = session.fields.customerType;
+  if (customerType === "commercial") return false;
+  return true;
 }

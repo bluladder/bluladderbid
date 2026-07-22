@@ -21,6 +21,7 @@ export type RequiredField =
   | "squareFootage"
   | "windowCleaningSides"
   | "stories"
+  | "windowCleaningCondition"
   | "address"
   | "city"
   | "contact_email"

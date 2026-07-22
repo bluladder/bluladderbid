@@ -50,5 +50,28 @@ export function extractFactsHeuristic(input: ExtractorInput): ExtractorResult {
     patch.windowCleaningSides = "outside_only"; conf.windowCleaningSides = 0.9;
   }
 
+  const condition = normalizeWindowCondition(input.utterance);
+  if (condition) { patch.condition = condition; conf.condition = 0.9; }
+
   return { patch, confidence: conf, ambiguities: [] };
+}
+
+/**
+ * Normalize a spoken window-condition answer into the canonical pricing value
+ * used by the web booking flow and the canonical pricing engine
+ * (`homeDetails.condition`). Only two canonical categories exist today:
+ *   - "maintenance" — regular / recently cleaned
+ *   - "heavy"       — first-time, noticeably dirty, or heavy buildup
+ * Both "noticeably dirty" and "heavily soiled" collapse to "heavy" to match
+ * the modifier value the engine already stores.
+ */
+export function normalizeWindowCondition(raw: string): "maintenance" | "heavy" | null {
+  const s = raw.toLowerCase();
+  if (/(regular(ly)?\s*maintain|well\s*maintain|recently\s*clean|clean(ed)?\s*(recently|within|last\s*year)|maintenance|not\s*(too\s*)?(bad|dirty)|pretty\s*clean)/.test(s)) {
+    return "maintenance";
+  }
+  if (/(heav(y|ily)|first[-\s]?time|never\s*been\s*clean|hasn'?t\s*been\s*clean|really\s*dirty|very\s*dirty|noticeably\s*dirty|significant\s*buildup|lots?\s*of\s*buildup|caked|filthy|neglected|a\s*while)/.test(s)) {
+    return "heavy";
+  }
+  return null;
 }

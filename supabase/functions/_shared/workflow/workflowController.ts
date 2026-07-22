@@ -63,6 +63,9 @@ function sessionToQuoteInput(session: QuoteSession): QuoteInput {
       squareFootage: (f.squareFootage as number) ?? undefined as unknown as number,
       stories: (f.stories as number) ?? undefined as unknown as number,
       windowCleaningType: sidesBoth ? "both" : "exterior",
+      // Carry the canonical window-condition modifier through to the pricing
+      // engine. Same field name/value the web booking flow persists.
+      condition: f.condition,
     },
     additionalServices: {
       windowCleaning: wants("windowCleaning") || wants("window_cleaning"),
