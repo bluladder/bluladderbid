@@ -69,6 +69,13 @@ export interface QuoteSessionFields {
     | "human_pricing_required"
     | "scope_collection_complete"
     | "awaiting_ben_review";
+  // ---- Workflow controller rollout state (Phase 4C-β.6) ----
+  // Persisted opaquely on quote_sessions.fields. Never exposed to the caller.
+  callerIdConfirmationStatus?: "pending" | "confirmed" | "declined";
+  callerIdProposedE164?: string;
+  returningCustomerId?: string;
+  returningCustomerResolved?: boolean;
+  awaitingDisambiguator?: boolean;
 }
 
 export interface QuoteSession {
