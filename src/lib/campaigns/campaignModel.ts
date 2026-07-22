@@ -252,6 +252,7 @@ export interface EditorStep {
   active: boolean;
   is_marketing: boolean;
   business_hours_only: boolean;
+  content_config?: Record<string, unknown> | null;
 }
 
 export interface EditorCampaign {
