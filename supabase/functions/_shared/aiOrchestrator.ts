@@ -672,18 +672,7 @@ async function runVoiceRoughQuoteRail(args: {
 }): Promise<OrchestratorResult | null> {
   let { facts, state } = args;
   if (state !== "voice_rough_quote" && !facts.roughQuote?.intent) return null;
-
-  // Regression guard (call 019f8b20-...): once we already have a current
-  // firm/estimated quote for these inputs, the rail must NOT re-run and
-  // re-speak the price on unrelated turns (e.g. "when are you available?").
-  // Only re-enter the rail when the customer explicitly asks about price/quote
-  // again, or when their message would change the pricing inputs (handled
-  // upstream by mergeFacts invalidating the current quote).
-  if (isQuoteEstimatedOrFirm(facts)) {
-    const asksForPriceAgain = /\b(price|quote|estimate|cost|how much|remind|again)\b/i
-      .test(args.userMessage ?? "");
-    if (!asksForPriceAgain) return null;
-  }
+  if (shouldSkipRoughQuoteReplay(facts, args.userMessage ?? "")) return null;
 
   if (facts.roughQuote?.city && !facts.roughQuote.cityStatus) {
     const lookup = await lookupServiceCity(args.supabase, facts.roughQuote.city);
