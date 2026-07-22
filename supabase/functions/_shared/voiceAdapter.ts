@@ -27,6 +27,7 @@ import {
   type VoiceRoute,
 } from "./voiceFastPath.ts";
 import { makeClock, sessionHash, voiceLatencyEnabled, type VoiceLatencyEvent } from "./voiceLatencyMetrics.ts";
+import { BUILD_ID } from "./buildMarker.ts";
 
 /** Max accepted request body in bytes. Voice turns are short; anything
  *  substantially larger than this is either malformed or hostile. */
@@ -345,6 +346,7 @@ export function buildNonStreamingResponse(model: string, completion: AdapterComp
       },
     ],
     bluladder: {
+      buildId: BUILD_ID,
       action: completion.action,
       state: completion.orchestrator.state ?? null,
     },
