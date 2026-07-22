@@ -235,6 +235,52 @@ serve(async (req) => {
   // this quote's link; we do not include cross-customer or admin data.
   const services = (row.services_json ?? {}) as Record<string, unknown>;
   const home = (row.home_details_json ?? {}) as Record<string, unknown>;
+
+  // Older saved quotes (before the additionalServices persistence patch)
+  // don't store an explicit additionalServices blob. Reconstruct the minimum
+  // selection from the persisted line items so the resume screen doesn't
+  // land the customer with every service toggled off.
+  function inferAdditionalServices(): Record<string, unknown> {
+    const acc: Record<string, unknown> = {};
+    const nameSources: string[] = [];
+    const svcs = services.services;
+    if (Array.isArray(svcs)) {
+      for (const s of svcs) {
+        const n = (s as { name?: unknown })?.name;
+        if (typeof n === "string") nameSources.push(n.toLowerCase());
+      }
+    }
+    const lis = services.lineItems;
+    if (Array.isArray(lis)) {
+      for (const li of lis) {
+        const l = (li as { label?: unknown; key?: unknown })?.label;
+        const k = (li as { label?: unknown; key?: unknown })?.key;
+        if (typeof l === "string") nameSources.push(l.toLowerCase());
+        if (typeof k === "string") nameSources.push(k.toLowerCase());
+      }
+    }
+    const has = (needle: string) => nameSources.some((n) => n.includes(needle));
+    acc.windowCleaning = has("window");
+    acc.gutterCleaning = has("gutter");
+    acc.houseWash = has("house wash") || has("house_wash");
+    acc.roofCleaning = has("roof");
+    acc.drivewayCleaning = { enabled: has("driveway"), sqft: 800, surfaceType: "concrete" };
+    acc.pressureWashing = {
+      enabled: has("pressure") && !has("driveway"),
+      surfaceType: "concrete",
+      frontPorch: { enabled: false, sqft: 100, surfaceType: "concrete" },
+      backPatio: { enabled: false, sqft: 300, surfaceType: "concrete" },
+      poolDeck: { enabled: false, sqft: 600, surfaceType: "concrete" },
+      walkways: { enabled: false, sqft: 200, surfaceType: "concrete" },
+    };
+    return acc;
+  }
+
+  const storedAdditional = services.additionalServices as Record<string, unknown> | undefined | null;
+  const additionalServices = storedAdditional && typeof storedAdditional === "object"
+    ? storedAdditional
+    : inferAdditionalServices();
+
   // Look up an existing booking for this quote so already-booked links skip
   // scheduling entirely.
   let booking: {
@@ -272,7 +318,7 @@ serve(async (req) => {
       phone: (row.customer_phone as string | null) ?? null,
     },
     homeDetails: home,
-    additionalServices: (services.additionalServices ?? null) as Record<string, unknown> | null,
+    additionalServices,
     sourceSessionId: (row.source_session_id as string | null) ?? null,
   };
 
