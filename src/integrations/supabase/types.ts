@@ -3259,6 +3259,7 @@ export type Database = {
       }
       quote_sessions: {
         Row: {
+          bid_request_status: string | null
           booking_ready: boolean
           channel: string
           conversation_ids: string[]
@@ -3268,6 +3269,7 @@ export type Database = {
           expires_at: string | null
           field_status: Json
           fields: Json
+          human_pricing_required: boolean
           id: string
           last_step: string | null
           phone_e164: string | null
@@ -3278,6 +3280,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          bid_request_status?: string | null
           booking_ready?: boolean
           channel: string
           conversation_ids?: string[]
@@ -3287,6 +3290,7 @@ export type Database = {
           expires_at?: string | null
           field_status?: Json
           fields?: Json
+          human_pricing_required?: boolean
           id?: string
           last_step?: string | null
           phone_e164?: string | null
@@ -3297,6 +3301,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          bid_request_status?: string | null
           booking_ready?: boolean
           channel?: string
           conversation_ids?: string[]
@@ -3306,6 +3311,7 @@ export type Database = {
           expires_at?: string | null
           field_status?: Json
           fields?: Json
+          human_pricing_required?: boolean
           id?: string
           last_step?: string | null
           phone_e164?: string | null
