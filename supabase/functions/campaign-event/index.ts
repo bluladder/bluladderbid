@@ -16,6 +16,7 @@ import {
   checkSuppression, normalizeEmail, normalizePhoneE164,
   type ConsentType, type EnrollDecision, type AudienceContext,
 } from "../_shared/campaignEngine.ts";
+import { gatherNurtureEntryContext, evaluateNurtureEntry } from "../_shared/nurtureEntryGate.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
@@ -313,6 +314,38 @@ serve(async (req) => {
         .limit(1).maybeSingle();
       if (prior) {
         decisions.push({ campaignId: c.id, campaignName: c.name, outcome: "skipped_duplicate", reason: "Re-entry disabled; prior enrollment exists" });
+        continue;
+      }
+    }
+
+    // Strict nurture-entry gate — applied to any campaign that requires
+    // marketing consent (the long, low-frequency educational nurture family,
+    // e.g. Evergreen Service Education Nurture). On top of the universal
+    // audience/consent/suppression checks above, we also require:
+    //   • no active appointment  • no recent booking
+    //   • no other active enrollment  • no email suppression
+    //   • no unresolved escalation  • no active human takeover
+    //   • no newer quote lifecycle superseding this one
+    // Transactional campaigns (booking confirmations, reminders, decline
+    // follow-ups) are intentionally excluded — they must fire regardless.
+    if (required === "marketing") {
+      const gateInput = {
+        customerId,
+        email,
+        currentCampaignId: c.id,
+        sourceQuoteId: typeof (meta as Record<string, unknown>).quote_id === "string"
+          ? String((meta as Record<string, unknown>).quote_id) : null,
+        lifecycleAnchorIso: typeof (meta as Record<string, unknown>).lifecycle_anchor_at === "string"
+          ? String((meta as Record<string, unknown>).lifecycle_anchor_at) : null,
+      };
+      const gateCtx = await gatherNurtureEntryContext(supabase, gateInput);
+      const gate = evaluateNurtureEntry(gateCtx);
+      if (!gate.eligible) {
+        decisions.push({
+          campaignId: c.id, campaignName: c.name,
+          outcome: "not_enrolled",
+          reason: `Strict entry gate: ${gate.reason}`,
+        });
         continue;
       }
     }

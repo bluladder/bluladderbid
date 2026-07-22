@@ -18,6 +18,7 @@ import { CampaignDryRun } from './sms/CampaignDryRun';
 import { CampaignDashboard } from './sms/CampaignDashboard';
 import { ConversationDashboard } from './ai/ConversationDashboard';
 import { KnowledgeCenter } from './knowledge/KnowledgeCenter';
+import { EvergreenNurtureAdminPanel } from './campaigns/EvergreenNurtureAdminPanel';
 
 export function IntegrationsTabContent() {
   const [activeSection, setActiveSection] = useState('jobber');
@@ -177,6 +178,9 @@ export function IntegrationsTabContent() {
             </TabsList>
             <TabsContent value="campaigns" className="mt-4">
               <SmsCampaignManager />
+              <div className="mt-6">
+                <EvergreenNurtureAdminPanel />
+              </div>
             </TabsContent>
             <TabsContent value="enrollments" className="mt-4">
               <EnrollmentAdmin />
