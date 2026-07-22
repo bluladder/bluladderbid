@@ -43,6 +43,27 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
+// Local helpers — SMS destination normalization + PII masking for success UI.
+// Kept in-file to avoid growing the shared surface for a single delivery flow.
+function normalizePhoneForBid(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = String(raw).replace(/\D+/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return null;
+}
+function maskPhone(e164: string): string {
+  const digits = e164.replace(/\D+/g, '').slice(-10);
+  if (digits.length !== 10) return '••• ••• ••••';
+  return `(${digits.slice(0, 3)}) •••-${digits.slice(6)}`;
+}
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@');
+  if (!user || !domain) return '•••@•••';
+  const head = user.slice(0, Math.min(2, user.length));
+  return `${head}${'•'.repeat(Math.max(1, user.length - head.length))}@${domain}`;
+}
+
 /** Human-readable prompts for the fields the pricing engine says are missing. */
 const MISSING_LABELS: Record<string, string> = {
   squareFootage: 'Enter your home square footage',
