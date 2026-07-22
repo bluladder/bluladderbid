@@ -119,6 +119,9 @@ serve(async (req) => {
 
       const toNorm = normalizePhone(body.to);
       // System-test suppression: never deliver to an approved test identity.
+      // Manual admin SMS is not a customer-triggered transactional message.
+      // Intentionally passed with no purpose so protected test identities stay
+      // suppressed even for admin-initiated one-offs.
       const manualSuppression = await checkSuppression(supabase, { phone: toNorm || body.to });
       if (manualSuppression.suppressed) {
         await supabase.from("sms_messages").insert({
@@ -259,9 +262,31 @@ serve(async (req) => {
     // The immediate transactional message is an SMS. Suppress it (but still allow
     // email follow-ups) when the lead opted out of texts or texting is paused.
     const optedOut = await isPhoneOptedOut(supabase, toNorm);
-    // System-test suppression is checked immediately before delivery and takes
-    // priority — an approved test identity must never receive a real message.
-    const testSuppression = await checkSuppression(supabase, { phone: toNorm || phone, email });
+    // System-test suppression is checked immediately before delivery. Map the
+    // canonical event to a transactional purpose so a protected test identity
+    // still receives their own booking-lifecycle SMS. quote_created only
+    // bypasses the identity gate when the caller explicitly marks the send as
+    // customer-initiated (guards against automated follow-ups piggybacking on
+    // this event type).
+    const eventPurpose:
+      | "booking_confirmed" | "booking_updated" | "booking_cancelled" | "quote_requested" | undefined =
+      eventType === "appointment_scheduled" ? "booking_confirmed"
+      : eventType === "appointment_rescheduled" ? "booking_updated"
+      : eventType === "appointment_cancelled" ? "booking_cancelled"
+      : eventType === "quote_created" ? "quote_requested"
+      : undefined;
+    // Explicit customer-initiated flag from trusted callers. Event-driven
+    // booking lifecycle sends are always in response to a customer action;
+    // quote sends require the caller to set customerInitiated on the body.
+    const customerInitiated =
+      eventType === "quote_created"
+        ? (body as { customerInitiated?: boolean }).customerInitiated === true
+        : true;
+    const testSuppression = await checkSuppression(
+      supabase,
+      { phone: toNorm || phone, email },
+      eventPurpose ? { purpose: eventPurpose, customerInitiated } : undefined,
+    );
     const smsSuppressed = optedOut || pause.sms_paused || testSuppression.suppressed;
     const immediateBody = renderTemplate(DEFAULT_TEMPLATES[eventType], vars);
     let transactionalSent = false;

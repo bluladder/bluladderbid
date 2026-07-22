@@ -137,11 +137,23 @@ serve(async (req) => {
 
   for (const msg of due || []) {
     // ===== SYSTEM-TEST SUPPRESSION (checked immediately before delivery) =====
-    // Never send to an approved test identity or while suppression is enabled.
-    const suppression = await checkSuppression(supabase, {
-      phone: (msg.to_number as string) ?? null,
-      email: (msg.to_email as string) ?? null,
-    });
+    // Never send to an approved test identity while it lacks an allowlisted
+    // transactional purpose. Rows on the queue carry a message_kind: only
+    // transactional booking-linked retries qualify as an allowlisted purpose.
+    // Campaign, manual, and quote-marketing rows pass no purpose and remain
+    // suppressed for protected test identities.
+    const kind = (msg.message_kind as string) ?? "";
+    const queuePurpose =
+      kind === "transactional" && msg.booking_id ? "booking_confirmed" as const
+      : undefined;
+    const suppression = await checkSuppression(
+      supabase,
+      {
+        phone: (msg.to_number as string) ?? null,
+        email: (msg.to_email as string) ?? null,
+      },
+      queuePurpose ? { purpose: queuePurpose } : undefined,
+    );
     if (suppression.suppressed) {
       await supabase.from("sms_messages").update({
         status: "cancelled",
