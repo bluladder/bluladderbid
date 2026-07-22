@@ -122,6 +122,26 @@ export function DateFirstCalendar({
   const days = getDaysToRender();
   const today = startOfDay(new Date());
 
+  // The availability endpoint is queried with a fixed 30-day lookahead
+  // (see useSmartAvailability.fetchRecommendations). Dates beyond that
+  // horizon have no slot data yet — we must NOT downgrade them to
+  // "No times", or customers can't book anything more than a month out.
+  // Prefer the actual last date present in the returned slots (in case the
+  // horizon changes), and fall back to today+30 when no slots came back.
+  const loadedHorizon = useMemo(() => {
+    let maxKey = '';
+    for (const s of availableSlots) {
+      const key = s.startTime.slice(0, 10);
+      if (key > maxKey) maxKey = key;
+    }
+    if (maxKey) {
+      const [y, m, d] = maxKey.split('-').map(Number);
+      return startOfDay(new Date(y, m - 1, d));
+    }
+    return addDays(today, 30);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableSlots, today.toDateString()]);
+
   const isDateDisabled = (date: Date) => {
     // Disabled if before today
     if (isBefore(date, today)) return true;
@@ -177,11 +197,15 @@ export function DateFirstCalendar({
     // Once availability has finished loading (and is verifiable), a work-day
     // date with no slot data means the server returned no bookable times —
     // present it as Full/No times, not as a neutral "open-looking" cell.
+    // BUT only within the loaded horizon: dates beyond the queried window
+    // have simply not been fetched yet and must remain neutral/clickable so
+    // customers can still book weeks or months out.
     if (
       info.status === 'unknown' &&
       !isDisabled &&
       !isLoadingAvailability &&
-      !availabilityUnavailable
+      !availabilityUnavailable &&
+      !isAfter(date, loadedHorizon)
     ) {
       info = { status: 'full', count: 0 };
     }
