@@ -188,6 +188,7 @@ serve(async (req) => {
     lineItems: body.lineItems ?? null,
     mode: quoteType === "recurring_plan" ? "plan" : "one_time",
     quote_type: quoteType,
+    additionalServices: body.additionalServices ?? null,
     ...(body.planSnapshot ?? {}),
   };
   const home_details_json = body.homeDetails ?? {};
