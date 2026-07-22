@@ -49,8 +49,9 @@ serve(async (req) => {
 
     const { data: challenge } = await supabase
       .from("customer_verification_challenges")
-      .select("id, otp_hash, status, attempts, max_attempts, expires_at")
+      .select("id, otp_hash, status, attempts, max_attempts, expires_at, usable_until, delivery_status")
       .eq("phone_hash", phoneHash)
+      .eq("channel", "sms")
       .eq("status", "pending")
       .order("created_at", { ascending: false })
       .limit(1)
@@ -58,7 +59,11 @@ serve(async (req) => {
     if (!challenge) return generic();
 
     // Expired?
-    if (new Date(challenge.expires_at).getTime() < Date.now()) {
+    const expiresAtMs = new Date(challenge.expires_at).getTime();
+    const usableUntilMs = challenge.usable_until ? new Date(challenge.usable_until).getTime() : expiresAtMs;
+    const isDelayedSms = ["accepted", "sent"].includes(String(challenge.delivery_status ?? ""));
+    const cutoffMs = isDelayedSms ? Math.max(expiresAtMs, usableUntilMs) : expiresAtMs;
+    if (cutoffMs < Date.now()) {
       await supabase.from("customer_verification_challenges").update({ status: "expired" }).eq("id", challenge.id);
       return generic();
     }
