@@ -45,10 +45,12 @@ export function resolveServiceKey(line: ServiceLineLike): string | null {
   const name = (line.name ?? "").toLowerCase();
   if (!name) return null;
   if (name.includes("window")) return "window_cleaning";
-  if (name.includes("house wash") || name.includes("soft wash") || name.includes("house-wash")) return "house_wash";
+  // Check specific surface keywords BEFORE generic "wash" / "pressure" so
+  // "Roof soft wash" and "Driveway pressure cleaning" resolve correctly.
   if (name.includes("roof")) return "roof_cleaning";
   if (name.includes("driveway") || name.includes("flatwork")) return "driveway_cleaning";
   if (name.includes("gutter")) return "gutter_cleaning";
+  if (name.includes("house wash") || name.includes("soft wash") || name.includes("house-wash")) return "house_wash";
   if (name.includes("pressure")) return "pressure_washing";
   if (name.includes("christmas") || name.includes("holiday light")) return "christmas_lights";
   return null;
