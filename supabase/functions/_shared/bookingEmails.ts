@@ -19,6 +19,14 @@
 import { sendEmail } from "./emailConfig.ts";
 import { checkSuppression } from "./suppression.ts";
 import { getAppUrl } from "./appUrl.ts";
+import {
+  buildPrepBlocks,
+  hasPrepAlreadyBeenSent,
+  loadActivePrepConfigs,
+  markPrepSent,
+  renderPrepHtml,
+  type PrepConfig,
+} from "./bookingPreparation.ts";
 
 const CUSTOMER_HELP_SMS = "(469) 747-2877";
 const OFFICE_REPLY = "info@bluladder.com";
@@ -91,12 +99,29 @@ export interface BookingEmailContext {
   attributionSource?: string | null;
 }
 
-function customerHtml(ctx: BookingEmailContext): { subject: string; html: string } {
+function customerHtml(
+  ctx: BookingEmailContext,
+  prepBlocks: PrepConfig[],
+): { subject: string; html: string } {
   const dt = fmtDateChicago(ctx.scheduledStart);
   const subject = `Your BluLadder appointment is confirmed — ${dt}`;
   const disc = ctx.discountAmount > 0
     ? `<tr><td style="color:#059669">Discount${ctx.discountCode ? ` (${escapeHtml(ctx.discountCode)})` : ""}</td><td align="right" style="color:#059669">-${fmtPrice(ctx.discountAmount)}</td></tr>`
     : "";
+  // Prep block: uses admin-configured per-service instructions when present.
+  // If none apply we fall back to a short generic block so the email always
+  // has SOME preparation guidance. We never re-send this on reschedule; the
+  // caller in sendBookingConfirmationEmails dedupes via
+  // bookings.prep_email_sent_at before we get here.
+  const prepHtml = prepBlocks.length > 0
+    ? renderPrepHtml(prepBlocks)
+    : `<h3 style="margin:20px 0 6px 0">How to prepare</h3>
+       <ul style="margin:0;padding-left:18px">
+         <li>Unlock exterior gates and clear a path to work areas.</li>
+         <li>Move fragile décor and patio items away from windows and walls.</li>
+         <li>Keep pets indoors during the visit.</li>
+         <li>An outdoor water spigot must be accessible for washing services.</li>
+       </ul>`;
   const inner = `
     <h2 style="color:#1e40af;margin:0 0 12px 0">Hi ${escapeHtml(ctx.customer.firstName || "there")},</h2>
     <p style="margin:0 0 14px 0">Your appointment is booked. Here are the details:</p>
@@ -112,13 +137,7 @@ function customerHtml(ctx: BookingEmailContext): { subject: string; html: string
       <tr><td style="font-weight:700;padding-top:6px">Total</td><td align="right" style="font-weight:700;padding-top:6px">${fmtPrice(ctx.total)}</td></tr>
     </table>
     <p style="font-size:12px;color:#64748b;margin-top:4px">Payment is collected after service is complete.</p>
-    <h3 style="margin:20px 0 6px 0">How to prepare</h3>
-    <ul style="margin:0;padding-left:18px">
-      <li>Unlock exterior gates and clear a path to work areas.</li>
-      <li>Move fragile décor and patio items away from windows and walls.</li>
-      <li>Keep pets indoors during the visit.</li>
-      <li>An outdoor water spigot must be accessible for washing services.</li>
-    </ul>
+    ${prepHtml}
     <h3 style="margin:20px 0 6px 0">Weather policy</h3>
     <p style="margin:0">If severe weather makes your services unsafe or ineffective, we'll reach out to reschedule — no fee, no rebooking hassle.</p>
     <h3 style="margin:20px 0 6px 0">Need to change something?</h3>
@@ -296,7 +315,16 @@ export async function sendBookingConfirmationEmails(supabase: any, ctx: BookingE
     return { customer: skip("customer_email", ctx.customer.email), owner: skip("owner_email", getOwnerRecipient()) };
   }
 
-  const cust = customerHtml(ctx);
+  // Preparation instructions: load admin config, resolve per booked service,
+  // and dedupe by bookings.prep_email_sent_at so a reschedule (which reuses
+  // this same code path for the change confirmation) never repeats prep the
+  // customer already received.
+  const alreadySentPrep = await hasPrepAlreadyBeenSent(supabase, ctx.bookingId);
+  const prepBlocks = alreadySentPrep
+    ? [] // suppress prep on the reschedule confirmation copy
+    : buildPrepBlocks(ctx.services ?? [], await loadActivePrepConfigs(supabase));
+
+  const cust = customerHtml(ctx, prepBlocks);
   const own = ownerHtml(ctx);
 
   // Fire the two sends in parallel — one channel failing must never block the other.
@@ -304,6 +332,14 @@ export async function sendBookingConfirmationEmails(supabase: any, ctx: BookingE
     sendOne(supabase, "customer_email", ctx, ctx.customer.email, cust.subject, cust.html, "BluLadder"),
     sendOne(supabase, "owner_email", ctx, getOwnerRecipient(), own.subject, own.html, "BluLadder Booking Alert"),
   ]);
+
+  // Mark prep as delivered ONLY on a successful first send that actually
+  // contained the prep block. This preserves dedupe correctness: a suppressed
+  // or provider-rejected send never counts as prep-delivered, and a repeated
+  // send (dedup=true) does not overwrite the earlier authoritative marker.
+  if (!alreadySentPrep && prepBlocks.length > 0 && customer.status === "sent" && !customer.dedup) {
+    await markPrepSent(supabase, ctx.bookingId);
+  }
 
   return { customer, owner };
 }
