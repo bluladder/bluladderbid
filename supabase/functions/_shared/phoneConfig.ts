@@ -9,7 +9,6 @@
 export type PhonePurpose =
   | "primary_public"
   | "app_ai"
-  | "responsibid"
   | "escalation_sender";
 
 export interface PhoneEntry {
@@ -20,10 +19,21 @@ export interface PhoneEntry {
   isPublic: boolean;
 }
 
+// Numbers retired from active BluLadder Bid use. Kept as a redaction list so
+// AI prompts, transcripts, and outbound copy can strip them defensively even
+// if a stale knowledge row still contains them. They MUST NOT resolve as an
+// active purpose (public, AI/SMS, transfer, booking, escalation).
+export const RETIRED_PHONE_NUMBERS: ReadonlyArray<{ e164: string; display: string; reason: string }> = [
+  {
+    e164: "+14692426556",
+    display: "(469) 242-6556",
+    reason: "retired_responsibid",
+  },
+];
+
 export const PHONE_FALLBACK: Record<PhonePurpose, PhoneEntry> = {
   primary_public: { purpose: "primary_public", e164: "+14697472877", display: "(469) 747-2877", label: "BluLadder", isPublic: true },
   app_ai: { purpose: "app_ai", e164: "+14697472877", display: "(469) 747-2877", label: "BluLadder Bid", isPublic: false },
-  responsibid: { purpose: "responsibid", e164: "+14692426556", display: "(469) 242-6556", label: "ResponsiBid", isPublic: false },
   escalation_sender: { purpose: "escalation_sender", e164: "+14697472877", display: "(469) 747-2877", label: "BluLadder Bid", isPublic: false },
 };
 
@@ -40,6 +50,10 @@ export async function getPhoneByPurpose(
       .eq("is_active", true)
       .maybeSingle();
     if (data) {
+      // Belt-and-suspenders: refuse to hand back a retired number even if a
+      // stale DB row somehow survives with is_active=true.
+      const retired = RETIRED_PHONE_NUMBERS.some((r) => r.e164 === data.e164);
+      if (retired) return PHONE_FALLBACK[purpose];
       return {
         purpose: data.purpose,
         e164: data.e164,
