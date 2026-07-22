@@ -25,6 +25,7 @@ import {
 } from "./conversationState.ts";
 import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
 import { lookupServiceCity } from "./serviceArea.ts";
+import { findOrCreateForConversation as findOrCreateQuoteSession, syncFromFacts as syncQuoteSession } from "./quoteSession.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
