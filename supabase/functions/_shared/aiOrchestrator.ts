@@ -883,7 +883,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   // Voice rough-quote rail runs before any model prompt is constructed, so the
   // address/service-area directive can never preempt the address-free quote.
   const roughQuoteRail = channel === "voice"
-    ? await runVoiceRoughQuoteRail({ supabase, toolCtx, conversationId, sessionToken, facts, state, history })
+    ? await runVoiceRoughQuoteRail({ supabase, toolCtx, conversationId, sessionToken, facts, state, history, userMessage })
     : null;
   if (roughQuoteRail) return roughQuoteRail;
 
