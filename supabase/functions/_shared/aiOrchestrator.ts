@@ -26,6 +26,16 @@ import {
 import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
 import { lookupServiceCity } from "./serviceArea.ts";
 import { findOrCreateForConversation as findOrCreateQuoteSession, syncFromFacts as syncQuoteSession } from "./quoteSession.ts";
+import { mergeFields as mergeSessionFields, changeWindowScope, type QuoteSessionFields } from "./quoteSession.ts";
+import {
+  classifyWindowIntent,
+  WINDOW_SIDES_QUESTION,
+  WINDOW_SCOPE_QUESTION,
+  COMMERCIAL_HANDOFF_LINE,
+  PARTIAL_PRICING_QUALIFIER,
+  type WindowIntentPatch,
+} from "./windowIntent.ts";
+import { computePartialWindowPrice } from "./partialWindowPricing.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
@@ -305,6 +315,18 @@ async function buildSystemPrompt(
     "",
     stateDirective(state as any, facts, channel),
   );
+  if ((facts.services ?? []).includes("windowCleaning")) {
+    sections.push(
+      "",
+      "WINDOW CLEANING SCOPE DIRECTIVE:",
+      "- Classify every window-cleaning request into one of three scopes: residential whole-home, residential partial (specific windows or areas), or commercial custom bid.",
+      "- When intent is unclear, ask: \"" + WINDOW_SCOPE_QUESTION + "\"",
+      "- When you need inside-vs-outside, ALWAYS ask: \"" + WINDOW_SIDES_QUESTION + "\" — never ask a bare \"exterior only?\" question.",
+      "- Partial requests use per-window pricing at $10 per cleaned side (outside-only = $10 per window; inside and outside = $20 per window). NEVER apply whole-home square-footage pricing to a partial request. If unusual access, storm windows, hard-water restoration, heavy paint, or another nonstandard condition is present, qualify the price and flag for review rather than inventing an adjustment. Qualifier line: \"" + PARTIAL_PRICING_QUALIFIER + "\"",
+      "- Commercial requests (storefront, office, restaurant, church, school, warehouse, apartment common area, HOA, property management, business location) receive a custom bid, NOT an automated price. After enough scope is captured, respond: \"" + COMMERCIAL_HANDOFF_LINE + "\" Persist preferred contact method(s) and then ask only for the details required by the selected method. Never promise a specific response time.",
+      "- Never re-ask a question when a usable value already exists in the Quote Session. Corrections update only the affected facts.",
+    );
+  }
   return sections.join("\n");
 }
 
@@ -699,7 +721,11 @@ function persistFacts(
   conversationId: string,
   facts: ConversationFacts,
   state: string,
-  opts?: { sessionToken?: string; channel?: "web" | "voice" | "sms" },
+  opts?: {
+    sessionToken?: string;
+    channel?: "web" | "voice" | "sms";
+    windowIntent?: WindowIntentPatch;
+  },
 ) {
   const c = facts.contact ?? {};
   const update: Record<string, unknown> = {
@@ -730,6 +756,70 @@ function persistFacts(
         email: facts.contact?.email ?? null,
       });
       if (session?.id) await syncQuoteSession(supabase, session.id, facts);
+      // Phase 4C-β.4A: apply window-scope classification into the same
+      // canonical row (never a duplicate/voice-only store). Scope changes go
+      // through changeWindowScope so unrelated captured facts are preserved.
+      if (session?.id && opts?.windowIntent && Object.keys(opts.windowIntent).length > 0) {
+        try {
+          const { data: row } = await supabase
+            .from("quote_sessions")
+            .select("*")
+            .eq("id", session.id)
+            .maybeSingle();
+          if (row) {
+            const current = {
+              id: row.id as string,
+              channel: row.channel as any,
+              conversationIds: (row.conversation_ids as string[]) ?? [],
+              fields: (row.fields as QuoteSessionFields) ?? {},
+              fieldStatus: (row.field_status as any) ?? {},
+              requiredRemaining: (row.required_remaining as string[]) ?? [],
+              quoteStatus: (row.quote_status as any) ?? "none",
+              bookingReady: !!row.booking_ready,
+            };
+            let next = current;
+            const wi = opts.windowIntent;
+            if (wi.windowCleaningScope && wi.windowCleaningScope !== current.fields.windowCleaningScope
+                && current.fields.windowCleaningScope) {
+              next = changeWindowScope(current, wi.windowCleaningScope);
+            }
+            const patch: Partial<QuoteSessionFields> = {};
+            if (wi.customerType) patch.customerType = wi.customerType;
+            if (wi.windowCleaningScope) patch.windowCleaningScope = wi.windowCleaningScope;
+            if (wi.windowCleaningSides) patch.windowCleaningSides = wi.windowCleaningSides;
+            if (wi.windowCount != null) patch.windowCount = wi.windowCount;
+            if (wi.partialAreas?.length) patch.partialAreas = wi.partialAreas;
+            if (wi.commercialPropertyType) patch.commercialPropertyType = wi.commercialPropertyType;
+            next = mergeSessionFields(next, patch);
+            // Compute partial-window price via the canonical rule when we have
+            // enough inputs. Never invoke for whole-home or commercial.
+            const f = next.fields;
+            if (
+              f.windowCleaningScope === "partial" &&
+              typeof f.windowCount === "number" &&
+              (f.windowCleaningSides === "outside_only" || f.windowCleaningSides === "inside_and_outside")
+            ) {
+              const pq = computePartialWindowPrice({
+                windowCount: f.windowCount,
+                sides: f.windowCleaningSides,
+              });
+              next = mergeSessionFields(next, {
+                partialWindowPrice: pq.price,
+                partialWindowRuleVersion: pq.ruleVersion,
+              });
+            }
+            const dbUpdate: Record<string, unknown> = {
+              fields: next.fields,
+              field_status: next.fieldStatus,
+            };
+            if (f.windowCleaningScope === "commercial_custom" || f.customerType === "commercial") {
+              dbUpdate.human_pricing_required = true;
+              dbUpdate.bid_request_status = "commercial_bid_requested";
+            }
+            await supabase.from("quote_sessions").update(dbUpdate).eq("id", session.id);
+          }
+        } catch (_e) { /* best-effort */ }
+      }
     } catch (_e) {
       // Non-fatal: canonical mirror is additive; primary write already committed.
     }
@@ -754,6 +844,14 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   }
   let state = computeState(facts, channel);
   const priorState: string = row?.conversation_state ?? "new";
+
+  // Phase 4C-β.4A — window scope classification runs on every turn when
+  // window cleaning is (or is about to be) an active service. The classifier
+  // is a pure function; results are persisted into the canonical Quote
+  // Session (never a duplicate voice-only store).
+  const windowIntent: WindowIntentPatch = classifyWindowIntent(userMessage, {
+    activeServices: facts.services,
+  });
 
   // Staff has taken over — the AI stays silent/deferential and takes no action.
   if (state === "staff_takeover") {
@@ -801,7 +899,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       const patch = factPatchFromTool("create_bluladder_booking", args, result, facts);
       facts = mergeFacts(facts, patch);
       state = computeState(facts, channel);
-      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel });
+      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel, windowIntent });
       railBooked = (result as any)?.status === "confirmed";
       // Give the model a system-scoped ground truth so its reply is anchored
       // in the real tool status, not a hallucinated confirmation.
@@ -872,7 +970,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       const patch = factPatchFromTool(name, args, result, facts);
       facts = mergeFacts(facts, patch);
       state = computeState(facts, channel);
-      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel });
+      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel, windowIntent });
 
       messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result) });
     }

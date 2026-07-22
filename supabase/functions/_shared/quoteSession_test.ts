@@ -9,6 +9,8 @@ import {
   normalizeEmail,
   normalizePhone,
   fieldsFromFacts,
+  changeWindowScope,
+  addCommercialLocation,
   type QuoteSession,
 } from "./quoteSession.ts";
 
@@ -130,4 +132,83 @@ Deno.test("Regression: correcting one field does not clear unrelated fields", ()
   assertEquals(s.fields.services, ["windowCleaning"]);
   assertEquals(s.fieldStatus.squareFootage, "corrected");
   assertEquals(s.fieldStatus.stories, "captured");
+});
+
+// -------- Phase 4C-β.4A additions --------
+
+Deno.test("computeRequired: partial-window request needs count + sides, never sqft", () => {
+  const missing = computeRequired({
+    services: ["windowCleaning"],
+    windowCleaningScope: "partial",
+  });
+  assert(missing.includes("windowCount"));
+  assert(missing.includes("windowCleaningSides"));
+  assert(!missing.includes("squareFootage"));
+});
+
+Deno.test("computeRequired: commercial custom bid asks for locations + contact method, not sqft", () => {
+  const missing = computeRequired({
+    services: ["windowCleaning"],
+    windowCleaningScope: "commercial_custom",
+    customerType: "commercial",
+  });
+  assert(missing.includes("commercialLocations"));
+  assert(missing.includes("preferredContactMethods"));
+  assert(!missing.includes("squareFootage"));
+});
+
+Deno.test("changeWindowScope: whole_home → partial preserves address/contact/notes", () => {
+  let s = mergeFields(empty(), {
+    services: ["windowCleaning"],
+    address: "123 Main St",
+    email: "a@b.co",
+    name: "Ada",
+    squareFootage: 2400,
+    windowCleaningType: "exterior",
+    windowCleaningScope: "whole_home",
+  });
+  s = changeWindowScope(s, "partial");
+  assertEquals(s.fields.address, "123 Main St");
+  assertEquals(s.fields.email, "a@b.co");
+  assertEquals(s.fields.name, "Ada");
+  // Whole-home-dependent pricing fields invalidated
+  assertEquals(s.fields.squareFootage, undefined);
+  assertEquals(s.fields.windowCleaningType, undefined);
+  assertEquals(s.fields.windowCleaningScope, "partial");
+});
+
+Deno.test("changeWindowScope: partial → whole_home invalidates partial pricing only", () => {
+  let s = mergeFields(empty(), {
+    services: ["windowCleaning"],
+    address: "1 Elm",
+    windowCleaningScope: "partial",
+    windowCount: 5,
+    partialWindowPrice: 50,
+    partialAreas: ["front"],
+  });
+  s = changeWindowScope(s, "whole_home");
+  assertEquals(s.fields.address, "1 Elm");
+  assertEquals(s.fields.windowCount, undefined);
+  assertEquals(s.fields.partialWindowPrice, undefined);
+  assertEquals(s.fields.partialAreas, undefined);
+  assertEquals(s.fields.windowCleaningScope, "whole_home");
+});
+
+Deno.test("addCommercialLocation: multiple locations persist distinctly", () => {
+  let s = empty();
+  s = addCommercialLocation(s, { address: "100 Main St, McKinney", sides: "outside_only" });
+  s = addCommercialLocation(s, { address: "200 Oak Ave, Frisco", sides: "outside_only" });
+  assertEquals(s.fields.commercialLocations?.length, 2);
+  // Repeat location merges rather than duplicating
+  s = addCommercialLocation(s, { address: "100 Main St, McKinney", stories: 2 });
+  assertEquals(s.fields.commercialLocations?.length, 2);
+  assertEquals(s.fields.commercialLocations?.[0].stories, 2);
+});
+
+Deno.test("nextQuestion: partial request routes to windowCount before other fields", () => {
+  const s: QuoteSession = {
+    ...empty(),
+    fields: { services: ["windowCleaning"], windowCleaningScope: "partial" },
+  };
+  assertEquals(nextQuestion(s).nextField, "windowCount");
 });

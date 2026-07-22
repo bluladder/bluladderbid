@@ -13,6 +13,13 @@ Deno.test("BUILD_FEATURES exposes address-free voice rough quote marker", () => 
   assertEquals(BUILD_FEATURES.voiceBookingDryRun, true);
 });
 
+Deno.test("BUILD_FEATURES exposes Phase 4C-β.4A window scope + partial + commercial flags", () => {
+  assertEquals(BUILD_FEATURES.progressiveQuoteSession, true);
+  assertEquals(BUILD_FEATURES.windowScopeClassification, true);
+  assertEquals(BUILD_FEATURES.partialWindowPricing, true);
+  assertEquals(BUILD_FEATURES.commercialCustomBidIntake, true);
+});
+
 Deno.test("buildNonStreamingResponse: buildId is in bluladder diagnostics", async () => {
   const completion: AdapterCompletion = {
     content: "Your rough exterior window quote is ready.",
