@@ -43,6 +43,10 @@ const CRITICAL_FUNCTIONS = [
   // deployment silently breaks attribution + follow-up enrollment even though
   // the browser save succeeds.
   'campaign-event',
+  // `resend-webhook` receives delivered/bounced/complained events from
+  // Resend. If it 404s, delivery status on every quote email stays stuck at
+  // `accepted` and hard-bounced addresses never enter the suppression list.
+  'resend-webhook',
 ] as const;
 
 const enabled = process.env.RUN_EDGE_SMOKE === '1';

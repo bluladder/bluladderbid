@@ -176,7 +176,12 @@ export function OneTimeSummary({
         },
       });
       if (error) throw error;
-      const resp = data as { quoteId?: string; quoteUrl?: string; emailStatus?: string } | null;
+      const resp = data as {
+        quoteId?: string;
+        quoteUrl?: string;
+        emailStatus?: 'accepted' | 'failed' | 'suppressed' | 'skipped' | 'sent';
+        emailFailureReason?: string | null;
+      } | null;
       setSavedQuoteUrl(resp?.quoteUrl ?? null);
 
       if (saveDialogAction === 'text' && resp?.quoteId && normalizedPhone) {
@@ -190,12 +195,23 @@ export function OneTimeSummary({
         toast.success(`Bid texted to ${masked}.`);
       } else if (saveDialogAction === 'email') {
         const masked = maskEmail(email);
-        if (resp?.emailStatus === 'sent') {
+        // "accepted" = Resend acknowledged with a provider id; delivery is
+        // NOT yet confirmed. Don't claim "delivered" or "sent" here — that
+        // only happens when the resend-webhook flips the attempt.
+        if (resp?.emailStatus === 'accepted' || resp?.emailStatus === 'sent') {
           setDeliveryStatus({ channel: 'email', masked });
           setDeliveredKeys((prev) => new Set(prev).add(dedupeKey!));
-          toast.success(`Bid emailed to ${masked}.`);
+          toast.success(`Quote email accepted for delivery to ${masked}.`);
+        } else if (resp?.emailStatus === 'suppressed') {
+          // Provider already refuses this address — don't add to dedupe set
+          // so the customer can correct the destination and retry.
+          toast.error(
+            `We can't send email to ${masked} — that address is blocked by our email provider. Please use a different address.`
+          );
         } else {
-          toast.error('Bid saved, but the email didn’t go through. Please retry or use a different address.');
+          toast.error(
+            "We couldn't send the email to that address. Please verify the address or use a different one."
+          );
         }
       } else {
         toast.success('Bid saved for 30 days.');
@@ -508,7 +524,7 @@ export function OneTimeSummary({
           {deliveryStatus && (
             <p className="text-xs text-center text-success" data-testid="delivery-success">
               {deliveryStatus.channel === 'email'
-                ? `Bid emailed to ${deliveryStatus.masked}.`
+                ? `Quote email accepted for delivery to ${deliveryStatus.masked}. We'll confirm delivery in your inbox.`
                 : `Bid texted to ${deliveryStatus.masked}.`}
             </p>
           )}

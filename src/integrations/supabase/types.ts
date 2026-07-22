@@ -2463,6 +2463,81 @@ export type Database = {
           },
         ]
       }
+      email_send_attempts: {
+        Row: {
+          accepted_at: string | null
+          bounced_at: string | null
+          complained_at: string | null
+          created_at: string
+          delivered_at: string | null
+          failure_category: string | null
+          failure_reason: string | null
+          http_status: number | null
+          id: string
+          last_event_at: string | null
+          last_event_type: string | null
+          metadata: Json
+          provider: string
+          provider_message_id: string | null
+          quote_id: string | null
+          recipient_email: string
+          source_session_id: string | null
+          status: string
+          submitted_at: string
+          suppressed_at: string | null
+          template: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          bounced_at?: string | null
+          complained_at?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          failure_category?: string | null
+          failure_reason?: string | null
+          http_status?: number | null
+          id?: string
+          last_event_at?: string | null
+          last_event_type?: string | null
+          metadata?: Json
+          provider?: string
+          provider_message_id?: string | null
+          quote_id?: string | null
+          recipient_email: string
+          source_session_id?: string | null
+          status: string
+          submitted_at?: string
+          suppressed_at?: string | null
+          template: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          bounced_at?: string | null
+          complained_at?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          failure_category?: string | null
+          failure_reason?: string | null
+          http_status?: number | null
+          id?: string
+          last_event_at?: string | null
+          last_event_type?: string | null
+          metadata?: Json
+          provider?: string
+          provider_message_id?: string | null
+          quote_id?: string | null
+          recipient_email?: string
+          source_session_id?: string | null
+          status?: string
+          submitted_at?: string
+          suppressed_at?: string | null
+          template?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       email_suppressions: {
         Row: {
           created_at: string
