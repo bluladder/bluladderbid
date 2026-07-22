@@ -42,6 +42,17 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
+// Cent-precise formatting for the exact payment schedule. Amounts shown to
+// the customer here must match what the payment processor will charge.
+function formatPriceCents(price: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(price);
+}
+
 export function PlanUpsellCard({
   oneTimeTotal,
   servicePrices,
@@ -103,6 +114,9 @@ export function PlanUpsellCard({
   const annualSavings = breakdown?.savings ?? 0;
   const annualTotal = breakdown?.annualTotal ?? 0;
   const remainingPayments = breakdown?.remainingPayments ?? 11;
+  const regularPaymentCount = breakdown?.regularPaymentCount ?? 10;
+  const finalPayment = breakdown?.finalPayment ?? monthlyPayment;
+  const hasFinalAdjustment = breakdown?.hasFinalAdjustment ?? false;
   
   if (!hasServices) {
     return (
@@ -381,10 +395,14 @@ export function PlanUpsellCard({
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold">{formatPrice(bundleBreakdown.depositAmount)} today</div>
+                          <div className="font-bold">{formatPriceCents(bundleBreakdown.depositAmount)} today</div>
                           <div className="text-xs text-muted-foreground">
-                            then {formatPrice(bundleBreakdown.monthlyPayment)} × {bundleBreakdown.remainingPayments} mo
+                            then {formatPriceCents(bundleBreakdown.monthlyPayment)} × {bundleBreakdown.regularPaymentCount} mo
+                            {bundleBreakdown.hasFinalAdjustment && (
+                              <> + {formatPriceCents(bundleBreakdown.finalPayment)} final</>
+                            )}
                           </div>
+                          <div className="text-[10px] text-muted-foreground">plus applicable tax</div>
                           {bundleBreakdown.savings > 0 && (
                             <div className="text-xs text-success">
                               Save {formatPrice(bundleBreakdown.savings)}/yr
@@ -432,35 +450,54 @@ export function PlanUpsellCard({
                 that reconcile to the authoritative annual total. */}
             <div className="rounded-md border border-primary/20 bg-background/60 p-3 mb-3 space-y-2">
               <div className="flex items-baseline justify-between">
-                <span className="text-sm text-muted-foreground">Due today</span>
+                <span className="text-sm text-muted-foreground">Due today (plus applicable tax)</span>
                 <span
                   className="text-2xl font-bold price-display text-foreground"
                   data-testid="plan-due-today"
                 >
-                  {formatPrice(deposit)}
+                  {formatPriceCents(deposit)}
                 </span>
               </div>
               <div className="flex items-baseline justify-between">
                 <span className="text-sm text-muted-foreground">
-                  Then {remainingPayments} monthly payments of
+                  {hasFinalAdjustment
+                    ? `Then ${regularPaymentCount} monthly payments of`
+                    : `Then ${remainingPayments} monthly payments of`}
                 </span>
                 <span
                   className="text-lg font-semibold text-foreground"
                   data-testid="plan-monthly-payment"
                 >
-                  {formatPrice(monthlyPayment)}
+                  {formatPriceCents(monthlyPayment)}
                 </span>
               </div>
+              {hasFinalAdjustment && (
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-muted-foreground">
+                    Final monthly payment of
+                  </span>
+                  <span
+                    className="text-lg font-semibold text-foreground"
+                    data-testid="plan-final-payment"
+                  >
+                    {formatPriceCents(finalPayment)}
+                  </span>
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground" data-testid="plan-tax-note">
+                All amounts shown plus applicable tax.
+              </p>
               <div className="flex items-baseline justify-between pt-2 border-t border-border">
                 <span className="text-sm text-muted-foreground">Annual plan total</span>
                 <span className="text-sm font-semibold text-foreground">
-                  {formatPrice(annualTotal)}
+                  {formatPriceCents(annualTotal)}
                 </span>
               </div>
               <div className="flex items-start gap-2 pt-1">
                 <CreditCard className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  20% due today, then {remainingPayments} equal monthly installments — cancel or change anytime before the next visit.
+                  Exactly 20% due today. Remaining balance split across {remainingPayments} monthly installments
+                  {hasFinalAdjustment && ' (final installment adjusted to the cent)'} — cancel or change anytime before the next visit.
                 </p>
               </div>
             </div>
