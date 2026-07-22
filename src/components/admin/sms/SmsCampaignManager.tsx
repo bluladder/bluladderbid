@@ -29,6 +29,8 @@ import {
 } from '@/lib/campaigns/campaignModel';
 import { CAMPAIGN_TEMPLATES } from '@/lib/campaigns/campaignTemplates';
 import { NurtureBackfillPanel } from './NurtureBackfillPanel';
+import { renderEducationalEmail } from '@/lib/campaigns/renderEducationalEmail';
+import type { EducationalStepContent } from '@/lib/campaigns/evergreenEducationContent';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as unknown as { from: (t: string) => any };
@@ -89,6 +91,37 @@ function StepRow({
   const consentWarn = step.is_marketing && campaignConsent === 'transactional';
   const smsTooLong = step.channel === 'sms' && body.length > 480;
 
+  // ------------------------------------------------------------------
+  // Optional educational-content editor. Only rendered for email steps
+  // that carry a content_config payload (currently the Evergreen
+  // Service Education Nurture campaign). Editing these fields
+  // re-renders subject + body_template via the shared pure renderer, so
+  // the admin UI and the delivery pipeline stay in lock-step.
+  // ------------------------------------------------------------------
+  const rawCfg = (step.content_config ?? null) as Partial<EducationalStepContent> | null;
+  const hasEduContent = step.channel === 'email' && rawCfg && typeof rawCfg === 'object' && 'placeholder_id' in rawCfg;
+  const [eduOpen, setEduOpen] = useState(false);
+  const [eduCfg, setEduCfg] = useState<Partial<EducationalStepContent>>(rawCfg ?? {});
+  useEffect(() => { setEduCfg((step.content_config ?? {}) as Partial<EducationalStepContent>); }, [step.content_config]);
+
+  const commitEdu = (patch: Partial<EducationalStepContent>) => {
+    const next = { ...eduCfg, ...patch } as EducationalStepContent;
+    setEduCfg(next);
+    // Only re-render when the minimum required fields are present.
+    if (!next.subject || !next.body || !next.cta_label || !next.cta_url || !next.fallback_copy) {
+      onUpdate(step.id, { content_config: next });
+      return;
+    }
+    const rendered = renderEducationalEmail(next);
+    setSubject(rendered.subject);
+    setBody(rendered.body);
+    onUpdate(step.id, {
+      content_config: next,
+      subject: rendered.subject,
+      body_template: rendered.body,
+    });
+  };
+
   return (
     <div className={`rounded-md border p-3 space-y-2 ${step.active ? 'bg-muted/20' : 'bg-muted/40 opacity-70'}`}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -142,6 +175,83 @@ function StepRow({
         <span>Variables: {VAR_TOKENS.slice(0, 5).map((v) => <code key={v} className="mx-0.5">{v}</code>)}</span>
         <span className={smsTooLong ? 'text-destructive' : ''}>{body.length} chars</span>
       </div>
+
+      {hasEduContent && (
+        <div className="rounded-md border bg-background/60">
+          <button
+            type="button"
+            onClick={() => setEduOpen((s) => !s)}
+            className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium"
+          >
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" /> Educational content
+              <Badge variant="outline" className="ml-1 text-[10px]">{eduCfg.placeholder_id}</Badge>
+            </span>
+            <span className="text-muted-foreground">{eduOpen ? 'Hide' : 'Edit'}</span>
+          </button>
+          {eduOpen && (
+            <div className="px-3 pb-3 space-y-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Subject</Label>
+                <Input className="h-8 text-sm" value={eduCfg.subject ?? ''}
+                  onChange={(e) => setEduCfg((c) => ({ ...c, subject: e.target.value }))}
+                  onBlur={(e) => commitEdu({ subject: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Body</Label>
+                <Textarea rows={5} className="text-sm" value={eduCfg.body ?? ''}
+                  onChange={(e) => setEduCfg((c) => ({ ...c, body: e.target.value }))}
+                  onBlur={(e) => commitEdu({ body: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">CTA label</Label>
+                  <Input className="h-8 text-sm" value={eduCfg.cta_label ?? ''}
+                    onChange={(e) => setEduCfg((c) => ({ ...c, cta_label: e.target.value }))}
+                    onBlur={(e) => commitEdu({ cta_label: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">CTA URL</Label>
+                  <Input className="h-8 text-sm" value={eduCfg.cta_url ?? ''}
+                    onChange={(e) => setEduCfg((c) => ({ ...c, cta_url: e.target.value }))}
+                    onBlur={(e) => commitEdu({ cta_url: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Article title (optional)</Label>
+                  <Input className="h-8 text-sm" value={eduCfg.article_title ?? ''}
+                    onChange={(e) => setEduCfg((c) => ({ ...c, article_title: e.target.value }))}
+                    onBlur={(e) => commitEdu({ article_title: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Article URL (optional)</Label>
+                  <Input className="h-8 text-sm" value={eduCfg.article_url ?? ''}
+                    onChange={(e) => setEduCfg((c) => ({ ...c, article_url: e.target.value }))}
+                    onBlur={(e) => commitEdu({ article_url: e.target.value })} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Article description (optional)</Label>
+                <Input className="h-8 text-sm" value={eduCfg.article_description ?? ''}
+                  onChange={(e) => setEduCfg((c) => ({ ...c, article_description: e.target.value }))}
+                  onBlur={(e) => commitEdu({ article_description: e.target.value })} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Fallback copy (used when no article is configured)</Label>
+                <Textarea rows={2} className="text-sm" value={eduCfg.fallback_copy ?? ''}
+                  onChange={(e) => setEduCfg((c) => ({ ...c, fallback_copy: e.target.value }))}
+                  onBlur={(e) => commitEdu({ fallback_copy: e.target.value })} />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Editing any field re-renders the subject and body above using the shared, timing-neutral renderer.
+                Leave the article fields blank to send the fallback line instead.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {showPreview && (
         <div className="rounded-md border bg-background p-2 text-xs">
           {step.channel === 'email' && subject && <p className="font-medium">{previewTemplate(subject)}</p>}
