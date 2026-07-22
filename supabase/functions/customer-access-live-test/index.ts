@@ -13,8 +13,10 @@ import {
   sendCallRailSms,
   normalizePhone,
 } from "../_shared/sms.ts";
-import {
 import { getAppUrl } from "../_shared/appUrl.ts";
+import { sendEmail } from "../_shared/emailConfig.ts";
+import { normalizeEmailAddr } from "../_shared/emailSuppression.ts";
+import {
   sha256Hex,
   generateOtp,
   generateSessionToken,
@@ -119,9 +121,11 @@ serve(async (req) => {
         const otp = generateOtp();
         const otpHash = await sha256Hex(otp);
         const phoneHash = await sha256Hex(phone);
+        const now = Date.now();
         const expiresAt = new Date(
-          Date.now() + cfg.otp_ttl_seconds * 1000,
+          now + cfg.otp_ttl_seconds * 1000,
         ).toISOString();
+        const usableUntil = new Date(now + (cfg.otp_ttl_seconds + 20 * 60) * 1000).toISOString();
 
         const { data: challenge } = await supabase
           .from("customer_verification_challenges")
@@ -131,7 +135,10 @@ serve(async (req) => {
             expires_at: expiresAt,
             max_attempts: cfg.max_attempts,
             ip_hash: await sha256Hex(`admin-test:${adminId}`),
+            channel: "sms",
+            provider: "callrail",
             delivery_status: "queued",
+            usable_until: usableUntil,
           })
           .select("id, correlation_id")
           .single();
@@ -149,47 +156,72 @@ serve(async (req) => {
             .from("customer_verification_challenges")
             .update({
               callrail_message_id: send.messageId ?? null,
-              delivery_status: send.ok ? "sent" : "delivery_failed",
+              provider_conversation_id: send.conversationId ?? null,
+              provider_message_id: send.messageId ?? null,
+              provider_status: send.providerMessageStatus ?? (send.ok ? "accepted" : "rejected"),
+              provider_response_kind: send.providerResponseKind ?? null,
+              provider_accepted_at: send.ok ? new Date().toISOString() : null,
+              delivery_status: send.ok ? "accepted" : "delivery_failed",
             })
             .eq("id", challenge?.id);
           result = {
-            status: send.ok ? "sent" : "failed",
+            status: send.ok ? "accepted" : "failed",
             correlation_id: auth.correlation_id,
             challenge_id: challenge?.id ?? null,
             challenge_correlation_id: challenge?.correlation_id ?? null,
+            provider_conversation_id: send.conversationId ?? null,
             provider_message_id: send.messageId ?? null,
-            delivery_status: send.ok ? "sent" : "delivery_failed",
+            delivery_status: send.ok ? "accepted" : "delivery_failed",
             error: send.ok ? null : sanitizeError(send.error ?? "send_failed"),
           };
         }
       }
     } else if (testType === "email_otp") {
-      const email = auth.recipient.trim().toLowerCase();
+      const email = normalizeEmailAddr(auth.recipient);
       if (email !== APPROVED_TEST_EMAIL) {
         result = { ...result, error: "recipient_not_approved" };
       } else {
-        // Uses Supabase Auth OTP (magic link + code). Not a transactional
-        // send — this is the real Auth email path the customer will use.
-        // deno-lint-ignore no-explicit-any
-        const { data, error } = await (supabase.auth as any).admin.generateLink(
-          {
-            type: "magiclink",
-            email,
-          },
-        );
-        if (error) {
-          result = {
-            ...result,
-            error: sanitizeError(error.message ?? "auth_error"),
-          };
-        } else {
-          result = {
-            status: "sent",
-            correlation_id: auth.correlation_id,
-            auth_user_id: data?.user?.id ?? null,
-            email_action_type: data?.properties?.email_action_type ?? "magiclink",
-          };
-        }
+        const cfg = await loadVerificationConfig(supabase);
+        const otp = generateOtp();
+        const otpHash = await sha256Hex(otp);
+        const emailHash = await sha256Hex(email);
+        const now = Date.now();
+        const expiresAt = new Date(now + cfg.otp_ttl_seconds * 1000).toISOString();
+        const usableUntil = new Date(now + (cfg.otp_ttl_seconds + 20 * 60) * 1000).toISOString();
+        const { data: challenge } = await supabase
+          .from("customer_verification_challenges")
+          .insert({
+            phone_hash: null,
+            otp_hash: otpHash,
+            expires_at: expiresAt,
+            max_attempts: cfg.max_attempts,
+            ip_hash: await sha256Hex(`admin-test:${adminId}`),
+            channel: "email",
+            provider: "resend",
+            delivery_status: "queued",
+            usable_until: usableUntil,
+            recipient_hint: emailHash,
+          })
+          .select("id, correlation_id")
+          .single();
+        const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6;font-size:16px;"><p>Your BluLadder verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:16px 0;">${otp}</p><p>This code expires shortly. Do not share it.</p></div>`;
+        const send = await sendEmail({ to: email, subject: "Your BluLadder verification code", html });
+        await supabase.from("customer_verification_challenges").update({
+          provider_message_id: send.providerMessageId ?? null,
+          provider_status: send.ok ? "accepted" : (send.failure?.category ?? "rejected"),
+          provider_response_kind: send.failure?.category ?? "email",
+          provider_accepted_at: send.ok ? new Date().toISOString() : null,
+          delivery_status: send.ok ? "accepted" : "delivery_failed",
+        }).eq("id", challenge?.id);
+        result = {
+          status: send.ok ? "accepted" : "failed",
+          correlation_id: auth.correlation_id,
+          challenge_id: challenge?.id ?? null,
+          challenge_correlation_id: challenge?.correlation_id ?? null,
+          provider_message_id: send.providerMessageId ?? null,
+          delivery_status: send.ok ? "accepted" : "delivery_failed",
+          error: send.ok ? null : sanitizeError(send.failure?.message ?? "send_failed"),
+        };
       }
     } else if (testType === "booking_link_sms") {
       const phone = normalizePhone(auth.recipient);
@@ -232,11 +264,12 @@ serve(async (req) => {
               `BluLadder: manage booking ${booking.reference_number}. Link expires in 48h: ${url}`;
             const send = await sendCallRailSms(callRail, phone, smsBody);
             result = {
-              status: send.ok ? "sent" : "failed",
+              status: send.ok ? "accepted" : "failed",
               correlation_id: auth.correlation_id,
               token_id: tokenRow?.id ?? null,
+              provider_conversation_id: send.conversationId ?? null,
               provider_message_id: send.messageId ?? null,
-              delivery_status: send.ok ? "sent" : "delivery_failed",
+              delivery_status: send.ok ? "accepted" : "delivery_failed",
               error: send.ok ? null : sanitizeError(send.error ?? "send_failed"),
             };
           }
