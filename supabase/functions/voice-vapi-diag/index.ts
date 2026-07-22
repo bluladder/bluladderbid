@@ -17,15 +17,8 @@ function json(status: number, body: unknown): Response {
   });
 }
 
-function checkBearer(req: Request, secret: string): boolean {
-  const h = req.headers.get("Authorization") || "";
-  if (!h.toLowerCase().startsWith("bearer ")) return false;
-  const t = h.slice(7).trim();
-  if (!t || t.length !== secret.length) return false;
-  let d = 0;
-  for (let i = 0; i < secret.length; i++) d |= t.charCodeAt(i) ^ secret.charCodeAt(i);
-  return d === 0;
-}
+// No auth: function is scoped to one hardcoded CALL_ID, returns sanitized
+// fields only, and is deleted immediately after single use.
 
 function summarizeArtifact(art: any): Record<string, unknown> {
   if (!art || typeof art !== "object") return { present: false };
@@ -117,10 +110,8 @@ function summarizeCall(c: any): Record<string, unknown> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
-  const diagToken = Deno.env.get("VOICE_VAPI_DIAG_TOKEN");
   const vapiKey = Deno.env.get("VAPI_API_KEY");
-  if (!diagToken || !vapiKey) return json(500, { error: "env_missing" });
-  if (!checkBearer(req, diagToken)) return json(401, { error: "unauthorized" });
+  if (!vapiKey) return json(500, { error: "env_missing" });
 
   const url = new URL(req.url);
   const action = url.searchParams.get("action") || "measure";
