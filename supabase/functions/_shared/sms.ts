@@ -65,7 +65,7 @@ function normalizeStatus(value: unknown): string | undefined {
 // `recent_messages[0].id` or `messages[0].id`; otherwise we persist only the
 // conversation id and mark the send as provider-accepted, not delivered.
 // deno-lint-ignore no-explicit-any
-function parseCallRailTextResponse(json: any): {
+export function parseCallRailTextResponse(json: any): {
   conversationId?: string;
   messageId?: string;
   providerMessageStatus?: string;
