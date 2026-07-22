@@ -36,6 +36,82 @@ export const ORCHESTRATOR_PROMPT_VERSION = "orchestrator/2026-07-20";
 const MAX_TOOL_STEPS = 6;
 
 // ---------------------------------------------------------------------------
+// Voice channel response-contract addendum. Appended to the system prompt for
+// channel === "voice" only. Web and SMS behavior unchanged.
+// ---------------------------------------------------------------------------
+const VOICE_RESPONSE_CONTRACT = [
+  "VOICE CHANNEL RESPONSE CONTRACT (applies only to spoken replies):",
+  "- Default to one or two short sentences (roughly 35 to 60 words).",
+  "- Ask at most one question per turn.",
+  "- Do not repeat information the customer already gave you.",
+  "- No markdown, headings, bullet lists, or tables in spoken text.",
+  "- Do not read URLs aloud unless the customer asks for one.",
+  "- Do not narrate internal tool or system operations.",
+  "- Use brief spoken transitions ('okay', 'got it') sparingly.",
+  "- Keep tone professional, direct, and conversational.",
+  "- Never sacrifice required disclosures, price accuracy, or booking safety in order to be shorter.",
+].join("\n");
+
+/** Public: streaming AI-gateway call used by the voice fast path. Returns an
+ *  async iterable of text deltas. Does NOT expose tools — the fast path is
+ *  knowledge-only. Falls back to a single non-streamed delta on any provider
+ *  error so callers always terminate cleanly. */
+export async function* streamKnowledgeReply(
+  systemPrompt: string,
+  userMessage: string,
+  history: { role: "user" | "assistant"; content: string }[],
+): AsyncGenerator<{ kind: "delta"; text: string } | { kind: "error"; code: string }, void, void> {
+  const key = Deno.env.get("LOVABLE_API_KEY");
+  if (!key) { yield { kind: "error", code: "no_api_key" }; return; }
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: "user", content: userMessage },
+  ];
+  let resp: Response;
+  try {
+    resp = await fetch(AI_GATEWAY, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: ORCHESTRATOR_MODEL, messages, stream: true }),
+    });
+  } catch {
+    yield { kind: "error", code: "gateway_fetch_failed" }; return;
+  }
+  if (resp.status === 429) { yield { kind: "error", code: "rate_limited" }; return; }
+  if (resp.status === 402) { yield { kind: "error", code: "credits" }; return; }
+  if (!resp.ok || !resp.body) { yield { kind: "error", code: "gateway_error" }; return; }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) !== -1) {
+      const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      for (const line of raw.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+          const j = JSON.parse(data);
+          const delta = j?.choices?.[0]?.delta?.content;
+          if (typeof delta === "string" && delta.length > 0) {
+            yield { kind: "delta", text: delta };
+          }
+        } catch { /* ignore malformed SSE fragment */ }
+      }
+    }
+  }
+}
+
+export function voiceResponseContract(): string { return VOICE_RESPONSE_CONTRACT; }
+
+export { buildSystemPrompt as _buildSystemPromptForVoice };
+
+// ---------------------------------------------------------------------------
 // Deterministic post-yes booking rail.
 //
 // The model is not permitted to conclude "your appointment is confirmed" on
