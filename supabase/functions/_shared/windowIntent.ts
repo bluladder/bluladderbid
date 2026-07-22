@@ -93,6 +93,8 @@ const OUTSIDE_ONLY_PHRASES = [
   /\bjust the outsides?\b/i,
   /\boutsides? only\b/i,
   /\bexteriors? only\b/i,
+  /\boutside glass\b/i,
+  /\bexterior glass\b/i,
 ];
 
 const INSIDE_AND_OUTSIDE_PHRASES = [
@@ -160,7 +162,10 @@ function detectPartialAreas(u: string): string[] {
 function detectCommercial(u: string): { hit: boolean; matched: string[]; type?: string } {
   const low = u.toLowerCase();
   const matched: string[] = [];
-  for (const kw of COMMERCIAL_KEYWORDS) {
+  // Longest keyword wins for the property-type label (so "dental office"
+  // beats "office"). We still record every matched signal.
+  const sorted = [...COMMERCIAL_KEYWORDS].sort((a, b) => b.length - a.length);
+  for (const kw of sorted) {
     if (low.includes(kw)) matched.push(kw);
   }
   const type = matched[0];
@@ -197,14 +202,16 @@ export function classifyWindowIntent(
   if (!commercial.hit) {
     const isPartial = anyMatch(u, PARTIAL_MARKERS);
     const isWhole = anyMatch(u, WHOLE_HOME_MARKERS);
-    if (isPartial && !isWhole) {
+    // Partial markers win when both are present — phrases like "don't want my
+    // whole house cleaned" trip both regex sets but are unambiguously partial.
+    if (isPartial) {
       patch.customerType = patch.customerType ?? "residential";
       patch.windowCleaningScope = "partial";
       const count = detectWindowCount(u);
       if (count) patch.windowCount = count;
       const areas = detectPartialAreas(u);
       if (areas.length) patch.partialAreas = areas;
-    } else if (isWhole && !isPartial) {
+    } else if (isWhole) {
       patch.customerType = patch.customerType ?? "residential";
       patch.windowCleaningScope = "whole_home";
     }
