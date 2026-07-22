@@ -179,14 +179,16 @@ serve(async (req) => {
     const smsBody = `Your BluLadder verification code is ${otp}. It expires in ${Math.round(cfg.otp_ttl_seconds / 60)} minutes. Do not share this code.`;
     const result = await sendCallRailSms(config, phone, smsBody);
     const acceptedAt = result.ok ? new Date().toISOString() : null;
+    const providerStatus = result.providerMessageStatus ?? (result.ok ? "accepted" : "rejected");
+    const smsDeliveryStatus = result.ok && providerStatus !== "failed" ? "accepted" : "delivery_failed";
     await supabase.from("customer_verification_challenges").update({
       callrail_message_id: result.messageId ?? null,
       provider_conversation_id: result.conversationId ?? null,
       provider_message_id: result.messageId ?? null,
-      provider_status: result.providerMessageStatus ?? (result.ok ? "accepted" : "rejected"),
+      provider_status: providerStatus,
       provider_response_kind: result.providerResponseKind ?? null,
       provider_accepted_at: acceptedAt,
-      delivery_status: result.ok ? "accepted" : "delivery_failed",
+      delivery_status: smsDeliveryStatus,
     }).eq("id", challenge.id);
 
     // Also record in sms_messages for the operator audit trail.
@@ -200,7 +202,7 @@ serve(async (req) => {
       provider: "callrail",
       provider_conversation_id: result.conversationId ?? null,
       provider_message_id: result.messageId ?? null,
-      provider_status: result.providerMessageStatus ?? (result.ok ? "accepted" : "rejected"),
+      provider_status: providerStatus,
       provider_response_kind: result.providerResponseKind ?? null,
       provider_accepted_at: acceptedAt,
       error: result.ok ? null : (result.error ?? "send failed"),

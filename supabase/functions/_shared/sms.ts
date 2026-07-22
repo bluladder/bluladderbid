@@ -54,6 +54,11 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
 }
 
+function normalizeStatus(value: unknown): string | undefined {
+  const s = asString(value)?.trim().toLowerCase();
+  return s || undefined;
+}
+
 // CallRail's Send-a-Text endpoint returns a conversation object. Its top-level
 // `id` is NOT a per-send message id — it stays the same for later texts in the
 // same conversation. When available, the actual newest outbound message id is in
@@ -72,8 +77,37 @@ function parseCallRailTextResponse(json: any): {
   ];
   const outgoing = messageCandidates.find((m) => String(m?.direction ?? "").toLowerCase() === "outgoing") ?? messageCandidates[0];
   const messageId = asString(outgoing?.id ?? json?.message?.id ?? json?.text_message?.id ?? json?.message_id);
-  const providerMessageStatus = asString(outgoing?.status ?? json?.status);
+  const providerMessageStatus = normalizeStatus(outgoing?.status ?? json?.status);
   return { conversationId, messageId, providerMessageStatus };
+}
+
+async function fetchCallRailConversationMessageStatus(
+  config: CallRailConfig,
+  conversationId: string,
+  sentContent: string,
+): Promise<{ messageId?: string; providerMessageStatus?: string }> {
+  const url = `${CALLRAIL_API_BASE}/a/${config.accountId}/text-messages/${conversationId}.json`;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { "Authorization": `Token token="${config.apiKey}"` },
+    });
+    if (!res.ok) return {};
+    const json = await res.json();
+    const messages = Array.isArray(json?.messages) ? json.messages : [];
+    const normalizedSent = sentContent.trim();
+    const match = messages.find((m: any) =>
+      String(m?.direction ?? "").toLowerCase() === "outgoing" &&
+      String(m?.content ?? m?.body ?? m?.message ?? m?.text ?? "").trim() === normalizedSent
+    ) ?? messages.find((m: any) => String(m?.direction ?? "").toLowerCase() === "outgoing");
+    if (!match) return {};
+    return {
+      messageId: asString(match.id ?? match.message_id ?? match.uuid),
+      providerMessageStatus: normalizeStatus(match.status ?? match.message_status ?? match.delivery_status),
+    };
+  } catch {
+    return {};
+  }
 }
 
 /** Send a single SMS through CallRail's Send-a-Text-Message endpoint. */
@@ -119,6 +153,11 @@ export async function sendCallRailSms(
       conversationId = parsed.conversationId;
       messageId = parsed.messageId;
       providerMessageStatus = parsed.providerMessageStatus;
+      if (conversationId && (!messageId || !providerMessageStatus)) {
+        const refreshed = await fetchCallRailConversationMessageStatus(config, conversationId, content);
+        messageId = messageId ?? refreshed.messageId;
+        providerMessageStatus = providerMessageStatus ?? refreshed.providerMessageStatus;
+      }
     } catch {
       // non-JSON success response; ignore
       providerResponseKind = "text";
