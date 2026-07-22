@@ -46,13 +46,14 @@ function summarizeTurns(turns: any[] | undefined) {
   if (!Array.isArray(turns)) return [];
   return turns.map((t, i) => ({
     idx: i,
-    total: t?.total ?? null,
-    endpointing: t?.endpointing ?? null,
-    transcriber: t?.transcriber ?? null,
-    model: t?.model ?? null,
-    voice: t?.voice ?? null,
-    fromTransport: t?.fromTransport ?? null,
-    toTransport: t?.toTransport ?? null,
+    keys: t && typeof t === "object" ? Object.keys(t) : null,
+    total: t?.total ?? t?.turnLatency ?? t?.latency ?? null,
+    endpointing: t?.endpointing ?? t?.endpointingLatency ?? null,
+    transcriber: t?.transcriber ?? t?.transcriberLatency ?? null,
+    model: t?.model ?? t?.modelLatency ?? null,
+    voice: t?.voice ?? t?.voiceLatency ?? null,
+    fromTransport: t?.fromTransport ?? t?.fromTransportLatency ?? null,
+    toTransport: t?.toTransport ?? t?.toTransportLatency ?? null,
   }));
 }
 
