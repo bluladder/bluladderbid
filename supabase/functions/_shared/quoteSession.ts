@@ -40,6 +40,35 @@ export interface QuoteSessionFields {
   pressureWashSurface?: string;
   promotionId?: string | null;
   discountCode?: string | null;
+  // Phase 4C-β.4A — window-scope classification
+  customerType?: "residential" | "commercial" | "unknown";
+  windowCleaningScope?: "whole_home" | "partial" | "commercial_custom" | "unknown";
+  windowCleaningSides?: "outside_only" | "inside_and_outside";
+  windowCount?: number;
+  partialAreas?: string[];
+  partialAccessNotes?: string;
+  partialWindowPrice?: number;
+  partialWindowRuleVersion?: string;
+  commercialPropertyType?: string;
+  commercialLocations?: Array<{
+    address?: string;
+    propertyType?: string;
+    windowsEstimate?: number;
+    stories?: number;
+    sides?: "outside_only" | "inside_and_outside";
+    frequency?: string;
+    accessNotes?: string;
+    notes?: string;
+  }>;
+  commercialFrequency?: string;
+  commercialScopeNotes?: string;
+  preferredContactMethods?: Array<"text" | "email" | "phone">;
+  humanPricingRequired?: boolean;
+  bidRequestStatus?:
+    | "commercial_bid_requested"
+    | "human_pricing_required"
+    | "scope_collection_complete"
+    | "awaiting_ben_review";
 }
 
 export interface QuoteSession {
@@ -85,6 +114,58 @@ export function mergeFields(
   return { ...prev, fields: nextFields, fieldStatus: nextStatus };
 }
 
+// Fields whose validity depends on WHOLE-HOME pricing (sqft-based engine).
+// A scope flip whole_home ↔ partial must invalidate ONLY these; address,
+// contact, notes, and conversation history are preserved.
+const WHOLE_HOME_PRICING_FIELDS: (keyof QuoteSessionFields)[] = [
+  "squareFootage",
+  "windowCleaningType",
+];
+const PARTIAL_PRICING_FIELDS: (keyof QuoteSessionFields)[] = [
+  "windowCount",
+  "partialAreas",
+  "partialAccessNotes",
+  "partialWindowPrice",
+  "partialWindowRuleVersion",
+];
+
+/** Apply a scope change while preserving unrelated captured facts. Invalidates
+ *  ONLY the fields whose meaning depends on the previous scope's pricing. */
+export function changeWindowScope(
+  prev: QuoteSession,
+  nextScope: NonNullable<QuoteSessionFields["windowCleaningScope"]>,
+): QuoteSession {
+  const currentScope = prev.fields.windowCleaningScope;
+  if (currentScope === nextScope) return prev;
+  const nextFields: QuoteSessionFields = { ...prev.fields };
+  const nextStatus = { ...prev.fieldStatus };
+  const invalidate = (keys: (keyof QuoteSessionFields)[]) => {
+    for (const k of keys) {
+      delete (nextFields as Record<string, unknown>)[k];
+      delete nextStatus[k];
+    }
+  };
+  if (currentScope === "whole_home" && nextScope === "partial") invalidate(WHOLE_HOME_PRICING_FIELDS);
+  if (currentScope === "partial" && nextScope === "whole_home") invalidate(PARTIAL_PRICING_FIELDS);
+  nextFields.windowCleaningScope = nextScope;
+  nextStatus.windowCleaningScope = "captured";
+  return { ...prev, fields: nextFields, fieldStatus: nextStatus };
+}
+
+/** Merge one commercial location into the array without flattening existing
+ *  locations to a note. Locations are matched by normalized address. */
+export function addCommercialLocation(
+  prev: QuoteSession,
+  loc: NonNullable<QuoteSessionFields["commercialLocations"]>[number],
+): QuoteSession {
+  const list = [...(prev.fields.commercialLocations ?? [])];
+  const norm = (s?: string) => (s ?? "").trim().toLowerCase();
+  const idx = list.findIndex((x) => norm(x.address) && norm(x.address) === norm(loc.address));
+  if (idx >= 0) list[idx] = { ...list[idx], ...loc };
+  else list.push(loc);
+  return mergeFields(prev, { commercialLocations: list });
+}
+
 function needsStories(service: string): boolean {
   return service === "windowCleaning" || service === "houseWash" || service === "gutters" || service === "roofCleaning";
 }
@@ -96,9 +177,24 @@ export function computeRequired(fields: QuoteSessionFields): string[] {
   const missing: string[] = [];
   const services = fields.services ?? [];
   if (services.length === 0) return ["services"];
+  // Commercial custom-bid requests never need residential pricing inputs.
+  if (fields.windowCleaningScope === "commercial_custom" || fields.customerType === "commercial") {
+    if (!fields.commercialLocations || fields.commercialLocations.length === 0) missing.push("commercialLocations");
+    if (!fields.preferredContactMethods || fields.preferredContactMethods.length === 0) missing.push("preferredContactMethods");
+    return missing;
+  }
+  // Partial-window requests need only per-window inputs, never sqft.
+  if (fields.windowCleaningScope === "partial") {
+    if (fields.windowCount == null) missing.push("windowCount");
+    if (!fields.windowCleaningSides) missing.push("windowCleaningSides");
+    return missing;
+  }
+  // Whole-home / default residential path — unchanged canonical inputs.
   if (fields.squareFootage == null) missing.push("squareFootage");
   if (fields.stories == null && services.some((s) => needsStories(s))) missing.push("stories");
-  if (services.includes("windowCleaning") && !fields.windowCleaningType) missing.push("windowCleaningType");
+  if (services.includes("windowCleaning") && !fields.windowCleaningType && !fields.windowCleaningSides) {
+    missing.push("windowCleaningType");
+  }
   if (services.includes("driveway") && fields.drivewaySqft == null) missing.push("drivewaySqft");
   if (services.includes("pressureWashing") && fields.pressureWashSqft == null) missing.push("pressureWashSqft");
   return missing;
@@ -119,6 +215,11 @@ export function isReadyToBook(session: QuoteSession): boolean {
 
 const QUESTION_PRIORITY: string[] = [
   "services",
+  "windowCleaningScope",
+  "windowCount",
+  "windowCleaningSides",
+  "commercialLocations",
+  "preferredContactMethods",
   "squareFootage",
   "windowCleaningType",
   "stories",
