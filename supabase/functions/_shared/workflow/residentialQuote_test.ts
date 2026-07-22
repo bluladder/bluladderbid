@@ -27,10 +27,10 @@ Deno.test("asks for services first when nothing is known", () => {
   if (a.kind === "ask") assertEquals(a.field, "services");
 });
 
-Deno.test("with service known, asks for sqft next (not city)", () => {
+Deno.test("with service+scope known, asks for sqft next (not city)", () => {
   const s = baseSession({
-    fields: { services: ["windowCleaning"] },
-    fieldStatus: { services: "captured" },
+    fields: { services: ["windowCleaning"], windowCleaningScope: "whole_home" },
+    fieldStatus: { services: "captured", windowCleaningScope: "captured" },
   });
   const a = decideResidentialQuoteAction(s);
   assertEquals(a.kind, "ask");
