@@ -5,6 +5,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { normalizePhone } from "../_shared/sms.ts";
+import { normalizeEmailAddr } from "../_shared/emailSuppression.ts";
 import {
   sha256Hex,
   generateSessionToken,
@@ -39,26 +40,33 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const phone = normalizePhone(typeof body?.phone === "string" ? body.phone : "");
+    const email = normalizeEmailAddr(typeof body?.email === "string" ? body.email : "");
     const code = typeof body?.code === "string" ? body.code.trim() : "";
-    if (!phone || !/^\d{6}$/.test(code)) return generic();
+    const channel = phone ? "sms" : email ? "email" : "";
+    if (!channel || !/^\d{6}$/.test(code)) return generic();
 
     const cfg = await loadVerificationConfig(supabase);
-    const phoneHash = await sha256Hex(phone);
+    const subjectHash = await sha256Hex(phone ?? email ?? "");
     const codeHash = await sha256Hex(code);
     const ipHash = await sha256Hex(clientIp(req));
 
-    const { data: challenge } = await supabase
+    let challengeQuery = supabase
       .from("customer_verification_challenges")
-      .select("id, otp_hash, status, attempts, max_attempts, expires_at")
-      .eq("phone_hash", phoneHash)
+      .select("id, otp_hash, status, attempts, max_attempts, expires_at, usable_until, delivery_status")
+      .eq("channel", channel)
       .eq("status", "pending")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    challengeQuery = phone ? challengeQuery.eq("phone_hash", subjectHash) : challengeQuery.eq("recipient_hint", subjectHash);
+    const { data: challenge } = await challengeQuery.maybeSingle();
     if (!challenge) return generic();
 
     // Expired?
-    if (new Date(challenge.expires_at).getTime() < Date.now()) {
+    const expiresAtMs = new Date(challenge.expires_at).getTime();
+    const usableUntilMs = challenge.usable_until ? new Date(challenge.usable_until).getTime() : expiresAtMs;
+    const isDelayedProviderAccepted = ["accepted", "sent"].includes(String(challenge.delivery_status ?? ""));
+    const cutoffMs = isDelayedProviderAccepted ? Math.max(expiresAtMs, usableUntilMs) : expiresAtMs;
+    if (cutoffMs < Date.now()) {
       await supabase.from("customer_verification_challenges").update({ status: "expired" }).eq("id", challenge.id);
       return generic();
     }
@@ -86,19 +94,22 @@ serve(async (req) => {
       attempts: (challenge.attempts ?? 0) + 1,
     }).eq("id", challenge.id);
 
-    // Resolve unambiguous customer match (by phone). Compare on E.164 normalized.
+    // Resolve unambiguous customer match. Compare on normalized phone or lower-cased email.
     const { data: matches } = await supabase
       .from("customers")
-      .select("id, phone")
-      .not("phone", "is", null);
+      .select(phone ? "id, phone" : "id, email")
+      .not(phone ? "phone" : "email", "is", null);
     const candidateIds = (matches ?? [])
-      .filter((c: { phone: string | null }) => normalizePhone(c.phone) === phone)
+      .filter((c: { phone?: string | null; email?: string | null }) => (
+        phone ? normalizePhone(c.phone) === phone : (c.email ?? "").toLowerCase().trim() === email
+      ))
       .map((c: { id: string }) => c.id);
 
     if (candidateIds.length > 1) {
       // Ambiguous — do not expose data. Queue an admin issue and return verified=false.
       await supabase.from("customer_account_match_issues").insert({
-        verified_phone: phone,
+        verified_phone: phone ?? null,
+        verified_email: email ?? null,
         candidate_customer_ids: candidateIds,
       });
       return generic({ ambiguous: true });
@@ -116,21 +127,23 @@ serve(async (req) => {
 
     // Create-or-update customer_account row.
     let accountId: string;
-    const { data: existingAccount } = await supabase
+    let accountQuery = supabase
       .from("customer_accounts")
       .select("id")
-      .eq("verified_phone", phone)
-      .maybeSingle();
+      .limit(1);
+    accountQuery = phone ? accountQuery.eq("verified_phone", phone) : accountQuery.eq("customer_id", customerId);
+    const { data: existingAccount } = await accountQuery.maybeSingle();
     if (existingAccount) {
       accountId = existingAccount.id;
       await supabase.from("customer_accounts").update({
         customer_id: customerId,
         last_verified_at: new Date().toISOString(),
+        ...(phone ? { verified_phone: phone } : { verified_email: email }),
       }).eq("id", accountId);
     } else {
       const { data: created, error: createErr } = await supabase
         .from("customer_accounts")
-        .insert({ customer_id: customerId, verified_phone: phone })
+        .insert({ customer_id: customerId, verified_phone: phone ?? null, verified_email: email ?? null })
         .select("id")
         .single();
       if (createErr || !created) return generic();

@@ -25,7 +25,7 @@ interface SmsMessage {
   channel: 'sms' | 'email' | null;
   subject: string | null;
   body: string;
-  status: 'pending' | 'sent' | 'failed' | 'cancelled' | 'inbound';
+  status: 'pending' | 'accepted' | 'sent' | 'failed' | 'cancelled' | 'inbound';
   message_kind: string | null;
   send_at: string | null;
   sent_at: string | null;
@@ -34,12 +34,19 @@ interface SmsMessage {
   max_attempts: number | null;
   next_retry_at: string | null;
   callrail_message_id: string | null;
+  provider: string | null;
+  provider_conversation_id: string | null;
+  provider_message_id: string | null;
+  provider_status: string | null;
+  provider_response_kind: string | null;
+  provider_accepted_at: string | null;
   updated_at: string | null;
   created_at: string;
 }
 
 const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   sent: 'default',
+  accepted: 'secondary',
   pending: 'secondary',
   failed: 'destructive',
   cancelled: 'outline',
@@ -59,7 +66,7 @@ export function SmsMessageLog() {
     setLoading(true);
     let query = supabase
       .from('sms_messages')
-      .select('id,to_number,to_email,channel,subject,body,status,message_kind,send_at,sent_at,error,attempts,max_attempts,next_retry_at,callrail_message_id,updated_at,created_at')
+      .select('id,to_number,to_email,channel,subject,body,status,message_kind,send_at,sent_at,error,attempts,max_attempts,next_retry_at,callrail_message_id,provider,provider_conversation_id,provider_message_id,provider_status,provider_response_kind,provider_accepted_at,updated_at,created_at')
       .order('created_at', { ascending: false })
       .limit(100);
     // "retrying" is a derived state of pending messages, so query pending at the
@@ -128,16 +135,16 @@ export function SmsMessageLog() {
     if (attempts > 0) {
       for (let i = 1; i <= attempts; i++) {
         const isLast = i === attempts;
-        if (isLast && m.status === 'sent') {
-          events.push({ icon: CheckCircle2, label: `Attempt ${i}: delivered`, detail: m.callrail_message_id ? `Provider ID ${m.callrail_message_id}` : undefined, at: m.sent_at, tone: 'text-green-600 dark:text-green-400' });
+        if (isLast && (m.status === 'accepted' || m.status === 'sent')) {
+          events.push({ icon: CheckCircle2, label: `Attempt ${i}: accepted by provider`, detail: m.provider_message_id ? `Message ID ${m.provider_message_id}` : m.provider_conversation_id ? `Conversation ID ${m.provider_conversation_id}` : m.callrail_message_id ? `Provider ID ${m.callrail_message_id}` : undefined, at: m.provider_accepted_at ?? m.sent_at, tone: 'text-green-600 dark:text-green-400' });
         } else if (isLast && m.status === 'failed') {
           events.push({ icon: XCircle, label: `Attempt ${i}: failed`, detail: m.error ?? undefined, at: m.updated_at, tone: 'text-destructive' });
         } else {
           events.push({ icon: XCircle, label: `Attempt ${i}: failed`, detail: m.error ?? 'Send error', at: null, tone: 'text-amber-600 dark:text-amber-400' });
         }
       }
-    } else if (m.status === 'sent') {
-      events.push({ icon: CheckCircle2, label: 'Delivered', detail: m.callrail_message_id ? `Provider ID ${m.callrail_message_id}` : undefined, at: m.sent_at, tone: 'text-green-600 dark:text-green-400' });
+    } else if (m.status === 'accepted' || m.status === 'sent') {
+      events.push({ icon: CheckCircle2, label: 'Accepted by provider', detail: m.provider_message_id ? `Message ID ${m.provider_message_id}` : m.provider_conversation_id ? `Conversation ID ${m.provider_conversation_id}` : m.callrail_message_id ? `Provider ID ${m.callrail_message_id}` : undefined, at: m.provider_accepted_at ?? m.sent_at, tone: 'text-green-600 dark:text-green-400' });
     }
     if (isRetrying(m) && m.next_retry_at) {
       events.push({ icon: RotateCw, label: `Retry scheduled (attempt ${attempts + 1}/${m.max_attempts ?? 3})`, at: m.next_retry_at, tone: 'text-amber-600 dark:text-amber-400' });
@@ -159,7 +166,12 @@ export function SmsMessageLog() {
 
   const providerResponse = (m: SmsMessage) => ({
     status: m.status,
-    provider_message_id: m.callrail_message_id,
+    provider: m.provider,
+    provider_conversation_id: m.provider_conversation_id,
+    provider_message_id: m.provider_message_id ?? m.callrail_message_id,
+    provider_status: m.provider_status,
+    provider_response_kind: m.provider_response_kind,
+    provider_accepted_at: m.provider_accepted_at,
     sent_at: m.sent_at,
     error: m.error,
     attempts: m.attempts ?? 0,
@@ -201,6 +213,7 @@ export function SmsMessageLog() {
               <SelectTrigger className="w-[130px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="accepted">Accepted</SelectItem>
                 <SelectItem value="sent">Sent</SelectItem>
                 <SelectItem value="retrying">Retrying</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
@@ -260,7 +273,7 @@ export function SmsMessageLog() {
                   <TableHead className="min-w-[260px]">Message</TableHead>
                   <TableHead>Retries</TableHead>
                   <TableHead>Scheduled</TableHead>
-                  <TableHead>Sent</TableHead>
+                    <TableHead>Accepted</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -309,7 +322,7 @@ export function SmsMessageLog() {
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{fmt(m.send_at)}</TableCell>
-                    <TableCell className="whitespace-nowrap text-xs">{fmt(m.sent_at)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{fmt(m.provider_accepted_at ?? m.sent_at)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

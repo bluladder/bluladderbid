@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
     const appPhone = await getPhoneByPurpose(supabase, "app_ai");
     const cfg = { ...cr, senderNumber: appPhone.e164 || cr.senderNumber };
     const r = await sendCallRailSms(cfg, recipient.phone, messageBody);
-    smsStatus = r.ok ? "sent" : "failed";
+    smsStatus = r.ok ? "accepted" : "failed";
     smsError = r.ok ? null : (r.error ?? "unknown").slice(0, 200);
   }
 

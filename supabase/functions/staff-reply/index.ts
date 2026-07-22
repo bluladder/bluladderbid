@@ -181,13 +181,20 @@ Deno.serve(async (req) => {
     const config: CallRailConfig = { ...base, senderNumber: appPhone.e164 || base.senderNumber };
     const result = await sendCallRailSms(config, to, message);
     if (result.ok) {
-      deliveryState = "sent";
+      deliveryState = "accepted";
       providerMessageId = result.messageId ?? null;
       providerStatus = "accepted";
       // Persist to the SMS ledger for parity with other outbound texts.
+      const acceptedAt = new Date().toISOString();
       await supabase.from("sms_messages").insert({
-        to_number: to, body: message, message_kind: "staff_reply", status: "sent",
-        sent_at: new Date().toISOString(), callrail_message_id: providerMessageId, attempts: 1,
+        to_number: to, body: message, message_kind: "staff_reply", status: "accepted",
+        sent_at: acceptedAt, callrail_message_id: providerMessageId, attempts: 1,
+        provider: "callrail",
+        provider_conversation_id: result.conversationId ?? null,
+        provider_message_id: providerMessageId,
+        provider_status: result.providerMessageStatus ?? "accepted",
+        provider_response_kind: result.providerResponseKind ?? null,
+        provider_accepted_at: acceptedAt,
       });
     } else {
       deliveryState = "delivery_failed";
@@ -203,7 +210,7 @@ Deno.serve(async (req) => {
     fromAddress = res.from;
     replyToAddress = res.replyTo;
     if (res.ok) {
-      deliveryState = "sent";
+      deliveryState = "accepted";
       providerStatus = "accepted";
       providerMessageId = res.providerMessageId;
     } else {
@@ -219,13 +226,13 @@ Deno.serve(async (req) => {
 
   // Record the outbound reply in the conversation timeline (staff, not AI),
   // including whether the provider actually accepted it.
-  await recordTimeline(supabase, conversationId, channel, to, message, deliveryState, providerStatus ?? "", adminId, correlationId, deliveryState === "sent", providerMessageId);
+  await recordTimeline(supabase, conversationId, channel, to, message, deliveryState, providerStatus ?? "", adminId, correlationId, false, providerMessageId);
   await supabase.from("chat_conversations").update({ last_activity_at: new Date().toISOString() }).eq("id", conversationId);
 
-  const ok = deliveryState === "sent";
+  const ok = deliveryState === "accepted";
   return json({
     ok,
-    status: ok ? "sent" : "failed",
+    status: ok ? "accepted" : "failed",
     deliveryState,
     channel,
     to,

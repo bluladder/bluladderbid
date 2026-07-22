@@ -251,9 +251,16 @@ serve(async (req) => {
       }
       const er = await sendEmail(resendKey, msg.to_email as string, msg.subject as string, msg.body as string);
       if (er.ok) {
+        const acceptedAt = new Date().toISOString();
         await supabase.from("sms_messages").update({
-          status: "sent", sent_at: new Date().toISOString(),
-          callrail_message_id: er.messageId ?? null, attempts: (msg.attempts ?? 0) + 1, error: null, next_retry_at: null,
+          status: "accepted", sent_at: acceptedAt,
+          callrail_message_id: er.messageId ?? null,
+          provider: "resend",
+          provider_message_id: er.messageId ?? null,
+          provider_status: "accepted",
+          provider_response_kind: "email",
+          provider_accepted_at: acceptedAt,
+          attempts: (msg.attempts ?? 0) + 1, error: null, next_retry_at: null,
         }).eq("id", msg.id);
         sent++;
       } else {
@@ -289,9 +296,17 @@ serve(async (req) => {
     }
     const result = await sendCallRailSms(config, msg.to_number as string, msg.body as string);
     if (result.ok) {
+      const acceptedAt = new Date().toISOString();
       await supabase.from("sms_messages").update({
-        status: "sent", sent_at: new Date().toISOString(),
-        callrail_message_id: result.messageId ?? null, attempts: (msg.attempts ?? 0) + 1, error: null, next_retry_at: null,
+        status: "accepted", sent_at: acceptedAt,
+        callrail_message_id: result.messageId ?? null,
+        provider: "callrail",
+        provider_conversation_id: result.conversationId ?? null,
+        provider_message_id: result.messageId ?? null,
+        provider_status: result.providerMessageStatus ?? "accepted",
+        provider_response_kind: result.providerResponseKind ?? null,
+        provider_accepted_at: acceptedAt,
+        attempts: (msg.attempts ?? 0) + 1, error: null, next_retry_at: null,
       }).eq("id", msg.id);
       sent++;
     } else {
