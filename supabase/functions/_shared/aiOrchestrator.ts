@@ -709,7 +709,11 @@ function persistFacts(
   conversationId: string,
   facts: ConversationFacts,
   state: string,
-  opts?: { sessionToken?: string; channel?: "web" | "voice" | "sms" },
+  opts?: {
+    sessionToken?: string;
+    channel?: "web" | "voice" | "sms";
+    windowIntent?: WindowIntentPatch;
+  },
 ) {
   const c = facts.contact ?? {};
   const update: Record<string, unknown> = {
@@ -740,6 +744,70 @@ function persistFacts(
         email: facts.contact?.email ?? null,
       });
       if (session?.id) await syncQuoteSession(supabase, session.id, facts);
+      // Phase 4C-β.4A: apply window-scope classification into the same
+      // canonical row (never a duplicate/voice-only store). Scope changes go
+      // through changeWindowScope so unrelated captured facts are preserved.
+      if (session?.id && opts?.windowIntent && Object.keys(opts.windowIntent).length > 0) {
+        try {
+          const { data: row } = await supabase
+            .from("quote_sessions")
+            .select("*")
+            .eq("id", session.id)
+            .maybeSingle();
+          if (row) {
+            const current = {
+              id: row.id as string,
+              channel: row.channel as any,
+              conversationIds: (row.conversation_ids as string[]) ?? [],
+              fields: (row.fields as QuoteSessionFields) ?? {},
+              fieldStatus: (row.field_status as any) ?? {},
+              requiredRemaining: (row.required_remaining as string[]) ?? [],
+              quoteStatus: (row.quote_status as any) ?? "none",
+              bookingReady: !!row.booking_ready,
+            };
+            let next = current;
+            const wi = opts.windowIntent;
+            if (wi.windowCleaningScope && wi.windowCleaningScope !== current.fields.windowCleaningScope
+                && current.fields.windowCleaningScope) {
+              next = changeWindowScope(current, wi.windowCleaningScope);
+            }
+            const patch: Partial<QuoteSessionFields> = {};
+            if (wi.customerType) patch.customerType = wi.customerType;
+            if (wi.windowCleaningScope) patch.windowCleaningScope = wi.windowCleaningScope;
+            if (wi.windowCleaningSides) patch.windowCleaningSides = wi.windowCleaningSides;
+            if (wi.windowCount != null) patch.windowCount = wi.windowCount;
+            if (wi.partialAreas?.length) patch.partialAreas = wi.partialAreas;
+            if (wi.commercialPropertyType) patch.commercialPropertyType = wi.commercialPropertyType;
+            next = mergeSessionFields(next, patch);
+            // Compute partial-window price via the canonical rule when we have
+            // enough inputs. Never invoke for whole-home or commercial.
+            const f = next.fields;
+            if (
+              f.windowCleaningScope === "partial" &&
+              typeof f.windowCount === "number" &&
+              (f.windowCleaningSides === "outside_only" || f.windowCleaningSides === "inside_and_outside")
+            ) {
+              const pq = computePartialWindowPrice({
+                windowCount: f.windowCount,
+                sides: f.windowCleaningSides,
+              });
+              next = mergeSessionFields(next, {
+                partialWindowPrice: pq.price,
+                partialWindowRuleVersion: pq.ruleVersion,
+              });
+            }
+            const dbUpdate: Record<string, unknown> = {
+              fields: next.fields,
+              field_status: next.fieldStatus,
+            };
+            if (f.windowCleaningScope === "commercial_custom" || f.customerType === "commercial") {
+              dbUpdate.human_pricing_required = true;
+              dbUpdate.bid_request_status = "commercial_bid_requested";
+            }
+            await supabase.from("quote_sessions").update(dbUpdate).eq("id", session.id);
+          }
+        } catch (_e) { /* best-effort */ }
+      }
     } catch (_e) {
       // Non-fatal: canonical mirror is additive; primary write already committed.
     }
