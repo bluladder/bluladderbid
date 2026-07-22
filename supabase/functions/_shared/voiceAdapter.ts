@@ -14,9 +14,19 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   runOrchestrator,
+  streamKnowledgeReply,
+  buildVoiceSystemPrompt,
   type OrchestratorResult,
   type VoiceDisposition,
 } from "./aiOrchestrator.ts";
+import {
+  classifyVoiceRoute,
+  slowBranchAcknowledgement,
+  stripVoiceControlTags,
+  FLUSH_TAG,
+  type VoiceRoute,
+} from "./voiceFastPath.ts";
+import { makeClock, sessionHash, voiceLatencyEnabled, type VoiceLatencyEvent } from "./voiceLatencyMetrics.ts";
 
 /** Max accepted request body in bytes. Voice turns are short; anything
  *  substantially larger than this is either malformed or hostile. */
@@ -155,6 +165,170 @@ export function chunkReply(reply: string, chunkSize = 80): string[] {
   const s = reply || "";
   for (let i = 0; i < s.length; i += chunkSize) out.push(s.slice(i, i + chunkSize));
   return out.length ? out : [""];
+}
+
+// ---------------------------------------------------------------------------
+// Streaming adapter events. These are BluLadder-internal events; the transport
+// layer converts them into OpenAI-compatible chat.completion.chunk SSE frames.
+// ---------------------------------------------------------------------------
+export type VoiceStreamEvent =
+  | { type: "route"; route: VoiceRoute }
+  | { type: "role_delta" }
+  | { type: "text_delta"; text: string }
+  | { type: "acknowledgement"; text: string }
+  | { type: "tool_started"; tool: string }
+  | { type: "tool_completed"; tool: string }
+  | { type: "disposition"; disposition: VoiceDisposition | null }
+  | { type: "complete"; result: OrchestratorResult }
+  | { type: "error"; reasonCode: string };
+
+export interface VoiceStreamArgs {
+  supabase: SupabaseClient;
+  request: ParsedAdapterRequest;
+  conversationId?: string;
+  sessionToken?: string;
+  /** Called at each event. Return false to abort (transport disconnected). */
+  emit: (ev: VoiceStreamEvent) => void | boolean | Promise<void | boolean>;
+}
+
+/** True streaming voice run.
+ *
+ *  Fast knowledge lane: streams model tokens directly, emitting text_delta
+ *  events as they arrive from the AI gateway. This is real first-token
+ *  streaming and is the primary source of the latency improvement.
+ *
+ *  Full-orchestrator lane: emits a deterministic acknowledgement immediately
+ *  (followed by <flush /> so the provider speaks it right away), then awaits
+ *  runOrchestrator() and emits the final reply. Tool-loop turns cannot stream
+ *  underlying model tokens because tool_calls require the full completion. */
+export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
+  content: string;
+  action: AdapterAction;
+  orchestrator: OrchestratorResult;
+  route: VoiceRoute;
+  ackEmitted: boolean;
+}> {
+  const { supabase, request, emit } = args;
+  const conversationId = args.conversationId || request.sessionId;
+  const sessionToken = args.sessionToken || "";
+  const clock = makeClock();
+  const t0 = clock.mark();
+  const timings: VoiceLatencyEvent["t"] = { requestReceived: 0 };
+  const emitEv = async (ev: VoiceStreamEvent) => { try { await emit(ev); } catch { /* transport */ } };
+
+  // Extract last user message + history exactly as the non-streaming path does.
+  const nonSystem = request.messages.filter((m) => m.role !== "system" && m.role !== "tool");
+  let lastUserIdx = -1;
+  for (let i = nonSystem.length - 1; i >= 0; i--) if (nonSystem[i].role === "user") { lastUserIdx = i; break; }
+  const history = lastUserIdx >= 0
+    ? nonSystem.slice(0, lastUserIdx).map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+    : [];
+  const userMessage = lastUserIdx >= 0 ? nonSystem[lastUserIdx].content : "";
+
+  const route = classifyVoiceRoute(userMessage);
+  await emitEv({ type: "route", route });
+  await emitEv({ type: "role_delta" });
+  timings.firstRoleDelta = clock.since(t0);
+
+  let ackEmitted = false;
+  let accumulated = "";
+  let orchestrator: OrchestratorResult | null = null;
+
+  if (route.type === "fast_knowledge") {
+    // Stream directly from the gateway using the SAME authoritative system
+    // prompt (plus voice-response contract). No tools are exposed here.
+    try {
+      // Use empty facts / neutral state for the knowledge lane; if the model
+      // decides the answer needs business data, fall-closed guidance in the
+      // prompt keeps it from inventing.
+      const system = await buildVoiceSystemPrompt(supabase, "new", {} as any);
+      timings.modelRequestStarted = clock.since(t0);
+      for await (const chunk of streamKnowledgeReply(system, userMessage, history)) {
+        if (chunk.kind === "error") {
+          // Fall through to full orchestrator on any error.
+          break;
+        }
+        if (timings.firstModelToken === undefined) timings.firstModelToken = clock.since(t0);
+        if (timings.firstContentDelta === undefined) timings.firstContentDelta = clock.since(t0);
+        accumulated += chunk.text;
+        await emitEv({ type: "text_delta", text: chunk.text });
+      }
+    } catch { /* fall through to full path */ }
+    if (accumulated.trim().length === 0) {
+      // Fast-path yielded nothing (auth/env/error). Fall to full orchestrator.
+      orchestrator = await runOrchestrator({ supabase, conversationId, sessionToken, channel: "voice", history, userMessage });
+      accumulated = orchestrator.reply;
+      await emitEv({ type: "text_delta", text: accumulated });
+    } else {
+      // Synthesize a minimal OrchestratorResult so the transport layer still
+      // has a disposition to work with. The fast lane never invokes tools.
+      orchestrator = {
+        reply: accumulated,
+        toolEvents: [],
+        events: ["voice_fast_path"],
+        state: "new",
+        voice: { type: "speak" },
+      };
+    }
+    timings.orchestratorCompleted = clock.since(t0);
+  } else {
+    // Slow lane: emit deterministic acknowledgement (with <flush /> so the
+    // TTS provider speaks it immediately), then run full orchestrator.
+    const ack = slowBranchAcknowledgement(route.reason);
+    if (ack) {
+      const delta = `${ack} ${FLUSH_TAG} `;
+      ackEmitted = true;
+      await emitEv({ type: "acknowledgement", text: ack });
+      await emitEv({ type: "text_delta", text: delta });
+      if (timings.firstContentDelta === undefined) timings.firstContentDelta = clock.since(t0);
+    }
+    timings.orchestratorInvoked = clock.since(t0);
+    orchestrator = await runOrchestrator({ supabase, conversationId, sessionToken, channel: "voice", history, userMessage });
+    timings.orchestratorCompleted = clock.since(t0);
+    // The final reply follows the acknowledgement. If the ack accidentally
+    // duplicates the opening of the orchestrator's reply, avoid saying it
+    // twice.
+    let finalReply = orchestrator.reply || "";
+    if (ack && finalReply.trim().toLowerCase().startsWith(ack.trim().toLowerCase())) {
+      finalReply = finalReply.slice(ack.length).replace(/^[\s,.:;-]+/, "");
+    }
+    accumulated = ack ? `${ack} ${finalReply}` : finalReply;
+    if (finalReply) await emitEv({ type: "text_delta", text: finalReply });
+  }
+
+  const disposition = orchestrator?.voice ?? null;
+  await emitEv({ type: "disposition", disposition });
+  if (orchestrator) await emitEv({ type: "complete", result: orchestrator });
+  timings.finalSseEvent = clock.since(t0);
+  timings.total = timings.finalSseEvent;
+
+  // Sanitized latency log (feature-flagged; never emits content or PII).
+  if (voiceLatencyEnabled()) {
+    try {
+      const hash = await sessionHash(request.sessionId);
+      const ev: VoiceLatencyEvent = {
+        at: "voice-latency",
+        sessionHash: hash,
+        channel: "voice",
+        route: route.type === "fast_knowledge" ? "fast_knowledge" : "full_orchestrator",
+        intentCategory: route.type === "fast_knowledge" ? route.category : route.reason,
+        ackEmitted,
+        toolInvoked: (orchestrator?.toolEvents?.length ?? 0) > 0,
+        dispositionType: disposition?.type ?? null,
+        errorCategory: orchestrator?.error ?? null,
+        t: timings,
+      };
+      console.log(JSON.stringify(ev));
+    } catch { /* never throw from telemetry */ }
+  }
+
+  const action = mapDispositionToAction(disposition);
+  // Persisted / analytics text MUST NOT contain SSE flush/break tags.
+  const cleanContent = stripVoiceControlTags(accumulated);
+  const cleanResult: OrchestratorResult = orchestrator
+    ? { ...orchestrator, reply: stripVoiceControlTags(orchestrator.reply || "") }
+    : { reply: cleanContent, toolEvents: [], events: [], state: "new", voice: null };
+  return { content: cleanContent, action, orchestrator: cleanResult, route, ackEmitted };
 }
 
 export function buildNonStreamingResponse(model: string, completion: AdapterCompletion): Response {
