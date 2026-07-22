@@ -5269,6 +5269,7 @@ export type Database = {
         | "cancelled"
         | "inbound"
         | "processing"
+        | "accepted"
       sms_trigger_event:
         | "quote_created"
         | "appointment_scheduled"
@@ -5459,6 +5460,7 @@ export const Constants = {
         "cancelled",
         "inbound",
         "processing",
+        "accepted",
       ],
       sms_trigger_event: [
         "quote_created",
