@@ -23,6 +23,7 @@ import {
   quoteInputsKey,
   stateDirective,
 } from "./conversationState.ts";
+import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
@@ -165,6 +166,12 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+  // Admin-controlled weather advisory. When status is "normal" this returns
+  // "" so the base prompt is unchanged. When the team flips the status the
+  // AI is required to relay admin-authored copy verbatim rather than guess
+  // about weather, delays, or reschedules.
+  const weather = await loadWeatherStatus(supabase);
+  const weatherDirective = renderWeatherDirective(weather);
   return [
     BASE_PROMPT,
     "",
@@ -172,11 +179,13 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
     "",
     `CONTACT DIRECTIVE: BluLadder's office number is ${office.display}. This is the ONLY phone number you may give a customer (for "call our office", human escalation, complaints, or scheduling help). Never share any other number.`,
     "",
+    weatherDirective ? weatherDirective : "",
+    weatherDirective ? "" : "",
     "APPROVED BUSINESS FACTS (the only facts you may assert):",
     knowledge || "- (none configured yet)",
     "",
     stateDirective(state as any, facts),
-  ].join("\n");
+  ].filter((line) => line !== null).join("\n");
 }
 
 // Milestone states worth (re)summarizing for the admin dashboard. We do NOT
