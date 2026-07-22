@@ -6,6 +6,7 @@ import { checkSuppression } from "../_shared/suppression.ts";
 import { runAbandonmentSweep, recoverPendingCampaignEvents, runPersistedQuoteAbandonmentSweep, runFollowUpCompletionSweep } from "../_shared/campaignSweep.ts";
 import { getSenderConfig } from "../_shared/emailConfig.ts";
 import { processDueCallRailRetries } from "../_shared/callrailEventProcessor.ts";
+import { runPostServiceEducationSweep, runMaintenanceOpportunitySweep } from "../_shared/postServiceSweeps.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
