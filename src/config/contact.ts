@@ -11,7 +11,6 @@
 export type PhonePurpose =
   | 'primary_public' // General public / "Call BluLadder" / office escalation
   | 'app_ai' // BluLadder Bid app + AI-chat transactional texting
-  | 'responsibid' // ResponsiBid integration ONLY — never the primary contact
   | 'escalation_sender';
 
 export interface PhoneEntry {
@@ -22,6 +21,20 @@ export interface PhoneEntry {
   /** Safe to show to customers as a contact number. */
   isPublic: boolean;
 }
+
+// Numbers that were once wired into BluLadder Bid but have been retired from
+// active use. They MUST NOT resolve as primary/public/AI/SMS/booking/transfer
+// numbers. Kept only for defense-in-depth redaction in prompts and logs so a
+// stale knowledge row or historical transcript cannot leak them.
+export const RETIRED_PHONE_NUMBERS: ReadonlyArray<{ e164: string; display: string; reason: string }> = [
+  {
+    e164: '+14692426556',
+    display: '(469) 242-6556',
+    // Former ResponsiBid integration line. BluLadder Bid no longer uses it
+    // for voice, SMS, transfer, booking, support, or public display.
+    reason: 'retired_responsibid',
+  },
+];
 
 /** Approved fallback mapping. Mirrors the seeded `phone_numbers` rows. */
 export const PHONE_FALLBACK: Record<PhonePurpose, PhoneEntry> = {
@@ -40,13 +53,6 @@ export const PHONE_FALLBACK: Record<PhonePurpose, PhoneEntry> = {
     e164: '+14697472877',
     display: '(469) 747-2877',
     label: 'BluLadder Bid',
-    isPublic: false,
-  },
-  responsibid: {
-    purpose: 'responsibid',
-    e164: '+14692426556',
-    display: '(469) 242-6556',
-    label: 'ResponsiBid',
     isPublic: false,
   },
   escalation_sender: {
