@@ -714,15 +714,26 @@ function persistFacts(
   if (c.name) update.prospect_name = c.name;
   if (c.email) update.prospect_email = c.email;
   if (c.phone) update.prospect_phone = c.phone;
-  if (opts?.channel === "voice") {
-    return supabase
-      .from("chat_conversations")
-      .upsert({ id: conversationId, session_token: opts.sessionToken || conversationId, channel: "voice", ...update }, { onConflict: "id" });
-  }
-  return supabase
-    .from("chat_conversations")
-    .update(update)
-    .eq("id", conversationId);
+  const write = opts?.channel === "voice"
+    ? supabase
+        .from("chat_conversations")
+        .upsert({ id: conversationId, session_token: opts.sessionToken || conversationId, channel: "voice", ...update }, { onConflict: "id" })
+    : supabase.from("chat_conversations").update(update).eq("id", conversationId);
+  // Mirror facts into the canonical Quote Session (Phase 4C-β.4). Best-effort:
+  // failures here must not break the primary conversation write.
+  return Promise.resolve(write).then(async () => {
+    try {
+      const session = await findOrCreateQuoteSession(supabase, {
+        conversationId,
+        channel: (opts?.channel ?? "web") as "voice" | "web" | "sms",
+        phone: facts.contact?.phone ?? null,
+        email: facts.contact?.email ?? null,
+      });
+      if (session?.id) await syncQuoteSession(supabase, session.id, facts);
+    } catch (_e) {
+      // Non-fatal: canonical mirror is additive; primary write already committed.
+    }
+  });
 }
 
 export async function runOrchestrator(input: OrchestratorInput): Promise<OrchestratorResult> {
