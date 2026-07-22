@@ -9,7 +9,9 @@ import {
   guardConfirmedLanguage,
   resolveUnambiguousOfferedSlot,
   textAssertsConfirmed,
+  shouldSkipRoughQuoteReplay,
 } from "./aiOrchestrator.ts";
+import { quoteInputsKey } from "./conversationState.ts";
 
 Deno.test("textAssertsConfirmed matches common confirmation phrasings", () => {
   assert(textAssertsConfirmed("You're all booked for Tuesday at 9am."));
@@ -38,6 +40,55 @@ Deno.test("guardConfirmedLanguage passes through non-confirmation replies", () =
   const facts = { bookingStatus: "none" } as any;
   const reply = "Would you like me to book Tuesday at 9am?";
   assertEquals(guardConfirmedLanguage(reply, facts, false), reply);
+});
+
+// -----------------------------------------------------------------------
+// Regression: voice rough-quote rail must not re-speak the estimate on
+// scheduling intents. Reproduces call 019f8b20-2417-7ffe-a4cf-ea1245f821a6.
+// -----------------------------------------------------------------------
+function factsWithCurrentQuote(): any {
+  const f: any = {
+    services: ["window_cleaning"],
+    property: { squareFootage: 2200, stories: 2, windowCleaningType: "exterior" },
+    roughQuote: { intent: true, city: "Frisco", cityStatus: "normal_service_city" },
+  };
+  f.quote = {
+    status: "estimated",
+    firm: false,
+    total: 185,
+    inputsKey: quoteInputsKey(f),
+  };
+  return f;
+}
+
+Deno.test("rough-quote replay guard: skips on scheduling intent after quote", () => {
+  const f = factsWithCurrentQuote();
+  for (const msg of [
+    "when are you available?",
+    "Can I get on the schedule?",
+    "what do you have this week",
+    "book me for Tuesday",
+    "yes",
+  ]) {
+    assert(shouldSkipRoughQuoteReplay(f, msg), `expected skip for: ${msg}`);
+  }
+});
+
+Deno.test("rough-quote replay guard: re-runs when customer explicitly asks for the price again", () => {
+  const f = factsWithCurrentQuote();
+  for (const msg of [
+    "what was the price again?",
+    "can you remind me of the quote?",
+    "how much did you say?",
+    "what's the estimate?",
+  ]) {
+    assert(!shouldSkipRoughQuoteReplay(f, msg), `expected re-run for: ${msg}`);
+  }
+});
+
+Deno.test("rough-quote replay guard: no current quote → do not skip (rail may quote for the first time)", () => {
+  const f: any = { services: ["window_cleaning"], roughQuote: { intent: true } };
+  assert(!shouldSkipRoughQuoteReplay(f, "when are you available?"));
 });
 
 // Minimal supabase stub — only the shape resolveUnambiguousOfferedSlot uses.
