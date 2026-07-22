@@ -325,16 +325,22 @@ export async function runControllerTurn(
   if (workflow === "cancel_or_reschedule") {
     return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action: { kind: "handoff", reason: "out_of_scope_workflow" }, spoken: speakForFsm({ kind: "handoff", reason: "out_of_scope_workflow" }) } };
   }
+  // In this controlled rollout slice the controller ONLY owns the pre-quote
+  // preface (caller-ID confirmation + returning-customer resolution +
+  // greeting). Fact extraction, pricing, and scheduling remain the legacy
+  // orchestrator's responsibility so real callers still complete an
+  // end-to-end quote and booking. Handoff/end are the only FSM actions we
+  // still voice locally, because they are terminal.
   const pricingMissing = await probePricingMissing(input.supabase, session);
   const action = decideResidentialQuoteAction(session, pricingMissing);
-  if (isDelegated(action)) {
-    return { sessionId: session.id, sessionPatch, pre: { kind: "delegate_legacy" } };
+  if (action.kind === "handoff" || action.kind === "end") {
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: { kind: "fsm", action, spoken: speakForFsm(action) },
+    };
   }
-  return {
-    sessionId: session.id,
-    sessionPatch,
-    pre: { kind: "fsm", action, spoken: speakForFsm(action) },
-  };
+  return { sessionId: session.id, sessionPatch, pre: { kind: "delegate_legacy" } };
 }
 
 /** Persist the sessionPatch returned by runControllerTurn. Safe no-op when
