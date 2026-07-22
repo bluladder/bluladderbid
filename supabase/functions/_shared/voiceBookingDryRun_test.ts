@@ -34,7 +34,7 @@ Deno.test("voice channel: create_bluladder_booking returns dry-run without any n
     return new Response("{}", { status: 200 });
   };
   try {
-    const result = await runTool(ctx, "create_bluladder_booking", {
+    const result = await runTool("create_bluladder_booking", ctx, {
       confirmed: true,
       slotId: "slot_xyz",
       address: "123 Test St",
