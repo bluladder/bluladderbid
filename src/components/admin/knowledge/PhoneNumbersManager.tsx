@@ -24,9 +24,12 @@ interface PhoneRow {
 const PURPOSE_LABEL: Record<string, string> = {
   primary_public: 'Primary public (Call BluLadder / office)',
   app_ai: 'BluLadder Bid / AI app + transactional SMS',
-  responsibid: 'ResponsiBid integration only',
   escalation_sender: 'Internal escalation sender',
 };
+
+// Purposes retired from active BluLadder Bid use. Never shown as selectable
+// or editable in the admin UI even if a legacy row still exists in the DB.
+const RETIRED_PURPOSES = new Set<string>(['responsibid']);
 
 export function PhoneNumbersManager() {
   const { toast } = useToast();
@@ -37,7 +40,10 @@ export function PhoneNumbersManager() {
   const load = async () => {
     setLoading(true);
     const { data } = await supabase.from('phone_numbers').select('*').order('purpose');
-    setRows((data as PhoneRow[]) ?? []);
+    const rows = (data as PhoneRow[]) ?? [];
+    // Hide retired purposes from the admin editor entirely. They are managed
+    // by migration and must not become primary/public/transferable again.
+    setRows(rows.filter((r) => !RETIRED_PURPOSES.has(r.purpose)));
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -99,7 +105,6 @@ export function PhoneNumbersManager() {
                   <label className="flex items-center gap-2 text-xs">
                     <Switch
                       checked={cur.is_public}
-                      disabled={row.purpose === 'responsibid'}
                       onCheckedChange={(v) => set(row.id, 'is_public', v)}
                     /> Customer-facing
                   </label>

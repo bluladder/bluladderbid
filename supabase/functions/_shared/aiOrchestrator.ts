@@ -12,7 +12,7 @@
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runTool, TOOL_DEFINITIONS, type ToolContext } from "./aiTools.ts";
-import { getPhoneByPurpose } from "./phoneConfig.ts";
+import { getPhoneByPurpose, RETIRED_PHONE_NUMBERS } from "./phoneConfig.ts";
 import { classifyInboundIntent } from "./bookingIntent.ts";
 import {
   type ConversationFacts,
@@ -142,14 +142,14 @@ async function buildSystemPrompt(supabase: SupabaseClient, state: string, facts:
     .order("sort_order");
   // Centralized, purpose-based contact number (never hard-coded in prompts).
   const office = await getPhoneByPurpose(supabase, "primary_public");
-  const responsibid = await getPhoneByPurpose(supabase, "responsibid");
-  // Defense-in-depth: even if a knowledge row still contains a non-public number
-  // (e.g. the ResponsiBid integration number), redact it so it can never be
-  // surfaced to a customer. The office number is injected via the directive.
+  // Defense-in-depth: even if a knowledge row still contains a retired number
+  // (e.g. the former ResponsiBid integration line), redact it so it can never
+  // be surfaced to a customer. The office number is injected via the directive.
   const redact = (s: string): string => {
     let out = s;
-    for (const bad of [responsibid.e164, responsibid.display]) {
-      if (bad) out = out.split(bad).join("[the BluLadder office number]");
+    for (const r of RETIRED_PHONE_NUMBERS) {
+      if (r.e164) out = out.split(r.e164).join("[the BluLadder office number]");
+      if (r.display) out = out.split(r.display).join("[the BluLadder office number]");
     }
     return out;
   };
