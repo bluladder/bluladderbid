@@ -114,20 +114,14 @@ export default function MyAppointments() {
     }
   }
 
-  // ---- Email OTP fallback via Supabase Auth ------------------------------
-  // Uses supabase.auth.signInWithOtp({ email }) — no password, no marketing
-  // consent. Once Supabase Auth verifies the code, we hand the resulting
-  // access token to customer-verification-email-confirm, which resolves an
-  // unambiguous internal customer match server-side and issues a portal
-  // session identical to the phone flow.
+  // ---- Email OTP fallback ------------------------------------------------
+  // Same backend challenge/session path as SMS; no password, no marketing
+  // consent, no typed email trusted until the one-time code is verified.
   async function requestEmailCode() {
     if (!email.trim()) return;
     setLoading(true);
     try {
-      await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: { shouldCreateUser: true },
-      });
+      await supabase.functions.invoke('customer-verification-request', { body: { email: email.trim() } });
       toast({
         title: 'Check your email',
         description: 'If that address is reachable, we sent a 6-digit code. It expires shortly.',
@@ -146,21 +140,9 @@ export default function MyAppointments() {
     if (!/^\d{6}$/.test(emailCode)) return;
     setLoading(true);
     try {
-      const { data: verify, error } = await supabase.auth.verifyOtp({
-        email: email.trim(),
-        token: emailCode,
-        type: 'email',
+      const { data: res } = await supabase.functions.invoke('customer-verification-confirm', {
+        body: { email: email.trim(), code: emailCode },
       });
-      if (error || !verify?.session) {
-        toast({ title: 'Invalid or expired code', description: 'Please try again.', variant: 'destructive' });
-        return;
-      }
-      const { data: res } = await supabase.functions.invoke('customer-verification-email-confirm', {
-        headers: { authorization: `Bearer ${verify.session.access_token}` },
-      });
-      // Immediately drop the transient Supabase Auth session — we only used
-      // it to prove email ownership; the portal session is memory-only.
-      await supabase.auth.signOut();
       if (res?.verified && !res?.guest) {
         if (res.session_token) writePortalToken(res.session_token as string);
         await refreshPortalData();
