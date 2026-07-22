@@ -28,6 +28,12 @@ const CRITICAL_FUNCTIONS = [
   'save-quote',
   'jobber-availability',
   'calculate-quote',
+  // `jobber-autosync` isn't called by the browser, but the customer-facing
+  // availability path fails closed when its mirror goes stale. Turn 2 outage:
+  // pg_cron kept firing but every invocation hit 404 NOT_FOUND_FUNCTION_BLOB,
+  // so the mirror aged past the freshness threshold and every quote saw the
+  // "Live scheduling is temporarily unavailable" fallback. Guard the deploy.
+  'jobber-autosync',
 ] as const;
 
 const enabled = process.env.RUN_EDGE_SMOKE === '1';
