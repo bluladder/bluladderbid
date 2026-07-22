@@ -107,16 +107,17 @@ function StepRow({
   const commitEdu = (patch: Partial<EducationalStepContent>) => {
     const next = { ...eduCfg, ...patch } as EducationalStepContent;
     setEduCfg(next);
+    const nextRecord = next as unknown as Record<string, unknown>;
     // Only re-render when the minimum required fields are present.
     if (!next.subject || !next.body || !next.cta_label || !next.cta_url || !next.fallback_copy) {
-      onUpdate(step.id, { content_config: next });
+      onUpdate(step.id, { content_config: nextRecord });
       return;
     }
     const rendered = renderEducationalEmail(next);
     setSubject(rendered.subject);
     setBody(rendered.body);
     onUpdate(step.id, {
-      content_config: next,
+      content_config: nextRecord,
       subject: rendered.subject,
       body_template: rendered.body,
     });
