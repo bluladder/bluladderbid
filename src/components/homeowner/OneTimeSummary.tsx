@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Calendar, Download, Check, Sparkles, Loader2, Info, HelpCircle, Bookmark, Mail } from 'lucide-react';
+import { Calendar, Download, Check, Sparkles, Loader2, Info, HelpCircle, Bookmark, Mail, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -62,11 +62,16 @@ export function OneTimeSummary({
 }: OneTimeSummaryProps) {
   const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
   const [showBookingFlow, setShowBookingFlow] = useState(false);
-  const [saveDialogAction, setSaveDialogAction] = useState<null | 'save' | 'email'>(null);
+  const [saveDialogAction, setSaveDialogAction] = useState<null | 'save' | 'email' | 'text'>(null);
   const [saveEmail, setSaveEmail] = useState(prefillCustomerInfo?.email ?? '');
   const [saveFirstName, setSaveFirstName] = useState(prefillCustomerInfo?.firstName ?? '');
+  const [savePhone, setSavePhone] = useState(prefillCustomerInfo?.phone ?? '');
   const [saveSubmitting, setSaveSubmitting] = useState(false);
   const [savedQuoteUrl, setSavedQuoteUrl] = useState<string | null>(null);
+  const [deliveryStatus, setDeliveryStatus] = useState<null | { channel: 'email' | 'text'; masked: string }>(null);
+  // Idempotency guard: remember exact (channel, normalized destination) pairs
+  // already delivered for this quote so retries don't fire duplicate sends.
+  const [deliveredKeys, setDeliveredKeys] = useState<Set<string>>(() => new Set());
 
   // Let the page know whether the booking flow is taking over the view.
   useEffect(() => {
@@ -91,24 +96,51 @@ export function OneTimeSummary({
   const serverDiscountAmount = quote?.discount?.amount ?? 0;
   const canBook = isFirm && typeof total === 'number';
 
-  const handleSaveOrEmail = async () => {
+  const handleDelivery = async () => {
     if (!saveDialogAction || !quote || typeof total !== 'number') return;
     const email = saveEmail.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       toast.error('Please enter a valid email address.');
       return;
     }
+    // For SMS delivery we require a mobile number; validate before persisting.
+    let normalizedPhone: string | null = null;
+    if (saveDialogAction === 'text') {
+      normalizedPhone = normalizePhoneForBid(savePhone);
+      if (!normalizedPhone) {
+        toast.error('Please enter a valid 10-digit mobile number.');
+        return;
+      }
+    }
+
+    const dedupeKey =
+      saveDialogAction === 'text' ? `text:${normalizedPhone}`
+      : saveDialogAction === 'email' ? `email:${email}`
+      : null;
+    if (dedupeKey && deliveredKeys.has(dedupeKey)) {
+      // Same destination already delivered for this quote — no duplicate send.
+      toast.info(saveDialogAction === 'text'
+        ? 'Bid already texted to that number.'
+        : 'Bid already emailed to that address.');
+      setSaveDialogAction(null);
+      return;
+    }
+
     setSaveSubmitting(true);
     try {
       const attribution = readAttribution();
       const services = quote.lineItems.map((li) => ({ key: li.key, name: li.label, amount: li.amount }));
+      // 'text' action reuses the save persistence path so we get the SAME
+      // quote row + resume token as email; SMS delivery is a follow-up
+      // invocation of the existing transactional sender.
+      const saveAction: 'save' | 'email' = saveDialogAction === 'email' ? 'email' : 'save';
       const { data, error } = await supabase.functions.invoke('save-quote', {
         body: {
-          action: saveDialogAction,
+          action: saveAction,
           email,
           firstName: saveFirstName || prefillCustomerInfo?.firstName || null,
           lastName: prefillCustomerInfo?.lastName || null,
-          phone: prefillCustomerInfo?.phone || null,
+          phone: normalizedPhone || prefillCustomerInfo?.phone || null,
           total,
           subtotal: quote.subtotal,
           services,
@@ -123,16 +155,33 @@ export function OneTimeSummary({
         },
       });
       if (error) throw error;
-      const resp = data as { quoteUrl?: string; emailStatus?: string } | null;
+      const resp = data as { quoteId?: string; quoteUrl?: string; emailStatus?: string } | null;
       setSavedQuoteUrl(resp?.quoteUrl ?? null);
-      if (saveDialogAction === 'email') {
-        toast.success(resp?.emailStatus === 'sent' ? 'Bid emailed — check your inbox.' : 'Bid saved. Email couldn\u2019t be sent right now, but your link is safe.');
+
+      if (saveDialogAction === 'text' && resp?.quoteId && normalizedPhone) {
+        const { error: smsErr } = await supabase.functions.invoke('send-sms', {
+          body: { eventType: 'quote_created', quoteId: resp.quoteId },
+        });
+        if (smsErr) throw smsErr;
+        const masked = maskPhone(normalizedPhone);
+        setDeliveryStatus({ channel: 'text', masked });
+        setDeliveredKeys((prev) => new Set(prev).add(dedupeKey!));
+        toast.success(`Bid texted to ${masked}.`);
+      } else if (saveDialogAction === 'email') {
+        const masked = maskEmail(email);
+        if (resp?.emailStatus === 'sent') {
+          setDeliveryStatus({ channel: 'email', masked });
+          setDeliveredKeys((prev) => new Set(prev).add(dedupeKey!));
+          toast.success(`Bid emailed to ${masked}.`);
+        } else {
+          toast.error('Bid saved, but the email didn’t go through. Please retry or use a different address.');
+        }
       } else {
         toast.success('Bid saved for 30 days.');
       }
       setSaveDialogAction(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Something went wrong saving this bid.');
+      toast.error(e instanceof Error ? e.message : 'Something went wrong sending this bid. Please retry.');
     } finally {
       setSaveSubmitting(false);
     }
