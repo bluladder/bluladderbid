@@ -320,7 +320,23 @@ serve(async (req) => {
   const quoteUrl = minted?.resumeUrl ?? `${getAppUrl()}/quote/${quoteId}`;
 
   // 3) Optional email send. Failure here still returns the saved quote.
-  let emailStatus: "sent" | "skipped" | "failed" = "skipped";
+  //
+  // Status semantics — DO NOT collapse:
+  //   "accepted"   -> Resend returned 2xx AND surfaced a provider message id.
+  //                   Delivery is not yet confirmed; a subsequent webhook
+  //                   (resend-webhook) will flip the attempt to
+  //                   "delivered" / "bounced" / "complained".
+  //   "suppressed" -> Recipient is on our pre-send suppression list, OR the
+  //                   provider immediately reported suppression.
+  //   "failed"     -> Submission failed OR a 2xx returned no provider id.
+  //   "skipped"    -> action !== "email" (no attempt made).
+  //
+  // Every intentional send attempt is persisted to public.email_send_attempts
+  // as its own row so retries / corrected destinations remain auditable.
+  let emailStatus: "accepted" | "failed" | "suppressed" | "skipped" = "skipped";
+  let providerMessageId: string | null = null;
+  let emailFailureReason: string | null = null;
+  let emailAttemptId: string | null = null;
   if (action === "email") {
     const res = await sendEmail({
       to: email,
@@ -333,7 +349,42 @@ serve(async (req) => {
         expiresAt: expiresAtIso,
       }),
     });
-    emailStatus = res.ok ? "sent" : "failed";
+    const nowAttempt = new Date().toISOString();
+    if (res.ok && res.providerMessageId) {
+      emailStatus = "accepted";
+      providerMessageId = res.providerMessageId;
+    } else if (res.failure?.category === "suppressed") {
+      emailStatus = "suppressed";
+      emailFailureReason = res.failure.message;
+    } else {
+      // Includes: 2xx-without-id, network_error, provider_rejected,
+      // sender_not_verified, invalid_recipient, rate_limited, etc.
+      emailStatus = "failed";
+      emailFailureReason = res.failure?.message ?? "No provider message id was returned.";
+    }
+    const { data: attempt } = await supabase
+      .from("email_send_attempts")
+      .insert({
+        quote_id: quoteId,
+        template: "save-quote",
+        recipient_email: email,
+        provider: "resend",
+        provider_message_id: providerMessageId,
+        status: emailStatus,
+        failure_category: res.failure?.category ?? null,
+        failure_reason: emailFailureReason,
+        http_status: res.httpStatus,
+        source_session_id: sessionId,
+        submitted_at: nowAttempt,
+        accepted_at: emailStatus === "accepted" ? nowAttempt : null,
+        suppressed_at: emailStatus === "suppressed" ? nowAttempt : null,
+        last_event_at: nowAttempt,
+        last_event_type: emailStatus === "accepted" ? "submitted" : emailStatus,
+        metadata: { from: res.from, reply_to: res.replyTo },
+      })
+      .select("id")
+      .single();
+    emailAttemptId = (attempt as { id?: string } | null)?.id ?? null;
   }
 
   // 4) Emit the canonical firm-quote event so first-touch attribution and
@@ -372,5 +423,14 @@ serve(async (req) => {
     console.warn("save-quote: quote_calculated emit failed:", e instanceof Error ? e.message : e);
   }
 
-  return json(200, { quoteId, quoteUrl, expiresAt: expiresAtIso, status, emailStatus });
+  return json(200, {
+    quoteId,
+    quoteUrl,
+    expiresAt: expiresAtIso,
+    status,
+    emailStatus,
+    providerMessageId,
+    emailAttemptId,
+    emailFailureReason,
+  });
 });

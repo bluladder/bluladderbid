@@ -10,6 +10,7 @@
 // ============================================================================
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { recordSuppression, type SuppressionReason } from "../_shared/emailSuppression.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
 
@@ -75,6 +76,33 @@ function mapEventType(type: string): SuppressionReason | null {
   return null;
 }
 
+// Which attempt-status a Resend event maps to when we can correlate by
+// provider_message_id. `null` means: ignore (informational-only event like
+// email.sent / email.opened / email.clicked).
+function mapEventToAttemptStatus(type: string):
+  | { status: "delivered" | "bounced" | "complained" | "suppressed"; column: string }
+  | null
+{
+  const t = type.toLowerCase();
+  if (t === "email.delivered")   return { status: "delivered",  column: "delivered_at"  };
+  if (t === "email.bounced" || t === "email.hard_bounced")
+                                 return { status: "bounced",    column: "bounced_at"    };
+  if (t === "email.complained")  return { status: "complained", column: "complained_at" };
+  // Resend surfaces suppressed sends via "email.failed" with a suppression
+  // reason in most payloads; treat any explicit suppressed/failed marker as
+  // suppressed on the attempt row.
+  if (t === "email.failed")      return { status: "suppressed", column: "suppressed_at" };
+  return null;
+}
+
+// deno-lint-ignore no-explicit-any
+function serviceClient(): any {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false } });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -101,25 +129,54 @@ Deno.serve(async (req) => {
   try { payload = JSON.parse(raw); } catch { return json({ error: "invalid_json" }, 400); }
 
   const type = String(payload?.type ?? "");
-  const reason = mapEventType(type);
-  if (!reason) return json({ ok: true, ignored: true, type });
-
   const data = payload?.data ?? {};
+  const providerMessageId: string | null =
+    typeof data?.email_id === "string" ? data.email_id
+    : typeof data?.id === "string" ? data.id
+    : null;
   const recipients: string[] = Array.isArray(data?.to)
     ? data.to.map((x: unknown) => String(x))
     : data?.email ? [String(data.email)] : [];
 
-  const results: Array<{ email: string; ok: boolean; error?: string }> = [];
-  for (const to of recipients) {
-    const r = await recordSuppression({
-      email: to,
-      reason,
-      source: "resend-webhook",
-      providerEventId: svixId,
-      notes: type,
-    });
-    results.push({ email: to, ...r });
+  // (a) Update the correlated email_send_attempts row (if we can find it).
+  const attemptTransition = mapEventToAttemptStatus(type);
+  let attemptUpdated = false;
+  if (attemptTransition && providerMessageId) {
+    const supabase = serviceClient();
+    if (supabase) {
+      const patch: Record<string, unknown> = {
+        status: attemptTransition.status,
+        last_event_at: new Date().toISOString(),
+        last_event_type: type,
+      };
+      patch[attemptTransition.column] = new Date().toISOString();
+      if (attemptTransition.status !== "delivered") {
+        patch.failure_reason = String(data?.reason ?? data?.bounce?.message ?? type);
+      }
+      const { error } = await supabase
+        .from("email_send_attempts")
+        .update(patch)
+        .eq("provider_message_id", providerMessageId);
+      attemptUpdated = !error;
+    }
   }
 
-  return json({ ok: true, type, reason, results });
+  // (b) For bounce/complaint/unsubscribe, keep the pre-send suppression gate
+  // authoritative so future sends short-circuit before touching Resend.
+  const reason = mapEventType(type);
+  const results: Array<{ email: string; ok: boolean; error?: string }> = [];
+  if (reason) {
+    for (const to of recipients) {
+      const r = await recordSuppression({
+        email: to,
+        reason,
+        source: "resend-webhook",
+        providerEventId: svixId,
+        notes: type,
+      });
+      results.push({ email: to, ...r });
+    }
+  }
+
+  return json({ ok: true, type, reason, attemptUpdated, results });
 });

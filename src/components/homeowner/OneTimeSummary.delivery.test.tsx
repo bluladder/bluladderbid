@@ -100,9 +100,14 @@ describe('OneTimeSummary — email + text delivery', () => {
     expect(bookNow.className).toMatch(/btn-primary/);
   });
 
-  it('email delivery reuses save-quote and shows masked destination', async () => {
+  it('email delivery reuses save-quote and shows masked destination as accepted (not delivered)', async () => {
     invokeMock.mockResolvedValueOnce({
-      data: { quoteId: 'q-1', quoteUrl: 'https://x/resume', emailStatus: 'sent' },
+      data: {
+        quoteId: 'q-1',
+        quoteUrl: 'https://x/resume',
+        emailStatus: 'accepted',
+        providerMessageId: 'resend-msg-1',
+      },
       error: null,
     });
     renderSummary();
@@ -112,7 +117,49 @@ describe('OneTimeSummary — email + text delivery', () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
     expect(invokeMock.mock.calls[0][0]).toBe('save-quote');
     expect(invokeMock.mock.calls[0][1].body.action).toBe('email');
-    expect(await screen.findByTestId('delivery-success')).toHaveTextContent(/ja[•]+@example\.com/);
+    const status = await screen.findByTestId('delivery-success');
+    // Masked destination is present…
+    expect(status.textContent).toMatch(/ja[•]+@example\.com/);
+    // …and wording claims acceptance for delivery, NOT delivery/sent.
+    expect(status.textContent).toMatch(/accepted for delivery/i);
+    expect(status.textContent).not.toMatch(/delivered/i);
+    expect(status.textContent).not.toMatch(/sent successfully/i);
+  });
+
+  it('suppressed emailStatus surfaces a corrective error and does NOT show delivery success', async () => {
+    invokeMock.mockResolvedValueOnce({
+      data: {
+        quoteId: 'q-2',
+        quoteUrl: 'https://x/resume',
+        emailStatus: 'suppressed',
+        emailFailureReason: 'Recipient is on the email suppression list (bounced).',
+      },
+      error: null,
+    });
+    renderSummary();
+    fireEvent.click(screen.getByRole('button', { name: /^email$/i }));
+    fireEvent.change(await screen.findByLabelText(/^Email$/), { target: { value: 'blocked@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /email me the bid/i }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('delivery-success')).toBeNull();
+  });
+
+  it('failed emailStatus surfaces a corrective error and does NOT show delivery success', async () => {
+    invokeMock.mockResolvedValueOnce({
+      data: {
+        quoteId: 'q-3',
+        quoteUrl: 'https://x/resume',
+        emailStatus: 'failed',
+        emailFailureReason: 'No provider message id was returned.',
+      },
+      error: null,
+    });
+    renderSummary();
+    fireEvent.click(screen.getByRole('button', { name: /^email$/i }));
+    fireEvent.change(await screen.findByLabelText(/^Email$/), { target: { value: 'unknown@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /email me the bid/i }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('delivery-success')).toBeNull();
   });
 
   it('text delivery normalizes phone, invokes send-sms with the SAME quote id, and dedupes retries', async () => {
