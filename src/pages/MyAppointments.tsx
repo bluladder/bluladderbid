@@ -149,7 +149,11 @@ export default function MyAppointments() {
       } else if (res?.ambiguous) {
         toast({ title: 'Needs review', description: 'Our team was notified. Please text us so we can help.', variant: 'destructive' });
       } else {
-        toast({ title: 'Verified', description: 'We could not find an account for that email yet.' });
+        toast({
+          title: 'Invalid portal code',
+          description: 'Use the code from “Your BluLadder verification code” — password reset or recovery codes will not work here.',
+          variant: 'destructive',
+        });
       }
     } finally {
       setLoading(false);
@@ -260,6 +264,9 @@ export default function MyAppointments() {
             {stage === 'enter_email_code' && (
               <div className="space-y-3">
                 <Label htmlFor="portal-email-code">6-digit code from your email</Label>
+                <p className="text-xs text-muted-foreground">
+                  Enter only the code from “Your BluLadder verification code.” Password reset or recovery emails are not used for My Appointments.
+                </p>
                 <Input
                   id="portal-email-code"
                   inputMode="numeric"
