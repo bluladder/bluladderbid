@@ -1,140 +1,111 @@
-# Canonical Progressive Quote Session (Phase 4C-β.4)
 
-Move from per-channel conversation state to a single **Quote Session** object that voice, web, SMS, and future channels all edit incrementally. The conversation becomes a thin natural-language interface; the Quote Session is the source of truth.
+# Phase 4C-β.4A — Window Scope Classification & Progressive Branching
 
-No CallRail/transfer/booking/campaign changes in this phase. Booking dry-run stays on for voice.
+This is a large, high-risk change (touches pricing, orchestrator, DB, voice, tests). Below is the plan I'd like your approval on before I start editing files. It's structured so pricing parity, CallRail, and Vapi provisioning are provably untouched.
 
-## Architecture at a glance
+## Branch classification model
 
-```text
-   ┌──────────┐  ┌────────┐  ┌──────┐  ┌───────┐
-   │  Voice   │  │  Web   │  │ SMS  │  │ Chat  │   channels
-   └────┬─────┘  └───┬────┘  └──┬───┘  └───┬───┘
-        │           │          │          │
-        └────────── fact patches ─────────┘
-                        │
-                ┌───────▼────────┐
-                │ QuoteSession   │  (canonical, versioned)
-                │  fields+status │
-                └───────┬────────┘
-                        │
-        ┌───────────────┼────────────────┐
-        │               │                │
-   Pricing engine   Booking path    Resume link
-   (unchanged)      (unchanged)     (existing tokens)
+Add a canonical classifier in `_shared/windowIntent.ts` with pure functions:
+- `classifyWindowIntent(utterance, priorFacts)` → `{ customerType, windowCleaningScope, windowCleaningSides?, windowCount?, areas?, commercialSignals? }`
+- Keyword lists for commercial (storefront, office, church, warehouse, apartment common area, property-management…), partial ("only", "just", "a few", "N windows", "front/back/upstairs/patio"), whole-home ("all", "whole house", "my windows").
+- Terminology normalizer scoped to `services.includes("windowCleaning")`:
+  - "outside only", "exterior only", "outside glass only", "just the outsides" → `outside_only`
+  - "inside and outside", "both sides", "full service", "interior and exterior" → `inside_and_outside`
+- Never interprets "exterior only" globally; only when window cleaning is the active service.
+
+## Quote Session schema extension
+
+Migration adds these fields (as jsonb columns on `quote_sessions`, or nested inside existing `fields` jsonb — I'll use `fields` jsonb to avoid duplicate storage and keep parity guarantees):
+- `customerType`: 'residential' | 'commercial' | 'unknown'
+- `windowCleaningScope`: 'whole_home' | 'partial' | 'commercial_custom'
+- `windowCleaningSides`: 'outside_only' | 'inside_and_outside'
+- `windowCount`, `partialAreas`, `partialAccessNotes`
+- `commercialPropertyType`, `commercialLocations[]`, `commercialFrequency`, `commercialScopeNotes`
+- `preferredContactMethods[]`, `humanPricingRequired`, `bidRequestStatus`
+
+Add DB column `bid_request_status text` and `human_pricing_required bool` for admin queries; everything else lives inside `fields` jsonb. Update `computeRequired` / `nextQuestion` / `mergeFields` to branch on scope.
+
+## Partial-window pricing rule
+
+Add a canonical helper `computePartialWindowPrice({ windowCount, sides })` in `src/lib/pricing/partialWindow.ts` (shared with edge via a mirrored `supabase/functions/_shared/partialWindowPricing.ts` — same formula, one source of truth doc):
 ```
+sidesMultiplier = sides === 'inside_and_outside' ? 2 : 1
+price = windowCount * sidesMultiplier * 10
+```
+- Never applied when `windowCleaningScope !== 'partial'`.
+- Whole-home path calls the existing pricing engine unchanged (parity tests must stay green).
+- Rule versioned as `partial_window_v1` and stored on the session.
 
-Voice/web/SMS orchestrators keep their prompts and tools but delegate all fact reads/writes to a shared `quoteSession` module. `ConversationFacts` becomes a view over the session.
+## Orchestrator changes (`aiOrchestrator.ts`)
 
-## Quote Session schema
+- Before asking window questions, run `classifyWindowIntent` on latest utterance and merge results into the session via existing `persistFacts` → `syncFromFacts`.
+- Replace ambiguous "exterior only?" prompt with: "For the window cleaning, do you want the outside surfaces only, or both inside and outside?"
+- Route:
+  - `commercial_custom` → collect commercial facts, respond with Ben-review copy, ask for preferred contact method, then ask only for details for that method.
+  - `partial` → collect windowCount + sides + area + access; compute price via `computePartialWindowPrice`; store on session; qualify with the "smaller jobs at $10 per window side" line.
+  - `whole_home` → unchanged canonical engine path.
+- Scope-change handling: if scope flips whole_home ↔ partial, invalidate only price/sqft-dependent fields, preserve address/contact/notes/history.
+- Question-repetition guard: `nextQuestion()` skips any field already `captured|verified|corrected|derived`.
 
-New table `public.quote_sessions` (progressive intake state, distinct from the finalized `quotes` row):
+## Address behavior
 
-- `id uuid pk`
-- `channel text` (voice|web|sms|chat) — initiating channel
-- `conversation_ids text[]` — one session may span chat_conversations rows across channels
-- `customer_id uuid nullable` — set once identified/created
-- `quote_id uuid nullable` — set once a canonical quote is persisted
-- `fields jsonb` — canonical field bag (see below)
-- `field_status jsonb` — per-field `unknown|captured|verified|corrected|derived`
-- `required_remaining text[]` — computed
-- `last_step text` — last completed planner step
-- `quote_status text` — none|estimated|firm|manual_review|error
-- `booking_ready boolean`
-- `resume_token_id uuid nullable` — reuses existing `quote_resume_tokens`
-- `expires_at timestamptz`
-- `created_at`, `updated_at`
+- Persist address as soon as captured; do not re-ask.
+- Serviceability validation runs async; does not block progressive collection.
+- Existing voice rough-quote rail already bypasses address; extend guard to whole-home window flow so slow validation never re-prompts.
 
-`fields` keys (reuse existing canonical shapes; no duplicate models):
-- contact: `name`, `email`, `phone`
-- location: `address`, `city`, `state`, `zip`, `lat`, `lng`
-- service: `services[]`, `windowCleaningType`, `serviceOptions`
-- property: `squareFootage`, `stories`, `condition`, `roofType`, `roofSeverity`, driveway/PW fields
-- pricing: `promotionId`, `discountCode`, `modifiers`
-- quote: mirrors current `ConversationFacts.quote` (total, lineItems, inputsKey, engineVersion)
+## Commercial multi-location
 
-RLS: service-role write; customer read via existing resume-token grant path. GRANTs included in the migration.
+`fields.commercialLocations` is `Array<{ address, propertyType?, windowsEstimate?, stories?, sides?, frequency?, accessNotes?, notes? }>`. Orchestrator merges rather than flattening to a note.
 
-## Progressive persistence
+## Response format for commercial
 
-- Every orchestrator turn produces a **fact patch**. Patches are applied through `quoteSession.applyPatch(sessionId, patch, source)` which:
-  1. Merges into `fields`, updates `field_status` (unknown→captured; changed→corrected).
-  2. Recomputes `required_remaining` from the pricing engine's declared input needs for the selected services.
-  3. Invalidates dependent state (quote/availability/slot) on correction, matching `mergeFacts` rules.
-  4. Auto-invokes `calculate_bluladder_quote` when all required pricing inputs are present and no current quote matches the inputs key.
-  5. Persists atomically; returns the updated session.
-- Voice rough-quote rail, web `runOrchestrator`, and SMS orchestrator all call this instead of writing to `chat_conversations.facts` directly. `chat_conversations` keeps a `quote_session_id` pointer.
-
-## Conversation planning
-
-New `quoteSession.nextQuestion(session)` returns:
-- `readyToPrice: boolean`
-- `readyToBook: boolean`
-- `missing: string[]`
-- `nextField: string | null` — the single best next question, chosen from `required_remaining` in a channel-agnostic priority order (service → property essentials → address if booking → contact if booking).
-
-Orchestrators use this instead of hard-coded scripts. Interruptions (unrelated questions) leave the session untouched; the planner still returns the same `nextField` on resume. Corrections update one field and only invalidate what depends on it.
-
-## Cross-channel continuity
-
-- `chat_conversations.quote_session_id` links every channel row to the same session.
-- Voice `ensureVoiceConversation` and web/SMS entry points call `quoteSession.findOrCreate({ phone, email, channel })` — matches on verified phone/email first, otherwise creates.
-- Resume token minting is unchanged; token now references `quote_session_id` in addition to `quote_id` when a finalized quote exists.
-
-## Dropped-call recovery
-
-On voice call end (existing Vapi end-of-call hook / session close in `voiceAdapter`), if the session has enough facts to price and SMS consent exists, mint a resume URL via existing `mintResumeUrl` and send through the existing SMS path. No new messaging surface. No auto-send without consent.
-
-## Files to change
-
-Shared modules (edge):
-- `supabase/functions/_shared/quoteSession.ts` — NEW. Types, `findOrCreate`, `applyPatch`, `nextQuestion`, `computeRequired`, `invalidateDependents`.
-- `supabase/functions/_shared/conversationState.ts` — keep state names; `ConversationFacts` derived from session fields; `mergeFacts` delegates to `quoteSession.applyPatch` invalidation rules.
-- `supabase/functions/_shared/aiOrchestrator.ts` — route persistence through quoteSession; planner uses `nextQuestion`.
-- `supabase/functions/_shared/voiceAdapter.ts` — `ensureVoiceConversation` attaches/creates `quote_session_id`; end-of-call dropped-call helper.
-- `supabase/functions/_shared/smsOrchestrator.ts` — read/write via quoteSession keyed by phone.
-- `supabase/functions/_shared/buildMarker.ts` — bump `BUILD_ID` to `voice-adapter-4C-b.4-progressive-quote-session`; keep existing flags; add `progressiveQuoteSession: true`.
-
-DB:
-- New migration: `quote_sessions` table + GRANTs + RLS + trigger for `updated_at`; add `quote_session_id uuid` nullable to `chat_conversations`.
-
-Frontend: unchanged behavior. `useServerQuoteCalculation` and the web BookingFlow already POST canonical inputs; server-side maps the request to a quoteSession patch. No UI redesign in this phase.
+After scope is sufficient, assistant says: "Thanks. I've saved the scope and locations. We'll prepare a custom bid, and Ben will reach out with the price. What's the best way to contact you: text, email, or a phone call?" — then persists `preferredContactMethods` and asks only for the matching contact details. Sets `bid_request_status = 'commercial_bid_requested'`, `human_pricing_required = true`.
 
 ## Tests
 
-Deno (shared functions):
-- `quoteSession_test.ts` — patch merge, status transitions, correction invalidation, `nextQuestion` ordering, cross-channel `findOrCreate`, auto-price trigger, dropped-call resume payload.
-- `voiceAdapter_test.ts` — voice turn produces a session, second turn does not re-ask captured fields, correction updates one field, drop → resume link path (mocked SMS send).
-- `smsOrchestrator_test.ts` — SMS turn edits an existing voice session by phone.
-- `aiOrchestrator_test.ts` — web path unchanged output; planner picks next best question.
-
-Vitest (frontend regression):
-- Existing engine parity, plan booking, promotion, and booking flow tests must remain green.
-- Add a small integration test that the web booking payload still round-trips through the server as a session patch and returns identical pricing (parity assertion against `engine.ts`).
+New / extended:
+- `_shared/windowIntent_test.ts` — classification, terminology normalization, "exterior only" scoped only to window cleaning, commercial keywords, partial keywords, ambiguity handling.
+- `_shared/partialWindowPricing_test.ts` — 1×outside=$10, 1×both=$20, 5×outside=$50, 5×both=$100, no-sqft-path.
+- `_shared/quoteSession_test.ts` — extend: scope flip preserves address/contact, invalidates only dependent fields; multi-location persistence; contact-preference gating; question non-repetition.
+- `_shared/aiOrchestrator_test.ts` — voice/web/sms all mutate same session id; commercial path never invokes residential pricing tool; window question wording asserted.
+- `src/lib/pricing/engine.parity.test.ts` — leave untouched; must still pass to prove whole-home parity.
+- Voice booking-blocked-in-beta assertion in `voiceAdapter` test remains green.
 
 ## Deployment
 
-1. Run migration (adds `quote_sessions`, `chat_conversations.quote_session_id`).
-2. `tsgo` typecheck, `deno test` shared suite, `vitest run` frontend suite.
-3. Deploy edge functions: `voice-llm-adapter`, `ai-chat`, `send-sms`, `campaign-event`, `save-quote` (any function that reads/writes conversation facts).
-4. Verify `/voice-llm-adapter/diagnostics` shows the new BUILD_ID and `progressiveQuoteSession: true`.
-5. No auto browser call.
+- Migration: adds `bid_request_status`, `human_pricing_required` columns + indexes; extends jsonb usage (no destructive changes).
+- Redeploy `voice-llm-adapter` and any other edge functions importing changed shared modules.
+- Bump `BUILD_ID` → `voice-adapter-4C-b.4A-window-scope-classification`.
+- Add flags: `progressiveQuoteSession`, `windowScopeClassification`, `partialWindowPricing`, `commercialCustomBidIntake` — all `true`.
+- Verify 401 on unauthenticated POST to `voice-llm-adapter` unchanged.
+- No CallRail / Vapi provisioning / transfer changes. No production booking. No call to Ben's cell.
 
-## Explicit non-goals / guardrails
+## Files I plan to add / edit
 
-- No pricing values, formulas, minimums, or modifiers change.
-- No phone numbers created; no CallRail routing edits; no transfer configuration.
-- No production booking from voice (dry-run stays on).
-- No outbound campaigns activated or sent.
-- No duplicate customer or quote models — reuse `customers`, `quotes`, `quote_resume_tokens`, canonical pricing engine.
+Add:
+- `supabase/functions/_shared/windowIntent.ts` + `_test.ts`
+- `supabase/functions/_shared/partialWindowPricing.ts` + `_test.ts`
+- `src/lib/pricing/partialWindow.ts` + `.test.ts` (client mirror; single formula documented)
 
-## Technical details
+Edit:
+- `supabase/functions/_shared/quoteSession.ts` (+ `_test.ts`) — new fields, scope-aware `computeRequired`, `nextQuestion`, scope-flip invalidation, multi-location merge.
+- `supabase/functions/_shared/aiOrchestrator.ts` — pre-question classification, branch dispatch, wording change, commercial contact-method flow.
+- `supabase/functions/_shared/conversationState.ts` — allow partial/commercial tool sets under voice + web + sms.
+- `supabase/functions/_shared/buildMarker.ts` — new BUILD_ID + flags.
+- `supabase/functions/_shared/buildMarker_test.ts` — assert new flags.
+- Migration for new columns.
 
-- `field_status` transitions: unknown → captured on first non-empty value; captured → corrected when value changes; captured → verified when a validator (address geocode, service-area check, OTP) confirms; derived for engine-computed fields (e.g., pricing modifiers).
-- `required_remaining` is computed from a per-service manifest that mirrors the pricing engine's declared required inputs — no new pricing rules, just introspection of existing engine input shape.
-- Concurrency: session updates use optimistic `updated_at` check; conflicting patches merge field-by-field with last-writer-wins per field and a corrected-status marker.
-- `chat_conversations` remains for transcript/history; only the pointer column is added.
+## Explicit non-goals for this phase
 
-## Deliverable / status at end
+- No changes to whole-home window pricing values or formulas.
+- No changes to any other service's pricing.
+- No SMS sends, no unsolicited outreach.
+- No dropped-call SMS workflow beyond ensuring facts are structured for later use.
+- No CallRail routing changes, no phone provisioning, no transfer config, no call to Ben.
+- Voice production booking remains blocked.
 
-Final report will include: architecture changes, schema diff, file list, planner behavior, progressive persistence proof, cross-channel proof, typecheck/Deno/Vitest results, deployment result, new build marker, and either **READY FOR PROGRESSIVE QUOTE TEST** or **NOT READY** with the exact blocker.
+## Completion report I will return
+
+Branch classification architecture, files changed, whole-home behavior confirmation, partial behavior + exact pricing, terminology normalization, commercial intake behavior, multi-location support, contact preference behavior, schema changes, persistence behavior, non-repetition safeguards, pricing parity result, typecheck result, full Deno result, Vitest result, deploy result, new build marker, diagnostic flags, and explicit confirmations (no pricing changes elsewhere, no CallRail change, no provisioning, no transfer config, no call to Ben, no production booking). Final status: READY FOR WINDOW-SCOPE PROGRESSIVE TEST or NOT READY with blocker.
+
+Approve and I'll execute end-to-end.
