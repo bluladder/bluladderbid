@@ -107,7 +107,7 @@ describe('OneTimeSummary — email + text delivery', () => {
     });
     renderSummary();
     fireEvent.click(screen.getByRole('button', { name: /^email$/i }));
-    fireEvent.change(await screen.findByLabelText(/email/i), { target: { value: 'jane.doe@example.com' } });
+    fireEvent.change(await screen.findByLabelText(/^Email$/), { target: { value: 'jane.doe@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: /email me the bid/i }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
     expect(invokeMock.mock.calls[0][0]).toBe('save-quote');
@@ -121,7 +121,7 @@ describe('OneTimeSummary — email + text delivery', () => {
       .mockResolvedValueOnce({ data: { success: true }, error: null });
     renderSummary();
     fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
-    fireEvent.change(await screen.findByLabelText(/email/i), { target: { value: 'jane@example.com' } });
+    fireEvent.change(await screen.findByLabelText(/^Email$/), { target: { value: 'jane@example.com' } });
     fireEvent.change(screen.getByLabelText(/mobile number/i), { target: { value: '(469) 747-2877' } });
     fireEvent.click(screen.getByRole('button', { name: /text me the bid/i }));
 
