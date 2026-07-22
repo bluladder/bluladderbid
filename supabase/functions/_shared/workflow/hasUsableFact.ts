@@ -18,6 +18,7 @@ function underlyingKey(field: RequiredField): keyof QuoteSessionFields | null {
     case "squareFootage": return "squareFootage";
     case "windowCleaningSides": return "windowCleaningSides";
     case "stories": return "stories";
+    case "windowCleaningCondition": return "condition";
     case "address": return "address";
     case "city": return "city";
     case "contact_email": return "email";

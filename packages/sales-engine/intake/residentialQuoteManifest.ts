@@ -23,6 +23,7 @@ export type ResidentialIntakeFieldId =
   | "squareFootage"
   | "windowCleaningSides"
   | "stories"
+  | "windowCleaningCondition"
   | "contact_email"
   | "city"
   | "address";
@@ -107,6 +108,20 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
     label: "Stories",
     engineMissingTokens: ["stories"],
     purpose: "Applies the story modifier to the base per-sqft price.",
+  },
+  {
+    id: "windowCleaningCondition",
+    prompt:
+      "Would you say the windows are regularly maintained, or heavily soiled with significant buildup?",
+    label: "Window condition",
+    // The canonical pricing engine treats `condition` as an optional modifier
+    // (no `missing[]` token), but BluLadder Bid's web workflow always asks it
+    // before quoting residential window cleaning. The residential FSM injects
+    // this id via `additionallyRequired` when windowCleaning is selected so
+    // voice matches web behavior without a voice-only required-field list.
+    engineMissingTokens: [],
+    purpose:
+      "Selects the canonical condition modifier (maintenance vs heavy) already used by the web booking flow and pricing engine.",
   },
   {
     id: "contact_email",
