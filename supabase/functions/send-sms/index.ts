@@ -156,12 +156,19 @@ serve(async (req) => {
         });
       }
       const result = await sendCallRailSms(config, body.to, body.body);
+      const acceptedAt = result.ok ? new Date().toISOString() : null;
       await supabase.from("sms_messages").update(
         result.ok
           ? {
-              status: "sent",
-              sent_at: new Date().toISOString(),
+              status: "accepted",
+              sent_at: acceptedAt,
               callrail_message_id: result.messageId ?? null,
+              provider: "callrail",
+              provider_conversation_id: result.conversationId ?? null,
+              provider_message_id: result.messageId ?? null,
+              provider_status: result.providerMessageStatus ?? "accepted",
+              provider_response_kind: result.providerResponseKind ?? null,
+              provider_accepted_at: acceptedAt,
               error: null,
               attempts: 1,
               next_retry_at: null,
@@ -332,14 +339,21 @@ serve(async (req) => {
         transactionalError = "CallRail not configured";
       } else {
         const result = await sendCallRailSms(config, toNorm, immediateBody);
+        const acceptedAt = result.ok ? new Date().toISOString() : null;
         transactionalSent = result.ok;
         transactionalError = result.error;
         await supabase.from("sms_messages").update(
           result.ok
             ? {
-                status: "sent",
-                sent_at: new Date().toISOString(),
+                status: "accepted",
+                sent_at: acceptedAt,
                 callrail_message_id: result.messageId ?? null,
+                provider: "callrail",
+                provider_conversation_id: result.conversationId ?? null,
+                provider_message_id: result.messageId ?? null,
+                provider_status: result.providerMessageStatus ?? "accepted",
+                provider_response_kind: result.providerResponseKind ?? null,
+                provider_accepted_at: acceptedAt,
                 error: null,
                 attempts: 1,
                 next_retry_at: null,
