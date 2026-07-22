@@ -55,6 +55,18 @@ const CRITICAL_FUNCTIONS = [
   // transactional SMS. A missing deployment silently breaks Text bid and
   // every downstream lifecycle SMS. Guard it against deployment drift.
   'send-sms',
+  // Portal OTP: if this 404s, verified customer sign-in stops working
+  // (My Appointments and the customer portal).
+  'customer-verification-request',
+  // Lifecycle notifications (reschedule/cancel confirmations to customer +
+  // owner). Missing deploy silently drops every post-change email.
+  'send-notification',
+  // "Contact BluLadder" backend replacement for the old mailto/sms draft.
+  // Missing deploy silently drops every customer help request from the
+  // scheduling and quote screens.
+  'contact-request',
+  // Admin one-shot re-send used after transient suppression / owner request.
+  'resend-booking-confirmation',
 ] as const;
 
 const enabled = process.env.RUN_EDGE_SMOKE === '1';

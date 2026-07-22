@@ -1683,6 +1683,72 @@ export type Database = {
           },
         ]
       }
+      contact_requests: {
+        Row: {
+          appointment_status: string | null
+          booking_id: string | null
+          created_at: string
+          customer_email: string | null
+          customer_name: string | null
+          customer_phone: string | null
+          id: string
+          ip_hash: string | null
+          note: string | null
+          owner_error: string | null
+          owner_notification_status: string
+          owner_provider_message_id: string | null
+          page_url: string | null
+          property_address: string | null
+          quote_id: string | null
+          request_key: string
+          services: Json | null
+          source: string
+          total: number | null
+        }
+        Insert: {
+          appointment_status?: string | null
+          booking_id?: string | null
+          created_at?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          id?: string
+          ip_hash?: string | null
+          note?: string | null
+          owner_error?: string | null
+          owner_notification_status?: string
+          owner_provider_message_id?: string | null
+          page_url?: string | null
+          property_address?: string | null
+          quote_id?: string | null
+          request_key: string
+          services?: Json | null
+          source?: string
+          total?: number | null
+        }
+        Update: {
+          appointment_status?: string | null
+          booking_id?: string | null
+          created_at?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          id?: string
+          ip_hash?: string | null
+          note?: string | null
+          owner_error?: string | null
+          owner_notification_status?: string
+          owner_provider_message_id?: string | null
+          page_url?: string | null
+          property_address?: string | null
+          quote_id?: string | null
+          request_key?: string
+          services?: Json | null
+          source?: string
+          total?: number | null
+        }
+        Relationships: []
+      }
       conversation_outcomes: {
         Row: {
           classified_at: string
