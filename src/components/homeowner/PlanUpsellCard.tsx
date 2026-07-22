@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { BundleTier, ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import { PlanCustomizeDrawer, type PlanCustomization } from './PlanCustomizeDrawer';
+import { computePlanPaymentBreakdown } from '@/lib/pricing/planPaymentBreakdown';
 
 interface PlanUpsellCardProps {
   oneTimeTotal: number;
@@ -71,12 +72,20 @@ export function PlanUpsellCard({
     ? bundles.find(b => b.tier === selectedTier) || recommendedBundle
     : recommendedBundle;
 
-  // A plan is only displayable when the server returned a real, non-zero
-  // annual total AND a real non-zero monthly amount. Zero-dollar plans must
-  // never render, be selectable, or be bookable.
-  const hasValidPlan = !!currentBundle
-    && currentBundle.annualTotal > 0
-    && Math.round((currentBundle.annualTotal - Math.round(currentBundle.annualTotal * 0.20)) / 11) > 0;
+  // Derive a fully reconciled 20%-deposit + 11-monthly-installment schedule
+  // from the AUTHORITATIVE annual total. Zero-dollar plans must never render,
+  // be selectable, or be bookable.
+  const annualOneTimeValue = currentBundle
+    ? oneTimeTotal * (currentBundle.windowFrequency || 2)
+    : 0;
+  const breakdown = currentBundle
+    ? computePlanPaymentBreakdown({
+        annualTotal: currentBundle.annualTotal,
+        authoritativeSavings: currentBundle.savings,
+        comparisonTotal: annualOneTimeValue,
+      })
+    : null;
+  const hasValidPlan = !!currentBundle && !!breakdown;
   
   // Count enabled services based on selection state
   const enabledServices = [
@@ -87,15 +96,13 @@ export function PlanUpsellCard({
     additionalServices.drivewayCleaning.enabled,
     additionalServices.pressureWashing.enabled,
   ].filter(Boolean).length;
-  
-  // Calculate annual value if they booked one-time multiple times
-  const annualOneTimeValue = hasValidPlan ? oneTimeTotal * (currentBundle!.windowFrequency || 2) : 0;
-  const annualSavings = hasValidPlan ? annualOneTimeValue - currentBundle!.annualTotal : 0;
 
-  // Calculate monthly payment structure (20% deposit + 11 monthly payments)
-  const deposit = hasValidPlan ? Math.round(currentBundle!.annualTotal * 0.20) : 0;
-  const remainingBalance = hasValidPlan ? currentBundle!.annualTotal - deposit : 0;
-  const monthlyPayment = hasValidPlan ? Math.round(remainingBalance / 11) : 0;
+  // Reconciled figures from the shared breakdown helper.
+  const deposit = breakdown?.depositAmount ?? 0;
+  const monthlyPayment = breakdown?.monthlyPayment ?? 0;
+  const annualSavings = breakdown?.savings ?? 0;
+  const annualTotal = breakdown?.annualTotal ?? 0;
+  const remainingPayments = breakdown?.remainingPayments ?? 11;
   
   if (!hasServices) {
     return (
