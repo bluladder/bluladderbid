@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.4B-stable-session-id";
+export const BUILD_ID = "voice-adapter-4C-b.5-shared-intake-manifest";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -17,4 +17,6 @@ export const BUILD_FEATURES = {
   commercialCustomBidIntake: true,
   stableVoiceSessionId: true,
   useWorkflowController: false,
+  sharedIntakeManifest: true,
+  contactFirstIntake: true,
 } as const;

@@ -20,36 +20,73 @@ function baseSession(over: Partial<QuoteSession> = {}): QuoteSession {
   };
 }
 
-Deno.test("asks for services first when nothing is known", () => {
+/** Convenience: a session whose contact-first fields are already captured, so
+ *  pricing-intake assertions read cleanly. */
+function afterContact(over: Partial<QuoteSession> = {}): QuoteSession {
+  return baseSession({
+    ...over,
+    fields: { name: "Alex", phone: "+14695551212", ...(over.fields ?? {}) },
+    fieldStatus: {
+      name: "captured",
+      phone: "captured",
+      ...(over.fieldStatus ?? {}),
+    },
+  });
+}
+
+Deno.test("contact-first: asks for the customer's name before anything else", () => {
   const s = baseSession();
   const a = decideResidentialQuoteAction(s);
+  assertEquals(a.kind, "ask");
+  if (a.kind === "ask") assertEquals(a.field, "contact_name");
+});
+
+Deno.test("contact-first: asks for mobile phone once name is captured", () => {
+  const s = baseSession({ fields: { name: "Alex" }, fieldStatus: { name: "captured" } });
+  const a = decideResidentialQuoteAction(s);
+  assertEquals(a.kind, "ask");
+  if (a.kind === "ask") assertEquals(a.field, "contact_phone");
+});
+
+Deno.test("after contact, asks for services when nothing else is known", () => {
+  const a = decideResidentialQuoteAction(afterContact());
   assertEquals(a.kind, "ask");
   if (a.kind === "ask") assertEquals(a.field, "services");
 });
 
 Deno.test("with service+scope known, asks for sqft next (not city)", () => {
-  const s = baseSession({
+  const s = afterContact({
     fields: { services: ["windowCleaning"], windowCleaningScope: "whole_home" },
     fieldStatus: { services: "captured", windowCleaningScope: "captured" },
   });
-  const a = decideResidentialQuoteAction(s);
+  // Engine authority: it still needs squareFootage + stories.
+  const a = decideResidentialQuoteAction(s, ["squareFootage", "stories"]);
   assertEquals(a.kind, "ask");
   if (a.kind === "ask") assertEquals(a.field, "squareFootage");
 });
 
+Deno.test("canonical wording: square footage prompt names the exact field", () => {
+  const s = afterContact({
+    fields: { services: ["windowCleaning"] },
+    fieldStatus: { services: "captured" },
+  });
+  const a = decideResidentialQuoteAction(s, ["squareFootage"]);
+  if (a.kind === "ask") assertEquals(a.prompt, "How many square feet is your home?");
+});
+
 Deno.test("never re-asks a captured field (regression: 019f8a84 repeats)", () => {
-  const s = baseSession({
+  const s = afterContact({
     fields: { services: ["windowCleaning"], squareFootage: 2000 },
     fieldStatus: { services: "captured", squareFootage: "captured" },
   });
-  const a = decideResidentialQuoteAction(s);
+  const a = decideResidentialQuoteAction(s, ["stories"]);
   if (a.kind === "ask") {
     assertEquals(a.field !== "services" && a.field !== "squareFootage", true);
   }
 });
 
 Deno.test("all pricing fields present → calculate_price (no city required)", () => {
-  const s = baseSession({
+  const s = afterContact({
     fields: {
       services: ["windowCleaning"],
       squareFootage: 2000,
@@ -60,11 +97,12 @@ Deno.test("all pricing fields present → calculate_price (no city required)", (
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
     },
   });
-  assertEquals(decideResidentialQuoteAction(s).kind, "calculate_price");
+  // Engine reports nothing missing → move to pricing.
+  assertEquals(decideResidentialQuoteAction(s, []).kind, "calculate_price");
 });
 
 Deno.test("pricing error surfaces as handoff, never as another intake question", () => {
-  const s = baseSession({
+  const s = afterContact({
     fields: {
       services: ["windowCleaning"],
       squareFootage: 2000,
@@ -76,13 +114,13 @@ Deno.test("pricing error surfaces as handoff, never as another intake question",
     },
     quoteStatus: "error",
   });
-  const a = decideResidentialQuoteAction(s);
+  const a = decideResidentialQuoteAction(s, []);
   assertEquals(a.kind, "handoff");
   if (a.kind === "handoff") assertEquals(a.reason, "pricing_error");
 });
 
 Deno.test("priced → speak_price first, then collects booking fields", () => {
-  const s = baseSession({
+  const s = afterContact({
     fields: {
       services: ["windowCleaning"],
       squareFootage: 2000,
@@ -94,5 +132,24 @@ Deno.test("priced → speak_price first, then collects booking fields", () => {
     },
     quoteStatus: "estimated",
   });
-  assertEquals(decideResidentialQuoteAction(s).kind, "speak_price");
+  assertEquals(decideResidentialQuoteAction(s, []).kind, "speak_price");
+});
+
+Deno.test("post-quote: asks for email before booking (not before speaking the price)", () => {
+  const s = afterContact({
+    fields: {
+      services: ["windowCleaning"],
+      squareFootage: 2000,
+      stories: 2,
+      windowCleaningSides: "outside_only",
+    },
+    fieldStatus: {
+      services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
+    },
+    quoteStatus: "estimated",
+    lastStep: "priced_spoken",
+  });
+  const a = decideResidentialQuoteAction(s, []);
+  assertEquals(a.kind, "ask");
+  if (a.kind === "ask") assertEquals(a.field, "contact_email");
 });

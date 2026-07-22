@@ -17,55 +17,86 @@
 import type { QuoteSession } from "../../quoteSession.ts";
 import { hasUsableFact } from "../hasUsableFact.ts";
 import {
-  RESIDENTIAL_QUESTION_PRIORITY,
-  missingResidentialPricingFields,
   missingResidentialBookingFields,
 } from "../intakeSchemas.ts";
 import type { WorkflowAction, RequiredField } from "../types.ts";
+// Runtime-neutral Sales Engine shared contract — see packages/sales-engine/README.md
+import {
+  RESIDENTIAL_INTAKE_BY_ID,
+  RESIDENTIAL_INTAKE_PRIORITY,
+  fieldsForEngineMissing,
+  nextResidentialQuestion,
+  type ResidentialIntakeFieldId,
+} from "../../../../../packages/sales-engine/intake/residentialQuoteManifest.ts";
 
-function ask(field: RequiredField): WorkflowAction {
-  const prompts: Record<RequiredField, string> = {
-    // Each prompt names the exact canonical field it captures. Keep short,
-    // confident, and warm — this is BluLadder's top CSR, not a chatbot.
-    services: "Which service would you like priced today — window cleaning, house wash, gutters, or something else?",
-    windowCleaningScope: "Got it. Is this every window on the home, or a specific count of windows?",
-    squareFootage: "Do you know approximately how many square feet your home is?",
-    windowCleaningSides: "Would you like exterior only, or full service inside and out?",
-    stories: "How many stories is the home — one, two, or three?",
-    city: "Which city is the home in?",
-    address: "What's the street address for the visit?",
-    contact_name: "Whose name should I put the appointment under?",
-    contact_email: "What's the best email for the confirmation?",
-    contact_phone: "And the best phone number for the crew?",
-  };
-  return { kind: "ask", field, prompt: prompts[field] };
+function ask(field: ResidentialIntakeFieldId): WorkflowAction {
+  const spec = RESIDENTIAL_INTAKE_BY_ID[field];
+  return { kind: "ask", field: field as RequiredField, prompt: spec.prompt };
+}
+
+/** Which RequiredFields correspond to which intake ids (they match 1:1 today). */
+function capturedIds(session: QuoteSession): ResidentialIntakeFieldId[] {
+  const out: ResidentialIntakeFieldId[] = [];
+  for (const id of RESIDENTIAL_INTAKE_PRIORITY) {
+    if (hasUsableFact(id as RequiredField, session)) out.push(id);
+  }
+  return out;
 }
 
 /** Decide the next Action for a residential-quote turn. Sequencing only —
- *  never speaks; never invents pricing. */
-export function decideResidentialQuoteAction(session: QuoteSession): WorkflowAction {
-  // 1. Fill pricing fields first, in priority order, skipping any already known.
-  const missingPricing = missingResidentialPricingFields(session.fields)
-    .filter((f) => !hasUsableFact(f, session));
-  if (missingPricing.length > 0) {
-    const next = RESIDENTIAL_QUESTION_PRIORITY.find((f) => missingPricing.includes(f)) ?? missingPricing[0];
-    return ask(next);
-  }
+ *  never speaks; never invents pricing.
+ *
+ *  Readiness authority:
+ *  - `pricingEngineMissing` is the canonical pricing engine's `missing[]`.
+ *    When provided, THIS is the source of truth for whether pricing inputs
+ *    are complete. Passing null means the caller has not yet probed the
+ *    engine — we defer to the shared manifest's pricing tokens as a proxy.
+ */
+export function decideResidentialQuoteAction(
+  session: QuoteSession,
+  pricingEngineMissing: readonly string[] | null = null,
+): WorkflowAction {
+  const captured = capturedIds(session);
+
+  // 1. Contact-first: name → phone → pricing intake. The next-question helper
+  //    enforces manifest priority and skips already-captured fields.
+  const engineMissingForIntake =
+    pricingEngineMissing !== null
+      ? pricingEngineMissing
+      : // Fallback: ask for the always-required pricing fields when the caller
+        // has not probed the engine yet. Kept intentionally minimal — the
+        // canonical engine remains the sole authority once it responds.
+        ["services", "squareFootage", "stories"];
+
+  const preQuote = nextResidentialQuestion({
+    captured,
+    engineMissing: engineMissingForIntake,
+  });
+  if (preQuote) return ask(preQuote.id);
 
   // 2. Ready to price. If we haven't priced yet, do so now.
   if (session.quoteStatus === "none") return { kind: "calculate_price" };
   if (session.quoteStatus === "error") return { kind: "handoff", reason: "pricing_error" };
 
-  // 3. Speak price the first time we transition to estimated/firm.
-  //    The controller decides speak-once via toolEvents; here we simply say
-  //    "speak_price" whenever price is known but we haven't offered scheduling.
+  // 3. Speak the authoritative quote before asking anything else. Email is
+  //    NOT required to speak a price — it is required before booking or
+  //    finalizing an unbooked proposal.
+  if (session.lastStep !== "priced_spoken") return { kind: "speak_price" };
+
+  // 4. Post-quote: collect email + address before offering scheduling.
   if (!session.bookingReady) {
-    const missingBook = missingResidentialBookingFields(session.fields)
-      .filter((f) => !hasUsableFact(f, session));
-    if (missingBook.length === 0) return { kind: "offer_scheduling" };
-    if (session.lastStep !== "priced_spoken") return { kind: "speak_price" };
-    const next = RESIDENTIAL_QUESTION_PRIORITY.find((f) => missingBook.includes(f)) ?? missingBook[0];
-    return ask(next);
+    const nextBook = nextResidentialQuestion({
+      captured,
+      engineMissing: [],
+      additionallyRequired: ["contact_email", "address"],
+    });
+    if (nextBook) return ask(nextBook.id);
+    // Legacy fallback in case future required booking fields appear.
+    const legacyMissing = missingResidentialBookingFields(session.fields).filter(
+      (f) => !hasUsableFact(f, session),
+    );
+    if (legacyMissing.length === 0) return { kind: "offer_scheduling" };
+    return ask(legacyMissing[0] as ResidentialIntakeFieldId);
   }
 
   return { kind: "offer_scheduling" };
