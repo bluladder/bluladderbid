@@ -2084,7 +2084,7 @@ export type Database = {
           ip_hash: string | null
           max_attempts: number
           otp_hash: string
-          phone_hash: string
+          phone_hash: string | null
           provider: string | null
           provider_accepted_at: string | null
           provider_conversation_id: string | null
@@ -2109,7 +2109,7 @@ export type Database = {
           ip_hash?: string | null
           max_attempts?: number
           otp_hash: string
-          phone_hash: string
+          phone_hash?: string | null
           provider?: string | null
           provider_accepted_at?: string | null
           provider_conversation_id?: string | null
@@ -2134,7 +2134,7 @@ export type Database = {
           ip_hash?: string | null
           max_attempts?: number
           otp_hash?: string
-          phone_hash?: string
+          phone_hash?: string | null
           provider?: string | null
           provider_accepted_at?: string | null
           provider_conversation_id?: string | null
