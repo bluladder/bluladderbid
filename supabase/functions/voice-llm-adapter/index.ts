@@ -14,6 +14,7 @@ import {
   type AdapterRequestError,
   type VoiceStreamEvent,
 } from "../_shared/voiceAdapter.ts";
+import { BUILD_ID, BUILD_FEATURES } from "../_shared/buildMarker.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,6 +58,16 @@ function checkBearer(req: Request, secret: string | undefined): boolean {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  // Safe diagnostics: non-authenticated GET returns the build marker only.
+  // Never speaks to a caller and never exposes secrets, env values, or PII.
+  const url = new URL(req.url);
+  if (req.method === "GET" && url.pathname.endsWith("/diagnostics")) {
+    return new Response(
+      JSON.stringify({ buildId: BUILD_ID, features: BUILD_FEATURES }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
   const secret = Deno.env.get("VOICE_LLM_ADAPTER_SHARED_SECRET");
   if (!secret) {
     console.warn("voice-llm-adapter: shared secret not configured");
@@ -77,7 +88,7 @@ Deno.serve(async (req) => {
   if (!parsed.value.stream) {
     const completion = await runVoiceAdapter({ supabase, request: parsed.value });
     console.log(JSON.stringify({
-      at: "voice-llm-adapter", stream: false, action: completion.action.kind,
+      at: "voice-llm-adapter", buildId: BUILD_ID, stream: false, action: completion.action.kind,
       state: completion.orchestrator.state ?? null, replyLen: completion.content.length,
     }));
     return buildNonStreamingResponse(model, completion);
@@ -111,11 +122,11 @@ Deno.serve(async (req) => {
         const result = await runVoiceAdapterStream({ supabase, request: parsed.value, emit });
         write({ id, object: "chat.completion.chunk", created, model,
           choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-          bluladder: { action: result.action, state: result.orchestrator.state ?? null, route: result.route.type } });
+          bluladder: { buildId: BUILD_ID, action: result.action, state: result.orchestrator.state ?? null, route: result.route.type } });
       } catch (_e) {
         write({ id, object: "chat.completion.chunk", created, model,
           choices: [{ index: 0, delta: { content: "Sorry, I hit a snag." }, finish_reason: "stop" }],
-          bluladder: { action: { kind: "safe_failure", reasonCode: "adapter_exception" } } });
+          bluladder: { buildId: BUILD_ID, action: { kind: "safe_failure", reasonCode: "adapter_exception" } } });
       } finally {
         controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
         closed = true;
