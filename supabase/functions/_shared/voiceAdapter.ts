@@ -129,7 +129,17 @@ export async function parseAdapterRequest(
 
   const headerSession = req.headers.get("x-bluladder-session-id");
   const userField = typeof body.user === "string" ? body.user : "";
-  const suppliedSession = headerSession || userField || "";
+  // Vapi custom-LLM requests embed the stable call id in the request body.
+  // This is the primary correlator that binds every HTTP turn of one voice
+  // call to the same chat_conversations / quote_sessions row. Accept the
+  // shapes Vapi is known to send; ignore anything not a non-empty string.
+  const bodyCallId =
+    (typeof body?.call?.id === "string" && body.call.id) ||
+    (typeof body?.metadata?.call?.id === "string" && body.metadata.call.id) ||
+    (typeof body?.metadata?.callId === "string" && body.metadata.callId) ||
+    "";
+  const providerSession = bodyCallId ? `vapi_call:${bodyCallId}` : "";
+  const suppliedSession = headerSession || userField || providerSession || "";
   const sessionIdIsSynthetic = !suppliedSession;
   const sessionId = suppliedSession || `synthetic-${crypto.randomUUID()}`;
 
