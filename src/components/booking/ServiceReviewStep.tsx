@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Check, Clock, Home, ArrowRight, AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -100,6 +100,16 @@ export function ServiceReviewStep({
 }: ServiceReviewStepProps) {
   const subtotal = servicePrices.grandTotal;
   const finalTotal = subtotal - discountAmount;
+
+  // Ensure the Review step opens at the top so customers see the header/quote
+  // first — not scrolled mid-list from the prior step.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rootRef.current?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, []);
   
   // Validate selection state and log warnings in dev mode
   const selectionMismatches = validateServiceSelection(additionalServices, servicePrices);
@@ -120,9 +130,41 @@ export function ServiceReviewStep({
     (additionalServices.drivewayCleaning.enabled || servicePrices.drivewayCleaning > 0) && servicePrices.drivewayCleaning > 0,
     (additionalServices.pressureWashing.enabled || servicePrices.pressureWashing > 0) && servicePrices.pressureWashing > 0,
   ].filter(Boolean).length;
-  
+
+  // Single source of truth for the concise terms caption. Rendered above BOTH
+  // the top and bottom Continue-to-Schedule CTAs so customers see the same
+  // wording whichever CTA they use.
+  const termsCaption = (
+    <p className="text-xs text-center text-muted-foreground px-4">
+      Prices based on information provided. Final pricing may adjust if on-site conditions differ.
+    </p>
+  );
+
+  // Shared Continue/Edit action pair. Both CTAs invoke the same handler; this
+  // is a convenience placement (top + bottom), not a duplicate submission —
+  // there is no quote submission on this step.
+  const continueActions = (
+    <div className="space-y-3 pt-1">
+      <Button
+        onClick={onProceed}
+        className="w-full h-12 text-base font-semibold shadow-md"
+        size="lg"
+      >
+        Continue to Schedule
+        <ArrowRight className="w-4 h-4 ml-2" />
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={onBack}
+        className="w-full text-muted-foreground h-9 text-sm"
+      >
+        Edit Services
+      </Button>
+    </div>
+  );
+
   return (
-    <div className="space-y-4">
+    <div ref={rootRef} className="space-y-4">
       {/* Live sticky quote — always in view */}
       <LiveQuoteBar
         servicePrices={servicePrices}
@@ -284,30 +326,15 @@ export function ServiceReviewStep({
           </div>
         </CardContent>
       </Card>
-      
-      {/* Primary scheduling actions appear immediately after the quote so the
-          customer can approve and pick a time without scrolling past add-ons. */}
-      <div className="space-y-3 pt-1">
-        <Button
-          onClick={onProceed}
-          className="w-full h-12 text-base font-semibold shadow-md"
-          size="lg"
-        >
-          Continue to Schedule
-          <ArrowRight className="w-4 h-4 ml-2" />
-        </Button>
 
-        <Button
-          variant="ghost"
-          onClick={onBack}
-          className="w-full text-muted-foreground h-9 text-sm"
-        >
-          Edit Services
-        </Button>
-      </div>
+      {/* TOP CTA — approve the quote and continue without scrolling past add-ons.
+          Terms caption is rendered directly above the CTA. */}
+      {termsCaption}
+      {continueActions}
 
-      {/* Complete Your Exterior Refresh — one-click upsells for unselected services.
-          Now placed below the primary CTA so it enhances but never blocks scheduling. */}
+      {/* Complete Your Exterior Refresh — Review Services is the authoritative
+          place to add recommended complementary services. Kept between the two
+          Continue CTAs so it enhances but never blocks scheduling. */}
       {onAdditionalServicesChange && (
         <CompleteYourRefresh
           additionalServices={additionalServices}
@@ -315,10 +342,11 @@ export function ServiceReviewStep({
         />
       )}
 
-      {/* Notice */}
-      <p className="text-xs text-center text-muted-foreground px-4">
-        Prices based on information provided. Final pricing may adjust if on-site conditions differ.
-      </p>
+      {/* BOTTOM CTA — same wording and same terms caption as the top CTA so
+          customers who scroll through the add-on grid never have to scroll back
+          up to continue. Not a separate action: identical handler. */}
+      {termsCaption}
+      {continueActions}
     </div>
   );
 }
