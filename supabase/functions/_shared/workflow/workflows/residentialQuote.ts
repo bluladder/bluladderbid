@@ -25,16 +25,18 @@ import type { WorkflowAction, RequiredField } from "../types.ts";
 
 function ask(field: RequiredField): WorkflowAction {
   const prompts: Record<RequiredField, string> = {
-    services: "What would you like a price on today?",
-    windowCleaningScope: "Are we cleaning all the windows on the home, or just a few specific ones?",
-    squareFootage: "About how many square feet is the home?",
-    windowCleaningSides: "For the windows, do you want the outside surfaces only, or both inside and outside?",
-    stories: "Is the home one story or two?",
-    city: "What city is the home in?",
-    address: "What is the property address for the visit?",
-    contact_name: "Who should I put the appointment under?",
-    contact_email: "What email should we send the confirmation to?",
-    contact_phone: "What's the best phone number for the crew to reach you?",
+    // Each prompt names the exact canonical field it captures. Keep short,
+    // confident, and warm — this is BluLadder's top CSR, not a chatbot.
+    services: "Which service would you like priced today — window cleaning, house wash, gutters, or something else?",
+    windowCleaningScope: "Got it. Is this every window on the home, or a specific count of windows?",
+    squareFootage: "Do you know approximately how many square feet your home is?",
+    windowCleaningSides: "Would you like exterior only, or full service inside and out?",
+    stories: "How many stories is the home — one, two, or three?",
+    city: "Which city is the home in?",
+    address: "What's the street address for the visit?",
+    contact_name: "Whose name should I put the appointment under?",
+    contact_email: "What's the best email for the confirmation?",
+    contact_phone: "And the best phone number for the crew?",
   };
   return { kind: "ask", field, prompt: prompts[field] };
 }
