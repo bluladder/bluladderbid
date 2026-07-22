@@ -413,30 +413,56 @@ export function PlanUpsellCard({
               }`}>
                 {currentBundle?.name || 'Better'} Plan
               </Badge>
-              <span className="text-sm font-medium text-primary">
-                {formatPrice(currentBundle.annualTotal)}/year
+              <span className="text-sm font-medium text-primary" data-testid="plan-annual-total">
+                {formatPrice(annualTotal)} total / year
               </span>
             </div>
-            
-            <div className="flex items-baseline justify-center gap-2 mb-2">
-              <span className="text-3xl font-bold price-display text-foreground">
-                {formatPrice(monthlyPayment)}
-              </span>
-              <span className="text-muted-foreground">/month</span>
-            </div>
-            
+
+            {/* Prominent annual savings. */}
             {annualSavings > 0 && (
-              <div className="savings-badge mb-3 inline-flex">
-                Save {formatPrice(annualSavings)} vs one-time
+              <div
+                className="savings-badge mb-3 inline-flex"
+                data-testid="plan-annual-savings"
+              >
+                Save {formatPrice(annualSavings)}/yr vs equivalent one-time visits
               </div>
             )}
-            
-            {/* Monthly Pricing Clarity */}
-            <div className="flex items-start gap-2 p-2 rounded-md bg-muted/50 border border-border mb-3">
-              <CreditCard className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground">
-                20% deposit today ({formatPrice(deposit)}), remaining balance split into 11 monthly payments
-              </p>
+
+            {/* Exact payment schedule — deposit due today + 11 monthly payments
+                that reconcile to the authoritative annual total. */}
+            <div className="rounded-md border border-primary/20 bg-background/60 p-3 mb-3 space-y-2">
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Due today</span>
+                <span
+                  className="text-2xl font-bold price-display text-foreground"
+                  data-testid="plan-due-today"
+                >
+                  {formatPrice(deposit)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Then {remainingPayments} monthly payments of
+                </span>
+                <span
+                  className="text-lg font-semibold text-foreground"
+                  data-testid="plan-monthly-payment"
+                >
+                  {formatPrice(monthlyPayment)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between pt-2 border-t border-border">
+                <span className="text-sm text-muted-foreground">Annual plan total</span>
+                <span className="text-sm font-semibold text-foreground">
+                  {formatPrice(annualTotal)}
+                </span>
+              </div>
+              <div className="flex items-start gap-2 pt-1">
+                <CreditCard className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  20% due today, then {remainingPayments} equal monthly installments — cancel or change anytime before the next visit.
+                </p>
+              </div>
             </div>
             
             {/* What's included */}
