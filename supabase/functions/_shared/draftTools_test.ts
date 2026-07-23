@@ -11,6 +11,7 @@ Deno.test("draft tool allowlist is stable and read-safe", () => {
   assertEquals([...DRAFT_TOOL_ALLOWLIST].sort(), [
     "calculate_quote",
     "confirm_property_fact",
+    "get_available_slots",
     "get_customer_context",
     "get_customer_properties",
     "get_pricing_summary",
