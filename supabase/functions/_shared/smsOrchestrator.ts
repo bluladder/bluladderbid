@@ -17,6 +17,15 @@
 // It does NOT decide STOP/START/escalation/booking-intent — those decisions
 // stay in callrail-inbound-sms so compliance and escalation paths short-
 // circuit before we ever spend an AI call.
+//
+// PHASE-2 CONTRACT (autonomous send gate)
+//   This module MUST NOT dispatch outbound SMS itself. It builds a candidate
+//   reply and returns it. Every autonomous send path is required to route
+//   the reply through `sendAutonomousCallRailSms` (autonomousSendGate.ts)
+//   immediately before the CallRail wire call. That is the ONE enforceable
+//   boundary — kill switch, conversation pause, staff takeover, STOP
+//   suppression, identity anchor, and action-class rules are all checked
+//   there. There is no bypass parameter.
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runOrchestrator } from "./aiOrchestrator.ts";
