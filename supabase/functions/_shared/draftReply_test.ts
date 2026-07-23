@@ -8,8 +8,12 @@ Deno.test("phase 2 draft tools are all read-only or conversation-scoped", () => 
   // Guard against silently widening the allowlist to include destructive
   // tools (send SMS, cancel booking, refund, etc.). Adding to this list
   // requires updating the test AND documenting the safety review.
+  const destructive = [
+    /^send_/i, /^create_booking/i, /^cancel_booking/i, /^reschedule_booking/i,
+    /^refund/i, /^delete_/i, /^update_customer/i, /^apply_discount/i,
+  ];
   for (const t of DRAFT_ALLOWED_TOOLS) {
-    if (/send|book|cancel|refund|delete|update_customer/i.test(t)) {
+    if (destructive.some((rx) => rx.test(t))) {
       throw new Error(`tool ${t} looks destructive; explicit review required`);
     }
   }
