@@ -4722,6 +4722,7 @@ export type Database = {
           execution_started_at: string | null
           execution_token: string | null
           expires_at: string
+          failure_class: string | null
           failure_reason: string | null
           id: string
           idempotency_key: string
@@ -4766,6 +4767,7 @@ export type Database = {
           execution_started_at?: string | null
           execution_token?: string | null
           expires_at: string
+          failure_class?: string | null
           failure_reason?: string | null
           id?: string
           idempotency_key: string
@@ -4810,6 +4812,7 @@ export type Database = {
           execution_started_at?: string | null
           execution_token?: string | null
           expires_at?: string
+          failure_class?: string | null
           failure_reason?: string | null
           id?: string
           idempotency_key?: string
@@ -5892,6 +5895,14 @@ export type Database = {
         }
       }
       claim_sms_booking_execution: {
+        Args: {
+          p_claim_source?: string
+          p_confirmation_id: string
+          p_execution_token: string
+        }
+        Returns: Json
+      }
+      claim_sms_reconciliation_execution: {
         Args: { p_confirmation_id: string; p_execution_token: string }
         Returns: Json
       }
@@ -5980,6 +5991,7 @@ export type Database = {
           p_confirmation_id: string
           p_error_code: string
           p_execution_token: string
+          p_failure_class: string
           p_last_error: string
           p_provider_request: Json
           p_provider_response: Json
@@ -5992,6 +6004,7 @@ export type Database = {
           p_confirmation_id: string
           p_error_code: string
           p_execution_token: string
+          p_failure_class: string
           p_last_error: string
           p_provider_response: Json
         }

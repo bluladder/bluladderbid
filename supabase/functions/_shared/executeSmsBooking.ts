@@ -56,6 +56,17 @@ export type ExecuteFailureCode =
   | "in_progress"
   | "already_failed";
 
+// Phase 6B.1 — every non-terminal-success outcome maps to a failure class.
+// Reconciliation-only classes are refused by customer-driven claims.
+export type FailureClass =
+  | "pre_claim_drift"
+  | "input_missing"
+  | "reservation_not_live"
+  | "verified_terminal_rejection"
+  | "external_outcome_unknown"
+  | "external_committed_pending_local"
+  | "manual_review_required";
+
 export interface ExecuteBookingResult {
   ok: boolean;
   status:
@@ -324,12 +335,14 @@ export async function executeSmsBooking(
   const finishPreClaimFailure = async (
     code: ExecuteFailureCode,
     detail?: string | null,
+    failureClass: FailureClass = "pre_claim_drift",
   ): Promise<ExecuteBookingResult> => {
     if (ledgerId) {
       await supabase
         .from("sms_booking_confirmations")
         .update({
           status: "failed_recoverable",
+          failure_class: failureClass,
           error_code: code,
           last_error: detail ?? null,
           last_error_at: new Date().toISOString(),
@@ -352,11 +365,13 @@ export async function executeSmsBooking(
     code: ExecuteFailureCode,
     detail?: string | null,
     providerResponse?: any,
+    failureClass: FailureClass = "verified_terminal_rejection",
   ): Promise<ExecuteBookingResult> => {
     if (ledgerId) {
       await supabase.rpc("mark_sms_booking_terminal_failure", {
         p_confirmation_id: ledgerId,
         p_execution_token: executionToken,
+        p_failure_class: failureClass,
         p_error_code: code,
         p_last_error: detail ?? null,
         p_provider_response: providerResponse ?? null,
@@ -378,11 +393,13 @@ export async function executeSmsBooking(
     detail?: string | null,
     providerRequest?: any,
     providerResponse?: any,
+    failureClass: FailureClass = "external_outcome_unknown",
   ): Promise<ExecuteBookingResult> => {
     if (ledgerId) {
       await supabase.rpc("mark_sms_booking_recoverable_failure", {
         p_confirmation_id: ledgerId,
         p_execution_token: executionToken,
+        p_failure_class: failureClass,
         p_error_code: code,
         p_last_error: detail ?? null,
         p_provider_request: providerRequest ?? null,
@@ -406,7 +423,11 @@ export async function executeSmsBooking(
     ? await deps.readinessFetcher(supabase, pres.conversation_id)
     : (await getBookingReadiness(supabase, pres.conversation_id)) as any;
   if (readiness.status !== "ready") {
-    return finishPreClaimFailure("readiness_not_ready", readiness.blockers?.[0]?.code ?? null);
+    return finishPreClaimFailure(
+      "readiness_not_ready",
+      readiness.blockers?.[0]?.code ?? null,
+      "pre_claim_drift",
+    );
   }
 
   const currentInputsKey = (readiness as any).quote?.inputs_key ?? null;
@@ -415,7 +436,7 @@ export async function executeSmsBooking(
     currentInputsKey &&
     pres.inputs_key !== currentInputsKey
   ) {
-    return finishPreClaimFailure("drift_detected", "inputs_key_changed");
+    return finishPreClaimFailure("drift_detected", "inputs_key_changed", "pre_claim_drift");
   }
 
   const currentResolvedCustomer =
@@ -427,7 +448,7 @@ export async function executeSmsBooking(
     currentResolvedCustomer &&
     pres.resolved_customer_id !== currentResolvedCustomer
   ) {
-    return finishPreClaimFailure("drift_detected", "customer_id_changed");
+    return finishPreClaimFailure("drift_detected", "customer_id_changed", "pre_claim_drift");
   }
 
   // Verify the reservation row underlying this hold is still LIVE.
@@ -445,7 +466,11 @@ export async function executeSmsBooking(
       const notExpired = !resv.expires_at
         || new Date(resv.expires_at).getTime() > now.getTime();
       if (!stillLive || !notExpired) {
-        return finishPreClaimFailure("reservation_not_live", `status=${status}`);
+        return finishPreClaimFailure(
+          "reservation_not_live",
+          `status=${status}`,
+          "reservation_not_live",
+        );
       }
     }
     // Missing row → let the idempotent booking creator re-verify capacity.
@@ -459,6 +484,7 @@ export async function executeSmsBooking(
   const { data: claim } = await supabase.rpc("claim_sms_booking_execution", {
     p_confirmation_id: ledgerId,
     p_execution_token: executionToken,
+    p_claim_source: "customer",
   });
   const claimRes = (claim ?? {}) as any;
   if (claimRes.ok === false) {
@@ -527,12 +553,37 @@ export async function executeSmsBooking(
 
   const last = (session?.fields as any)?.lastQuoteResult;
   if (!last || !Number.isFinite(Number(last.total)) || Number(last.total) <= 0) {
-    return finishRecoverableFailure(executionToken, "quote_result_missing");
+    return finishRecoverableFailure(
+      executionToken,
+      "quote_result_missing",
+      null,
+      null,
+      null,
+      "input_missing",
+    );
   }
 
-  if (!customer) return finishRecoverableFailure(executionToken, "customer_missing");
+  if (!customer) {
+    return finishRecoverableFailure(
+      executionToken,
+      "customer_missing",
+      null,
+      null,
+      null,
+      "input_missing",
+    );
+  }
   const email = String(customer.email ?? "").trim();
-  if (!email) return finishRecoverableFailure(executionToken, "customer_missing", "missing_email");
+  if (!email) {
+    return finishRecoverableFailure(
+      executionToken,
+      "customer_missing",
+      "missing_email",
+      null,
+      null,
+      "input_missing",
+    );
+  }
   const fullName = customer.first_name || customer.last_name
     ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
     : (customer.name ?? "");
@@ -541,16 +592,39 @@ export async function executeSmsBooking(
   const composed = [property?.street, property?.city, property?.state, property?.postal_code]
     .filter(Boolean).join(", ");
   const address = (property?.formatted_address ?? composed) || null;
-  if (!address) return finishRecoverableFailure(executionToken, "property_missing");
+  if (!address) {
+    return finishRecoverableFailure(
+      executionToken,
+      "property_missing",
+      null,
+      null,
+      null,
+      "input_missing",
+    );
+  }
 
   const services = servicesFromLastQuote(last);
   if (services.length === 0) {
-    return finishRecoverableFailure(executionToken, "quote_result_missing", "no_line_items");
+    return finishRecoverableFailure(
+      executionToken,
+      "quote_result_missing",
+      "no_line_items",
+      null,
+      null,
+      "input_missing",
+    );
   }
 
   const heldCrew: string[] = Array.isArray(pres.held_crew_ids) ? pres.held_crew_ids : [];
   if (heldCrew.length === 0) {
-    return finishRecoverableFailure(executionToken, "hold_missing_or_expired", "no_crew_on_hold");
+    return finishRecoverableFailure(
+      executionToken,
+      "hold_missing_or_expired",
+      "no_crew_on_hold",
+      null,
+      null,
+      "reservation_not_live",
+    );
   }
   const technicianId = heldCrew[0];
   const teamTechnicianIds = heldCrew.length > 1 ? heldCrew : undefined;
@@ -602,6 +676,7 @@ export async function executeSmsBooking(
       e instanceof Error ? e.message : String(e),
       bookingInput as any,
       null,
+      "external_outcome_unknown",
     );
   }
 
@@ -612,6 +687,7 @@ export async function executeSmsBooking(
         "booking_creator_rejected",
         creator.detail,
         (creator as any).raw ?? null,
+        "verified_terminal_rejection",
       );
     }
     return finishRecoverableFailure(
@@ -620,6 +696,7 @@ export async function executeSmsBooking(
       creator.detail,
       bookingInput as any,
       (creator as any).raw ?? null,
+      "external_outcome_unknown",
     );
   }
 
@@ -646,6 +723,7 @@ export async function executeSmsBooking(
       commitRes.reason ?? "commit_denied",
       bookingInput as any,
       { booking_creator_success: creator, commit_response: commitRes },
+      "external_committed_pending_local",
     );
   }
 
