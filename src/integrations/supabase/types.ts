@@ -4565,8 +4565,19 @@ export type Database = {
           conversation_id: string
           created_at: string
           expires_at: string
+          held_at: string | null
+          held_crew_ids: string[] | null
+          held_end_at: string | null
+          held_start_at: string | null
+          hold_expires_at: string | null
+          hold_group_id: string | null
+          hold_idempotency_key: string | null
+          hold_release_reason: string | null
+          hold_released_at: string | null
+          hold_status: string
           id: string
           idempotency_key: string | null
+          identity_resolution_method: string | null
           inputs_key: string | null
           options: Json
           outbound_message_preview: string | null
@@ -4575,6 +4586,7 @@ export type Database = {
           property_id: string | null
           quote_session_id: string | null
           quote_signature: string | null
+          resolved_customer_id: string | null
           selected_end_at: string | null
           selected_slot_id: string | null
           selected_start_at: string | null
@@ -4598,8 +4610,19 @@ export type Database = {
           conversation_id: string
           created_at?: string
           expires_at: string
+          held_at?: string | null
+          held_crew_ids?: string[] | null
+          held_end_at?: string | null
+          held_start_at?: string | null
+          hold_expires_at?: string | null
+          hold_group_id?: string | null
+          hold_idempotency_key?: string | null
+          hold_release_reason?: string | null
+          hold_released_at?: string | null
+          hold_status?: string
           id?: string
           idempotency_key?: string | null
+          identity_resolution_method?: string | null
           inputs_key?: string | null
           options: Json
           outbound_message_preview?: string | null
@@ -4608,6 +4631,7 @@ export type Database = {
           property_id?: string | null
           quote_session_id?: string | null
           quote_signature?: string | null
+          resolved_customer_id?: string | null
           selected_end_at?: string | null
           selected_slot_id?: string | null
           selected_start_at?: string | null
@@ -4631,8 +4655,19 @@ export type Database = {
           conversation_id?: string
           created_at?: string
           expires_at?: string
+          held_at?: string | null
+          held_crew_ids?: string[] | null
+          held_end_at?: string | null
+          held_start_at?: string | null
+          hold_expires_at?: string | null
+          hold_group_id?: string | null
+          hold_idempotency_key?: string | null
+          hold_release_reason?: string | null
+          hold_released_at?: string | null
+          hold_status?: string
           id?: string
           idempotency_key?: string | null
+          identity_resolution_method?: string | null
           inputs_key?: string | null
           options?: Json
           outbound_message_preview?: string | null
@@ -4641,6 +4676,7 @@ export type Database = {
           property_id?: string | null
           quote_session_id?: string | null
           quote_signature?: string | null
+          resolved_customer_id?: string | null
           selected_end_at?: string | null
           selected_slot_id?: string | null
           selected_start_at?: string | null
@@ -5669,6 +5705,14 @@ export type Database = {
         Args: { p_holder_id: string; p_lock_ttl_minutes?: number }
         Returns: boolean
       }
+      activate_presentation_atomic: {
+        Args: {
+          p_id: string
+          p_outbound_message_preview: string
+          p_outbound_sms_id: string
+        }
+        Returns: string
+      }
       admin_set_lifecycle: {
         Args: {
           p_customer_id: string
@@ -5824,6 +5868,7 @@ export type Database = {
         Returns: string
       }
       current_pricing_version: { Args: never; Returns: number }
+      expire_stale_presentation_holds: { Args: never; Returns: number }
       expire_stale_reservations: { Args: never; Returns: number }
       generate_booking_reference: { Args: never; Returns: string }
       has_admin_level: {
