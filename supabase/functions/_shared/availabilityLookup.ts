@@ -38,7 +38,7 @@
 // deno-lint-ignore-file no-explicit-any
 
 import { getBookingReadiness, type BookingReadiness } from "./bookingReadiness.ts";
-import { evaluateAutonomousSendGate } from "./autonomousSendGate.ts";
+import { evaluateAutonomousSendGate, type AutonomousGateDecision } from "./autonomousSendGate.ts";
 import { getMirrorFreshness } from "./scheduleFreshness.ts";
 import { findByConversation } from "./quoteSession.ts";
 import { buildOfferSlotId } from "./slotOffer.ts";
@@ -317,6 +317,8 @@ async function defaultFetcher(body: Record<string, unknown>): Promise<{ status: 
 export interface GetAvailableSlotsDeps {
   fetcher?: AvailabilityFetcher;
   readinessOverride?: BookingReadiness;
+  /** Test-only injection. Production code MUST NOT set this. */
+  gateOverride?: AutonomousGateDecision;
 }
 
 export async function getAvailableSlots(
@@ -327,11 +329,12 @@ export async function getAvailableSlots(
 ): Promise<AvailabilityLookupResult> {
   // ---- 1. Autonomous send / scheduling action gate (fail-closed) ----------
   const convo = await fetchConversationContext(supabase, conversationId);
-  const gate = await evaluateAutonomousSendGate(supabase, {
-    conversationId,
-    phone: convo?.prospect_phone ?? null,
-    actionClass: "scheduling",
-  });
+  const gate = deps.gateOverride
+    ?? (await evaluateAutonomousSendGate(supabase, {
+      conversationId,
+      phone: convo?.prospect_phone ?? null,
+      actionClass: "scheduling",
+    }));
   if (!gate.allow) {
     return {
       status: "gate_blocked",
