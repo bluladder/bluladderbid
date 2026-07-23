@@ -63,6 +63,7 @@ export type FailureClass =
   | "input_missing"
   | "reservation_not_live"
   | "verified_terminal_rejection"
+  | "verified_not_created"
   | "external_outcome_unknown"
   | "external_committed_pending_local"
   | "manual_review_required";
@@ -127,10 +128,15 @@ export interface BookingCreatorSuccess {
 
 export interface BookingCreatorFailure {
   ok: false;
-  /** rejected = verified terminal rejection (safe to release the hold).
-   *  unknown  = network / timeout / malformed response — KEEP the hold and
-   *             enter failed_recoverable so reconciliation resolves truth. */
-  code: "rejected" | "unknown";
+  /** not_created = booking creator VERIFIED no external write happened.
+   *                Safe to retry; release the hold and let the customer
+   *                pick fresh availability. Customer-owned recoverable.
+   *  rejected    = verified terminal rejection where an external side
+   *                effect may exist and further attempts must not run.
+   *  unknown     = network / timeout / malformed response — KEEP the hold
+   *                and enter failed_recoverable so reconciliation resolves
+   *                truth. */
+  code: "not_created" | "rejected" | "unknown";
   detail: string;
   raw?: unknown;
 }
