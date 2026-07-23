@@ -121,7 +121,6 @@ export async function notifyOwnerOfInboundReply(
         suppressed: suppression.suppressed || undefined,
         suppressed_reason: suppression.suppressed ? suppression.reason : undefined,
         send_at: nowIso,
-        related_provider_message_id: input.providerMessageId,
       });
       if (!error && !suppression.suppressed) smsQueued += 1;
     } catch (e) {
