@@ -54,6 +54,8 @@ Deno.test("readiness: unresolved identity => identity_blocked / ask_for_email", 
     conversation: { id: "c1", property_id: null, prospect_phone: null, prospect_email: null, quote_session_id: null,
       customer_id: null, confirmed_email_customer_id: null, resolution_method: null,
       resolution_confidence: null, awaiting_email_disambiguation: false },
+    autosync: { last_full_sync_completed_at: new Date().toISOString(),
+      lock_holder_id: null, lock_acquired_at: null, last_run_status: "ok" },
   });
   const r = await getBookingReadiness(supabase, "c1");
   assertEquals(r.status, "identity_blocked");
