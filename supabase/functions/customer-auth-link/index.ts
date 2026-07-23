@@ -54,6 +54,66 @@ serve(async (req) => {
     return json({ status: "already_linked", customer_account_id: existing.id });
   }
 
+  // Email/OTP portal rows may already exist for this customer from the legacy
+  // access flow. Do not insert a duplicate row with the same verified_email —
+  // attach the authenticated identity to that existing immutable customer link.
+  if (authEmail) {
+    const { data: existingEmailAccounts } = await service
+      .from("customer_accounts")
+      .select("id, customer_id, auth_user_id")
+      .eq("verified_email", authEmail);
+
+    const emailAccounts = existingEmailAccounts ?? [];
+    if (emailAccounts.length === 1) {
+      const emailAccount = emailAccounts[0] as { id: string; customer_id: string; auth_user_id: string | null };
+      if (emailAccount.auth_user_id && emailAccount.auth_user_id !== user.id) {
+        await service.from("customer_auth_link_events").insert({
+          auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
+          outcome: "ambiguous", customer_id: emailAccount.customer_id, matched_count: 1,
+          detail: "verified email is already linked to another auth user; manual review required",
+        });
+        return json({ status: "ambiguous", contact_support: true }, 200);
+      }
+
+      const { data: updated, error: updateErr } = await service
+        .from("customer_accounts")
+        .update({
+          auth_user_id: user.id,
+          auth_provider: provider,
+          auth_linked_at: new Date().toISOString(),
+          last_verified_at: new Date().toISOString(),
+        })
+        .eq("id", emailAccount.id)
+        .select("id")
+        .single();
+
+      if (updateErr || !updated) {
+        await service.from("customer_auth_link_events").insert({
+          auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
+          outcome: "error", customer_id: emailAccount.customer_id,
+          detail: updateErr?.message ?? "existing email account link update failed",
+        });
+        return json({ error: "link_failed" }, 500);
+      }
+
+      await service.from("customer_auth_link_events").insert({
+        auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
+        outcome: "linked_existing", customer_id: emailAccount.customer_id, matched_count: 1,
+        detail: "linked auth user to existing verified email portal account",
+      });
+      return json({ status: "linked_existing", customer_account_id: updated.id });
+    }
+
+    if (emailAccounts.length > 1) {
+      await service.from("customer_auth_link_events").insert({
+        auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
+        outcome: "ambiguous", matched_count: emailAccounts.length,
+        detail: "multiple customer_accounts rows share this verified email; manual review required",
+      });
+      return json({ status: "ambiguous", contact_support: true }, 200);
+    }
+  }
+
   // Deterministic match by normalized email.
   let outcome: "linked_existing" | "linked_new_account" | "ambiguous" | "error" = "error";
   let matched_count = 0;
