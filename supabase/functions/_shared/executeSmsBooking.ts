@@ -56,6 +56,17 @@ export type ExecuteFailureCode =
   | "in_progress"
   | "already_failed";
 
+// Phase 6B.1 — every non-terminal-success outcome maps to a failure class.
+// Reconciliation-only classes are refused by customer-driven claims.
+export type FailureClass =
+  | "pre_claim_drift"
+  | "input_missing"
+  | "reservation_not_live"
+  | "verified_terminal_rejection"
+  | "external_outcome_unknown"
+  | "external_committed_pending_local"
+  | "manual_review_required";
+
 export interface ExecuteBookingResult {
   ok: boolean;
   status:
