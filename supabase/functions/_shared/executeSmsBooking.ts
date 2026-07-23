@@ -687,6 +687,19 @@ export async function executeSmsBooking(
   }
 
   if (!creator.ok) {
+    if (creator.code === "not_created") {
+      // Verified no external write. Release the protected hold so the slot
+      // returns to the pool immediately, and classify as customer-owned
+      // recoverable — the customer is invited to pick fresh availability.
+      return finishRecoverableFailure(
+        executionToken,
+        "booking_creator_rejected",
+        creator.detail,
+        bookingInput as any,
+        (creator as any).raw ?? null,
+        "verified_not_created",
+      );
+    }
     if (creator.code === "rejected") {
       return finishTerminalFailure(
         executionToken,
