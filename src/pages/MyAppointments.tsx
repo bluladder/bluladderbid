@@ -339,11 +339,7 @@ function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => vo
               <CardContent className="space-y-3">
                 {data.upcoming_appointments.length === 0 && <p className="text-sm text-muted-foreground">No upcoming appointments.</p>}
                 {data.upcoming_appointments.map((b) => (
-                  <div key={b.id} className="rounded-md border p-3 text-sm">
-                    <div className="font-medium">{fmtDate(b.scheduled_start)}</div>
-                    <div className="text-muted-foreground">{b.address}</div>
-                    <div className="flex justify-between mt-1"><span>Ref {b.reference_number}</span><span>{fmt(b.total)}</span></div>
-                  </div>
+                  <UpcomingAppointmentRow key={b.id} appt={b} fmt={fmt} fmtDate={fmtDate} />
                 ))}
               </CardContent>
             </Card>
