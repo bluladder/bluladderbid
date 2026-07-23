@@ -113,3 +113,9 @@ verify_jwt = false
 # provider can post server events without a Supabase session.
 [functions.voice-vapi-events]
 verify_jwt = false
+
+# Phase 6B.2 reconciliation runner. Authenticated in-code via the
+# service-role Bearer/apikey header; leave verify_jwt disabled so the
+# platform scheduler can invoke it without a Supabase session.
+[functions.sms-booking-reconcile]
+verify_jwt = false
