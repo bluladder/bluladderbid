@@ -199,7 +199,7 @@ export default function MyAppointments() {
       return;
     }
     const strength = isReasonablePassword(pwPassword);
-    if (!strength.ok) { setPwError(strength.msg); return; }
+    if (strength.ok === false) { setPwError(strength.msg); return; }
     if (pwPassword !== pwConfirm) { setPwError('Passwords do not match.'); return; }
     setLoading(true);
     try {
