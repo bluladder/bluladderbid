@@ -443,7 +443,7 @@ serve(async (req) => {
       ? ((meta as Record<string, unknown>).service_names as unknown[]).map(String).filter(Boolean).join(", ")
       : "";
     const bookingTotalStr = formatBookingTotal((meta as Record<string, unknown>).booking_total);
-    const manageLink = safeLink((meta as Record<string, unknown>).manage_link, `${APP_URL}/my-appointments`);
+    const manageLink = safeLink((meta as Record<string, unknown>).manage_link, `${APP_URL}/customer-portal`);
     const rescheduleLink = safeLink((meta as Record<string, unknown>).reschedule_link, manageLink);
     const cancelLink = safeLink((meta as Record<string, unknown>).cancel_link, manageLink);
     // Reschedule-specific merge vars (Phase 2B). Missing values render as

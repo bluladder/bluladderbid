@@ -13,9 +13,9 @@ import { Button } from "@/components/ui/button";
 // a same-origin relative path — never taken directly from an untrusted URL
 // parameter — to prevent open redirects.
 function sanitizeNext(raw: string | null): string {
-  if (!raw) return "/my-appointments";
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/my-appointments";
-  if (raw.startsWith("/admin")) return "/my-appointments";
+  if (!raw) return "/customer-portal";
+  if (!raw.startsWith("/") || raw.startsWith("//")) return "/customer-portal";
+  if (raw.startsWith("/admin")) return "/customer-portal";
   return raw;
 }
 
@@ -78,7 +78,7 @@ export default function AuthCallback() {
           <>
             <h1 className="text-xl font-semibold">Sign-in problem</h1>
             <p className="text-sm text-muted-foreground">{error}</p>
-            <Button className="min-h-11" onClick={() => navigate("/my-appointments", { replace: true })}>
+            <Button className="min-h-11" onClick={() => navigate("/customer-portal", { replace: true })}>
               Back to sign-in
             </Button>
           </>

@@ -183,7 +183,7 @@ export async function finalizeBookingCancellation(
         service_address: serviceAddress,
         booking_total: booking.total,
         cancellation_reason: trim(input.reason ?? null, 120),
-        manage_link: `${APP_URL}/my-appointments`,
+        manage_link: `${APP_URL}/customer-portal`,
         booking_link: `${APP_URL}/`,
       },
     });

@@ -182,7 +182,7 @@ export default function ConfirmChange() {
           </CardHeader>
           <CardContent className="space-y-4">
             <Button asChild className="w-full">
-              <Link to="/my-appointments">View My Appointments</Link>
+              <Link to="/customer-portal">View Customer Portal</Link>
             </Button>
             <Button variant="outline" asChild className="w-full">
               <Link to="/">Return Home</Link>

@@ -232,8 +232,8 @@ serve(async (req) => {
         vars.date = date;
         vars.time = time;
         vars.total = formatPrice(bk.total);
-        vars.appointment_link = `${APP_URL}/my-appointments`;
-        vars.link = `${APP_URL}/my-appointments`;
+        vars.appointment_link = `${APP_URL}/customer-portal`;
+        vars.link = `${APP_URL}/customer-portal`;
       }
     } else if (quoteId) {
       const { data: q } = await supabase

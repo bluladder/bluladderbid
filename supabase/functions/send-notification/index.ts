@@ -73,7 +73,7 @@ function generateEmailContent(
         <p><strong>Services:</strong> ${(booking.services_json as Array<{name: string}>).map(s => s.name).join(', ')}</p>
         ${showPriceChange ? `<p><strong>Total:</strong> ${formatPrice(booking.total as number)}</p>` : ''}
       `;
-      actionHtml = `<a href="${APP_URL}/my-appointments" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Appointment</a>`;
+      actionHtml = `<a href="${APP_URL}/customer-portal" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Appointment</a>`;
       break;
 
     case 'rescheduled':
@@ -138,7 +138,7 @@ function generateEmailContent(
   }
 
   if (!actionHtml && eventType !== 'cancelled') {
-    actionHtml = `<a href="${APP_URL}/my-appointments" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Appointment</a>`;
+    actionHtml = `<a href="${APP_URL}/customer-portal" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Appointment</a>`;
   }
 
   const html = `

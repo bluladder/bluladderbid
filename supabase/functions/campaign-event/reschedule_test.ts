@@ -35,7 +35,7 @@ Deno.test("reschedule confirmation SMS renders safely when arrival_window is mis
   const out = renderTemplate(tpl, {
     first_name: "Ada",
     appointment_when: when,
-    manage_link: "https://bluladderbid.lovable.app/my-appointments",
+    manage_link: "https://bluladderbid.lovable.app/customer-portal",
   });
   // Never contains "undefined", "null", or a dangling "during ."
   assert(!/undefined|null|during \./.test(out));

@@ -46,8 +46,8 @@ Deno.test("formatBookingTotal returns empty string for zero/missing (never '$0')
 });
 
 Deno.test("safeLink refuses non-absolute URLs and falls back", () => {
-  const fallback = "https://bluladderbid.lovable.app/my-appointments";
-  assertEquals(safeLink("https://bluladderbid.lovable.app/my-appointments?b=1", fallback), "https://bluladderbid.lovable.app/my-appointments?b=1");
+  const fallback = "https://bluladderbid.lovable.app/customer-portal";
+  assertEquals(safeLink("https://bluladderbid.lovable.app/customer-portal?b=1", fallback), "https://bluladderbid.lovable.app/customer-portal?b=1");
   assertEquals(safeLink("javascript:alert(1)", fallback), fallback);
   assertEquals(safeLink("/relative", fallback), fallback);
   assertEquals(safeLink(null, fallback), fallback);
@@ -67,13 +67,13 @@ Deno.test("Booking confirmation SMS renders cleanly with full data", () => {
     first_name: "Jamie",
     service: "Window Cleaning",
     appointment_when: buildAppointmentWhen(formatAppointmentDate("2026-07-21T15:00:00Z"), "8:00 AM – 10:00 AM"),
-    manage_link: safeLink("https://bluladderbid.lovable.app/my-appointments?b=abc", "https://bluladderbid.lovable.app/my-appointments"),
+    manage_link: safeLink("https://bluladderbid.lovable.app/customer-portal?b=abc", "https://bluladderbid.lovable.app/customer-portal"),
   };
   const out = renderTemplate(SMS_TEMPLATE, vars);
   assert(out.includes("Jamie"));
   assert(out.includes("Tuesday, July 21 during 8:00 AM – 10:00 AM"));
   assert(out.includes("Window Cleaning"));
-  assert(out.includes("https://bluladderbid.lovable.app/my-appointments?b=abc"));
+  assert(out.includes("https://bluladderbid.lovable.app/customer-portal?b=abc"));
   assert(!out.includes("{{"), "no unrendered placeholders");
   assert(!out.includes("undefined"));
   assert(!out.includes("during ."), "must not produce awkward 'during .' output");
@@ -84,7 +84,7 @@ Deno.test("Booking confirmation SMS renders cleanly when arrival_window is missi
     first_name: "Jamie",
     service: "Pressure Washing",
     appointment_when: buildAppointmentWhen(formatAppointmentDate("2026-07-21T15:00:00Z"), null),
-    manage_link: "https://bluladderbid.lovable.app/my-appointments",
+    manage_link: "https://bluladderbid.lovable.app/customer-portal",
   };
   const out = renderTemplate(SMS_TEMPLATE, vars);
   assert(out.includes("confirmed for Tuesday, July 21."));
@@ -97,7 +97,7 @@ Deno.test("Booking confirmation email renders without $0 when total is missing",
   const rendered = renderTemplate(body, {
     appointment_when: "Tuesday, July 21 during 8-10 AM",
     booking_total: formatBookingTotal(0), // missing / zero
-    manage_link: "https://bluladderbid.lovable.app/my-appointments",
+    manage_link: "https://bluladderbid.lovable.app/customer-portal",
   });
   assert(!rendered.includes("$0"), "must never render $0 when total is unknown");
   assert(rendered.includes("Estimated total: \n") || rendered.match(/Estimated total: *\n/), "empty total line renders as blank");

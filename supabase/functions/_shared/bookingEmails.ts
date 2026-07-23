@@ -142,7 +142,7 @@ function customerHtml(
     <p style="margin:0">If severe weather makes your services unsafe or ineffective, we'll reach out to reschedule — no fee, no rebooking hassle.</p>
     <h3 style="margin:20px 0 6px 0">Need to change something?</h3>
     <p style="margin:0">Reply to this email at <a href="mailto:${OFFICE_REPLY}">${OFFICE_REPLY}</a> or text ${escapeHtml(CUSTOMER_HELP_SMS)}. You can also manage this appointment at
-    <a href="${APP_URL}/my-appointments">${APP_URL}/my-appointments</a>.</p>
+    <a href="${APP_URL}/customer-portal">${APP_URL}/customer-portal</a>.</p>
     <hr style="border:none;border-top:1px solid #e5e7eb;margin:22px 0"/>
     <p style="font-size:12px;color:#64748b;margin:0">© ${new Date().getFullYear()} BluLadder</p>
   `;

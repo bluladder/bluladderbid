@@ -59,7 +59,7 @@ export default function ResetPassword() {
       const { error } = await supabase.auth.updateUser({ password: pw });
       if (error) { setErr('We couldn\'t update your password. The link may be expired.'); return; }
       toast({ title: 'Password updated', description: 'You are now signed in.' });
-      navigate('/my-appointments', { replace: true });
+      navigate('/customer-portal', { replace: true });
     } finally {
       setSaving(false);
     }
@@ -81,7 +81,7 @@ export default function ResetPassword() {
             {linkError ? (
               <div className="space-y-3 text-center">
                 <p className="text-sm text-destructive">{linkError}</p>
-                <Button className="w-full min-h-11" onClick={() => navigate('/my-appointments', { replace: true })}>
+                <Button className="w-full min-h-11" onClick={() => navigate('/customer-portal', { replace: true })}>
                   Back to sign-in
                 </Button>
               </div>

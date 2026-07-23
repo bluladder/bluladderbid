@@ -34,6 +34,7 @@ const App = () => (
           <Route path="/plan-builder" element={<PlanBuilder />} />
           <Route path="/quote/:id" element={<QuoteView />} />
           <Route path="/quote/:id/book" element={<QuoteBookingView />} />
+          <Route path="/customer-portal" element={<MyAppointments />} />
           <Route path="/my-appointments" element={<MyAppointments />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/reset-password" element={<ResetPassword />} />

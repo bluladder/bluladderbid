@@ -11,7 +11,7 @@
 // specific tables required by each gate. Every query is bounded and read-only.
 // ============================================================================
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 export const NURTURE_RECENT_BOOKING_WINDOW_DAYS = 14;
 

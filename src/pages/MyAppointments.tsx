@@ -64,7 +64,7 @@ type Stage =
 
 interface PortalData {
   customer: { first_name?: string; last_name?: string; address?: string } | null;
-  recent_quotes: Array<{ id: string; created_at: string; total: number; status: string; address?: string; services_json?: any }>;
+  recent_quotes: Array<{ id: string; created_at: string; total: number; status: string; address?: string; services_json?: any; line_item_snapshot?: any }>;
   upcoming_appointments: Array<{ id: string; reference_number: string; scheduled_start: string; address?: string; status: string; total: number }>;
   previous_work: Array<{ id: string; reference_number: string; scheduled_start: string; address?: string; total: number }>;
 }
@@ -160,7 +160,7 @@ export default function MyAppointments() {
   async function continueWithGoogle() {
     setLoading(true);
     try {
-      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      sessionStorage.setItem('bl_auth_next', '/customer-portal');
       const result = await lovable.auth.signInWithOAuth('google', {
         redirect_uri: `${window.location.origin}/auth/callback`,
       });
@@ -184,7 +184,7 @@ export default function MyAppointments() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) return;
     setLoading(true);
     try {
-      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      sessionStorage.setItem('bl_auth_next', '/customer-portal');
       const { error } = await supabase.auth.signInWithOtp({
         email: addr,
         options: {
@@ -217,7 +217,7 @@ export default function MyAppointments() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr) || !pwPassword) return;
     setLoading(true);
     try {
-      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      sessionStorage.setItem('bl_auth_next', '/customer-portal');
       const { error } = await supabase.auth.signInWithPassword({ email: addr, password: pwPassword });
       if (error) {
         // Neutral message — do not disclose whether the account exists. Steer
@@ -246,7 +246,7 @@ export default function MyAppointments() {
     if (pwPassword !== pwConfirm) { setPwError('Passwords do not match.'); return; }
     setLoading(true);
     try {
-      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      sessionStorage.setItem('bl_auth_next', '/customer-portal');
       const { data: res, error } = await supabase.auth.signUp({
         email: addr,
         password: pwPassword,
@@ -777,7 +777,7 @@ export default function MyAppointments() {
               <div className="space-y-3">
                 <Label htmlFor="portal-email-code">6-digit code from your email</Label>
                 <p className="text-xs text-muted-foreground">
-                  Enter only the code from “Your BluLadder verification code.” Password reset or recovery emails are not used for My Appointments.
+                  Enter only the code from “Your BluLadder verification code.” Password reset or recovery emails are not used for Customer Portal access.
                 </p>
                 <Input
                   id="portal-email-code"
@@ -816,6 +816,7 @@ function PortalView({ data, onSignOut, authedEmail, onRefresh }: { data: PortalD
       <main className="container py-8 max-w-3xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
+            <p className="text-sm font-medium text-primary">Customer Portal</p>
             <h1 className="text-2xl font-semibold">Welcome back, {name}</h1>
             {authedEmail && <p className="text-xs text-muted-foreground">Signed in as {authedEmail}</p>}
           </div>
@@ -907,7 +908,17 @@ type QuoteItem = PortalData['recent_quotes'][number];
 
 interface LineItem { key?: string; label?: string; name?: string; amount?: number; quantity?: number; unit?: string }
 
-function extractLineItems(services_json: any): LineItem[] {
+function extractLineItems(services_json: any, line_item_snapshot?: any): LineItem[] {
+  if (Array.isArray(line_item_snapshot) && line_item_snapshot.length > 0) {
+    return line_item_snapshot.map((li: any) => ({
+      key: li.key,
+      label: li.label ?? li.name,
+      name: li.name,
+      amount: Number(li.amount) || 0,
+      quantity: li.quantity,
+      unit: li.unit,
+    }));
+  }
   if (!services_json || typeof services_json !== 'object') return [];
   if (Array.isArray(services_json.lineItems) && services_json.lineItems.length > 0) return services_json.lineItems;
   if (Array.isArray(services_json.services)) {
@@ -920,7 +931,7 @@ function extractLineItems(services_json: any): LineItem[] {
 
 function QuoteRow({ quote, fmt }: { quote: QuoteItem; fmt: (n: number) => string }) {
   const [open, setOpen] = useState(false);
-  const items = extractLineItems(quote.services_json);
+  const items = extractLineItems(quote.services_json, quote.line_item_snapshot);
   const dateStr = new Date(quote.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   return (
     <div className="rounded-md border p-3 text-sm space-y-2">

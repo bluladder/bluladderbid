@@ -233,7 +233,7 @@ export default function QuoteBookingView() {
                 </p>
               )}
               <Button asChild className="w-full">
-                <Link to="/my-appointments">Manage this appointment</Link>
+                <Link to="/customer-portal">Manage this appointment</Link>
               </Button>
             </CardContent>
           </Card>

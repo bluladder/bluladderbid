@@ -19,7 +19,7 @@ interface CustomerHeaderProps {
 const NAV_LINKS = [
   { to: '/services', label: 'Services' },
   { to: '/plan-builder', label: 'Service Plans' },
-  { to: '/my-appointments', label: 'My Appointments' },
+  { to: '/customer-portal', label: 'Customer Portal' },
 ];
 
 /**
