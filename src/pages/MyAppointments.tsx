@@ -3,14 +3,26 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone, FileText, ExternalLink } from 'lucide-react';
+import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone, FileText, ExternalLink, Mail } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PRIMARY_PUBLIC_PHONE } from '@/config/contact';
 import { supabase } from '@/integrations/supabase/client';
+import { lovable } from '@/integrations/lovable';
 import { useToast } from '@/hooks/use-toast';
+
+function GoogleGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
+  );
+}
 
 // Memory-only portal token.
 // The customer frontend (bid.bluladder.com) and Edge Functions (*.supabase.co) live
@@ -34,7 +46,17 @@ function portalHeaders(): Record<string, string> {
 // through edge functions that validate an httpOnly session cookie. The browser
 // never touches customer, quote, or booking tables directly.
 
-type Stage = 'enter_phone' | 'enter_code' | 'enter_email' | 'enter_email_code' | 'signed_in';
+// Primary auth path: Google + email magic link (Supabase Auth). Phone/email OTP
+// remains available as a "trouble signing in?" fallback but is not shown by default.
+type Stage =
+  | 'choose'
+  | 'magic_link_email'
+  | 'magic_link_sent'
+  | 'legacy_phone'
+  | 'legacy_phone_code'
+  | 'legacy_email'
+  | 'legacy_email_code'
+  | 'signed_in';
 
 interface PortalData {
   customer: { first_name?: string; last_name?: string; address?: string } | null;
@@ -45,16 +67,93 @@ interface PortalData {
 
 export default function MyAppointments() {
   const { toast } = useToast();
-  const [stage, setStage] = useState<Stage>('enter_phone');
+  const [stage, setStage] = useState<Stage>('choose');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [email, setEmail] = useState('');
   const [emailCode, setEmailCode] = useState('');
+  const [magicEmail, setMagicEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<PortalData | null>(null);
+  const [authedEmail, setAuthedEmail] = useState<string | null>(null);
+
+  // Watch Supabase Auth session — if a real auth user is signed in, prefer that
+  // path over the legacy portal-token flow.
+  useEffect(() => {
+    let cancelled = false;
+    const hydrateAuthed = async () => {
+      const { data: authedData, error } = await supabase.functions.invoke('customer-portal-data-authed');
+      if (cancelled) return;
+      if (error || !authedData) return;
+      setData(authedData as PortalData);
+      setStage('signed_in');
+    };
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      if (session?.user) {
+        setAuthedEmail(session.user.email ?? null);
+        void hydrateAuthed();
+      }
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      if (session?.user) {
+        setAuthedEmail(session.user.email ?? null);
+        void hydrateAuthed();
+      } else {
+        setAuthedEmail(null);
+      }
+    });
+    return () => { cancelled = true; sub.subscription.unsubscribe(); };
+  }, []);
 
   // No persistent session — nothing to restore. In-memory token dies on refresh.
   useEffect(() => { if (inMemoryPortalToken) void refreshPortalData(true); }, []);
+
+  // --- Supabase Auth primary path ---------------------------------------
+  async function continueWithGoogle() {
+    setLoading(true);
+    try {
+      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      const result = await lovable.auth.signInWithOAuth('google', {
+        redirect_uri: `${window.location.origin}/auth/callback`,
+      });
+      if (result.error) {
+        toast({
+          title: 'Sign-in cancelled',
+          description: 'Google sign-in didn\'t complete. Please try again.',
+          variant: 'destructive',
+        });
+      }
+      // If redirected, the browser navigates away; nothing more to do here.
+    } catch {
+      toast({ title: 'Sign-in error', description: 'Please try again.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function sendMagicLink() {
+    const addr = magicEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) return;
+    setLoading(true);
+    try {
+      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      const { error } = await supabase.auth.signInWithOtp({
+        email: addr,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          shouldCreateUser: true,
+        },
+      });
+      if (error) {
+        // Never reveal whether an account exists.
+        toast({ title: 'Check your email', description: 'If that address is reachable, we sent you a sign-in link.' });
+      }
+      setStage('magic_link_sent');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function refreshPortalData(silent = false) {
     try {
@@ -82,7 +181,7 @@ export default function MyAppointments() {
         title: 'Check your phone',
         description: 'If that number is reachable, we texted you a 6-digit code from (469) 747-2877.',
       });
-      setStage('enter_code');
+      setStage('legacy_phone_code');
     } finally {
       setLoading(false);
     }
@@ -129,11 +228,11 @@ export default function MyAppointments() {
         title: 'Check your email',
         description: 'If that address is reachable, we sent a 6-digit code. It expires shortly.',
       });
-      setStage('enter_email_code');
+      setStage('legacy_email_code');
     } catch {
       // Generic — never reveal whether an account exists.
       toast({ title: 'Check your email', description: 'If that address is reachable, we sent a code.' });
-      setStage('enter_email_code');
+      setStage('legacy_email_code');
     } finally {
       setLoading(false);
     }
@@ -164,18 +263,22 @@ export default function MyAppointments() {
   }
 
   async function signOut() {
-    await supabase.functions.invoke('customer-verification-logout', { headers: portalHeaders() });
+    // Sign out of both the legacy portal session and the Supabase Auth session.
+    try { await supabase.functions.invoke('customer-verification-logout', { headers: portalHeaders() }); } catch { /* noop */ }
+    try { await supabase.auth.signOut(); } catch { /* noop */ }
     writePortalToken(null);
     setData(null);
     setPhone('');
     setCode('');
     setEmail('');
     setEmailCode('');
-    setStage('enter_phone');
+    setMagicEmail('');
+    setAuthedEmail(null);
+    setStage('choose');
   }
 
   if (stage === 'signed_in' && data) {
-    return <PortalView data={data} onSignOut={signOut} />;
+    return <PortalView data={data} onSignOut={signOut} authedEmail={authedEmail} />;
   }
 
   return (
@@ -186,16 +289,98 @@ export default function MyAppointments() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-primary" />
-              Secure sign-in
+              Sign in to your account
             </CardTitle>
             <CardDescription>
-              Enter your mobile number and we'll text a 6-digit code from
-              {' '}{PRIMARY_PUBLIC_PHONE.display}.
+              View your bids, upcoming appointments, and past work.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {stage === 'enter_phone' && (
+            {stage === 'choose' && (
               <div className="space-y-3">
+                <Button
+                  className="w-full min-h-11"
+                  onClick={continueWithGoogle}
+                  disabled={loading}
+                >
+                  {loading
+                    ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    : <GoogleGlyph className="w-4 h-4 mr-2" />}
+                  Continue with Google
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full min-h-11"
+                  onClick={() => setStage('magic_link_email')}
+                  disabled={loading}
+                >
+                  <Mail className="w-4 h-4 mr-2" />
+                  Continue with Email
+                </Button>
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    onClick={() => setStage('legacy_phone')}
+                    disabled={loading}
+                  >
+                    Trouble signing in? Use a phone code instead
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground pt-2">
+                  By continuing you agree to our terms and privacy notice. We won't post anything to your Google account.
+                </p>
+              </div>
+            )}
+
+            {stage === 'magic_link_email' && (
+              <div className="space-y-3">
+                <Label htmlFor="magic-email">Email address</Label>
+                <Input
+                  id="magic-email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={magicEmail}
+                  onChange={(e) => setMagicEmail(e.target.value)}
+                  disabled={loading}
+                  className="min-h-11"
+                />
+                <Button
+                  className="w-full min-h-11"
+                  onClick={sendMagicLink}
+                  disabled={loading || !magicEmail.trim()}
+                >
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
+                  Send me a sign-in link
+                </Button>
+                <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('choose')} disabled={loading}>
+                  Back
+                </Button>
+              </div>
+            )}
+
+            {stage === 'magic_link_sent' && (
+              <div className="space-y-3 text-center">
+                <Mail className="w-8 h-8 text-primary mx-auto" />
+                <h3 className="font-medium">Check your email</h3>
+                <p className="text-sm text-muted-foreground">
+                  If <span className="font-medium text-foreground">{magicEmail}</span> is reachable, we sent a secure sign-in link. Open it on this device to continue.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  The link expires shortly. You can close this tab and click the link from your email.
+                </p>
+                <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('choose')}>
+                  Use a different method
+                </Button>
+              </div>
+            )}
+
+            {stage === 'legacy_phone' && (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  We'll text a 6-digit code from {PRIMARY_PUBLIC_PHONE.display}.
+                </p>
                 <Label htmlFor="portal-phone">Mobile phone</Label>
                 <Input
                   id="portal-phone"
@@ -205,23 +390,21 @@ export default function MyAppointments() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   disabled={loading}
+                  className="min-h-11"
                 />
-                <Button className="w-full" onClick={requestCode} disabled={loading || !phone.trim()}>
+                <Button className="w-full min-h-11" onClick={requestCode} disabled={loading || !phone.trim()}>
                   {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <MessageSquare className="w-4 h-4 mr-2" />}
                   Text me a code
                 </Button>
-                <Button variant="ghost" className="w-full" onClick={() => setStage('enter_email')} disabled={loading}>
-                  Verify another way
+                <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('legacy_email')} disabled={loading}>
+                  Use email OTP instead
                 </Button>
-                <p className="text-xs text-muted-foreground">
-                  Message and data rates may apply. This is a one-time verification, not a marketing subscription.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  For your security, sign-in ends when you close or refresh this tab.
-                </p>
+                <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('choose')} disabled={loading}>
+                  Back to sign-in options
+                </Button>
               </div>
             )}
-            {stage === 'enter_code' && (
+            {stage === 'legacy_phone_code' && (
               <div className="space-y-3">
                 <Label htmlFor="portal-code">6-digit code</Label>
                 <Input
@@ -233,17 +416,18 @@ export default function MyAppointments() {
                   value={code}
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
                   disabled={loading}
+                  className="min-h-11"
                 />
-                <Button className="w-full" onClick={confirmCode} disabled={loading || !/^\d{6}$/.test(code)}>
+                <Button className="w-full min-h-11" onClick={confirmCode} disabled={loading || !/^\d{6}$/.test(code)}>
                   {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
                   Verify
                 </Button>
-                <Button variant="ghost" className="w-full" onClick={() => setStage('enter_phone')} disabled={loading}>
+                <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('legacy_phone')} disabled={loading}>
                   Use a different number
                 </Button>
               </div>
             )}
-            {stage === 'enter_email' && (
+            {stage === 'legacy_email' && (
               <div className="space-y-3">
                 <Label htmlFor="portal-email">Email address</Label>
                 <Input
@@ -254,17 +438,18 @@ export default function MyAppointments() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}
+                  className="min-h-11"
                 />
-                <Button className="w-full" onClick={requestEmailCode} disabled={loading || !email.trim()}>
+                <Button className="w-full min-h-11" onClick={requestEmailCode} disabled={loading || !email.trim()}>
                   {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
                   Email me a secure code
                 </Button>
-                <Button variant="ghost" className="w-full" onClick={() => setStage('enter_phone')} disabled={loading}>
+                <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('legacy_phone')} disabled={loading}>
                   Use phone instead
                 </Button>
               </div>
             )}
-            {stage === 'enter_email_code' && (
+            {stage === 'legacy_email_code' && (
               <div className="space-y-3">
                 <Label htmlFor="portal-email-code">6-digit code from your email</Label>
                 <p className="text-xs text-muted-foreground">
@@ -279,12 +464,13 @@ export default function MyAppointments() {
                   value={emailCode}
                   onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, ''))}
                   disabled={loading}
+                  className="min-h-11"
                 />
-                <Button className="w-full" onClick={confirmEmailCode} disabled={loading || !/^\d{6}$/.test(emailCode)}>
+                <Button className="w-full min-h-11" onClick={confirmEmailCode} disabled={loading || !/^\d{6}$/.test(emailCode)}>
                   {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ShieldCheck className="w-4 h-4 mr-2" />}
                   Verify
                 </Button>
-                <Button variant="ghost" className="w-full" onClick={() => setStage('enter_email')} disabled={loading}>
+                <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('legacy_email')} disabled={loading}>
                   Use a different email
                 </Button>
               </div>
@@ -296,7 +482,7 @@ export default function MyAppointments() {
   );
 }
 
-function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => void }) {
+function PortalView({ data, onSignOut, authedEmail }: { data: PortalData; onSignOut: () => void; authedEmail?: string | null }) {
   const name = [data.customer?.first_name, data.customer?.last_name].filter(Boolean).join(' ') || 'there';
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
   const fmtDate = (iso: string) => new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
@@ -305,8 +491,11 @@ function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => vo
       <CustomerHeader />
       <main className="container py-8 max-w-3xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Welcome back, {name}</h1>
-          <Button variant="ghost" size="sm" onClick={onSignOut}>
+          <div>
+            <h1 className="text-2xl font-semibold">Welcome back, {name}</h1>
+            {authedEmail && <p className="text-xs text-muted-foreground">Signed in as {authedEmail}</p>}
+          </div>
+          <Button variant="ghost" size="sm" onClick={onSignOut} className="min-h-11">
             <LogOut className="w-4 h-4 mr-2" />Sign out
           </Button>
         </div>

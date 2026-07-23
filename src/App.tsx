@@ -13,6 +13,7 @@ import QuoteBookingView from "./pages/QuoteBookingView";
 import MyAppointments from "./pages/MyAppointments";
 import ConfirmChange from "./pages/ConfirmChange";
 import MessagePreferences from "./pages/MessagePreferences";
+import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 import ChatWidget from "./components/chat/ChatWidget";
 
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/quote/:id" element={<QuoteView />} />
           <Route path="/quote/:id/book" element={<QuoteBookingView />} />
           <Route path="/my-appointments" element={<MyAppointments />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/confirm-change" element={<ConfirmChange />} />
           <Route path="/preferences" element={<MessagePreferences />} />
           {/* Service-specific landing pages */}

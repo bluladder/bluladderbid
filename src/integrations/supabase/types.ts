@@ -1991,6 +1991,9 @@ export type Database = {
       }
       customer_accounts: {
         Row: {
+          auth_linked_at: string | null
+          auth_provider: string | null
+          auth_user_id: string | null
           created_at: string
           customer_id: string
           id: string
@@ -2000,6 +2003,9 @@ export type Database = {
           verified_phone: string | null
         }
         Insert: {
+          auth_linked_at?: string | null
+          auth_provider?: string | null
+          auth_user_id?: string | null
           created_at?: string
           customer_id: string
           id?: string
@@ -2009,6 +2015,9 @@ export type Database = {
           verified_phone?: string | null
         }
         Update: {
+          auth_linked_at?: string | null
+          auth_provider?: string | null
+          auth_user_id?: string | null
           created_at?: string
           customer_id?: string
           id?: string
@@ -2026,6 +2035,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      customer_auth_link_events: {
+        Row: {
+          auth_email: string | null
+          auth_provider: string | null
+          auth_user_id: string | null
+          created_at: string
+          customer_id: string | null
+          detail: string | null
+          id: string
+          matched_count: number | null
+          outcome: string
+        }
+        Insert: {
+          auth_email?: string | null
+          auth_provider?: string | null
+          auth_user_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          detail?: string | null
+          id?: string
+          matched_count?: number | null
+          outcome: string
+        }
+        Update: {
+          auth_email?: string | null
+          auth_provider?: string | null
+          auth_user_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          detail?: string | null
+          id?: string
+          matched_count?: number | null
+          outcome?: string
+        }
+        Relationships: []
       }
       customer_portal_sessions: {
         Row: {
