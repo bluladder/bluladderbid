@@ -44,7 +44,7 @@ function makeStub(seed: Record<string, Row[]>) {
         return { data: rows[0] ?? null, error: null };
       },
       insert(row: Row) {
-        const newRow = { id: crypto.randomUUID(), created_at: new Date().toISOString(), ...row };
+        const newRow: Row = { id: crypto.randomUUID(), created_at: new Date().toISOString(), ...row };
         // Enforce unique idempotency_key for sms_booking_confirmations.
         if (table === "sms_booking_confirmations" && newRow.idempotency_key) {
           const clash = (tables[table] ?? []).some((r) =>
