@@ -7,6 +7,7 @@ import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/hom
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 import { CompleteYourRefresh } from './CompleteYourRefresh';
 import { LiveQuoteBar } from './LiveQuoteBar';
+import { useUpsellEstimates } from '@/hooks/useUpsellEstimates';
 
 interface ServiceReviewStepProps {
   servicePrices: ServicePrices;
@@ -98,6 +99,12 @@ export function ServiceReviewStep({
   onBack,
   onAdditionalServicesChange,
 }: ServiceReviewStepProps) {
+  // Fetch real per-sqft estimates for the four services whose price is fully
+  // determined by the home (window cleaning, house wash, gutter cleaning,
+  // roof cleaning). Pressure washing and driveway continue to show the
+  // "from $X" floor because their price depends on flatwork sqft the
+  // customer hasn't entered yet at the upsell moment.
+  const upsellEstimates = useUpsellEstimates(homeDetails, !!onAdditionalServicesChange);
   const subtotal = servicePrices.grandTotal;
   const finalTotal = subtotal - discountAmount;
 
