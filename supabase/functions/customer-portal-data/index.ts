@@ -29,7 +29,7 @@ serve(async (req) => {
 
   const { data: account } = await supabase
     .from("customer_accounts")
-    .select("customer_id")
+    .select("customer_id, verified_phone, verified_email")
     .eq("id", session.customer_account_id)
     .single();
   if (!account) {
@@ -37,27 +37,45 @@ serve(async (req) => {
       status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  const customerId = account.customer_id;
+  // A single verified person can have multiple customer rows (created from
+  // different intake paths — SMS, web form, imports). Aggregate every row that
+  // shares the verified phone or verified email on this account so the portal
+  // shows all of their quotes, upcoming visits, and past work — not just the
+  // customer row that happened to be linked when the account was created.
+  const orFilters: string[] = [];
+  if (account.verified_phone) orFilters.push(`phone.eq.${account.verified_phone}`);
+  if (account.verified_email) orFilters.push(`email.eq.${account.verified_email.toLowerCase()}`);
+  let customerIds: string[] = [account.customer_id];
+  if (orFilters.length > 0) {
+    const { data: matches } = await supabase
+      .from("customers")
+      .select("id")
+      .or(orFilters.join(","));
+    if (matches && matches.length > 0) {
+      customerIds = Array.from(new Set([account.customer_id, ...matches.map((m: any) => m.id)]));
+    }
+  }
+  const primaryCustomerId = account.customer_id;
 
   const [customer, quotes, upcoming, completed] = await Promise.all([
     supabase.from("customers")
       .select("first_name, last_name, address")
-      .eq("id", customerId).maybeSingle(),
+      .eq("id", primaryCustomerId).maybeSingle(),
     supabase.from("quotes")
       .select("id, created_at, total, status, services_json, address")
-      .eq("customer_id", customerId)
+      .in("customer_id", customerIds)
       .gte("created_at", new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString())
       .order("created_at", { ascending: false })
       .limit(20),
     supabase.from("bookings")
       .select("id, reference_number, scheduled_start, scheduled_end, status, address, services_json, total")
-      .eq("customer_id", customerId)
+      .in("customer_id", customerIds)
       .in("status", ["scheduled", "confirmed", "in_progress"])
       .order("scheduled_start", { ascending: true })
       .limit(20),
     supabase.from("bookings")
       .select("id, reference_number, scheduled_start, status, address, services_json, total")
-      .eq("customer_id", customerId)
+      .in("customer_id", customerIds)
       .eq("status", "completed")
       .order("scheduled_start", { ascending: false })
       .limit(20),
