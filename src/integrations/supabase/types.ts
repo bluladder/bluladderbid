@@ -4557,6 +4557,74 @@ export type Database = {
         }
         Relationships: []
       }
+      sms_availability_presentations: {
+        Row: {
+          authoritative_duration_minutes: number | null
+          canonical_total_cents: number | null
+          conversation_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          inputs_key: string | null
+          options: Json
+          outbound_message_preview: string | null
+          outbound_sms_id: string | null
+          pricing_version: string | null
+          property_id: string | null
+          quote_session_id: string | null
+          quote_signature: string | null
+          status: string
+          superseded_at: string | null
+          superseded_by: string | null
+        }
+        Insert: {
+          authoritative_duration_minutes?: number | null
+          canonical_total_cents?: number | null
+          conversation_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          inputs_key?: string | null
+          options: Json
+          outbound_message_preview?: string | null
+          outbound_sms_id?: string | null
+          pricing_version?: string | null
+          property_id?: string | null
+          quote_session_id?: string | null
+          quote_signature?: string | null
+          status?: string
+          superseded_at?: string | null
+          superseded_by?: string | null
+        }
+        Update: {
+          authoritative_duration_minutes?: number | null
+          canonical_total_cents?: number | null
+          conversation_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          inputs_key?: string | null
+          options?: Json
+          outbound_message_preview?: string | null
+          outbound_sms_id?: string | null
+          pricing_version?: string | null
+          property_id?: string | null
+          quote_session_id?: string | null
+          quote_signature?: string | null
+          status?: string
+          superseded_at?: string | null
+          superseded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_availability_presentations_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "sms_availability_presentations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sms_booking_confirmations: {
         Row: {
           authoritative_total: number
