@@ -22,4 +22,9 @@ type: feature
 **Non-blocking follow-ups (deferred):**
 
 - Live-reservation fixture for `executeSmsBooking_6b1_test.ts` (recorded in `sms-autonomous-booking-phase6`).
-- One controlled live inbound test after Ben's sign-off, using the existing live-test authorization pattern.
+
+**Gated next step — DO NOT execute without explicit owner authorization:**
+
+- `VOICE_LIVE_BOOKING_ENABLED` stays unset/false until Ben gives explicit go-ahead in chat.
+- First live inbound voice test uses the existing live-test authorization pattern (protected test identity, one-time single-use Jobber write authorization).
+- Do not flip the flag, do not run a live inbound test, and do not stage a production rollout on your own initiative — wait for an explicit approval message.
