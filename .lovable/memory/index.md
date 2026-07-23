@@ -52,4 +52,5 @@
 - [Live Jobber Test Authorization](mem://features/live-jobber-test-authorization) — One-time admin-scoped single-use authorization for exactly one real Jobber write from the protected test identity
 - [Lead-Anchored Crew Availability](mem://features/lead-anchored-crew-availability) — Leader-only availability, hidden junior capacity, crew size 1–5, productivity multipliers
 - [Voice Assistant Optimization](mem://preferences/voice-assistant-optimization) — Voice AI = top CSR: transaction completion > conversation; every question names its canonical field
+- [Voice Phase 7 — Inbound Booking MVP](mem://features/voice-phase7) — Voice reuses Phase 6 pipeline; VOICE_LIVE_BOOKING_ENABLED unlocks live booking
 - [SMS Autonomous Booking Phase 6](mem://features/sms-autonomous-booking-phase6) — Complete and approved; includes non-blocking live-reservation test fixture note
