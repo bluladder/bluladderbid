@@ -39,6 +39,7 @@ import { evaluateAiSafetyGate, logGateDecision } from "./aiSafetyGate.ts";
 import { sendAutonomousCallRailSms } from "./autonomousSendGate.ts";
 import { readIdentityAnchor } from "./identityAnchor.ts";
 import { handleSlotSelectionReply } from "./handleSlotSelectionReply.ts";
+import { handleConfirmationReply } from "./handleConfirmationReply.ts";
 
 type Supa = any;
 
@@ -343,6 +344,26 @@ export async function processPersistedCallRailEvent(
       resolved?.conversationId &&
       inboundSmsId
     ) {
+      // Phase 6A: BEFORE slot-selection parsing, if a held presentation is
+      // waiting on YES/NO, route the inbound through the confirmation
+      // handler. It only pre-empts when hold_status='held' AND the hold
+      // hasn't expired; otherwise it returns { handled:false } and we fall
+      // through to the existing slot-selection path.
+      try {
+        const confirmation = await handleConfirmationReply(supabase, {
+          conversationId: resolved.conversationId,
+          phone,
+          inboundSmsId,
+          inboundText: content,
+          isCompliance: false,
+        });
+        if (confirmation.handled) {
+          return { action: `confirmation:${confirmation.action ?? "unknown"}` };
+        }
+      } catch (e) {
+        console.error("confirmation handler failed:", e);
+      }
+
       try {
         const selection = await handleSlotSelectionReply(supabase, {
           conversationId: resolved.conversationId,
