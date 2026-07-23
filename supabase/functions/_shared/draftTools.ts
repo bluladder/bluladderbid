@@ -312,9 +312,11 @@ export async function executeDraftTool(
         const input = fieldsToQuoteInput(session.fields);
         const result = calculateQuote(input, loaded.pricing, loaded.ruleVersion);
         // Persist result on the session so the admin UI panel and future turns
-        // both see the same authoritative quote.
+        // both see the same authoritative quote. We embed the snapshot in the
+        // `fields` JSON (under `lastQuoteResult`) to avoid a schema change.
+        const nextFields = { ...session.fields, lastQuoteResult: result } as any;
         await ctx.supabase.from("quote_sessions").update({
-          last_quote_result: result,
+          fields: nextFields,
           quote_status: result.status === "firm" ? "firm"
             : result.status === "estimated" ? "estimated"
             : result.status === "manual_review_required" ? "manual_review"
@@ -345,8 +347,13 @@ export async function loadQuoteContextSnapshot(supabase: SB, conversationId: str
   if (!session) return null;
   const { data: row } = await supabase
     .from("quote_sessions")
-    .select("id, fields, required_remaining, quote_status, last_quote_result, updated_at")
+    .select("id, fields, required_remaining, quote_status, updated_at")
     .eq("id", session.id)
     .maybeSingle();
-  return row ?? null;
+  if (!row) return null;
+  const fields = (row.fields ?? {}) as any;
+  return {
+    ...row,
+    last_quote_result: fields.lastQuoteResult ?? null,
+  };
 }
