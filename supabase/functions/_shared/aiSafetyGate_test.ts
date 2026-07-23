@@ -97,7 +97,7 @@ Deno.test("FAIL-CLOSED: pause state read error blocks auto_reply", async () => {
   }));
   const d = await evaluateAiSafetyGate(supa, { action: "auto_reply", conversationId: CONV, phone: PHONE });
   assertEquals(d.allow, false);
-  assertEquals(d.reason, "conversation_missing");
+  assertEquals(d.reason, "conversation_unreadable");
 });
 
 Deno.test("FAIL-CLOSED: missing conversation row blocks auto_reply", async () => {
