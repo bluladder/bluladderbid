@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone } from 'lucide-react';
+import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone, FileText, ExternalLink } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -38,7 +38,7 @@ type Stage = 'enter_phone' | 'enter_code' | 'enter_email' | 'enter_email_code' |
 
 interface PortalData {
   customer: { first_name?: string; last_name?: string; address?: string } | null;
-  recent_quotes: Array<{ id: string; created_at: string; total: number; status: string; address?: string }>;
+  recent_quotes: Array<{ id: string; created_at: string; total: number; status: string; address?: string; services_json?: any }>;
   upcoming_appointments: Array<{ id: string; reference_number: string; scheduled_start: string; address?: string; status: string; total: number }>;
   previous_work: Array<{ id: string; reference_number: string; scheduled_start: string; address?: string; total: number }>;
 }
@@ -354,14 +354,7 @@ function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => vo
               <CardContent className="space-y-3">
                 {data.recent_quotes.length === 0 && <p className="text-sm text-muted-foreground">No recent bids.</p>}
                 {data.recent_quotes.map((q) => (
-                  <div key={q.id} className="rounded-md border p-3 text-sm">
-                    <div className="flex justify-between">
-                      <span>{new Date(q.created_at).toLocaleDateString()}</span>
-                      <span>{fmt(q.total)}</span>
-                    </div>
-                    <div className="text-muted-foreground">{q.address ?? ''}</div>
-                    <div className="text-xs uppercase text-muted-foreground mt-1">{q.status}</div>
-                  </div>
+                  <QuoteRow key={q.id} quote={q} fmt={fmt} />
                 ))}
               </CardContent>
             </Card>
@@ -389,6 +382,112 @@ function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => vo
 }
 
 type UpcomingAppt = PortalData['upcoming_appointments'][number];
+type QuoteItem = PortalData['recent_quotes'][number];
+
+interface LineItem { key?: string; label?: string; name?: string; amount?: number; quantity?: number; unit?: string }
+
+function extractLineItems(services_json: any): LineItem[] {
+  if (!services_json || typeof services_json !== 'object') return [];
+  if (Array.isArray(services_json.lineItems) && services_json.lineItems.length > 0) return services_json.lineItems;
+  if (Array.isArray(services_json.services)) {
+    return services_json.services.map((s: any) => ({
+      key: s.key, label: s.name ?? s.label, amount: Number(s.amount) || 0,
+    }));
+  }
+  return [];
+}
+
+function QuoteRow({ quote, fmt }: { quote: QuoteItem; fmt: (n: number) => string }) {
+  const [open, setOpen] = useState(false);
+  const items = extractLineItems(quote.services_json);
+  const dateStr = new Date(quote.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return (
+    <div className="rounded-md border p-3 text-sm space-y-2">
+      <div className="flex justify-between items-start gap-3">
+        <div className="min-w-0">
+          <div className="font-medium">{dateStr}</div>
+          {quote.address && <div className="text-muted-foreground truncate">{quote.address}</div>}
+          <div className="text-xs uppercase tracking-wide text-muted-foreground mt-1">{quote.status}</div>
+        </div>
+        <div className="text-right font-semibold whitespace-nowrap">{fmt(quote.total)}</div>
+      </div>
+
+      {items.length > 0 && (
+        <ul className="text-xs text-muted-foreground space-y-0.5">
+          {items.slice(0, 3).map((li, i) => (
+            <li key={i} className="flex justify-between gap-2">
+              <span className="truncate">{li.label ?? li.name ?? li.key}</span>
+              {typeof li.amount === 'number' && <span className="tabular-nums">{fmt(li.amount)}</span>}
+            </li>
+          ))}
+          {items.length > 3 && <li className="italic">+{items.length - 3} more…</li>}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button size="sm" variant="outline" className="flex-1 min-w-[140px]" onClick={() => setOpen(true)}>
+          <FileText className="w-4 h-4 mr-2" />View line items
+        </Button>
+        <Button asChild size="sm" className="flex-1 min-w-[140px]">
+          <a href={`/quote/${quote.id}`} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="w-4 h-4 mr-2" />Open full quote
+          </a>
+        </Button>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bid from {dateStr}</DialogTitle>
+            <DialogDescription>
+              Prices are recalculated when you continue booking to reflect current rates.
+            </DialogDescription>
+          </DialogHeader>
+
+          {quote.address && (
+            <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">{quote.address}</div>
+          )}
+
+          <div className="border rounded-md divide-y">
+            {items.length === 0 && (
+              <div className="p-3 text-sm text-muted-foreground">No itemized breakdown available for this bid.</div>
+            )}
+            {items.map((li, i) => (
+              <div key={i} className="p-3 text-sm flex justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{li.label ?? li.name ?? li.key}</div>
+                  {li.quantity != null && li.unit && (
+                    <div className="text-xs text-muted-foreground">{li.quantity.toLocaleString()} {li.unit}</div>
+                  )}
+                </div>
+                {typeof li.amount === 'number' && (
+                  <div className="tabular-nums font-medium">{fmt(li.amount)}</div>
+                )}
+              </div>
+            ))}
+            <div className="p-3 flex justify-between items-center bg-muted/40">
+              <span className="font-semibold">Total</span>
+              <span className="font-semibold text-lg tabular-nums">{fmt(quote.total)}</span>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
+            <Button asChild variant="outline" className="w-full sm:w-auto">
+              <a href={`/quote/${quote.id}`} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="w-4 h-4 mr-2" />Open full quote
+              </a>
+            </Button>
+            <Button asChild className="w-full sm:w-auto">
+              <a href={`/quote/${quote.id}/book`}>
+                <CalendarClock className="w-4 h-4 mr-2" />Continue to booking
+              </a>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function UpcomingAppointmentRow({
   appt,
