@@ -10,6 +10,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { verifyAdmin, getBearer } from "../_shared/auth.ts";
 import { generateDraftReply } from "../_shared/draftReply.ts";
+import { loadQuoteContextSnapshot } from "../_shared/draftTools.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,12 +21,14 @@ type Action =
   | "takeover" | "release"
   | "pause_campaign" | "resume_campaign" | "stop_campaign"
   | "send_reply" | "mark_resolved" | "request_callback"
-  | "generate_draft" | "edit_draft" | "discard_draft" | "mark_draft_sent";
+  | "generate_draft" | "edit_draft" | "discard_draft" | "mark_draft_sent"
+  | "get_draft_context";
 
 const VALID: readonly Action[] = [
   "takeover","release","pause_campaign","resume_campaign","stop_campaign",
   "send_reply","mark_resolved","request_callback",
   "generate_draft","edit_draft","discard_draft","mark_draft_sent",
+  "get_draft_context",
 ] as const;
 
 function j(body: unknown, status = 200) {
@@ -167,6 +170,10 @@ serve(async (req) => {
         .eq("id", conversationId);
       if (error) return j({ error: error.message }, 500);
       return j({ ok: true });
+    }
+    case "get_draft_context": {
+      const snapshot = await loadQuoteContextSnapshot(supabase, conversationId);
+      return j({ ok: true, snapshot });
     }
   }
 
