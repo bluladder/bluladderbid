@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone } from 'lucide-react';
+import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone, FileText, ExternalLink } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -38,7 +38,7 @@ type Stage = 'enter_phone' | 'enter_code' | 'enter_email' | 'enter_email_code' |
 
 interface PortalData {
   customer: { first_name?: string; last_name?: string; address?: string } | null;
-  recent_quotes: Array<{ id: string; created_at: string; total: number; status: string; address?: string }>;
+  recent_quotes: Array<{ id: string; created_at: string; total: number; status: string; address?: string; services_json?: any }>;
   upcoming_appointments: Array<{ id: string; reference_number: string; scheduled_start: string; address?: string; status: string; total: number }>;
   previous_work: Array<{ id: string; reference_number: string; scheduled_start: string; address?: string; total: number }>;
 }
@@ -354,14 +354,7 @@ function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => vo
               <CardContent className="space-y-3">
                 {data.recent_quotes.length === 0 && <p className="text-sm text-muted-foreground">No recent bids.</p>}
                 {data.recent_quotes.map((q) => (
-                  <div key={q.id} className="rounded-md border p-3 text-sm">
-                    <div className="flex justify-between">
-                      <span>{new Date(q.created_at).toLocaleDateString()}</span>
-                      <span>{fmt(q.total)}</span>
-                    </div>
-                    <div className="text-muted-foreground">{q.address ?? ''}</div>
-                    <div className="text-xs uppercase text-muted-foreground mt-1">{q.status}</div>
-                  </div>
+                  <QuoteRow key={q.id} quote={q} fmt={fmt} />
                 ))}
               </CardContent>
             </Card>
