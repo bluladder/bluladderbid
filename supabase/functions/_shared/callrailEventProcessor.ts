@@ -34,6 +34,7 @@ import {
   notifyOwnerOfInboundReply,
 } from "./ownerNotifications.ts";
 import { getPhoneByPurpose } from "./phoneConfig.ts";
+import { generateDraftReply, shouldAutoDraft } from "./draftReply.ts";
 
 type Supa = any;
 
@@ -168,6 +169,28 @@ export async function processPersistedCallRailEvent(
           await supabase.from("callrail_inbound_events").update({
             owner_notification_skipped_reason: gate.reason ?? "not_genuine_inbound",
           }).eq("id", row.id);
+        }
+
+        // ---- AI-assisted draft reply (Phase 1: never sends) --------------
+        // Best-effort: failure MUST NOT block persistence, notifications, or
+        // downstream routing. Idempotency is enforced inside generateDraftReply
+        // on (conversation_id, inbound sms_messages.id).
+        try {
+          const draftGate = shouldAutoDraft({
+            content,
+            isGenuine: gate.ok,
+            staffTakeover: false,
+            resolutionConfidence: resolved.resolutionConfidence ?? null,
+          });
+          if (draftGate.ok && resolved.conversationId && inboundSmsId) {
+            await generateDraftReply(supabase, {
+              conversationId: resolved.conversationId,
+              inboundMessageId: inboundSmsId,
+              reason: "auto_inbound",
+            });
+          }
+        } catch (e) {
+          console.error("draft reply generation failed:", e);
         }
       } catch (e) {
         console.error("owner notification failed:", e);

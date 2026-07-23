@@ -15,6 +15,7 @@ import {
 } from "@/lib/conversations/aggregate";
 import {
   MessageSquare, Mail, Phone, Bot, User, AlertTriangle, CheckCircle2, PauseCircle,
+  Sparkles, Loader2,
 } from "lucide-react";
 
 const BUCKETS: { key: FilterBucket; label: string }[] = [
@@ -97,6 +98,41 @@ function ConversationDetail({
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [replyBody, setReplyBody] = useState("");
   const [acting, setActing] = useState(false);
+  // AI draft state — sourced from chat_conversations directly since ConversationRow
+  // doesn't include the draft fields. We refetch on selection change and after
+  // draft-related actions.
+  const [draft, setDraft] = useState<{
+    body: string;
+    status: string | null;
+    generatedAt: string | null;
+    model: string | null;
+    error: string | null;
+  } | null>(null);
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [draftEditing, setDraftEditing] = useState(false);
+  const [draftText, setDraftText] = useState("");
+
+  const loadDraft = useCallback(async () => {
+    if (!conversationId) { setDraft(null); return; }
+    const { data } = await supabase
+      .from("chat_conversations")
+      .select("pending_draft_reply, draft_status, draft_generated_at, draft_model, draft_error")
+      .eq("id", conversationId)
+      .maybeSingle();
+    if (data) {
+      setDraft({
+        body: (data as any).pending_draft_reply ?? "",
+        status: (data as any).draft_status ?? null,
+        generatedAt: (data as any).draft_generated_at ?? null,
+        model: (data as any).draft_model ?? null,
+        error: (data as any).draft_error ?? null,
+      });
+      setDraftText((data as any).pending_draft_reply ?? "");
+      setDraftEditing(false);
+    }
+  }, [conversationId]);
+
+  useEffect(() => { loadDraft(); }, [loadDraft]);
 
   useEffect(() => {
     if (!conversationId || !row) { setTimeline([]); return; }
@@ -162,6 +198,52 @@ function ConversationDetail({
     }
   }, [conversationId, onChanged]);
 
+  // Draft-specific invocations. Kept separate from `invoke` so the AI draft
+  // card can show its own busy state without freezing the top toolbar.
+  const invokeDraft = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
+    if (!conversationId) return null;
+    setDraftBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-conversation-action", {
+        body: { conversation_id: conversationId, action, ...extra },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      await loadDraft();
+      return data;
+    } catch (e: any) {
+      toast.error(e?.message ?? "Draft action failed");
+      return null;
+    } finally {
+      setDraftBusy(false);
+    }
+  }, [conversationId, loadDraft]);
+
+  const sendDraft = useCallback(async () => {
+    if (!conversationId || !draftText.trim()) return;
+    setDraftBusy(true);
+    try {
+      // The draft is sent through the existing staff-reply SMS path — the same
+      // endpoint the manual "Approved reply" button uses. We do NOT create a
+      // second outbound-send implementation.
+      const { data, error } = await supabase.functions.invoke("staff-reply", {
+        body: { conversationId, channel: "sms", message: draftText.trim() },
+      });
+      if (error) throw error;
+      if ((data as any)?.ok === false) {
+        throw new Error((data as any).message ?? "Send failed");
+      }
+      toast.success("Draft sent");
+      await invokeDraft("mark_draft_sent");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Send failed");
+      // Draft is preserved intentionally so Ben can retry.
+    } finally {
+      setDraftBusy(false);
+    }
+  }, [conversationId, draftText, invokeDraft, onChanged]);
+
   if (!conversationId || !row) {
     return (
       <Card>
@@ -173,6 +255,8 @@ function ConversationDetail({
   }
 
   const takenOver = isHumanTakeover(row);
+  const draftReady = draft && (draft.status === "ready" || draft.status === "edited") && draft.body;
+  const draftFailed = draft?.status === "failed";
 
   return (
     <div className="space-y-4">
@@ -267,6 +351,92 @@ function ConversationDetail({
               </ol>
             )}
           </ScrollArea>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" /> AI suggested reply
+            {draft?.status && (
+              <Badge variant="outline" className="text-[10px] py-0 h-4 uppercase">
+                {draft.status}
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="text-xs text-muted-foreground">
+            Nothing is sent until you click <span className="font-medium">Send</span>. The AI cannot reply on its own.
+          </div>
+          {draftFailed && (
+            <div className="text-xs text-destructive">
+              Draft failed: {draft?.error ?? "unknown"}. You can regenerate.
+            </div>
+          )}
+          {draftReady && !draftEditing ? (
+            <div className="rounded-md border bg-muted/40 p-3 whitespace-pre-wrap">
+              {draft!.body}
+            </div>
+          ) : draftReady && draftEditing ? (
+            <Textarea
+              rows={4}
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+              maxLength={800}
+            />
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              {draft?.status === "pending"
+                ? "Generating…"
+                : draft?.status === "sent"
+                ? "Last draft was sent."
+                : draft?.status === "discarded"
+                ? "Last draft was discarded."
+                : draft?.status === "superseded"
+                ? "A newer customer message replaced the previous draft."
+                : "No draft yet — one will appear automatically after the next inbound message."}
+            </div>
+          )}
+          {draft?.generatedAt && (
+            <div className="text-[10px] text-muted-foreground">
+              Generated {timeAgo(draft.generatedAt)}
+              {draft.model ? ` · ${draft.model}` : ""}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2 justify-end">
+            <Button size="sm" variant="outline" disabled={draftBusy}
+              onClick={() => invokeDraft("generate_draft")}>
+              {draftBusy ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+              {draftReady || draftFailed ? "Regenerate" : "Generate draft"}
+            </Button>
+            {draftReady && !draftEditing && (
+              <Button size="sm" variant="outline" disabled={draftBusy}
+                onClick={() => setDraftEditing(true)}>
+                Edit
+              </Button>
+            )}
+            {draftReady && draftEditing && (
+              <Button size="sm" variant="outline" disabled={draftBusy || !draftText.trim()}
+                onClick={async () => {
+                  const ok = await invokeDraft("edit_draft", { draft_body: draftText.trim() });
+                  if (ok) setDraftEditing(false);
+                }}>
+                Save edits
+              </Button>
+            )}
+            {draftReady && (
+              <Button size="sm" variant="destructive" disabled={draftBusy}
+                onClick={() => invokeDraft("discard_draft")}>
+                Discard
+              </Button>
+            )}
+            {draftReady && (
+              <Button size="sm" disabled={draftBusy || !draftText.trim()} onClick={sendDraft}>
+                Send
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 

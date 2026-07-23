@@ -1384,6 +1384,14 @@ export type Database = {
           conversation_state: string
           created_at: string
           customer_id: string | null
+          draft_context_version: string | null
+          draft_edited_at: string | null
+          draft_error: string | null
+          draft_generated_at: string | null
+          draft_model: string | null
+          draft_sent_at: string | null
+          draft_source_message_id: string | null
+          draft_status: string | null
           facts: Json
           id: string
           internal_notes: string | null
@@ -1394,6 +1402,7 @@ export type Database = {
           manual_review_reason: string | null
           marketing_consent: boolean
           needs_attention: boolean
+          pending_draft_reply: string | null
           pricing_version: number | null
           prospect_email: string | null
           prospect_name: string | null
@@ -1433,6 +1442,14 @@ export type Database = {
           conversation_state?: string
           created_at?: string
           customer_id?: string | null
+          draft_context_version?: string | null
+          draft_edited_at?: string | null
+          draft_error?: string | null
+          draft_generated_at?: string | null
+          draft_model?: string | null
+          draft_sent_at?: string | null
+          draft_source_message_id?: string | null
+          draft_status?: string | null
           facts?: Json
           id?: string
           internal_notes?: string | null
@@ -1443,6 +1460,7 @@ export type Database = {
           manual_review_reason?: string | null
           marketing_consent?: boolean
           needs_attention?: boolean
+          pending_draft_reply?: string | null
           pricing_version?: number | null
           prospect_email?: string | null
           prospect_name?: string | null
@@ -1482,6 +1500,14 @@ export type Database = {
           conversation_state?: string
           created_at?: string
           customer_id?: string | null
+          draft_context_version?: string | null
+          draft_edited_at?: string | null
+          draft_error?: string | null
+          draft_generated_at?: string | null
+          draft_model?: string | null
+          draft_sent_at?: string | null
+          draft_source_message_id?: string | null
+          draft_status?: string | null
           facts?: Json
           id?: string
           internal_notes?: string | null
@@ -1492,6 +1518,7 @@ export type Database = {
           manual_review_reason?: string | null
           marketing_consent?: boolean
           needs_attention?: boolean
+          pending_draft_reply?: string | null
           pricing_version?: number | null
           prospect_email?: string | null
           prospect_name?: string | null
