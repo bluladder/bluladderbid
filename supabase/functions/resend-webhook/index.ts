@@ -11,6 +11,8 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { recordSuppression, type SuppressionReason } from "../_shared/emailSuppression.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { mapEventToAttemptStatus, shouldApplyTransition, type AttemptStatus } from "./mapping.ts";
+export { mapEventToAttemptStatus, shouldApplyTransition } from "./mapping.ts";
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
 
@@ -76,24 +78,6 @@ function mapEventType(type: string): SuppressionReason | null {
   return null;
 }
 
-// Which attempt-status a Resend event maps to when we can correlate by
-// provider_message_id. `null` means: ignore (informational-only event like
-// email.sent / email.opened / email.clicked).
-function mapEventToAttemptStatus(type: string):
-  | { status: "delivered" | "bounced" | "complained" | "suppressed"; column: string }
-  | null
-{
-  const t = type.toLowerCase();
-  if (t === "email.delivered")   return { status: "delivered",  column: "delivered_at"  };
-  if (t === "email.bounced" || t === "email.hard_bounced")
-                                 return { status: "bounced",    column: "bounced_at"    };
-  if (t === "email.complained")  return { status: "complained", column: "complained_at" };
-  // Resend surfaces suppressed sends via "email.failed" with a suppression
-  // reason in most payloads; treat any explicit suppressed/failed marker as
-  // suppressed on the attempt row.
-  if (t === "email.failed")      return { status: "suppressed", column: "suppressed_at" };
-  return null;
-}
 
 // deno-lint-ignore no-explicit-any
 function serviceClient(): any {
@@ -138,26 +122,58 @@ Deno.serve(async (req) => {
     ? data.to.map((x: unknown) => String(x))
     : data?.email ? [String(data.email)] : [];
 
+  const supabase = serviceClient();
+
+  // Dedupe: refuse to reprocess a svix-id we've already logged. The unique
+  // constraint on svix_id makes this race-safe — a duplicate insert throws.
+  if (supabase) {
+    const { error: dupErr } = await supabase
+      .from("resend_webhook_events")
+      .insert({
+        svix_id: svixId,
+        event_type: type,
+        provider_message_id: providerMessageId,
+        payload,
+      });
+    if (dupErr) {
+      // duplicate key → already processed; ack 200 so Resend stops retrying.
+      if (String(dupErr.message).toLowerCase().includes("duplicate")) {
+        return json({ ok: true, duplicate: true });
+      }
+      // Non-duplicate insert error is unexpected but non-fatal for suppression;
+      // continue so terminal bounce/complaint state still records.
+    }
+  }
+
   // (a) Update the correlated email_send_attempts row (if we can find it).
   const attemptTransition = mapEventToAttemptStatus(type);
   let attemptUpdated = false;
-  if (attemptTransition && providerMessageId) {
-    const supabase = serviceClient();
-    if (supabase) {
+  let attemptSkipped = false;
+  if (attemptTransition && providerMessageId && supabase) {
+    const { data: rows } = await supabase
+      .from("email_send_attempts")
+      .select("id,status")
+      .eq("provider_message_id", providerMessageId);
+    const matched = Array.isArray(rows) ? rows : [];
+    for (const row of matched) {
+      if (!shouldApplyTransition(row?.status, attemptTransition.status)) {
+        attemptSkipped = true;
+        continue;
+      }
       const patch: Record<string, unknown> = {
         status: attemptTransition.status,
         last_event_at: new Date().toISOString(),
         last_event_type: type,
       };
       patch[attemptTransition.column] = new Date().toISOString();
-      if (attemptTransition.status !== "delivered") {
+      if (attemptTransition.status !== "delivered" && attemptTransition.status !== "sent") {
         patch.failure_reason = String(data?.reason ?? data?.bounce?.message ?? type);
       }
       const { error } = await supabase
         .from("email_send_attempts")
         .update(patch)
-        .eq("provider_message_id", providerMessageId);
-      attemptUpdated = !error;
+        .eq("id", row.id);
+      if (!error) attemptUpdated = true;
     }
   }
 
@@ -178,5 +194,5 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ ok: true, type, reason, attemptUpdated, results });
+  return json({ ok: true, type, reason, attemptUpdated, attemptSkipped, correlated: !!providerMessageId, results });
 });

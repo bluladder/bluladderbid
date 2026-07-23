@@ -1,23 +1,15 @@
-// Deno tests for resend-webhook event → attempt-status mapping.
-// The mapping helper is duplicated here (private to index.ts) so the test
-// stays a pure-function assertion without importing runtime side effects.
+// Deno tests for resend-webhook event mapping and transition guards.
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { mapEventToAttemptStatus, shouldApplyTransition } from "./mapping.ts";
 
-function mapEventToAttemptStatus(type: string):
-  | { status: "delivered" | "bounced" | "complained" | "suppressed"; column: string }
-  | null
-{
-  const t = type.toLowerCase();
-  if (t === "email.delivered")   return { status: "delivered",  column: "delivered_at"  };
-  if (t === "email.bounced" || t === "email.hard_bounced")
-                                 return { status: "bounced",    column: "bounced_at"    };
-  if (t === "email.complained")  return { status: "complained", column: "complained_at" };
-  if (t === "email.failed")      return { status: "suppressed", column: "suppressed_at" };
-  return null;
-}
-
+Deno.test("email.sent → sent", () => {
+  assertEquals(mapEventToAttemptStatus("email.sent")?.status, "sent");
+});
 Deno.test("email.delivered → delivered", () => {
   assertEquals(mapEventToAttemptStatus("email.delivered")?.status, "delivered");
+});
+Deno.test("email.delivery_delayed → delayed", () => {
+  assertEquals(mapEventToAttemptStatus("email.delivery_delayed")?.status, "delayed");
 });
 Deno.test("email.bounced / email.hard_bounced → bounced", () => {
   assertEquals(mapEventToAttemptStatus("email.bounced")?.status, "bounced");
@@ -26,11 +18,36 @@ Deno.test("email.bounced / email.hard_bounced → bounced", () => {
 Deno.test("email.complained → complained", () => {
   assertEquals(mapEventToAttemptStatus("email.complained")?.status, "complained");
 });
-Deno.test("email.failed → suppressed", () => {
-  assertEquals(mapEventToAttemptStatus("email.failed")?.status, "suppressed");
+Deno.test("email.failed → failed", () => {
+  assertEquals(mapEventToAttemptStatus("email.failed")?.status, "failed");
 });
-Deno.test("informational events are ignored", () => {
-  assertEquals(mapEventToAttemptStatus("email.sent"), null);
+Deno.test("opened/clicked are ignored", () => {
   assertEquals(mapEventToAttemptStatus("email.opened"), null);
   assertEquals(mapEventToAttemptStatus("email.clicked"), null);
+});
+
+// Transition guards ----------------------------------------------------------
+Deno.test("accepted → any: allowed", () => {
+  assertEquals(shouldApplyTransition("accepted", "delivered"), true);
+  assertEquals(shouldApplyTransition("accepted", "sent"), true);
+  assertEquals(shouldApplyTransition(null, "bounced"), true);
+});
+Deno.test("delayed does not overwrite delivered", () => {
+  assertEquals(shouldApplyTransition("delivered", "delayed"), false);
+});
+Deno.test("sent does not regress delivered", () => {
+  assertEquals(shouldApplyTransition("delivered", "sent"), false);
+});
+Deno.test("bounced (terminal) cannot be overwritten by delivered", () => {
+  assertEquals(shouldApplyTransition("bounced", "delivered"), false);
+});
+Deno.test("complained (terminal) cannot be overwritten", () => {
+  assertEquals(shouldApplyTransition("complained", "delivered"), false);
+  assertEquals(shouldApplyTransition("complained", "sent"), false);
+});
+Deno.test("sent → delayed allowed (forward)", () => {
+  assertEquals(shouldApplyTransition("sent", "delayed"), true);
+});
+Deno.test("delayed → delivered allowed (forward)", () => {
+  assertEquals(shouldApplyTransition("delayed", "delivered"), true);
 });

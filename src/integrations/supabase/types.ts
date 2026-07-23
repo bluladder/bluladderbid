@@ -2562,6 +2562,7 @@ export type Database = {
           bounced_at: string | null
           complained_at: string | null
           created_at: string
+          delayed_at: string | null
           delivered_at: string | null
           failure_category: string | null
           failure_reason: string | null
@@ -2574,6 +2575,7 @@ export type Database = {
           provider_message_id: string | null
           quote_id: string | null
           recipient_email: string
+          sent_at: string | null
           source_session_id: string | null
           status: string
           submitted_at: string
@@ -2586,6 +2588,7 @@ export type Database = {
           bounced_at?: string | null
           complained_at?: string | null
           created_at?: string
+          delayed_at?: string | null
           delivered_at?: string | null
           failure_category?: string | null
           failure_reason?: string | null
@@ -2598,6 +2601,7 @@ export type Database = {
           provider_message_id?: string | null
           quote_id?: string | null
           recipient_email: string
+          sent_at?: string | null
           source_session_id?: string | null
           status: string
           submitted_at?: string
@@ -2610,6 +2614,7 @@ export type Database = {
           bounced_at?: string | null
           complained_at?: string | null
           created_at?: string
+          delayed_at?: string | null
           delivered_at?: string | null
           failure_category?: string | null
           failure_reason?: string | null
@@ -2622,6 +2627,7 @@ export type Database = {
           provider_message_id?: string | null
           quote_id?: string | null
           recipient_email?: string
+          sent_at?: string | null
           source_session_id?: string | null
           status?: string
           submitted_at?: string
@@ -3698,6 +3704,33 @@ export type Database = {
           updated_at?: string
           window_ms?: number
           window_start?: string
+        }
+        Relationships: []
+      }
+      resend_webhook_events: {
+        Row: {
+          event_type: string
+          id: string
+          payload: Json
+          provider_message_id: string | null
+          received_at: string
+          svix_id: string
+        }
+        Insert: {
+          event_type: string
+          id?: string
+          payload: Json
+          provider_message_id?: string | null
+          received_at?: string
+          svix_id: string
+        }
+        Update: {
+          event_type?: string
+          id?: string
+          payload?: Json
+          provider_message_id?: string | null
+          received_at?: string
+          svix_id?: string
         }
         Relationships: []
       }
