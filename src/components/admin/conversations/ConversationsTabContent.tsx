@@ -17,6 +17,7 @@ import {
   MessageSquare, Mail, Phone, Bot, User, AlertTriangle, CheckCircle2, PauseCircle,
   Sparkles, Loader2,
 } from "lucide-react";
+import { QuoteContextPanel } from "./QuoteContextPanel";
 
 const BUCKETS: { key: FilterBucket; label: string }[] = [
   { key: "all", label: "All" },
