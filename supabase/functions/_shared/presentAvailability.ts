@@ -206,6 +206,13 @@ export async function presentAvailability(
       Number(availability.readiness?.quote?.canonical_total ?? 0) * 100,
     ),
     slots: availability.slots,
+    // Phase 5: persist the canonical backend identity anchored at
+    // presentation time so downstream selection handling can prove
+    // deterministic equality without hashing.
+    resolvedCustomerId:
+      availability.readiness?.identity?.resolved_customer_id ?? null,
+    identityResolutionMethod:
+      availability.readiness?.identity?.resolution_method ?? null,
   });
   if (!pending.row) {
     return { status: "engine_error", availability, detail: pending.error ?? "presentation_create_failed" };
