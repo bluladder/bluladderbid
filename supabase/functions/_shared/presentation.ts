@@ -307,6 +307,70 @@ export async function attachSelectionAckSms(
     .is("selection_ack_sms_id", null);
 }
 
+// ---------------------------------------------------------------------------
+// Phase 5: hold state helpers. These are pure persistence helpers — they do
+// NOT call the reservation RPC themselves. See slotHold.ts for the read /
+// reserve / persist / release / expire orchestration.
+// ---------------------------------------------------------------------------
+
+export interface PersistHoldStateInput {
+  presentationId: string;
+  holdGroupId: string;
+  crewIds: string[];
+  startAt: string;
+  endAt: string;
+  expiresAt: string;
+  idempotencyKey: string;
+}
+
+/** Local persistence AFTER a successful reserve_booking_slot call. Writes are
+ *  guarded so an already-held row is never overwritten with a second hold —
+ *  callers must release first. */
+export async function persistHoldStateOnPresentation(
+  supabase: SupabaseClient,
+  input: PersistHoldStateInput,
+): Promise<PresentationRow | null> {
+  const { data } = await supabase
+    .from("sms_availability_presentations")
+    .update({
+      hold_status: "held",
+      hold_group_id: input.holdGroupId,
+      held_crew_ids: input.crewIds,
+      held_start_at: input.startAt,
+      held_end_at: input.endAt,
+      hold_expires_at: input.expiresAt,
+      held_at: new Date().toISOString(),
+      hold_idempotency_key: input.idempotencyKey,
+      hold_released_at: null,
+      hold_release_reason: null,
+    })
+    .eq("id", input.presentationId)
+    .in("hold_status", ["none", "released", "expired"])
+    .select("*")
+    .maybeSingle();
+  return (data as PresentationRow | null) ?? null;
+}
+
+/** Record that a hold was released (either by us or by a superseding
+ *  presentation). Does NOT call release_booking_slot — the caller controls
+ *  the RPC ordering so this helper is safe to reuse from the expire path. */
+export async function markHoldReleased(
+  supabase: SupabaseClient,
+  presentationId: string,
+  status: "released" | "expired" | "revalidation_failed" | "conflict" | "superseded",
+  reason: string,
+): Promise<void> {
+  await supabase
+    .from("sms_availability_presentations")
+    .update({
+      hold_status: status,
+      hold_released_at: new Date().toISOString(),
+      hold_release_reason: reason.slice(0, 200),
+    })
+    .eq("id", presentationId)
+    .eq("hold_status", "held");
+}
+
 // Legacy alias so any prior imports still work. New code should call the
 // explicit lifecycle helpers above.
 export async function recordPresentation(
