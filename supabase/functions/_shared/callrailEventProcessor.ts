@@ -38,6 +38,7 @@ import { generateDraftReply, shouldAutoDraft } from "./draftReply.ts";
 import { evaluateAiSafetyGate, logGateDecision } from "./aiSafetyGate.ts";
 import { sendAutonomousCallRailSms } from "./autonomousSendGate.ts";
 import { readIdentityAnchor } from "./identityAnchor.ts";
+import { handleSlotSelectionReply } from "./handleSlotSelectionReply.ts";
 
 type Supa = any;
 
@@ -330,6 +331,32 @@ export async function processPersistedCallRailEvent(
         reason: "Replied START", last_inbound_body: content, opted_in_at: nowIso,
       }, { onConflict: "phone" });
       return { action: "opted_in" };
+    }
+
+    // ---- Phase 4C: slot-selection short-circuit ----------------------------
+    // If the conversation has an ACTIVE availability presentation and this
+    // inbound is not STOP/START, try to interpret it as a slot selection.
+    // Only pre-empts the AI orchestrator when a presentation is actually
+    // active — otherwise the parser is not run and normal AI routing proceeds.
+    if (
+      complianceIntent === null &&
+      resolved?.conversationId &&
+      inboundSmsId
+    ) {
+      try {
+        const selection = await handleSlotSelectionReply(supabase, {
+          conversationId: resolved.conversationId,
+          phone,
+          inboundSmsId,
+          inboundText: content,
+          isCompliance: false,
+        });
+        if (selection.handled) {
+          return { action: `slot_selection:${selection.action ?? "unknown"}` };
+        }
+      } catch (e) {
+        console.error("slot selection handler failed:", e);
+      }
     }
 
     // AI conversational routing — skip if we already replied for this receipt.

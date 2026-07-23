@@ -4559,12 +4559,14 @@ export type Database = {
       }
       sms_availability_presentations: {
         Row: {
+          activated_at: string | null
           authoritative_duration_minutes: number | null
           canonical_total_cents: number | null
           conversation_id: string
           created_at: string
           expires_at: string
           id: string
+          idempotency_key: string | null
           inputs_key: string | null
           options: Json
           outbound_message_preview: string | null
@@ -4573,17 +4575,31 @@ export type Database = {
           property_id: string | null
           quote_session_id: string | null
           quote_signature: string | null
+          selected_end_at: string | null
+          selected_slot_id: string | null
+          selected_start_at: string | null
+          selection_ack_sms_id: string | null
+          selection_inbound_sms_id: string | null
+          selection_invalidation_reason: string | null
+          selection_option_number: number | null
+          selection_parsed_at: string | null
+          selection_reply_text: string | null
+          selection_status: string | null
+          send_failed_at: string | null
+          send_failure_reason: string | null
           status: string
           superseded_at: string | null
           superseded_by: string | null
         }
         Insert: {
+          activated_at?: string | null
           authoritative_duration_minutes?: number | null
           canonical_total_cents?: number | null
           conversation_id: string
           created_at?: string
           expires_at: string
           id?: string
+          idempotency_key?: string | null
           inputs_key?: string | null
           options: Json
           outbound_message_preview?: string | null
@@ -4592,17 +4608,31 @@ export type Database = {
           property_id?: string | null
           quote_session_id?: string | null
           quote_signature?: string | null
+          selected_end_at?: string | null
+          selected_slot_id?: string | null
+          selected_start_at?: string | null
+          selection_ack_sms_id?: string | null
+          selection_inbound_sms_id?: string | null
+          selection_invalidation_reason?: string | null
+          selection_option_number?: number | null
+          selection_parsed_at?: string | null
+          selection_reply_text?: string | null
+          selection_status?: string | null
+          send_failed_at?: string | null
+          send_failure_reason?: string | null
           status?: string
           superseded_at?: string | null
           superseded_by?: string | null
         }
         Update: {
+          activated_at?: string | null
           authoritative_duration_minutes?: number | null
           canonical_total_cents?: number | null
           conversation_id?: string
           created_at?: string
           expires_at?: string
           id?: string
+          idempotency_key?: string | null
           inputs_key?: string | null
           options?: Json
           outbound_message_preview?: string | null
@@ -4611,6 +4641,18 @@ export type Database = {
           property_id?: string | null
           quote_session_id?: string | null
           quote_signature?: string | null
+          selected_end_at?: string | null
+          selected_slot_id?: string | null
+          selected_start_at?: string | null
+          selection_ack_sms_id?: string | null
+          selection_inbound_sms_id?: string | null
+          selection_invalidation_reason?: string | null
+          selection_option_number?: number | null
+          selection_parsed_at?: string | null
+          selection_reply_text?: string | null
+          selection_status?: string | null
+          send_failed_at?: string | null
+          send_failure_reason?: string | null
           status?: string
           superseded_at?: string | null
           superseded_by?: string | null

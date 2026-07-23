@@ -42,6 +42,7 @@ import {
 import type { FactType, ServiceKind } from "./profile/serviceFactMap.ts";
 import { getBookingReadiness } from "./bookingReadiness.ts";
 import { getAvailableSlots } from "./availabilityLookup.ts";
+import { presentAvailability } from "./presentAvailability.ts";
 
 type SB = any;
 
@@ -64,6 +65,7 @@ export const DRAFT_TOOL_ALLOWLIST = [
   "confirm_property_fact",
   "get_quote_booking_readiness",
   "get_available_slots",
+  "send_availability_options",
 ] as const;
 
 export type DraftToolName = (typeof DRAFT_TOOL_ALLOWLIST)[number];
@@ -181,6 +183,16 @@ export function draftToolDescriptors() {
         preferred_day: { type: "string", description: "Optional textual day preference: 'today', 'tomorrow', 'monday'..'friday', 'this week', 'next week'." },
         time_of_day: { type: "string", enum: ["morning", "afternoon"], description: "Optional AM/PM preference." },
         max_options: { type: "number", description: "Optional cap on returned options; hard maximum is 4." },
+      },
+    ),
+    t(
+      "send_availability_options",
+      "AUTONOMOUS SEND. Runs get_available_slots, persists the exact options as a presentation record, and sends them to the customer as an SMS via the gated autonomous-send boundary (action_class=\"scheduling\"). Idempotent per (conversation, triggering inbound, session, inputs, preferences, slots signature): repeated calls do NOT resend. Returns the presentation record and outbound status. Never reserves, holds, confirms, or creates a booking. All authoritative context (customer, phone, property, services, duration) is resolved server-side.",
+      {
+        preferred_date: { type: "string", description: "YYYY-MM-DD. Optional." },
+        preferred_day: { type: "string", description: "Optional day preference: 'today', 'tomorrow', 'monday'..'friday', 'this week', 'next week'." },
+        time_of_day: { type: "string", enum: ["morning", "afternoon"], description: "Optional AM/PM preference." },
+        max_options: { type: "number", description: "Optional cap; hard max 4." },
       },
     ),
   ];
@@ -505,6 +517,27 @@ export async function executeDraftTool(
             ? args.time_of_day
             : null,
           max_options: typeof args.max_options === "number" ? args.max_options : null,
+        });
+        return { name: call.name, ok: true, data: result };
+      }
+      case "send_availability_options": {
+        const convo = await loadConversation(ctx.supabase, ctx.conversationId);
+        const phone = (convo as any)?.prospect_phone as string | null | undefined;
+        if (!phone) {
+          return { name: call.name, ok: false, error: "conversation_missing_phone" };
+        }
+        const result = await presentAvailability(ctx.supabase, {
+          conversationId: ctx.conversationId,
+          phone,
+          triggeringInboundSmsId: (ctx as any).triggeringInboundSmsId ?? null,
+          preference: {
+            preferred_date: typeof args.preferred_date === "string" ? args.preferred_date : null,
+            preferred_day: typeof args.preferred_day === "string" ? args.preferred_day : null,
+            time_of_day: args.time_of_day === "morning" || args.time_of_day === "afternoon"
+              ? args.time_of_day
+              : null,
+            max_options: typeof args.max_options === "number" ? args.max_options : null,
+          },
         });
         return { name: call.name, ok: true, data: result };
       }
