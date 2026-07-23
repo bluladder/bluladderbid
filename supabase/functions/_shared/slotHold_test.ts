@@ -116,6 +116,10 @@ function makeStub() {
         update: (payload: any) => {
           chain._updatePayload = payload;
           updates.push(payload);
+          // Apply immediately: real Supabase queries can be awaited without
+          // maybeSingle/select. The stub honors the id match only.
+          const id = chain._match.id as string | undefined;
+          if (id && presentations[id]) Object.assign(presentations[id], payload);
           return chain;
         },
       };
