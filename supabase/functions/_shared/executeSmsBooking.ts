@@ -553,12 +553,37 @@ export async function executeSmsBooking(
 
   const last = (session?.fields as any)?.lastQuoteResult;
   if (!last || !Number.isFinite(Number(last.total)) || Number(last.total) <= 0) {
-    return finishRecoverableFailure(executionToken, "quote_result_missing");
+    return finishRecoverableFailure(
+      executionToken,
+      "quote_result_missing",
+      null,
+      null,
+      null,
+      "input_missing",
+    );
   }
 
-  if (!customer) return finishRecoverableFailure(executionToken, "customer_missing");
+  if (!customer) {
+    return finishRecoverableFailure(
+      executionToken,
+      "customer_missing",
+      null,
+      null,
+      null,
+      "input_missing",
+    );
+  }
   const email = String(customer.email ?? "").trim();
-  if (!email) return finishRecoverableFailure(executionToken, "customer_missing", "missing_email");
+  if (!email) {
+    return finishRecoverableFailure(
+      executionToken,
+      "customer_missing",
+      "missing_email",
+      null,
+      null,
+      "input_missing",
+    );
+  }
   const fullName = customer.first_name || customer.last_name
     ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
     : (customer.name ?? "");
@@ -567,16 +592,39 @@ export async function executeSmsBooking(
   const composed = [property?.street, property?.city, property?.state, property?.postal_code]
     .filter(Boolean).join(", ");
   const address = (property?.formatted_address ?? composed) || null;
-  if (!address) return finishRecoverableFailure(executionToken, "property_missing");
+  if (!address) {
+    return finishRecoverableFailure(
+      executionToken,
+      "property_missing",
+      null,
+      null,
+      null,
+      "input_missing",
+    );
+  }
 
   const services = servicesFromLastQuote(last);
   if (services.length === 0) {
-    return finishRecoverableFailure(executionToken, "quote_result_missing", "no_line_items");
+    return finishRecoverableFailure(
+      executionToken,
+      "quote_result_missing",
+      "no_line_items",
+      null,
+      null,
+      "input_missing",
+    );
   }
 
   const heldCrew: string[] = Array.isArray(pres.held_crew_ids) ? pres.held_crew_ids : [];
   if (heldCrew.length === 0) {
-    return finishRecoverableFailure(executionToken, "hold_missing_or_expired", "no_crew_on_hold");
+    return finishRecoverableFailure(
+      executionToken,
+      "hold_missing_or_expired",
+      "no_crew_on_hold",
+      null,
+      null,
+      "reservation_not_live",
+    );
   }
   const technicianId = heldCrew[0];
   const teamTechnicianIds = heldCrew.length > 1 ? heldCrew : undefined;
