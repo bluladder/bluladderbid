@@ -520,6 +520,27 @@ export async function executeDraftTool(
         });
         return { name: call.name, ok: true, data: result };
       }
+      case "send_availability_options": {
+        const convo = await loadConversation(ctx.supabase, ctx.conversationId);
+        const phone = (convo as any)?.prospect_phone as string | null | undefined;
+        if (!phone) {
+          return { name: call.name, ok: false, error: "conversation_missing_phone" };
+        }
+        const result = await presentAvailability(ctx.supabase, {
+          conversationId: ctx.conversationId,
+          phone,
+          triggeringInboundSmsId: (ctx as any).triggeringInboundSmsId ?? null,
+          preference: {
+            preferred_date: typeof args.preferred_date === "string" ? args.preferred_date : null,
+            preferred_day: typeof args.preferred_day === "string" ? args.preferred_day : null,
+            time_of_day: args.time_of_day === "morning" || args.time_of_day === "afternoon"
+              ? args.time_of_day
+              : null,
+            max_options: typeof args.max_options === "number" ? args.max_options : null,
+          },
+        });
+        return { name: call.name, ok: true, data: result };
+      }
     }
   } catch (e) {
     return { name: call.name, ok: false, error: `exception:${String(e).slice(0, 120)}` };
