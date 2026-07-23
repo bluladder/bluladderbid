@@ -429,7 +429,7 @@ export default function MyAppointments() {
   }
 
   if (stage === 'signed_in' && data) {
-    return <PortalView data={data} onSignOut={signOut} authedEmail={authedEmail} />;
+    return <PortalView data={data} onSignOut={signOut} authedEmail={authedEmail} onRefresh={() => { setData(null); setReloadTick((t) => t + 1); }} />;
   }
 
   return (
