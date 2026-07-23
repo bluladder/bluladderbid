@@ -115,19 +115,43 @@ export async function handleConfirmationReply(
   if (!row) return { handled: false, action: "no_active_presentation" };
   if (row.hold_status !== "held") return { handled: false, action: "hold_not_held" };
 
-  // If the hold TTL has elapsed, defer to the slot-selection / AI handlers.
-  // Presentation expiry sweeper will flip the row asynchronously.
   const now = deps.now ? deps.now() : new Date();
-  if (
+  const holdExpired =
     !row.hold_expires_at ||
     new Date(row.hold_expires_at).getTime() <= now.getTime() ||
-    expired
-  ) {
-    return { handled: false, action: "hold_expired", presentation: row };
-  }
+    expired;
 
   const parsed = parseConfirmationReply(input.inboundText);
   const callrail = getCallRailConfig();
+
+  // Phase 6B.1 — deterministic expired-hold response. If the reply is a
+  // recognisable YES/NO but the 8-minute hold already elapsed, tell the
+  // customer explicitly and stop routing. Unclear replies fall through so
+  // the AI orchestrator can handle unrelated intents.
+  if (holdExpired) {
+    if (parsed.status === "unclear") {
+      return { handled: false, action: "hold_expired", presentation: row };
+    }
+    if (!callrail) return { handled: true, action: "hold_expired", presentation: row };
+    const outcome = await sendAutonomousCallRailSms(supabase, {
+      conversationId: row.conversation_id,
+      phone: input.phone,
+      actionClass: "scheduling",
+      body: EXPIRED_HOLD_BODY,
+      callRail: callrail,
+      messageKind: "ai_hold_expired_ack",
+      outboundIdempotencyKey: `hold_expired:${row.id}`,
+      where: "handleConfirmationReply",
+      extraLog: { presentation_id: row.id, parse: parsed.status },
+    });
+    return {
+      handled: true,
+      action: !outcome.sent
+        ? outcome.decision.allow ? "sent_failed" : "gate_blocked"
+        : "hold_expired",
+      presentation: row,
+    };
+  }
 
   // ---------- unclear → clarification -------------------------------------
   if (parsed.status === "unclear") {
