@@ -178,6 +178,12 @@ export interface AutonomousSendInput {
   /** Correlation for structured logging. */
   where?: string;
   extraLog?: Record<string, unknown>;
+  /** Idempotency key for the outbound SMS itself. If a prior sms_messages
+   *  row exists with this key we short-circuit — CallRail is NOT invoked a
+   *  second time and the prior send is returned as an idempotent replay.
+   *  Used by booking-confirmation SMS to guarantee the customer never
+   *  receives two "you're booked" texts. */
+  outboundIdempotencyKey?: string | null;
 }
 
 export interface AutonomousSendResult {
@@ -189,6 +195,9 @@ export interface AutonomousSendResult {
    *  to a presentation record. Null when the write failed. */
   smsMessageId?: string | null;
   error?: string;
+  /** True when this call returned a prior send for the same
+   *  outboundIdempotencyKey WITHOUT invoking CallRail again. */
+  idempotentReplay?: boolean;
 }
 
 export async function sendAutonomousCallRailSms(
@@ -196,6 +205,28 @@ export async function sendAutonomousCallRailSms(
   input: AutonomousSendInput,
 ): Promise<AutonomousSendResult> {
   const phoneNorm = normalizePhone(input.phone ?? null);
+
+  // Outbound idempotency short-circuit — check BEFORE the safety gate so a
+  // recorded prior send is always honored even if safety later toggles off.
+  if (input.outboundIdempotencyKey) {
+    try {
+      const { data: prior } = await supabase
+        .from("sms_messages")
+        .select("id, provider_message_id, status")
+        .eq("outbound_idempotency_key", input.outboundIdempotencyKey)
+        .maybeSingle();
+      if (prior?.id) {
+        return {
+          sent: prior.status === "sent",
+          decision: { allow: true, actionClass: input.actionClass } as AutonomousGateDecision,
+          messageId: (prior.provider_message_id as string | null) ?? null,
+          smsMessageId: prior.id as string,
+          idempotentReplay: true,
+        };
+      }
+    } catch (_e) { /* fall through to normal path */ }
+  }
+
   const decision = await evaluateAutonomousSendGate(supabase, {
     conversationId: input.conversationId,
     phone: phoneNorm ?? input.phone,
@@ -292,6 +323,7 @@ export async function sendAutonomousCallRailSms(
       provider_message_id: result.messageId ?? null,
       error: result.ok ? null : result.error ?? null,
       sent_at: result.ok ? nowIso : null,
+      outbound_idempotency_key: input.outboundIdempotencyKey ?? null,
     })
     .select("id")
     .maybeSingle();

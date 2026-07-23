@@ -55,6 +55,8 @@ export interface HandleConfirmationResult {
     | "declined"
     | "unclear"
     | "booking_failed"
+    | "booking_failed_recoverable"
+    | "in_progress"
     | "gate_blocked"
     | "sent_failed";
   execution?: ExecuteBookingResult | null;
@@ -90,6 +92,11 @@ const DECLINE_ACK =
 
 const BOOKING_FAILED_BODY =
   "I hit a snag finalizing that booking. Our team will follow up shortly to lock it in.";
+
+// UNKNOWN external outcome — the reservation is still held and reconciliation
+// will resolve truth. Do NOT tell the customer it failed.
+const BOOKING_UNCERTAIN_BODY =
+  "Thanks — I'm locking that in now. I'll send your confirmation as soon as it clears (usually under a minute).";
 
 export async function handleConfirmationReply(
   supabase: SB,
@@ -205,6 +212,11 @@ export async function handleConfirmationReply(
     if (execution.status === "duplicate_confirmation") {
       return { handled: true, action: "duplicate_confirmation", execution, presentation: row };
     }
+    // Outbound idempotency: the confirmation SMS is keyed off the ledger so a
+    // retried inbound event never produces a second "you're booked" text.
+    const outboundKey = execution.ledger_id
+      ? `booking_confirmation:${execution.ledger_id}`
+      : null;
     const outcome = await sendAutonomousCallRailSms(supabase, {
       conversationId: row.conversation_id,
       phone: input.phone,
@@ -212,6 +224,7 @@ export async function handleConfirmationReply(
       body: confirmationSmsBody(execution),
       callRail: callrail,
       messageKind: "ai_booking_confirmed",
+      outboundIdempotencyKey: outboundKey,
       where: "handleConfirmationReply",
       extraLog: {
         presentation_id: row.id,
@@ -222,7 +235,10 @@ export async function handleConfirmationReply(
     if (outcome.sent && outcome.smsMessageId && execution.ledger_id) {
       await supabase
         .from("sms_booking_confirmations")
-        .update({ confirmation_ack_sms_id: outcome.smsMessageId })
+        .update({
+          confirmation_ack_sms_id: outcome.smsMessageId,
+          status: "confirmed",
+        })
         .eq("id", execution.ledger_id);
     }
     return {
@@ -237,25 +253,41 @@ export async function handleConfirmationReply(
     };
   }
 
-  // Booking failed. NEVER send a confirmation body. Send a bounded fallback.
+  // In-progress: another worker holds the execution claim. Stay silent —
+  // that worker will send the confirmation SMS on success.
+  if (execution.status === "in_progress") {
+    return { handled: true, action: "in_progress", execution, presentation: row };
+  }
+
+  // Recoverable failure: external outcome UNKNOWN. Hold is preserved.
+  // Never tell the customer it failed.
+  const recoverable = execution.status === "failed_recoverable"
+    || execution.preserve_customer_uncertainty === true;
+
   if (callrail) {
     await sendAutonomousCallRailSms(supabase, {
       conversationId: row.conversation_id,
       phone: input.phone,
       actionClass: "scheduling",
-      body: BOOKING_FAILED_BODY,
+      body: recoverable ? BOOKING_UNCERTAIN_BODY : BOOKING_FAILED_BODY,
       callRail: callrail,
-      messageKind: "ai_booking_failed_followup",
+      messageKind: recoverable
+        ? "ai_booking_pending_reconciliation"
+        : "ai_booking_failed_followup",
+      outboundIdempotencyKey: execution.ledger_id
+        ? `booking_${recoverable ? "pending" : "failed"}:${execution.ledger_id}`
+        : null,
       where: "handleConfirmationReply",
       extraLog: {
         presentation_id: row.id,
         error_code: execution.error_code,
+        recoverable,
       },
     });
   }
   return {
     handled: true,
-    action: "booking_failed",
+    action: recoverable ? "booking_failed_recoverable" : "booking_failed",
     execution,
     presentation: row,
   };
