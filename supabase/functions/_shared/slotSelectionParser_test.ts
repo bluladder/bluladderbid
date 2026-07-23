@@ -33,10 +33,10 @@ Deno.test("'the last option' selects LAST regardless of count", () => {
   assertEquals(r.status, "selected");
   assertEquals(r.matched_option_number, 3);
 });
-Deno.test("'Friday morning' selects the sole Friday-AM option", () => {
+Deno.test("'Friday morning' matches both Friday-AM options → ambiguous (never silently picks one)", () => {
   const r = pick("friday morning works for me");
-  assertEquals(r.status, "selected");
-  assertEquals(r.matched_option_number, 1);
+  assertEquals(r.status, "ambiguous");
+  assert(r.clarification_message && r.clarification_message.length > 0);
 });
 Deno.test("'Friday' alone (two Friday options) → ambiguous", () => {
   const r = pick("friday");
