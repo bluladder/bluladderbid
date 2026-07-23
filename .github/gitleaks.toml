@@ -1,0 +1,22 @@
+# Gitleaks config for BluLadder Bid.
+# Extends the default ruleset and allowlists frontend-public VITE_* config
+# that is intentionally shipped in the browser bundle.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Frontend-public configuration and repo-internal fixtures"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)bun\.lock$''',
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+]
+regexes = [
+  # VITE_* vars are build-time public by design.
+  '''VITE_[A-Z0-9_]+\s*=''',
+  # Supabase publishable/anon JWTs are meant to ship in the client bundle.
+  '''"role"\s*:\s*"anon"''',
+]
