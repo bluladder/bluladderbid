@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ShieldCheck, MessageSquare, LogOut, Loader2 } from 'lucide-react';
+import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PRIMARY_PUBLIC_PHONE } from '@/config/contact';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -338,11 +339,7 @@ function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => vo
               <CardContent className="space-y-3">
                 {data.upcoming_appointments.length === 0 && <p className="text-sm text-muted-foreground">No upcoming appointments.</p>}
                 {data.upcoming_appointments.map((b) => (
-                  <div key={b.id} className="rounded-md border p-3 text-sm">
-                    <div className="font-medium">{fmtDate(b.scheduled_start)}</div>
-                    <div className="text-muted-foreground">{b.address}</div>
-                    <div className="flex justify-between mt-1"><span>Ref {b.reference_number}</span><span>{fmt(b.total)}</span></div>
-                  </div>
+                  <UpcomingAppointmentRow key={b.id} appt={b} fmt={fmt} fmtDate={fmtDate} />
                 ))}
               </CardContent>
             </Card>
@@ -387,6 +384,106 @@ function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => vo
           </TabsContent>
         </Tabs>
       </main>
+    </div>
+  );
+}
+
+type UpcomingAppt = PortalData['upcoming_appointments'][number];
+
+function UpcomingAppointmentRow({
+  appt,
+  fmt,
+  fmtDate,
+}: {
+  appt: UpcomingAppt;
+  fmt: (n: number) => string;
+  fmtDate: (iso: string) => string;
+}) {
+  const [action, setAction] = useState<null | 'reschedule' | 'cancel'>(null);
+  const hoursUntil = (new Date(appt.scheduled_start).getTime() - Date.now()) / 3_600_000;
+  const withinLockout = hoursUntil < 48;
+  const phoneDigits = PRIMARY_PUBLIC_PHONE.e164.replace(/[^\d+]/g, '');
+  const smsBody = (kind: 'reschedule' | 'cancel') =>
+    encodeURIComponent(
+      kind === 'reschedule'
+        ? `Hi BluLadder — I'd like to reschedule appointment ${appt.reference_number} (${fmtDate(appt.scheduled_start)}).`
+        : `Hi BluLadder — I need to cancel appointment ${appt.reference_number} (${fmtDate(appt.scheduled_start)}).`,
+    );
+
+  return (
+    <div className="rounded-md border p-3 text-sm space-y-3">
+      <div>
+        <div className="font-medium">{fmtDate(appt.scheduled_start)}</div>
+        <div className="text-muted-foreground">{appt.address}</div>
+        <div className="flex justify-between mt-1">
+          <span>Ref {appt.reference_number}</span>
+          <span>{fmt(appt.total)}</span>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 min-w-[140px]"
+          onClick={() => setAction('reschedule')}
+        >
+          <CalendarClock className="w-4 h-4 mr-2" />
+          Reschedule
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 min-w-[140px] text-destructive hover:text-destructive"
+          onClick={() => setAction('cancel')}
+        >
+          <XCircle className="w-4 h-4 mr-2" />
+          Cancel
+        </Button>
+      </div>
+
+      <Dialog open={action !== null} onOpenChange={(o) => !o && setAction(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {action === 'reschedule' ? 'Reschedule this appointment' : 'Cancel this appointment'}
+            </DialogTitle>
+            <DialogDescription>
+              {withinLockout ? (
+                <>
+                  Your appointment is within 48 hours, so changes need to go through our team.
+                  Text or call us and we'll take care of it right away.
+                </>
+              ) : (
+                <>
+                  To keep your crew assignment and route correct, {action === 'reschedule' ? 'reschedules' : 'cancellations'} from
+                  the portal go through our team. Text or call and we'll confirm within business hours.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+            <div className="font-medium">Ref {appt.reference_number}</div>
+            <div className="text-muted-foreground">{fmtDate(appt.scheduled_start)}</div>
+            {appt.address && <div className="text-muted-foreground">{appt.address}</div>}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
+            <Button asChild variant="outline" className="w-full sm:w-auto">
+              <a href={`tel:${phoneDigits}`}>
+                <Phone className="w-4 h-4 mr-2" />
+                Call {PRIMARY_PUBLIC_PHONE.display}
+              </a>
+            </Button>
+            <Button asChild className="w-full sm:w-auto">
+              <a href={`sms:${phoneDigits}?&body=${smsBody(action ?? 'reschedule')}`}>
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Text us
+              </a>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
