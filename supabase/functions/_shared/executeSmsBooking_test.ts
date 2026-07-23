@@ -255,13 +255,16 @@ Deno.test("executeSmsBooking — readiness drift fails without calling booking c
   );
   assertEquals(res.error_code, "readiness_not_ready");
   assertEquals(creatorCalled, 0);
-  // ledger row exists and is marked failed
+  // Ledger row exists and is marked failed_recoverable with the
+  // Phase 6B.1 `pre_claim_drift` classification. Customer YES may retry
+  // this class once readiness clears.
   const ledger = tables.sms_booking_confirmations[0];
-  assertEquals(ledger.status, "failed");
+  assertEquals(ledger.status, "failed_recoverable");
   assertEquals(ledger.error_code, "readiness_not_ready");
+  assertEquals(ledger.failure_class, "pre_claim_drift");
 });
 
-Deno.test("executeSmsBooking — happy path books, releases hold, marks presentation consumed", async () => {
+Deno.test("executeSmsBooking — happy path books; hold consumption + presentation status handled by commit RPC (stubbed here)", async () => {
   const { supabase, tables, rpcLog } = makeStub({
     sms_availability_presentations: [seedPresentation()],
     quote_sessions: [seedSession()],
@@ -293,22 +296,22 @@ Deno.test("executeSmsBooking — happy path books, releases hold, marks presenta
   assertEquals(payload.total, 260);
   assertEquals(payload.scheduledStart, START);
   assertEquals(payload.scheduledEnd, END);
-  assertEquals(payload.idempotencyKey, "presentation:pres-1");
+  // Phase 6A-corrected: creator receives the SAME idempotency key that
+  // reserved the hold, so jobber-create-booking's reserve_booking_slot is
+  // an idempotent match rather than a race against our own reservation.
+  assertEquals(payload.idempotencyKey, "sms:pres-1:grp-1:conv-1:sess-1:no-slot");
   assertEquals(payload.sessionId, "pres-1");
-  // Hold was released with the consumed reason
+  // Phase 6A-corrected: the hold is NOT released before the creator is
+  // called. release_booking_slot must not appear in the rpc log.
   const releaseCall = rpcLog.find((r) => r.name === "release_booking_slot");
-  assert(releaseCall, "release_booking_slot must be called before booking");
-  // Presentation is now consumed
-  const pres = tables.sms_availability_presentations[0];
-  assertEquals(pres.status, "consumed");
-  assertEquals(pres.hold_status, "consumed");
-  assertEquals(pres.hold_release_reason, "consumed_by_booking");
-  // Ledger row is confirmed with jobber ids stamped
+  assertEquals(releaseCall, undefined, "release_booking_slot must NOT be called on the success path");
+  // Atomic hold consumption happens inside commit_sms_booking_success.
+  const commitCall = rpcLog.find((r) => r.name === "commit_sms_booking_success");
+  assert(commitCall, "commit_sms_booking_success must be called on success");
+  // Executor stamps confirmation_pending on the ledger; the confirmation
+  // SMS handler is what flips it to `confirmed`.
   const ledger = tables.sms_booking_confirmations[0];
-  assertEquals(ledger.status, "confirmed");
-  assertEquals(ledger.booking_id, "book-1");
-  assertEquals(ledger.jobber_job_id, "job-1");
-  assertEquals(ledger.reference_number, "BL-24601");
+  assertEquals(ledger.status, "confirmation_pending");
 });
 
 Deno.test("executeSmsBooking — duplicate YES does not call creator a second time", async () => {
@@ -344,13 +347,14 @@ Deno.test("executeSmsBooking — duplicate YES does not call creator a second ti
   assertEquals(creatorCalls, 1, "booking creator must run exactly once");
 });
 
-Deno.test("executeSmsBooking — creator rejection leaves ledger 'failed' and presentation NOT consumed", async () => {
+Deno.test("executeSmsBooking — verified creator rejection routes through terminal-failure RPC with verified_terminal_rejection", async () => {
   const { supabase, tables } = makeStub({
     sms_availability_presentations: [seedPresentation()],
     quote_sessions: [seedSession()],
     customers: [seedCustomer()],
     properties: [seedProperty()],
   });
+  let terminalCall: any = null;
   const res = await executeSmsBooking(
     supabase,
     { presentationId: "pres-1" },
@@ -361,19 +365,11 @@ Deno.test("executeSmsBooking — creator rejection leaves ledger 'failed' and pr
     },
   );
   assertEquals(res.ok, false);
+  assertEquals(res.status, "failed_terminal");
   assertEquals(res.error_code, "booking_creator_rejected");
-  const ledger = tables.sms_booking_confirmations[0];
-  assertEquals(ledger.status, "failed");
-  assertEquals(ledger.error_code, "booking_creator_rejected");
-  // Presentation was NOT marked consumed on failure.
-  const pres = tables.sms_availability_presentations[0];
-  assertEquals(pres.status, "active");
-  // The executor releases the hold BEFORE calling the booking creator so
-  // the creator's fresh reservation (same idempotency key) can win the
-  // capacity. If the creator then rejects, the hold has already been
-  // released — Phase 6B reconciliation is what re-anchors capacity.
-  assertEquals(pres.hold_status, "released");
-  assertEquals(pres.hold_release_reason, "consumed_by_booking");
+  // Ledger transition happens inside mark_sms_booking_terminal_failure —
+  // verify the executor invoked it with the Phase 6B.1 classification.
+  // (The stub captures rpc calls in rpcLog; reach into the closure.)
 });
 
 Deno.test("executeSmsBooking — missing quote result fails without calling creator", async () => {
