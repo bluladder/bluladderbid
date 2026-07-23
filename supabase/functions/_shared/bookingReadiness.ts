@@ -347,17 +347,18 @@ export async function getBookingReadiness(
     const inputsStale = lastQuote != null && !inputsCurrent;
     if (!pricingEngineOk || noQuoteCached || pricingErrored || !pricingCurrent || inputsStale) {
       status = "pricing_blocked";
-      const code = !pricingEngineOk
-        ? "pricing_engine_unavailable"
-        : noQuoteCached
-        ? "no_canonical_quote"
+      // Inputs-drift takes precedence over engine liveness/version drift when
+      // a lastQuoteResult is cached — the cached total/duration are the actual
+      // hazard we need to name for the AI, regardless of loader health.
+      const code = noQuoteCached
+        ? (!pricingEngineOk ? "pricing_engine_unavailable" : "no_canonical_quote")
         : pricingErrored
         ? "pricing_engine_error"
-        : !pricingCurrent
-        ? "pricing_version_drift"
-        : inputsKeyPresent
-        ? "quote_inputs_changed"
-        : "quote_inputs_unverified";
+        : inputsStale
+        ? (inputsKeyPresent ? "quote_inputs_changed" : "quote_inputs_unverified")
+        : !pricingEngineOk
+        ? "pricing_engine_unavailable"
+        : "pricing_version_drift";
       blockers.push({
         code,
         customer_safe_message: CUSTOMER_SAFE_GENERIC,
