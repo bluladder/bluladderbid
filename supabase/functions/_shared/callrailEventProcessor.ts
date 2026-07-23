@@ -34,6 +34,7 @@ import {
   notifyOwnerOfInboundReply,
 } from "./ownerNotifications.ts";
 import { getPhoneByPurpose } from "./phoneConfig.ts";
+import { generateDraftReply, shouldAutoDraft } from "./draftReply.ts";
 
 type Supa = any;
 
