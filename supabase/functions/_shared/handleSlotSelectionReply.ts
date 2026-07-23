@@ -222,11 +222,90 @@ export async function handleSlotSelectionReply(
     invalidationReason,
   });
 
-  // Build the outbound body.
-  const body = selection
-    ? ackForSelectedSlot(row, selection.optionNumber)
-    : clarification ??
-      "Reply with the option number (1, 2, or 3) to pick a time.";
+  // ------------------------------------------------------------------------
+  // Phase 5 hold pipeline (only on a valid selection):
+  //   revalidate (READ-ONLY) → reserve (RPC ONLY) → persist (LOCAL ONLY)
+  // Prior hold on this same presentation is released first so a second reply
+  // picks up the newer slot without leaking capacity.
+  // ------------------------------------------------------------------------
+  let holdGroupId: string | null = null;
+  let holdExpiresAt: string | null = null;
+  type HoldAction =
+    | "held"
+    | "slot_filled"
+    | "revalidation_failed"
+    | "reserve_conflict"
+    | null;
+  let holdAction: HoldAction = null;
+
+  if (selection) {
+    if (row.hold_status === "held" && row.hold_group_id) {
+      await releaseHold(
+        supabase,
+        row.id,
+        row.hold_group_id,
+        "customer_changed_selection",
+      );
+    }
+
+    const reval = await revalidateSelectedSlot(supabase, {
+      conversation_id: row.conversation_id,
+      selected_slot_id: selection.slotId,
+      selected_start_at: selection.start,
+      selected_end_at: selection.end,
+      options: row.options,
+    });
+
+    if (!reval.ok || !reval.slot) {
+      holdAction = reval.reason === "slot_unavailable"
+        ? "slot_filled"
+        : "revalidation_failed";
+    } else if (!reval.crewIds || reval.crewIds.length === 0) {
+      holdAction = "revalidation_failed";
+    } else {
+      const idem = `presentation:${row.id}:${selection.slotId}:${selection.start}`;
+      const reserve = await reserveAuthoritativeSlot(supabase, {
+        crewIds: reval.crewIds,
+        startAt: selection.start,
+        endAt: selection.end,
+        sessionId: row.quote_session_id ?? null,
+        idempotencyKey: idem,
+        ttlMinutes: HOLD_TTL_MINUTES,
+      });
+      if (!reserve.ok) {
+        holdAction = reserve.status === "conflict"
+          ? "slot_filled"
+          : "reserve_conflict";
+      } else if (reserve.groupId && reserve.expiresAtIso) {
+        await persistHoldState(supabase, {
+          presentationId: row.id,
+          holdGroupId: reserve.groupId,
+          crewIds: reval.crewIds,
+          startAt: selection.start,
+          endAt: selection.end,
+          expiresAtIso: reserve.expiresAtIso,
+          idempotencyKey: idem,
+        });
+        holdGroupId = reserve.groupId;
+        holdExpiresAt = reserve.expiresAtIso;
+        holdAction = "held";
+      } else {
+        holdAction = "revalidation_failed";
+      }
+    }
+  }
+
+  // Deterministic body — chosen from row state, not model output.
+  const body =
+    selection && holdAction === "held" && holdExpiresAt
+      ? ackForHeldSlot(row, selection.optionNumber, holdExpiresAt)
+      : selection &&
+        (holdAction === "slot_filled" || holdAction === "reserve_conflict")
+      ? SLOT_FILLED_BODY
+      : selection
+      ? ackForSelectedSlot(row, selection.optionNumber)
+      : clarification ??
+        "Reply with the option number (1, 2, or 3) to pick a time.";
 
   const callrail = getCallRailConfig();
   if (!callrail) {
@@ -238,6 +317,8 @@ export async function handleSlotSelectionReply(
       selectedSlotId: selection?.slotId ?? null,
       selectedStart: selection?.start ?? null,
       selectedEnd: selection?.end ?? null,
+      holdGroupId,
+      holdExpiresAt,
     };
   }
 
@@ -247,12 +328,20 @@ export async function handleSlotSelectionReply(
     actionClass: "scheduling",
     body,
     callRail: callrail,
-    messageKind: selection ? "ai_slot_selection_ack" : "ai_slot_selection_clarify",
+    messageKind: selection
+      ? holdAction === "held"
+        ? "ai_slot_hold_confirmed"
+        : holdAction === "slot_filled" || holdAction === "reserve_conflict"
+        ? "ai_slot_filled_retry"
+        : "ai_slot_selection_ack"
+      : "ai_slot_selection_clarify",
     where: "handleSlotSelectionReply",
     extraLog: {
       presentation_id: row.id,
       parse_status: parseStatus,
       option_number: selection?.optionNumber ?? null,
+      hold_action: holdAction,
+      hold_group_id: holdGroupId,
     },
   });
 
@@ -266,6 +355,14 @@ export async function handleSlotSelectionReply(
       ? outcome.decision.allow
         ? "sent_failed"
         : "gate_blocked"
+      : holdAction === "held"
+      ? "held"
+      : holdAction === "slot_filled"
+      ? "slot_filled"
+      : holdAction === "reserve_conflict"
+      ? "reserve_conflict"
+      : holdAction === "revalidation_failed"
+      ? "revalidation_failed"
       : parseStatus === "selected"
       ? "selected"
       : parseStatus,
@@ -274,5 +371,7 @@ export async function handleSlotSelectionReply(
     selectedSlotId: selection?.slotId ?? null,
     selectedStart: selection?.start ?? null,
     selectedEnd: selection?.end ?? null,
+    holdGroupId,
+    holdExpiresAt,
   };
 }
