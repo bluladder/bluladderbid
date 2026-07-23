@@ -10,13 +10,21 @@ import { DRAFT_TOOL_ALLOWLIST, executeDraftTool } from "./draftTools.ts";
 Deno.test("draft tool allowlist is stable and read-safe", () => {
   assertEquals([...DRAFT_TOOL_ALLOWLIST].sort(), [
     "calculate_quote",
+    "confirm_property_fact",
     "get_customer_context",
+    "get_customer_properties",
     "get_pricing_summary",
+    "get_property_profile",
+    "get_quote_booking_readiness",
     "get_quote_session",
+    "get_resolved_customer_profile",
+    "get_reusable_quote_inputs",
     "get_service_area",
     "list_recent_quotes",
     "list_upcoming_bookings",
+    "propose_property_fact",
     "search_business_knowledge",
+    "select_conversation_property",
     "update_quote_session",
   ]);
   // Not one of the allowlisted names contains "send", "book", "cancel",
