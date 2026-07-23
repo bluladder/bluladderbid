@@ -368,7 +368,12 @@ Deno.test("executeSmsBooking — creator rejection leaves ledger 'failed' and pr
   // Presentation was NOT marked consumed on failure.
   const pres = tables.sms_availability_presentations[0];
   assertEquals(pres.status, "active");
-  assertEquals(pres.hold_status, "held", "hold_status stays 'held' on booking failure (Phase 6B reconciles)");
+  // The executor releases the hold BEFORE calling the booking creator so
+  // the creator's fresh reservation (same idempotency key) can win the
+  // capacity. If the creator then rejects, the hold has already been
+  // released — Phase 6B reconciliation is what re-anchors capacity.
+  assertEquals(pres.hold_status, "released");
+  assertEquals(pres.hold_release_reason, "consumed_by_booking");
 });
 
 Deno.test("executeSmsBooking — missing quote result fails without calling creator", async () => {
