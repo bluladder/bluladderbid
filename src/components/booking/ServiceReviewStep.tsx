@@ -346,6 +346,7 @@ export function ServiceReviewStep({
         <CompleteYourRefresh
           additionalServices={additionalServices}
           onAdd={onAdditionalServicesChange}
+          estimates={upsellEstimates}
         />
       )}
 
