@@ -24,6 +24,24 @@ interface Snapshot {
     lineItems?: { label: string; amount: number }[];
     explanation?: string;
   } | null;
+  properties?: Array<{
+    propertyId: string;
+    label: string | null;
+    street: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    isPrimary: boolean;
+  }>;
+  bound_property_id?: string | null;
+  property_facts?: Array<{
+    factType: string;
+    value: number | string | null;
+    unit: string | null;
+    source: string;
+    verificationStatus: string;
+    stale: boolean;
+  }>;
 }
 
 export function QuoteContextPanel({ conversationId }: { conversationId: string | null }) {
@@ -50,6 +68,9 @@ export function QuoteContextPanel({ conversationId }: { conversationId: string |
   const fields = (snap?.fields ?? {}) as Record<string, unknown>;
   const missing = snap?.required_remaining ?? [];
   const q = snap?.last_quote_result ?? null;
+  const properties = snap?.properties ?? [];
+  const boundId = snap?.bound_property_id ?? null;
+  const facts = snap?.property_facts ?? [];
 
   const fieldChips: [string, unknown][] = [
     ["services", (fields.services as string[])?.join(", ")],
@@ -87,6 +108,50 @@ export function QuoteContextPanel({ conversationId }: { conversationId: string |
               <div className="text-xs">
                 <span className="text-muted-foreground">Still needed: </span>
                 <span className="text-amber-600">{missing.join(", ")}</span>
+              </div>
+            )}
+            {properties.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Properties</div>
+                <ul className="space-y-1">
+                  {properties.map((p) => {
+                    const isBound = p.propertyId === boundId;
+                    return (
+                      <li key={p.propertyId} className="text-xs flex items-center gap-1.5">
+                        {isBound && <Badge variant="default" className="text-[10px]">bound</Badge>}
+                        {p.isPrimary && !isBound && <Badge variant="outline" className="text-[10px]">primary</Badge>}
+                        <span className={isBound ? "font-medium" : ""}>
+                          {[p.street, p.city, p.state].filter(Boolean).join(", ") || "(no address)"}
+                        </span>
+                        {p.label && <span className="text-muted-foreground">— {p.label}</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            {facts.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Verified property facts
+                </div>
+                <ul className="grid grid-cols-2 gap-1">
+                  {facts.map((f) => (
+                    <li key={f.factType} className="text-[11px] flex items-center gap-1">
+                      <span className="text-muted-foreground">{f.factType}:</span>
+                      <span className="font-medium">
+                        {String(f.value ?? "—")}{f.unit ? ` ${f.unit}` : ""}
+                      </span>
+                      <Badge
+                        variant={f.stale ? "outline" : "secondary"}
+                        className="text-[9px] font-normal"
+                        title={`source: ${f.source}${f.stale ? " (stale)" : ""}`}
+                      >
+                        {f.source}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             {q ? (
