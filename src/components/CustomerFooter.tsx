@@ -19,7 +19,7 @@ export function CustomerFooter({ embed }: CustomerFooterProps) {
           <nav className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
             <Link to="/services" className="hover:text-foreground transition-colors">Services</Link>
             <Link to="/plan-builder" className="hover:text-foreground transition-colors">Service Plans</Link>
-            <Link to="/my-appointments" className="hover:text-foreground transition-colors">My Appointments</Link>
+            <Link to="/customer-portal" className="hover:text-foreground transition-colors">Customer Portal</Link>
             <Link to="/preferences" className="hover:text-foreground transition-colors">Message Preferences</Link>
           </nav>
         </div>
