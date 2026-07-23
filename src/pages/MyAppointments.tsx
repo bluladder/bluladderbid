@@ -824,6 +824,12 @@ function PortalView({ data, onSignOut, authedEmail }: { data: PortalData; onSign
           </Button>
         </div>
 
+        <div className="flex justify-end mb-2">
+          <Button size="sm" variant="ghost" onClick={() => { setData(null); setReloadTick((t) => t + 1); }}>
+            <Loader2 className="w-4 h-4 mr-2" />Refresh
+          </Button>
+        </div>
+
         <Tabs defaultValue="upcoming" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="upcoming">
