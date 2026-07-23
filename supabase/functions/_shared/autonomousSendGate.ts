@@ -183,7 +183,11 @@ export interface AutonomousSendInput {
 export interface AutonomousSendResult {
   sent: boolean;
   decision: AutonomousGateDecision;
+  /** CallRail's provider message id, when the send succeeded. */
   messageId?: string | null;
+  /** Our own sms_messages.id — needed to attach outbound delivery evidence
+   *  to a presentation record. Null when the write failed. */
+  smsMessageId?: string | null;
   error?: string;
 }
 
@@ -278,19 +282,24 @@ export async function sendAutonomousCallRailSms(
 
   const result = await sendCallRailSms(input.callRail, phoneNorm, input.body);
   const nowIso = new Date().toISOString();
-  await supabase.from("sms_messages").insert({
-    to_number: phoneNorm,
-    body: input.body,
-    message_kind: input.messageKind,
-    status: result.ok ? "sent" : "failed",
-    provider_message_id: result.messageId ?? null,
-    error: result.ok ? null : result.error ?? null,
-    sent_at: result.ok ? nowIso : null,
-  });
+  const { data: inserted } = await supabase
+    .from("sms_messages")
+    .insert({
+      to_number: phoneNorm,
+      body: input.body,
+      message_kind: input.messageKind,
+      status: result.ok ? "sent" : "failed",
+      provider_message_id: result.messageId ?? null,
+      error: result.ok ? null : result.error ?? null,
+      sent_at: result.ok ? nowIso : null,
+    })
+    .select("id")
+    .maybeSingle();
   return {
     sent: result.ok,
     decision,
     messageId: result.messageId ?? null,
+    smsMessageId: (inserted?.id as string | undefined) ?? null,
     error: result.ok ? undefined : result.error ?? undefined,
   };
 }
