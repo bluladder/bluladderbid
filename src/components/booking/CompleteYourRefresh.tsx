@@ -1,6 +1,7 @@
 import { Plus, Check, Sparkles, Home, Droplets, Trees, Sun, PanelTop, Grid3x3, Waves } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { AdditionalServices } from '@/types/homeowner';
+import type { UpsellEstimates } from '@/hooks/useUpsellEstimates';
 
 // Presentation-only anchor prices — used strictly as "starting from" marketing anchors.
 // Actual booking price is always driven by the canonical pricing engine once selected.
@@ -121,6 +122,14 @@ interface CompleteYourRefreshProps {
   variant?: 'full' | 'compact';
   /** When set, limits the number of cards shown (default: 5 for the top row). */
   maxItems?: number;
+  /**
+   * Optional per-service estimates for the four sqft-driven services. When
+   * provided, replaces the marketing "from $X" anchor with a real price the
+   * customer will actually pay. Services not present in this map (driveway,
+   * pressure washing, etc.) continue to show the "from $X" floor because
+   * their price depends on user-entered flatwork sqft.
+   */
+  estimates?: UpsellEstimates | null;
 }
 
 /**
@@ -136,6 +145,7 @@ export function CompleteYourRefresh({
   subtitle = "Since we're already coming out — most customers add one of these.",
   variant = 'full',
   maxItems = 5,
+  estimates = null,
 }: CompleteYourRefreshProps) {
   const missing = UPSELL_CATALOG.filter((s) => !isSelected(additionalServices, s.key));
   if (missing.length === 0) {
@@ -180,6 +190,28 @@ export function CompleteYourRefresh({
       >
         {items.map((item) => {
           const { Icon } = item;
+          // Prefer the real per-sqft estimate for the four services where the
+          // pricing engine can compute a precise price. Fall back to the
+          // marketing "from $X" anchor for services that still need a user
+          // input (driveway / pressure washing sqft, panel count, screens).
+          let priceLabel: JSX.Element;
+          const est =
+            estimates && item.key in estimates
+              ? (estimates as unknown as Record<string, number | null>)[item.key]
+              : null;
+          if (typeof est === 'number' && est > 0) {
+            priceLabel = (
+              <span className="text-[11px] text-muted-foreground">
+                <span className="font-bold text-foreground">${est}</span>
+              </span>
+            );
+          } else {
+            priceLabel = (
+              <span className="text-[11px] text-muted-foreground">
+                From <span className="font-bold text-foreground">${item.from}</span>
+              </span>
+            );
+          }
           return (
             <div
               key={item.key}
@@ -206,9 +238,7 @@ export function CompleteYourRefresh({
                   </p>
                 </div>
                 <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-                  <span className="text-[11px] text-muted-foreground">
-                    From <span className="font-bold text-foreground">${item.from}</span>
-                  </span>
+                  {priceLabel}
                   <Button
                     size="sm"
                     onClick={() => onAdd((prev) => enableService(prev, item.key))}
