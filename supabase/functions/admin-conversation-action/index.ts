@@ -8,7 +8,7 @@
 // the admin explicitly invokes send_reply with an approved body.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { verifyAdmin, getBearer } from "../_shared/auth.ts";
+import { verifyAdmin, getBearer, isServiceRoleToken } from "../_shared/auth.ts";
 import { generateDraftReply } from "../_shared/draftReply.ts";
 import { loadQuoteContextSnapshot } from "../_shared/draftTools.ts";
 
@@ -41,8 +41,17 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return j({ error: "method_not_allowed" }, 405);
 
-  const adminId = await verifyAdmin(getBearer(req), "operations_admin");
-  if (!adminId) return j({ error: "forbidden" }, 403);
+  const bearer = getBearer(req);
+  const service = isServiceRoleToken(bearer);
+  const adminId = service ? null : await verifyAdmin(bearer, "operations_admin");
+  if (!service && !adminId) return j({ error: "forbidden" }, 403);
+  // Service-role callers may only invoke read/regenerate actions. Every write
+  // that mutates conversation state (takeover, campaigns, replies) still
+  // requires an admin JWT so audit fields (staff_takeover_by, etc.) are real.
+  const SERVICE_ALLOWED: readonly string[] = ["generate_draft", "get_draft_context"];
+  if (service && !SERVICE_ALLOWED.includes(body?.action ?? "")) {
+    return j({ error: "forbidden" }, 403);
+  }
 
   const body = await req.json().catch(() => ({})) as {
     conversation_id?: string; action?: Action; note?: string;
