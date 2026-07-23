@@ -41,6 +41,7 @@ import {
 } from "./profile/propertyRepo.ts";
 import type { FactType, ServiceKind } from "./profile/serviceFactMap.ts";
 import { getBookingReadiness } from "./bookingReadiness.ts";
+import { getAvailableSlots } from "./availabilityLookup.ts";
 
 type SB = any;
 
@@ -62,6 +63,7 @@ export const DRAFT_TOOL_ALLOWLIST = [
   "propose_property_fact",
   "confirm_property_fact",
   "get_quote_booking_readiness",
+  "get_available_slots",
 ] as const;
 
 export type DraftToolName = (typeof DRAFT_TOOL_ALLOWLIST)[number];
@@ -170,6 +172,16 @@ export function draftToolDescriptors() {
     t(
       "get_quote_booking_readiness",
       "READ-ONLY. Returns the authoritative server-side answer to whether this conversation is ready to show live appointment availability: identity, property authorization, quote completeness, canonical pricing/duration, manual-review flags, and schedule-mirror freshness. Takes no arguments — all IDs are resolved server-side from the conversation.",
+    ),
+    t(
+      "get_available_slots",
+      "READ-ONLY. Returns up to 4 real, authoritative appointment options for the current conversation. Runs the same production availability engine used by the booking UI. Never holds, reserves, confirms, or creates anything. Preconditions (identity, property, quote inputs, canonical pricing, duration, manual-review, schedule freshness) are enforced server-side via get_quote_booking_readiness; if any fail the tool returns the blockers instead of slots. All authoritative context (customer, property, services, duration, address) is resolved server-side — the model may only supply optional conversation-safe preferences.",
+      {
+        preferred_date: { type: "string", description: "YYYY-MM-DD. Optional. If provided, restricts search to that single day." },
+        preferred_day: { type: "string", description: "Optional textual day preference: 'today', 'tomorrow', 'monday'..'friday', 'this week', 'next week'." },
+        time_of_day: { type: "string", enum: ["morning", "afternoon"], description: "Optional AM/PM preference." },
+        max_options: { type: "number", description: "Optional cap on returned options; hard maximum is 4." },
+      },
     ),
   ];
 }
@@ -484,6 +496,17 @@ export async function executeDraftTool(
       case "get_quote_booking_readiness": {
         const readiness = await getBookingReadiness(ctx.supabase, ctx.conversationId);
         return { name: call.name, ok: true, data: readiness };
+      }
+      case "get_available_slots": {
+        const result = await getAvailableSlots(ctx.supabase, ctx.conversationId, {
+          preferred_date: typeof args.preferred_date === "string" ? args.preferred_date : null,
+          preferred_day: typeof args.preferred_day === "string" ? args.preferred_day : null,
+          time_of_day: args.time_of_day === "morning" || args.time_of_day === "afternoon"
+            ? args.time_of_day
+            : null,
+          max_options: typeof args.max_options === "number" ? args.max_options : null,
+        });
+        return { name: call.name, ok: true, data: result };
       }
     }
   } catch (e) {
