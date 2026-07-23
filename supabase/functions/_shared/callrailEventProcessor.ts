@@ -35,6 +35,7 @@ import {
 } from "./ownerNotifications.ts";
 import { getPhoneByPurpose } from "./phoneConfig.ts";
 import { generateDraftReply, shouldAutoDraft } from "./draftReply.ts";
+import { evaluateAiSafetyGate, logGateDecision } from "./aiSafetyGate.ts";
 
 type Supa = any;
 
@@ -172,34 +173,35 @@ export async function processPersistedCallRailEvent(
         }
 
         // ---- AI-assisted draft reply (Phase 1: never sends) --------------
-        // Best-effort: failure MUST NOT block persistence, notifications, or
-        // downstream routing. Idempotency is enforced inside generateDraftReply
-        // on (conversation_id, inbound sms_messages.id).
+        // Safety gates FAIL CLOSED. Any read failure of a switch, pause
+        // flag, staff takeover, or suppression state blocks the autonomous
+        // draft — the conversation is already persisted and staff will see
+        // it in the admin queue via the owner notification path above.
         try {
-          // Global AI SMS kill switch + per-conversation pause. Fail-open on
-          // read errors (we do not want a DB blip to silently pause the AI).
-          let aiSmsEnabled = true;
-          let autoreplyPaused = false;
-          try {
-            const [{ data: sys }, { data: convo }] = await Promise.all([
-              supabase.from("system_test_config")
-                .select("ai_sms_enabled").eq("id", "default").maybeSingle(),
-              supabase.from("chat_conversations")
-                .select("ai_autoreply_paused").eq("id", resolved.conversationId).maybeSingle(),
-            ]);
-            if (sys && sys.ai_sms_enabled === false) aiSmsEnabled = false;
-            if (convo && convo.ai_autoreply_paused === true) autoreplyPaused = true;
-          } catch (_e) { /* fail-open */ }
+          const safety = await evaluateAiSafetyGate(supabase, {
+            action: "auto_reply",
+            conversationId: resolved.conversationId,
+            phone,
+          });
+          logGateDecision("callrailEventProcessor.autoDraft", safety, {
+            provider_message_id: providerMessageId,
+            conversation_id: resolved.conversationId,
+          });
 
           const draftGate = shouldAutoDraft({
             content,
             isGenuine: gate.ok,
-            staffTakeover: false,
+            staffTakeover: !!safety.checks.staffTakeoverAt,
             resolutionConfidence: resolved.resolutionConfidence ?? null,
-            aiSmsEnabled,
-            autoreplyPaused,
+            aiSmsEnabled: safety.checks.aiSmsEnabled === true,
+            autoreplyPaused: safety.checks.conversationPaused !== false ? true : false,
           });
-          if (draftGate.ok && resolved.conversationId && inboundSmsId) {
+          if (
+            safety.allow &&
+            draftGate.ok &&
+            resolved.conversationId &&
+            inboundSmsId
+          ) {
             await generateDraftReply(supabase, {
               conversationId: resolved.conversationId,
               inboundMessageId: inboundSmsId,
@@ -207,7 +209,14 @@ export async function processPersistedCallRailEvent(
             });
           }
         } catch (e) {
-          console.error("draft reply generation failed:", e);
+          // Any unexpected throw ⇒ fail closed. Do not draft.
+          console.error(JSON.stringify({
+            at: "callrailEventProcessor.autoDraft",
+            allow: false,
+            reason: "unexpected_exception",
+            detail: String(e).slice(0, 200),
+            provider_message_id: providerMessageId,
+          }));
         }
       } catch (e) {
         console.error("owner notification failed:", e);
