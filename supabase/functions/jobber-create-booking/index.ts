@@ -990,6 +990,10 @@ Deno.serve(async (req) => {
     const jobInstructions = [
       promoPrepInstructions ? `PREP REQUIRED: ${promoPrepInstructions}` : "",
       booking.notes?.trim() || "",
+      // Booking idempotency reference — enables reconciliation to correlate
+      // orphaned Jobber jobs back to the original booking attempt.
+      // Kept as a short human-readable line (no JSON) per instructions-format rules.
+      `Ref: ${idempotencyKey}`,
     ]
       .filter(Boolean)
       .join("\n\n");
