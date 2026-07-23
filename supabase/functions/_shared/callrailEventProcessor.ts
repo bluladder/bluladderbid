@@ -28,6 +28,12 @@ import {
   markAttempt, markProcessed,
   classifyError, isTransient, nextAttemptAt, MAX_ATTEMPTS,
 } from "./callrailReceipts.ts";
+import { resolveInboundContext } from "./conversationContext.ts";
+import {
+  isGenuineInboundCustomerMessage,
+  notifyOwnerOfInboundReply,
+} from "./ownerNotifications.ts";
+import { getPhoneByPurpose } from "./phoneConfig.ts";
 
 type Supa = any;
 
@@ -111,6 +117,63 @@ export async function processPersistedCallRailEvent(
   }
 
   const runProcessing = async (): Promise<{ action: string }> => {
+    // ---- Conversation context (idempotent thread upsert) ----------------
+    // Runs BEFORE side-effects so the row & thread are visible even if
+    // downstream steps throw. If resolution fails we still let the
+    // pipeline continue — owner notification just won't fire.
+    let resolved: Awaited<ReturnType<typeof resolveInboundContext>> | null = null;
+    try {
+      resolved = await resolveInboundContext(supabase, { fromPhone: phone, receivedAt: row.received_at });
+      // Backlink the provider event row to the thread + resolved customer.
+      await supabase.from("callrail_inbound_events").update({
+        conversation_id: resolved.conversationId,
+        customer_id: resolved.customerId,
+      }).eq("id", row.id);
+    } catch (e) {
+      console.error("resolveInboundContext failed:", e);
+    }
+
+    // ---- Owner notification (genuine inbound only, idempotent) ----------
+    if (resolved) {
+      try {
+        const ownedNumbers: string[] = [];
+        try {
+          const [pub, ai, esc] = await Promise.all([
+            getPhoneByPurpose(supabase, "primary_public"),
+            getPhoneByPurpose(supabase, "app_ai"),
+            getPhoneByPurpose(supabase, "escalation_sender"),
+          ]);
+          for (const p of [pub?.e164, ai?.e164, esc?.e164]) {
+            if (p && !ownedNumbers.includes(p)) ownedNumbers.push(p);
+          }
+        } catch { /* fall through with empty list */ }
+
+        const gate = isGenuineInboundCustomerMessage({
+          content,
+          complianceIntent,
+          richIntentKind: richIntent.kind,
+          fromPhone: phone,
+          ownedSenderNumbers: ownedNumbers,
+          eventType: null,
+        });
+        if (gate.ok) {
+          await notifyOwnerOfInboundReply(supabase, {
+            eventId: row.id,
+            providerMessageId,
+            fromPhone: phone,
+            messagePreview: content,
+            context: resolved,
+          });
+        } else {
+          await supabase.from("callrail_inbound_events").update({
+            owner_notification_skipped_reason: gate.reason ?? "not_genuine_inbound",
+          }).eq("id", row.id);
+        }
+      } catch (e) {
+        console.error("owner notification failed:", e);
+      }
+    }
+
     // customer_replied — keyed on provider_message_id
     try {
       await emitCampaignEvent({
