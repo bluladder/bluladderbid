@@ -121,6 +121,12 @@ export async function sendCallRailSms(
     return { ok: false, error: `Invalid recipient phone number: ${toNumber}` };
   }
 
+  // Enforce SMS-safe body at the only choke point that talks to CallRail:
+  // strip Markdown (**, __, *, _, `, links, headings, blockquotes, bullets)
+  // and cap length at 320 chars (~2 SMS segments) so drafts written for the
+  // admin UI never ship raw Markdown or an unbounded message to a customer.
+  const safeContent = clampSmsBody(stripMarkdownForSms(content));
+
   const url = `${CALLRAIL_API_BASE}/a/${config.accountId}/text-messages.json`;
   try {
     const res = await fetch(url, {
@@ -133,7 +139,7 @@ export async function sendCallRailSms(
         company_id: config.companyId,
         customer_phone_number: normalized,
         tracking_number: config.senderNumber,
-        content,
+        content: safeContent,
       }),
     });
 
@@ -154,7 +160,7 @@ export async function sendCallRailSms(
       messageId = parsed.messageId;
       providerMessageStatus = parsed.providerMessageStatus;
       if (conversationId && (!messageId || !providerMessageStatus)) {
-        const refreshed = await fetchCallRailConversationMessageStatus(config, conversationId, content);
+        const refreshed = await fetchCallRailConversationMessageStatus(config, conversationId, safeContent);
         messageId = messageId ?? refreshed.messageId;
         providerMessageStatus = providerMessageStatus ?? refreshed.providerMessageStatus;
       }
@@ -166,6 +172,46 @@ export async function sendCallRailSms(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/**
+ * Best-effort Markdown → plain-text scrub for SMS bodies. Exported for tests.
+ * Deliberately conservative: we don't rewrite URLs, we just unwrap link
+ * syntax and drop inline formatting markers customers should never see.
+ */
+export function stripMarkdownForSms(input: string): string {
+  if (!input) return "";
+  return input
+    // fenced code
+    .replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, ""))
+    // inline code
+    .replace(/`([^`]+)`/g, "$1")
+    // images ![alt](url) → alt
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1")
+    // links [text](url) → text (url)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, t, u) => (t && t.trim() ? `${t} (${u})` : u))
+    // bold/italic markers
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(?=\S)(.+?)(?<=\S)\1/g, "$2")
+    // headings and blockquotes at line start
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    // unordered bullets at line start
+    .replace(/^\s{0,3}[-*+]\s+/gm, "")
+    // numbered bullets
+    .replace(/^\s{0,3}\d+\.\s+/gm, "")
+    // strikethrough
+    .replace(/~~(.*?)~~/g, "$1")
+    // collapse 3+ newlines
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Cap outbound SMS to ~2 segments so we never ship an unbounded body. */
+export function clampSmsBody(input: string, maxChars = 320): string {
+  if (!input) return "";
+  if (input.length <= maxChars) return input;
+  return input.slice(0, maxChars - 1).replace(/\s+\S*$/, "").trimEnd() + "…";
 }
 
 /** Render {{variable}} placeholders in a template against a value map. Missing vars become empty strings. */

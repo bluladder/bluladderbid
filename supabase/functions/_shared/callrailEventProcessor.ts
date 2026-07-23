@@ -176,11 +176,28 @@ export async function processPersistedCallRailEvent(
         // downstream routing. Idempotency is enforced inside generateDraftReply
         // on (conversation_id, inbound sms_messages.id).
         try {
+          // Global AI SMS kill switch + per-conversation pause. Fail-open on
+          // read errors (we do not want a DB blip to silently pause the AI).
+          let aiSmsEnabled = true;
+          let autoreplyPaused = false;
+          try {
+            const [{ data: sys }, { data: convo }] = await Promise.all([
+              supabase.from("system_test_config")
+                .select("ai_sms_enabled").eq("id", "default").maybeSingle(),
+              supabase.from("chat_conversations")
+                .select("ai_autoreply_paused").eq("id", resolved.conversationId).maybeSingle(),
+            ]);
+            if (sys && sys.ai_sms_enabled === false) aiSmsEnabled = false;
+            if (convo && convo.ai_autoreply_paused === true) autoreplyPaused = true;
+          } catch (_e) { /* fail-open */ }
+
           const draftGate = shouldAutoDraft({
             content,
             isGenuine: gate.ok,
             staffTakeover: false,
             resolutionConfidence: resolved.resolutionConfidence ?? null,
+            aiSmsEnabled,
+            autoreplyPaused,
           });
           if (draftGate.ok && resolved.conversationId && inboundSmsId) {
             await generateDraftReply(supabase, {

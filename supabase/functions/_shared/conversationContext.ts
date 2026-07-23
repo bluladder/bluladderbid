@@ -11,6 +11,12 @@
 //   C. Match via customer_accounts.phone (verified portal identity)
 //   D. Multi-match on customers.phone → ambiguous
 //   E. No match → unresolved
+//
+// Ambiguity safety: when phone resolution returns `ambiguous` (multiple
+// customers share the number) we do NOT let the latest-quote / latest-booking
+// enrichment step silently promote one of them into an identity anchor.
+// The only way out of `ambiguous` is a durable, deterministic signal such as
+// a confirmed email (see confirmed_email_customer_id on chat_conversations).
 // ============================================================================
 // deno-lint-ignore-file no-explicit-any
 
@@ -105,72 +111,129 @@ export async function resolveInboundContext(
     }
   }
 
-  // B. Enrich with latest quote / booking (either for the matched customer
-  //    OR for anyone sharing this phone number — used only for display).
-  let latestQuoteId: string | null = null;
-  let latestBookingId: string | null = null;
-
-  const quoteQuery = supabase
-    .from("quotes")
-    .select("id, customer_id, service_address")
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  const { data: quoteRow } = customerId
-    ? await quoteQuery.eq("customer_id", customerId).maybeSingle()
-    : await quoteQuery.eq("customer_phone", phone).maybeSingle();
-  if (quoteRow) {
-    latestQuoteId = quoteRow.id ?? null;
-    serviceAddress = quoteRow.service_address ?? serviceAddress;
-    if (!customerId && quoteRow.customer_id) {
-      customerId = quoteRow.customer_id;
-      method = "recent_quote";
-      confidence = "medium";
-      unresolvedReason = null;
-    }
-  }
-
-  const bookingQuery = supabase
-    .from("bookings")
-    .select("id, customer_id, service_address")
-    .order("created_at", { ascending: false })
-    .limit(1);
-  const { data: bookingRow } = customerId
-    ? await bookingQuery.eq("customer_id", customerId).maybeSingle()
-    : await bookingQuery.eq("customer_phone", phone).maybeSingle();
-  if (bookingRow) {
-    latestBookingId = bookingRow.id ?? null;
-    serviceAddress = serviceAddress ?? bookingRow.service_address ?? null;
-    if (!customerId && bookingRow.customer_id) {
-      customerId = bookingRow.customer_id;
-      method = "recent_booking";
-      confidence = "medium";
-      unresolvedReason = null;
-    }
-  }
-
-  // Upsert the SMS thread (find-or-create by prospect_phone).
-  const { data: existingThread } = await supabase
+  // Preserve a durable identity anchor if the conversation already has one
+  // (e.g. the customer previously disambiguated their phone by confirming an
+  // email). This takes precedence over quote/booking enrichment.
+  const { data: threadPeek } = await supabase
     .from("chat_conversations")
-    .select("id, customer_id")
+    .select("id, customer_id, confirmed_email_customer_id, confirmed_email, awaiting_email_disambiguation")
     .eq("channel", "sms")
     .eq("prospect_phone", phone)
     .order("last_activity_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
+  if (method === "ambiguous" && threadPeek?.confirmed_email_customer_id) {
+    const { data: anchor } = await supabase
+      .from("customers")
+      .select("id, first_name, last_name, email")
+      .eq("id", threadPeek.confirmed_email_customer_id)
+      .maybeSingle();
+    if (anchor) {
+      customerId = anchor.id;
+      customerName = [anchor.first_name, anchor.last_name].filter(Boolean).join(" ") || null;
+      customerEmail = anchor.email ?? null;
+      method = "customer_account";
+      confidence = "high";
+      unresolvedReason = null;
+      matchNeedsReview = false;
+    }
+  }
+
+  // B. Enrich with latest quote / booking. IMPORTANT: when resolution is
+  //    still ambiguous we only enrich for display when we can scope to an
+  //    already-anchored customer_id. We never promote a shared-phone quote
+  //    into a customer anchor — that was the identity-leak bug.
+  let latestQuoteId: string | null = null;
+  let latestBookingId: string | null = null;
+
+  if (customerId) {
+    const { data: quoteRow } = await supabase
+      .from("quotes")
+      .select("id, service_address")
+      .eq("customer_id", customerId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (quoteRow) {
+      latestQuoteId = quoteRow.id ?? null;
+      serviceAddress = quoteRow.service_address ?? serviceAddress;
+    }
+    const { data: bookingRow } = await supabase
+      .from("bookings")
+      .select("id, service_address")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (bookingRow) {
+      latestBookingId = bookingRow.id ?? null;
+      serviceAddress = serviceAddress ?? bookingRow.service_address ?? null;
+    }
+  } else if (method !== "ambiguous") {
+    // Unresolved (E): promote a solo phone-matched quote/booking as a
+    // medium-confidence anchor. Ambiguous stays ambiguous.
+    const { data: quoteRow } = await supabase
+      .from("quotes")
+      .select("id, customer_id, service_address")
+      .eq("customer_phone", phone)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (quoteRow) {
+      latestQuoteId = quoteRow.id ?? null;
+      serviceAddress = quoteRow.service_address ?? serviceAddress;
+      if (quoteRow.customer_id) {
+        customerId = quoteRow.customer_id;
+        method = "recent_quote";
+        confidence = "medium";
+        unresolvedReason = null;
+      }
+    }
+    const { data: bookingRow } = await supabase
+      .from("bookings")
+      .select("id, customer_id, service_address")
+      .eq("customer_phone", phone)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (bookingRow) {
+      latestBookingId = bookingRow.id ?? null;
+      serviceAddress = serviceAddress ?? bookingRow.service_address ?? null;
+      if (!customerId && bookingRow.customer_id) {
+        customerId = bookingRow.customer_id;
+        method = "recent_booking";
+        confidence = "medium";
+        unresolvedReason = null;
+      }
+    }
+  }
+
+  // Upsert the SMS thread (find-or-create by prospect_phone).
+  const existingThread = threadPeek;
+
   let conversationId: string;
   if (existingThread?.id) {
     conversationId = existingThread.id;
+    // Never overwrite a durable customer anchor. If the thread already had a
+    // customer_id, keep it. If it did not and resolution is not ambiguous,
+    // we may set it now. Ambiguous threads stay customer_id = NULL until an
+    // email disambiguation lands.
+    const nextCustomerId = existingThread.customer_id
+      ?? (method === "ambiguous" ? null : customerId);
     await supabase
       .from("chat_conversations")
       .update({
-        customer_id: existingThread.customer_id ?? customerId,
+        customer_id: nextCustomerId,
         resolution_method: method,
         resolution_confidence: confidence,
         unresolved_reason: unresolvedReason,
         service_address: serviceAddress ?? undefined,
         prospect_name: customerName ?? undefined,
         prospect_email: customerEmail ?? undefined,
+        awaiting_email_disambiguation: method === "ambiguous"
+          ? (existingThread.awaiting_email_disambiguation ?? true)
+          : false,
         last_inbound_at: now,
         last_activity_at: now,
       })
@@ -186,10 +249,12 @@ export async function resolveInboundContext(
         prospect_name: customerName,
         prospect_email: customerEmail,
         service_address: serviceAddress,
-        customer_id: customerId,
+        // Ambiguous threads must not be created with an inferred customer.
+        customer_id: method === "ambiguous" ? null : customerId,
         resolution_method: method,
         resolution_confidence: confidence,
         unresolved_reason: unresolvedReason,
+        awaiting_email_disambiguation: method === "ambiguous",
         last_inbound_at: now,
         last_activity_at: now,
         summary: "SMS conversation",
@@ -204,7 +269,7 @@ export async function resolveInboundContext(
 
   return {
     conversationId,
-    customerId,
+    customerId: method === "ambiguous" ? null : customerId,
     customerName,
     customerEmail,
     latestQuoteId,

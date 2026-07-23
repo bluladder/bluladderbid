@@ -1382,14 +1382,22 @@ export type Database = {
         Row: {
           abandonment_emitted_version: string | null
           abandonment_swept_at: string | null
+          ai_autoreply_paused: boolean
+          ai_autoreply_paused_at: string | null
+          ai_autoreply_paused_by: string | null
           ai_summary: string | null
           ai_summary_updated_at: string | null
           assigned_admin: string | null
+          awaiting_email_disambiguation: boolean
           best_time_to_contact: string | null
           booking_status: string
           callback_requested: boolean
           campaign_status: string | null
           channel: string
+          confirmed_email: string | null
+          confirmed_email_at: string | null
+          confirmed_email_customer_id: string | null
+          confirmed_email_sms_id: string | null
           contact_method: string | null
           conversation_state: string
           created_at: string
@@ -1441,14 +1449,22 @@ export type Database = {
         Insert: {
           abandonment_emitted_version?: string | null
           abandonment_swept_at?: string | null
+          ai_autoreply_paused?: boolean
+          ai_autoreply_paused_at?: string | null
+          ai_autoreply_paused_by?: string | null
           ai_summary?: string | null
           ai_summary_updated_at?: string | null
           assigned_admin?: string | null
+          awaiting_email_disambiguation?: boolean
           best_time_to_contact?: string | null
           booking_status?: string
           callback_requested?: boolean
           campaign_status?: string | null
           channel?: string
+          confirmed_email?: string | null
+          confirmed_email_at?: string | null
+          confirmed_email_customer_id?: string | null
+          confirmed_email_sms_id?: string | null
           contact_method?: string | null
           conversation_state?: string
           created_at?: string
@@ -1500,14 +1516,22 @@ export type Database = {
         Update: {
           abandonment_emitted_version?: string | null
           abandonment_swept_at?: string | null
+          ai_autoreply_paused?: boolean
+          ai_autoreply_paused_at?: string | null
+          ai_autoreply_paused_by?: string | null
           ai_summary?: string | null
           ai_summary_updated_at?: string | null
           assigned_admin?: string | null
+          awaiting_email_disambiguation?: boolean
           best_time_to_contact?: string | null
           booking_status?: string
           callback_requested?: boolean
           campaign_status?: string | null
           channel?: string
+          confirmed_email?: string | null
+          confirmed_email_at?: string | null
+          confirmed_email_customer_id?: string | null
+          confirmed_email_sms_id?: string | null
           contact_method?: string | null
           conversation_state?: string
           created_at?: string
@@ -1557,6 +1581,20 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "chat_conversations_confirmed_email_customer_id_fkey"
+            columns: ["confirmed_email_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_conversations_confirmed_email_sms_id_fkey"
+            columns: ["confirmed_email_sms_id"]
+            isOneToOne: false
+            referencedRelation: "sms_messages"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "chat_conversations_property_id_fkey"
             columns: ["property_id"]
@@ -4519,6 +4557,144 @@ export type Database = {
         }
         Relationships: []
       }
+      sms_booking_confirmations: {
+        Row: {
+          authoritative_total: number
+          booking_id: string | null
+          confirmation_requested_at: string
+          confirmed_at: string | null
+          conversation_id: string
+          created_at: string
+          crew_ids: string[]
+          customer_id: string
+          expires_at: string
+          failure_reason: string | null
+          id: string
+          idempotency_key: string
+          inbound_confirmation_sms_id: string | null
+          outbound_sms_id: string | null
+          pricing_version: number
+          property_id: string
+          quote_session_id: string | null
+          scheduled_end: string
+          scheduled_start: string
+          services_json: Json
+          slot_group_id: string | null
+          status: string
+          summary_text: string
+          updated_at: string
+        }
+        Insert: {
+          authoritative_total: number
+          booking_id?: string | null
+          confirmation_requested_at?: string
+          confirmed_at?: string | null
+          conversation_id: string
+          created_at?: string
+          crew_ids: string[]
+          customer_id: string
+          expires_at: string
+          failure_reason?: string | null
+          id?: string
+          idempotency_key: string
+          inbound_confirmation_sms_id?: string | null
+          outbound_sms_id?: string | null
+          pricing_version: number
+          property_id: string
+          quote_session_id?: string | null
+          scheduled_end: string
+          scheduled_start: string
+          services_json: Json
+          slot_group_id?: string | null
+          status?: string
+          summary_text: string
+          updated_at?: string
+        }
+        Update: {
+          authoritative_total?: number
+          booking_id?: string | null
+          confirmation_requested_at?: string
+          confirmed_at?: string | null
+          conversation_id?: string
+          created_at?: string
+          crew_ids?: string[]
+          customer_id?: string
+          expires_at?: string
+          failure_reason?: string | null
+          id?: string
+          idempotency_key?: string
+          inbound_confirmation_sms_id?: string | null
+          outbound_sms_id?: string | null
+          pricing_version?: number
+          property_id?: string
+          quote_session_id?: string | null
+          scheduled_end?: string
+          scheduled_start?: string
+          services_json?: Json
+          slot_group_id?: string | null
+          status?: string
+          summary_text?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_booking_confirmations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "admin_marketing_funnel"
+            referencedColumns: ["booking_id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "chat_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_inbound_confirmation_sms_id_fkey"
+            columns: ["inbound_confirmation_sms_id"]
+            isOneToOne: false
+            referencedRelation: "sms_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_outbound_sms_id_fkey"
+            columns: ["outbound_sms_id"]
+            isOneToOne: false
+            referencedRelation: "sms_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_quote_session_id_fkey"
+            columns: ["quote_session_id"]
+            isOneToOne: false
+            referencedRelation: "quote_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sms_campaign_steps: {
         Row: {
           active: boolean
@@ -4955,18 +5131,24 @@ export type Database = {
       }
       system_test_config: {
         Row: {
+          ai_sms_autobook_enabled: boolean
+          ai_sms_enabled: boolean
           id: string
           suppress_all: boolean
           suppress_reason: string | null
           updated_at: string
         }
         Insert: {
+          ai_sms_autobook_enabled?: boolean
+          ai_sms_enabled?: boolean
           id?: string
           suppress_all?: boolean
           suppress_reason?: string | null
           updated_at?: string
         }
         Update: {
+          ai_sms_autobook_enabled?: boolean
+          ai_sms_enabled?: boolean
           id?: string
           suppress_all?: boolean
           suppress_reason?: string | null

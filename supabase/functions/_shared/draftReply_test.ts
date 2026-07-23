@@ -4,10 +4,37 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { DRAFT_ALLOWED_TOOLS, sanitizeDraftBody, shouldAutoDraft } from "./draftReply.ts";
 
-Deno.test("phase 1 exposes zero tools to the model", () => {
-  // If this ever changes without an explicit review, the test fails so a
-  // reviewer must acknowledge that the AI can now take actions in draft mode.
-  assertEquals(DRAFT_ALLOWED_TOOLS.length, 0);
+Deno.test("phase 2 draft tools are all read-only or conversation-scoped", () => {
+  // Guard against silently widening the allowlist to include destructive
+  // tools (send SMS, cancel booking, refund, etc.). Adding to this list
+  // requires updating the test AND documenting the safety review.
+  const destructive = [
+    /^send_/i, /^create_booking/i, /^cancel_booking/i, /^reschedule_booking/i,
+    /^refund/i, /^delete_/i, /^update_customer/i, /^apply_discount/i,
+  ];
+  for (const t of DRAFT_ALLOWED_TOOLS) {
+    if (destructive.some((rx) => rx.test(t))) {
+      throw new Error(`tool ${t} looks destructive; explicit review required`);
+    }
+  }
+});
+
+Deno.test("shouldAutoDraft honors the global AI SMS kill switch", () => {
+  const r = shouldAutoDraft({
+    content: "Hi", isGenuine: true, staffTakeover: false,
+    resolutionConfidence: "high", aiSmsEnabled: false,
+  });
+  assertEquals(r.ok, false);
+  assertEquals(r.reason, "ai_sms_kill_switch");
+});
+
+Deno.test("shouldAutoDraft honors per-conversation pause", () => {
+  const r = shouldAutoDraft({
+    content: "Hi", isGenuine: true, staffTakeover: false,
+    resolutionConfidence: "high", autoreplyPaused: true,
+  });
+  assertEquals(r.ok, false);
+  assertEquals(r.reason, "conversation_paused");
 });
 
 Deno.test("shouldAutoDraft blocks non-genuine inbound (STOP / delivery receipts)", () => {

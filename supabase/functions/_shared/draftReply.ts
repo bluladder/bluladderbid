@@ -165,7 +165,7 @@ function buildSystemPrompt(ctx: NonNullable<Awaited<ReturnType<typeof loadThread
     ? [
         "THREAD RESOLUTION: AMBIGUOUS or UNRESOLVED.",
         "You DO NOT know which customer this is. Do NOT use any customer name, address, quote, or appointment in the draft.",
-        "Draft a neutral message asking the customer to confirm their name and service address so BluLadder can look up the correct account.",
+        "Ask ONCE for the email address on file so BluLadder can match the correct account (do not ask again if the thread notes already show 'awaiting_email_disambiguation'). Do NOT ask for name, address, or SSN. Do NOT quote prices. Do NOT suggest appointment times.",
       ].join(" ")
     : [
         `Customer name: ${convo.prospect_name ?? "(unknown)"}`,
@@ -194,7 +194,10 @@ function buildSystemPrompt(ctx: NonNullable<Awaited<ReturnType<typeof loadThread
     "You are NOT sending anything. Ben will read your draft, may edit it, and then choose to send or discard it.",
     "",
     "HARD RULES (never break):",
-    "- You may call READ-ONLY tools and the calculate_quote tool. You cannot send messages, book, reschedule, cancel, apply discounts, or issue refunds — those tools do not exist.",
+    "- You may call READ-ONLY tools and the calculate_quote tool. You cannot send messages, book, reschedule, cancel, apply discounts, or issue refunds — those tools do not exist in draft mode.",
+    "- IDENTITY GATE: if the thread is ambiguous or unresolved, you may NOT quote a price, propose a time, or reference any customer/property fact. Ask for the email on file, once.",
+    "- When you reference a fact that came from a prior interaction (address, sqft, stories), phrase it as \"from your previous booking\" or \"the address we have on file\" rather than asserting it as new information.",
+    "- Output plain text only. Never use Markdown: no **bold**, no _italics_, no bullets, no headings, no links in [text](url) form. Write URLs bare.",
     "- Prefer calling tools to look up verified facts (quote session state, recent quotes, upcoming bookings, service area, pricing summary, business knowledge) rather than guessing.",
     "- When the customer supplies new intake facts (square footage, stories, address, service scope), first call update_quote_session to record them, then call calculate_quote to produce a canonical price BEFORE quoting a number in the draft.",
     "- NEVER quote a price the calculate_quote tool did not return. If required inputs are missing, ask ONE clarifying question in the draft instead of guessing.",
@@ -475,9 +478,13 @@ export function shouldAutoDraft(input: {
   isGenuine: boolean;
   staffTakeover: boolean;
   resolutionConfidence: string | null;
+  aiSmsEnabled?: boolean;
+  autoreplyPaused?: boolean;
 }): { ok: boolean; reason?: string } {
   if (!input.isGenuine) return { ok: false, reason: "not_genuine_inbound" };
   if (!input.content?.trim()) return { ok: false, reason: "empty_body" };
+  if (input.aiSmsEnabled === false) return { ok: false, reason: "ai_sms_kill_switch" };
+  if (input.autoreplyPaused === true) return { ok: false, reason: "conversation_paused" };
   // Ambiguous / unresolved threads are still eligible — the draft prompt
   // above renders a neutral "please confirm name and address" instead of
   // exposing any potentially-wrong identity. Staff takeover does not block
