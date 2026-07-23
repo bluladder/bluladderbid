@@ -39,6 +39,7 @@ import {
   selectConversationProperty,
 } from "./profile/propertyRepo.ts";
 import type { FactType, ServiceKind } from "./profile/serviceFactMap.ts";
+import { getBookingReadiness } from "./bookingReadiness.ts";
 
 type SB = any;
 
@@ -59,6 +60,7 @@ export const DRAFT_TOOL_ALLOWLIST = [
   "get_reusable_quote_inputs",
   "propose_property_fact",
   "confirm_property_fact",
+  "get_quote_booking_readiness",
 ] as const;
 
 export type DraftToolName = (typeof DRAFT_TOOL_ALLOWLIST)[number];
@@ -163,6 +165,10 @@ export function draftToolDescriptors() {
         value_text: { type: "string" },
         unit: { type: "string" },
       },
+    ),
+    t(
+      "get_quote_booking_readiness",
+      "READ-ONLY. Returns the authoritative server-side answer to whether this conversation is ready to show live appointment availability: identity, property authorization, quote completeness, canonical pricing/duration, manual-review flags, and schedule-mirror freshness. Takes no arguments — all IDs are resolved server-side from the conversation.",
     ),
   ];
 }
@@ -466,6 +472,10 @@ export async function executeDraftTool(
           ? await confirmPropertyFact(ctx.supabase, payload)
           : await proposePropertyFact(ctx.supabase, payload);
         return { name: call.name, ok: res.ok, data: res, error: res.ok ? undefined : (res as any).error };
+      }
+      case "get_quote_booking_readiness": {
+        const readiness = await getBookingReadiness(ctx.supabase, ctx.conversationId);
+        return { name: call.name, ok: true, data: readiness };
       }
     }
   } catch (e) {
