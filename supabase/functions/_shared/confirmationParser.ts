@@ -60,6 +60,29 @@ const DECLINE_PATTERNS: RegExp[] = [
   /^never mind$/i,
 ];
 
+// Words / phrases that immediately DISQUALIFY a message as an unqualified YES.
+// If any of these appear the message is treated as `unclear` (never confirmed).
+// This is a fail-closed heuristic — the deterministic CONFIRM_PATTERNS above
+// already require an EXACT short match to the whole normalized string, so a
+// two-word "yes but" reply never reaches them. This list additionally guards
+// against future pattern loosening.
+const CONFIRMATION_DISQUALIFIERS: RegExp[] = [
+  /\bbut\b/i,
+  /\bhowever\b/i,
+  /\bmaybe\b/i,
+  /\bnot\b/i,
+  /\bdon'?t\b/i,
+  /\bwait\b/i,
+  /\bhold on\b/i,
+  /\bchange\b/i,
+  /\bmove\b/i,
+  /\breschedul/i,
+  /\bwrong\b/i,
+  /\bask (my|his|her|the) (wife|husband|partner|spouse|boss)/i,
+  /\bcheck with\b/i,
+  /\?/,                  // any question → not an affirmative
+];
+
 function normalize(text: string): string {
   return String(text ?? "")
     .trim()
@@ -71,12 +94,18 @@ export const CLARIFICATION_ASK =
   "Just reply YES to confirm this appointment, or NO if you'd like to pick a different time.";
 
 export function parseConfirmationReply(text: string): ConfirmationParseResult {
+  const raw = String(text ?? "");
   const normalized = normalize(text);
   if (!normalized) {
     return { status: "unclear", normalized, clarification_message: CLARIFICATION_ASK };
   }
 
-  if (CONFIRM_PATTERNS.some((rx) => rx.test(normalized))) {
+  // Fail-closed: any disqualifier tokens on the RAW input (before trailing
+  // punctuation stripping) block confirmation. Decline patterns are checked
+  // first so "no" style replies still land as declined.
+  const disqualified = CONFIRMATION_DISQUALIFIERS.some((rx) => rx.test(raw));
+
+  if (!disqualified && CONFIRM_PATTERNS.some((rx) => rx.test(normalized))) {
     return { status: "confirmed", normalized, clarification_message: null };
   }
   if (DECLINE_PATTERNS.some((rx) => rx.test(normalized))) {
