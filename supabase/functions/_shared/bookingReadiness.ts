@@ -23,7 +23,7 @@
 import { readIdentityAnchor } from "./identityAnchor.ts";
 import {
   computeRequired,
-  findOrCreateForConversation,
+  findByConversation,
   type QuoteSession,
 } from "./quoteSession.ts";
 import {
@@ -192,19 +192,12 @@ export async function getBookingReadiness(
     }
   }
 
-  // Quote session — do NOT create write side-effects beyond the existing
-  // findOrCreate helper, which is the same helper used everywhere else.
-  let session: QuoteSession | null = null;
-  try {
-    session = await findOrCreateForConversation(supabase, {
-      conversationId,
-      channel: "sms",
-      phone: convo?.prospect_phone ?? null,
-      email: convo?.prospect_email ?? null,
-    });
-  } catch {
-    session = null;
-  }
+  // Quote session — STRICT read-only. Merely inspecting readiness must never
+  // create or link a session. Absent session => quote_incomplete blocker.
+  const session: QuoteSession | null = await findByConversation(
+    supabase,
+    conversationId,
+  );
 
   const fields = session?.fields ?? {};
   const requestedServices: string[] = Array.isArray((fields as any).services)
