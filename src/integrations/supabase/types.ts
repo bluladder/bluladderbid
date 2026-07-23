@@ -708,6 +708,7 @@ export type Database = {
           pricing_override_by: string | null
           pricing_override_reason: string | null
           pricing_rule_version: number | null
+          property_id: string | null
           quote_id: string | null
           quote_to_booking_seconds: number | null
           reference_number: string
@@ -772,6 +773,7 @@ export type Database = {
           pricing_override_by?: string | null
           pricing_override_reason?: string | null
           pricing_rule_version?: number | null
+          property_id?: string | null
           quote_id?: string | null
           quote_to_booking_seconds?: number | null
           reference_number: string
@@ -836,6 +838,7 @@ export type Database = {
           pricing_override_by?: string | null
           pricing_override_reason?: string | null
           pricing_rule_version?: number | null
+          property_id?: string | null
           quote_id?: string | null
           quote_to_booking_seconds?: number | null
           reference_number?: string
@@ -862,6 +865,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
           {
@@ -1404,6 +1414,7 @@ export type Database = {
           needs_attention: boolean
           pending_draft_reply: string | null
           pricing_version: number | null
+          property_id: string | null
           prospect_email: string | null
           prospect_name: string | null
           prospect_phone: string | null
@@ -1462,6 +1473,7 @@ export type Database = {
           needs_attention?: boolean
           pending_draft_reply?: string | null
           pricing_version?: number | null
+          property_id?: string | null
           prospect_email?: string | null
           prospect_name?: string | null
           prospect_phone?: string | null
@@ -1520,6 +1532,7 @@ export type Database = {
           needs_attention?: boolean
           pending_draft_reply?: string | null
           pricing_version?: number | null
+          property_id?: string | null
           prospect_email?: string | null
           prospect_name?: string | null
           prospect_phone?: string | null
@@ -1543,7 +1556,15 @@ export type Database = {
           unresolved_reason?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "chat_conversations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       chat_messages: {
         Row: {
@@ -2167,6 +2188,60 @@ export type Database = {
           },
         ]
       }
+      customer_properties: {
+        Row: {
+          active: boolean
+          authorization_status: string
+          created_at: string
+          customer_id: string
+          id: string
+          is_primary: boolean
+          label: string | null
+          property_id: string
+          relationship_type: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          authorization_status?: string
+          created_at?: string
+          customer_id: string
+          id?: string
+          is_primary?: boolean
+          label?: string | null
+          property_id: string
+          relationship_type?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          authorization_status?: string
+          created_at?: string
+          customer_id?: string
+          id?: string
+          is_primary?: boolean
+          label?: string | null
+          property_id?: string
+          relationship_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_properties_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customer_verification_challenges: {
         Row: {
           attempts: number
@@ -2289,6 +2364,7 @@ export type Database = {
           address: string | null
           auth_user_id: string | null
           created_at: string
+          customer_type: string
           email: string
           email_paused: boolean
           first_name: string | null
@@ -2300,7 +2376,11 @@ export type Database = {
           lifecycle_status:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
+          notes: string | null
           phone: string | null
+          preferred_contact_method: string | null
+          preferred_email: string | null
+          preferred_phone: string | null
           sms_paused: boolean
           updated_at: string
         }
@@ -2308,6 +2388,7 @@ export type Database = {
           address?: string | null
           auth_user_id?: string | null
           created_at?: string
+          customer_type?: string
           email: string
           email_paused?: boolean
           first_name?: string | null
@@ -2319,7 +2400,11 @@ export type Database = {
           lifecycle_status?:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
+          notes?: string | null
           phone?: string | null
+          preferred_contact_method?: string | null
+          preferred_email?: string | null
+          preferred_phone?: string | null
           sms_paused?: boolean
           updated_at?: string
         }
@@ -2327,6 +2412,7 @@ export type Database = {
           address?: string | null
           auth_user_id?: string | null
           created_at?: string
+          customer_type?: string
           email?: string
           email_paused?: boolean
           first_name?: string | null
@@ -2338,7 +2424,11 @@ export type Database = {
           lifecycle_status?:
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
+          notes?: string | null
           phone?: string | null
+          preferred_contact_method?: string | null
+          preferred_email?: string | null
+          preferred_phone?: string | null
           sms_paused?: boolean
           updated_at?: string
         }
@@ -3470,6 +3560,122 @@ export type Database = {
         }
         Relationships: []
       }
+      properties: {
+        Row: {
+          active: boolean
+          city: string | null
+          created_at: string
+          id: string
+          jobber_property_id: string | null
+          latitude: number | null
+          longitude: number | null
+          normalized_address: string
+          postal_code: string | null
+          property_type: string
+          state: string | null
+          street: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          city?: string | null
+          created_at?: string
+          id?: string
+          jobber_property_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          normalized_address: string
+          postal_code?: string | null
+          property_type?: string
+          state?: string | null
+          street?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          city?: string | null
+          created_at?: string
+          id?: string
+          jobber_property_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          normalized_address?: string
+          postal_code?: string | null
+          property_type?: string
+          state?: string | null
+          street?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      property_facts: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          created_by_id: string | null
+          created_by_type: string
+          fact_type: string
+          id: string
+          last_verified_at: string | null
+          observed_at: string | null
+          property_id: string
+          source: string
+          source_record_id: string | null
+          superseded_at: string | null
+          unit: string | null
+          updated_at: string
+          value_numeric: number | null
+          value_text: string | null
+          verification_status: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          created_by_id?: string | null
+          created_by_type?: string
+          fact_type: string
+          id?: string
+          last_verified_at?: string | null
+          observed_at?: string | null
+          property_id: string
+          source: string
+          source_record_id?: string | null
+          superseded_at?: string | null
+          unit?: string | null
+          updated_at?: string
+          value_numeric?: number | null
+          value_text?: string | null
+          verification_status?: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          created_by_id?: string | null
+          created_by_type?: string
+          fact_type?: string
+          id?: string
+          last_verified_at?: string | null
+          observed_at?: string | null
+          property_id?: string
+          source?: string
+          source_record_id?: string | null
+          superseded_at?: string | null
+          unit?: string | null
+          updated_at?: string
+          value_numeric?: number | null
+          value_text?: string | null
+          verification_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_facts_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       quote_resume_tokens: {
         Row: {
           consumed_at: string | null
@@ -3543,6 +3749,7 @@ export type Database = {
           id: string
           last_step: string | null
           phone_e164: string | null
+          property_id: string | null
           quote_id: string | null
           quote_status: string
           required_remaining: string[]
@@ -3564,6 +3771,7 @@ export type Database = {
           id?: string
           last_step?: string | null
           phone_e164?: string | null
+          property_id?: string | null
           quote_id?: string | null
           quote_status?: string
           required_remaining?: string[]
@@ -3585,13 +3793,22 @@ export type Database = {
           id?: string
           last_step?: string | null
           phone_e164?: string | null
+          property_id?: string | null
           quote_id?: string | null
           quote_status?: string
           required_remaining?: string[]
           resume_token_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "quote_sessions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quotes: {
         Row: {
@@ -3628,6 +3845,7 @@ export type Database = {
           line_item_snapshot: Json | null
           pricing_engine_version: string | null
           pricing_rule_version: number | null
+          property_id: string | null
           quote_completion_seconds: number | null
           quote_type: string | null
           saved_at: string | null
@@ -3677,6 +3895,7 @@ export type Database = {
           line_item_snapshot?: Json | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
+          property_id?: string | null
           quote_completion_seconds?: number | null
           quote_type?: string | null
           saved_at?: string | null
@@ -3726,6 +3945,7 @@ export type Database = {
           line_item_snapshot?: Json | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
+          property_id?: string | null
           quote_completion_seconds?: number | null
           quote_type?: string | null
           saved_at?: string | null
@@ -3761,6 +3981,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
             referencedColumns: ["id"]
           },
           {
@@ -5060,6 +5287,35 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      property_facts_current: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          created_by_id: string | null
+          created_by_type: string | null
+          fact_type: string | null
+          id: string | null
+          last_verified_at: string | null
+          observed_at: string | null
+          property_id: string | null
+          source: string | null
+          source_record_id: string | null
+          unit: string | null
+          updated_at: string | null
+          value_numeric: number | null
+          value_text: string | null
+          verification_status: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_facts_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       technicians_public: {
         Row: {

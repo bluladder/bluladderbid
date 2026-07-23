@@ -28,6 +28,17 @@ import {
   type QuoteSession,
   type QuoteSessionFields,
 } from "./quoteSession.ts";
+import {
+  confirmPropertyFact,
+  customerOwnsProperty,
+  getCustomerProperties,
+  getPropertyProfile,
+  getResolvedCustomerProfile,
+  getReusableQuoteInputs,
+  proposePropertyFact,
+  selectConversationProperty,
+} from "./profile/propertyRepo.ts";
+import type { FactType, ServiceKind } from "./profile/serviceFactMap.ts";
 
 type SB = any;
 
@@ -41,6 +52,13 @@ export const DRAFT_TOOL_ALLOWLIST = [
   "get_pricing_summary",
   "search_business_knowledge",
   "calculate_quote",
+  "get_resolved_customer_profile",
+  "get_customer_properties",
+  "select_conversation_property",
+  "get_property_profile",
+  "get_reusable_quote_inputs",
+  "propose_property_fact",
+  "confirm_property_fact",
 ] as const;
 
 export type DraftToolName = (typeof DRAFT_TOOL_ALLOWLIST)[number];
@@ -104,6 +122,48 @@ export function draftToolDescriptors() {
       "calculate_quote",
       "Run the CANONICAL pricing engine on the current quote session and store the result on the session. This is the only source of truth for prices. Nothing is sent.",
     ),
+    t(
+      "get_resolved_customer_profile",
+      "Normalized customer profile for the resolved conversation (name, preferred phone/email/contact method, customer type). Empty when unresolved.",
+    ),
+    t(
+      "get_customer_properties",
+      "List of active properties linked to the resolved customer (property_id, label, street/city/state/postal, is_primary). Empty when unresolved.",
+    ),
+    t(
+      "select_conversation_property",
+      "Bind an existing customer property to this conversation and its quote session. Only succeeds if the property is one of the resolved customer's linked properties.",
+      { property_id: { type: "string" } },
+    ),
+    t(
+      "get_property_profile",
+      "Verified property facts (with provenance and stale flag) for the currently bound property.",
+    ),
+    t(
+      "get_reusable_quote_inputs",
+      "Autofill report for a given service: which facts on the bound property may be reused, which are stale, which conflict, and which required inputs are still missing.",
+      { service: { type: "string" } },
+    ),
+    t(
+      "propose_property_fact",
+      "Stage a candidate fact value for the bound property (never overwrites technician/admin/jobber facts; conflicts are flagged for review).",
+      {
+        fact_type: { type: "string" },
+        value_numeric: { type: "number" },
+        value_text: { type: "string" },
+        unit: { type: "string" },
+      },
+    ),
+    t(
+      "confirm_property_fact",
+      "Confirm a customer-provided fact value for the bound property. Refuses to overwrite a conflicting technician/admin/jobber fact and instead logs a needs_review row.",
+      {
+        fact_type: { type: "string" },
+        value_numeric: { type: "number" },
+        value_text: { type: "string" },
+        unit: { type: "string" },
+      },
+    ),
   ];
 }
 
@@ -114,7 +174,7 @@ async function loadConversation(supabase: SB, conversationId: string) {
   const { data } = await supabase
     .from("chat_conversations")
     .select(
-      "id, prospect_name, prospect_email, prospect_phone, service_address, services_discussed, quote_result, quote_session_id, customer_id, resolution_confidence",
+      "id, prospect_name, prospect_email, prospect_phone, service_address, services_discussed, quote_result, quote_session_id, customer_id, property_id, resolution_confidence",
     )
     .eq("id", conversationId)
     .maybeSingle();
@@ -333,6 +393,80 @@ export async function executeDraftTool(
           },
         };
       }
+      case "get_resolved_customer_profile": {
+        const convo = await loadConversation(ctx.supabase, ctx.conversationId);
+        if (!convo || isAmbiguous(convo)) return { name: call.name, ok: true, data: { resolved: false } };
+        const profile = await getResolvedCustomerProfile(ctx.supabase, convo.customer_id);
+        return { name: call.name, ok: true, data: { resolved: !!profile, profile } };
+      }
+      case "get_customer_properties": {
+        const convo = await loadConversation(ctx.supabase, ctx.conversationId);
+        if (!convo || isAmbiguous(convo)) return { name: call.name, ok: true, data: [] };
+        const props = await getCustomerProperties(ctx.supabase, convo.customer_id);
+        return { name: call.name, ok: true, data: props };
+      }
+      case "select_conversation_property": {
+        const convo = await loadConversation(ctx.supabase, ctx.conversationId);
+        if (!convo || isAmbiguous(convo)) return { name: call.name, ok: false, error: "unresolved_conversation" };
+        const propertyId = String(args.property_id ?? "");
+        if (!propertyId) return { name: call.name, ok: false, error: "property_id_required" };
+        const session = await ensureSession(ctx.supabase, ctx.conversationId);
+        const res = await selectConversationProperty(ctx.supabase, {
+          conversationId: ctx.conversationId,
+          quoteSessionId: session?.id ?? null,
+          customerId: convo.customer_id,
+          propertyId,
+        });
+        return { name: call.name, ok: res.ok, error: res.ok ? undefined : res.error };
+      }
+      case "get_property_profile": {
+        const convo = await loadConversation(ctx.supabase, ctx.conversationId);
+        if (!convo?.property_id) return { name: call.name, ok: true, data: [] };
+        if (!isAmbiguous(convo)
+          && !(await customerOwnsProperty(ctx.supabase, convo.customer_id, convo.property_id))) {
+          return { name: call.name, ok: false, error: "property_not_linked_to_customer" };
+        }
+        const facts = await getPropertyProfile(ctx.supabase, convo.property_id);
+        return { name: call.name, ok: true, data: facts };
+      }
+      case "get_reusable_quote_inputs": {
+        const convo = await loadConversation(ctx.supabase, ctx.conversationId);
+        if (!convo?.property_id) return { name: call.name, ok: false, error: "no_property_bound" };
+        if (!isAmbiguous(convo)
+          && !(await customerOwnsProperty(ctx.supabase, convo.customer_id, convo.property_id))) {
+          return { name: call.name, ok: false, error: "property_not_linked_to_customer" };
+        }
+        const service = String(args.service ?? "") as ServiceKind;
+        if (!service) return { name: call.name, ok: false, error: "service_required" };
+        const report = await getReusableQuoteInputs(ctx.supabase, {
+          propertyId: convo.property_id, service,
+        });
+        return { name: call.name, ok: true, data: report };
+      }
+      case "propose_property_fact":
+      case "confirm_property_fact": {
+        const convo = await loadConversation(ctx.supabase, ctx.conversationId);
+        if (!convo?.property_id) return { name: call.name, ok: false, error: "no_property_bound" };
+        if (isAmbiguous(convo)
+          || !(await customerOwnsProperty(ctx.supabase, convo.customer_id, convo.property_id))) {
+          return { name: call.name, ok: false, error: "property_not_linked_to_customer" };
+        }
+        const factType = String(args.fact_type ?? "") as FactType;
+        if (!factType) return { name: call.name, ok: false, error: "fact_type_required" };
+        const payload = {
+          propertyId: convo.property_id,
+          factType,
+          valueNumeric: typeof args.value_numeric === "number" ? args.value_numeric : null,
+          valueText: typeof args.value_text === "string" ? args.value_text : null,
+          unit: typeof args.unit === "string" ? args.unit : null,
+          source: "customer_provided" as const,
+          createdByType: "ai_draft",
+        };
+        const res = call.name === "confirm_property_fact"
+          ? await confirmPropertyFact(ctx.supabase, payload)
+          : await proposePropertyFact(ctx.supabase, payload);
+        return { name: call.name, ok: res.ok, data: res, error: res.ok ? undefined : (res as any).error };
+      }
     }
   } catch (e) {
     return { name: call.name, ok: false, error: `exception:${String(e).slice(0, 120)}` };
@@ -352,8 +486,20 @@ export async function loadQuoteContextSnapshot(supabase: SB, conversationId: str
     .maybeSingle();
   if (!row) return null;
   const fields = (row.fields ?? {}) as any;
+  const convo = await loadConversation(supabase, conversationId);
+  let properties: unknown[] = [];
+  let boundProperty: string | null = null;
+  let propertyFacts: unknown[] = [];
+  if (convo && !isAmbiguous(convo)) {
+    properties = await getCustomerProperties(supabase, convo.customer_id);
+    boundProperty = convo.property_id ?? null;
+    if (boundProperty) propertyFacts = await getPropertyProfile(supabase, boundProperty);
+  }
   return {
     ...row,
     last_quote_result: fields.lastQuoteResult ?? null,
+    properties,
+    bound_property_id: boundProperty,
+    property_facts: propertyFacts,
   };
 }
