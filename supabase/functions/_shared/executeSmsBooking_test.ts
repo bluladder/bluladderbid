@@ -348,13 +348,12 @@ Deno.test("executeSmsBooking — duplicate YES does not call creator a second ti
 });
 
 Deno.test("executeSmsBooking — verified creator rejection routes through terminal-failure RPC with verified_terminal_rejection", async () => {
-  const { supabase, tables } = makeStub({
+  const { supabase, rpcLog } = makeStub({
     sms_availability_presentations: [seedPresentation()],
     quote_sessions: [seedSession()],
     customers: [seedCustomer()],
     properties: [seedProperty()],
   });
-  let terminalCall: any = null;
   const res = await executeSmsBooking(
     supabase,
     { presentationId: "pres-1" },
@@ -367,9 +366,10 @@ Deno.test("executeSmsBooking — verified creator rejection routes through termi
   assertEquals(res.ok, false);
   assertEquals(res.status, "failed_terminal");
   assertEquals(res.error_code, "booking_creator_rejected");
-  // Ledger transition happens inside mark_sms_booking_terminal_failure —
-  // verify the executor invoked it with the Phase 6B.1 classification.
-  // (The stub captures rpc calls in rpcLog; reach into the closure.)
+  const terminalCall = rpcLog.find((r) => r.name === "mark_sms_booking_terminal_failure");
+  assert(terminalCall, "terminal failure RPC must be called");
+  assertEquals(terminalCall!.args.p_failure_class, "verified_terminal_rejection");
+  assertEquals(terminalCall!.args.p_error_code, "booking_creator_rejected");
 });
 
 Deno.test("executeSmsBooking — missing quote result fails without calling creator", async () => {
