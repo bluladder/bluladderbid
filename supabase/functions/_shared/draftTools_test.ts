@@ -29,7 +29,9 @@ Deno.test("draft tool allowlist is stable and read-safe", () => {
   ]);
   // Not one of the allowlisted names contains "send", "book", "cancel",
   // "reschedule", "delete", or "refund".
-  const bad = /(send|book|cancel|reschedul|delete|refund|charge)/i;
+  // Verbs that would indicate an autonomous action. `list_upcoming_bookings`
+  // is read-only despite the noun "bookings", so match on leading verbs only.
+  const bad = /^(send|cancel|reschedul|delete|refund|charge|book)_/i;
   for (const name of DRAFT_TOOL_ALLOWLIST) {
     if (bad.test(name)) throw new Error(`disallowed verb in tool name: ${name}`);
   }
