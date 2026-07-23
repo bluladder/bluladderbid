@@ -208,7 +208,7 @@ export async function handleConfirmationReply(
     const outcome = await sendAutonomousCallRailSms(supabase, {
       conversationId: row.conversation_id,
       phone: input.phone,
-      actionClass: "booking",
+      actionClass: "booking_confirmation",
       body: confirmationSmsBody(execution),
       callRail: callrail,
       messageKind: "ai_booking_confirmed",
