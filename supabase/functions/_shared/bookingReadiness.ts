@@ -24,6 +24,7 @@ import { readIdentityAnchor } from "./identityAnchor.ts";
 import {
   computeRequired,
   findByConversation,
+  sessionInputsKey,
   type QuoteSession,
 } from "./quoteSession.ts";
 import {
@@ -51,6 +52,7 @@ export type ReadinessNextAction =
   | "ask_for_email"
   | "select_property"
   | "collect_quote_inputs"
+  | "recalculate_quote"
   | "send_for_manual_review"
   | "refresh_schedule"
   | "show_availability"
@@ -88,6 +90,8 @@ export interface BookingReadiness {
     canonical_total: number | null;
     pricing_version: string | null;
     pricing_current: boolean;
+    inputs_key_present: boolean;
+    inputs_current: boolean;
     manual_review_required: boolean;
     manual_review_reasons: string[];
   };
@@ -208,8 +212,6 @@ export async function getBookingReadiness(
 
   const lastQuote = extractLastQuoteResult(session);
   const lastStatus: string | null = lastQuote?.status ?? null;
-  const canonicalTotal: number | null =
-    typeof lastQuote?.total === "number" ? lastQuote.total : null;
   const quotePricingVersion: string | null =
     lastQuote?.engineVersion ?? null;
   const quoteRuleVersion: number | null =
@@ -221,6 +223,25 @@ export async function getBookingReadiness(
     : [];
   const manualReviewRequired =
     lastStatus === "manual_review_required" || manualReviewReasons.length > 0;
+
+  // ---- Authoritative inputs-freshness check --------------------------------
+  // The cached lastQuoteResult must have been produced from the CURRENT
+  // canonical session inputs. Any drift (address change, sqft change, service
+  // toggle, roof severity, discount, promotion, etc.) invalidates the cached
+  // total AND the cached duration. We route through the same
+  // `sessionInputsKey` used when persisting the result — never a second hash.
+  const storedInputsKey: string | null =
+    typeof lastQuote?.inputsKey === "string" && lastQuote.inputsKey.length > 0
+      ? lastQuote.inputsKey
+      : null;
+  const currentInputsKey: string | null = session
+    ? sessionInputsKey(session.fields)
+    : null;
+  const inputsKeyPresent = storedInputsKey != null;
+  const inputsCurrent =
+    inputsKeyPresent &&
+    currentInputsKey != null &&
+    storedInputsKey === currentInputsKey;
 
   // Pricing engine liveness + version match. If we can't load pricing, we
   // treat the pricing rail as blocked (never guess).
@@ -241,13 +262,27 @@ export async function getBookingReadiness(
     liveRuleVersion != null &&
     quoteRuleVersion === liveRuleVersion;
 
-  // Duration comes from the canonical pricing engine's `estimatedDurationMinutes`
-  // on the cached last-quote result. We do NOT introduce a second duration
-  // source here.
-  const durationMinutes: number | null =
+  // A cached quote is only trustworthy when EVERY signal aligns. Historical
+  // totals (stale inputs, drifted rules, non-bookable status) must never leak
+  // through to scheduling.
+  const bookableStatus =
+    lastStatus === "firm" || lastStatus === "estimated";
+  const rawTotal: number | null =
+    typeof lastQuote?.total === "number" ? lastQuote.total : null;
+  const rawDuration: number | null =
     typeof lastQuote?.estimatedDurationMinutes === "number"
       ? lastQuote.estimatedDurationMinutes
       : null;
+  const cachedQuoteTrustworthy =
+    lastQuote != null &&
+    inputsCurrent &&
+    pricingCurrent &&
+    bookableStatus &&
+    rawTotal != null && rawTotal > 0 &&
+    rawDuration != null && rawDuration > 0;
+
+  const canonicalTotal: number | null = cachedQuoteTrustworthy ? rawTotal : null;
+  const durationMinutes: number | null = cachedQuoteTrustworthy ? rawDuration : null;
   const durationResolved = durationMinutes != null && durationMinutes > 0;
 
   // Schedule mirror freshness (single shared reader).
@@ -309,18 +344,27 @@ export async function getBookingReadiness(
   if (status === "ready") {
     const noQuoteCached = lastQuote == null;
     const pricingErrored = lastStatus === "error" || lastStatus === "pricing_unavailable";
-    if (!pricingEngineOk || noQuoteCached || pricingErrored || !pricingCurrent) {
+    const inputsStale = lastQuote != null && !inputsCurrent;
+    if (!pricingEngineOk || noQuoteCached || pricingErrored || !pricingCurrent || inputsStale) {
       status = "pricing_blocked";
+      const code = !pricingEngineOk
+        ? "pricing_engine_unavailable"
+        : noQuoteCached
+        ? "no_canonical_quote"
+        : pricingErrored
+        ? "pricing_engine_error"
+        : !pricingCurrent
+        ? "pricing_version_drift"
+        : inputsKeyPresent
+        ? "quote_inputs_changed"
+        : "quote_inputs_unverified";
       blockers.push({
-        code: !pricingEngineOk
-          ? "pricing_engine_unavailable"
-          : noQuoteCached
-          ? "no_canonical_quote"
-          : pricingErrored
-          ? "pricing_engine_error"
-          : "pricing_version_drift",
+        code,
         customer_safe_message: CUSTOMER_SAFE_GENERIC,
-        staff_message: `pricingEngineOk=${pricingEngineOk} lastStatus=${lastStatus ?? "none"} quoteRuleVersion=${quoteRuleVersion ?? "null"} liveRuleVersion=${liveRuleVersion ?? "null"}`,
+        staff_message:
+          `pricingEngineOk=${pricingEngineOk} lastStatus=${lastStatus ?? "none"} ` +
+          `quoteRuleVersion=${quoteRuleVersion ?? "null"} liveRuleVersion=${liveRuleVersion ?? "null"} ` +
+          `inputsKeyPresent=${inputsKeyPresent} inputsCurrent=${inputsCurrent}`,
       });
     }
   }
@@ -372,6 +416,15 @@ export async function getBookingReadiness(
     system_blocked: "staff_intervention",
   };
 
+  // Route pricing_blocked to a concrete recovery action for the two
+  // inputs-drift cases: recollect if fields are incomplete, otherwise a safe
+  // recalculation via the existing `calculate_quote` tool. All other
+  // pricing_blocked reasons remain staff_intervention.
+  let nextAction: ReadinessNextAction = nextActionMap[status];
+  if (status === "pricing_blocked" && lastQuote != null && !inputsCurrent) {
+    nextAction = requiredComplete ? "recalculate_quote" : "collect_quote_inputs";
+  }
+
   return {
     ready,
     status,
@@ -392,6 +445,8 @@ export async function getBookingReadiness(
       canonical_total: canonicalTotal,
       pricing_version: quotePricingVersion,
       pricing_current: pricingCurrent,
+      inputs_key_present: inputsKeyPresent,
+      inputs_current: inputsCurrent,
       manual_review_required: manualReviewRequired,
       manual_review_reasons: manualReviewReasons,
     },
@@ -407,6 +462,6 @@ export async function getBookingReadiness(
       refresh_in_progress: mirror.syncInProgress,
     },
     blockers,
-    next_action: nextActionMap[status],
+    next_action: nextAction,
   };
 }
