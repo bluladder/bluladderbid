@@ -28,6 +28,18 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 /**
+ * Phase 7 voice-booking feature flag. Off by default — voice channel returns a
+ * dry-run receipt (Phase 4C-β behavior). Set VOICE_LIVE_BOOKING_ENABLED=true to
+ * route voice through the same booking pipeline used by SMS/web. Every
+ * downstream Phase 6 safety guard (readiness, suppression, one-time live-Jobber
+ * authorization) still applies.
+ */
+export function voiceLiveBookingEnabled(): boolean {
+  const v = (Deno.env.get("VOICE_LIVE_BOOKING_ENABLED") ?? "").trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
+
+/**
  * Record a failed slot-selection attempt with its exact technical reason (for
  * the admin conversation view) and bump the consecutive-failure counter. After
  * MAX_SLOT_FAILURES_BEFORE_ESCALATION consecutive failures, create ONE human
@@ -376,10 +388,14 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
 // TOOL: create_bluladder_booking — explicit confirmation + prior slot required.
 // ---------------------------------------------------------------------------
 async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>) {
-  // Phase 4C-β voice-beta dry-run safeguard. The isolated voice test is not
-  // authorized to write real Jobber bookings. Enforced server-side (prompt
-  // language alone is not sufficient). Web and SMS channels are untouched.
-  if (ctx.channel === "voice") {
+  // Phase 7 (voice booking) MVP: voice channel is fail-closed by default and
+  // returns a dry-run receipt, matching the Phase 4C-β safeguard. Setting
+  // VOICE_LIVE_BOOKING_ENABLED=true unlocks the same booking pipeline used by
+  // SMS/web (identity, quote, reservation, executeSmsBooking, Jobber write,
+  // outbox confirmation). All Phase 6 guards (readiness, test-identity
+  // suppression, one-time live-Jobber authorization) continue to apply
+  // downstream, so flipping this flag alone can never bypass them.
+  if (ctx.channel === "voice" && !voiceLiveBookingEnabled()) {
     return {
       status: "voice_beta_dry_run",
       simulated: true,
