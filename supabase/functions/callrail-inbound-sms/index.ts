@@ -98,10 +98,13 @@ serve(async (req) => {
     // The customer's number is the "from" on an inbound message.
     const rawPhone = pick(
       "customer_phone_number", "customer_number", "from", "from_number", "phone_number",
+      "source_number",
     );
     const content = pick("content", "message", "body", "text", "sms_body") || "";
-    const direction = (pick("direction") || "inbound").toLowerCase();
-    const toRawPhone = pick("company_phone_number", "tracking_number", "to", "to_number");
+    const direction = (pick("direction", "message_direction") || "inbound").toLowerCase();
+    const toRawPhone = pick(
+      "company_phone_number", "tracking_number", "to", "to_number", "destination_number",
+    );
 
     const phone = normalizePhone(rawPhone);
     if (!phone) {
