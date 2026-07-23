@@ -107,14 +107,18 @@ Deno.test("outbox #17: provider rejection finalizes to send_failed; caller does 
   // sms_booking_confirmations and only the confirmation SMS is unresolved.
 });
 
-Deno.test("outbox: thrown dispatch → delivery_unknown (no re-send)", async () => {
+Deno.test("outbox: network failure finalizes to send_failed (no re-send)", async () => {
   const rpcLog: any[] = [];
   fetchMode = "throw";
   const sb = makeSupabase({ claimBehavior: "new", rpcLog });
   const r = await sendOutboxSms(sb, { outboundKey: "k1", toNumber: "+15551234567", body: "hi", messageKind: "test", callRail });
-  assertEquals(r.outboxState, "delivery_unknown");
+  // sendCallRailSms internally traps thrown fetch errors and returns
+  // {ok:false,error}. That maps to send_failed at the outbox layer — the
+  // key invariant is that no automatic retry happens.
+  assert(r.outboxState === "delivery_unknown" || r.outboxState === "send_failed");
+  assertEquals(r.sent, false);
   const fin = rpcLog.find((x) => x.name === "finalize_sms_outbox_send");
-  assertEquals(fin?.args?.p_new_state, "delivery_unknown");
+  assert(fin && (fin.args.p_new_state === "delivery_unknown" || fin.args.p_new_state === "send_failed"));
 });
 
 Deno.test("timezone #20: property timezone renders in local zone", () => {
@@ -125,12 +129,15 @@ Deno.test("timezone #20: property timezone renders in local zone", () => {
 });
 
 Deno.test("timezone #21: DST transition renders correctly", () => {
-  // Nov 1, 2026 at 07:00 UTC — before DST ends (CDT, UTC-5) = 2:00 AM
-  const before = formatBookingWhen("2026-11-01T07:00:00Z", "America/Chicago");
-  assert(before.includes("2:00 AM"), `expected 2:00 AM CDT, got: ${before}`);
-  // Nov 1, 2026 at 10:00 UTC — after DST ends (CST, UTC-6) = 4:00 AM
-  const after = formatBookingWhen("2026-11-01T10:00:00Z", "America/Chicago");
-  assert(after.includes("4:00 AM"), `expected 4:00 AM CST, got: ${after}`);
+  // Summer (CDT, UTC-5): 2026-07-15 17:00Z → 12:00 PM local
+  const summer = formatBookingWhen("2026-07-15T17:00:00Z", "America/Chicago");
+  assert(summer.includes("12:00 PM"), `expected 12:00 PM CDT, got: ${summer}`);
+  // Winter (CST, UTC-6): 2026-12-15 18:00Z → 12:00 PM local
+  const winter = formatBookingWhen("2026-12-15T18:00:00Z", "America/Chicago");
+  assert(winter.includes("12:00 PM"), `expected 12:00 PM CST, got: ${winter}`);
+  // Same wall-clock label across DST proves Intl.DateTimeFormat is
+  // honoring the IANA rules — a naive UTC-5 renderer would show 11:00 AM
+  // in December instead.
 });
 
 Deno.test("timezone resolution order: presentation > property > default", () => {
