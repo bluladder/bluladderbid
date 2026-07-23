@@ -1032,6 +1032,8 @@ export type Database = {
           last_error_category: string | null
           last_error_detail: string | null
           next_attempt_at: string | null
+          owner_notification_skipped_reason: string | null
+          owner_notified_at: string | null
           payload_safe: Json
           processed_at: string | null
           provider_message_id: string
@@ -1058,6 +1060,8 @@ export type Database = {
           last_error_category?: string | null
           last_error_detail?: string | null
           next_attempt_at?: string | null
+          owner_notification_skipped_reason?: string | null
+          owner_notified_at?: string | null
           payload_safe?: Json
           processed_at?: string | null
           provider_message_id: string
@@ -1084,6 +1088,8 @@ export type Database = {
           last_error_category?: string | null
           last_error_detail?: string | null
           next_attempt_at?: string | null
+          owner_notification_skipped_reason?: string | null
+          owner_notified_at?: string | null
           payload_safe?: Json
           processed_at?: string | null
           provider_message_id?: string
@@ -1377,11 +1383,14 @@ export type Database = {
           contact_method: string | null
           conversation_state: string
           created_at: string
+          customer_id: string | null
           facts: Json
           id: string
           internal_notes: string | null
           last_activity_at: string
           last_error: string | null
+          last_inbound_at: string | null
+          last_outbound_at: string | null
           manual_review_reason: string | null
           marketing_consent: boolean
           needs_attention: boolean
@@ -1391,6 +1400,8 @@ export type Database = {
           prospect_phone: string | null
           quote_result: Json | null
           quote_session_id: string | null
+          resolution_confidence: string | null
+          resolution_method: string | null
           resolved: boolean
           selected_slot_id: string | null
           service_address: string | null
@@ -1404,6 +1415,7 @@ export type Database = {
           staff_takeover_reason: string | null
           status: string
           summary: string | null
+          unresolved_reason: string | null
           updated_at: string
         }
         Insert: {
@@ -1420,11 +1432,14 @@ export type Database = {
           contact_method?: string | null
           conversation_state?: string
           created_at?: string
+          customer_id?: string | null
           facts?: Json
           id?: string
           internal_notes?: string | null
           last_activity_at?: string
           last_error?: string | null
+          last_inbound_at?: string | null
+          last_outbound_at?: string | null
           manual_review_reason?: string | null
           marketing_consent?: boolean
           needs_attention?: boolean
@@ -1434,6 +1449,8 @@ export type Database = {
           prospect_phone?: string | null
           quote_result?: Json | null
           quote_session_id?: string | null
+          resolution_confidence?: string | null
+          resolution_method?: string | null
           resolved?: boolean
           selected_slot_id?: string | null
           service_address?: string | null
@@ -1447,6 +1464,7 @@ export type Database = {
           staff_takeover_reason?: string | null
           status?: string
           summary?: string | null
+          unresolved_reason?: string | null
           updated_at?: string
         }
         Update: {
@@ -1463,11 +1481,14 @@ export type Database = {
           contact_method?: string | null
           conversation_state?: string
           created_at?: string
+          customer_id?: string | null
           facts?: Json
           id?: string
           internal_notes?: string | null
           last_activity_at?: string
           last_error?: string | null
+          last_inbound_at?: string | null
+          last_outbound_at?: string | null
           manual_review_reason?: string | null
           marketing_consent?: boolean
           needs_attention?: boolean
@@ -1477,6 +1498,8 @@ export type Database = {
           prospect_phone?: string | null
           quote_result?: Json | null
           quote_session_id?: string | null
+          resolution_confidence?: string | null
+          resolution_method?: string | null
           resolved?: boolean
           selected_slot_id?: string | null
           service_address?: string | null
@@ -1490,6 +1513,7 @@ export type Database = {
           staff_takeover_reason?: string | null
           status?: string
           summary?: string | null
+          unresolved_reason?: string | null
           updated_at?: string
         }
         Relationships: []
