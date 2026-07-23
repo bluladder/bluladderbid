@@ -100,6 +100,38 @@ function ackForSelectedSlot(row: PresentationRow, optNumber: number): string {
   return `${startFmt} at ${window} is your preferred time. I'll verify that opening and send the final booking summary next.`;
 }
 
+/** Body used AFTER a successful 8-minute hold. Deterministic — never rewritten
+ *  by the model. */
+function ackForHeldSlot(
+  row: PresentationRow,
+  optNumber: number,
+  expiresAtIso: string,
+): string {
+  const opt = (row.options as any[]).find(
+    (o) => Number(o.option_number) === optNumber,
+  );
+  if (!opt) {
+    return `I'm holding that opening for you for ${HOLD_TTL_MINUTES} minutes.`;
+  }
+  const startFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: opt.timezone,
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(opt.start_at));
+  const window = opt.customer_label ?? opt.arrival_window_label ?? "";
+  const expiresFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: opt.timezone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(expiresAtIso));
+  return `I'm holding ${startFmt} at ${window} for ${HOLD_TTL_MINUTES} minutes (until ${expiresFmt}). I'll send the final booking summary next.`;
+}
+
+const SLOT_FILLED_BODY =
+  "That opening just filled — let me pull fresh times for you.";
+
 /** Re-check the drift-sensitive slice of readiness at reply time. Returns a
  *  reason string when the current context no longer matches what we captured
  *  when the presentation was created. */
