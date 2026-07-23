@@ -80,6 +80,7 @@ export default function MyAppointments() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<PortalData | null>(null);
   const [authedEmail, setAuthedEmail] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
   // Password form state (sign-in, sign-up, forgot)
   const [pwEmail, setPwEmail] = useState('');
   const [pwPassword, setPwPassword] = useState('');
@@ -99,6 +100,7 @@ export default function MyAppointments() {
       const { data: linkData, error: linkError } = await supabase.functions.invoke('customer-auth-link');
       if (cancelled) return;
       if (linkError || linkData?.error) {
+        console.error('[portal] auth-link failed', { linkError, linkData });
         toast({
           title: "We couldn't connect your account yet",
           description: 'Your sign-in worked, but we could not finish linking it to your customer records. Please contact support if this keeps happening.',
@@ -117,6 +119,7 @@ export default function MyAppointments() {
       const { data: authedData, error } = await supabase.functions.invoke('customer-portal-data-authed');
       if (cancelled) return;
       if (error || !authedData) {
+        console.error('[portal] portal-data-authed failed', { error, authedData });
         toast({
           title: "We couldn't load your account",
           description: "You're signed in, but we hit a snag pulling your quotes and appointments. Please refresh, or contact support if this keeps happening.",
@@ -124,6 +127,11 @@ export default function MyAppointments() {
         });
         return;
       }
+      console.debug('[portal] loaded', {
+        upcoming: authedData?.upcoming_appointments?.length ?? 0,
+        quotes: authedData?.recent_quotes?.length ?? 0,
+        past: authedData?.previous_work?.length ?? 0,
+      });
       setData(authedData as PortalData);
       setStage('signed_in');
     };
@@ -143,7 +151,7 @@ export default function MyAppointments() {
       }
     });
     return () => { cancelled = true; sub.subscription.unsubscribe(); };
-  }, []);
+  }, [reloadTick]);
 
   // No persistent session — nothing to restore. In-memory token dies on refresh.
   useEffect(() => { if (inMemoryPortalToken) void refreshPortalData(true); }, []);
