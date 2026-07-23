@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ShieldCheck, MessageSquare, LogOut, Loader2 } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { PRIMARY_PUBLIC_PHONE } from '@/config/contact';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -308,53 +310,82 @@ function PortalView({ data, onSignOut }: { data: PortalData; onSignOut: () => vo
           </Button>
         </div>
 
-        <Card>
-          <CardHeader><CardTitle>Upcoming appointments</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {data.upcoming_appointments.length === 0 && <p className="text-sm text-muted-foreground">No upcoming appointments.</p>}
-            {data.upcoming_appointments.map((b) => (
-              <div key={b.id} className="rounded-md border p-3 text-sm">
-                <div className="font-medium">{fmtDate(b.scheduled_start)}</div>
-                <div className="text-muted-foreground">{b.address}</div>
-                <div className="flex justify-between mt-1"><span>Ref {b.reference_number}</span><span>{fmt(b.total)}</span></div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="upcoming" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="upcoming">
+              Upcoming
+              {data.upcoming_appointments.length > 0 && (
+                <Badge variant="secondary" className="ml-2">{data.upcoming_appointments.length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="quotes">
+              Bids
+              {data.recent_quotes.length > 0 && (
+                <Badge variant="secondary" className="ml-2">{data.recent_quotes.length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="past">
+              Past work
+              {data.previous_work.length > 0 && (
+                <Badge variant="secondary" className="ml-2">{data.previous_work.length}</Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent quotes (last 30 days)</CardTitle>
-            <CardDescription>Prices are recalculated when you continue booking.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {data.recent_quotes.length === 0 && <p className="text-sm text-muted-foreground">No recent quotes.</p>}
-            {data.recent_quotes.map((q) => (
-              <div key={q.id} className="rounded-md border p-3 text-sm">
-                <div className="flex justify-between">
-                  <span>{new Date(q.created_at).toLocaleDateString()}</span>
-                  <span>{fmt(q.total)}</span>
-                </div>
-                <div className="text-muted-foreground">{q.address ?? ''}</div>
-                <div className="text-xs uppercase text-muted-foreground mt-1">{q.status}</div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+          <TabsContent value="upcoming" className="mt-4">
+            <Card>
+              <CardHeader><CardTitle>Upcoming appointments</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {data.upcoming_appointments.length === 0 && <p className="text-sm text-muted-foreground">No upcoming appointments.</p>}
+                {data.upcoming_appointments.map((b) => (
+                  <div key={b.id} className="rounded-md border p-3 text-sm">
+                    <div className="font-medium">{fmtDate(b.scheduled_start)}</div>
+                    <div className="text-muted-foreground">{b.address}</div>
+                    <div className="flex justify-between mt-1"><span>Ref {b.reference_number}</span><span>{fmt(b.total)}</span></div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <Card>
-          <CardHeader><CardTitle>Previous work</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {data.previous_work.length === 0 && <p className="text-sm text-muted-foreground">No completed services yet.</p>}
-            {data.previous_work.map((b) => (
-              <div key={b.id} className="rounded-md border p-3 text-sm">
-                <div>{new Date(b.scheduled_start).toLocaleDateString()}</div>
-                <div className="text-muted-foreground">{b.address}</div>
-                <div className="flex justify-between mt-1"><span>Ref {b.reference_number}</span><span>{fmt(b.total)}</span></div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+          <TabsContent value="quotes" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent bids (last 30 days)</CardTitle>
+                <CardDescription>Prices are recalculated when you continue booking.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {data.recent_quotes.length === 0 && <p className="text-sm text-muted-foreground">No recent bids.</p>}
+                {data.recent_quotes.map((q) => (
+                  <div key={q.id} className="rounded-md border p-3 text-sm">
+                    <div className="flex justify-between">
+                      <span>{new Date(q.created_at).toLocaleDateString()}</span>
+                      <span>{fmt(q.total)}</span>
+                    </div>
+                    <div className="text-muted-foreground">{q.address ?? ''}</div>
+                    <div className="text-xs uppercase text-muted-foreground mt-1">{q.status}</div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="past" className="mt-4">
+            <Card>
+              <CardHeader><CardTitle>Previous work</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {data.previous_work.length === 0 && <p className="text-sm text-muted-foreground">No completed services yet.</p>}
+                {data.previous_work.map((b) => (
+                  <div key={b.id} className="rounded-md border p-3 text-sm">
+                    <div>{new Date(b.scheduled_start).toLocaleDateString()}</div>
+                    <div className="text-muted-foreground">{b.address}</div>
+                    <div className="flex justify-between mt-1"><span>Ref {b.reference_number}</span><span>{fmt(b.total)}</span></div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
