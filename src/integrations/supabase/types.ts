@@ -4711,6 +4711,7 @@ export type Database = {
           booking_id: string | null
           booking_idempotency_key: string | null
           booking_result: Json | null
+          booking_timezone: string | null
           confirmation_ack_sms_id: string | null
           confirmation_requested_at: string
           confirmed_at: string | null
@@ -4756,6 +4757,7 @@ export type Database = {
           booking_id?: string | null
           booking_idempotency_key?: string | null
           booking_result?: Json | null
+          booking_timezone?: string | null
           confirmation_ack_sms_id?: string | null
           confirmation_requested_at?: string
           confirmed_at?: string | null
@@ -4801,6 +4803,7 @@ export type Database = {
           booking_id?: string | null
           booking_idempotency_key?: string | null
           booking_result?: Json | null
+          booking_timezone?: string | null
           confirmation_ack_sms_id?: string | null
           confirmation_requested_at?: string
           confirmed_at?: string | null
@@ -5071,14 +5074,20 @@ export type Database = {
           message_kind: string
           next_retry_at: string | null
           outbound_idempotency_key: string | null
+          outbox_state: string | null
           provider: string | null
           provider_accepted_at: string | null
           provider_conversation_id: string | null
+          provider_dispatched_at: string | null
           provider_message_id: string | null
           provider_response_kind: string | null
           provider_status: string | null
           quote_id: string | null
           send_at: string
+          send_claim_at: string | null
+          send_claim_token: string | null
+          send_error_at: string | null
+          send_error_code: string | null
           sent_at: string | null
           status: Database["public"]["Enums"]["sms_status"]
           subject: string | null
@@ -5105,14 +5114,20 @@ export type Database = {
           message_kind?: string
           next_retry_at?: string | null
           outbound_idempotency_key?: string | null
+          outbox_state?: string | null
           provider?: string | null
           provider_accepted_at?: string | null
           provider_conversation_id?: string | null
+          provider_dispatched_at?: string | null
           provider_message_id?: string | null
           provider_response_kind?: string | null
           provider_status?: string | null
           quote_id?: string | null
           send_at?: string
+          send_claim_at?: string | null
+          send_claim_token?: string | null
+          send_error_at?: string | null
+          send_error_code?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["sms_status"]
           subject?: string | null
@@ -5139,14 +5154,20 @@ export type Database = {
           message_kind?: string
           next_retry_at?: string | null
           outbound_idempotency_key?: string | null
+          outbox_state?: string | null
           provider?: string | null
           provider_accepted_at?: string | null
           provider_conversation_id?: string | null
+          provider_dispatched_at?: string | null
           provider_message_id?: string | null
           provider_response_kind?: string | null
           provider_status?: string | null
           quote_id?: string | null
           send_at?: string
+          send_claim_at?: string | null
+          send_claim_token?: string | null
+          send_error_at?: string | null
+          send_error_code?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["sms_status"]
           subject?: string | null
@@ -5870,14 +5891,20 @@ export type Database = {
           message_kind: string
           next_retry_at: string | null
           outbound_idempotency_key: string | null
+          outbox_state: string | null
           provider: string | null
           provider_accepted_at: string | null
           provider_conversation_id: string | null
+          provider_dispatched_at: string | null
           provider_message_id: string | null
           provider_response_kind: string | null
           provider_status: string | null
           quote_id: string | null
           send_at: string
+          send_claim_at: string | null
+          send_claim_token: string | null
+          send_error_at: string | null
+          send_error_code: string | null
           sent_at: string | null
           status: Database["public"]["Enums"]["sms_status"]
           subject: string | null
@@ -5899,6 +5926,17 @@ export type Database = {
           p_claim_source?: string
           p_confirmation_id: string
           p_execution_token: string
+        }
+        Returns: Json
+      }
+      claim_sms_outbox_send: {
+        Args: {
+          p_body: string
+          p_claim_token: string
+          p_message_kind: string
+          p_outbound_key: string
+          p_stale_claim_seconds?: number
+          p_to_number: string
         }
         Returns: Json
       }
@@ -5972,6 +6010,19 @@ export type Database = {
       current_pricing_version: { Args: never; Returns: number }
       expire_stale_presentation_holds: { Args: never; Returns: number }
       expire_stale_reservations: { Args: never; Returns: number }
+      finalize_sms_outbox_send: {
+        Args: {
+          p_claim_token: string
+          p_error: string
+          p_new_state: string
+          p_provider_conversation_id: string
+          p_provider_message_id: string
+          p_provider_response_kind: string
+          p_provider_status: string
+          p_sms_message_id: string
+        }
+        Returns: Json
+      }
       generate_booking_reference: { Args: never; Returns: string }
       has_admin_level: {
         Args: { _min_level: string; _user_id: string }
