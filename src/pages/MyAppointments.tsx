@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone, FileText, ExternalLink, Mail } from 'lucide-react';
+import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone, FileText, ExternalLink, Mail, Lock } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -50,6 +50,10 @@ function portalHeaders(): Record<string, string> {
 // remains available as a "trouble signing in?" fallback but is not shown by default.
 type Stage =
   | 'choose'
+  | 'password_signin'
+  | 'password_signup'
+  | 'forgot_password'
+  | 'forgot_sent'
   | 'magic_link_email'
   | 'magic_link_sent'
   | 'legacy_phone'
@@ -76,6 +80,11 @@ export default function MyAppointments() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<PortalData | null>(null);
   const [authedEmail, setAuthedEmail] = useState<string | null>(null);
+  // Password form state (sign-in, sign-up, forgot)
+  const [pwEmail, setPwEmail] = useState('');
+  const [pwPassword, setPwPassword] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwError, setPwError] = useState<string | null>(null);
 
   // Watch Supabase Auth session — if a real auth user is signed in, prefer that
   // path over the legacy portal-token flow.
@@ -150,6 +159,92 @@ export default function MyAppointments() {
         toast({ title: 'Check your email', description: 'If that address is reachable, we sent you a sign-in link.' });
       }
       setStage('magic_link_sent');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --- Password sign-in / sign-up / reset -------------------------------
+  function isReasonablePassword(pw: string): { ok: true } | { ok: false; msg: string } {
+    if (pw.length < 10) return { ok: false, msg: 'Password must be at least 10 characters.' };
+    // require at least two of: lower, upper, digit, symbol
+    const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length;
+    if (classes < 2) return { ok: false, msg: 'Use a mix of letters, numbers, or symbols.' };
+    return { ok: true };
+  }
+
+  async function passwordSignIn() {
+    setPwError(null);
+    const addr = pwEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr) || !pwPassword) return;
+    setLoading(true);
+    try {
+      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      const { error } = await supabase.auth.signInWithPassword({ email: addr, password: pwPassword });
+      if (error) {
+        // Neutral message — do not disclose whether the account exists.
+        setPwError('That email and password combination didn\'t match. Please try again or reset your password.');
+      }
+      // On success, onAuthStateChange fires and hydrates the portal.
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function passwordSignUp() {
+    setPwError(null);
+    const addr = pwEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+      setPwError('Please enter a valid email address.');
+      return;
+    }
+    const strength = isReasonablePassword(pwPassword);
+    if (strength.ok === false) { setPwError(strength.msg); return; }
+    if (pwPassword !== pwConfirm) { setPwError('Passwords do not match.'); return; }
+    setLoading(true);
+    try {
+      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      const { data: res, error } = await supabase.auth.signUp({
+        email: addr,
+        password: pwPassword,
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (error) {
+        // Neutral message — avoid account enumeration.
+        toast({
+          title: 'Check your email',
+          description: 'If that address is available, we sent a confirmation link.',
+        });
+        return;
+      }
+      // If email confirmation is required, session will be null here.
+      if (!res.session) {
+        toast({
+          title: 'Confirm your email',
+          description: 'We sent a confirmation link. Click it to finish creating your account.',
+        });
+        setStage('magic_link_sent');
+      }
+      // If session present, onAuthStateChange takes over.
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function requestPasswordReset() {
+    setPwError(null);
+    const addr = pwEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+      setPwError('Please enter a valid email address.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await supabase.auth.resetPasswordForEmail(addr, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      // Always show the same neutral confirmation.
+      setStage('forgot_sent');
     } finally {
       setLoading(false);
     }
@@ -308,23 +403,27 @@ export default function MyAppointments() {
                     : <GoogleGlyph className="w-4 h-4 mr-2" />}
                   Continue with Google
                 </Button>
+                <div className="relative py-1">
+                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                  <div className="relative flex justify-center"><span className="bg-background px-2 text-xs text-muted-foreground">or</span></div>
+                </div>
                 <Button
                   variant="outline"
                   className="w-full min-h-11"
-                  onClick={() => setStage('magic_link_email')}
+                  onClick={() => { setPwError(null); setStage('password_signin'); }}
                   disabled={loading}
                 >
                   <Mail className="w-4 h-4 mr-2" />
-                  Continue with Email
+                  Sign in with Email
                 </Button>
                 <div className="pt-2 text-center">
                   <button
                     type="button"
                     className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                    onClick={() => setStage('legacy_phone')}
+                    onClick={() => setStage('magic_link_email')}
                     disabled={loading}
                   >
-                    Trouble signing in? Use a phone code instead
+                    Trouble signing in?
                   </button>
                 </div>
                 <p className="text-xs text-muted-foreground pt-2">
@@ -333,8 +432,169 @@ export default function MyAppointments() {
               </div>
             )}
 
+            {stage === 'password_signin' && (
+              <form
+                className="space-y-3"
+                onSubmit={(e) => { e.preventDefault(); void passwordSignIn(); }}
+              >
+                <div className="space-y-1">
+                  <Label htmlFor="pw-email">Email address</Label>
+                  <Input
+                    id="pw-email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={pwEmail}
+                    onChange={(e) => setPwEmail(e.target.value)}
+                    disabled={loading}
+                    className="min-h-11"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="pw-password">Password</Label>
+                  <Input
+                    id="pw-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={pwPassword}
+                    onChange={(e) => setPwPassword(e.target.value)}
+                    disabled={loading}
+                    className="min-h-11"
+                  />
+                </div>
+                {pwError && <p className="text-sm text-destructive">{pwError}</p>}
+                <Button type="submit" className="w-full min-h-11" disabled={loading || !pwEmail.trim() || !pwPassword}>
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Lock className="w-4 h-4 mr-2" />}
+                  Sign In
+                </Button>
+                <div className="flex items-center justify-between text-sm">
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 text-muted-foreground hover:text-foreground"
+                    onClick={() => { setPwError(null); setStage('forgot_password'); }}
+                    disabled={loading}
+                  >
+                    Forgot password?
+                  </button>
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 text-muted-foreground hover:text-foreground"
+                    onClick={() => { setPwError(null); setPwPassword(''); setPwConfirm(''); setStage('password_signup'); }}
+                    disabled={loading}
+                  >
+                    Create account
+                  </button>
+                </div>
+                <Button type="button" variant="ghost" className="w-full min-h-11" onClick={() => setStage('choose')} disabled={loading}>
+                  Back
+                </Button>
+              </form>
+            )}
+
+            {stage === 'password_signup' && (
+              <form
+                className="space-y-3"
+                onSubmit={(e) => { e.preventDefault(); void passwordSignUp(); }}
+              >
+                <div className="space-y-1">
+                  <Label htmlFor="su-email">Email address</Label>
+                  <Input
+                    id="su-email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={pwEmail}
+                    onChange={(e) => setPwEmail(e.target.value)}
+                    disabled={loading}
+                    className="min-h-11"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="su-password">Password</Label>
+                  <Input
+                    id="su-password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={pwPassword}
+                    onChange={(e) => setPwPassword(e.target.value)}
+                    disabled={loading}
+                    className="min-h-11"
+                  />
+                  <p className="text-xs text-muted-foreground">At least 10 characters with a mix of letters, numbers, or symbols.</p>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="su-confirm">Confirm password</Label>
+                  <Input
+                    id="su-confirm"
+                    type="password"
+                    autoComplete="new-password"
+                    value={pwConfirm}
+                    onChange={(e) => setPwConfirm(e.target.value)}
+                    disabled={loading}
+                    className="min-h-11"
+                  />
+                </div>
+                {pwError && <p className="text-sm text-destructive">{pwError}</p>}
+                <Button type="submit" className="w-full min-h-11" disabled={loading || !pwEmail.trim() || !pwPassword || !pwConfirm}>
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Lock className="w-4 h-4 mr-2" />}
+                  Create account
+                </Button>
+                <Button type="button" variant="ghost" className="w-full min-h-11" onClick={() => { setPwError(null); setStage('password_signin'); }} disabled={loading}>
+                  I already have an account
+                </Button>
+              </form>
+            )}
+
+            {stage === 'forgot_password' && (
+              <form
+                className="space-y-3"
+                onSubmit={(e) => { e.preventDefault(); void requestPasswordReset(); }}
+              >
+                <p className="text-sm text-muted-foreground">
+                  Enter your account email and we'll send you a secure reset link.
+                </p>
+                <div className="space-y-1">
+                  <Label htmlFor="fp-email">Email address</Label>
+                  <Input
+                    id="fp-email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={pwEmail}
+                    onChange={(e) => setPwEmail(e.target.value)}
+                    disabled={loading}
+                    className="min-h-11"
+                  />
+                </div>
+                {pwError && <p className="text-sm text-destructive">{pwError}</p>}
+                <Button type="submit" className="w-full min-h-11" disabled={loading || !pwEmail.trim()}>
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
+                  Send reset link
+                </Button>
+                <Button type="button" variant="ghost" className="w-full min-h-11" onClick={() => setStage('password_signin')} disabled={loading}>
+                  Back
+                </Button>
+              </form>
+            )}
+
+            {stage === 'forgot_sent' && (
+              <div className="space-y-3 text-center">
+                <Mail className="w-8 h-8 text-primary mx-auto" />
+                <h3 className="font-medium">Check your email</h3>
+                <p className="text-sm text-muted-foreground">
+                  If an account exists for that email, we sent reset instructions. The link expires shortly.
+                </p>
+                <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('choose')}>
+                  Back to sign-in
+                </Button>
+              </div>
+            )}
+
             {stage === 'magic_link_email' && (
               <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  We'll email you a one-time sign-in link — useful if you don't have a password yet.
+                </p>
                 <Label htmlFor="magic-email">Email address</Label>
                 <Input
                   id="magic-email"
@@ -353,6 +613,14 @@ export default function MyAppointments() {
                 >
                   {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
                   Send me a sign-in link
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full min-h-11"
+                  onClick={() => setStage('legacy_phone')}
+                  disabled={loading}
+                >
+                  Use a phone code instead
                 </Button>
                 <Button variant="ghost" className="w-full min-h-11" onClick={() => setStage('choose')} disabled={loading}>
                   Back
