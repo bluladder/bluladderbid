@@ -46,8 +46,10 @@ export interface ParseInput {
 // ---------------------------------------------------------------------------
 
 const WORD_NUMS: Record<string, number> = {
+  // Only bare cardinal words. Ordinals (first/second/…) are handled by the
+  // positional matcher. Cardinals REQUIRE an "option/opt/number/#" prefix
+  // (see matchByNumber) to avoid false hits on filler like "the last one".
   one: 1, two: 2, three: 3, four: 4,
-  first: 1, second: 2, third: 3, fourth: 4,
 };
 
 const WEEKDAYS: Record<string, number> = {
@@ -88,9 +90,11 @@ function matchByNumber(text: string, count: number): number[] {
     const n = Number(explicit[1]);
     if (n >= 1 && n <= count) return [n];
   }
-  // Word number ("option one" / just "first")
-  for (const [w, n] of Object.entries(WORD_NUMS)) {
-    if (new RegExp(`\\b${w}\\b`).test(t) && n <= count) return [n];
+  // Word number ONLY when explicitly prefixed ("option one", "number two").
+  const wordExplicit = t.match(/\b(?:option|opt|number|no|#)\s+(one|two|three|four)\b/);
+  if (wordExplicit) {
+    const n = WORD_NUMS[wordExplicit[1]];
+    if (n && n <= count) return [n];
   }
   // Bare digit BUT only if it looks like a standalone selection (avoids eating
   // hours in "10 to 12"). Require: single 1-digit token AND no adjacent "to/-/:".
