@@ -34,6 +34,10 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getBookingReadiness } from "./bookingReadiness.ts";
+import {
+  protectReservationForExecution,
+  unprotectReservationAfterFailure,
+} from "./reservationProtection.ts";
 
 type SB = any;
 
@@ -373,6 +377,13 @@ export async function executeSmsBooking(
     providerResponse?: any,
     failureClass: FailureClass = "verified_terminal_rejection",
   ): Promise<ExecuteBookingResult> => {
+    // Terminal failure: return capacity. Unprotect the reservation from
+    // 'executing' → 'released' if we ever entered protection.
+    if (pres.hold_group_id) {
+      await unprotectReservationAfterFailure(supabase, pres.hold_group_id, "released").catch(
+        () => undefined,
+      );
+    }
     if (ledgerId) {
       await supabase.rpc("mark_sms_booking_terminal_failure", {
         p_confirmation_id: ledgerId,
@@ -401,6 +412,18 @@ export async function executeSmsBooking(
     providerResponse?: any,
     failureClass: FailureClass = "external_outcome_unknown",
   ): Promise<ExecuteBookingResult> => {
+    // Recoverable failure: only `verified_not_created` returns capacity to
+    // the pool. Every other failure class MUST preserve capacity for the
+    // reconciliation runner. Unprotect the reservation from 'executing' →
+    // 'held' (or 'released' for verified_not_created). No-op if we never
+    // entered protection.
+    if (pres.hold_group_id) {
+      const target: "held" | "released" =
+        failureClass === "verified_not_created" ? "released" : "held";
+      await unprotectReservationAfterFailure(supabase, pres.hold_group_id, target).catch(
+        () => undefined,
+      );
+    }
     if (ledgerId) {
       await supabase.rpc("mark_sms_booking_recoverable_failure", {
         p_confirmation_id: ledgerId,
@@ -530,6 +553,30 @@ export async function executeSmsBooking(
       };
     }
     return finishPreClaimFailure("execution_claim_denied", claimRes.reason ?? "unknown");
+  }
+
+  // 4b) RESERVATION PROTECTION — flip the underlying slot_reservations row
+  //     from 'held' to 'executing' and extend its expiration past our
+  //     external round-trip so the periodic expiration sweep cannot release
+  //     capacity while jobber-create-booking is in flight. Idempotent.
+  const executionDeadline = new Date(now.getTime() + 6 * 60 * 1000);
+  const protectResult = await protectReservationForExecution(
+    supabase,
+    pres.hold_group_id,
+    executionDeadline,
+  );
+  if (!protectResult.ok) {
+    // Could not protect (row missing, wrong state, or RPC error). This
+    // means the reservation is not in the expected 'held' state — treat as
+    // pre-claim style failure but through the executing-aware channel.
+    return finishRecoverableFailure(
+      executionToken,
+      "reservation_not_live",
+      protectResult.reason ?? "protect_failed",
+      null,
+      null,
+      "reservation_not_live",
+    );
   }
 
   // 5) Build BookingRequest from authoritative sources.
