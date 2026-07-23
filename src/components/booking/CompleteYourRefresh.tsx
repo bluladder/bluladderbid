@@ -181,11 +181,10 @@ export function CompleteYourRefresh({
         </div>
       </header>
 
-      {/* Mobile: horizontal snap scroll keeps things one-row and thumb-friendly.
-          sm+: 3-col grid so the top recommended add-ons fit above the fold and
-          the customer doesn't scroll past a wall of cards to reach scheduling. */}
+      {/* Mobile: 2-column grid keeps both cards fully visible and centered
+          within the panel (no off-screen scroll). sm+: 3-col grid. */}
       <div
-        className="flex sm:grid sm:grid-cols-3 gap-2 sm:gap-3 overflow-x-auto sm:overflow-visible -mx-4 sm:mx-0 px-4 sm:px-0 snap-x snap-mandatory sm:snap-none pb-1"
+        className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3"
         role="list"
       >
         {items.map((item) => {
@@ -216,7 +215,7 @@ export function CompleteYourRefresh({
             <div
               key={item.key}
               role="listitem"
-              className="group relative flex flex-col shrink-0 w-[75%] sm:w-auto snap-start rounded-lg border border-border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+              className="group relative flex flex-col rounded-lg border border-border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow"
             >
               {/* Compact icon tile — smaller than the old "photo" tile so five cards
                   fit comfortably in one row without dominating the review page. */}
