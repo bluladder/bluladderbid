@@ -246,7 +246,7 @@ export default function MyAppointments() {
     if (pwPassword !== pwConfirm) { setPwError('Passwords do not match.'); return; }
     setLoading(true);
     try {
-      sessionStorage.setItem('bl_auth_next', '/my-appointments');
+      sessionStorage.setItem('bl_auth_next', '/customer-portal');
       const { data: res, error } = await supabase.auth.signUp({
         email: addr,
         password: pwPassword,
@@ -777,7 +777,7 @@ export default function MyAppointments() {
               <div className="space-y-3">
                 <Label htmlFor="portal-email-code">6-digit code from your email</Label>
                 <p className="text-xs text-muted-foreground">
-                  Enter only the code from “Your BluLadder verification code.” Password reset or recovery emails are not used for My Appointments.
+                  Enter only the code from “Your BluLadder verification code.” Password reset or recovery emails are not used for Customer Portal access.
                 </p>
                 <Input
                   id="portal-email-code"

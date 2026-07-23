@@ -1476,7 +1476,7 @@ Deno.serve(async (req) => {
         ? booking.services.map((s: any) => s?.name ?? s?.service ?? s).filter(Boolean) as string[]
         : [];
       const APP_URL = getAppUrl();
-      const manageLink = `${APP_URL}/my-appointments`;
+      const manageLink = `${APP_URL}/customer-portal`;
 
       await emitCampaignEvent({
         eventName: "booking_completed",
