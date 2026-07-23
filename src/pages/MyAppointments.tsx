@@ -91,9 +91,23 @@ export default function MyAppointments() {
   useEffect(() => {
     let cancelled = false;
     const hydrateAuthed = async () => {
+      // Ensure the auth user is bound to a customer_accounts row. Password
+      // sign-in does NOT route through /auth/callback (only OAuth / magic
+      // links do), so without this call first-time password users would sit
+      // on the login screen forever while portal-data-authed returned
+      // not_linked. Safe to call repeatedly — the function is idempotent.
+      try { await supabase.functions.invoke('customer-auth-link'); } catch { /* non-fatal */ }
+      if (cancelled) return;
       const { data: authedData, error } = await supabase.functions.invoke('customer-portal-data-authed');
       if (cancelled) return;
-      if (error || !authedData) return;
+      if (error || !authedData) {
+        toast({
+          title: "We couldn't load your account",
+          description: "You're signed in, but we hit a snag pulling your quotes and appointments. Please refresh, or contact support if this keeps happening.",
+          variant: 'destructive',
+        });
+        return;
+      }
       setData(authedData as PortalData);
       setStage('signed_in');
     };
