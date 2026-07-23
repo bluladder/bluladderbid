@@ -96,8 +96,24 @@ export default function MyAppointments() {
       // links do), so without this call first-time password users would sit
       // on the login screen forever while portal-data-authed returned
       // not_linked. Safe to call repeatedly — the function is idempotent.
-      try { await supabase.functions.invoke('customer-auth-link'); } catch { /* non-fatal */ }
+      const { data: linkData, error: linkError } = await supabase.functions.invoke('customer-auth-link');
       if (cancelled) return;
+      if (linkError || linkData?.error) {
+        toast({
+          title: "We couldn't connect your account yet",
+          description: 'Your sign-in worked, but we could not finish linking it to your customer records. Please contact support if this keeps happening.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (linkData?.contact_support || linkData?.status === 'ambiguous') {
+        toast({
+          title: 'Customer match needs review',
+          description: 'Your sign-in worked, but we found more than one possible customer match. Please contact support and we will connect it for you.',
+          variant: 'destructive',
+        });
+        return;
+      }
       const { data: authedData, error } = await supabase.functions.invoke('customer-portal-data-authed');
       if (cancelled) return;
       if (error || !authedData) {
