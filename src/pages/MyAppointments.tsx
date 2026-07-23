@@ -806,7 +806,7 @@ export default function MyAppointments() {
   );
 }
 
-function PortalView({ data, onSignOut, authedEmail }: { data: PortalData; onSignOut: () => void; authedEmail?: string | null }) {
+function PortalView({ data, onSignOut, authedEmail, onRefresh }: { data: PortalData; onSignOut: () => void; authedEmail?: string | null; onRefresh?: () => void }) {
   const name = [data.customer?.first_name, data.customer?.last_name].filter(Boolean).join(' ') || 'there';
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
   const fmtDate = (iso: string) => new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
@@ -824,11 +824,13 @@ function PortalView({ data, onSignOut, authedEmail }: { data: PortalData; onSign
           </Button>
         </div>
 
-        <div className="flex justify-end mb-2">
-          <Button size="sm" variant="ghost" onClick={() => { setData(null); setReloadTick((t) => t + 1); }}>
-            <Loader2 className="w-4 h-4 mr-2" />Refresh
-          </Button>
-        </div>
+        {onRefresh && (
+          <div className="flex justify-end mb-2">
+            <Button size="sm" variant="ghost" onClick={onRefresh}>
+              <Loader2 className="w-4 h-4 mr-2" />Refresh
+            </Button>
+          </div>
+        )}
 
         <Tabs defaultValue="upcoming" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
