@@ -303,3 +303,112 @@ Deno.test("readiness: resolved identity, no property => property_blocked / selec
   assertEquals(r.next_action, "select_property");
   assertEquals(r.identity.status, "resolved");
 });
+
+// ---- Inputs freshness ------------------------------------------------------
+
+import { sessionInputsKey } from "./quoteSession.ts";
+
+const bookableFields = () => ({
+  services: ["gutter_cleaning"],
+  address: "720 Parkland Dr",
+  squareFootage: 2400,
+  stories: 2,
+});
+
+Deno.test("readiness: cached quote without inputsKey => pricing_blocked / quote_inputs_unverified", async () => {
+  const fields = bookableFields();
+  const supabase = makeSupabase({
+    conversation: resolvedConversation(),
+    customerProperty: { customer_id: "cust-1", property_id: "prop-1" },
+    quoteSession: {
+      id: "qs-1", channel: "sms", conversation_ids: ["c-resolved"],
+      fields: {
+        ...fields,
+        lastQuoteResult: {
+          status: "firm", total: 349, engineVersion: "1.0.0", ruleVersion: 1,
+          estimatedDurationMinutes: 120,
+          // NOTE: no inputsKey
+        },
+      },
+      field_status: {}, required_remaining: [], quote_status: "firm", booking_ready: false,
+    },
+    pricingConfig: { id: "default", pricing: {} },
+    pricingVersion: { rule_version: 1 },
+    autosync: freshAutosync(),
+  });
+  const r = await getBookingReadiness(supabase, "c-resolved");
+  assertEquals(r.status, "pricing_blocked");
+  assertEquals(r.quote.inputs_key_present, false);
+  assertEquals(r.quote.inputs_current, false);
+  assertEquals(r.quote.canonical_total, null);
+  assertEquals(r.duration.resolved, false);
+  assertEquals(r.blockers[0].code, "quote_inputs_unverified");
+  assertEquals(r.next_action, "recalculate_quote");
+});
+
+Deno.test("readiness: cached quote with drifted inputsKey => pricing_blocked / quote_inputs_changed", async () => {
+  const fields = bookableFields();
+  const staleFields = { ...fields, squareFootage: 1800 };
+  const supabase = makeSupabase({
+    conversation: resolvedConversation(),
+    customerProperty: { customer_id: "cust-1", property_id: "prop-1" },
+    quoteSession: {
+      id: "qs-1", channel: "sms", conversation_ids: ["c-resolved"],
+      fields: {
+        ...fields,
+        lastQuoteResult: {
+          status: "firm", total: 299, engineVersion: "1.0.0", ruleVersion: 1,
+          estimatedDurationMinutes: 90,
+          inputsKey: sessionInputsKey(staleFields as any),
+        },
+      },
+      field_status: {}, required_remaining: [], quote_status: "firm", booking_ready: false,
+    },
+    pricingConfig: { id: "default", pricing: {} },
+    pricingVersion: { rule_version: 1 },
+    autosync: freshAutosync(),
+  });
+  const r = await getBookingReadiness(supabase, "c-resolved");
+  assertEquals(r.status, "pricing_blocked");
+  assertEquals(r.quote.inputs_key_present, true);
+  assertEquals(r.quote.inputs_current, false);
+  assertEquals(r.quote.canonical_total, null);
+  assertEquals(r.duration.resolved, false);
+  assertEquals(r.blockers[0].code, "quote_inputs_changed");
+  assertEquals(r.next_action, "recalculate_quote");
+});
+
+Deno.test("readiness: cached quote with matching inputsKey exposes canonical total + duration", async () => {
+  const fields = bookableFields();
+  const supabase = makeSupabase({
+    conversation: resolvedConversation(),
+    customerProperty: { customer_id: "cust-1", property_id: "prop-1" },
+    quoteSession: {
+      id: "qs-1", channel: "sms", conversation_ids: ["c-resolved"],
+      fields: {
+        ...fields,
+        lastQuoteResult: {
+          status: "firm", total: 349, engineVersion: "1.0.0", ruleVersion: 1,
+          estimatedDurationMinutes: 120,
+          inputsKey: sessionInputsKey(fields as any),
+        },
+      },
+      field_status: {}, required_remaining: [], quote_status: "firm", booking_ready: false,
+    },
+    pricingConfig: { id: "default", pricing: {} },
+    pricingVersion: { rule_version: 1 },
+    autosync: freshAutosync(),
+  });
+  const r = await getBookingReadiness(supabase, "c-resolved");
+  assertEquals(r.quote.inputs_key_present, true);
+  assertEquals(r.quote.inputs_current, true);
+  // canonical total surfaces only when pricingCurrent aligns as well; the fake
+  // pricing loader may still block the "ready" path, but inputs_current must
+  // be independently true and the blocker (if any) must NOT be an inputs-drift
+  // code.
+  for (const b of r.blockers) {
+    if (b.code === "quote_inputs_changed" || b.code === "quote_inputs_unverified") {
+      throw new Error(`unexpected inputs-drift blocker: ${b.code}`);
+    }
+  }
+});

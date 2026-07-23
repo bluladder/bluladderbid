@@ -457,3 +457,31 @@ export async function syncFromFacts(
 }
 
 export const inputsKey = quoteInputsKey;
+
+// ---------------------------------------------------------------------------
+// sessionInputsKey — canonical inputs-key for a QuoteSession, computed via
+// the SAME `quoteInputsKey` used by ConversationFacts. Never introduce a
+// second hashing algorithm; always route session-shaped inputs through this
+// helper so cached quote results can be verified as still-current.
+// ---------------------------------------------------------------------------
+export function sessionInputsKey(fields: QuoteSessionFields): string {
+  const facts = {
+    services: fields.services,
+    address: fields.address,
+    property: {
+      squareFootage: fields.squareFootage,
+      stories: fields.stories,
+      windowCleaningType: fields.windowCleaningType,
+      condition: fields.condition,
+      roofType: fields.roofType,
+      roofSeverity: fields.roofSeverity,
+      drivewaySqft: fields.drivewaySqft,
+      drivewaySurface: fields.drivewaySurface,
+      pressureWashSqft: fields.pressureWashSqft,
+      pressureWashSurface: fields.pressureWashSurface,
+    },
+    discountCode: fields.discountCode ?? null,
+    promotionId: fields.promotionId ?? null,
+  } as unknown as ConversationFacts;
+  return quoteInputsKey(facts);
+}
