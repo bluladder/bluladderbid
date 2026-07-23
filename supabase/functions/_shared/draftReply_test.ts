@@ -5,9 +5,6 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { DRAFT_ALLOWED_TOOLS, sanitizeDraftBody, shouldAutoDraft } from "./draftReply.ts";
 
 Deno.test("phase 2 draft tools are all read-only or conversation-scoped", () => {
-  // Guard against silently widening the allowlist to include destructive
-  // tools (send SMS, cancel booking, refund, etc.). Adding to this list
-  // requires updating the test AND documenting the safety review.
   const destructive = [
     /^send_/i, /^create_booking/i, /^cancel_booking/i, /^reschedule_booking/i,
     /^refund/i, /^delete_/i, /^update_customer/i, /^apply_discount/i,
@@ -22,7 +19,16 @@ Deno.test("phase 2 draft tools are all read-only or conversation-scoped", () => 
 Deno.test("shouldAutoDraft honors the global AI SMS kill switch", () => {
   const r = shouldAutoDraft({
     content: "Hi", isGenuine: true, staffTakeover: false,
-    resolutionConfidence: "high", aiSmsEnabled: false,
+    resolutionConfidence: "high", aiSmsEnabled: false, autoreplyPaused: false,
+  });
+  assertEquals(r.ok, false);
+  assertEquals(r.reason, "ai_sms_kill_switch");
+});
+
+Deno.test("shouldAutoDraft fails CLOSED when kill switch is indeterminate (undefined)", () => {
+  const r = shouldAutoDraft({
+    content: "Hi", isGenuine: true, staffTakeover: false,
+    resolutionConfidence: "high", aiSmsEnabled: undefined, autoreplyPaused: false,
   });
   assertEquals(r.ok, false);
   assertEquals(r.reason, "ai_sms_kill_switch");
@@ -31,15 +37,34 @@ Deno.test("shouldAutoDraft honors the global AI SMS kill switch", () => {
 Deno.test("shouldAutoDraft honors per-conversation pause", () => {
   const r = shouldAutoDraft({
     content: "Hi", isGenuine: true, staffTakeover: false,
-    resolutionConfidence: "high", autoreplyPaused: true,
+    resolutionConfidence: "high", aiSmsEnabled: true, autoreplyPaused: true,
   });
   assertEquals(r.ok, false);
   assertEquals(r.reason, "conversation_paused");
 });
 
+Deno.test("shouldAutoDraft fails CLOSED when pause state is indeterminate (undefined)", () => {
+  const r = shouldAutoDraft({
+    content: "Hi", isGenuine: true, staffTakeover: false,
+    resolutionConfidence: "high", aiSmsEnabled: true, autoreplyPaused: undefined,
+  });
+  assertEquals(r.ok, false);
+  assertEquals(r.reason, "conversation_paused");
+});
+
+Deno.test("shouldAutoDraft blocks when staff takeover is active", () => {
+  const r = shouldAutoDraft({
+    content: "Hi", isGenuine: true, staffTakeover: true,
+    resolutionConfidence: "high", aiSmsEnabled: true, autoreplyPaused: false,
+  });
+  assertEquals(r.ok, false);
+  assertEquals(r.reason, "staff_takeover_active");
+});
+
 Deno.test("shouldAutoDraft blocks non-genuine inbound (STOP / delivery receipts)", () => {
   const r = shouldAutoDraft({
     content: "STOP", isGenuine: false, staffTakeover: false, resolutionConfidence: "high",
+    aiSmsEnabled: true, autoreplyPaused: false,
   });
   assertEquals(r.ok, false);
   assertEquals(r.reason, "not_genuine_inbound");
@@ -48,25 +73,24 @@ Deno.test("shouldAutoDraft blocks non-genuine inbound (STOP / delivery receipts)
 Deno.test("shouldAutoDraft blocks empty bodies", () => {
   const r = shouldAutoDraft({
     content: "   ", isGenuine: true, staffTakeover: false, resolutionConfidence: "high",
+    aiSmsEnabled: true, autoreplyPaused: false,
   });
   assertEquals(r.ok, false);
   assertEquals(r.reason, "empty_body");
 });
 
 Deno.test("shouldAutoDraft allows ambiguous threads (neutral draft path)", () => {
-  // Ambiguous threads produce a neutral 'confirm name and address' draft.
-  // The gate must NOT block them — the prompt handles safety downstream.
   const r = shouldAutoDraft({
     content: "Hey, is this Blu?", isGenuine: true, staffTakeover: false,
-    resolutionConfidence: "ambiguous",
+    resolutionConfidence: "ambiguous", aiSmsEnabled: true, autoreplyPaused: false,
   });
   assertEquals(r.ok, true);
 });
 
-Deno.test("shouldAutoDraft still allows drafts during staff takeover", () => {
+Deno.test("shouldAutoDraft allows only when every gate is explicitly safe", () => {
   const r = shouldAutoDraft({
-    content: "When are you coming?", isGenuine: true, staffTakeover: true,
-    resolutionConfidence: "high",
+    content: "When are you coming?", isGenuine: true, staffTakeover: false,
+    resolutionConfidence: "high", aiSmsEnabled: true, autoreplyPaused: false,
   });
   assertEquals(r.ok, true);
 });
@@ -91,6 +115,5 @@ Deno.test("sanitizeDraftBody truncates overly long output", () => {
   const big = "a".repeat(1000);
   const r = sanitizeDraftBody(big);
   assertEquals(r.ok, true);
-  // Truncated to <=480 + ellipsis marker.
   if (r.body.length > 481) throw new Error("not truncated");
 });

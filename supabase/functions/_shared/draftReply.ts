@@ -483,11 +483,14 @@ export function shouldAutoDraft(input: {
 }): { ok: boolean; reason?: string } {
   if (!input.isGenuine) return { ok: false, reason: "not_genuine_inbound" };
   if (!input.content?.trim()) return { ok: false, reason: "empty_body" };
-  if (input.aiSmsEnabled === false) return { ok: false, reason: "ai_sms_kill_switch" };
-  if (input.autoreplyPaused === true) return { ok: false, reason: "conversation_paused" };
+  // Fail-CLOSED: the caller MUST pass explicit booleans. Undefined = we could
+  // not verify the switch, therefore we do not proceed. This prevents a DB
+  // blip from silently bypassing the kill switch.
+  if (input.aiSmsEnabled !== true) return { ok: false, reason: "ai_sms_kill_switch" };
+  if (input.autoreplyPaused !== false) return { ok: false, reason: "conversation_paused" };
+  if (input.staffTakeover === true) return { ok: false, reason: "staff_takeover_active" };
   // Ambiguous / unresolved threads are still eligible — the draft prompt
   // above renders a neutral "please confirm name and address" instead of
-  // exposing any potentially-wrong identity. Staff takeover does not block
-  // draft creation either: Ben may still find the suggestion useful.
+  // exposing any potentially-wrong identity.
   return { ok: true };
 }
