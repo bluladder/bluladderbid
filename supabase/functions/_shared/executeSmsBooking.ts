@@ -423,7 +423,11 @@ export async function executeSmsBooking(
     ? await deps.readinessFetcher(supabase, pres.conversation_id)
     : (await getBookingReadiness(supabase, pres.conversation_id)) as any;
   if (readiness.status !== "ready") {
-    return finishPreClaimFailure("readiness_not_ready", readiness.blockers?.[0]?.code ?? null);
+    return finishPreClaimFailure(
+      "readiness_not_ready",
+      readiness.blockers?.[0]?.code ?? null,
+      "pre_claim_drift",
+    );
   }
 
   const currentInputsKey = (readiness as any).quote?.inputs_key ?? null;
@@ -432,7 +436,7 @@ export async function executeSmsBooking(
     currentInputsKey &&
     pres.inputs_key !== currentInputsKey
   ) {
-    return finishPreClaimFailure("drift_detected", "inputs_key_changed");
+    return finishPreClaimFailure("drift_detected", "inputs_key_changed", "pre_claim_drift");
   }
 
   const currentResolvedCustomer =
@@ -444,7 +448,7 @@ export async function executeSmsBooking(
     currentResolvedCustomer &&
     pres.resolved_customer_id !== currentResolvedCustomer
   ) {
-    return finishPreClaimFailure("drift_detected", "customer_id_changed");
+    return finishPreClaimFailure("drift_detected", "customer_id_changed", "pre_claim_drift");
   }
 
   // Verify the reservation row underlying this hold is still LIVE.
@@ -462,7 +466,11 @@ export async function executeSmsBooking(
       const notExpired = !resv.expires_at
         || new Date(resv.expires_at).getTime() > now.getTime();
       if (!stillLive || !notExpired) {
-        return finishPreClaimFailure("reservation_not_live", `status=${status}`);
+        return finishPreClaimFailure(
+          "reservation_not_live",
+          `status=${status}`,
+          "reservation_not_live",
+        );
       }
     }
     // Missing row → let the idempotent booking creator re-verify capacity.
@@ -476,6 +484,7 @@ export async function executeSmsBooking(
   const { data: claim } = await supabase.rpc("claim_sms_booking_execution", {
     p_confirmation_id: ledgerId,
     p_execution_token: executionToken,
+    p_claim_source: "customer",
   });
   const claimRes = (claim ?? {}) as any;
   if (claimRes.ok === false) {
