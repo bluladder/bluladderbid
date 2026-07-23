@@ -98,11 +98,17 @@ const BOOKING_FAILED_BODY =
 const BOOKING_UNCERTAIN_BODY =
   "Thanks — I'm locking that in now. I'll send your confirmation as soon as it clears (usually under a minute).";
 
-// Phase 6B.1 — deterministic expired-hold response. Sent only when the
-// customer's reply is a recognisable YES/NO to a hold whose 8-minute window
-// already elapsed. Unclear replies still fall through to the AI orchestrator.
-const EXPIRED_HOLD_BODY =
-  "That 8-minute hold just expired. Reply here and I'll pull fresh times for you.";
+// Phase 6B.1 — deterministic expired-hold responses. Split by parsed intent:
+//   * YES on an expired hold → tell the customer the window lapsed and invite
+//     them to pull fresh times. (Availability itself is Phase 4C — this text
+//     only signals readiness to route, not a new presentation.)
+//   * NO on an expired hold → acknowledge that nothing was booked. Do NOT
+//     invite fresh availability; the customer just declined.
+// Unclear replies fall through to the AI orchestrator.
+const EXPIRED_HOLD_YES_BODY =
+  "That 8-minute hold just expired, so I didn't book it. Reply here and I'll pull fresh times for you.";
+const EXPIRED_HOLD_NO_BODY =
+  "Understood — nothing was booked. That hold already expired on its own. Reply here anytime and we'll pick it back up.";
 
 export async function handleConfirmationReply(
   supabase: SB,
@@ -132,15 +138,21 @@ export async function handleConfirmationReply(
     if (parsed.status === "unclear") {
       return { handled: false, action: "hold_expired", presentation: row };
     }
+    const expiredBody = parsed.status === "declined"
+      ? EXPIRED_HOLD_NO_BODY
+      : EXPIRED_HOLD_YES_BODY;
+    const expiredKind = parsed.status === "declined"
+      ? "ai_hold_expired_declined_ack"
+      : "ai_hold_expired_ack";
     if (!callrail) return { handled: true, action: "hold_expired", presentation: row };
     const outcome = await sendAutonomousCallRailSms(supabase, {
       conversationId: row.conversation_id,
       phone: input.phone,
       actionClass: "scheduling",
-      body: EXPIRED_HOLD_BODY,
+      body: expiredBody,
       callRail: callrail,
-      messageKind: "ai_hold_expired_ack",
-      outboundIdempotencyKey: `hold_expired:${row.id}`,
+      messageKind: expiredKind,
+      outboundIdempotencyKey: `hold_expired:${parsed.status}:${row.id}`,
       where: "handleConfirmationReply",
       extraLog: { presentation_id: row.id, parse: parsed.status },
     });
