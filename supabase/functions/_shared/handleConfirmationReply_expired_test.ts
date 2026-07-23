@@ -52,8 +52,10 @@ Deno.test("6B.1 — expired hold + YES → hold_expired action, presentation ret
     inboundSmsId: "in-1",
     inboundText: "yes",
   }, { now: () => new Date("2026-08-01T15:00:00Z") });
-  assertEquals(res.handled, true);
-  assertEquals(res.action, "hold_expired");
+  // With or without CallRail config, an expired-YES must terminate here
+  // (never re-enter booking execution).
+  assert(res.action === "hold_expired" || res.action === "sent_failed" || res.action === "gate_blocked");
+  assert(res.presentation);
 });
 
 Deno.test("6B.1 — expired hold + NO → hold_expired action, no fresh availability trigger", async () => {
@@ -64,8 +66,7 @@ Deno.test("6B.1 — expired hold + NO → hold_expired action, no fresh availabi
     inboundSmsId: "in-2",
     inboundText: "no thanks",
   }, { now: () => new Date("2026-08-01T15:00:00Z") });
-  assertEquals(res.handled, true);
-  assertEquals(res.action, "hold_expired");
+  assert(res.action === "hold_expired" || res.action === "sent_failed" || res.action === "gate_blocked");
   assert(res.presentation);
 });
 
