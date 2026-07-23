@@ -335,12 +335,14 @@ export async function executeSmsBooking(
   const finishPreClaimFailure = async (
     code: ExecuteFailureCode,
     detail?: string | null,
+    failureClass: FailureClass = "pre_claim_drift",
   ): Promise<ExecuteBookingResult> => {
     if (ledgerId) {
       await supabase
         .from("sms_booking_confirmations")
         .update({
           status: "failed_recoverable",
+          failure_class: failureClass,
           error_code: code,
           last_error: detail ?? null,
           last_error_at: new Date().toISOString(),
@@ -363,11 +365,13 @@ export async function executeSmsBooking(
     code: ExecuteFailureCode,
     detail?: string | null,
     providerResponse?: any,
+    failureClass: FailureClass = "verified_terminal_rejection",
   ): Promise<ExecuteBookingResult> => {
     if (ledgerId) {
       await supabase.rpc("mark_sms_booking_terminal_failure", {
         p_confirmation_id: ledgerId,
         p_execution_token: executionToken,
+        p_failure_class: failureClass,
         p_error_code: code,
         p_last_error: detail ?? null,
         p_provider_response: providerResponse ?? null,
@@ -389,11 +393,13 @@ export async function executeSmsBooking(
     detail?: string | null,
     providerRequest?: any,
     providerResponse?: any,
+    failureClass: FailureClass = "external_outcome_unknown",
   ): Promise<ExecuteBookingResult> => {
     if (ledgerId) {
       await supabase.rpc("mark_sms_booking_recoverable_failure", {
         p_confirmation_id: ledgerId,
         p_execution_token: executionToken,
+        p_failure_class: failureClass,
         p_error_code: code,
         p_last_error: detail ?? null,
         p_provider_request: providerRequest ?? null,
