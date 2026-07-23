@@ -162,7 +162,7 @@ export async function presentAvailability(
   const [convoRes, sessRes] = await Promise.all([
     supabase
       .from("chat_conversations")
-      .select("id, quote_session_id, property_id")
+      .select("id, quote_session_id, property_id, customer_id, resolution_method")
       .eq("id", input.conversationId)
       .maybeSingle(),
     supabase
@@ -209,10 +209,11 @@ export async function presentAvailability(
     // Phase 5: persist the canonical backend identity anchored at
     // presentation time so downstream selection handling can prove
     // deterministic equality without hashing.
-    resolvedCustomerId:
-      availability.readiness?.identity?.resolved_customer_id ?? null,
+    resolvedCustomerId: (convo?.customer_id as string | null) ?? null,
     identityResolutionMethod:
-      availability.readiness?.identity?.resolution_method ?? null,
+      (availability.readiness?.identity?.method as string | null)
+        ?? (convo?.resolution_method as string | null)
+        ?? null,
   });
   if (!pending.row) {
     return { status: "engine_error", availability, detail: pending.error ?? "presentation_create_failed" };
