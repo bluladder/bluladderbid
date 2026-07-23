@@ -35,7 +35,7 @@ const CONFIRM_PATTERNS: RegExp[] = [
   /^correct$/i,
   /^confirm(ed)?$/i,
   /^book( it)?$/i,
-  /^lets? do it$/i,
+  /^let'?s? do it$/i,
   /^sounds? good$/i,
   /^looks? good$/i,
   /^that'?s? (fine|good|perfect|great)$/i,
