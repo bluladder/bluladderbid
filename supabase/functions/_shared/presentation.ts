@@ -52,6 +52,11 @@ export interface CreatePendingPresentationInput {
   slots: AvailabilitySlot[];
   outboundMessagePreview?: string | null;
   ttlMs?: number;
+  /** Canonical backend identity anchored at presentation time. Persisted so
+   *  the selection handler can prove deterministic equality of "same
+   *  customer" without hashing anything on this backend-only table. */
+  resolvedCustomerId?: string | null;
+  identityResolutionMethod?: string | null;
 }
 
 export interface PresentationRow {
@@ -78,6 +83,25 @@ export interface PresentationRow {
   selected_end_at: string | null;
   selection_ack_sms_id: string | null;
   selection_invalidation_reason: string | null;
+  resolved_customer_id: string | null;
+  identity_resolution_method: string | null;
+  hold_status:
+    | "none"
+    | "held"
+    | "released"
+    | "expired"
+    | "revalidation_failed"
+    | "conflict"
+    | "superseded";
+  hold_group_id: string | null;
+  held_crew_ids: string[] | null;
+  held_start_at: string | null;
+  held_end_at: string | null;
+  hold_expires_at: string | null;
+  held_at: string | null;
+  hold_released_at: string | null;
+  hold_release_reason: string | null;
+  hold_idempotency_key: string | null;
 }
 
 /** Result of a create attempt. `reused=true` means we returned an existing
@@ -137,6 +161,9 @@ export async function createPendingPresentation(
       outbound_message_preview: input.outboundMessagePreview ?? null,
       status: "pending_send",
       expires_at: expiresAt,
+      resolved_customer_id: input.resolvedCustomerId ?? null,
+      identity_resolution_method: input.identityResolutionMethod ?? null,
+      hold_status: "none",
     })
     .select("*")
     .maybeSingle();
@@ -165,41 +192,23 @@ export async function activatePresentationAfterSend(
   presentationId: string,
   args: { outboundSmsId?: string | null; outboundMessagePreview?: string | null } = {},
 ): Promise<PresentationRow | null> {
-  const now = new Date().toISOString();
-  const { data: activated } = await supabase
+  // Phase 5: single-transaction activation. The RPC atomically:
+  //   * retires the prior active presentation on this conversation,
+  //   * releases any 8-minute hold that presentation was carrying,
+  //   * flips this pending_send row to active.
+  // A partial unique index guarantees at most one active row per
+  // conversation at any moment.
+  await supabase.rpc("activate_presentation_atomic", {
+    p_id: presentationId,
+    p_outbound_sms_id: args.outboundSmsId ?? null,
+    p_outbound_message_preview: args.outboundMessagePreview ?? null,
+  });
+  const { data: row } = await supabase
     .from("sms_availability_presentations")
-    .update({
-      status: "active",
-      activated_at: now,
-      outbound_sms_id: args.outboundSmsId ?? null,
-      outbound_message_preview: args.outboundMessagePreview ?? null,
-    })
-    .eq("id", presentationId)
-    .eq("status", "pending_send")
     .select("*")
+    .eq("id", presentationId)
     .maybeSingle();
-  if (!activated) {
-    // Idempotent re-activation: caller retried after success. Return whatever
-    // row currently exists.
-    const { data: existing } = await supabase
-      .from("sms_availability_presentations")
-      .select("*")
-      .eq("id", presentationId)
-      .maybeSingle();
-    return (existing as PresentationRow | null) ?? null;
-  }
-  // Supersede any OTHER active row on the same conversation.
-  await supabase
-    .from("sms_availability_presentations")
-    .update({
-      status: "superseded",
-      superseded_by: presentationId,
-      superseded_at: now,
-    })
-    .eq("conversation_id", (activated as any).conversation_id)
-    .eq("status", "active")
-    .neq("id", presentationId);
-  return activated as PresentationRow;
+  return (row as PresentationRow | null) ?? null;
 }
 
 /** Mark a `pending_send` presentation as `send_failed`. The prior active
