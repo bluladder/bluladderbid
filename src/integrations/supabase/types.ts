@@ -4705,9 +4705,11 @@ export type Database = {
       }
       sms_booking_confirmations: {
         Row: {
+          attempt_count: number
           authoritative_total: number
           booked_at: string | null
           booking_id: string | null
+          booking_idempotency_key: string | null
           booking_result: Json | null
           confirmation_ack_sms_id: string | null
           confirmation_requested_at: string
@@ -4717,6 +4719,8 @@ export type Database = {
           crew_ids: string[]
           customer_id: string
           error_code: string | null
+          execution_started_at: string | null
+          execution_token: string | null
           expires_at: string
           failure_reason: string | null
           id: string
@@ -4724,11 +4728,17 @@ export type Database = {
           inbound_confirmation_sms_id: string | null
           jobber_job_id: string | null
           jobber_visit_id: string | null
+          last_error: string | null
+          last_error_at: string | null
+          local_committed_at: string | null
           outbound_sms_id: string | null
           presentation_id: string | null
           pricing_version: number
           property_id: string
+          provider_request: Json | null
+          provider_response: Json | null
           quote_session_id: string | null
+          reconciliation_status: string | null
           reference_number: string | null
           scheduled_end: string
           scheduled_start: string
@@ -4739,9 +4749,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attempt_count?: number
           authoritative_total: number
           booked_at?: string | null
           booking_id?: string | null
+          booking_idempotency_key?: string | null
           booking_result?: Json | null
           confirmation_ack_sms_id?: string | null
           confirmation_requested_at?: string
@@ -4751,6 +4763,8 @@ export type Database = {
           crew_ids: string[]
           customer_id: string
           error_code?: string | null
+          execution_started_at?: string | null
+          execution_token?: string | null
           expires_at: string
           failure_reason?: string | null
           id?: string
@@ -4758,11 +4772,17 @@ export type Database = {
           inbound_confirmation_sms_id?: string | null
           jobber_job_id?: string | null
           jobber_visit_id?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          local_committed_at?: string | null
           outbound_sms_id?: string | null
           presentation_id?: string | null
           pricing_version: number
           property_id: string
+          provider_request?: Json | null
+          provider_response?: Json | null
           quote_session_id?: string | null
+          reconciliation_status?: string | null
           reference_number?: string | null
           scheduled_end: string
           scheduled_start: string
@@ -4773,9 +4793,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attempt_count?: number
           authoritative_total?: number
           booked_at?: string | null
           booking_id?: string | null
+          booking_idempotency_key?: string | null
           booking_result?: Json | null
           confirmation_ack_sms_id?: string | null
           confirmation_requested_at?: string
@@ -4785,6 +4807,8 @@ export type Database = {
           crew_ids?: string[]
           customer_id?: string
           error_code?: string | null
+          execution_started_at?: string | null
+          execution_token?: string | null
           expires_at?: string
           failure_reason?: string | null
           id?: string
@@ -4792,11 +4816,17 @@ export type Database = {
           inbound_confirmation_sms_id?: string | null
           jobber_job_id?: string | null
           jobber_visit_id?: string | null
+          last_error?: string | null
+          last_error_at?: string | null
+          local_committed_at?: string | null
           outbound_sms_id?: string | null
           presentation_id?: string | null
           pricing_version?: number
           property_id?: string
+          provider_request?: Json | null
+          provider_response?: Json | null
           quote_session_id?: string | null
+          reconciliation_status?: string | null
           reference_number?: string | null
           scheduled_end?: string
           scheduled_start?: string
@@ -5037,6 +5067,7 @@ export type Database = {
           max_attempts: number
           message_kind: string
           next_retry_at: string | null
+          outbound_idempotency_key: string | null
           provider: string | null
           provider_accepted_at: string | null
           provider_conversation_id: string | null
@@ -5070,6 +5101,7 @@ export type Database = {
           max_attempts?: number
           message_kind?: string
           next_retry_at?: string | null
+          outbound_idempotency_key?: string | null
           provider?: string | null
           provider_accepted_at?: string | null
           provider_conversation_id?: string | null
@@ -5103,6 +5135,7 @@ export type Database = {
           max_attempts?: number
           message_kind?: string
           next_retry_at?: string | null
+          outbound_idempotency_key?: string | null
           provider?: string | null
           provider_accepted_at?: string | null
           provider_conversation_id?: string | null
@@ -5833,6 +5866,7 @@ export type Database = {
           max_attempts: number
           message_kind: string
           next_retry_at: string | null
+          outbound_idempotency_key: string | null
           provider: string | null
           provider_accepted_at: string | null
           provider_conversation_id: string | null
@@ -5857,9 +5891,28 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_sms_booking_execution: {
+        Args: { p_confirmation_id: string; p_execution_token: string }
+        Returns: Json
+      }
       clear_live_jobber_authorization: {
         Args: { p_email: string }
         Returns: undefined
+      }
+      commit_sms_booking_success: {
+        Args: {
+          p_booking_id: string
+          p_booking_result: Json
+          p_confirmation_id: string
+          p_execution_token: string
+          p_hold_group_id: string
+          p_jobber_job_id: string
+          p_jobber_visit_id: string
+          p_presentation_id: string
+          p_provider_response: Json
+          p_reference_number: string
+        }
+        Returns: Json
       }
       compute_customer_lifecycle: {
         Args: { p_customer_id: string }
@@ -5922,6 +5975,28 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_read_only_admin: { Args: never; Returns: boolean }
+      mark_sms_booking_recoverable_failure: {
+        Args: {
+          p_confirmation_id: string
+          p_error_code: string
+          p_execution_token: string
+          p_last_error: string
+          p_provider_request: Json
+          p_provider_response: Json
+          p_reconciliation_status: string
+        }
+        Returns: Json
+      }
+      mark_sms_booking_terminal_failure: {
+        Args: {
+          p_confirmation_id: string
+          p_error_code: string
+          p_execution_token: string
+          p_last_error: string
+          p_provider_response: Json
+        }
+        Returns: Json
+      }
       publish_pricing_version: { Args: { p_note?: string }; Returns: number }
       quote_has_real_services: { Args: { p: Json }; Returns: boolean }
       record_consent: {
