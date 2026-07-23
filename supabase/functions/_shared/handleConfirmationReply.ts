@@ -26,6 +26,12 @@ import { parseConfirmationReply, CLARIFICATION_ASK } from "./confirmationParser.
 import { sendAutonomousCallRailSms } from "./autonomousSendGate.ts";
 import { getCallRailConfig } from "./sms.ts";
 import { releaseHold } from "./slotHold.ts";
+import { sendOutboxSms } from "./smsOutbox.ts";
+import {
+  resolveBookingTimezone,
+  formatBookingWhen,
+  BLULADDER_DEFAULT_TIMEZONE,
+} from "./bookingTimezone.ts";
 import {
   executeSmsBooking,
   makeHttpBookingCreator,
@@ -69,20 +75,14 @@ export interface HandleConfirmationDeps {
 }
 
 // Deterministic bodies — chosen from state, not from an LLM.
-function confirmationSmsBody(exec: ExecuteBookingResult): string {
-  const start = exec.scheduled_start ? new Date(exec.scheduled_start) : null;
-  const tz = exec.timezone ?? "America/Chicago";
-  const when = start
-    ? new Intl.DateTimeFormat("en-US", {
-        timeZone: tz,
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      }).format(start)
-    : "your requested time";
+// Phase 6B.3: timezone comes from the resolver, not from an ad-hoc field on
+// the execution result. That way DST is always correct and the same zone
+// used to format the customer SMS is also persisted on the ledger.
+export function confirmationSmsBody(
+  exec: ExecuteBookingResult,
+  timezone: string,
+): string {
+  const when = formatBookingWhen(exec.scheduled_start ?? null, timezone);
   const ref = exec.reference_number ? ` Confirmation #${exec.reference_number}.` : "";
   return `You're booked for ${when}.${ref} We'll text you a reminder before we arrive. Reply HELP for support.`;
 }
@@ -254,42 +254,46 @@ export async function handleConfirmationReply(
     if (execution.status === "duplicate_confirmation") {
       return { handled: true, action: "duplicate_confirmation", execution, presentation: row };
     }
-    // Outbound idempotency: the confirmation SMS is keyed off the ledger so a
-    // retried inbound event never produces a second "you're booked" text.
-    const outboundKey = execution.ledger_id
-      ? `booking_confirmation:${execution.ledger_id}`
-      : null;
-    const outcome = await sendAutonomousCallRailSms(supabase, {
-      conversationId: row.conversation_id,
-      phone: input.phone,
-      actionClass: "booking_confirmation",
-      body: confirmationSmsBody(execution),
-      callRail: callrail,
-      messageKind: "ai_booking_confirmed",
-      outboundIdempotencyKey: outboundKey,
-      where: "handleConfirmationReply",
-      extraLog: {
-        presentation_id: row.id,
-        booking_id: execution.booking_id,
-        ledger_id: execution.ledger_id,
-      },
-    });
-    if (outcome.sent && outcome.smsMessageId && execution.ledger_id) {
+    // Phase 6B.3: booking-confirmation SMS goes through the outbox state
+    // machine so a crash after CallRail dispatch cannot produce a duplicate
+    // "you're booked" text. Resolve the timezone once, persist it on the
+    // ledger, and use the same value to render the customer body.
+    const timezone =
+      execution.timezone ??
+      resolveBookingTimezone({ presentation: row, property: null }) ??
+      BLULADDER_DEFAULT_TIMEZONE;
+    if (execution.ledger_id) {
       await supabase
         .from("sms_booking_confirmations")
-        .update({
-          confirmation_ack_sms_id: outcome.smsMessageId,
-          status: "confirmed",
-        })
+        .update({ booking_timezone: timezone })
+        .eq("id", execution.ledger_id)
+        .is("booking_timezone", null);
+    }
+    const outboundKey = execution.ledger_id
+      ? `booking_confirmation:${execution.ledger_id}`
+      : `booking_confirmation_pres:${row.id}`;
+    const outbox = await sendOutboxSms(supabase, {
+      outboundKey,
+      toNumber: input.phone,
+      body: confirmationSmsBody(execution, timezone),
+      messageKind: "ai_booking_confirmed",
+      callRail: callrail,
+    });
+    if (outbox.smsMessageId && execution.ledger_id) {
+      // Attach evidence regardless of send outcome — even a delivery_unknown
+      // row is the authoritative dispatch record for this ledger.
+      const patch: Record<string, unknown> = {
+        confirmation_ack_sms_id: outbox.smsMessageId,
+      };
+      if (outbox.sent) patch.status = "confirmed";
+      await supabase
+        .from("sms_booking_confirmations")
+        .update(patch)
         .eq("id", execution.ledger_id);
     }
     return {
       handled: true,
-      action: !outcome.sent
-        ? outcome.decision.allow
-          ? "sent_failed"
-          : "gate_blocked"
-        : "confirmed",
+      action: outbox.sent ? "confirmed" : "sent_failed",
       execution,
       presentation: row,
     };
