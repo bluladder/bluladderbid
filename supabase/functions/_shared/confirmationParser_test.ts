@@ -38,3 +38,26 @@ Deno.test("parseConfirmationReply — never treats a decline as a confirmation",
   assertEquals(parseConfirmationReply("no").status, "declined");
   assertEquals(parseConfirmationReply("NO").status, "declined");
 });
+
+Deno.test("parseConfirmationReply — qualified/contradictory affirmatives never confirm (Phase 6A)", () => {
+  // Per Phase 6A correction — none of these may return `confirmed`.
+  const musts: Array<[string, "unclear" | "declined"]> = [
+    ["No", "declined"],
+    ["Not yet", "declined"],
+    ["Yes, but change the time", "unclear"],
+    ["Yes, but not Friday", "unclear"],
+    ["That's not correct", "unclear"],
+    ["Correct address, wrong appointment time", "unclear"],
+    ["Don't book it", "unclear"],
+    ["Maybe", "unclear"],
+    ["I need to ask my wife", "unclear"],
+    ["Can you confirm the price?", "unclear"],
+  ];
+  for (const [t, expected] of musts) {
+    const r = parseConfirmationReply(t);
+    if (r.status === "confirmed") {
+      throw new Error(`FAIL-OPEN: ${JSON.stringify(t)} returned 'confirmed'`);
+    }
+    assertEquals(r.status, expected, `for input ${JSON.stringify(t)}`);
+  }
+});
