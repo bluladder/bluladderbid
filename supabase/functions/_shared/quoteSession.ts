@@ -394,6 +394,36 @@ export async function findOrCreateForConversation(
   return EMPTY_SESSION(channel, conversationId);
 }
 
+/**
+ * Strict read-only lookup: returns the QuoteSession bound to the given
+ * conversation, or null. Never inserts, never updates, never links a session
+ * across conversations. Callers that must remain read-only (e.g. the booking
+ * readiness tool) MUST use this instead of findOrCreateForConversation.
+ */
+export async function findByConversation(
+  supabase: SB,
+  conversationId: string,
+): Promise<QuoteSession | null> {
+  if (!conversationId) return null;
+  try {
+    const { data: conv } = await supabase
+      .from("chat_conversations")
+      .select("quote_session_id")
+      .eq("id", conversationId)
+      .maybeSingle();
+    const sid: string | null = conv?.quote_session_id ?? null;
+    if (!sid) return null;
+    const { data } = await supabase
+      .from("quote_sessions")
+      .select("*")
+      .eq("id", sid)
+      .maybeSingle();
+    return data ? rowToSession(data) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Sync a session from the orchestrator's current ConversationFacts. Primary
  *  write path: every persistFacts() call also mirrors here so voice/web/SMS
  *  edit the same canonical object. */
