@@ -9,6 +9,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { verifyAdmin, getBearer } from "../_shared/auth.ts";
+import { generateDraftReply } from "../_shared/draftReply.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,11 +19,13 @@ const corsHeaders = {
 type Action =
   | "takeover" | "release"
   | "pause_campaign" | "resume_campaign" | "stop_campaign"
-  | "send_reply" | "mark_resolved" | "request_callback";
+  | "send_reply" | "mark_resolved" | "request_callback"
+  | "generate_draft" | "edit_draft" | "discard_draft" | "mark_draft_sent";
 
 const VALID: readonly Action[] = [
   "takeover","release","pause_campaign","resume_campaign","stop_campaign",
   "send_reply","mark_resolved","request_callback",
+  "generate_draft","edit_draft","discard_draft","mark_draft_sent",
 ] as const;
 
 function j(body: unknown, status = 200) {
@@ -41,6 +44,7 @@ serve(async (req) => {
   const body = await req.json().catch(() => ({})) as {
     conversation_id?: string; action?: Action; note?: string;
     reply_body?: string; reply_channel?: "sms" | "email";
+    draft_body?: string;
   };
   const conversationId = body.conversation_id;
   const action = body.action;
@@ -55,7 +59,7 @@ serve(async (req) => {
 
   const { data: convo } = await supabase
     .from("chat_conversations")
-    .select("id, staff_takeover_at, campaign_status, resolved")
+    .select("id, staff_takeover_at, campaign_status, resolved, draft_status, draft_source_message_id, pending_draft_reply, prospect_phone")
     .eq("id", conversationId)
     .maybeSingle();
   if (!convo) return j({ error: "not_found" }, 404);
@@ -111,6 +115,58 @@ serve(async (req) => {
       });
       if (error) return j({ error: error.message }, 500);
       return j({ ok: true, queued: true });
+    }
+    case "generate_draft": {
+      // Manual regeneration. Bypasses per-inbound idempotency so Ben can
+      // re-roll a suggestion for the same message.
+      const inboundId = (convo.draft_source_message_id as string | null) ?? null;
+      const result = await generateDraftReply(supabase, {
+        conversationId,
+        inboundMessageId: inboundId,
+        reason: "manual",
+      });
+      return j({ ok: result.status !== "failed", ...result });
+    }
+    case "edit_draft": {
+      const b = (body.draft_body ?? "").trim();
+      if (!b) return j({ error: "draft_body_required" }, 400);
+      if (b.length > 800) return j({ error: "draft_body_too_long" }, 400);
+      const { error } = await supabase
+        .from("chat_conversations")
+        .update({
+          pending_draft_reply: b,
+          draft_status: "edited",
+          draft_edited_at: now,
+        })
+        .eq("id", conversationId);
+      if (error) return j({ error: error.message }, 500);
+      return j({ ok: true });
+    }
+    case "discard_draft": {
+      const { error } = await supabase
+        .from("chat_conversations")
+        .update({
+          pending_draft_reply: null,
+          draft_status: "discarded",
+        })
+        .eq("id", conversationId);
+      if (error) return j({ error: error.message }, 500);
+      return j({ ok: true });
+    }
+    case "mark_draft_sent": {
+      // Called by the UI AFTER the existing staff-reply endpoint successfully
+      // queues the outbound. Preserves the sent body in the normal outbound
+      // message record; here we only bookkeep the draft lifecycle.
+      const { error } = await supabase
+        .from("chat_conversations")
+        .update({
+          draft_status: "sent",
+          draft_sent_at: now,
+          pending_draft_reply: null,
+        })
+        .eq("id", conversationId);
+      if (error) return j({ error: error.message }, 500);
+      return j({ ok: true });
     }
   }
 
