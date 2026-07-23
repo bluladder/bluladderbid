@@ -182,8 +182,13 @@ export default function MyAppointments() {
       sessionStorage.setItem('bl_auth_next', '/my-appointments');
       const { error } = await supabase.auth.signInWithPassword({ email: addr, password: pwPassword });
       if (error) {
-        // Neutral message — do not disclose whether the account exists.
-        setPwError('That email and password combination didn\'t match. Please try again or reset your password.');
+        // Neutral message — do not disclose whether the account exists. Steer
+        // customers to the reset flow, which also works for accounts that were
+        // originally created with Google or a magic link and have no password yet.
+        const msg = /confirm/i.test(error.message)
+          ? 'Please confirm your email first — check your inbox for the confirmation link, then try signing in again.'
+          : "That email and password didn't match. If you signed up with Google or a magic link, use \"Forgot password?\" to set one.";
+        setPwError(msg);
       }
       // On success, onAuthStateChange fires and hydrates the portal.
     } finally {
@@ -210,11 +215,24 @@ export default function MyAppointments() {
         options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
       });
       if (error) {
-        // Neutral message — avoid account enumeration.
-        toast({
-          title: 'Check your email',
-          description: 'If that address is available, we sent a confirmation link.',
+        // HIBP or other server-side rejection — surface the message inline so the
+        // customer can react (pick a stronger password, etc.) instead of silently
+        // dropping them on a "check your email" screen.
+        setPwError(error.message || 'We couldn\'t create that account. Please try again.');
+        return;
+      }
+      // Supabase enumeration-protection tell: on a repeated signup the returned
+      // user has an empty identities[] array and NO confirmation email is sent.
+      // If we don't handle this, the customer sits waiting for an email that
+      // will never arrive. Transparently kick off a password reset instead so
+      // they get a real, actionable email that lets them set a new password.
+      const identities = (res.user as { identities?: unknown[] } | null)?.identities;
+      const alreadyRegistered = !!res.user && Array.isArray(identities) && identities.length === 0;
+      if (alreadyRegistered) {
+        await supabase.auth.resetPasswordForEmail(addr, {
+          redirectTo: `${window.location.origin}/reset-password`,
         });
+        setStage('forgot_sent');
         return;
       }
       // If email confirmation is required, session will be null here.
