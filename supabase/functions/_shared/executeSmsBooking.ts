@@ -676,6 +676,7 @@ export async function executeSmsBooking(
       e instanceof Error ? e.message : String(e),
       bookingInput as any,
       null,
+      "external_outcome_unknown",
     );
   }
 
@@ -686,6 +687,7 @@ export async function executeSmsBooking(
         "booking_creator_rejected",
         creator.detail,
         (creator as any).raw ?? null,
+        "verified_terminal_rejection",
       );
     }
     return finishRecoverableFailure(
@@ -694,6 +696,7 @@ export async function executeSmsBooking(
       creator.detail,
       bookingInput as any,
       (creator as any).raw ?? null,
+      "external_outcome_unknown",
     );
   }
 
@@ -720,6 +723,7 @@ export async function executeSmsBooking(
       commitRes.reason ?? "commit_denied",
       bookingInput as any,
       { booking_creator_success: creator, commit_response: commitRes },
+      "external_committed_pending_local",
     );
   }
 
