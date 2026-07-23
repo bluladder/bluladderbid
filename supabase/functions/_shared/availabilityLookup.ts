@@ -72,6 +72,10 @@ export interface AvailabilitySlot {
   arrival_window_label: string;
   customer_label: string;
   preference_match: boolean;
+  /** Internal — jobber user ids of the crew currently anchoring the slot.
+   *  Never surfaced in customer-visible SMS bodies. Used by slotHold to
+   *  reserve the exact crew when the customer picks this option. */
+  crew_ids?: string[];
 }
 
 export type AvailabilityStatus =
@@ -241,6 +245,23 @@ function labelArrivalWindow(iso: string): string {
       hour12: true,
     }).format(d);
   return `${fmt(start)} – ${fmt(end)}`;
+}
+
+/** Pull the crew (jobber user) ids the engine anchored to a raw slot. The
+ *  engine exposes `technicianId` (crew leader) and optionally an assistant
+ *  in team mode via `secondaryTechnicianId` / `additionalTechnicianIds`.
+ *  Everything is filtered to non-empty strings; duplicates removed while
+ *  preserving order. */
+function extractCrewIds(raw: any): string[] {
+  const ids: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === "string" && v.length > 0 && !ids.includes(v)) ids.push(v);
+  };
+  push(raw?.technicianId);
+  push(raw?.secondaryTechnicianId);
+  const arr = raw?.additionalTechnicianIds ?? raw?.crewIds ?? raw?.assignedTechnicians;
+  if (Array.isArray(arr)) for (const v of arr) push(v);
+  return ids;
 }
 
 // ----------------------------------------------------------------------------
@@ -499,6 +520,7 @@ export async function getAvailableSlots(
         ? s.displayTime
         : labelArrivalWindow(startAt),
       preference_match: !!matches,
+      crew_ids: extractCrewIds(s),
     });
   }
 
