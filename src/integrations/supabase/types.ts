@@ -6010,6 +6010,10 @@ export type Database = {
         }
         Returns: Json
       }
+      protect_reservation_for_execution: {
+        Args: { p_group_id: string; p_min_expires_at: string }
+        Returns: Json
+      }
       publish_pricing_version: { Args: { p_note?: string }; Returns: number }
       quote_has_real_services: { Args: { p: Json }; Returns: boolean }
       record_consent: {
@@ -6062,6 +6066,14 @@ export type Database = {
       set_reservation_job: {
         Args: { p_group_id: string; p_job_id: string }
         Returns: undefined
+      }
+      unprotect_reservation_after_failure: {
+        Args: {
+          p_group_id: string
+          p_hold_ttl_minutes?: number
+          p_new_status?: string
+        }
+        Returns: Json
       }
       update_autosync_coverage: { Args: never; Returns: undefined }
     }
