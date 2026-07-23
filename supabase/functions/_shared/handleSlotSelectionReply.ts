@@ -31,6 +31,13 @@ import { parseSlotSelection, type PresentedOption } from "./slotSelectionParser.
 import { getBookingReadiness } from "./bookingReadiness.ts";
 import { sendAutonomousCallRailSms } from "./autonomousSendGate.ts";
 import { getCallRailConfig } from "./sms.ts";
+import {
+  HOLD_TTL_MINUTES,
+  persistHoldState,
+  releaseHold,
+  reserveAuthoritativeSlot,
+  revalidateSelectedSlot,
+} from "./slotHold.ts";
 
 type SB = any;
 
@@ -47,6 +54,10 @@ export interface HandleSelectionResult {
   handled: boolean;
   action?:
     | "selected"
+    | "held"
+    | "slot_filled"
+    | "revalidation_failed"
+    | "reserve_conflict"
     | "ambiguous"
     | "no_match"
     | "expired_options"
@@ -59,6 +70,8 @@ export interface HandleSelectionResult {
   selectedSlotId?: string | null;
   selectedStart?: string | null;
   selectedEnd?: string | null;
+  holdGroupId?: string | null;
+  holdExpiresAt?: string | null;
 }
 
 function toPresentedOptions(row: PresentationRow): PresentedOption[] {
