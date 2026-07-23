@@ -1,0 +1,55 @@
+# Project Memory
+
+## Core
+- Calculate prices via central engine based on sqft/modifiers; never hardcode tier prices.
+- Visual selection state of services MUST perfectly match pricing engine inclusion.
+- Availability checks MUST use local `jobber_busy_blocks` mirror. Never poll Jobber API.
+- Use `__none__` or `__default__` sentinel values for empty Radix UI Select components.
+- Booking flow: Contact → Property → Primary Services → Details → Pricing → Scheduling → Review.
+- 48-hour lockout applies to all customer-initiated appointment modifications.
+- Customer availability is anchored by crew leaders only (`technicians.customer_bookable_lead=true`). Juniors never create a slot alone. Customer UIs never show technician names.
+
+## Memories
+- [Branding & UI Style](mem://style/branding) — BluLadder colors, gradients, and friendly copy
+- [Pricing Disclaimer](mem://constraints/pricing-disclaimer) — Required legal disclaimer for estimates
+- [Minimum Price Floors](mem://features/minimum-price-thresholds) — Application of minimum thresholds to core services
+- [Availability Logic](mem://architecture/availability-engine-logic) — Gap minimization, AM/PM filters, 3-option limits
+- [Jobber Sync Pacing](mem://integrations/jobber-sync-pacing-requirements) — Strict 2000-3000ms delay and chunking for Jobber API
+- [Jobber Booking Mapping](mem://integrations/jobber-booking-logic-details) — 4-step Client > Property > Job > Visit creation flow
+- [Jobber Instructions format](mem://integrations/jobber-instructions-format) — Exclude JSON/raw data from technician view
+- [Recurring Quotes](mem://features/recurring-service-quote-flow) — Subscription bundles generate Jobber Quotes, not instant visits
+- [Pressure Washing Rates](mem://features/pressure-washing-split-logic) — Split pricing for driveway vs flatwork
+- [Window Cleaning Engine](mem://features/window-frequency-engine) — Interior vs exterior split frequencies
+- [Dynamic Estimates](mem://features/dynamic-price-estimates) — Unselected services display ~$ estimates dynamically
+- [Route Density](mem://features/route-density-optimization) — Slot scoring for proximity to existing jobs
+- [UTM Attribution](mem://features/utm-tracking-attribution) — Capture and persist UTMs to Jobber
+- [Window Cleaning Default](mem://features/window-cleaning-selection-rules) — Only pre-selected on dedicated landing page
+- [Duration Math](mem://architecture/booking-duration-calculation) — Formula for appointment duration + buffer
+- [Service Plan Builder](mem://features/service-plan-builder) — 12-month installment logic and rules
+- [Address-First Flow](mem://features/address-first-scheduling-logic) — Collect address before schedule for density math
+- [Embed System](mem://features/admin-embed-system-v3) — ?embed=true parameter for iframe integrations
+- [Calendar System](mem://features/booking-calendar-system-v5) — Date-first 365-day availability loading
+- [Slot Overlap Math](mem://architecture/slot-validation-and-duration-logic) — Boolean logic for checking valid gaps
+- [Schedule Mirror](mem://integrations/jobber-schedule-mirror-implementation) — Architecture for the local availability mirror
+- [Long Job Rule](mem://features/dispatch-smart-availability-system) — 8+ hr jobs must be morning, 4-8 hr prefer AM
+- [State Consistency](mem://features/service-selection-state-consistency) — Pricing conditional rendering rules
+- [Booking UX Standards](mem://features/booking-flow-friction-kill-complete-v2) — Form UI behaviors and layout constraints
+- [Self-Service Management](mem://features/customer-self-service-appointment-management) — Customer portal rules and limitations
+- [Admin Schedule Control](mem://features/admin-schedule-control-complete) — Overrides and manual blocks
+- [Customer Confirmation](mem://features/customer-confirmation-flow) — pending_confirmation workflow
+- [Drive Time Caching](mem://architecture/drive-time-caching) — Persistent caching for drive time API calls
+- [Technician Eligibility](mem://features/technician-eligibility-logic) — Hard filters and skill-based scoring
+- [Team Mode Booking](mem://features/multi-technician-booking-logic) — >$900 or 8hr threshold triggers multi-crew
+- [Gutter Add-ons](mem://features/gutter-cleaning-intelligence) — Drains, repairs, micro-mesh specifics
+- [House Wash Surcharge](mem://features/house-wash-stain-surcharge) — 15% added for rust/irrigation
+- [Roof Pitch Info](mem://features/roof-cleaning-informational-data) — Captured for info only, no pricing impact
+- [AI Chatbot](mem://features/ai-quote-chatbot) — Gemini Flash quote generation details
+- [Admin Rule UX](mem://features/admin-rule-logic-ux) — Plain English display for rules
+- [Approved Test Identity](mem://testing/approved-test-identity) — Owner-approved test customer for controlled end-to-end booking tests
+- [Promotions & Test Suppression](mem://features/promotions-and-test-suppression) — $99 window promo rules + system-test message suppression
+- [Consent & Campaign Engine](mem://features/consent-and-campaign-engine) — Canonical consent model, allowlisted events, single enrollment engine, delivery-safety
+- [Campaign Administration UI](mem://features/campaign-admin-ui) — Admin editor, audience builder, dry-run, enrollment controls, consent history, dashboard
+- [Live Jobber Test Authorization](mem://features/live-jobber-test-authorization) — One-time admin-scoped single-use authorization for exactly one real Jobber write from the protected test identity
+- [Lead-Anchored Crew Availability](mem://features/lead-anchored-crew-availability) — Leader-only availability, hidden junior capacity, crew size 1–5, productivity multipliers
+- [Voice Assistant Optimization](mem://preferences/voice-assistant-optimization) — Voice AI = top CSR: transaction completion > conversation; every question names its canonical field
+- [SMS Autonomous Booking Phase 6](mem://features/sms-autonomous-booking-phase6) — Complete and approved; includes non-blocking live-reservation test fixture note
