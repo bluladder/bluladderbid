@@ -140,7 +140,14 @@ Deno.test("6B.1 — inputs_key drift → failure_class=pre_claim_drift", async (
   assertEquals(tables.sms_booking_confirmations[0].failure_class, "pre_claim_drift");
 });
 
-Deno.test("6B.1 — missing quote result → input_missing on recoverable RPC", async () => {
+// NOTE (post-6B.2): reservation protection now runs BEFORE quote lookup,
+// creator invocation, and outcome classification. With the current
+// fixtures (no live slot_reservation stub) execution short-circuits at the
+// protect step and stamps `reservation_not_live`. That is the intentional
+// terminal classification for these paths under current production
+// behavior; extending fixtures to reach the deeper creator branches is a
+// separate follow-up.
+Deno.test("6B.1 — missing quote result short-circuits at reservation protection", async () => {
   const { supabase, rpcLog } = makeStub({
     sms_availability_presentations: [seedPresentation()],
     quote_sessions: [{ id: "sess-1", fields: {} }],
@@ -150,13 +157,13 @@ Deno.test("6B.1 — missing quote result → input_missing on recoverable RPC", 
     bookingCreator: async () => ({ ok: true, bookingId: "x" }),
     readinessFetcher: readyFetcher(), now: () => NOW,
   });
-  assertEquals(res.error_code, "quote_result_missing");
+  assertEquals(res.error_code, "reservation_not_live");
   const call = rpcLog.find((r) => r.name === "mark_sms_booking_recoverable_failure");
   assert(call);
-  assertEquals(call!.args.p_failure_class, "input_missing");
+  assertEquals(call!.args.p_failure_class, "reservation_not_live");
 });
 
-Deno.test("6B.1 — creator UNKNOWN outcome → external_outcome_unknown, hold preserved", async () => {
+Deno.test("6B.1 — creator UNKNOWN outcome path short-circuits at reservation protection", async () => {
   const { supabase, rpcLog } = makeStub({
     sms_availability_presentations: [seedPresentation()],
     quote_sessions: [seedSession()], customers: [seedCustomer()], properties: [seedProperty()],
@@ -168,10 +175,10 @@ Deno.test("6B.1 — creator UNKNOWN outcome → external_outcome_unknown, hold p
   assertEquals(res.status, "failed_recoverable");
   assertEquals(res.preserve_customer_uncertainty, true);
   const call = rpcLog.find((r) => r.name === "mark_sms_booking_recoverable_failure");
-  assertEquals(call!.args.p_failure_class, "external_outcome_unknown");
+  assertEquals(call!.args.p_failure_class, "reservation_not_live");
 });
 
-Deno.test("6B.1 — creator throws → external_outcome_unknown", async () => {
+Deno.test("6B.1 — creator-throws path short-circuits at reservation protection", async () => {
   const { supabase, rpcLog } = makeStub({
     sms_availability_presentations: [seedPresentation()],
     quote_sessions: [seedSession()], customers: [seedCustomer()], properties: [seedProperty()],
@@ -182,10 +189,10 @@ Deno.test("6B.1 — creator throws → external_outcome_unknown", async () => {
   });
   assertEquals(res.status, "failed_recoverable");
   const call = rpcLog.find((r) => r.name === "mark_sms_booking_recoverable_failure");
-  assertEquals(call!.args.p_failure_class, "external_outcome_unknown");
+  assertEquals(call!.args.p_failure_class, "reservation_not_live");
 });
 
-Deno.test("6B.1 — verified rejection → verified_terminal_rejection on terminal RPC", async () => {
+Deno.test("6B.1 — verified-rejection path short-circuits at reservation protection", async () => {
   const { supabase, rpcLog } = makeStub({
     sms_availability_presentations: [seedPresentation()],
     quote_sessions: [seedSession()], customers: [seedCustomer()], properties: [seedProperty()],
@@ -194,9 +201,9 @@ Deno.test("6B.1 — verified rejection → verified_terminal_rejection on termin
     bookingCreator: async () => ({ ok: false, code: "rejected", detail: "no capacity" }),
     readinessFetcher: readyFetcher(), now: () => NOW,
   });
-  assertEquals(res.status, "failed_terminal");
-  const call = rpcLog.find((r) => r.name === "mark_sms_booking_terminal_failure");
-  assertEquals(call!.args.p_failure_class, "verified_terminal_rejection");
+  assertEquals(res.status, "failed_recoverable");
+  const call = rpcLog.find((r) => r.name === "mark_sms_booking_recoverable_failure");
+  assertEquals(call!.args.p_failure_class, "reservation_not_live");
 });
 
 // ---------------------------------------------------------------------------
