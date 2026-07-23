@@ -189,6 +189,9 @@ export interface AutonomousSendResult {
    *  to a presentation record. Null when the write failed. */
   smsMessageId?: string | null;
   error?: string;
+  /** True when this call returned a prior send for the same
+   *  outboundIdempotencyKey WITHOUT invoking CallRail again. */
+  idempotentReplay?: boolean;
 }
 
 export async function sendAutonomousCallRailSms(
