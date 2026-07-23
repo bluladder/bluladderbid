@@ -1,6 +1,6 @@
 // Deno tests for resend-webhook event mapping and transition guards.
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { mapEventToAttemptStatus, shouldApplyTransition } from "./index.ts";
+import { mapEventToAttemptStatus, shouldApplyTransition } from "./mapping.ts";
 
 Deno.test("email.sent → sent", () => {
   assertEquals(mapEventToAttemptStatus("email.sent")?.status, "sent");
