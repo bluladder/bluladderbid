@@ -4706,22 +4706,30 @@ export type Database = {
       sms_booking_confirmations: {
         Row: {
           authoritative_total: number
+          booked_at: string | null
           booking_id: string | null
+          booking_result: Json | null
+          confirmation_ack_sms_id: string | null
           confirmation_requested_at: string
           confirmed_at: string | null
           conversation_id: string
           created_at: string
           crew_ids: string[]
           customer_id: string
+          error_code: string | null
           expires_at: string
           failure_reason: string | null
           id: string
           idempotency_key: string
           inbound_confirmation_sms_id: string | null
+          jobber_job_id: string | null
+          jobber_visit_id: string | null
           outbound_sms_id: string | null
+          presentation_id: string | null
           pricing_version: number
           property_id: string
           quote_session_id: string | null
+          reference_number: string | null
           scheduled_end: string
           scheduled_start: string
           services_json: Json
@@ -4732,22 +4740,30 @@ export type Database = {
         }
         Insert: {
           authoritative_total: number
+          booked_at?: string | null
           booking_id?: string | null
+          booking_result?: Json | null
+          confirmation_ack_sms_id?: string | null
           confirmation_requested_at?: string
           confirmed_at?: string | null
           conversation_id: string
           created_at?: string
           crew_ids: string[]
           customer_id: string
+          error_code?: string | null
           expires_at: string
           failure_reason?: string | null
           id?: string
           idempotency_key: string
           inbound_confirmation_sms_id?: string | null
+          jobber_job_id?: string | null
+          jobber_visit_id?: string | null
           outbound_sms_id?: string | null
+          presentation_id?: string | null
           pricing_version: number
           property_id: string
           quote_session_id?: string | null
+          reference_number?: string | null
           scheduled_end: string
           scheduled_start: string
           services_json: Json
@@ -4758,22 +4774,30 @@ export type Database = {
         }
         Update: {
           authoritative_total?: number
+          booked_at?: string | null
           booking_id?: string | null
+          booking_result?: Json | null
+          confirmation_ack_sms_id?: string | null
           confirmation_requested_at?: string
           confirmed_at?: string | null
           conversation_id?: string
           created_at?: string
           crew_ids?: string[]
           customer_id?: string
+          error_code?: string | null
           expires_at?: string
           failure_reason?: string | null
           id?: string
           idempotency_key?: string
           inbound_confirmation_sms_id?: string | null
+          jobber_job_id?: string | null
+          jobber_visit_id?: string | null
           outbound_sms_id?: string | null
+          presentation_id?: string | null
           pricing_version?: number
           property_id?: string
           quote_session_id?: string | null
+          reference_number?: string | null
           scheduled_end?: string
           scheduled_start?: string
           services_json?: Json
@@ -4795,6 +4819,13 @@ export type Database = {
             columns: ["booking_id"]
             isOneToOne: false
             referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_confirmation_ack_sms_id_fkey"
+            columns: ["confirmation_ack_sms_id"]
+            isOneToOne: false
+            referencedRelation: "sms_messages"
             referencedColumns: ["id"]
           },
           {
@@ -4823,6 +4854,13 @@ export type Database = {
             columns: ["outbound_sms_id"]
             isOneToOne: false
             referencedRelation: "sms_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_booking_confirmations_presentation_id_fkey"
+            columns: ["presentation_id"]
+            isOneToOne: false
+            referencedRelation: "sms_availability_presentations"
             referencedColumns: ["id"]
           },
           {
