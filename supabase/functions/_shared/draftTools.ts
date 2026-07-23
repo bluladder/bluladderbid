@@ -39,6 +39,7 @@ import {
   selectConversationProperty,
 } from "./profile/propertyRepo.ts";
 import type { FactType, ServiceKind } from "./profile/serviceFactMap.ts";
+import { getBookingReadiness } from "./bookingReadiness.ts";
 
 type SB = any;
 
@@ -59,6 +60,7 @@ export const DRAFT_TOOL_ALLOWLIST = [
   "get_reusable_quote_inputs",
   "propose_property_fact",
   "confirm_property_fact",
+  "get_quote_booking_readiness",
 ] as const;
 
 export type DraftToolName = (typeof DRAFT_TOOL_ALLOWLIST)[number];
