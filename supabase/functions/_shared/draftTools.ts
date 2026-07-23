@@ -25,6 +25,7 @@ import {
   findOrCreateForConversation,
   mergeFields,
   computeRequired,
+  sessionInputsKey,
   type QuoteSession,
   type QuoteSessionFields,
 } from "./quoteSession.ts";
@@ -380,7 +381,14 @@ export async function executeDraftTool(
         // Persist result on the session so the admin UI panel and future turns
         // both see the same authoritative quote. We embed the snapshot in the
         // `fields` JSON (under `lastQuoteResult`) to avoid a schema change.
-        const nextFields = { ...session.fields, lastQuoteResult: result } as any;
+        // The canonical `inputsKey` is stamped on the result so downstream
+        // consumers (bookingReadiness) can prove the cached total/duration
+        // still matches the current session inputs.
+        const stampedResult = {
+          ...result,
+          inputsKey: sessionInputsKey(session.fields),
+        };
+        const nextFields = { ...session.fields, lastQuoteResult: stampedResult } as any;
         await ctx.supabase.from("quote_sessions").update({
           fields: nextFields,
           quote_status: result.status === "firm" ? "firm"
