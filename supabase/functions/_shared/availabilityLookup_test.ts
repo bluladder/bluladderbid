@@ -210,7 +210,7 @@ Deno.test("getAvailableSlots: preference_ambiguous short-circuits before engine 
 
 Deno.test("getAvailableSlots: happy path returns structured slots capped at MAX_OPTIONS and performs zero writes", async () => {
   const { sb, log } = makeSpySupabase({
-    conversation: { id: "c1", prospect_phone: "+14690000000", service_address: "720 Parkland Dr, Anywhere, TX", property_id: "prop-1" },
+    conversation: { id: "c1", prospect_phone: "+14690000000", service_address: "720 Parkland Dr, Anywhere, TX", property_id: "prop-1", quote_session_id: "qs-1" },
     session: {
       id: "qs-1",
       conversation_id: "c1",
@@ -281,7 +281,7 @@ Deno.test("getAvailableSlots: happy path returns structured slots capped at MAX_
 
 Deno.test("getAvailableSlots: engine reporting unavailable => schedule_drifted + refresh_schedule, no writes", async () => {
   const { sb, log } = makeSpySupabase({
-    conversation: { id: "c1", prospect_phone: "+14690000000", service_address: "x", property_id: "p1" },
+    conversation: { id: "c1", prospect_phone: "+14690000000", service_address: "x", property_id: "p1", quote_session_id: "qs-1" },
     session: {
       id: "qs-1", conversation_id: "c1",
       fields: {
