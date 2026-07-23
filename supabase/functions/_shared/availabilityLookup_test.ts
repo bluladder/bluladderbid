@@ -16,6 +16,9 @@ import {
   type AvailabilityFetcher,
 } from "./availabilityLookup.ts";
 import type { BookingReadiness } from "./bookingReadiness.ts";
+import type { AutonomousGateDecision } from "./autonomousSendGate.ts";
+
+const ALLOW_GATE: AutonomousGateDecision = { allow: true, actionClass: "scheduling" };
 
 // ---------- Spy Supabase ----------------------------------------------------
 interface WriteLog {
@@ -176,7 +179,7 @@ Deno.test("getAvailableSlots: readiness NOT ready → returns blockers, no engin
   let fetcherCalled = false;
   const fetcher: AvailabilityFetcher = async () => { fetcherCalled = true; return { status: 200, json: {} }; };
 
-  const res = await getAvailableSlots(sb as any, "c1", {}, { readinessOverride: readiness, fetcher });
+  const res = await getAvailableSlots(sb as any, "c1", {}, { readinessOverride: readiness, fetcher, gateOverride: ALLOW_GATE });
   assertEquals(res.status, "not_ready");
   assertEquals(res.slots.length, 0);
   assertEquals(res.next_action, "ask_for_email");
@@ -198,7 +201,7 @@ Deno.test("getAvailableSlots: preference_ambiguous short-circuits before engine 
   const res = await getAvailableSlots(
     sb as any, "c1",
     { preferred_day: "someday" },
-    { readinessOverride: readyReadiness(), fetcher },
+    { readinessOverride: readyReadiness(), fetcher, gateOverride: ALLOW_GATE },
   );
   assertEquals(res.status, "preference_ambiguous");
   assertEquals(fetcherCalled, false);
@@ -248,7 +251,7 @@ Deno.test("getAvailableSlots: happy path returns structured slots capped at MAX_
   const res = await getAvailableSlots(
     sb as any, "c1",
     { time_of_day: "morning", max_options: 10 },
-    { readinessOverride: readyReadiness(), fetcher },
+    { readinessOverride: readyReadiness(), fetcher, gateOverride: ALLOW_GATE },
   );
 
   assertEquals(res.status, "ok");
@@ -294,7 +297,7 @@ Deno.test("getAvailableSlots: engine reporting unavailable => schedule_drifted +
     status: 503,
     json: { availability_unavailable: true, reason: "stale", slots: [], recommendations: [] },
   });
-  const res = await getAvailableSlots(sb as any, "c1", {}, { readinessOverride: readyReadiness(), fetcher });
+  const res = await getAvailableSlots(sb as any, "c1", {}, { readinessOverride: readyReadiness(), fetcher, gateOverride: ALLOW_GATE });
   assertEquals(res.status, "engine_error");
   assertEquals(log.inserts.length + log.updates.length + log.upserts.length + log.rpc.length + log.invocations.length, 0);
 });
