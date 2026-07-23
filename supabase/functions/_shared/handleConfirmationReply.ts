@@ -98,6 +98,12 @@ const BOOKING_FAILED_BODY =
 const BOOKING_UNCERTAIN_BODY =
   "Thanks — I'm locking that in now. I'll send your confirmation as soon as it clears (usually under a minute).";
 
+// Phase 6B.1 — deterministic expired-hold response. Sent only when the
+// customer's reply is a recognisable YES/NO to a hold whose 8-minute window
+// already elapsed. Unclear replies still fall through to the AI orchestrator.
+const EXPIRED_HOLD_BODY =
+  "That 8-minute hold just expired. Reply here and I'll pull fresh times for you.";
+
 export async function handleConfirmationReply(
   supabase: SB,
   input: HandleConfirmationInput,
