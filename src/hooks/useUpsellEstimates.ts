@@ -46,8 +46,8 @@ function buildProbeInput(home: HomeDetails): QuoteInput {
       solarScreens: false,
       solarScreensPercent: 0,
       ladderWork: false,
-      ladderWorkCount: 0,
-      sunroom: false,
+      ladderWorkCount: '0',
+      sunroom: 'none',
     },
     additionalServices: {
       windowCleaning: true,
