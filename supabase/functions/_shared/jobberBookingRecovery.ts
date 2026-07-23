@@ -114,7 +114,7 @@ export async function findJobberJobByIdempotencyKey(
   let pagesScanned = 0;
 
   for (let i = 0; i < maxPages; i++) {
-    const result = await gql<JobsResponse>(JOBS_QUERY, {
+    const result: any = await gql<JobsResponse>(JOBS_QUERY, {
       after: cursor,
       createdAfter: opts.createdAfter.toISOString(),
     });
@@ -126,10 +126,10 @@ export async function findJobberJobByIdempotencyKey(
     if (result.errors && result.errors.length > 0) {
       return {
         outcome: "error",
-        detail: result.errors.map((e) => e.message).join("; ") || "graphql_error",
+        detail: result.errors.map((e: { message: string }) => e.message).join("; ") || "graphql_error",
       };
     }
-    const nodes = result.data?.jobs?.nodes ?? [];
+    const nodes: any[] = result.data?.jobs?.nodes ?? [];
     for (const node of nodes) {
       if (matchesIdempotencyRef(node.instructions, opts.idempotencyKey)) {
         return {
@@ -143,7 +143,7 @@ export async function findJobberJobByIdempotencyKey(
         };
       }
     }
-    const page = result.data?.jobs?.pageInfo;
+    const page: { hasNextPage: boolean; endCursor: string | null } | undefined = result.data?.jobs?.pageInfo;
     if (!page?.hasNextPage || !page.endCursor) {
       return { outcome: "not_found", pagesScanned };
     }
