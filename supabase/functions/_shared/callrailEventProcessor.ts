@@ -36,6 +36,8 @@ import {
 import { getPhoneByPurpose } from "./phoneConfig.ts";
 import { generateDraftReply, shouldAutoDraft } from "./draftReply.ts";
 import { evaluateAiSafetyGate, logGateDecision } from "./aiSafetyGate.ts";
+import { sendAutonomousCallRailSms } from "./autonomousSendGate.ts";
+import { readIdentityAnchor } from "./identityAnchor.ts";
 
 type Supa = any;
 
@@ -291,13 +293,19 @@ export async function processPersistedCallRailEvent(
           const callrail = getCallRailConfig();
           if (callrail) {
             const reply = renderBookingAutoReply({ firstName, quoteLink });
-            const result = await sendCallRailSms(callrail, phone, reply);
-            await supabase.from("sms_messages").insert({
-              to_number: phone, body: reply, message_kind: bookItSentinelKind,
-              status: result.ok ? "sent" : "failed",
-              provider_message_id: result.messageId ?? null,
-              error: result.ok ? null : result.error ?? null,
-              sent_at: result.ok ? new Date().toISOString() : null,
+            // Gated autonomous send. BOOK-IT is a canned auto-reply pointing
+            // the customer at the resume link — classified `informational`
+            // because it makes no customer-specific commitment and requires
+            // no identity anchor.
+            await sendAutonomousCallRailSms(supabase, {
+              conversationId: resolved?.conversationId ?? null,
+              phone,
+              actionClass: "informational",
+              body: reply,
+              callRail: callrail,
+              messageKind: bookItSentinelKind,
+              where: "callrailEventProcessor.bookItAutoReply",
+              extraLog: { provider_message_id: providerMessageId },
             });
           }
         } catch (e) {
@@ -343,15 +351,38 @@ export async function processPersistedCallRailEvent(
         supabase, phoneE164: phone, userMessage: content, providerMessageId,
       });
       if (callrail && result.reply && !bookedAlready) {
-        const send = await sendCallRailSms(callrail, phone, result.reply.slice(0, SMS_REPLY_MAX_CHARS));
-        await supabase.from("sms_messages").insert({
-          to_number: phone, body: result.reply, message_kind: aiKind,
-          status: send.ok ? "sent" : "failed",
-          provider_message_id: send.messageId ?? null,
-          error: send.ok ? null : send.error ?? null,
-          sent_at: send.ok ? new Date().toISOString() : null,
+        // Central send-boundary gate. Reads identity_anchor and classifies
+        // the outbound action so ambiguous threads can only send the ONE
+        // permitted email-disambiguation ask; any customer-specific
+        // scheduling / booking-advancing reply is blocked.
+        const identity = await readIdentityAnchor(
+          supabase,
+          result.conversationId || null,
+        );
+        const actionClass = identity.identity_status === "ambiguous"
+          ? "identity_resolution"
+          : "informational";
+        const messageKind = actionClass === "identity_resolution"
+          ? "ai_identity_resolution"
+          : aiKind;
+        const outcome = await sendAutonomousCallRailSms(supabase, {
+          conversationId: result.conversationId || null,
+          phone,
+          actionClass,
+          body: result.reply.slice(0, SMS_REPLY_MAX_CHARS),
+          callRail: callrail,
+          messageKind,
+          dedupeIdentityResolution: true,
+          where: "callrailEventProcessor.aiReply",
+          extraLog: {
+            provider_message_id: providerMessageId,
+            conversation_id: result.conversationId,
+          },
         });
-        return { action: send.ok ? "ai_replied" : "ai_reply_failed" };
+        if (!outcome.decision.allow) {
+          return { action: `ai_blocked:${outcome.decision.reason}` };
+        }
+        return { action: outcome.sent ? "ai_replied" : "ai_reply_failed" };
       }
       return { action: bookedAlready ? "book_it_handled" : "logged" };
     } catch (e) {
