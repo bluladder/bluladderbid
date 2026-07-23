@@ -170,7 +170,7 @@ export default function MyAppointments() {
         title: 'Check your phone',
         description: 'If that number is reachable, we texted you a 6-digit code from (469) 747-2877.',
       });
-      setStage('enter_code');
+      setStage('legacy_phone_code');
     } finally {
       setLoading(false);
     }
@@ -217,11 +217,11 @@ export default function MyAppointments() {
         title: 'Check your email',
         description: 'If that address is reachable, we sent a 6-digit code. It expires shortly.',
       });
-      setStage('enter_email_code');
+      setStage('legacy_email_code');
     } catch {
       // Generic — never reveal whether an account exists.
       toast({ title: 'Check your email', description: 'If that address is reachable, we sent a code.' });
-      setStage('enter_email_code');
+      setStage('legacy_email_code');
     } finally {
       setLoading(false);
     }
