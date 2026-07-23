@@ -376,10 +376,14 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
 // TOOL: create_bluladder_booking — explicit confirmation + prior slot required.
 // ---------------------------------------------------------------------------
 async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>) {
-  // Phase 4C-β voice-beta dry-run safeguard. The isolated voice test is not
-  // authorized to write real Jobber bookings. Enforced server-side (prompt
-  // language alone is not sufficient). Web and SMS channels are untouched.
-  if (ctx.channel === "voice") {
+  // Phase 7 (voice booking) MVP: voice channel is fail-closed by default and
+  // returns a dry-run receipt, matching the Phase 4C-β safeguard. Setting
+  // VOICE_LIVE_BOOKING_ENABLED=true unlocks the same booking pipeline used by
+  // SMS/web (identity, quote, reservation, executeSmsBooking, Jobber write,
+  // outbox confirmation). All Phase 6 guards (readiness, test-identity
+  // suppression, one-time live-Jobber authorization) continue to apply
+  // downstream, so flipping this flag alone can never bypass them.
+  if (ctx.channel === "voice" && !voiceLiveBookingEnabled()) {
     return {
       status: "voice_beta_dry_run",
       simulated: true,
