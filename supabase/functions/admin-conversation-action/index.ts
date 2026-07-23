@@ -45,13 +45,6 @@ serve(async (req) => {
   const service = isServiceRoleToken(bearer);
   const adminId = service ? null : await verifyAdmin(bearer, "operations_admin");
   if (!service && !adminId) return j({ error: "forbidden" }, 403);
-  // Service-role callers may only invoke read/regenerate actions. Every write
-  // that mutates conversation state (takeover, campaigns, replies) still
-  // requires an admin JWT so audit fields (staff_takeover_by, etc.) are real.
-  const SERVICE_ALLOWED: readonly string[] = ["generate_draft", "get_draft_context"];
-  if (service && !SERVICE_ALLOWED.includes(body?.action ?? "")) {
-    return j({ error: "forbidden" }, 403);
-  }
 
   const body = await req.json().catch(() => ({})) as {
     conversation_id?: string; action?: Action; note?: string;
@@ -62,6 +55,14 @@ serve(async (req) => {
   const action = body.action;
   if (!conversationId || !action || !VALID.includes(action)) {
     return j({ error: "invalid_request" }, 400);
+  }
+
+  // Service-role callers may only invoke read/regenerate actions. Every write
+  // that mutates conversation state (takeover, campaigns, replies) still
+  // requires an admin JWT so audit fields (staff_takeover_by, etc.) are real.
+  const SERVICE_ALLOWED: readonly Action[] = ["generate_draft", "get_draft_context"];
+  if (service && !SERVICE_ALLOWED.includes(action)) {
+    return j({ error: "forbidden" }, 403);
   }
 
   const supabase = createClient(
