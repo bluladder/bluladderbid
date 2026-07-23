@@ -205,15 +205,20 @@ export async function sendAutonomousCallRailSms(
     decision.allow &&
     input.actionClass === "identity_resolution" &&
     input.dedupeIdentityResolution !== false &&
-    input.conversationId
+    phoneNorm
   ) {
     try {
+      // Dedupe by (to_number, message_kind) within a 24h window — the
+      // sms_messages table has no conversation_id column so we scope by
+      // phone + message_kind, which is stable per thread.
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("sms_messages")
         .select("id")
-        .eq("conversation_id", input.conversationId)
+        .eq("to_number", phoneNorm)
         .eq("message_kind", input.messageKind)
         .in("status", ["sent", "queued", "pending"])
+        .gte("created_at", since)
         .limit(1)
         .maybeSingle();
       if (data?.id) {
@@ -281,7 +286,6 @@ export async function sendAutonomousCallRailSms(
     provider_message_id: result.messageId ?? null,
     error: result.ok ? null : result.error ?? null,
     sent_at: result.ok ? nowIso : null,
-    conversation_id: input.conversationId ?? null,
   });
   return {
     sent: result.ok,
