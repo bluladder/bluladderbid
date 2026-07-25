@@ -44,6 +44,18 @@ serve(async (req) => {
   const provider = (user.app_metadata as { provider?: string } | null)?.provider ?? "unknown";
   const service = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+  // The customers table requires a non-null email, and customer_accounts requires
+  // either verified_email or verified_phone. If the identity has no email
+  // (rare — some OAuth providers return no email), fail cleanly instead of
+  // hitting a NOT NULL / CHECK violation.
+  if (!authEmail) {
+    await service.from("customer_auth_link_events").insert({
+      auth_user_id: user.id, auth_email: null, auth_provider: provider,
+      outcome: "error", detail: "auth identity has no email",
+    });
+    return json({ error: "no_email", contact_support: true }, 400);
+  }
+
   // Idempotency: already linked → return.
   const { data: existing } = await service
     .from("customer_accounts")
@@ -88,6 +100,16 @@ serve(async (req) => {
         .single();
 
       if (updateErr || !updated) {
+        // A concurrent invocation may have already claimed this row for the
+        // same auth user; treat that as success instead of a hard 500.
+        const { data: reread } = await service
+          .from("customer_accounts")
+          .select("id, auth_user_id")
+          .eq("id", emailAccount.id)
+          .maybeSingle();
+        if (reread?.auth_user_id === user.id) {
+          return json({ status: "linked_existing", customer_account_id: reread.id });
+        }
         await service.from("customer_auth_link_events").insert({
           auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
           outcome: "error", customer_id: emailAccount.customer_id,
@@ -146,14 +168,28 @@ serve(async (req) => {
       .select("id")
       .single();
     if (cErr || !created) {
+      // customers.email is UNIQUE — a case/whitespace variant or a concurrent
+      // insert can race past the ilike lookup above. Re-query and reuse.
+      const { data: raced } = await service
+        .from("customers")
+        .select("id")
+        .ilike("email", authEmail)
+        .limit(1)
+        .maybeSingle();
+      if (raced?.id) {
+        customerId = raced.id;
+        outcome = "linked_existing";
+      } else {
       await service.from("customer_auth_link_events").insert({
         auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
         outcome: "error", detail: cErr?.message ?? "customer insert failed",
       });
       return json({ error: "link_failed" }, 500);
+      }
+    } else {
+      customerId = created.id;
+      outcome = "linked_new_account";
     }
-    customerId = created.id;
-    outcome = "linked_new_account";
   }
 
   const { data: acct, error: aErr } = await service
@@ -169,6 +205,17 @@ serve(async (req) => {
     .select("id")
     .single();
   if (aErr || !acct) {
+    // Race recovery: another concurrent call may have already inserted the
+    // customer_accounts row for this auth user or this verified email.
+    const { data: racedAcct } = await service
+      .from("customer_accounts")
+      .select("id, auth_user_id, verified_email")
+      .or(`auth_user_id.eq.${user.id},verified_email.eq.${authEmail}`)
+      .limit(1)
+      .maybeSingle();
+    if (racedAcct?.id) {
+      return json({ status: "already_linked", customer_account_id: racedAcct.id });
+    }
     await service.from("customer_auth_link_events").insert({
       auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
       outcome: "error", customer_id: customerId, detail: aErr?.message ?? "account insert failed",
