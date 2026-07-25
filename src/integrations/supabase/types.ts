@@ -6067,6 +6067,16 @@ export type Database = {
       }
       publish_pricing_version: { Args: { p_note?: string }; Returns: number }
       quote_has_real_services: { Args: { p: Json }; Returns: boolean }
+      reconcile_sms_booking_matched: {
+        Args: {
+          p_confirmation_id: string
+          p_execution_token: string
+          p_jobber_job_id: string
+          p_jobber_visit_id: string
+          p_reference_number: string
+        }
+        Returns: Json
+      }
       record_consent: {
         Args: {
           p_actor_id?: string
