@@ -137,24 +137,39 @@ export async function runSmsBookingReconciliation(
     });
 
     if (result.outcome === "matched") {
-      const { data: commit } = await supabase.rpc("commit_sms_booking_success", {
-        p_confirmation_id: row.id,
-        p_execution_token: executionToken,
-        p_presentation_id: null,
-        p_hold_group_id: row.slot_group_id,
-        p_booking_id: result.jobberJobId,
-        p_jobber_job_id: result.jobberJobId,
-        p_jobber_visit_id: result.jobberVisitId,
-        p_reference_number: result.referenceNumber,
-        p_booking_result: { reconciled: true },
-        p_provider_response: { reconciled: true, source: "jobber_search" },
-      });
+      // Use the reconciliation-specific RPC. commit_sms_booking_success
+      // requires a caller-supplied presentation_id and a UUID booking_id
+      // (local bookings.id) — neither of which reconciliation has. The
+      // reconcile RPC reads presentation_id from the ledger row and treats
+      // Jobber IDs as opaque strings.
+      const { data: commit, error: commitErr } = await supabase.rpc(
+        "reconcile_sms_booking_matched",
+        {
+          p_confirmation_id: row.id,
+          p_execution_token: executionToken,
+          p_jobber_job_id: result.jobberJobId,
+          p_jobber_visit_id: result.jobberVisitId,
+          p_reference_number: result.referenceNumber,
+        },
+      );
       const commitRes = (commit ?? {}) as any;
-      if (commitRes.ok === false) {
+      if (commitErr || commitRes.ok === false) {
+        // Requeue as reconcile-owned so the next tick retries. Keep the
+        // hold protected as 'executing' until we know the final outcome.
+        await supabase.rpc("mark_sms_booking_recoverable_failure", {
+          p_confirmation_id: row.id,
+          p_execution_token: executionToken,
+          p_failure_class: priorClass,
+          p_error_code: "reconcile_commit_denied",
+          p_last_error: commitErr?.message ?? commitRes.reason ?? "commit_denied",
+          p_provider_request: null,
+          p_provider_response: null,
+          p_reconciliation_status: "pending",
+        });
         outcomes.push({
           confirmationId: row.id,
           decision: "commit_denied",
-          detail: commitRes.reason ?? "commit_denied",
+          detail: commitErr?.message ?? commitRes.reason ?? "commit_denied",
         });
         continue;
       }
