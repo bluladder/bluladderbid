@@ -25,8 +25,13 @@ function makeSupabaseStub(opts: {
       if (name === "claim_sms_booking_execution") {
         return { data: opts.claim ?? { ok: true }, error: null };
       }
-      if (name === "commit_sms_booking_success") {
-        return { data: opts.commit ?? { ok: true }, error: null };
+      if (name === "reconcile_sms_booking_matched") {
+        const c = opts.commit ?? { ok: true };
+        // Allow tests to inject a Postgres-level rejection via opts.commit.error.
+        if ((c as any).__error) {
+          return { data: null, error: { message: (c as any).__error } };
+        }
+        return { data: c, error: null };
       }
       return { data: { ok: true }, error: null };
     },
@@ -54,7 +59,47 @@ Deno.test("reconcile: matched → commit_sms_booking_success called", async () =
   const r = await runSmsBookingReconciliation(supabase as any, { recovery });
   assertEquals(r.outcomes[0].decision, "matched_committed");
   const names = rpcLog.map((x) => x.name);
-  assertEquals(names.includes("commit_sms_booking_success"), true);
+  assertEquals(names.includes("reconcile_sms_booking_matched"), true);
+  // Never call the SMS-flow commit RPC from reconciliation.
+  assertEquals(names.includes("commit_sms_booking_success"), false);
+});
+
+Deno.test("reconcile: matched but RPC rejected → commit_denied + requeued", async () => {
+  const rpcLog: any[] = [];
+  const supabase = makeSupabaseStub({
+    rows: [baseRow],
+    commit: { __error: "invalid input syntax for type uuid" } as any,
+    rpcLog,
+  });
+  const recovery = async (): Promise<RecoveryResult> => ({
+    outcome: "matched",
+    jobberJobId: "gid://Jobber/Job/123",
+    jobberVisitId: "gid://Jobber/Visit/9",
+    referenceNumber: "42",
+  });
+  const r = await runSmsBookingReconciliation(supabase as any, { recovery });
+  assertEquals(r.outcomes[0].decision, "commit_denied");
+  const mark = rpcLog.find((x) => x.name === "mark_sms_booking_recoverable_failure");
+  assertEquals(mark?.args?.p_error_code, "reconcile_commit_denied");
+  assertEquals(mark?.args?.p_failure_class, "external_outcome_unknown");
+});
+
+Deno.test("reconcile: matched but ok:false → commit_denied + requeued", async () => {
+  const rpcLog: any[] = [];
+  const supabase = makeSupabaseStub({
+    rows: [baseRow],
+    commit: { ok: false, reason: "not_executing" },
+    rpcLog,
+  });
+  const recovery = async (): Promise<RecoveryResult> => ({
+    outcome: "matched",
+    jobberJobId: "J1",
+    jobberVisitId: "V1",
+    referenceNumber: "R1",
+  });
+  const r = await runSmsBookingReconciliation(supabase as any, { recovery });
+  assertEquals(r.outcomes[0].decision, "commit_denied");
+  assertEquals(r.outcomes[0].detail, "not_executing");
 });
 
 Deno.test("reconcile: not_found → verified_not_created + released", async () => {
