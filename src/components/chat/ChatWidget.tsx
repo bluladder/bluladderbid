@@ -1,15 +1,25 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageCircle, X, Send, Loader2, RotateCcw, Phone } from 'lucide-react';
+import { MessageCircle, X, Send, Loader2, RotateCcw, Phone, Flag, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import { PRIMARY_PUBLIC_PHONE } from '@/config/contact';
 
-type Msg = { role: 'user' | 'assistant'; content: string };
+type Msg = {
+  role: 'user' | 'assistant';
+  content: string;
+  // Server-issued provenance handles, populated only for assistant replies from
+  // the current session. Older transcripts loaded from localStorage may be
+  // missing these — the Report button falls back to sending the answer text.
+  assistantMessageId?: string | null;
+  conversationId?: string | null;
+  reported?: boolean;
+};
 
 // The browser talks ONLY to the server-side ai-chat orchestrator. All pricing,
 // availability and booking logic lives behind allowlisted server tools.
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
+const FEEDBACK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/knowledge-feedback`;
 
 const SESSION_KEY = 'bluladder_chat_session';
 const MESSAGES_KEY = 'bluladder_chat_messages';
@@ -43,7 +53,11 @@ function loadStoredMessages(): Msg[] {
   }
 }
 
-async function sendChat(sessionToken: string, message: string, marketingConsent: boolean): Promise<string> {
+async function sendChat(sessionToken: string, message: string, marketingConsent: boolean): Promise<{
+  reply: string;
+  assistantMessageId: string | null;
+  conversationId: string | null;
+}> {
   const resp = await fetch(CHAT_URL, {
     method: 'POST',
     headers: {
@@ -60,7 +74,33 @@ async function sendChat(sessionToken: string, message: string, marketingConsent:
   });
   const data = await resp.json().catch(() => ({ error: 'Connection failed' }));
   if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
-  return data.reply as string;
+  return {
+    reply: (data.reply as string) ?? '',
+    assistantMessageId: (data.assistantMessageId as string | null) ?? null,
+    conversationId: (data.conversationId as string | null) ?? null,
+  };
+}
+
+// Fire-and-forget "Report bad answer" — the server pulls provenance from the
+// message row so the client never sees which knowledge records were used.
+async function reportBadAnswer(payload: {
+  conversationId: string | null;
+  messageId: string | null;
+  answerText: string;
+}): Promise<boolean> {
+  try {
+    const resp = await fetch(FEEDBACK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
 }
 
 export default function ChatWidget() {
@@ -112,8 +152,12 @@ export default function ChatWidget() {
     setIsLoading(true);
 
     try {
-      const reply = await sendChat(sessionRef.current, text, marketingConsent);
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      const res = await sendChat(sessionRef.current, text, marketingConsent);
+      setMessages(prev => [...prev, {
+        role: 'assistant', content: res.reply,
+        assistantMessageId: res.assistantMessageId,
+        conversationId: res.conversationId,
+      }]);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'please try again';
       setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, something went wrong: ${msg}` }]);
@@ -153,10 +197,31 @@ export default function ChatWidget() {
     setMessages(prev => [...prev, { role: 'user', content: text }]);
     setIsLoading(true);
     sendChat(sessionRef.current, text, marketingConsent)
-      .then(reply => setMessages(prev => [...prev, { role: 'assistant', content: reply }]))
+      .then(res => setMessages(prev => [...prev, {
+        role: 'assistant', content: res.reply,
+        assistantMessageId: res.assistantMessageId,
+        conversationId: res.conversationId,
+      }]))
       .catch(() => setMessages(prev => [...prev, { role: 'assistant', content: `I couldn't reach the team just now — please call us at ${PRIMARY_PUBLIC_PHONE.display}.` }]))
       .finally(() => { setIsLoading(false); inputRef.current?.focus(); });
   }, [isLoading, marketingConsent]);
+
+  // Report a specific assistant answer as bad. Idempotency lives on the server;
+  // locally we flip the message's `reported` flag so the button reflects state.
+  const reportMessage = useCallback(async (index: number) => {
+    const target = messages[index];
+    if (!target || target.role !== 'assistant' || target.reported) return;
+    // Optimistically mark reported so double-clicks don't double-file.
+    setMessages(prev => prev.map((m, i) => i === index ? { ...m, reported: true } : m));
+    const ok = await reportBadAnswer({
+      conversationId: target.conversationId ?? null,
+      messageId: target.assistantMessageId ?? null,
+      answerText: target.content,
+    });
+    if (!ok) {
+      setMessages(prev => prev.map((m, i) => i === index ? { ...m, reported: false } : m));
+    }
+  }, [messages]);
 
   return (
     <>
@@ -213,20 +278,34 @@ export default function ChatWidget() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.map((msg, i) => (
               <div key={i} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-                <div
-                  className={cn(
-                    'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
-                    msg.role === 'user'
-                      ? 'bg-primary text-primary-foreground rounded-br-md'
-                      : 'bg-muted text-foreground rounded-bl-md'
-                  )}
-                >
-                  {msg.role === 'assistant' ? (
-                    <div className="prose prose-sm max-w-none dark:prose-invert [&>p]:mb-1.5 [&>p:last-child]:mb-0 [&>ul]:mb-1.5 [&>ul]:pl-4">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <p>{msg.content}</p>
+                <div className={cn('flex flex-col max-w-[85%]', msg.role === 'user' ? 'items-end' : 'items-start')}>
+                  <div
+                    className={cn(
+                      'rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
+                      msg.role === 'user'
+                        ? 'bg-primary text-primary-foreground rounded-br-md'
+                        : 'bg-muted text-foreground rounded-bl-md'
+                    )}
+                  >
+                    {msg.role === 'assistant' ? (
+                      <div className="prose prose-sm max-w-none dark:prose-invert [&>p]:mb-1.5 [&>p:last-child]:mb-0 [&>ul]:mb-1.5 [&>ul]:pl-4">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p>{msg.content}</p>
+                    )}
+                  </div>
+                  {msg.role === 'assistant' && msg.content && !msg.content.startsWith('Sorry, something went wrong') && (
+                    <button
+                      type="button"
+                      onClick={() => void reportMessage(i)}
+                      disabled={msg.reported}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-70 disabled:cursor-default"
+                      aria-label={msg.reported ? 'Reported for review' : 'Report this answer'}
+                      title={msg.reported ? 'Thanks — Ben will review this.' : 'Report a bad answer'}
+                    >
+                      {msg.reported ? (<><Check className="w-3 h-3" /> Reported — thanks</>) : (<><Flag className="w-3 h-3" /> Report bad answer</>)}
+                    </button>
                   )}
                 </div>
               </div>
