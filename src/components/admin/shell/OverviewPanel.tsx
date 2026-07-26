@@ -53,7 +53,7 @@ export function OverviewPanel({ onNavigate }: { onNavigate?: (section: string) =
         supabase
           .from("chat_conversations")
           .select("id", { count: "exact", head: true })
-          .is("closed_at", null),
+          .eq("resolved", false),
         supabase
           .from("knowledge_gaps")
           .select("id", { count: "exact", head: true })
