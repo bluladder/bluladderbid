@@ -14,6 +14,87 @@ export type Database = {
   }
   public: {
     Tables: {
+      action_inbox_items: {
+        Row: {
+          booking_id: string | null
+          conversation_id: string | null
+          created_at: string
+          customer_id: string | null
+          dedupe_key: string | null
+          due_at: string | null
+          id: string
+          knowledge_gap_id: string | null
+          knowledge_key: string | null
+          metadata: Json
+          owner_user_id: string | null
+          priority: Database["public"]["Enums"]["action_inbox_priority"]
+          quote_id: string | null
+          recommended_action: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          snooze_until: string | null
+          source_channel: string | null
+          status: Database["public"]["Enums"]["action_inbox_status"]
+          suggested_response: string | null
+          summary: string | null
+          title: string
+          type: Database["public"]["Enums"]["action_inbox_type"]
+          updated_at: string
+        }
+        Insert: {
+          booking_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          dedupe_key?: string | null
+          due_at?: string | null
+          id?: string
+          knowledge_gap_id?: string | null
+          knowledge_key?: string | null
+          metadata?: Json
+          owner_user_id?: string | null
+          priority?: Database["public"]["Enums"]["action_inbox_priority"]
+          quote_id?: string | null
+          recommended_action?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          snooze_until?: string | null
+          source_channel?: string | null
+          status?: Database["public"]["Enums"]["action_inbox_status"]
+          suggested_response?: string | null
+          summary?: string | null
+          title: string
+          type: Database["public"]["Enums"]["action_inbox_type"]
+          updated_at?: string
+        }
+        Update: {
+          booking_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          dedupe_key?: string | null
+          due_at?: string | null
+          id?: string
+          knowledge_gap_id?: string | null
+          knowledge_key?: string | null
+          metadata?: Json
+          owner_user_id?: string | null
+          priority?: Database["public"]["Enums"]["action_inbox_priority"]
+          quote_id?: string | null
+          recommended_action?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          snooze_until?: string | null
+          source_channel?: string | null
+          status?: Database["public"]["Enums"]["action_inbox_status"]
+          suggested_response?: string | null
+          summary?: string | null
+          title?: string
+          type?: Database["public"]["Enums"]["action_inbox_type"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ai_escalations: {
         Row: {
           alert_count: number
@@ -6283,6 +6364,25 @@ export type Database = {
       update_autosync_coverage: { Args: never; Returns: undefined }
     }
     Enums: {
+      action_inbox_priority: "low" | "normal" | "high" | "urgent"
+      action_inbox_status:
+        | "open"
+        | "in_progress"
+        | "snoozed"
+        | "resolved"
+        | "dismissed"
+      action_inbox_type:
+        | "knowledge_gap"
+        | "low_confidence_answer"
+        | "reported_bad_answer"
+        | "missed_call_followup"
+        | "promised_callback"
+        | "email_draft_review"
+        | "complaint_or_risk"
+        | "quote_followup"
+        | "content_recommendation"
+        | "policy_conflict"
+        | "integration_error"
       app_role:
         | "admin"
         | "user"
@@ -6469,6 +6569,27 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      action_inbox_priority: ["low", "normal", "high", "urgent"],
+      action_inbox_status: [
+        "open",
+        "in_progress",
+        "snoozed",
+        "resolved",
+        "dismissed",
+      ],
+      action_inbox_type: [
+        "knowledge_gap",
+        "low_confidence_answer",
+        "reported_bad_answer",
+        "missed_call_followup",
+        "promised_callback",
+        "email_draft_review",
+        "complaint_or_risk",
+        "quote_followup",
+        "content_recommendation",
+        "policy_conflict",
+        "integration_error",
+      ],
       app_role: [
         "admin",
         "user",

@@ -1,62 +1,74 @@
-# Fix: Reconciliation silently fails to finalize bookings recovered from Jobber
+# Customer Intelligence + Admin Portal — Staged Plan
 
-## Confirmed root causes (in `supabase/functions/_shared/smsBookingReconcile.ts` matched branch)
+## Reality check
 
-1. **Wrong `p_presentation_id`** — passes `null`. The RPC `commit_sms_booking_success` compares against `v_row.presentation_id` (set at insert time) and returns `presentation_mismatch`.
-2. **Wrong `p_booking_id`** — passes the Jobber GraphQL node id (opaque base64) into a UUID-typed parameter. Postgres rejects the call at parameter binding; the RPC body never runs.
-3. **Silent failure** — the call site reads only `data`, never `error`. A rejected RPC returns `data: null`, so `commitRes.ok === false` is skipped and the row is reported as `matched_committed`. The ledger stays in `executing` forever (subsequent ticks only scan `failed_recoverable`), the reservation stays in `executing` protection, and no confirmation SMS is emitted.
-4. **Matched branch never consumes/releases the reservation protection**, unlike `not_found`/`error` branches.
-5. **Matched branch never emits the customer "You're booked" outbox SMS** — that message normally fires from `handleConfirmationReply` after a normal commit, which reconciliation bypasses.
+The scope you sent spans 11 major systems (admin shell, action inbox, knowledge-gap automation, lead attribution end-to-end, CallRail intelligence + webhooks, missed-call/promise tracking, Gmail assistant with OAuth, KPI reporting engine, content recommendations, customer 360, policy conflict detector) plus tests. Every one of those is a multi-day slice on this codebase (63-column bookings table, 90+ tables, dozens of edge functions already in flight).
 
-## Fix
+Doing it "in one coherent pass" would produce thin scaffolding everywhere and near-guaranteed regressions in the live booking, SMS, and campaign flows. I want to build this well, not everywhere-at-once.
 
-### 1. New migration: `reconcile_sms_booking_matched` RPC
+I'm asking for approval on staged delivery. Each phase is a single implementation pass with tests, ends in a working state, and doesn't block the ones after it.
 
-Dedicated to reconciliation — the shape mismatch with `commit_sms_booking_success` is intentional (no local `bookings` row, no presentation from the caller).
+## Proposed phases
 
-Behavior:
-- `SELECT ... FOR UPDATE` the ledger row.
-- Idempotent replay: if `status IN ('local_committed','confirmation_pending','confirmed')` and `jobber_job_id = p_jobber_job_id`, return `{ ok: true, idempotent: true, ... }`.
-- Require `status = 'executing'` and `execution_token = p_execution_token`, else return typed reason.
-- Use the row's own `presentation_id` and `slot_group_id` — do not accept them from the caller.
-- Update ledger: `status = 'local_committed'`, set `jobber_job_id`, `jobber_visit_id`, `reference_number`, `booking_result`, `provider_response = { reconciled: true, source: 'jobber_search' }`, `booked_at`, `local_committed_at`. Leave `booking_id` NULL (no local bookings row exists — reconciliation only has Jobber IDs).
-- Consume the presentation hold (`sms_availability_presentations.status = 'consumed'`, `hold_status = 'consumed'`, `hold_released_at`, `hold_release_reason = 'consumed_by_reconciliation'`).
-- Consume the underlying `slot_reservations` row for `slot_group_id`: transition `executing`/`held` → `consumed` (matches semantics used by the normal commit path).
-- REVOKE from PUBLIC/anon/authenticated, GRANT EXECUTE to service_role.
+**Phase 1 — Admin shell + Overview + Action Inbox (data model + UI)**
+- New `/admin` shell with left nav (Overview, Action Inbox, Leads, Conversations, Knowledge, Email Drafts, Reports, Integrations, Settings). Existing tabs move into the shell — no capability removed.
+- `action_inbox_items` table (all 11 types, priority/status/snooze/owner/metadata, admin RLS).
+- Overview cards wired to real counts (leads, bookings, close rate, open actions, unresolved gaps).
+- Action Inbox list + detail with filters, bulk resolve, source links.
 
-### 2. `smsBookingReconcile.ts` matched branch
+**Phase 2 — Lead attribution end-to-end**
+- Schema: `self_reported_source`, `self_reported_source_detail`, `attribution_*`, first/last touch on `quote_sessions`, `quotes`, `bookings`, `customers`.
+- `lead_sources` admin table (aliases, grouping, active flag, seed defaults).
+- Booking flow: required-with-skip lead source step + "Other" custom text.
+- Jobber sync audit + safest mapping (custom field or note), sync status surfaced in Admin.
+- Tests: capture, normalization, Jobber idempotency, fallback.
 
-Replace the `commit_sms_booking_success` call with `reconcile_sms_booking_matched`. Read **both** `data` and `error`:
+**Phase 3 — Knowledge-gap automation + notification routing**
+- `knowledge_gaps` classification (7 reasons), dedup, escalation.
+- Hook into orchestrator low-confidence path → creates gap + Action Inbox item.
+- Notification service using existing SMS/email infra, admin preferences, safe-disabled state.
+- Immediate vs digest routing rules.
 
-```ts
-const { data: commit, error: commitErr } = await supabase.rpc(
-  "reconcile_sms_booking_matched",
-  { p_confirmation_id: row.id, p_execution_token: executionToken,
-    p_jobber_job_id: result.jobberJobId,
-    p_jobber_visit_id: result.jobberVisitId,
-    p_reference_number: result.referenceNumber });
-if (commitErr || (commit as any)?.ok === false) {
-  outcomes.push({ confirmationId: row.id, decision: "commit_denied",
-    detail: commitErr?.message ?? (commit as any)?.reason ?? "commit_denied" });
-  // Requeue as reconcile-owned so we try again next tick.
-  await supabase.rpc("mark_sms_booking_recoverable_failure", { ... priorClass ... });
-  continue;
-}
-```
+**Phase 4 — CallRail conversation intelligence**
+- `callrail_calls`, `conversation_transcripts`, `conversation_insights`, `promises` (idempotent on CallRail call ID).
+- Webhook ingestion + reconciliation cron for late transcripts.
+- Insights extraction (intent, objections, promises, risk flags) via existing AI orchestrator.
+- Conversations admin page with actions ("Create knowledge record", etc.).
 
-After a successful commit, enqueue the customer confirmation SMS via the existing outbox path used by `handleConfirmationReply` (same rendering + `bookingTimezone` resolution + `claim_sms_outbox_send`/`finalize_sms_outbox_send`), keyed by an idempotency string like `reconcile:<confirmationId>:confirm-sms`.
+**Phase 5 — Missed-call recovery + promise tracking**
+- Missed-call → Action Inbox item + suggested SMS draft (no auto-send).
+- Overdue promise flagging.
 
-### 3. Tests
+**Phase 6 — Gmail draft assistant (code-complete, gated)**
+- Integrations > Gmail setup screen; verifies mailbox == ben@bluladder.com.
+- `email_threads`, `email_drafts` schema; classification + draft generation service.
+- Email Drafts admin page (edit/approve/dismiss/owner-needed).
+- Full functional path behind "Connect ben@bluladder.com" disabled state until OAuth secrets provided. I'll list exact secrets needed.
 
-- Update `smsBookingReconcile_test.ts`:
-  - Matched branch now calls `reconcile_sms_booking_matched` (assert RPC name + args).
-  - Simulate rpc `error` — assert decision is `commit_denied`, not `matched_committed`.
-  - Simulate rpc `{ ok: false, reason: 'not_executing' }` — same.
-  - Assert the confirmation outbox enqueue is invoked exactly once on success and is idempotent on replay.
-- Migration smoke via existing test infra if applicable.
+**Phase 7 — Reporting + KPIs + scheduling**
+- `marketing_spend`, `report_runs`, `report_artifacts`.
+- Aggregation service for all listed KPIs, channel breakdown, WoW/MoM/QoQ/YoY.
+- Weekly + monthly cron; archived Reports page; email to ben@bluladder.com when email is configured.
 
-## Out of scope
+**Phase 8 — Content recommendations + Customer 360 + policy-conflict detector**
+- `content_recommendations` with clustering/dedup.
+- Customer timeline view combining calls, texts, emails, quotes, bookings, appointments, AI chats, actions.
+- Policy-conflict detector across transcripts, templates, KB, website-synced knowledge → Action Inbox items.
 
-- Any change to `commit_sms_booking_success` (still used by the normal handleConfirmationReply path with correct args).
-- Broader Jobber recovery search behavior (`jobberBookingRecovery.ts` is unchanged).
-- Any change to the not_found / error branches (already correct).
+## Cross-cutting rules (applied every phase)
+
+- Idempotent migrations; no data loss; no infra migration; no publish/deploy.
+- Draft/recommendation-only for all customer-facing automation.
+- Admin RLS on every new table; rate limits + idempotency on all webhooks/ingestion.
+- Typecheck + production build + focused tests must stay green.
+- Final honest audit each phase: what works, what's awaiting credentials, exact manual setup steps.
+
+## Ask
+
+Reply with one of:
+1. **"Go phase 1"** — I start on the admin shell + Action Inbox now, ship it end-to-end with tests, then stop and wait for your review before phase 2.
+2. **"Reorder to X first"** — tell me which phase to lead with (e.g., attribution is the highest business ROI; CallRail intelligence is the biggest unlock).
+3. **"Compress to N phases"** — I'll merge and tell you exactly what gets thinner.
+4. **"Just do everything, thin is fine"** — I'll do one shallow pass across all 11 areas with schema + skeleton UI + no deep logic, and be explicit that most of it is scaffolding.
+
+Default recommendation: **Go phase 1**, then attribution (phase 2), then CallRail (phase 4) — those three unlock the Action Inbox, the reporting numbers, and the intelligence feed everything else depends on.
