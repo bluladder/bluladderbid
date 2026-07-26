@@ -106,6 +106,12 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
                   View Site
                 </Link>
               </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/admin/knowledge">
+                  <ClipboardList className="w-4 h-4 mr-2" />
+                  Knowledge Base
+                </Link>
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => signOut()}>
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign Out
