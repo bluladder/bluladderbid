@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Admin from "./pages/Admin";
+import KnowledgeBaseAdmin from "./pages/KnowledgeBaseAdmin";
 import Services from "./pages/Services";
 import ServiceLanding from "./pages/ServiceLanding";
 import PlanBuilder from "./pages/PlanBuilder";
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/jobber" element={<Admin initialTab="integrations" />} />
+          <Route path="/admin/knowledge" element={<KnowledgeBaseAdmin />} />
           <Route path="/services" element={<Services />} />
           <Route path="/plan-builder" element={<PlanBuilder />} />
           <Route path="/quote/:id" element={<QuoteView />} />
@@ -40,20 +42,17 @@ const App = () => (
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/confirm-change" element={<ConfirmChange />} />
           <Route path="/preferences" element={<MessagePreferences />} />
-          {/* Service-specific landing pages */}
           <Route path="/window-cleaning" element={<ServiceLanding />} />
           <Route path="/gutter-cleaning" element={<ServiceLanding />} />
           <Route path="/house-wash" element={<ServiceLanding />} />
           <Route path="/roof-cleaning" element={<ServiceLanding />} />
           <Route path="/driveway-cleaning" element={<ServiceLanding />} />
           <Route path="/pressure-washing" element={<ServiceLanding />} />
-          {/* Generic service route (catches any service slug) */}
           <Route path="/:service" element={<ServiceLanding />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        <ChatWidget />
       </BrowserRouter>
-      <ChatWidget />
     </TooltipProvider>
   </QueryClientProvider>
 );
