@@ -102,9 +102,12 @@ Deno.serve(async (req) => {
       state: result.state ?? null,
       channel: "web" as const,
     };
-    await supabase.from("chat_messages").insert({
-      conversation_id: convo.id, role: "assistant", content: result.reply, ai_metadata: aiMetadata,
-    });
+    const { data: insertedAssistant } = await supabase
+      .from("chat_messages")
+      .insert({ conversation_id: convo.id, role: "assistant", content: result.reply, ai_metadata: aiMetadata })
+      .select("id")
+      .single();
+    const assistantMessageId = insertedAssistant?.id ?? null;
     await supabase.from("chat_conversations").update({ last_activity_at: new Date().toISOString() }).eq("id", convo.id);
 
     // chat_lead_created — emitted ONCE per conversation, only after the chat has
@@ -179,7 +182,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ reply: result.reply, events: result.events, state: result.state });
+    return json({
+      reply: result.reply,
+      events: result.events,
+      state: result.state,
+      // Provenance handles for the "Report bad answer" flow. The client never
+      // sees which knowledge records were retrieved — only the opaque IDs it
+      // needs to file a report against this specific answer.
+      conversationId: convo.id,
+      assistantMessageId,
+    });
   } catch (e) {
     console.error("ai-chat error:", e instanceof Error ? e.message : e);
     return json({ error: "Something went wrong. Please try again." }, 500);
