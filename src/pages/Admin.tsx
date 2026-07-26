@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useIsAdmin, useAuth } from '@/hooks/useAuth';
 import { AdminLogin } from '@/components/admin/AdminLogin';
 import { BookingsManager } from '@/components/admin/BookingsManager';
@@ -10,8 +10,8 @@ import { IntegrationsTabContent } from '@/components/admin/IntegrationsTabConten
 import { PricingTabContent } from '@/components/admin/PricingTabContent';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogOut, Home, ShieldX, ClipboardList, Phone, BarChart3, Users, Plug, DollarSign, ShieldCheck, MessageSquare, Activity } from 'lucide-react';
+import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { LogOut, Home, ShieldX, Mail, FileBarChart } from 'lucide-react';
 import { CustomerAccessLiveTestsPanel } from '@/components/admin/security/CustomerAccessLiveTestsPanel';
 import { SecurityErrorBoundary } from '@/components/admin/security/SecurityErrorBoundary';
 import { ConversationsTabContent } from '@/components/admin/conversations/ConversationsTabContent';
@@ -20,19 +20,41 @@ import { OpsAlertsPanel } from '@/components/admin/ops/OpsAlertsPanel';
 import { EmailSuppressionsPanel } from '@/components/admin/ops/EmailSuppressionsPanel';
 import { CallRailDurabilityPanel } from '@/components/admin/ops/CallRailDurabilityPanel';
 import { CampaignLaunchControlsPanel } from '@/components/admin/ops/CampaignLaunchControlsPanel';
-import { Link } from 'react-router-dom';
+import { AdminSidebar, type AdminSection } from '@/components/admin/shell/AdminSidebar';
+import { OverviewPanel } from '@/components/admin/shell/OverviewPanel';
+import { ActionInboxPanel } from '@/components/admin/shell/ActionInboxPanel';
+import { PlaceholderPanel } from '@/components/admin/shell/PlaceholderPanel';
+import { useActionInboxCount } from '@/hooks/useActionInboxCount';
+
+const TAB_TO_SECTION: Record<string, AdminSection> = {
+  ops: 'ops',
+  conversations: 'conversations',
+  bookings: 'bookings',
+  scheduling: 'scheduling',
+  analytics: 'analytics',
+  crew: 'crew',
+  integrations: 'integrations',
+  pricing: 'pricing',
+  security: 'security',
+};
+
+function resolveSection(raw: string | null | undefined): AdminSection {
+  if (!raw) return 'overview';
+  if (TAB_TO_SECTION[raw]) return TAB_TO_SECTION[raw];
+  return raw as AdminSection;
+}
 
 export default function Admin({ initialTab }: { initialTab?: string }) {
   const { isAdmin, loading, user } = useIsAdmin();
   const { signOut } = useAuth();
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(initialTab || searchParams.get('tab') || 'bookings');
+  const [section, setSection] = useState<AdminSection>(
+    resolveSection(initialTab ?? searchParams.get('tab')),
+  );
+  const inboxCount = useActionInboxCount();
 
-  // Update tab when initialTab prop changes
   useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
+    if (initialTab) setSection(resolveSection(initialTab));
   }, [initialTab]);
 
   // Show login if not authenticated
@@ -86,138 +108,79 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
     );
   }
 
-  // Show admin panel
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card sticky top-0 z-50">
-        <div className="container py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-display font-bold text-primary">
+    <SidebarProvider>
+      <div className="min-h-screen flex w-full bg-background">
+        <AdminSidebar active={section} onSelect={setSection} inboxCount={inboxCount} />
+
+        <div className="flex-1 flex flex-col min-w-0">
+          <header className="h-14 flex items-center gap-3 border-b border-border bg-card px-4 sticky top-0 z-40">
+            <SidebarTrigger />
+            <div className="flex-1 min-w-0">
+              <h1 className="text-base font-display font-semibold text-primary truncate">
                 BluLadder Admin
               </h1>
-              <p className="text-xs text-muted-foreground">Management Portal</p>
             </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-muted-foreground">{user?.email}</span>
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/">
-                  <Home className="w-4 h-4 mr-2" />
-                  View Site
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/knowledge">
-                  <ClipboardList className="w-4 h-4 mr-2" />
-                  Knowledge Base
-                </Link>
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => signOut()}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
-              </Button>
+            <span className="text-xs text-muted-foreground hidden sm:inline truncate max-w-[200px]">
+              {user?.email}
+            </span>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/">
+                <Home className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">View Site</span>
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => signOut()}>
+              <LogOut className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </Button>
+          </header>
+
+          <main className="flex-1 p-6 overflow-x-hidden">
+            <div className="max-w-6xl mx-auto">
+              {section === 'overview' && <OverviewPanel onNavigate={(s) => setSection(s as AdminSection)} />}
+              {section === 'inbox' && <ActionInboxPanel />}
+              {section === 'ops' && (
+                <div className="space-y-6">
+                  <OpsHealthPanel />
+                  <OpsAlertsPanel />
+                  <CampaignLaunchControlsPanel />
+                  <EmailSuppressionsPanel />
+                  <CallRailDurabilityPanel />
+                </div>
+              )}
+              {section === 'conversations' && <ConversationsTabContent />}
+              {section === 'bookings' && <BookingsManager />}
+              {section === 'scheduling' && <SchedulingPortal />}
+              {section === 'analytics' && <AnalyticsTabContent />}
+              {section === 'crew' && <CrewTabContent />}
+              {section === 'integrations' && <IntegrationsTabContent />}
+              {section === 'pricing' && <PricingTabContent />}
+              {section === 'security' && (
+                <SecurityErrorBoundary>
+                  <CustomerAccessLiveTestsPanel />
+                </SecurityErrorBoundary>
+              )}
+              {section === 'email-drafts' && (
+                <PlaceholderPanel
+                  icon={Mail}
+                  title="Email Drafts"
+                  phase="Phase 6 · Coming soon"
+                  description="Ben's Gmail assistant will surface drafted replies here once ben@bluladder.com is connected. Nothing sends automatically — every reply lands here for review."
+                />
+              )}
+              {section === 'reports' && (
+                <PlaceholderPanel
+                  icon={FileBarChart}
+                  title="Reports"
+                  phase="Phase 7 · Coming soon"
+                  description="Weekly and monthly KPI reports with channel breakdown and period-over-period comparisons will publish here on schedule."
+                />
+              )}
             </div>
-          </div>
+          </main>
         </div>
-      </header>
-
-      <main className="container py-8">
-        <div className="max-w-6xl mx-auto">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-9 mb-6">
-              <TabsTrigger value="ops" className="flex items-center gap-2">
-                <Activity className="w-4 h-4" />
-                <span className="hidden sm:inline">Ops</span>
-              </TabsTrigger>
-              <TabsTrigger value="conversations" className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4" />
-                <span className="hidden sm:inline">Conversations</span>
-              </TabsTrigger>
-              <TabsTrigger value="bookings" className="flex items-center gap-2">
-                <ClipboardList className="w-4 h-4" />
-                <span className="hidden sm:inline">Bookings</span>
-              </TabsTrigger>
-              <TabsTrigger value="scheduling" className="flex items-center gap-2">
-                <Phone className="w-4 h-4" />
-                <span className="hidden sm:inline">Scheduling</span>
-              </TabsTrigger>
-              <TabsTrigger value="analytics" className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4" />
-                <span className="hidden sm:inline">Analytics</span>
-              </TabsTrigger>
-              <TabsTrigger value="crew" className="flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                <span className="hidden sm:inline">Crew</span>
-              </TabsTrigger>
-              <TabsTrigger value="integrations" className="flex items-center gap-2">
-                <Plug className="w-4 h-4" />
-                <span className="hidden sm:inline">Integrations</span>
-              </TabsTrigger>
-              <TabsTrigger value="pricing" className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4" />
-                <span className="hidden sm:inline">Pricing</span>
-              </TabsTrigger>
-              <TabsTrigger value="security" className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4" />
-                <span className="hidden sm:inline">Security</span>
-              </TabsTrigger>
-            </TabsList>
-            
-            {/* Ops Tab - Read-only operational health snapshot */}
-            <TabsContent value="ops">
-              <div className="space-y-6">
-                <OpsHealthPanel />
-                <OpsAlertsPanel />
-                <CampaignLaunchControlsPanel />
-                <EmailSuppressionsPanel />
-                <CallRailDurabilityPanel />
-              </div>
-            </TabsContent>
-
-            {/* Conversations Tab - Unified inbox across chat, SMS, email, campaigns */}
-            <TabsContent value="conversations">
-              <ConversationsTabContent />
-            </TabsContent>
-
-            {/* Bookings Tab - View/manage all bookings */}
-            <TabsContent value="bookings">
-              <BookingsManager />
-            </TabsContent>
-            
-            {/* Scheduling Tab - Phone bookings, quote generation, availability */}
-            <TabsContent value="scheduling">
-              <SchedulingPortal />
-            </TabsContent>
-            
-            {/* Analytics Tab - Trends, success rates, campaign performance */}
-            <TabsContent value="analytics">
-              <AnalyticsTabContent />
-            </TabsContent>
-            
-            {/* Crew Tab - Technician config, capabilities, eligibility rules, big job settings */}
-            <TabsContent value="crew">
-              <CrewTabContent />
-            </TabsContent>
-            
-            {/* Integrations Tab - Jobber + Website embeds/links */}
-            <TabsContent value="integrations">
-              <IntegrationsTabContent />
-            </TabsContent>
-            
-            {/* Pricing Tab - Pricing config, scenarios, discounts */}
-            <TabsContent value="pricing">
-              <PricingTabContent />
-            </TabsContent>
-
-            {/* Security Tab - Customer Access live tests and future security tooling */}
-            <TabsContent value="security">
-              <SecurityErrorBoundary>
-                <CustomerAccessLiveTestsPanel />
-              </SecurityErrorBoundary>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </main>
-    </div>
+      </div>
+    </SidebarProvider>
   );
 }
