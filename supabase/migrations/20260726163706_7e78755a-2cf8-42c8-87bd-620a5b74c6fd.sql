@@ -1,0 +1,2 @@
+-- see /tmp/kbv1/update.sql; embedded below as a single UPDATE
+-- ${INLINE}
