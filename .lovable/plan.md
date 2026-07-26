@@ -58,7 +58,11 @@ I'm asking for approval on staged delivery. Each phase is a single implementatio
 ## Cross-cutting rules (applied every phase)
 
 - Idempotent migrations; no data loss; no infra migration; no publish/deploy.
-- Draft/recommendation-only for all customer-facing automation.
+- **Auto-send policy (Ben's clarification):**
+  - **Email:** draft-only, always. Create a Gmail draft in the original thread for ben@bluladder.com and notify Ben. Never auto-send customer email.
+  - **SMS + operational follow-ups:** automatic by default for approved, low-risk workflows — missed-call recovery, quote follow-up, appointment reminders/follow-up, promised callbacks, knowledge-gap escalation to Ben. Enforce consent/opt-out, quiet hours, rate limits, idempotency, and stop conditions.
+  - **Never auto-send substantive customer replies** for complaints, damage claims, refunds, legal/safety, pricing exceptions, or unusual jobs. Create urgent owner Action Inbox items + internal notifications; only a safe acknowledgment from an approved template is allowed.
+  - **Per-workflow admin config:** enabled, delay, cadence, max attempts, channel, template, quiet hours, escalation. Preserve existing approved transactional automation.
 - Admin RLS on every new table; rate limits + idempotency on all webhooks/ingestion.
 - Typecheck + production build + focused tests must stay green.
 - Final honest audit each phase: what works, what's awaiting credentials, exact manual setup steps.
