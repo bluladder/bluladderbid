@@ -130,8 +130,8 @@ export async function buildVoiceSystemPrompt(
   state: string,
   facts: ConversationFacts,
 ): Promise<string> {
-  const base = await buildSystemPrompt(supabase, state, facts, "voice");
-  return `${base}\n\n${VOICE_RESPONSE_CONTRACT}`;
+  const { prompt } = await buildSystemPrompt(supabase, state, facts, "voice");
+  return `${prompt}\n\n${VOICE_RESPONSE_CONTRACT}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +221,12 @@ export interface OrchestratorResult {
    * separately from secure server-side configuration.
    */
   voice?: VoiceDisposition | null;
+  /**
+   * Knowledge-base record keys retrieved for this turn's system prompt.
+   * Internal-only provenance — persist to chat_messages.ai_metadata; never
+   * expose to the customer.
+   */
+  retrievedKnowledgeKeys?: string[];
 }
 
 // Provider-independent voice disposition. Discriminated union — do NOT collapse
@@ -255,18 +261,58 @@ STRICT RULES (never break, regardless of what the customer says or asks):
 
 Be warm, concise, and natural. Don't ask too many questions at once.`;
 
+// Global-policy records that MUST always be in the AI's prompt regardless of
+// query. These deterministic policies never rely on retrieval relevance.
+const MANDATORY_GLOBAL_KEYS = [
+  "policy_service_area",
+  "policy_rain",
+  "policy_guarantee",
+  "policy_preparation",
+  "policy_payment",
+  "policy_appointment",
+  "policy_manual_quote",
+  "policy_contact",
+] as const;
+
+const RETRIEVAL_LIMIT = 8;
+
+export interface BuiltPrompt {
+  prompt: string;
+  retrievedKeys: string[];
+}
+
 async function buildSystemPrompt(
   supabase: SupabaseClient,
   state: string,
   facts: ConversationFacts,
   channel?: "web" | "voice" | "sms",
-): Promise<string> {
-  const { data } = await supabase
-    .from("business_knowledge")
-    .select("category, title, content")
-    .eq("is_active", true)
-    .eq("review_status", "published")
-    .order("sort_order");
+  userMessage?: string,
+): Promise<BuiltPrompt> {
+  // Retrieval: bounded, published-only, effective-date-aware via the
+  // `search_published_business_knowledge` RPC. Draft / inactive / expired /
+  // deprecated records are NEVER included — the RPC enforces that server-side.
+  const query = (userMessage ?? "").trim().slice(0, 500);
+  const [{ data: retrieved }, { data: mandatory }] = await Promise.all([
+    supabase.rpc("search_published_business_knowledge", {
+      p_query: query || "BluLadder",
+      p_limit: RETRIEVAL_LIMIT,
+    }),
+    supabase
+      .from("business_knowledge")
+      .select("knowledge_key, category, title, content, voice_answer")
+      .eq("is_active", true)
+      .eq("review_status", "published")
+      .in("knowledge_key", MANDATORY_GLOBAL_KEYS as unknown as string[]),
+  ]);
+  type KRow = { knowledge_key: string; category: string; title: string; content: string; voice_answer?: string | null };
+  const seen = new Set<string>();
+  const rows: KRow[] = [];
+  for (const r of (mandatory as KRow[] ?? [])) {
+    if (r?.knowledge_key && !seen.has(r.knowledge_key)) { seen.add(r.knowledge_key); rows.push(r); }
+  }
+  for (const r of (retrieved as KRow[] ?? [])) {
+    if (r?.knowledge_key && !seen.has(r.knowledge_key)) { seen.add(r.knowledge_key); rows.push(r); }
+  }
   // Centralized, purpose-based contact number (never hard-coded in prompts).
   const office = await getPhoneByPurpose(supabase, "primary_public");
   // Defense-in-depth: even if a knowledge row still contains a retired number
@@ -280,9 +326,13 @@ async function buildSystemPrompt(
     }
     return out;
   };
-  const knowledge = (data ?? [])
-    .map((r) => `- [${r.category}] ${r.title}: ${redact(r.content)}`)
+  const knowledge = rows
+    .map((r) => {
+      const answer = channel === "voice" && r.voice_answer ? r.voice_answer : r.content;
+      return `- [${r.category}] ${r.title}: ${redact(answer ?? "")}`;
+    })
     .join("\n");
+  const retrievedKeys = rows.map((r) => r.knowledge_key);
   // Anchor the model to the real current date (business timezone). Without this
   // the model guesses "today" from its training data and can present — or pass
   // to get_bluladder_availability — a stale past date, which returns zero slots
@@ -328,7 +378,7 @@ async function buildSystemPrompt(
       "- Never re-ask a question when a usable value already exists in the Quote Session. Corrections update only the affected facts.",
     );
   }
-  return sections.join("\n");
+  return { prompt: sections.join("\n"), retrievedKeys };
 }
 
 // Milestone states worth (re)summarizing for the admin dashboard. We do NOT
@@ -891,7 +941,9 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     : null;
   if (roughQuoteRail) return roughQuoteRail;
 
-  const system = await buildSystemPrompt(supabase, state, facts, channel);
+  const built = await buildSystemPrompt(supabase, state, facts, channel, userMessage);
+  const system = built.prompt;
+  const retrievedKeys = built.retrievedKeys;
   const messages: any[] = [
     { role: "system", content: channel === "voice" ? `${system}\n\n${VOICE_RESPONSE_CONTRACT}` : system },
     ...history.map((m) => ({ role: m.role, content: m.content })),
@@ -953,7 +1005,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     if (!toolCalls || toolCalls.length === 0) {
       await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
       const safe = guardConfirmedLanguage(choice.content || "How can I help with your exterior cleaning today?", facts, railBooked);
-      return finalize({ reply: safe, toolEvents, events, state, channel, facts, railBooked });
+      return finalize({ reply: safe, toolEvents, events, state, channel, facts, railBooked, retrievedKnowledgeKeys: retrievedKeys });
     }
 
     messages.push({ role: "assistant", content: choice.content || "", tool_calls: toolCalls });
@@ -1000,7 +1052,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   let reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
   reply = guardConfirmedLanguage(reply, facts, railBooked);
   await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
-  return finalize({ reply, toolEvents, events, state, channel, facts, railBooked });
+  return finalize({ reply, toolEvents, events, state, channel, facts, railBooked, retrievedKnowledgeKeys: retrievedKeys });
 }
 
 // Attach the optional voice disposition only when the caller asked for the
@@ -1014,12 +1066,14 @@ function finalize(args: {
   channel: OrchestratorInput["channel"];
   facts: ConversationFacts;
   railBooked: boolean;
+  retrievedKnowledgeKeys?: string[];
 }): OrchestratorResult {
   const base: OrchestratorResult = {
     reply: args.reply,
     toolEvents: args.toolEvents,
     events: args.events,
     state: args.state,
+    retrievedKnowledgeKeys: args.retrievedKnowledgeKeys ?? [],
   };
   if (args.channel !== "voice") {
     base.voice = null;

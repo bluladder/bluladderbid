@@ -909,79 +909,118 @@ export type Database = {
           applicable_region: string | null
           applicable_service: string | null
           category: string
+          confidence: string
           content: string
           created_at: string
+          effective_at: string | null
           effective_date: string
+          expires_at: string | null
           id: string
+          internal_policy: string | null
           is_active: boolean
           knowledge_key: string
           last_changed_at: string | null
           last_checked_at: string | null
+          owner_notes: string | null
           pending_content: string | null
           pending_source_hash: string | null
           priority: number
+          published_at: string | null
+          question: string | null
+          record_number: number | null
+          related_records: number[]
           requires_admin_input: boolean
           requires_owner_review: boolean
           review_status: string
           revision: number
+          sales_guidance: string | null
           sort_order: number
           source_hash: string | null
           source_page: string | null
           source_type: string
+          tags: string[]
           title: string
           updated_at: string
+          updated_by: string | null
+          voice_answer: string | null
         }
         Insert: {
           applicable_region?: string | null
           applicable_service?: string | null
           category: string
+          confidence?: string
           content: string
           created_at?: string
+          effective_at?: string | null
           effective_date?: string
+          expires_at?: string | null
           id?: string
+          internal_policy?: string | null
           is_active?: boolean
           knowledge_key: string
           last_changed_at?: string | null
           last_checked_at?: string | null
+          owner_notes?: string | null
           pending_content?: string | null
           pending_source_hash?: string | null
           priority?: number
+          published_at?: string | null
+          question?: string | null
+          record_number?: number | null
+          related_records?: number[]
           requires_admin_input?: boolean
           requires_owner_review?: boolean
           review_status?: string
           revision?: number
+          sales_guidance?: string | null
           sort_order?: number
           source_hash?: string | null
           source_page?: string | null
           source_type?: string
+          tags?: string[]
           title: string
           updated_at?: string
+          updated_by?: string | null
+          voice_answer?: string | null
         }
         Update: {
           applicable_region?: string | null
           applicable_service?: string | null
           category?: string
+          confidence?: string
           content?: string
           created_at?: string
+          effective_at?: string | null
           effective_date?: string
+          expires_at?: string | null
           id?: string
+          internal_policy?: string | null
           is_active?: boolean
           knowledge_key?: string
           last_changed_at?: string | null
           last_checked_at?: string | null
+          owner_notes?: string | null
           pending_content?: string | null
           pending_source_hash?: string | null
           priority?: number
+          published_at?: string | null
+          question?: string | null
+          record_number?: number | null
+          related_records?: number[]
           requires_admin_input?: boolean
           requires_owner_review?: boolean
           review_status?: string
           revision?: number
+          sales_guidance?: string | null
           sort_order?: number
           source_hash?: string | null
           source_page?: string | null
           source_type?: string
+          tags?: string[]
           title?: string
           updated_at?: string
+          updated_by?: string | null
+          voice_answer?: string | null
         }
         Relationships: []
       }
@@ -1606,6 +1645,7 @@ export type Database = {
       }
       chat_messages: {
         Row: {
+          ai_metadata: Json | null
           content: string | null
           conversation_id: string
           created_at: string
@@ -1615,6 +1655,7 @@ export type Database = {
           tool_result: Json | null
         }
         Insert: {
+          ai_metadata?: Json | null
           content?: string | null
           conversation_id: string
           created_at?: string
@@ -1624,6 +1665,7 @@ export type Database = {
           tool_result?: Json | null
         }
         Update: {
+          ai_metadata?: Json | null
           content?: string | null
           conversation_id?: string
           created_at?: string
@@ -3191,6 +3233,84 @@ export type Database = {
           raw_body?: string | null
           received_at?: string
           topic?: string | null
+        }
+        Relationships: []
+      }
+      knowledge_audit_events: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          id: number
+          knowledge_id: string | null
+          knowledge_key: string
+          new_row: Json | null
+          old_row: Json | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          id?: never
+          knowledge_id?: string | null
+          knowledge_key: string
+          new_row?: Json | null
+          old_row?: Json | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          id?: never
+          knowledge_id?: string | null
+          knowledge_key?: string
+          new_row?: Json | null
+          old_row?: Json | null
+        }
+        Relationships: []
+      }
+      knowledge_feedback: {
+        Row: {
+          answer_text: string | null
+          conversation_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          knowledge_keys: string[]
+          message_id: string | null
+          reporter_note: string | null
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        Insert: {
+          answer_text?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          knowledge_keys?: string[]
+          message_id?: string | null
+          reporter_note?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Update: {
+          answer_text?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          knowledge_keys?: string[]
+          message_id?: string | null
+          reporter_note?: string | null
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
         }
         Relationships: []
       }
@@ -6112,6 +6232,17 @@ export type Database = {
         Args: { tmpl: string; vars: Json }
         Returns: string
       }
+      report_knowledge_feedback: {
+        Args: {
+          p_answer_text: string
+          p_conversation_id: string
+          p_created_by: string
+          p_knowledge_keys: string[]
+          p_message_id: string
+          p_reporter_note: string
+        }
+        Returns: string
+      }
       reserve_booking_slot: {
         Args: {
           p_crew_ids: string[]
@@ -6122,6 +6253,19 @@ export type Database = {
           p_ttl_minutes?: number
         }
         Returns: Json
+      }
+      search_published_business_knowledge: {
+        Args: { p_limit?: number; p_query: string }
+        Returns: {
+          category: string
+          content: string
+          knowledge_key: string
+          priority: number
+          question: string
+          rank: number
+          title: string
+          voice_answer: string
+        }[]
       }
       services_label: { Args: { p: Json }; Returns: string }
       set_reservation_job: {
