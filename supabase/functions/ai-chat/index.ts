@@ -96,7 +96,15 @@ Deno.serve(async (req) => {
       supabase, conversationId: convo.id, sessionToken, channel: "web", history, userMessage: message,
     });
 
-    await supabase.from("chat_messages").insert({ conversation_id: convo.id, role: "assistant", content: result.reply });
+    const aiMetadata = {
+      retrieved_knowledge_keys: Array.isArray((result as any).retrievedKnowledgeKeys)
+        ? (result as any).retrievedKnowledgeKeys : [],
+      state: result.state ?? null,
+      channel: "web" as const,
+    };
+    await supabase.from("chat_messages").insert({
+      conversation_id: convo.id, role: "assistant", content: result.reply, ai_metadata: aiMetadata,
+    });
     await supabase.from("chat_conversations").update({ last_activity_at: new Date().toISOString() }).eq("id", convo.id);
 
     // chat_lead_created — emitted ONCE per conversation, only after the chat has
