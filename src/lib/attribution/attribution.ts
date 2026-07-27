@@ -37,11 +37,15 @@ export interface AttributionState {
   landing_page_slug?: string;
   fbclid?: string;
   referrer?: string;
+  self_reported_source?: string;
+  self_reported_source_detail?: string;
 }
 
 const FIRST_TOUCH_KEY = 'bluladder_attribution_first_touch';
 const LAST_TOUCH_KEY = 'bluladder_attribution_last_touch';
 const SESSION_ID_KEY = 'bluladder_source_session_id';
+const SELF_REPORTED_SOURCE_KEY = 'bluladder_self_reported_source';
+const SELF_REPORTED_DETAIL_KEY = 'bluladder_self_reported_source_detail';
 
 const MAX_LEN = 200;
 const META_SOURCES = new Set(['facebook', 'fb', 'meta', 'instagram', 'ig']);
@@ -72,10 +76,7 @@ function sanitize(value: string | null | undefined): string | undefined {
   if (value == null) return undefined;
   const trimmed = String(value).slice(0, MAX_LEN).trim();
   if (!trimmed) return undefined;
-  // Strip anything that looks like an email or phone number — belt & braces.
   if (/@/.test(trimmed) && /\.[a-z]{2,}/i.test(trimmed)) return undefined;
-  // Phone-like: 7+ digits (with optional separators). Marketing tokens rarely
-  // look like this, so this is a safe guard.
   const digits = trimmed.replace(/\D/g, '');
   if (digits.length >= 7 && /^\+?[\d\s().-]+$/.test(trimmed)) return undefined;
   return trimmed;
@@ -127,17 +128,19 @@ export function getOrCreateSourceSessionId(): string {
   return id;
 }
 
-/**
- * Capture attribution from the given URLSearchParams (call once per page mount).
- * - Adds a URL-provided `source_session_id` if present, else creates one.
- * - Writes a first_touch record only if none exists, OR the existing
- *   first_touch is not a Meta touch and the new incoming touch IS Meta
- *   (Meta upgrade wins). Direct traffic never overwrites a valid touch.
- * - Always updates last_touch when the incoming touch has any parameter.
- */
+export function setSelfReportedSource(source: string, detail?: string): void {
+  const cleanSource = sanitize(source);
+  const cleanDetail = sanitize(detail);
+  if (!cleanSource) return;
+  safeSet(localS(), SELF_REPORTED_SOURCE_KEY, cleanSource);
+  if (cleanDetail) safeSet(localS(), SELF_REPORTED_DETAIL_KEY, cleanDetail);
+  else {
+    try { localS()?.removeItem(SELF_REPORTED_DETAIL_KEY); } catch { /* noop */ }
+  }
+}
+
 export function captureAttribution(params: URLSearchParams): AttributionState {
   const incoming = pickWhitelisted(params);
-  // Referrer fallback (only used when nothing else provided one)
   if (!incoming.referrer && typeof document !== 'undefined' && document.referrer) {
     try {
       const url = new URL(document.referrer);
@@ -148,7 +151,6 @@ export function captureAttribution(params: URLSearchParams): AttributionState {
   }
 
   const sessionId = sanitize(incoming.source_session_id) ?? getOrCreateSourceSessionId();
-  // Ensure the session id is persisted across visits.
   if (safeGet(localS(), SESSION_ID_KEY) !== sessionId) {
     safeSet(localS(), SESSION_ID_KEY, sessionId);
   }
@@ -161,10 +163,8 @@ export function captureAttribution(params: URLSearchParams): AttributionState {
     if (!existingFirst || !hasAnyMeaningful(existingFirst)) {
       newFirst = { ...incoming, captured_at: new Date().toISOString() };
     } else if (!isMetaTouch(existingFirst) && isMetaTouch(incoming)) {
-      // Upgrade: Meta first-touch supersedes an earlier non-Meta first-touch.
       newFirst = { ...incoming, captured_at: new Date().toISOString() };
     }
-    // else: freeze — never overwrite an established first-touch with direct/later data
   }
 
   if (newFirst && newFirst !== existingFirst) {
@@ -183,6 +183,8 @@ export function captureAttribution(params: URLSearchParams): AttributionState {
     landing_page_slug: (newFirst ?? existingFirst)?.landing_page_slug ?? incoming.landing_page_slug,
     fbclid: (newFirst ?? existingFirst)?.fbclid ?? incoming.fbclid,
     referrer: (newFirst ?? existingFirst)?.referrer ?? incoming.referrer,
+    self_reported_source: sanitize(safeGet(localS(), SELF_REPORTED_SOURCE_KEY)),
+    self_reported_source_detail: sanitize(safeGet(localS(), SELF_REPORTED_DETAIL_KEY)),
   };
 }
 
@@ -197,6 +199,8 @@ export function readAttribution(): AttributionState {
     landing_page_slug: first.landing_page_slug ?? last.landing_page_slug,
     fbclid: first.fbclid ?? last.fbclid,
     referrer: first.referrer ?? last.referrer,
+    self_reported_source: sanitize(safeGet(localS(), SELF_REPORTED_SOURCE_KEY)),
+    self_reported_source_detail: sanitize(safeGet(localS(), SELF_REPORTED_DETAIL_KEY)),
   };
 }
 
@@ -205,6 +209,8 @@ export function __resetAttributionForTests(): void {
   try {
     localS()?.removeItem(FIRST_TOUCH_KEY);
     localS()?.removeItem(SESSION_ID_KEY);
+    localS()?.removeItem(SELF_REPORTED_SOURCE_KEY);
+    localS()?.removeItem(SELF_REPORTED_DETAIL_KEY);
     sessionS()?.removeItem(LAST_TOUCH_KEY);
   } catch {
     /* noop */
