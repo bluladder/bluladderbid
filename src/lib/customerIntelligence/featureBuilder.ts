@@ -22,6 +22,7 @@ export interface BuiltFeatureSnapshot extends CustomerFeatureSnapshot {
     completedEventCount: number;
     historicalCoverageDays: number;
     sparse: boolean;
+    excludedReason: string | null;
   };
 }
 
@@ -60,6 +61,7 @@ function median(values: number[]): number | null {
 export function buildCustomerFeatureSnapshot(args: {
   asOf: string;
   events: TimelineEvent[];
+  isArchived?: boolean;
   complaintLookbackDays?: number;
   cancellationLookbackDays?: number;
 }): BuiltFeatureSnapshot {
@@ -103,10 +105,8 @@ export function buildCustomerFeatureSnapshot(args: {
   }
 
   const lastCompletedAt = completed.length ? new Date(completed[completed.length - 1].eventAt) : null;
-  const lastQuoteAt = quotes.length ? new Date(quotes[quotes.length - 1].eventAt) : null;
   const complaintLookback = args.complaintLookbackDays ?? 120;
   const cancellationLookback = args.cancellationLookbackDays ?? 90;
-
   const recentComplaint = events.some((event) =>
     COMPLAINT_TYPES.has(event.eventType)
     && daysBetween(asOfDate, new Date(event.eventAt)) <= complaintLookback,
@@ -119,6 +119,7 @@ export function buildCustomerFeatureSnapshot(args: {
   const paidAmounts = completed
     .map((event) => event.amount)
     .filter((value): value is number => typeof value === 'number' && value > 0);
+  const isArchived = args.isArchived === true;
 
   return {
     asOf: asOfDate.toISOString(),
@@ -135,6 +136,7 @@ export function buildCustomerFeatureSnapshot(args: {
     recentComplaint,
     recentCancellation,
     season: seasonFor(asOfDate),
+    isArchived,
     preferredChannel: mostCommon(events.map((event) => event.channel).filter((value): value is string => !!value)),
     primaryCity: mostCommon(events.map((event) => event.city).filter((value): value is string => !!value)),
     dataQuality: {
@@ -142,6 +144,7 @@ export function buildCustomerFeatureSnapshot(args: {
       completedEventCount: completed.length,
       historicalCoverageDays: daysBetween(asOfDate, earliest),
       sparse: events.length < 5 || completed.length < 2,
+      excludedReason: isArchived ? 'archived_jobber_client' : null,
     },
   };
 }
