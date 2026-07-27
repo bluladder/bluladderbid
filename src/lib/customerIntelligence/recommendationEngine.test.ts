@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  outcomeLearningValue,
   proposeBoundedWeightUpdate,
   rankRecommendations,
   scoreServiceRecommendation,
@@ -63,13 +64,18 @@ describe('recommendationEngine', () => {
   });
 
   it('suppresses recommendations during a recent complaint', () => {
-    const ranked = rankRecommendations({
+    expect(rankRecommendations({
       services: ['window_cleaning', 'house_wash'],
       features: { ...features, recentComplaint: true },
       model,
-    });
+    })).toEqual([]);
+  });
 
-    expect(ranked).toEqual([]);
+  it('fully excludes archived Jobber clients', () => {
+    const archived = { ...features, isArchived: true };
+    expect(rankRecommendations({ services: ['window_cleaning', 'house_wash'], features: archived, model })).toEqual([]);
+    expect(scoreServiceRecommendation({ serviceKey: 'window_cleaning', features: archived, model }).reasonCodes)
+      .toContain('ARCHIVED_CLIENT_EXCLUDED');
   });
 
   it('ranks an overdue repeat service above a new cross-sell', () => {
@@ -78,25 +84,34 @@ describe('recommendationEngine', () => {
       features,
       model,
     });
-
     expect(ranked[0].serviceKey).toBe('window_cleaning');
+  });
+
+  it('treats paid and completed as the strongest outcomes', () => {
+    expect(outcomeLearningValue({ feature: 'x', outcomeType: 'paid' })).toBe(1);
+    expect(outcomeLearningValue({ feature: 'x', outcomeType: 'completed' })).toBe(0.95);
+    expect(outcomeLearningValue({ feature: 'x', outcomeType: 'booked' })).toBeLessThan(0.95);
+    expect(outcomeLearningValue({ feature: 'x', outcomeType: 'accepted' })).toBeLessThan(0.7);
+  });
+
+  it('disregards all outcomes from archived clients', () => {
+    expect(outcomeLearningValue({ feature: 'x', outcomeType: 'paid', isArchivedClient: true })).toBeNull();
   });
 
   it('does not learn until minimum evidence thresholds are met', () => {
     const result = proposeBoundedWeightUpdate({
       currentWeights: model.weights,
-      outcomes: Array.from({ length: 10 }, () => ({ feature: 'season_match', positive: true })),
+      outcomes: Array.from({ length: 10 }, () => ({ feature: 'season_match', outcomeType: 'paid' as const })),
       bounds: model.bounds,
     });
-
     expect(result.eligible).toBe(false);
     expect(result.proposedWeights).toEqual(model.weights);
   });
 
   it('limits each learning update and preserves global bounds', () => {
     const outcomes = [
-      ...Array.from({ length: 30 }, () => ({ feature: 'season_match', positive: true })),
-      ...Array.from({ length: 10 }, () => ({ feature: 'cross_sell_gap', positive: false })),
+      ...Array.from({ length: 30 }, () => ({ feature: 'season_match', outcomeType: 'paid' as const })),
+      ...Array.from({ length: 10 }, () => ({ feature: 'cross_sell_gap', outcomeType: 'rejected' as const })),
     ];
     const result = proposeBoundedWeightUpdate({
       currentWeights: { season_match: 3.99, cross_sell_gap: -3.99 },
