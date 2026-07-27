@@ -1171,6 +1171,42 @@ Deno.serve(async (req) => {
       console.log("Created job:", jobberJobId, "Job number:", jobNumber);
     }
 
+    // Idempotent lead-source sync audit. The unique constraint on
+    // `idempotency_key` guarantees retries never insert duplicates; existing
+    // rows are left untouched.
+    if (leadSourceAudit && jobberJobId) {
+      try {
+        await supabase
+          .from("lead_source_sync_events")
+          .insert({
+            entity_type: "booking",
+            entity_id: null,
+            provider: "jobber",
+            idempotency_key: `booking:${idempotencyKey}`,
+            source_key: leadSourceAudit.source_key,
+            mapping_mode: leadSourceAudit.mapping_mode,
+            request_payload: {
+              jobber_job_id: jobberJobId,
+              jobber_client_id: jobberClientId,
+              display_name: leadSourceAudit.display_name,
+              self_reported_detail: leadSourceAudit.self_reported_detail,
+              written_via: "job_instructions",
+            },
+            response_payload: { note_included: true },
+            status: "succeeded",
+            attempt_count: 1,
+            last_attempt_at: new Date().toISOString(),
+          });
+      } catch (e) {
+        // Duplicate idempotency_key (retry) is expected and safe; other errors
+        // are logged but never block the booking flow.
+        const msg = (e as Error).message || "";
+        if (!/duplicate|unique/i.test(msg)) {
+          console.warn("lead_source_sync_events insert failed:", msg);
+        }
+      }
+    }
+
     // Schedule a visit for the job using VisitCreateInput
     // VisitCreateInput requires a 'visits' array, and response has 'createdVisits'
     console.log("Creating visit for job");
