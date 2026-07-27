@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Admin from "./pages/Admin";
 import KnowledgeBaseAdmin from "./pages/KnowledgeBaseAdmin";
+import LeadSourcesAdmin from "./pages/LeadSourcesAdmin";
 import Services from "./pages/Services";
 import ServiceLanding from "./pages/ServiceLanding";
 import PlanBuilder from "./pages/PlanBuilder";
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/admin" element={<Admin />} />
           <Route path="/admin/jobber" element={<Admin initialTab="integrations" />} />
           <Route path="/admin/knowledge" element={<KnowledgeBaseAdmin />} />
+          <Route path="/admin/lead-sources" element={<LeadSourcesAdmin />} />
           <Route path="/services" element={<Services />} />
           <Route path="/plan-builder" element={<PlanBuilder />} />
           <Route path="/quote/:id" element={<QuoteView />} />
