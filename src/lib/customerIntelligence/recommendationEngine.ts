@@ -1,11 +1,14 @@
 export type ServiceKey =
   | 'window_cleaning'
   | 'gutter_cleaning'
+  | 'gutter_guards'
   | 'house_wash'
   | 'driveway_cleaning'
   | 'roof_cleaning'
   | 'solar_panel_cleaning'
-  | 'screen_repair';
+  | 'screen_repair'
+  | 'christmas_lights'
+  | 'commercial_services';
 
 export interface CustomerFeatureSnapshot {
   asOf: string;
@@ -19,6 +22,8 @@ export interface CustomerFeatureSnapshot {
   recentComplaint: boolean;
   recentCancellation: boolean;
   season: 'winter' | 'spring' | 'summer' | 'fall';
+  /** Archived Jobber clients are never eligible for recommendations or learning. */
+  isArchived?: boolean;
 }
 
 export interface RecommendationModel {
@@ -49,10 +54,12 @@ export interface RecommendationCandidate {
 
 const SERVICE_SEASON: Partial<Record<ServiceKey, CustomerFeatureSnapshot['season'][]>> = {
   gutter_cleaning: ['fall', 'winter'],
+  gutter_guards: ['spring', 'summer', 'fall'],
   house_wash: ['spring', 'summer'],
   driveway_cleaning: ['spring', 'summer'],
   window_cleaning: ['spring', 'summer', 'fall'],
   solar_panel_cleaning: ['spring', 'summer'],
+  christmas_lights: ['fall', 'winter'],
 };
 
 const sigmoid = (value: number): number => 1 / (1 + Math.exp(-value));
@@ -68,6 +75,21 @@ export function scoreServiceRecommendation(args: {
   model: RecommendationModel;
 }): RecommendationCandidate {
   const { serviceKey, features, model } = args;
+
+  if (features.isArchived) {
+    return {
+      serviceKey,
+      score: 0,
+      confidence: 1,
+      reasonCodes: ['ARCHIVED_CLIENT_EXCLUDED'],
+      evidence: [
+        { key: 'model_version', value: model.version },
+        { key: 'archived_client', value: true },
+      ],
+      explanation: 'Archived Jobber clients are excluded from recommendations and model learning.',
+    };
+  }
+
   const cadence = features.inferredServiceCadenceDays[serviceKey]
     ?? model.priors.serviceDefaultCadenceDays[serviceKey]
     ?? 365;
@@ -142,16 +164,55 @@ export function rankRecommendations(args: {
   model: RecommendationModel;
   limit?: number;
 }): RecommendationCandidate[] {
+  if (args.features.isArchived) return [];
+
   return args.services
     .map((serviceKey) => scoreServiceRecommendation({ serviceKey, features: args.features, model: args.model }))
     .filter((candidate) => !candidate.reasonCodes.includes('RECENT_COMPLAINT_SUPPRESSION'))
+    .filter((candidate) => !candidate.reasonCodes.includes('ARCHIVED_CLIENT_EXCLUDED'))
     .sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.serviceKey.localeCompare(b.serviceKey))
     .slice(0, args.limit ?? 3);
 }
 
+export type RecommendationOutcomeType =
+  | 'shown'
+  | 'offered'
+  | 'accepted'
+  | 'rejected'
+  | 'ignored'
+  | 'booked'
+  | 'cancelled'
+  | 'completed'
+  | 'paid'
+  | 'owner_suppressed'
+  | 'owner_overridden';
+
 export interface LearningOutcome {
   feature: string;
-  positive: boolean;
+  outcomeType?: RecommendationOutcomeType;
+  positive?: boolean;
+  isArchivedClient?: boolean;
+}
+
+/** Completed and paid are strongest; accepted/booked are weaker positive signals. */
+export function outcomeLearningValue(outcome: LearningOutcome): number | null {
+  if (outcome.isArchivedClient) return null;
+  if (typeof outcome.positive === 'boolean') return outcome.positive ? 1 : 0;
+
+  switch (outcome.outcomeType) {
+    case 'paid': return 1;
+    case 'completed': return 0.95;
+    case 'booked': return 0.7;
+    case 'accepted': return 0.5;
+    case 'offered':
+    case 'shown': return null;
+    case 'ignored': return 0.25;
+    case 'rejected': return 0;
+    case 'cancelled': return 0;
+    case 'owner_suppressed':
+    case 'owner_overridden': return null;
+    default: return null;
+  }
 }
 
 export function proposeBoundedWeightUpdate(args: {
@@ -160,24 +221,28 @@ export function proposeBoundedWeightUpdate(args: {
   bounds: RecommendationModel['bounds'];
   learningRate?: number;
 }): { eligible: boolean; proposedWeights: Record<string, number>; summary: Record<string, number> } {
-  const positives = args.outcomes.filter((outcome) => outcome.positive).length;
-  if (args.outcomes.length < args.bounds.minimumOutcomes || positives < args.bounds.minimumPositiveOutcomes) {
+  const eligibleOutcomes = args.outcomes
+    .map((outcome) => ({ ...outcome, value: outcomeLearningValue(outcome) }))
+    .filter((outcome): outcome is LearningOutcome & { value: number } => outcome.value != null);
+  const positives = eligibleOutcomes.filter((outcome) => outcome.value >= 0.5).length;
+
+  if (eligibleOutcomes.length < args.bounds.minimumOutcomes || positives < args.bounds.minimumPositiveOutcomes) {
     return { eligible: false, proposedWeights: { ...args.currentWeights }, summary: {} };
   }
 
   const learningRate = args.learningRate ?? 0.05;
-  const grouped = new Map<string, { positive: number; total: number }>();
-  for (const outcome of args.outcomes) {
-    const current = grouped.get(outcome.feature) ?? { positive: 0, total: 0 };
+  const grouped = new Map<string, { totalValue: number; total: number }>();
+  for (const outcome of eligibleOutcomes) {
+    const current = grouped.get(outcome.feature) ?? { totalValue: 0, total: 0 };
     current.total += 1;
-    if (outcome.positive) current.positive += 1;
+    current.totalValue += outcome.value;
     grouped.set(outcome.feature, current);
   }
 
   const proposedWeights = { ...args.currentWeights };
   const summary: Record<string, number> = {};
   for (const [feature, counts] of grouped) {
-    const observedRate = counts.positive / counts.total;
+    const observedRate = counts.totalValue / counts.total;
     const centeredSignal = observedRate - 0.5;
     const rawDelta = centeredSignal * learningRate;
     const delta = Math.max(-args.bounds.maxDeltaPerRun, Math.min(args.bounds.maxDeltaPerRun, rawDelta));
