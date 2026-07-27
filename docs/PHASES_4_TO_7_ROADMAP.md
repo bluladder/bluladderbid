@@ -10,6 +10,18 @@
 - Approved low-risk SMS automation must remain allowlisted, configurable, and auditable.
 - Complaints, damage, refunds, legal matters, and safety issues always escalate to the owner.
 
+## Mandatory post-phase hardening gate
+
+After each phase, and before beginning the next phase:
+
+1. Review the complete phase diff and integration surface for bugs, regressions, missing edge cases, security concerns, performance problems, UX friction, data-quality risks, and practical enhancements.
+2. Run all relevant automated checks, including focused unit tests, repository CI, lint, typecheck, build, migration review, secret scanning, and applicable integration tests.
+3. Inspect failed or flaky tests and distinguish newly introduced failures from pre-existing repository failures.
+4. Fix all phase-related defects and reasonable in-scope enhancements before the phase is considered complete.
+5. Perform managed-environment validation only when it cannot be done correctly through GitHub, while minimizing Lovable credit usage.
+6. Record unresolved external dependencies, manual validation requirements, and deferred enhancements in the phase PR and implementation documentation.
+7. Do not merge or advance to the next phase until the phase-specific hardening gate is complete.
+
 ## Phase 4 — CallRail conversation intelligence
 
 - Ingest calls, texts, recordings, transcripts, dispositions, tracking numbers, and campaign metadata.
@@ -43,3 +55,19 @@
 - End-to-end security, privacy, RLS, failure recovery, observability, and data-retention audit.
 - Production smoke testing and runbooks.
 - No model or automation activation without an explicit owner-controlled state change.
+
+## Final program-wide audit and corrective pass
+
+After all seven phases are complete:
+
+1. Perform a full-system review across booking, chat, SMS, voice, Jobber, CallRail, Gmail drafts, customer intelligence, recommendations, reporting, admin controls, security, observability, and recovery workflows.
+2. Search for cross-phase defects, duplicated logic, inconsistent business rules, stale assumptions, broken integrations, missing audit trails, performance bottlenecks, confusing UX, and data-quality gaps.
+3. Address identified bugs and reasonable high-value enhancements immediately before declaring the program complete.
+4. Re-run the complete automated validation suite and all available integration checks.
+5. Minimize Lovable credit use; use Lovable only where managed-environment verification or deployment is technically required.
+6. Produce a final implementation report containing:
+   - completed capabilities;
+   - bugs and enhancements resolved during hardening;
+   - remaining known limitations or external dependencies;
+   - optional future additions that could materially improve the platform;
+   - a manual validation checklist, including AI voice calls, chatbot quoting and booking, SMS quoting and booking, rescheduling, cancellations, human transfer, Jobber record verification, CallRail linkage, email draft review, mobile testing, permission testing, failure recovery, and production smoke tests.
