@@ -982,6 +982,60 @@ Deno.serve(async (req) => {
     
     console.log("No conflicts detected, proceeding with booking");
 
+    // ------------------------------------------------------------------
+    // Lead source resolution (Phase 2 wiring).
+    //
+    // Jobber's GraphQL 2025-04-16 `ClientCreateInput` and `JobCreateAttributes`
+    // do not expose a first-class Lead Source field that we can reliably set
+    // from the API for this account. All 13 `lead_source_definitions` are
+    // therefore mapped to `internal_note`: we surface the label inside the
+    // job's `instructions` (technician-visible) and record an idempotent
+    // `lead_source_sync_events` audit row so the write is auditable and
+    // safe to retry.
+    // ------------------------------------------------------------------
+    let leadSourceLabel = "";
+    let leadSourceAudit: {
+      source_key: string | null;
+      mapping_mode: string;
+      display_name: string | null;
+      self_reported_detail: string | null;
+    } | null = null;
+    try {
+      const attrSessionId =
+        booking.attribution?.source_session_id ?? booking.sourceSessionId ?? null;
+      if (attrSessionId) {
+        const { data: attrRow } = await supabase
+          .from("attribution_events")
+          .select("normalized_source_key, self_reported_source_detail")
+          .eq("source_session_id", attrSessionId)
+          .maybeSingle();
+        const srcKey = attrRow?.normalized_source_key ?? null;
+        if (srcKey) {
+          const { data: def } = await supabase
+            .from("lead_source_definitions")
+            .select("source_key, display_name, jobber_mapping_mode")
+            .eq("source_key", srcKey)
+            .maybeSingle();
+          if (def) {
+            const detail = attrRow?.self_reported_source_detail
+              ? String(attrRow.self_reported_source_detail).trim().slice(0, 120)
+              : "";
+            leadSourceLabel = detail
+              ? `Lead Source: ${def.display_name} — ${detail}`
+              : `Lead Source: ${def.display_name}`;
+            leadSourceAudit = {
+              source_key: def.source_key,
+              mapping_mode: def.jobber_mapping_mode,
+              display_name: def.display_name,
+              self_reported_detail: detail || null,
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Lead source lookup failed (non-fatal):", (e as Error).message);
+    }
+
     // Build notes for the job
     // Only include customer's special instructions in Jobber job notes
     // The detailed home info, services, and pricing are tracked in our local booking record
@@ -990,6 +1044,7 @@ Deno.serve(async (req) => {
     const jobInstructions = [
       promoPrepInstructions ? `PREP REQUIRED: ${promoPrepInstructions}` : "",
       booking.notes?.trim() || "",
+      leadSourceLabel,
       // Booking idempotency reference — enables reconciliation to correlate
       // orphaned Jobber jobs back to the original booking attempt.
       // Kept as a short human-readable line (no JSON) per instructions-format rules.
@@ -1114,6 +1169,42 @@ Deno.serve(async (req) => {
       }
 
       console.log("Created job:", jobberJobId, "Job number:", jobNumber);
+    }
+
+    // Idempotent lead-source sync audit. The unique constraint on
+    // `idempotency_key` guarantees retries never insert duplicates; existing
+    // rows are left untouched.
+    if (leadSourceAudit && jobberJobId) {
+      try {
+        await supabase
+          .from("lead_source_sync_events")
+          .insert({
+            entity_type: "booking",
+            entity_id: null,
+            provider: "jobber",
+            idempotency_key: `booking:${idempotencyKey}`,
+            source_key: leadSourceAudit.source_key,
+            mapping_mode: leadSourceAudit.mapping_mode,
+            request_payload: {
+              jobber_job_id: jobberJobId,
+              jobber_client_id: jobberClientId,
+              display_name: leadSourceAudit.display_name,
+              self_reported_detail: leadSourceAudit.self_reported_detail,
+              written_via: "job_instructions",
+            },
+            response_payload: { note_included: true },
+            status: "succeeded",
+            attempt_count: 1,
+            last_attempt_at: new Date().toISOString(),
+          });
+      } catch (e) {
+        // Duplicate idempotency_key (retry) is expected and safe; other errors
+        // are logged but never block the booking flow.
+        const msg = (e as Error).message || "";
+        if (!/duplicate|unique/i.test(msg)) {
+          console.warn("lead_source_sync_events insert failed:", msg);
+        }
+      }
     }
 
     // Schedule a visit for the job using VisitCreateInput
