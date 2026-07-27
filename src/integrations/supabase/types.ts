@@ -231,50 +231,86 @@ export type Database = {
       }
       attribution_events: {
         Row: {
+          attribution_campaign: string | null
+          attribution_content: string | null
+          attribution_medium: string | null
+          attribution_source: string | null
           booking_id: string | null
+          callrail_campaign: string | null
+          callrail_tracking_number: string | null
           created_at: string
           customer_id: string | null
           fbclid: string | null
           first_touch: Json | null
+          first_touch_referrer: string | null
           id: string
           jobber_client_id: string | null
           jobber_job_id: string | null
           landing_page_slug: string | null
           last_touch: Json | null
+          last_touch_referrer: string | null
+          normalized_source_key: string | null
           quote_id: string | null
           referrer: string | null
+          self_reported_source: string | null
+          self_reported_source_detail: string | null
+          source_required_resolved_at: string | null
           source_session_id: string
           updated_at: string
         }
         Insert: {
+          attribution_campaign?: string | null
+          attribution_content?: string | null
+          attribution_medium?: string | null
+          attribution_source?: string | null
           booking_id?: string | null
+          callrail_campaign?: string | null
+          callrail_tracking_number?: string | null
           created_at?: string
           customer_id?: string | null
           fbclid?: string | null
           first_touch?: Json | null
+          first_touch_referrer?: string | null
           id?: string
           jobber_client_id?: string | null
           jobber_job_id?: string | null
           landing_page_slug?: string | null
           last_touch?: Json | null
+          last_touch_referrer?: string | null
+          normalized_source_key?: string | null
           quote_id?: string | null
           referrer?: string | null
+          self_reported_source?: string | null
+          self_reported_source_detail?: string | null
+          source_required_resolved_at?: string | null
           source_session_id: string
           updated_at?: string
         }
         Update: {
+          attribution_campaign?: string | null
+          attribution_content?: string | null
+          attribution_medium?: string | null
+          attribution_source?: string | null
           booking_id?: string | null
+          callrail_campaign?: string | null
+          callrail_tracking_number?: string | null
           created_at?: string
           customer_id?: string | null
           fbclid?: string | null
           first_touch?: Json | null
+          first_touch_referrer?: string | null
           id?: string
           jobber_client_id?: string | null
           jobber_job_id?: string | null
           landing_page_slug?: string | null
           last_touch?: Json | null
+          last_touch_referrer?: string | null
+          normalized_source_key?: string | null
           quote_id?: string | null
           referrer?: string | null
+          self_reported_source?: string | null
+          self_reported_source_detail?: string | null
+          source_required_resolved_at?: string | null
           source_session_id?: string
           updated_at?: string
         }
@@ -299,6 +335,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "customers"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attribution_events_normalized_source_key_fkey"
+            columns: ["normalized_source_key"]
+            isOneToOne: false
+            referencedRelation: "lead_source_definitions"
+            referencedColumns: ["source_key"]
           },
           {
             foreignKeyName: "attribution_events_quote_id_fkey"
@@ -3487,6 +3530,108 @@ export type Database = {
           },
         ]
       }
+      lead_source_definitions: {
+        Row: {
+          aliases: string[]
+          channel_group: string
+          created_at: string
+          display_name: string
+          id: string
+          is_active: boolean
+          is_other: boolean
+          jobber_mapping_key: string | null
+          jobber_mapping_mode: string
+          sort_order: number
+          source_key: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          aliases?: string[]
+          channel_group: string
+          created_at?: string
+          display_name: string
+          id?: string
+          is_active?: boolean
+          is_other?: boolean
+          jobber_mapping_key?: string | null
+          jobber_mapping_mode?: string
+          sort_order?: number
+          source_key: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          aliases?: string[]
+          channel_group?: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          is_active?: boolean
+          is_other?: boolean
+          jobber_mapping_key?: string | null
+          jobber_mapping_mode?: string
+          sort_order?: number
+          source_key?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      lead_source_sync_events: {
+        Row: {
+          attempt_count: number
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          error_message: string | null
+          id: string
+          idempotency_key: string
+          last_attempt_at: string | null
+          mapping_mode: string
+          provider: string
+          request_payload: Json
+          response_payload: Json | null
+          source_key: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          error_message?: string | null
+          id?: string
+          idempotency_key: string
+          last_attempt_at?: string | null
+          mapping_mode: string
+          provider?: string
+          request_payload?: Json
+          response_payload?: Json | null
+          source_key?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          error_message?: string | null
+          id?: string
+          idempotency_key?: string
+          last_attempt_at?: string | null
+          mapping_mode?: string
+          provider?: string
+          request_payload?: Json
+          response_payload?: Json | null
+          source_key?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       message_templates: {
         Row: {
           active: boolean
@@ -6262,6 +6407,7 @@ export type Database = {
         }
         Returns: Json
       }
+      normalize_lead_source: { Args: { p_value: string }; Returns: string }
       protect_reservation_for_execution: {
         Args: { p_group_id: string; p_min_expires_at: string }
         Returns: Json
@@ -6362,6 +6508,10 @@ export type Database = {
         Returns: Json
       }
       update_autosync_coverage: { Args: never; Returns: undefined }
+      validate_lead_source_submission: {
+        Args: { p_source_detail?: string; p_source_key: string }
+        Returns: boolean
+      }
     }
     Enums: {
       action_inbox_priority: "low" | "normal" | "high" | "urgent"
