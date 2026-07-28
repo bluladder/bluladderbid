@@ -42,6 +42,7 @@ jobs:
           bun run check:roadmap-ledger
           bun run check:organization-connectors
           bun run check:organization-pricing
+          bun run check:customer-intelligence
 
       - name: Unit tests (vitest)
         run: bun run test
