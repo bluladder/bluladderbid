@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "check:tenant-inventory": "node scripts/check-tenant-inventory.mjs",
+    "check:tenant-foundation": "node scripts/check-tenant-foundation.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
