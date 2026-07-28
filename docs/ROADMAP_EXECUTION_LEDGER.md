@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `7932356d7b5ecd3183b5edc5ac5a8d68bfef621a`
+Last reconciled main: `e76031d64fa3ea0e50ca556f92e10bd7d3463c0b`
 
 ## Dependency graph
 
@@ -20,9 +20,10 @@ Last reconciled main: `7932356d7b5ecd3183b5edc5ac5a8d68bfef621a`
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
-          │   └─ 10A pure catalog/pricing contracts  active
+          │   └─ 10A pure catalog/pricing contracts  complete (PR #19)
           └─ remaining tenant-table rollout          staged by authority path
-                └─ #4 customer intelligence          after #9/#10 foundations
+                └─ #4 customer intelligence
+                    └─ 4A pure tenant-safe engine     active
 
 #11 isolation/release hardening runs across every node.
 Oregon provisioning remains inactive until every upstream gate is proven.
@@ -39,26 +40,26 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Routing 8A | #8 | Settings, contacts, territories, services, pure fail-closed routing | #17 | merged |
 | Routing 8B | #8 | Runtime adoption requires persisted tenant lineage and hosted schema evidence | TBD | protected gate |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
-| Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | TBD | active |
+| Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
+| Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | TBD | active |
 
-## Current stage: Issue #10 Stage 10A
+## Current stage: Issue #4 Stage 4A
 
-Objective: define organization-scoped service-catalog and versioned-pricing
-contracts around the existing DFW engine without schema changes, authoritative
-price changes, hosted assumptions, or runtime cutover.
+Objective: adapt the deterministic customer-intelligence concepts from stale
+draft PR #5 into a tenant-safe pure engine without its unscoped migration,
+hosted-data assumptions, importer, persistence, or runtime cutover.
 
 Required repository outcomes:
 
-- organization-owned standard and custom service definitions with explicit
-  owner approval and independent quote/plan availability;
-- square-footage, window-count, pane-count, manual, promotional, and hybrid
-  pricing strategy contracts with deterministic priority;
-- immutable approved profile versions carrying minimums, labor, travel,
-  discount, tax, buffer, and manual-review policy;
-- fail-closed organization lineage, duplicate configuration, unsupported
-  input, and inactive Oregon behavior;
-- exact compatibility with the current canonical DFW pricing engine and
-  configuration.
+- mandatory organization lineage on events, snapshots, models, candidates, and
+  learning outcomes;
+- deterministic point-in-time features with canonical event identity, explicit
+  value semantics, and reproducible input fingerprints;
+- approved Stage 10A service-catalog gating and approved-model gating;
+- archived-client and sensitive-event suppression;
+- per-organization, per-model, per-feature evidence thresholds and bounded
+  weight proposals;
+- isolation, catalog, provenance, DFW compatibility, and inactive Oregon tests.
 
 ## Protected-action gates
 
@@ -80,16 +81,17 @@ are separated in
 
 ## Queued safe stages
 
-1. Finish Issue #10A versioned service-catalog/pricing domain and DFW parity
-   fixtures without activating new authoritative prices.
+1. Finish Issue #4 Stage 4A pure tenant-safe intelligence contracts.
 2. Complete the Stage 8B persisted-lineage and runtime-adoption package after
    the hosted migration/type gate.
-3. Remaining tenant-owned tables in narrow nullable waves, each with
+3. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
+   with organization-keyed uniqueness, composite lineage, and draft-only seeds.
+4. Remaining tenant-owned tables in narrow nullable waves, each with
    authoritative-write coverage and verification.
-4. Issue #4 customer-intelligence tenant scoping and advisory engine
-   completion after connector and pricing contracts stabilize.
-5. Inactive Oregon provisioning/evidence fixtures.
-6. Issue #11 whole-system isolation, migration, and release hardening.
+5. Issue #4 read-only importer and later persistence/runtime stages through the
+   Stage 9A connector contract.
+6. Inactive Oregon provisioning/evidence fixtures.
+7. Issue #11 whole-system isolation, migration, and release hardening.
 
 ## Validation ledger
 
