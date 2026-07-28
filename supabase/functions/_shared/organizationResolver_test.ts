@@ -26,14 +26,21 @@ Deno.test("conflicting trusted signals fail closed despite precedence", () => {
   assertEquals(
     resolveOrganizationContext([
       { organizationId: ORG_A, source: "resource", evidence: "quote:q-a" },
-      { organizationId: ORG_B, source: "membership", evidence: "member:user-b" },
+      {
+        organizationId: ORG_B,
+        source: "membership",
+        evidence: "member:user-b",
+      },
     ]),
     { ok: false, reason: "conflict" },
   );
 });
 
 Deno.test("missing and malformed signals fail closed", () => {
-  assertEquals(resolveOrganizationContext([]), { ok: false, reason: "missing" });
+  assertEquals(resolveOrganizationContext([]), {
+    ok: false,
+    reason: "missing",
+  });
   assertEquals(
     resolveOrganizationContext([
       { organizationId: "client-payload", source: "site", evidence: "raw" },
