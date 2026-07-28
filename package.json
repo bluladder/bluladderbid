@@ -11,6 +11,7 @@
     "check:tenant-inventory": "node scripts/check-tenant-inventory.mjs",
     "check:tenant-foundation": "node scripts/check-tenant-foundation.mjs",
     "check:tenant-readiness": "node scripts/check-tenant-readiness.mjs",
+    "check:organization-routing": "node scripts/check-organization-routing.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
