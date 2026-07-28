@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `6af1edfdeaaf6d7bfdd37c0c9d0f4ae80b0c8f3b`
+Last reconciled main: `7932356d7b5ecd3183b5edc5ac5a8d68bfef621a`
 
 ## Dependency graph
 
@@ -18,8 +18,9 @@ Last reconciled main: `6af1edfdeaaf6d7bfdd37c0c9d0f4ae80b0c8f3b`
           │   ├─ 8A schema and pure routing          complete (PR #17)
           │   └─ 8B server/runtime adoption           protected gate
           ├─ #9 organization connector contracts
-          │   └─ 9A pure contracts and Jobber seam   active
-          ├─ #10 service catalog and pricing         queued after 8B contract
+          │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
+          ├─ #10 service catalog and pricing
+          │   └─ 10A pure catalog/pricing contracts  active
           └─ remaining tenant-table rollout          staged by authority path
                 └─ #4 customer intelligence          after #9/#10 foundations
 
@@ -37,27 +38,27 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Tenant 7C | #7 | Read-only hosted preflight and controlled migration runbook | #16 | merged |
 | Routing 8A | #8 | Settings, contacts, territories, services, pure fail-closed routing | #17 | merged |
 | Routing 8B | #8 | Runtime adoption requires persisted tenant lineage and hosted schema evidence | TBD | protected gate |
-| Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | TBD | active |
+| Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
+| Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | TBD | active |
 
-## Current stage: Issue #9 Stage 9A
+## Current stage: Issue #10 Stage 10A
 
-Objective: define organization-scoped connector contracts and wrap the existing
-DFW Jobber behavior behind a typed seam without provider calls, configuration
-changes, hosted schema assumptions, or runtime cutover.
+Objective: define organization-scoped service-catalog and versioned-pricing
+contracts around the existing DFW engine without schema changes, authoritative
+price changes, hosted assumptions, or runtime cutover.
 
 Required repository outcomes:
 
-- typed contracts for customer, quote, availability, booking, cancellation,
-  invoice, communications, health, and capability reporting;
-- server-resolved organization connector selection with explicit missing,
-  conflicting, inactive, unsupported, and degraded states;
-- idempotency, retry, dead-letter/manual-review, and audit contracts;
-- a Jobber adapter seam that preserves the existing DFW request/result
-  behavior without changing deployed entry points;
-- evidence-based JobTread and calendar-fallback capability matrices without
-  inventing unsupported operations;
-- payment-destination interface only, with no Stripe implementation;
-- isolation, selection, failure, capability, and DFW parity tests.
+- organization-owned standard and custom service definitions with explicit
+  owner approval and independent quote/plan availability;
+- square-footage, window-count, pane-count, manual, promotional, and hybrid
+  pricing strategy contracts with deterministic priority;
+- immutable approved profile versions carrying minimums, labor, travel,
+  discount, tax, buffer, and manual-review policy;
+- fail-closed organization lineage, duplicate configuration, unsupported
+  input, and inactive Oregon behavior;
+- exact compatibility with the current canonical DFW pricing engine and
+  configuration.
 
 ## Protected-action gates
 
@@ -79,18 +80,16 @@ are separated in
 
 ## Queued safe stages
 
-1. Finish Issue #9A connector interfaces, selection, failure states, and
-   Jobber parity inventory without provider changes.
-2. Issue #10A versioned service-catalog/pricing domain and DFW parity fixtures
-   without activating new authoritative prices.
-3. Complete the Stage 8B persisted-lineage and runtime-adoption package after
+1. Finish Issue #10A versioned service-catalog/pricing domain and DFW parity
+   fixtures without activating new authoritative prices.
+2. Complete the Stage 8B persisted-lineage and runtime-adoption package after
    the hosted migration/type gate.
-4. Remaining tenant-owned tables in narrow nullable waves, each with
+3. Remaining tenant-owned tables in narrow nullable waves, each with
    authoritative-write coverage and verification.
-5. Issue #4 customer-intelligence tenant scoping and advisory engine
+4. Issue #4 customer-intelligence tenant scoping and advisory engine
    completion after connector and pricing contracts stabilize.
-6. Inactive Oregon provisioning/evidence fixtures.
-7. Issue #11 whole-system isolation, migration, and release hardening.
+5. Inactive Oregon provisioning/evidence fixtures.
+6. Issue #11 whole-system isolation, migration, and release hardening.
 
 ## Validation ledger
 
