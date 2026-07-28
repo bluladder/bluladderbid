@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DateFirstCalendar } from './DateFirstCalendar';
 import { format, addDays } from 'date-fns';
@@ -29,6 +29,15 @@ function iso(d: Date, hour: number) {
 }
 
 describe('DateFirstCalendar — status-driven presentation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-15T12:00:00'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders "Open" on a business day with several valid slots', () => {
     const target = nthWeekday(3);
     const key = format(target, 'yyyy-MM-dd');

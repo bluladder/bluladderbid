@@ -7,14 +7,19 @@ import type { ParsedAdapterRequest } from "./voiceAdapter.ts";
 function stubSupabase(): any {
   const q = {
     select: () => q,
+    insert: () => q,
+    upsert: () => q,
     eq: () => q,
+    in: () => q,
     order: () => q,
     limit: () => q,
     maybeSingle: async () => ({ data: null, error: null }),
+    single: async () => ({ data: null, error: null }),
     then: (fn: any) => fn({ data: [], error: null }),
   };
   return {
     from: () => q,
+    rpc: async () => ({ data: [], error: null }),
   };
 }
 

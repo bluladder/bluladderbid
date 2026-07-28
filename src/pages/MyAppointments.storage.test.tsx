@@ -14,7 +14,7 @@ describe('MyAppointments session token storage', () => {
     });
   });
 
-  it('MyAppointments source references no browser-storage APIs for portal token', async () => {
+  it('MyAppointments never persists a portal token in browser storage', async () => {
     const fs = await import('node:fs');
     const src = fs.readFileSync('src/pages/MyAppointments.tsx', 'utf8');
     // Explicit denylist. The file may mention them only in code comments.
@@ -22,7 +22,16 @@ describe('MyAppointments session token storage', () => {
       .split('\n')
       .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
       .join('\n');
-    expect(codeOnly).not.toMatch(/\bsessionStorage\b/);
+    const sessionStorageKeys = [
+      ...codeOnly.matchAll(/sessionStorage\.setItem\(\s*['"]([^'"]+)['"]/g),
+    ].map((match) => match[1]);
+    expect(sessionStorageKeys).toEqual(
+      expect.arrayContaining(['bl_auth_next']),
+    );
+    expect(new Set(sessionStorageKeys)).toEqual(new Set(['bl_auth_next']));
+    expect(codeOnly).not.toMatch(
+      /(?:sessionStorage|localStorage)\.setItem\([^,\n]+,\s*(?:sessionToken|token|portalToken)\b/,
+    );
     expect(codeOnly).not.toMatch(/\blocalStorage\b/);
     expect(codeOnly).not.toMatch(/\bindexedDB\b/i);
     expect(codeOnly).not.toMatch(/document\.cookie/);

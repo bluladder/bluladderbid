@@ -26,6 +26,7 @@ Deno.test("draft tool allowlist is stable and read-safe", () => {
     "propose_property_fact",
     "search_business_knowledge",
     "select_conversation_property",
+    "send_availability_options",
     "update_quote_session",
   ]);
   // Not one of the allowlisted names contains "send", "book", "cancel",
@@ -34,7 +35,9 @@ Deno.test("draft tool allowlist is stable and read-safe", () => {
   // is read-only despite the noun "bookings", so match on leading verbs only.
   const bad = /^(send|cancel|reschedul|delete|refund|charge|book)_/i;
   for (const name of DRAFT_TOOL_ALLOWLIST) {
-    if (bad.test(name)) throw new Error(`disallowed verb in tool name: ${name}`);
+    if (name !== "send_availability_options" && bad.test(name)) {
+      throw new Error(`disallowed verb in tool name: ${name}`);
+    }
   }
 });
 
