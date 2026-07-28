@@ -33,6 +33,11 @@ jobs:
       - name: Typecheck
         run: bunx tsc --noEmit
 
+      - name: Tenant inventory and migration contracts
+        run: |
+          bun run check:tenant-inventory
+          bun run check:tenant-foundation
+
       - name: Unit tests (vitest)
         run: bun run test
 
@@ -60,7 +65,7 @@ jobs:
         continue-on-error: true
 
       - name: Deno tests
-        run: deno test --allow-all --no-check supabase/functions/_shared
+        run: deno test --allow-all supabase/functions/_shared
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
