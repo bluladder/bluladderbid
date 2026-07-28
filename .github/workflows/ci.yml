@@ -37,6 +37,7 @@ jobs:
         run: |
           bun run check:tenant-inventory
           bun run check:tenant-foundation
+          bun run check:organization-routing
 
       - name: Unit tests (vitest)
         run: bun run test
