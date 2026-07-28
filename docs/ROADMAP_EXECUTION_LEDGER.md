@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `1da3732f76b5ed171d89710b1a28652b2e3f66b6`
+Last reconciled main: `4032aa047eb128a572802a03fe8652cb71f27ae8`
 
 ## Dependency graph
 
@@ -26,7 +26,7 @@ Last reconciled main: `1da3732f76b5ed171d89710b1a28652b2e3f66b6`
                     └─ 4A pure tenant-safe engine     complete (PR #20)
 
 #11 isolation/release hardening runs across every node.
-  └─ 11B cross-contract isolation suite              active
+  └─ 11B cross-contract isolation suite              complete (PR #21)
 Oregon provisioning remains inactive until every upstream gate is proven.
 ```
 
@@ -43,23 +43,22 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
-| Hardening 11B | #11 | Cross-contract routing-to-intelligence isolation suite | TBD | active |
+| Hardening 11B | #11 | Cross-contract routing-to-intelligence isolation suite | #21 | merged |
 
-## Current stage: Issue #11 Stage 11B
+## Current stage: protected hosted migration gate
 
-Objective: compose the merged pure tenant contracts in a two-organization
-integration suite proving that routing ambiguity or inactive Oregon cannot
-inherit DFW connector, pricing, or intelligence state.
+No repository-only stage is active. The safe graph through pure routing,
+connectors, pricing, customer intelligence, and cross-contract isolation is
+complete.
 
-Required repository outcomes:
+The next dependency requires controlled read-only hosted preflight evidence,
+followed by separately authorized schema migration, verification, and generated
+type regeneration. Those actions cannot be inferred from repository merge
+authority.
 
-- explicit DFW compatibility across routing, connector, catalog, pricing
-  profile, and intelligence contracts;
-- inactive Oregon manual review at every downstream contract;
-- ambiguous territory produces unowned lead tags and conflicting resolver
-  signals fail closed;
-- legacy DFW resolution remains possible only through its explicit
-  compatibility gate.
+Until that gate is cleared, runtime adoption, additional tenant-owned
+persistence, provider-backed historical importing, owner activation, and Oregon
+provisioning remain blocked.
 
 ## Protected-action gates
 
@@ -81,17 +80,18 @@ are separated in
 
 ## Queued safe stages
 
-1. Finish Issue #11 Stage 11B cross-contract isolation hardening.
-2. Complete the Stage 8B persisted-lineage and runtime-adoption package after
+None. The following stages remain gated:
+
+1. Complete the Stage 8B persisted-lineage and runtime-adoption package after
    the hosted migration/type gate.
-3. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
+2. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
    with organization-keyed uniqueness, composite lineage, and draft-only seeds.
-4. Remaining tenant-owned tables in narrow nullable waves, each with
+3. Remaining tenant-owned tables in narrow nullable waves, each with
    authoritative-write coverage and verification.
-5. Issue #4 read-only importer and later persistence/runtime stages through the
+4. Issue #4 read-only importer and later persistence/runtime stages through the
    Stage 9A connector contract.
-6. Inactive Oregon provisioning/evidence fixtures.
-7. Issue #11 whole-system isolation, migration, and release hardening.
+5. Inactive Oregon provisioning/evidence fixtures.
+6. Issue #11 whole-system isolation, migration, and release hardening.
 
 ## Validation ledger
 
