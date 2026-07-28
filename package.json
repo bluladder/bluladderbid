@@ -12,6 +12,8 @@
     "check:tenant-foundation": "node scripts/check-tenant-foundation.mjs",
     "check:tenant-readiness": "node scripts/check-tenant-readiness.mjs",
     "check:organization-routing": "node scripts/check-organization-routing.mjs",
+    "check:roadmap-ledger": "node scripts/check-roadmap-ledger.mjs",
+    "check:organization-connectors": "node scripts/check-organization-connectors.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
