@@ -424,7 +424,7 @@ function buildSummary(f: ConversationFacts, state: string): string {
 
 async function callModel(messages: any[], tools: any[]): Promise<any> {
   const key = Deno.env.get("LOVABLE_API_KEY");
-  if (!key) throw new Error("LOVABLE_API_KEY not configured");
+  if (!key) return { __error: true };
   const resp = await fetch(AI_GATEWAY, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },

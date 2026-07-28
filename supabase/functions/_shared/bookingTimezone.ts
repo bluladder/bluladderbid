@@ -65,5 +65,5 @@ export function formatBookingWhen(
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-  }).format(start);
+  }).format(start).replace(/[\u00a0\u202f]/g, " ");
 }

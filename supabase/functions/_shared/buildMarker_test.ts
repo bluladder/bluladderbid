@@ -22,8 +22,8 @@ Deno.test("BUILD_FEATURES exposes Phase 4C-β.4A window scope + partial + commer
 
 Deno.test("BUILD_FEATURES exposes Phase 4C-β.4B stable-session + workflow-controller flags", () => {
   assertEquals(BUILD_FEATURES.stableVoiceSessionId, true);
-  // Controller is scaffolded but off by default until parity is proven end-to-end.
-  assertEquals(BUILD_FEATURES.useWorkflowController, false);
+  // Controller remains gated until parity is proven end-to-end.
+  assertEquals(BUILD_FEATURES.useWorkflowController, "gated");
 });
 
 Deno.test("buildNonStreamingResponse: buildId is in bluladder diagnostics", async () => {

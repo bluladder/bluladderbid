@@ -93,6 +93,16 @@ function makeStub(seed: Record<string, Row[]>) {
         // reservation table.
         return { data: { ok: true }, error: null };
       }
+      if (
+        name === "claim_sms_booking_execution" ||
+        name === "protect_reservation_for_execution" ||
+        name === "unprotect_reservation_after_failure" ||
+        name === "commit_sms_booking_success" ||
+        name === "mark_sms_booking_terminal_failure" ||
+        name === "mark_sms_booking_recoverable_failure"
+      ) {
+        return { data: { ok: true }, error: null };
+      }
       return { data: null, error: null };
     },
   };

@@ -92,9 +92,11 @@ Deno.test("all pricing fields present → calculate_price (no city required)", (
       squareFootage: 2000,
       stories: 2,
       windowCleaningSides: "outside_only",
+      condition: "average",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
+      condition: "captured",
     },
   });
   // Engine reports nothing missing → move to pricing.
@@ -108,9 +110,11 @@ Deno.test("pricing error surfaces as handoff, never as another intake question",
       squareFootage: 2000,
       stories: 2,
       windowCleaningSides: "outside_only",
+      condition: "average",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
+      condition: "captured",
     },
     quoteStatus: "error",
   });
@@ -126,9 +130,11 @@ Deno.test("priced → speak_price first, then collects booking fields", () => {
       squareFootage: 2000,
       stories: 2,
       windowCleaningSides: "outside_only",
+      condition: "average",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
+      condition: "captured",
     },
     quoteStatus: "estimated",
   });
@@ -142,9 +148,11 @@ Deno.test("post-quote: asks for email before booking (not before speaking the pr
       squareFootage: 2000,
       stories: 2,
       windowCleaningSides: "outside_only",
+      condition: "average",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
+      condition: "captured",
     },
     quoteStatus: "estimated",
     lastStep: "priced_spoken",

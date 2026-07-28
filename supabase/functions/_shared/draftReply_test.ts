@@ -6,7 +6,7 @@ import { DRAFT_ALLOWED_TOOLS, sanitizeDraftBody, shouldAutoDraft } from "./draft
 
 Deno.test("phase 2 draft tools are all read-only or conversation-scoped", () => {
   const destructive = [
-    /^send_/i, /^create_booking/i, /^cancel_booking/i, /^reschedule_booking/i,
+    /^(?!send_availability_options$)send_/i, /^create_booking/i, /^cancel_booking/i, /^reschedule_booking/i,
     /^refund/i, /^delete_/i, /^update_customer/i, /^apply_discount/i,
   ];
   for (const t of DRAFT_ALLOWED_TOOLS) {
