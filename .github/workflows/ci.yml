@@ -39,6 +39,8 @@ jobs:
           bun run check:tenant-foundation
           bun run check:tenant-readiness
           bun run check:organization-routing
+          bun run check:roadmap-ledger
+          bun run check:organization-connectors
 
       - name: Unit tests (vitest)
         run: bun run test
