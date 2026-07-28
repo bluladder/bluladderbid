@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `e76031d64fa3ea0e50ca556f92e10bd7d3463c0b`
+Last reconciled main: `1da3732f76b5ed171d89710b1a28652b2e3f66b6`
 
 ## Dependency graph
 
@@ -23,9 +23,10 @@ Last reconciled main: `e76031d64fa3ea0e50ca556f92e10bd7d3463c0b`
           │   └─ 10A pure catalog/pricing contracts  complete (PR #19)
           └─ remaining tenant-table rollout          staged by authority path
                 └─ #4 customer intelligence
-                    └─ 4A pure tenant-safe engine     active
+                    └─ 4A pure tenant-safe engine     complete (PR #20)
 
 #11 isolation/release hardening runs across every node.
+  └─ 11B cross-contract isolation suite              active
 Oregon provisioning remains inactive until every upstream gate is proven.
 ```
 
@@ -41,25 +42,24 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Routing 8B | #8 | Runtime adoption requires persisted tenant lineage and hosted schema evidence | TBD | protected gate |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
-| Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | TBD | active |
+| Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
+| Hardening 11B | #11 | Cross-contract routing-to-intelligence isolation suite | TBD | active |
 
-## Current stage: Issue #4 Stage 4A
+## Current stage: Issue #11 Stage 11B
 
-Objective: adapt the deterministic customer-intelligence concepts from stale
-draft PR #5 into a tenant-safe pure engine without its unscoped migration,
-hosted-data assumptions, importer, persistence, or runtime cutover.
+Objective: compose the merged pure tenant contracts in a two-organization
+integration suite proving that routing ambiguity or inactive Oregon cannot
+inherit DFW connector, pricing, or intelligence state.
 
 Required repository outcomes:
 
-- mandatory organization lineage on events, snapshots, models, candidates, and
-  learning outcomes;
-- deterministic point-in-time features with canonical event identity, explicit
-  value semantics, and reproducible input fingerprints;
-- approved Stage 10A service-catalog gating and approved-model gating;
-- archived-client and sensitive-event suppression;
-- per-organization, per-model, per-feature evidence thresholds and bounded
-  weight proposals;
-- isolation, catalog, provenance, DFW compatibility, and inactive Oregon tests.
+- explicit DFW compatibility across routing, connector, catalog, pricing
+  profile, and intelligence contracts;
+- inactive Oregon manual review at every downstream contract;
+- ambiguous territory produces unowned lead tags and conflicting resolver
+  signals fail closed;
+- legacy DFW resolution remains possible only through its explicit
+  compatibility gate.
 
 ## Protected-action gates
 
@@ -81,7 +81,7 @@ are separated in
 
 ## Queued safe stages
 
-1. Finish Issue #4 Stage 4A pure tenant-safe intelligence contracts.
+1. Finish Issue #11 Stage 11B cross-contract isolation hardening.
 2. Complete the Stage 8B persisted-lineage and runtime-adoption package after
    the hosted migration/type gate.
 3. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,

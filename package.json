@@ -16,6 +16,7 @@
     "check:organization-connectors": "node scripts/check-organization-connectors.mjs",
     "check:organization-pricing": "node scripts/check-organization-pricing.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
+    "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
