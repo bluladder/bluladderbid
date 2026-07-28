@@ -1,0 +1,469 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-28",
+  "project_ref": "gyndziiuizpgwhqwyrvn",
+  "classification_contract": {
+    "intentionally platform-global": "The identifier or security token must be unique across the entire platform.",
+    "organization-scoped composite key": "Add organization_id to the uniqueness key before a second organization is active.",
+    "provider-scoped": "Scope uniqueness to the owning provider connector/account and organization where applicable.",
+    "ambiguous and requiring decision": "Product or identity semantics must be decided before changing the key.",
+    "safe for single-organization compatibility only": "Current global key preserves DFW but is not safe for a second active organization."
+  },
+  "entries": [
+    {
+      "table": "action_inbox_items",
+      "index": "action_inbox_items_dedupe_key_idx",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "dedupe_key"],
+      "rationale": "Operational actions can have identical dedupe inputs in different organizations."
+    },
+    {
+      "table": "ai_escalations",
+      "index": "uq_ai_escalations_active",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "conversation_id", "category"],
+      "rationale": "Conversation lineage is tenant-owned; organization scope is defense in depth."
+    },
+    {
+      "table": "attribution_events",
+      "index": "attribution_events_source_session_id_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "source_session_id"],
+      "rationale": "Browser/session identifiers are not globally authoritative and the attribution trigger currently updates by this value."
+    },
+    {
+      "table": "availability_cache",
+      "index": "availability_cache_cache_key_idx",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "cache_key"],
+      "rationale": "Availability depends on organization-specific crews, territory, and provider configuration."
+    },
+    {
+      "table": "availability_cache",
+      "index": "availability_cache_cache_key_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "cache_key"],
+      "rationale": "Duplicate global indexes should be consolidated when organization scope is introduced."
+    },
+    {
+      "table": "booking_crew_assignments",
+      "index": "booking_crew_assignments_booking_id_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "booking_id"],
+      "rationale": "Booking is tenant-owned; composite lineage prevents cross-organization assignment."
+    },
+    {
+      "table": "booking_management_tokens",
+      "index": "booking_management_tokens_token_hash_key",
+      "classification": "intentionally platform-global",
+      "target_key": ["token_hash"],
+      "rationale": "A security token hash must never identify more than one management session anywhere on the platform."
+    },
+    {
+      "table": "booking_management_tokens",
+      "index": "ux_bmt_management_session_hash",
+      "classification": "intentionally platform-global",
+      "target_key": ["management_session_hash"],
+      "rationale": "A bearer-session hash must be globally unambiguous before its organization is resolved."
+    },
+    {
+      "table": "booking_test_runs",
+      "index": "idx_booking_test_runs_correlation",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Decide whether synthetic correlations are platform diagnostics or organization-scoped test executions."
+    },
+    {
+      "table": "bookings",
+      "index": "bookings_reference_number_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "reference_number"],
+      "rationale": "Human-facing reference numbers may be generated independently by each organization."
+    },
+    {
+      "table": "business_knowledge",
+      "index": "business_knowledge_knowledge_key_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "knowledge_key"],
+      "rationale": "Canonical business knowledge must not collide or leak across organizations."
+    },
+    {
+      "table": "business_knowledge",
+      "index": "business_knowledge_record_number_uidx",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "record_number"],
+      "rationale": "Record numbering belongs to each organization's knowledge catalog."
+    },
+    {
+      "table": "callrail_inbound_events",
+      "index": "callrail_inbound_events_provider_message_id_key",
+      "classification": "provider-scoped",
+      "target_key": ["organization_id", "callrail_connector_id", "provider_message_id"],
+      "rationale": "Provider message identity is authoritative only within the mapped CallRail account/company."
+    },
+    {
+      "table": "campaign_enrollments",
+      "index": "uq_enrollment_active",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "campaign_id", "subject_identity", "event_name"],
+      "rationale": "Enrollment and customer/contact identity are tenant-owned."
+    },
+    {
+      "table": "campaign_events",
+      "index": "campaign_events_idempotency_key_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "idempotency_key"],
+      "rationale": "Application idempotency keys can be independently generated by organizations."
+    },
+    {
+      "table": "communication_consent",
+      "index": "uq_consent_email",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "email", "consent_type"],
+      "rationale": "Business communication consent is organization-specific; platform suppression remains separate."
+    },
+    {
+      "table": "communication_consent",
+      "index": "uq_consent_sms",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "phone", "consent_type"],
+      "rationale": "Business communication consent is organization-specific; statutory/platform suppression remains separate."
+    },
+    {
+      "table": "contact_requests",
+      "index": "contact_requests_request_key_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "request_key"],
+      "rationale": "Public request idempotency must be bound to server-resolved organization context."
+    },
+    {
+      "table": "conversation_reviews",
+      "index": "conversation_reviews_conversation_id_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "conversation_id"],
+      "rationale": "Conversation review is tenant-owned and should enforce matching lineage."
+    },
+    {
+      "table": "crew_config",
+      "index": "crew_config_singleton_key",
+      "classification": "safe for single-organization compatibility only",
+      "target_key": ["organization_id", "singleton"],
+      "rationale": "The current singleton is DFW-global and must become one row per organization."
+    },
+    {
+      "table": "customer_access_test_authorizations",
+      "index": "customer_access_test_authorizatio_test_type_idempotency_key_key",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Decide whether customer-access testing is a platform safety facility or an organization-scoped operation."
+    },
+    {
+      "table": "customer_accounts",
+      "index": "customer_accounts_auth_user_id_key",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Requires a product decision whether one authenticated identity can hold accounts in multiple organizations."
+    },
+    {
+      "table": "customer_accounts",
+      "index": "customer_accounts_verified_phone_key",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Requires a cross-organization customer identity and account-recovery decision."
+    },
+    {
+      "table": "customer_accounts",
+      "index": "ux_customer_accounts_verified_email",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Requires a cross-organization customer identity and account-recovery decision."
+    },
+    {
+      "table": "customer_portal_sessions",
+      "index": "customer_portal_sessions_session_token_hash_key",
+      "classification": "intentionally platform-global",
+      "target_key": ["session_token_hash"],
+      "rationale": "A bearer-session hash must resolve to exactly one session before tenant access."
+    },
+    {
+      "table": "customer_properties",
+      "index": "customer_properties_customer_id_property_id_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "customer_id", "property_id"],
+      "rationale": "Both parent records are tenant-owned and lineage must match."
+    },
+    {
+      "table": "customer_properties",
+      "index": "ux_customer_properties_primary",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "customer_id"],
+      "rationale": "Primary-property selection belongs to a customer within an organization."
+    },
+    {
+      "table": "customers",
+      "index": "customers_email_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "email"],
+      "rationale": "The same person may be a customer of multiple organizations."
+    },
+    {
+      "table": "discount_codes",
+      "index": "discount_codes_code_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "code"],
+      "rationale": "Organizations independently own promotions and code vocabularies."
+    },
+    {
+      "table": "drive_time_cache",
+      "index": "drive_time_cache_origin_hash_dest_hash_key",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "A purely geographic cache may be platform-global, but provider/model/config differences may require organization scope."
+    },
+    {
+      "table": "email_inbound_messages",
+      "index": "email_inbound_messages_provider_message_id_key",
+      "classification": "provider-scoped",
+      "target_key": ["email_connector_id", "provider_message_id"],
+      "rationale": "Provider message identifiers are only authoritative in their receiving account."
+    },
+    {
+      "table": "email_inbound_messages",
+      "index": "email_inbound_messages_provider_msg_idx",
+      "classification": "provider-scoped",
+      "target_key": ["provider", "email_connector_id", "provider_message_id"],
+      "rationale": "Preserve provider namespace and connector ownership."
+    },
+    {
+      "table": "email_suppressions",
+      "index": "email_suppressions_email_lower_key",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Provider/platform deliverability suppression and organization-specific communication choice require separate semantics."
+    },
+    {
+      "table": "escalation_settings",
+      "index": "escalation_settings_singleton_key",
+      "classification": "safe for single-organization compatibility only",
+      "target_key": ["organization_id", "singleton"],
+      "rationale": "Escalation configuration must become one row per organization."
+    },
+    {
+      "table": "jobber_busy_blocks",
+      "index": "jobber_busy_blocks_visit_crew_key",
+      "classification": "provider-scoped",
+      "target_key": ["organization_id", "jobber_connector_id", "jobber_visit_id", "crew_id"],
+      "rationale": "Visit identifiers and crews belong to a mapped Jobber account."
+    },
+    {
+      "table": "jobber_webhook_events",
+      "index": "jobber_webhook_events_event_id_key",
+      "classification": "provider-scoped",
+      "target_key": ["jobber_connector_id", "event_id"],
+      "rationale": "Webhook event identifiers are authoritative within a provider account/app."
+    },
+    {
+      "table": "knowledge_gaps",
+      "index": "knowledge_gaps_grouping_key_uidx",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "grouping_key"],
+      "rationale": "Learning and gap aggregation must never combine organizations."
+    },
+    {
+      "table": "lead_source_definitions",
+      "index": "lead_source_definitions_source_key_key",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Decide between a platform taxonomy with organization mappings and fully organization-owned source catalogs."
+    },
+    {
+      "table": "lead_source_sync_events",
+      "index": "lead_source_sync_events_idempotency_key_key",
+      "classification": "provider-scoped",
+      "target_key": ["organization_id", "provider_connector_id", "idempotency_key"],
+      "rationale": "Sync idempotency belongs to one organization/provider connector."
+    },
+    {
+      "table": "pending_confirmations",
+      "index": "pending_confirmations_token_key",
+      "classification": "intentionally platform-global",
+      "target_key": ["token"],
+      "rationale": "A bearer token must resolve globally to one pending confirmation."
+    },
+    {
+      "table": "phone_numbers",
+      "index": "phone_numbers_purpose_key",
+      "classification": "safe for single-organization compatibility only",
+      "target_key": ["organization_id", "purpose"],
+      "rationale": "Each organization needs independent business, tracking, escalation, and provider numbers."
+    },
+    {
+      "table": "pricing_config",
+      "index": "pricing_config_config_key_key",
+      "classification": "safe for single-organization compatibility only",
+      "target_key": ["organization_id", "config_key"],
+      "rationale": "Pricing configuration keys repeat independently per organization."
+    },
+    {
+      "table": "pricing_versions",
+      "index": "pricing_versions_version_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "version"],
+      "rationale": "Pricing version sequences are organization-owned."
+    },
+    {
+      "table": "properties",
+      "index": "ux_properties_normalized_address",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "normalized_address"],
+      "rationale": "The same physical property may legitimately appear in multiple organizations."
+    },
+    {
+      "table": "quote_resume_tokens",
+      "index": "quote_resume_tokens_token_hash_key",
+      "classification": "intentionally platform-global",
+      "target_key": ["token_hash"],
+      "rationale": "A bearer token hash must resolve globally to one quote context."
+    },
+    {
+      "table": "quotes",
+      "index": "quotes_idempotency_key_uidx",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "idempotency_key"],
+      "rationale": "Client and integration idempotency namespaces are organization-specific."
+    },
+    {
+      "table": "resend_webhook_events",
+      "index": "resend_webhook_events_svix_id_key",
+      "classification": "provider-scoped",
+      "target_key": ["email_connector_id", "svix_id"],
+      "rationale": "Webhook delivery identity belongs to the receiving provider account."
+    },
+    {
+      "table": "service_area_config",
+      "index": "service_area_config_singleton_key",
+      "classification": "safe for single-organization compatibility only",
+      "target_key": ["organization_id", "singleton"],
+      "rationale": "Current service-area singleton is DFW-only."
+    },
+    {
+      "table": "service_education_content",
+      "index": "service_education_content_key_channel_unique",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "service_key", "channel"],
+      "rationale": "Customer communication content is organization-specific."
+    },
+    {
+      "table": "service_maintenance_intervals",
+      "index": "service_maintenance_intervals_service_key_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "service_key"],
+      "rationale": "Maintenance guidance can vary by organization."
+    },
+    {
+      "table": "service_preparation_config",
+      "index": "service_preparation_config_service_key_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "service_key"],
+      "rationale": "Preparation instructions are organization-owned."
+    },
+    {
+      "table": "service_staffing_requirements",
+      "index": "service_staffing_requirements_service_key_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "service_key"],
+      "rationale": "Staffing requirements depend on organization-specific crews and offerings."
+    },
+    {
+      "table": "sms_availability_presentations",
+      "index": "uq_sms_presentations_convo_idem",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "conversation_id", "idempotency_key"],
+      "rationale": "SMS presentation identity follows tenant-owned conversation lineage."
+    },
+    {
+      "table": "sms_availability_presentations",
+      "index": "uq_sms_presentations_one_active_per_convo",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "conversation_id"],
+      "rationale": "An active presentation belongs to a conversation in one organization."
+    },
+    {
+      "table": "sms_availability_presentations",
+      "index": "uq_sms_presentations_selection_inbound",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "id", "selection_inbound_sms_id"],
+      "rationale": "Inbound selection linkage must preserve tenant lineage."
+    },
+    {
+      "table": "sms_booking_confirmations",
+      "index": "sms_booking_confirmations_idempotency_key_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "idempotency_key"],
+      "rationale": "Confirmation idempotency keys are generated within organization workflows."
+    },
+    {
+      "table": "sms_booking_confirmations",
+      "index": "uq_smsbc_presentation_active",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "presentation_id"],
+      "rationale": "Presentation and confirmation must share organization lineage."
+    },
+    {
+      "table": "sms_messages",
+      "index": "uq_sms_messages_outbound_idempotency_key",
+      "classification": "provider-scoped",
+      "target_key": ["organization_id", "sms_connector_id", "outbound_idempotency_key"],
+      "rationale": "Outbound delivery identity belongs to one sender/provider connector."
+    },
+    {
+      "table": "sms_opt_outs",
+      "index": "sms_opt_outs_phone_key",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Legal/platform-wide suppression and organization-specific consent may require separate records and precedence."
+    },
+    {
+      "table": "system_issues",
+      "index": "system_issues_dedupe_key_key",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "System-global incidents and tenant-specific incidents need explicit nullable-scope semantics."
+    },
+    {
+      "table": "technician_service_rates",
+      "index": "technician_service_rates_technician_id_service_type_key",
+      "classification": "organization-scoped composite key",
+      "target_key": ["organization_id", "technician_id", "service_type"],
+      "rationale": "Technician and service pricing are tenant-owned."
+    },
+    {
+      "table": "technicians",
+      "index": "technicians_jobber_user_id_key",
+      "classification": "provider-scoped",
+      "target_key": ["organization_id", "jobber_connector_id", "jobber_user_id"],
+      "rationale": "Jobber user IDs belong to an account/connector."
+    },
+    {
+      "table": "test_identities",
+      "index": "test_identities_email_lower_uidx",
+      "classification": "ambiguous and requiring decision",
+      "target_key": null,
+      "rationale": "Decide whether test suppression is platform-global or organization-scoped with a platform safety override."
+    },
+    {
+      "table": "user_roles",
+      "index": "user_roles_user_id_role_key",
+      "classification": "intentionally platform-global",
+      "target_key": ["user_id", "role"],
+      "rationale": "Stage 7A retains user_roles as the separate platform-role mechanism; organization access is represented by memberships."
+    },
+    {
+      "table": "weather_status",
+      "index": "weather_status_singleton_unique",
+      "classification": "safe for single-organization compatibility only",
+      "target_key": ["organization_id", "singleton"],
+      "rationale": "Operational weather status is organization/territory-specific."
+    }
+  ]
+}

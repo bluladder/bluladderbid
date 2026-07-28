@@ -38,6 +38,7 @@ jobs:
           bun run check:tenant-inventory
           bun run check:tenant-foundation
           bun run check:tenant-readiness
+          bun run check:stage-7d-migration-gate
           bun run check:organization-routing
           bun run check:roadmap-ledger
           bun run check:organization-connectors
