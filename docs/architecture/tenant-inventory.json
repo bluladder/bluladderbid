@@ -1,6 +1,17 @@
 {
   "schemaVersion": 1,
   "sourceCommit": "ebfeae98e7e90dba66d5a0463ca5555790ee51a1",
+  "stage7BRepositoryTables": [
+    "organization_memberships",
+    "organization_resolution_keys",
+    "organizations"
+  ],
+  "stage7BFirstWaveTables": [
+    "bookings",
+    "customers",
+    "properties",
+    "quotes"
+  ],
   "tables": {
     "global_system_owned": [
       "booking_test_runs",
