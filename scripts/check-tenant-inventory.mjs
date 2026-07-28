@@ -50,8 +50,9 @@ const migrationText = fs.readdirSync(migrationDir)
   .map((name) => fs.readFileSync(path.join(migrationDir, name), "utf8"))
   .join("\n");
 
-if (/\b(?:organization_id|tenant_id)\b/i.test(migrationText)) {
-  throw new Error("Stage 7A baseline changed: tenant columns now exist in migration history");
+const tenantColumnMigrations = migrationText.match(/\borganization_id\b/gi) ?? [];
+if (!tenantColumnMigrations.length) {
+  throw new Error("Tenant foundation missing: organization_id is absent from migration history");
 }
 
 const edgeRoot = path.join(root, "supabase/functions");
