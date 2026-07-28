@@ -111,7 +111,8 @@ export function assertOrganizationLineage(
   }
   if (
     !UUID_PATTERN.test(resourceOrganizationId) ||
-    resolvedOrganizationId.toLowerCase() !== resourceOrganizationId.toLowerCase()
+    resolvedOrganizationId.toLowerCase() !==
+      resourceOrganizationId.toLowerCase()
   ) {
     throw new Error("organization_lineage_mismatch");
   }
