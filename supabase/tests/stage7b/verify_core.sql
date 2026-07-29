@@ -102,15 +102,17 @@ BEGIN
       AND policyname IN (
         'Members can view active organizations',
         'Members can view memberships in their organizations',
-        'Organization admins manage memberships',
+        'Organization admins insert memberships',
+        'Organization admins update memberships',
+        'Organization admins delete memberships',
         'Organization admins manage resolution keys',
         'Tenant boundary customers',
         'Tenant boundary properties',
         'Tenant boundary quotes',
         'Tenant boundary bookings'
       )
-  ) <> 8 THEN
-    RAISE EXCEPTION 'expected eight Stage 7B policies';
+  ) <> 10 THEN
+    RAISE EXCEPTION 'expected ten corrected Stage 7B policies';
   END IF;
 END $$;
 
