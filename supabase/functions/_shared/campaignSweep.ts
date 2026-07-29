@@ -697,7 +697,7 @@ async function checkSuppressionSafe(supabase: any, target: { email: string | nul
     const r = await mod.checkSuppression(supabase, target);
     return !!r.suppressed;
   } catch {
-    return false;
+    return true;
   }
 }
 
