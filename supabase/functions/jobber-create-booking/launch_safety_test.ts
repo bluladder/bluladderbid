@@ -6,6 +6,19 @@ import {
 
 const source = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
 
+Deno.test("customer and property lineage validation precedes provider mutation", () => {
+  const validationStart = source.indexOf("validatePublicBookingCustomer(booking.customer)");
+  const providerLookup = source.indexOf('console.log("Looking up technician:"');
+  assert(validationStart >= 0 && providerLookup > validationStart);
+
+  assertStringIncludes(source, "clientProperties(first: 50)");
+  assertStringIncludes(source, "findMatchingJobberProperty(");
+  assertStringIncludes(source, 'code: "PROPERTY_LOOKUP_UNAVAILABLE"');
+  assertEquals(source.includes("clientProperties(first: 1)"), false);
+  assertEquals(source.includes('city: addressParts.city || "Austin"'), false);
+  assertEquals(source.includes('postalCode: addressParts.postalCode || "78701"'), false);
+});
+
 Deno.test("authoritative pricing failure stops before provider mutation", () => {
   const pricingStart = source.indexOf("if (booking.additionalServices || booking.promotion)");
   const providerLookup = source.indexOf('console.log("Looking up technician:"');
