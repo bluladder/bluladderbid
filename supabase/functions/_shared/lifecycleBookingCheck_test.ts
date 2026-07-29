@@ -2,8 +2,12 @@
 // Pure tests for the source-lifecycle-scoped booking check.
 // Hermetic — no DB, no network.
 // ============================================================================
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
+  assertEquals,
+  assertRejects,
+} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import {
+  hasLifecycleBlockingBooking,
   isLifecycleBlockingBooking,
   type LifecycleBookingRow,
 } from "./lifecycleBookingCheck.ts";
@@ -115,4 +119,50 @@ Deno.test("no anchor and no quote link → cannot attribute → does NOT block",
     ),
     false,
   );
+});
+
+Deno.test("database failure never masquerades as no blocking booking", async () => {
+  const query = {
+    select: () => query,
+    eq: () => query,
+    neq: async () => ({ data: null, error: { code: "unavailable" } }),
+  };
+  const supabase = { from: () => query };
+  await assertRejects(
+    () =>
+      hasLifecycleBlockingBooking(supabase, {
+        customerId: "c1",
+        quoteId: "q1",
+        anchorIso: null,
+      }),
+    Error,
+    "authoritative booking lookup failed",
+  );
+});
+
+Deno.test("exact quote lineage remains checkable when customer id is absent", async () => {
+  let filter: [string, string | null] | null = null;
+  const booking = row({
+    quote_id: "q1",
+    status: "scheduled",
+    jobber_visit_id: "v1",
+  });
+  const query = {
+    select: () => query,
+    eq: (column: string, value: string | null) => {
+      filter = [column, value];
+      return query;
+    },
+    neq: async () => ({ data: [booking], error: null }),
+  };
+  const supabase = { from: () => query };
+  assertEquals(
+    await hasLifecycleBlockingBooking(supabase, {
+      customerId: null,
+      quoteId: "q1",
+      anchorIso: null,
+    }),
+    true,
+  );
+  assertEquals(filter, ["quote_id", "q1"]);
 });
