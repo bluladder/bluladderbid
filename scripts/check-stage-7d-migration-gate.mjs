@@ -139,6 +139,9 @@ for (const needle of [
   "20260728060000_tenant_foundation_stage_7b.sql",
   "supabase migration repair",
   "supabase db push --linked --dry-run",
+  "WHERE jobid IN (3, 5, 6)",
+  "SET active = false",
+  "SET active = true",
   "Must never replay",
   "20260128005316",
 ]) {

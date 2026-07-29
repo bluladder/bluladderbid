@@ -161,6 +161,37 @@ Because jobs run continuously, the mutation window must either receive explicit
 authorization to pause all three or prove in a rehearsal that concurrent
 execution is harmless. The safer gate is a reviewed pause and restoration.
 
+Exact protected pause command, to run only under separate cron-configuration
+authorization immediately before the migration window:
+
+```sql
+BEGIN;
+UPDATE cron.job
+SET active = false
+WHERE jobid IN (3, 5, 6)
+  AND active = true
+RETURNING jobid, schedule, active, md5(command) AS command_fingerprint;
+COMMIT;
+```
+
+Require exactly three returned rows and the recorded preflight fingerprints.
+Stop if a job is missing, already inactive, or its fingerprint changed.
+
+Exact protected restoration command, to run only after Stage 7B verification:
+
+```sql
+BEGIN;
+UPDATE cron.job
+SET active = true
+WHERE jobid IN (3, 5, 6)
+  AND active = false
+RETURNING jobid, schedule, active, md5(command) AS command_fingerprint;
+COMMIT;
+```
+
+Again require exactly three rows and unchanged fingerprints. These commands do
+not select or rewrite the credential-bearing command text.
+
 ## Uniqueness classification
 
 `tenant-stage-7d-uniqueness-classification.json` classifies all 65 hosted
