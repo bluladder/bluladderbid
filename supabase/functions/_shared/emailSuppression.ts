@@ -35,25 +35,36 @@ function serviceClient(): any {
 export interface SuppressionCheck {
   suppressed: boolean;
   reason: SuppressionReason | null;
+  readable: boolean;
 }
 
-/** Returns { suppressed: true, reason } if the email is on the suppression list. Fails open. */
-export async function isEmailSuppressed(email: string): Promise<SuppressionCheck> {
+/** Returns a typed fail-closed result for the canonical email suppression list. */
+// deno-lint-ignore no-explicit-any
+export async function isEmailSuppressed(
+  email: string,
+  supabase: any = serviceClient(),
+): Promise<SuppressionCheck> {
   const normalized = normalizeEmailAddr(email);
-  if (!normalized) return { suppressed: false, reason: null };
-  const supabase = serviceClient();
-  if (!supabase) return { suppressed: false, reason: null };
+  if (!normalized) return { suppressed: false, reason: null, readable: true };
+  if (!supabase) return { suppressed: true, reason: null, readable: false };
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("email_suppressions")
       .select("reason")
       .eq("email", normalized)
       .maybeSingle();
-    if (data?.reason) return { suppressed: true, reason: data.reason as SuppressionReason };
+    if (error) return { suppressed: true, reason: null, readable: false };
+    if (data?.reason) {
+      return {
+        suppressed: true,
+        reason: data.reason as SuppressionReason,
+        readable: true,
+      };
+    }
   } catch {
-    /* fail open */
+    return { suppressed: true, reason: null, readable: false };
   }
-  return { suppressed: false, reason: null };
+  return { suppressed: false, reason: null, readable: true };
 }
 
 /** Upsert a suppression record. Idempotent on email address (case-insensitive). */
