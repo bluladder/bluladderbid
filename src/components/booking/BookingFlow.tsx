@@ -41,6 +41,8 @@ interface BookingFlowProps {
    * the promotion branch instead of the standard per-sqft pricing.
    */
   promotion?: { id: string; windowCount: number } | null;
+  /** Exact quote capability used to authorize and convert a resumed bid. */
+  resumedQuote?: { quoteId: string; resumeToken: string } | null;
   /**
    * Allow the customer to add services from within the booking flow
    * (upsell surfaces). Presentation-only: the pricing engine still computes
@@ -80,6 +82,7 @@ export function BookingFlow({
   onCancel,
   prefillCustomerInfo,
   promotion,
+  resumedQuote,
   onAdditionalServicesChange,
 }: BookingFlowProps) {
   const [step, setStep] = useState<BookingStep>('review');
@@ -381,6 +384,11 @@ export function BookingFlow({
       // by the tamper/stale guard against normal per-sqft pricing).
       if (promotion && promotion.id) {
         (bookingBody as Record<string, unknown>).promotion = promotion;
+      }
+      if (resumedQuote) {
+        (bookingBody as Record<string, unknown>).resumedQuoteId = resumedQuote.quoteId;
+        (bookingBody as Record<string, unknown>).resumedQuoteToken = resumedQuote.resumeToken;
+        (bookingBody as Record<string, unknown>).confirmedTotal = finalTotal;
       }
 
       // Attach full attribution snapshot so the server can persist it on the

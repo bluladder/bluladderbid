@@ -13,6 +13,11 @@ import {
   validatePublicBookingCustomer,
   type JobberPropertyCandidate,
 } from "../_shared/publicBookingCustomer.ts";
+import { verifyResumeToken } from "../_shared/quoteResumeTokens.ts";
+import {
+  isResumedQuoteBookable,
+  parseResumedQuoteBooking,
+} from "../_shared/resumedQuoteBooking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -68,22 +73,15 @@ interface BookingRequest {
     referrer?: string;
   };
   sourceSessionId?: string;
+  resumedQuoteId?: string;
+  resumedQuoteToken?: string;
+  confirmedTotal?: number;
   // Team booking fields
   isTeamJob?: boolean;
   teamTechnicianIds?: string[];
   // Concurrency / retry safety
   idempotencyKey?: string;
   sessionId?: string;
-}
-
-// Booking from a resumed quote: caller passes the stored quote id and the
-// total the customer just explicitly confirmed. If the server recomputes a
-// materially different total (pricing rules updated, promotion expired, etc.)
-// the booking is refused with a typed `requires_reconfirmation` result so the
-// UI can present the new total and require a new explicit confirmation.
-interface ResumedQuoteFields {
-  resumedQuoteId?: string;
-  confirmedTotal?: number;
 }
 
 // Busy block type from database
@@ -323,6 +321,66 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const resumedClaim = parseResumedQuoteBooking(booking);
+    let resumedQuote: {
+      quoteId: string;
+      status: string;
+      confirmedTotal: number;
+    } | null = null;
+
+    if (resumedClaim.kind === "invalid") {
+      return new Response(
+        JSON.stringify({ error: "Invalid resumed quote authorization" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (resumedClaim.kind === "valid") {
+      const verified = await verifyResumeToken(
+        supabase,
+        resumedClaim.quoteId,
+        resumedClaim.resumeToken,
+      );
+      if (!verified.ok) {
+        return new Response(
+          JSON.stringify({ error: "Invalid resumed quote authorization" }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      const { data: quoteRow, error: quoteError } = await supabase
+        .from("quotes")
+        .select("id, status, expires_at")
+        .eq("id", resumedClaim.quoteId)
+        .maybeSingle();
+      if (
+        quoteError ||
+        !quoteRow ||
+        !isResumedQuoteBookable(quoteRow.status, quoteRow.expires_at)
+      ) {
+        return new Response(
+          JSON.stringify({
+            error: "This quote is no longer available for booking.",
+            code: "QUOTE_NOT_BOOKABLE",
+          }),
+          {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      resumedQuote = {
+        quoteId: resumedClaim.quoteId,
+        status: quoteRow.status,
+        confirmedTotal: resumedClaim.confirmedTotal,
+      };
+    }
 
     // ========================================================================
     // AUTHORITATIVE SERVER-SIDE PRICING (never trust the client total).
@@ -413,19 +471,15 @@ Deno.serve(async (req) => {
             // If this booking is created from a stored quote link, refuse to
             // silently rewrite the price. Require an explicit reconfirmation
             // against the fresh authoritative total before any Jobber writes.
-            const resumedQuoteId = (booking as unknown as ResumedQuoteFields).resumedQuoteId;
-            const confirmedTotal = Number(
-              (booking as unknown as ResumedQuoteFields).confirmedTotal ?? NaN,
-            );
-            if (resumedQuoteId && Number.isFinite(confirmedTotal)) {
-              const drift = Math.abs(serverTotal - confirmedTotal);
+            if (resumedQuote) {
+              const drift = Math.abs(serverTotal - resumedQuote.confirmedTotal);
               const pct = serverTotal > 0 ? drift / serverTotal : 1;
               if (drift > 2 && pct > 0.02) {
                 return new Response(
                   JSON.stringify({
                     status: "requires_reconfirmation",
                     reason: "pricing_refreshed",
-                    resumedQuoteId,
+                    resumedQuoteId: resumedQuote.quoteId,
                     authoritative: {
                       total: serverTotal,
                       subtotal: engineResult.subtotal,
@@ -1340,6 +1394,7 @@ Deno.serve(async (req) => {
         .from("bookings")
         .insert({
           customer_id: customer.id,
+          quote_id: resumedQuote?.quoteId ?? null,
           technician_id: booking.technicianId,
           jobber_job_id: jobberJobId,
           jobber_visit_id: null,
@@ -1387,6 +1442,7 @@ Deno.serve(async (req) => {
       .from("bookings")
       .insert({
         customer_id: customer.id,
+        quote_id: resumedQuote?.quoteId ?? null,
         technician_id: booking.technicianId,
         jobber_job_id: jobberJobId,
         jobber_visit_id: jobberVisitId,
@@ -1480,12 +1536,11 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Resolve and persist the originating quote_id so booking_completed can
-      // scope the abandoned/decline-nurture stop to THIS specific quote
-      // journey. Best-effort: an admin/manual booking without a quote leaves
-      // quote_id null and the stop simply matches nothing (fail-safe).
+      // Capability-authenticated resumed bookings already wrote the exact
+      // quote_id in the booking insert. Preserve the legacy session link only
+      // for ordinary DFW bookings that did not claim a specific quote.
       try {
-        if (sessionForLink) {
+        if (!resumedQuote && sessionForLink) {
           const { data: linkedQuote } = await supabase
             .from("quotes")
             .select("id")
@@ -1500,6 +1555,79 @@ Deno.serve(async (req) => {
         }
       } catch (e) {
         console.warn("quote_id link failed:", (e as Error).message);
+      }
+
+      // A resumed bid becomes converted only after both the provider visit and
+      // the local booking row are durable. Compare-and-set the status observed
+      // before provider mutation so a concurrent decline/conversion cannot be
+      // silently overwritten.
+      if (resumedQuote) {
+        const convertedAt = new Date().toISOString();
+        const { data: convertedQuote, error: conversionError } = await supabase
+          .from("quotes")
+          .update({
+            status: "converted",
+            converted_booking_id: bookingRecord.id,
+            converted_at: convertedAt,
+            last_activity_at: convertedAt,
+          })
+          .eq("id", resumedQuote.quoteId)
+          .eq("status", resumedQuote.status)
+          .is("converted_booking_id", null)
+          .select("id")
+          .maybeSingle();
+
+        let conversionConfirmed = !conversionError && !!convertedQuote?.id;
+        if (!conversionConfirmed) {
+          const { data: currentQuote } = await supabase
+            .from("quotes")
+            .select("status, converted_booking_id")
+            .eq("id", resumedQuote.quoteId)
+            .maybeSingle();
+          conversionConfirmed =
+            currentQuote?.status === "converted" &&
+            currentQuote?.converted_booking_id === bookingRecord.id;
+        }
+
+        if (!conversionConfirmed) {
+          console.error(
+            "Quote conversion requires reconciliation:",
+            conversionError?.message ?? "compare-and-set did not match",
+          );
+          const pendingConversionPayload = {
+            success: false,
+            pendingManualConfirmation: true,
+            code: "QUOTE_CONVERSION_RECONCILIATION_REQUIRED",
+            referenceNumber,
+            jobNumber,
+            jobberJobId,
+            jobberVisitId,
+            bookingId: bookingRecord.id,
+            error:
+              "Your appointment was created with our scheduling provider, but we couldn't finish linking the accepted bid. Our team must verify it — please don't rebook.",
+          };
+          if (reservationGroupId) {
+            try {
+              await supabase.rpc("confirm_booking_slot", {
+                p_group_id: reservationGroupId,
+                p_booking_id: bookingRecord.id,
+                p_job_id: jobberJobId,
+                p_visit_id: jobberVisitId,
+                p_result: pendingConversionPayload,
+              });
+            } catch (e) {
+              console.warn("Failed to persist quote-reconciliation result:", e);
+            }
+          }
+          reservationSettled = true;
+          return new Response(
+            JSON.stringify(pendingConversionPayload),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 202,
+            },
+          );
+        }
       }
     }
 
