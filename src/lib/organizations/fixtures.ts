@@ -3,8 +3,8 @@ import type {
   OrganizationSummary,
 } from './applicationContracts';
 
-export const DFW_ORGANIZATION_ID = '00000000-0000-4000-8000-000000000001';
-export const OREGON_ORGANIZATION_ID = '00000000-0000-4000-8000-000000000002';
+export const DFW_ORGANIZATION_ID = 'b1addf00-0000-4000-8000-000000000001';
+export const OREGON_ORGANIZATION_ID = 'b1addf00-0000-4000-8000-000000000002';
 
 export const DFW_ORGANIZATION: OrganizationSummary = {
   id: DFW_ORGANIZATION_ID,
