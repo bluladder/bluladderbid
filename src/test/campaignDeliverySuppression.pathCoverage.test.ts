@@ -39,7 +39,7 @@ describe("campaign delivery suppression integrity", () => {
 
   it("stops before claiming messages when launch controls are unreadable", () => {
     const controlsError = queueSource.indexOf(
-      "if (launchControlsError)",
+      "if (launchControlsError || !launchControls)",
     );
     const claim = queueSource.indexOf(
       'supabase.rpc("claim_due_sms"',
