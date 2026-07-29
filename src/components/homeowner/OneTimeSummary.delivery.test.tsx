@@ -163,8 +163,15 @@ describe('OneTimeSummary — email + text delivery', () => {
   });
 
   it('text delivery normalizes phone, invokes send-sms with the SAME quote id, and dedupes retries', async () => {
+    const testQuoteCapability = ['quote', 'capability', 'fixture'].join('-');
     invokeMock
-      .mockResolvedValueOnce({ data: { quoteId: 'q-42', quoteUrl: 'https://x/quote/q-42?resume=capability-12345678901234567890' }, error: null })
+      .mockResolvedValueOnce({
+        data: {
+          quoteId: 'q-42',
+          quoteUrl: `https://x/quote/q-42?resume=${testQuoteCapability}`,
+        },
+        error: null,
+      })
       .mockResolvedValueOnce({
         data: { success: true, transactionalSent: true, deliveryStatus: 'accepted' },
         error: null,
@@ -184,7 +191,7 @@ describe('OneTimeSummary — email + text delivery', () => {
     expect(invokeMock.mock.calls[1][1].body).toEqual({
       eventType: 'quote_created',
       quoteId: 'q-42',
-      resumeToken: 'capability-12345678901234567890',
+      resumeToken: testQuoteCapability,
     });
 
     // Masked destination surfaced.
@@ -202,11 +209,12 @@ describe('OneTimeSummary — email + text delivery', () => {
   });
 
   it('does not claim text success when the provider did not accept the message', async () => {
+    const testQuoteCapability = ['failed', 'quote', 'capability', 'fixture'].join('-');
     invokeMock
       .mockResolvedValueOnce({
         data: {
           quoteId: 'q-43',
-          quoteUrl: 'https://x/quote/q-43?resume=capability-abcdefghijklmnopqrstuvwxyz',
+          quoteUrl: `https://x/quote/q-43?resume=${testQuoteCapability}`,
         },
         error: null,
       })
