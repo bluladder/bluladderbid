@@ -40,7 +40,7 @@ Legend:
 | `booking-management` | secret (token) | — | Single-use bootstrap redemption issues short-lived portal session. |
 | `quote-decline` | secret (token) | — | Same-token model as booking-management. |
 | `send-notification` | public | — | Rendered templates; recipients server-derived. |
-| `send-sms` | jwt or service | mem (5/min per non-service caller) | Service role bypasses limiter for queue processor. |
+| `send-sms` | quote capability or service; admin JWT for manual sends | mem (5/min per non-service caller) | Public callers may send only `quote_created` for the quote named by a valid opaque resume capability. Booking events are service-only; manual sends require operations-admin authorization. |
 
 ## Webhooks (secret-authenticated)
 
