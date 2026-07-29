@@ -117,9 +117,22 @@ export function RecurringServiceRequestFlow({
       const { data, error } = await supabase.functions.invoke('jobber-create-service-request', {
         body: buildPayload(info, confirmPricingChange),
       });
-      if (error) throw new Error(error.message || 'Failed to submit request');
+      let responseData = data;
+      if (error) {
+        try {
+          const context = error.context as { json?: () => Promise<unknown> } | undefined;
+          if (typeof context?.json === 'function') {
+            responseData = await context.json();
+          }
+        } catch {
+          // Fall through to the transport error when no business response can be parsed.
+        }
+        if (!responseData) {
+          throw new Error(error.message || 'Failed to submit request');
+        }
+      }
 
-      const res = data as { status?: string; pricing_changed?: boolean; current?: { annualTotal: number; monthlyPayment: number; engineVersion: string | null; ruleVersion: number | null }; error?: string; message?: string; missing?: string[]; reasons?: string[] };
+      const res = responseData as { status?: string; pricing_changed?: boolean; current?: { annualTotal: number; monthlyPayment: number; engineVersion: string | null; ruleVersion: number | null }; error?: string; message?: string; missing?: string[]; reasons?: string[] };
 
       if (res.status === 'pricing_changed' && res.current) {
         // Do NOT book. Show the updated summary and require fresh confirmation.
@@ -137,7 +150,17 @@ export function RecurringServiceRequestFlow({
         return;
       }
       if (res.status === 'manual_review_required') {
-        toast.error('This plan needs a manual quote — our team will follow up with you.');
+        toast.error('This plan needs a manual quote. No follow-up request was recorded; please contact BluLadder for help.');
+        return;
+      }
+      if (
+        res.status === 'service_area_ineligible' ||
+        res.status === 'service_area_ambiguous' ||
+        res.status === 'service_area_unavailable' ||
+        res.status === 'service_area_manual_review' ||
+        res.status === 'service_area_intervention_failed'
+      ) {
+        toast.error(res.error || 'We could not verify service availability. No request was created.');
         return;
       }
       if (res.status === 'pending_provider_confirmation') {
@@ -188,7 +211,8 @@ export function RecurringServiceRequestFlow({
             <h2 className="text-2xl font-bold text-foreground">Request Saved — Verification Needed</h2>
             <p className="text-muted-foreground max-w-md mx-auto">
               We saved your service-plan request, but could not verify that it reached scheduling.
-              Please do not submit it again while the existing request is reviewed.
+              Please do not submit it again. Contact BluLadder if you need immediate help;
+              no appointment has been confirmed.
             </p>
           </div>
           <Button onClick={onCancel} variant="outline">Return to Quote</Button>

@@ -98,7 +98,8 @@ export async function routeInboundSmsToOrchestrator(
     if (error || !created) {
       return {
         conversationId: "",
-        reply: "Thanks — we got your message and will follow up shortly.",
+        reply:
+          "We couldn't record your request right now. Please try again or call BluLadder directly.",
         events: [],
         error: "convo_create_failed",
       };

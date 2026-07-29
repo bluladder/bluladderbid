@@ -22,6 +22,8 @@ import {
   bridgeFireBookingFailed,
 } from '@/lib/bridge/bluladderBidPostMessage';
 import { useBookingStepTracking } from '@/hooks/useBookingStepTracking';
+import { PRIMARY_PUBLIC_PHONE, SUPPORT_EMAIL, telHref } from '@/config/contact';
+import { buildBookingIntentSignature } from '@/lib/bookingIntentSignature';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import type { ValidatedDiscount } from '@/hooks/useDiscountCodes';
 
@@ -96,7 +98,10 @@ export function BookingFlow({
   // Set when the backend accepted the request (202) but could not fully confirm
   // the appointment on the calendar. The slot is held and staff will finish it —
   // this is NOT a failure and must NOT be shown as a confirmed booking.
-  const [pendingManual, setPendingManual] = useState<{ referenceNumber?: string } | null>(null);
+  const [pendingManual, setPendingManual] = useState<{
+    referenceNumber?: string;
+    interventionRecorded: boolean;
+  } | null>(null);
   // Controls the "Confirm your details" dialog. The final booking write
   // happens ONLY from the dialog's "Confirm and Book" button — clicking the
   // sticky CTA opens this dialog first so customers explicitly review
@@ -344,7 +349,23 @@ export function BookingFlow({
     setIsSubmitting(true);
 
     try {
-      const slotSignature = `${selectedSlot.startTime}|${selectedSlot.technicianId}|${customerInfo.email.toLowerCase()}`;
+      const slotSignature = buildBookingIntentSignature({
+        customerEmail: customerInfo.email,
+        serviceAddress: customerInfo.address,
+        scheduledStart: selectedSlot.startTime,
+        scheduledEnd: selectedSlot.endTime,
+        technicianIds: (selectedSlot as any).teamTechnicianIds?.length
+          ? (selectedSlot as any).teamTechnicianIds
+          : [selectedSlot.technicianId],
+        services: services.map((service) => ({
+          name: service.name,
+          price: service.price,
+          description: service.description,
+        })),
+        homeDetails,
+        additionalServices,
+        promotion: promotion && promotion.id ? promotion : null,
+      });
       const idempotencyKey = getIdempotencyKey(slotSignature);
 
       // Build the booking request body
@@ -427,8 +448,18 @@ export function BookingFlow({
 
         // Accepted-but-not-confirmed (defensive: in case invoke surfaces 202 as
         // an error on some clients). Treat as pending manual confirmation.
-        if (errorBody?.pendingManualConfirmation || errorBody?.code === 'VISIT_CREATION_FAILED') {
-          setPendingManual({ referenceNumber: errorBody.referenceNumber });
+        if (
+          errorBody?.pendingManualConfirmation ||
+          errorBody?.code === 'VISIT_CREATION_FAILED' ||
+          errorBody?.code === 'INTERVENTION_RECORD_FAILED' ||
+          errorBody?.code === 'SERVICE_AREA_MANUAL_REVIEW' ||
+          errorBody?.code === 'SERVICE_AREA_INTERVENTION_FAILED'
+        ) {
+          setPendingManual({
+            referenceNumber: errorBody.referenceNumber,
+            interventionRecorded:
+              errorBody.interventionState === 'intervention_recorded',
+          });
           trackConfirmation();
           return;
         }
@@ -461,7 +492,11 @@ export function BookingFlow({
       // but the appointment still needs a person to finalize it. Never present
       // this as a confirmed booking.
       if (data?.pendingManualConfirmation || data?.code === 'VISIT_CREATION_FAILED' || data?.success === false) {
-        setPendingManual({ referenceNumber: data?.referenceNumber });
+        setPendingManual({
+          referenceNumber: data?.referenceNumber,
+          interventionRecorded:
+            data?.interventionState === 'intervention_recorded',
+        });
         trackConfirmation();
         return;
       }
@@ -472,7 +507,10 @@ export function BookingFlow({
 
       // A real confirmation requires a Jobber visit id to exist.
       if (!data?.jobberVisitId) {
-        setPendingManual({ referenceNumber: data?.referenceNumber });
+        setPendingManual({
+          referenceNumber: data?.referenceNumber,
+          interventionRecorded: false,
+        });
         trackConfirmation();
         return;
       }
@@ -567,12 +605,26 @@ export function BookingFlow({
         <div className="space-y-2">
           <h2 className="text-xl font-bold">We received your request</h2>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            Your appointment still needs to be confirmed by our team. We&apos;ll contact you
-            shortly to lock in your time — you don&apos;t need to rebook.
+            {pendingManual.interventionRecorded
+              ? 'Your appointment is not confirmed. We recorded the request for manual review; contact BluLadder if you need immediate help.'
+              : 'Your appointment is not confirmed, and we could not verify that a manual-review item was recorded. Please do not resubmit this time slot; contact BluLadder directly so we can check the provider result.'}
           </p>
           {pendingManual.referenceNumber && (
             <p className="text-sm font-mono pt-1">
               Reference: <span className="font-semibold">{pendingManual.referenceNumber}</span>
+            </p>
+          )}
+          {!pendingManual.interventionRecorded && (
+            <p className="text-sm">
+              Call{' '}
+              <a className="underline" href={telHref(PRIMARY_PUBLIC_PHONE.e164)}>
+                {PRIMARY_PUBLIC_PHONE.display}
+              </a>{' '}
+              or email{' '}
+              <a className="underline" href={`mailto:${SUPPORT_EMAIL}`}>
+                {SUPPORT_EMAIL}
+              </a>
+              .
             </p>
           )}
         </div>

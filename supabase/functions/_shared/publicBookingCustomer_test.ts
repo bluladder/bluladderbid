@@ -35,22 +35,18 @@ Deno.test("phone normalization rejects alphabetic, short, and international inpu
   assertEquals(normalizeUsPhone("1 469 555 1212"), "+14695551212");
 });
 
-Deno.test("address validation fails closed on incomplete and Oregon input", () => {
+Deno.test("address shape validation fails closed while geography remains a server routing decision", () => {
   assertEquals(parseServiceAddress("123 Main St"), null);
-  assertEquals(
-    validatePublicBookingCustomer({
-      firstName: "Alex",
-      lastName: "Homeowner",
-      email: "alex@example.com",
-      phone: "4695551212",
-      address: "123 Main St, Portland, OR 97201",
-    }),
-    {
-      ok: false,
-      code: "OUTSIDE_DFW_STATE",
-      message: "Online booking is currently available only for eligible DFW, Texas addresses.",
-    },
-  );
+  const parsedOregon = validatePublicBookingCustomer({
+    firstName: "Alex",
+    lastName: "Homeowner",
+    email: "alex@example.com",
+    phone: "4695551212",
+    address: "123 Main St, Portland, OR 97201",
+  });
+  assert(parsedOregon.ok);
+  if (!parsedOregon.ok) return;
+  assertEquals(parsedOregon.address.province, "OR");
 });
 
 Deno.test("property matching chooses the submitted address, not the first property", () => {

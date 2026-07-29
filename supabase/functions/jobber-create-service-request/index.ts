@@ -39,6 +39,18 @@ import {
   type EngineAdditionalServices,
   type EngineHomeDetails,
 } from "../_shared/pricingEngine.ts";
+import { validateServiceArea } from "../_shared/serviceArea.ts";
+import {
+  evaluatePublicBookingServiceArea,
+  hasAttemptedOrganizationOverride,
+  PUBLIC_BOOKING_ORGANIZATION_ID,
+} from "../_shared/publicBookingServiceArea.ts";
+import {
+  fingerprintPublicRequest,
+  requestFingerprintMatches,
+} from "../_shared/publicRequestReplay.ts";
+import { resolvePublicBookingOrganization } from "../_shared/publicBookingOrganization.ts";
+import { recordServiceAreaIntervention } from "../_shared/serviceAreaIntervention.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -135,6 +147,13 @@ Deno.serve(async (req) => {
       return json({ status: "error", error: "Invalid request body" }, 400);
     }
     const b = body as Record<string, unknown>;
+    if (hasAttemptedOrganizationOverride(b)) {
+      return json({
+        status: "error",
+        code: "ORGANIZATION_OVERRIDE_REJECTED",
+        error: "Organization selection is not accepted on public service requests.",
+      }, 400);
+    }
 
     // ---- Structural validation (NO trusted prices) --------------------------
     const rawCustomer = b.customer as Customer | undefined;
@@ -171,17 +190,25 @@ Deno.serve(async (req) => {
     const idempotencyKey = typeof b.idempotencyKey === "string" && b.idempotencyKey.trim()
       ? b.idempotencyKey.slice(0, 100) : null;
     const notes = typeof b.notes === "string" ? b.notes.slice(0, 2000) : "";
+    const requestFingerprint = await fingerprintPublicRequest({
+      organizationId: PUBLIC_BOOKING_ORGANIZATION_ID,
+      customerEmail: customer.email.toLowerCase(),
+      serviceAddress: customer.address,
+      tier,
+      homeDetails,
+      additionalServices,
+      customizations: customizations ?? null,
+    });
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-
     // ---- Idempotent replay: same key never creates a duplicate --------------
     if (idempotencyKey) {
       const { data: existing, error: existingError } = await supabase
         .from("quotes")
-        .select("id, jobber_quote_id, total, services_json")
+        .select("id, jobber_quote_id, total, services_json, input_snapshot")
         .eq("idempotency_key", idempotencyKey)
         .maybeSingle();
       if (existingError) {
@@ -192,6 +219,20 @@ Deno.serve(async (req) => {
         }, 503);
       }
       if (existing) {
+        if (
+          !requestFingerprintMatches(
+            existing.input_snapshot,
+            requestFingerprint,
+          )
+        ) {
+          return json({
+            status: "error",
+            code: "IDEMPOTENCY_KEY_REUSED",
+            retryable: false,
+            error:
+              "This request key is already bound to a different or unverifiable plan request.",
+          }, 409);
+        }
         if (!existing.jobber_quote_id) {
           const replaySuppression = await checkSuppression(supabase, {
             email: customer.email,
@@ -227,6 +268,87 @@ Deno.serve(async (req) => {
           annualTotal: Number(existing.total),
         });
       }
+    }
+
+    const organizationResolution = await resolvePublicBookingOrganization(
+      supabase,
+    );
+    if (organizationResolution.status !== "resolved") {
+      return json({
+        status: "service_area_unavailable",
+        code: organizationResolution.code,
+        retryable: true,
+        error:
+          "We can't verify the service organization right now. No request or notification was created.",
+      }, 503);
+    }
+    const organizationWriteFields =
+      organizationResolution.tenantFoundationAvailable
+        ? { organization_id: organizationResolution.organizationId }
+        : {};
+
+    const serviceAreaResult = await validateServiceArea(
+      supabase,
+      customer.address,
+    );
+    const serviceAreaDecision = evaluatePublicBookingServiceArea(
+      submittedServiceAddress,
+      serviceAreaResult,
+    );
+    if (serviceAreaDecision.status === "manual_review") {
+      const intervention = await recordServiceAreaIntervention(supabase, {
+        requestFingerprint,
+        source: "public_recurring_plan",
+        customerName: `${customer.firstName} ${customer.lastName}`.trim(),
+        customerEmail: customer.email,
+        customerPhone: customer.phone ?? null,
+        propertyAddress: customer.address,
+        services: {
+          tier,
+          additionalServices,
+          customizations: customizations ?? null,
+        },
+        total: expectedAnnualTotal,
+        reasonCode: "configured_manual_review_county",
+      });
+      if (intervention.status === "recorded") {
+        return json({
+          status: "service_area_manual_review",
+          code: "SERVICE_AREA_MANUAL_REVIEW",
+          retryable: false,
+          interventionState: "intervention_recorded",
+          interventionId: intervention.interventionId,
+          error:
+            "This address needs a manual service-area review. Your request was recorded, but no plan, quote, or notification was created.",
+        }, 202);
+      }
+      return json({
+        status: "service_area_intervention_failed",
+        code: "SERVICE_AREA_INTERVENTION_FAILED",
+        retryable: false,
+        interventionState: "intervention_record_failed",
+        error:
+          "This address needs a manual service-area review, but we couldn't record the request. No plan, quote, or notification was created; contact BluLadder directly.",
+      }, 503);
+    }
+    if (serviceAreaDecision.status !== "eligible") {
+      return json({
+        status: serviceAreaDecision.status === "ineligible"
+          ? "service_area_ineligible"
+          : serviceAreaDecision.status === "ambiguous"
+          ? "service_area_ambiguous"
+          : "service_area_unavailable",
+        code: serviceAreaDecision.code,
+        retryable: serviceAreaDecision.retryable,
+        error: serviceAreaDecision.status === "ineligible"
+          ? "This address is outside the verified DFW online service area."
+          : serviceAreaDecision.status === "ambiguous"
+          ? "We couldn't verify that exact address. Please correct the street, city, state, and ZIP."
+          : "Service availability cannot be verified right now. No request or notification was created.",
+      }, serviceAreaDecision.status === "ineligible" ||
+          serviceAreaDecision.status === "ambiguous"
+        ? 422
+        : 503);
     }
 
     // ---- 1) Load current published pricing ---------------------------------
@@ -333,18 +455,26 @@ Deno.serve(async (req) => {
       additionalServices,
       customizations: customizations ?? null,
       expected: { engineVersion: expectedEngineVersion, ruleVersion: expectedRuleVersion, annualTotal: expectedAnnualTotal },
+      _requestFingerprint: requestFingerprint,
     };
 
     // ---- Find or create the local customer ---------------------------------
-    let { data: dbCustomer } = await supabase
+    let dbCustomerLookup = supabase
       .from("customers")
       .select("*")
-      .eq("email", customer.email.toLowerCase())
-      .maybeSingle();
+      .eq("email", customer.email.toLowerCase());
+    if (organizationResolution.tenantFoundationAvailable) {
+      dbCustomerLookup = dbCustomerLookup.eq(
+        "organization_id",
+        organizationResolution.organizationId,
+      );
+    }
+    let { data: dbCustomer } = await dbCustomerLookup.maybeSingle();
     if (!dbCustomer) {
       const { data: nc, error: ce } = await supabase
         .from("customers")
         .insert({
+          ...organizationWriteFields,
           email: customer.email.toLowerCase(),
           first_name: customer.firstName,
           last_name: customer.lastName,
@@ -362,6 +492,7 @@ Deno.serve(async (req) => {
 
     // ---- Reserve the plan record (idempotency guard) BEFORE any Jobber write.
     const insertRow = {
+      ...organizationWriteFields,
       customer_id: dbCustomer.id,
       customer_name: `${customer.firstName} ${customer.lastName}`.trim(),
       customer_email: customer.email.toLowerCase(),
@@ -389,12 +520,32 @@ Deno.serve(async (req) => {
       // Unique-violation on idempotency key = concurrent duplicate; return the
       // record that won the race instead of creating a second one.
       if ((insErr as { code?: string }).code === "23505" && idempotencyKey) {
-        const { data: won } = await supabase
+        let wonLookup = supabase
           .from("quotes")
-          .select("id, jobber_quote_id, total")
-          .eq("idempotency_key", idempotencyKey)
-          .maybeSingle();
+          .select("id, jobber_quote_id, total, input_snapshot")
+          .eq("idempotency_key", idempotencyKey);
+        if (organizationResolution.tenantFoundationAvailable) {
+          wonLookup = wonLookup.eq(
+            "organization_id",
+            organizationResolution.organizationId,
+          );
+        }
+        const { data: won } = await wonLookup.maybeSingle();
         if (won) {
+          if (
+            !requestFingerprintMatches(
+              won.input_snapshot,
+              requestFingerprint,
+            )
+          ) {
+            return json({
+              status: "error",
+              code: "IDEMPOTENCY_KEY_REUSED",
+              retryable: false,
+              error:
+                "This request key was concurrently bound to a different plan request.",
+            }, 409);
+          }
           if (!won.jobber_quote_id) {
             return json({
               status: "pending_provider_confirmation",

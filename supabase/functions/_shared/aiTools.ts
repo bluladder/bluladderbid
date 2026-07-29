@@ -328,12 +328,12 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
   });
 
   if (status !== 200 || !json) {
-    return { status: "unavailable", message: "I couldn't load times just now — I can have the team reach out with options." };
+    return { status: "unavailable", message: "I couldn't load times just now. Please try again or contact BluLadder directly." };
   }
   // Withhold stale / sync-in-progress availability (the function returns a
   // customer-safe message in those cases).
   if (json.unavailable || json.stale || json.syncInProgress || json.error) {
-    return { status: "unavailable", message: json.message || "Scheduling is briefly syncing — I can have the team follow up with times." };
+    return { status: "unavailable", message: json.message || "Scheduling is briefly syncing. Please try again or contact BluLadder directly." };
   }
 
   const rawSlots: any[] = json.recommendations || json.slots || [];
@@ -525,15 +525,31 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
     idempotencyKey,
   });
 
-  if (status === 409) {
+  if (status === 409 && json?.code === "CONFLICT") {
     // A GENUINE reservation conflict. This is the only path that may tell the
     // customer a time was actually taken.
     await recordSlotFailure(ctx, "reservation_conflict_409", "jobber-create-booking returned 409 (real conflict)", convo);
     return { status: "slot_taken", message: "That exact time was just booked by someone else — let me get the current openings." };
   }
+  if (
+    json?.code === "INTERVENTION_RECORD_FAILED" ||
+    json?.retryable === false
+  ) {
+    await recordSlotFailure(
+      ctx,
+      "provider_outcome_requires_review",
+      "jobber-create-booking returned a non-retryable uncertain result",
+      convo,
+    );
+    return {
+      status: "needs_attention",
+      message:
+        "No appointment is confirmed, and I couldn't verify that a manual-review item was recorded. Please do not try the booking again; contact BluLadder so the provider result can be checked.",
+    };
+  }
   if (status === 503) {
     await recordSlotFailure(ctx, "provider_unavailable_503", "jobber-create-booking returned 503 (provider unavailable)", convo);
-    return { status: "temporarily_unavailable", message: "Our booking system is briefly unavailable — I can have the team confirm this time, or you can try again in a moment." };
+    return { status: "temporarily_unavailable", message: "Our booking system is briefly unavailable. No appointment or follow-up request was created; please try again in a moment." };
   }
   const visitId = json?.jobberVisitId || json?.visitId;
   if (json?.status === "needs_attention" || json?.needsAttention) {
@@ -543,7 +559,7 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
     }).eq("id", ctx.conversationId);
     // needs_attention itself is a first-class escalation path.
     try {
-      await escalateToHuman(ctx.supabase, {
+      const escalation = await escalateToHuman(ctx.supabase, {
         conversationId: ctx.conversationId,
         category: "booking_needs_attention",
         severity: "high",
@@ -553,15 +569,37 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
         serviceAddress: convo?.service_address ?? null,
         summary: "Booking returned needs_attention; a human should confirm the appointment.",
       });
+      if (!escalation.escalationId) {
+        return {
+          status: "needs_attention",
+          message:
+            "Your appointment is not confirmed, and I couldn't record a manual-review request. Please contact BluLadder directly.",
+        };
+      }
+      const office = await getPhoneByPurpose(ctx.supabase, "primary_public");
+      return {
+        status: "needs_attention",
+        message:
+          "Your appointment is not confirmed. " +
+          customerEscalationMessage(
+            escalation.deliveryState,
+            escalation.severity,
+            office.display,
+          ),
+      };
     } catch (_e) { /* non-blocking */ }
-    return { status: "needs_attention", message: "Your appointment is being finalized and the team will confirm shortly." };
+    return {
+      status: "needs_attention",
+      message:
+        "Your appointment is not confirmed, and I couldn't verify a manual-review request. Please contact BluLadder directly.",
+    };
   }
   if (status !== 200 || !visitId) {
     await ctx.supabase.from("chat_conversations").update({
       booking_status: "failed", needs_attention: true, last_error: json?.error || "booking failed",
     }).eq("id", ctx.conversationId);
     await recordSlotFailure(ctx, "internal_booking_error", `status ${status}, no visit id (${json?.error ?? "unknown"})`, convo);
-    return { status: "error", message: "I couldn't finalize the booking — the team will follow up to confirm." };
+    return { status: "error", message: "I couldn't finalize the booking, and no appointment is confirmed. Please try again or contact BluLadder directly." };
   }
 
   await ctx.supabase.from("chat_conversations").update({

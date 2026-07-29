@@ -356,7 +356,7 @@ export default function MyAppointments() {
       } else if (res?.ambiguous) {
         toast({
           title: 'Needs review',
-          description: 'Our team was notified. Please text us so we can help.',
+          description: 'This needs manual review. Please text us so we can help.',
           variant: 'destructive',
         });
       } else {
@@ -400,7 +400,7 @@ export default function MyAppointments() {
         if (res.session_token) writePortalToken(res.session_token as string);
         await refreshPortalData();
       } else if (res?.ambiguous) {
-        toast({ title: 'Needs review', description: 'Our team was notified. Please text us so we can help.', variant: 'destructive' });
+        toast({ title: 'Needs review', description: 'The automated change did not complete. Please text us so we can help.', variant: 'destructive' });
       } else {
         toast({
           title: 'Invalid portal code',

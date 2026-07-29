@@ -17,6 +17,7 @@ import { recordSystemIssue, resolveSystemIssue } from "./systemHealth.ts";
 // browser key for server-side geocoding.
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_maps";
 const GEOCODE_HEALTH_KEY = "geocoding_api";
+const GEOCODE_ATTEMPT_TIMEOUT_MS = 4_000;
 
 export type ServiceAreaStatus =
   | "eligible"
@@ -26,9 +27,16 @@ export type ServiceAreaStatus =
 
 export interface ServiceAreaResult {
   status: ServiceAreaStatus;
+  reasonCode?:
+    | "configured_manual_review_county"
+    | "outside_primary_service_area";
+  streetNumber?: string;
+  route?: string;
   city?: string;
   county?: string;
   state?: string;
+  postalCode?: string;
+  countryCode?: string;
   formattedAddress?: string;
   latitude?: number;
   longitude?: number;
@@ -82,9 +90,13 @@ export async function lookupServiceCity(
 }
 
 interface Geo {
+  streetNumber?: string;
+  route?: string;
   city?: string;
   county?: string;
   state?: string;
+  postalCode?: string;
+  countryCode?: string;
   formatted?: string;
   lat?: number;
   lng?: number;
@@ -119,7 +131,10 @@ async function geocode(address: string): Promise<Geo | null | "unavailable"> {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     let resp: Response | null = null;
     try {
-      resp = await fetch(url, { headers });
+      resp = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(GEOCODE_ATTEMPT_TIMEOUT_MS),
+      });
     } catch {
       resp = null; // network error → transient
     }
@@ -163,16 +178,23 @@ async function geocode(address: string): Promise<Geo | null | "unavailable"> {
     get("sublocality")?.long_name ||
     get("administrative_area_level_3")?.long_name;
   const county = get("administrative_area_level_2")?.long_name?.replace(/ county$/i, "");
+  const streetNumber = get("street_number")?.long_name;
+  const route = get("route")?.long_name;
   const state = get("administrative_area_level_1")?.short_name;
-  const hasStreet = !!get("street_number") || !!get("route") || r.geometry?.location_type === "ROOFTOP";
+  const postalCode = get("postal_code")?.long_name;
+  const countryCode = get("country")?.short_name;
   return {
+    streetNumber,
+    route,
     city,
     county,
     state,
+    postalCode,
+    countryCode,
     formatted: r.formatted_address,
     lat: r.geometry?.location?.lat,
     lng: r.geometry?.location?.lng,
-    partial: !!r.partial_match || !hasStreet,
+    partial: !!r.partial_match || !streetNumber || !route,
   };
 }
 
@@ -192,6 +214,7 @@ export async function validateServiceArea(
   if (!config) {
     return {
       status: "validation_unavailable",
+      reason: "service_area_configuration_unavailable",
       customerMessage: "I can't verify the service area right now — I can take your address and have the team confirm and follow up.",
     };
   }
@@ -209,6 +232,7 @@ export async function validateServiceArea(
     });
     return {
       status: "validation_unavailable",
+      reason: "geocoder_unavailable",
       customerMessage: "I can't verify the address right now — I can take your details and have the team confirm eligibility.",
     };
   }
@@ -225,6 +249,25 @@ export async function validateServiceArea(
     last_success_at: new Date().toISOString(),
   });
 
+  if (geo.partial) {
+    return {
+      status: "address_incomplete",
+      streetNumber: geo.streetNumber,
+      route: geo.route,
+      city: geo.city,
+      county: geo.county,
+      state: geo.state,
+      postalCode: geo.postalCode,
+      countryCode: geo.countryCode,
+      formattedAddress: geo.formatted,
+      latitude: geo.lat,
+      longitude: geo.lng,
+      reason: "geocoder_ambiguous_or_partial",
+      customerMessage:
+        "I couldn't verify that exact street address. Please check the street, city, state, and ZIP.",
+    };
+  }
+
   const city = norm(geo.city || "");
   const county = norm(geo.county || "");
   const state = norm(geo.state || "");
@@ -232,9 +275,13 @@ export async function validateServiceArea(
   if (!city || !state) {
     return {
       status: "address_incomplete",
+      streetNumber: geo.streetNumber,
+      route: geo.route,
       city: geo.city,
       county: geo.county,
       state: geo.state,
+      postalCode: geo.postalCode,
+      countryCode: geo.countryCode,
       formattedAddress: geo.formatted,
       latitude: geo.lat,
       longitude: geo.lng,
@@ -249,9 +296,13 @@ export async function validateServiceArea(
   if (cityEligible) {
     return {
       status: "eligible",
+      streetNumber: geo.streetNumber,
+      route: geo.route,
       city: geo.city,
       county: geo.county,
       state: geo.state,
+      postalCode: geo.postalCode,
+      countryCode: geo.countryCode,
       formattedAddress: geo.formatted,
       latitude: geo.lat,
       longitude: geo.lng,
@@ -265,9 +316,16 @@ export async function validateServiceArea(
     : "Outside the automatically eligible primary service area";
   return {
     status: "manual_review_required",
+    reasonCode: countyManual
+      ? "configured_manual_review_county"
+      : "outside_primary_service_area",
+    streetNumber: geo.streetNumber,
+    route: geo.route,
     city: geo.city,
     county: geo.county,
     state: geo.state,
+    postalCode: geo.postalCode,
+    countryCode: geo.countryCode,
     formattedAddress: geo.formatted,
     latitude: geo.lat,
     longitude: geo.lng,

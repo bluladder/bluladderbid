@@ -355,7 +355,7 @@ export function OneTimeSummary({
             <div className="p-4 rounded-lg bg-muted/50 border border-border flex items-start gap-2">
               <HelpCircle className="w-4 h-4 text-primary mt-0.5" />
               <p className="text-sm text-muted-foreground">
-                This service needs a customized quote. Share your details and our team will follow up.
+                This service needs a customized quote. Submit the contact form below to record a help request.
               </p>
             </div>
             <BookingHelpContact variant="quote" />
@@ -370,7 +370,7 @@ export function OneTimeSummary({
             <div className="p-4 rounded-lg bg-muted/50 border border-border flex items-start gap-2">
               <Info className="w-4 h-4 text-primary mt-0.5" />
               <p className="text-sm text-muted-foreground">
-                We're temporarily unable to calculate this price. You can request a quote and our team will follow up.
+                We&apos;re temporarily unable to calculate this price. Retry or submit the contact form below to record a help request.
               </p>
             </div>
             <BookingHelpContact variant="quote" />

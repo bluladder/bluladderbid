@@ -58,7 +58,7 @@ export interface ServerBundleTiersState {
 }
 
 const UNAVAILABLE_MESSAGE =
-  "We're temporarily unable to calculate plan pricing. You can request a quote and our team will follow up.";
+  "We're temporarily unable to calculate plan pricing. You can retry or submit the contact form to record a help request.";
 
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
