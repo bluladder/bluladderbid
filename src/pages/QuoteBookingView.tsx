@@ -12,7 +12,7 @@ import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ShieldCheck, CalendarCheck, AlertCircle } from 'lucide-react';
+import { ShieldCheck, CalendarCheck, AlertCircle, Clock } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { BookingFlow } from '@/components/booking/BookingFlow';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
@@ -211,6 +211,31 @@ export default function QuoteBookingView() {
   const booking = response.booking;
 
   // Terminal states — do NOT drop the customer into a blank form.
+  if (booking?.status === 'needs_attention') {
+    return (
+      <div className="min-h-screen bg-background">
+        <CustomerHeader />
+        <div className="max-w-2xl mx-auto px-4 py-12">
+          <Card>
+            <CardContent className="pt-6 text-center space-y-4">
+              <Clock className="w-12 h-12 mx-auto text-primary" />
+              <h1 className="text-2xl font-bold">We’re verifying your appointment</h1>
+              <p className="text-muted-foreground">
+                Your request is safely recorded, but the calendar confirmation still needs review.
+                Please don’t submit another booking.
+              </p>
+              {booking.referenceNumber && (
+                <p className="text-sm font-mono">
+                  Reference: <span className="font-semibold">{booking.referenceNumber}</span>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   if (booking && booking.scheduledStart) {
     const when = new Date(booking.scheduledStart);
     return (
@@ -296,6 +321,7 @@ export default function QuoteBookingView() {
           homeDetails={homeDetails}
           prefillCustomerInfo={prefillCustomerInfo}
           promotion={promotion}
+          resumedQuote={{ quoteId: quote.quoteId, resumeToken }}
           onCancel={() => {
             window.location.href = `/quote/${quote.quoteId}?resume=${encodeURIComponent(resumeToken)}`;
           }}
