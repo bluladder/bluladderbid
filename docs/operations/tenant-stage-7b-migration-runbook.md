@@ -12,18 +12,21 @@ Status: Stage 7D reconciliation complete; hosted mutation remains NO-GO.
 - Operator has Supabase CLI, approved project link, migration-only access,
   rollback reviewer, incident channel, and a frozen deploy window.
 - Application remains on DFW-compatible code; no second organization is active.
-- Stage 7D's 99 shifted ledger versions, seven functionally-present provenance
-  gaps, and one superseded cleanup are reconciled through a separately
-  authorized ledger-only repair.
+- The independent Stage 7D audit's zero-action ledger manifest is unchanged.
+  The rejected 99-revert/107-apply bulk repair has not been executed.
 - Hosted-only ledger version `20260128005316` has an approved repository
   provenance disposition. Do not remove or remap it ad hoc.
-- A read-only `supabase migration list --linked` comparison matches
-  `tenant-stage-7d-migration-reconciliation.json`.
-- Cron jobs 3, 5, and 6 have a separately approved pause/restoration procedure;
-  their credential-bearing commands must never be copied into GitHub evidence.
-- The approved release checkout contains Stage 7B as the only genuinely pending
-  migration. Current main also contains Stage 8A, so current main is not that
-  release checkout.
+- A read-only `supabase migration list --linked` comparison is captured and
+  reconciled to the accepted legacy-drift exception. Timestamp parity alone is
+  not schema equivalence.
+- Cron jobs 3, 5, and 6 have a separately authorized, rehearsed
+  `cron.alter_job(..., active := false/true)` pause/restoration procedure and a
+  drain gate; their credential-bearing commands must never be selected or
+  copied into evidence.
+- The approved detached release checkout is exactly `bb96ec9`, with Supabase
+  CLI exactly `2.101.0` and the Stage 7B migration SHA-256 exactly
+  `b26d38b6b63d5f1fa67f0e7ae8ce0a31eb8892690c9078063fa19dc36ba9c2ca`.
+  Current main is not an acceptable release checkout.
 
 ## Dry run and execution
 
@@ -37,8 +40,8 @@ Expected: exactly
 `20260728060000_tenant_foundation_stage_7b.sql`, no unrelated migration, and no
 remote destructive statement warning. Any other output is a stop.
 
-Never use `--include-all`. Before Stage 7D reconciliation it can select up to
-110 branch-local versions, including a historical `DELETE`.
+Never use `--include-all`. The disposable Stage 7B release rehearsal selects
+108 older local-only versions with that flag, including a historical `DELETE`.
 
 Only after the separate production authorization:
 
@@ -51,9 +54,9 @@ repository SHA, migration checksum, UTC timestamps, project ref, operator, and
 reviewer. Do not use `--include-all`, repair the ledger, or bypass prompts during
 the window.
 
-Ledger repair and cron pause are distinct protected phases. They must be
-completed and verified before this command; they must not be improvised inside
-the Stage 7B schema/backfill window.
+Cron pause is a distinct protected phase. It must be separately authorized,
+completed, and verified before this command. Do not perform a ledger repair or
+improvise cron operations inside the Stage 7B schema/backfill window.
 
 ## Post-migration verification
 

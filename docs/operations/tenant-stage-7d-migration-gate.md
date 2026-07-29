@@ -96,10 +96,10 @@ Before any repair:
   99 repository versions, seven functionally-present provenance gaps, the
   superseded cleanup, Stage 7B, Stage 8A, and the Stage 7D security migration.
 
-Expected safe behavior for `supabase db push --linked --dry-run` is a migration
-history mismatch/stop, not a one-migration proposal. If an operator bypassed
-history checks with `--include-all`, up to 110 local migrations would become
-candidates, including a historical `DELETE`; doing so is prohibited.
+Ordinary `supabase db push --linked --dry-run` considers unapplied migrations
+after the hosted history tip. It does not automatically select all older
+local-only migrations. The `--include-all` flag expands selection to those
+historical files, including destructive cleanup SQL, and is prohibited.
 
 The approved-window acceptance target remains exactly:
 
@@ -109,18 +109,18 @@ The approved-window acceptance target remains exactly:
 
 Reaching it requires all of the following:
 
-1. Separately authorize and execute the 99 shifted-version ledger remappings.
-2. Mark the seven proven functionally-present migrations applied.
-3. Mark the superseded cleanup applied so it can never replay.
-4. Resolve the hosted-only `20260128005316` provenance strategy.
-5. Use an approved Stage 7B release checkout that does not contain later pending
+1. Do not execute the rejected 99-revert/107-apply bulk repair.
+2. Retain all existing hosted ledger rows and the zero-action repair manifest.
+3. Resolve the hosted-only `20260128005316` provenance strategy.
+4. Use the Stage 7B release checkout at `bb96ec9`, which does not contain later pending
    Stage 8A or Stage 7D migration files.
+5. Pin Supabase CLI `2.101.0`.
 6. Run `supabase migration list --linked` and independently compare its output
    with the reconciliation ledger.
 7. Run the dry run without `--include-all`; stop unless exactly Stage 7B appears.
 
-No ledger repair may be performed piecemeal. Capture before/after ledger exports
-and have a second operator compare all versions before proceeding.
+No ledger repair is authorized or currently justified. Capture the ledger and
+have a second operator compare it before any future protected action.
 
 ## Security-definer review
 
@@ -161,36 +161,31 @@ Because jobs run continuously, the mutation window must either receive explicit
 authorization to pause all three or prove in a rehearsal that concurrent
 execution is harmless. The safer gate is a reviewed pause and restoration.
 
-Exact protected pause command, to run only under separate cron-configuration
-authorization immediately before the migration window:
+The previously documented direct `UPDATE cron.job` pause/restore procedure is
+withdrawn. Current Supabase Cron does not allow direct inserts or updates to
+`cron.job`.
 
-```sql
-BEGIN;
-UPDATE cron.job
-SET active = false
-WHERE jobid IN (3, 5, 6)
-  AND active = true
-RETURNING jobid, schedule, active, md5(command) AS command_fingerprint;
-COMMIT;
-```
+The supported secret-preserving primitive for a separately authorized window is
+`cron.alter_job(jobid, active := false)` and its `true` counterpart. It retains
+the job ID, schedule, and credential-bearing command. Never unschedule and
+recreate these jobs.
 
-Require exactly three returned rows and the recorded preflight fingerprints.
-Stop if a job is missing, already inactive, or its fingerprint changed.
+Before that protected transaction, verify in read-only mode:
 
-Exact protected restoration command, to run only after Stage 7B verification:
+- the installed pg_cron version and exact `cron.alter_job` signature;
+- ownership/permission for the window operator;
+- exactly jobs 3, 5, and 6 with expected active state and MD5 fingerprints;
+- zero starting or running invocations.
 
-```sql
-BEGIN;
-UPDATE cron.job
-SET active = true
-WHERE jobid IN (3, 5, 6)
-  AND active = false
-RETURNING jobid, schedule, active, md5(command) AS command_fingerprint;
-COMMIT;
-```
+The protected transaction must revalidate those exact tuples, invoke
+`cron.alter_job` for all three, and return only job ID, schedule, active state,
+and command fingerprint. After commit, poll safe `cron.job_run_details`
+metadata until all in-flight invocations drain. Restoration mirrors the same
+checks with `active := true`.
 
-Again require exactly three rows and unchanged fingerprints. These commands do
-not select or rewrite the credential-bearing command text.
+No cron operation is authorized now. Stop if the function, owner, count, state,
+or fingerprint differs; any call fails; jobs do not drain; or command text
+would need to be exposed or reconstructed.
 
 ## Uniqueness classification
 
@@ -226,40 +221,16 @@ Must never replay:
 - all seven functionally-present provenance gaps;
 - `20260713051500_cleanup_geocode_verify_precheck.sql`.
 
-## Exact protected ledger commands
+## Rejected protected ledger commands
 
-Generate the reviewed command manifest from the machine ledger:
-
-```sh
-node scripts/print-stage-7d-ledger-repair.mjs \
-  > /tmp/stage-7d-ledger-repair.sh
-sha256sum /tmp/stage-7d-ledger-repair.sh
-less /tmp/stage-7d-ledger-repair.sh
-```
-
-The manifest first reverts the 99 shifted hosted versions, then marks their 99
-repository versions applied, and finally marks the seven functionally-present
-versions plus the superseded cleanup applied.
-
-It emits the exact supported CLI form:
-
-```sh
-supabase migration repair --linked --status reverted <99-hosted-versions>
-supabase migration repair --linked --status applied <107-repository-versions>
-```
-
-Execution is a protected action and is **not authorized**:
-
-```sh
-sh /tmp/stage-7d-ledger-repair.sh
-```
-
-Do not add `20260128005316` to that manifest. Its disposition requires the
-provenance-restoration gate above.
+The previous 99-revert/107-apply manifest was derived from timestamp proximity
+and ordering. It is not independently proven and must not be generated or
+executed. `scripts/print-stage-7d-ledger-repair.mjs` now fails closed. The only
+audited repair manifest contains zero actions.
 
 ## Migration-window acceptance
 
-After separately authorized ledger repair and provenance resolution:
+From the immutable Stage 7B release checkout, after provenance review:
 
 ```sh
 supabase migration list --linked
@@ -295,10 +266,9 @@ and an exact one-row Stage 7B ledger addition.
 
 ## Rollback implications
 
-Ledger repair changes metadata only; it does not reverse SQL. Its rollback is
-another reviewed ledger repair using the captured before-state manifest.
-Reverting only half the mapping creates a worse, ambiguous state, so operators
-must treat the repair as one controlled batch with before/after checks.
+Ledger repair changes metadata only; it does not reverse SQL. No repair is
+approved. A compensating repair cannot be assumed to restore original ledger
+metadata, so the rejected bulk rewrite has no acceptable rollback plan.
 
 For Stage 7B, rollback remains forward-safe: stop runtime adoption, retain
 additive columns and backfilled IDs, and use a new corrective migration for a
@@ -310,6 +280,7 @@ organization, erase organization IDs, or rewrite the ledger during an incident.
 **NO-GO** for hosted mutation today.
 
 Repository-remediable analysis, security hardening, contract checks, and
-runbooks are complete. Remaining gates require protected migration-ledger
-mutation, cron pause/credential remediation, and an approved provenance decision
-for hosted-only `20260128005316`.
+runbooks are complete. Remaining gates include a successful pinned-CLI
+rehearsal, a secret-safe cron decision, and an approved provenance decision for
+hosted-only `20260128005316`. Historical ledger mutation is not presently
+recommended.

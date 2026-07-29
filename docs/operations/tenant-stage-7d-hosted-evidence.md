@@ -9,6 +9,8 @@ are retained.
 
 - PostgreSQL 17.6, primary database, `transaction_read_only=on`.
 - 145 hosted migration-ledger rows; last version `20260726194719`.
+- Independent version/name fingerprint:
+  `73ed8522db78e51049a421e1f72b18c3`.
 - First-wave counts: 16 customers, 10 properties, 2 quotes, 2 bookings.
 - All first-wave `organization_id` columns are absent.
 - One platform role (`admin`) maps deterministically to DFW `admin`.
@@ -25,6 +27,9 @@ are retained.
 - Cron job 3 command MD5: `1a1b5b332626f37867e3521d2052f56b`
 - Cron job 5 command MD5: `88e143e3876903e839e7551f68dd179b`
 - Cron job 6 command MD5: `ad8c290523e2659a608e7fcb7d57bcb7`
+- Hosted-only `20260128005316` statement MD5:
+  `caac83d911c70e3f539cc2230dd8586b`; its single statement mentions
+  `big_job_settings`, `eligibility_rules`, and `schedule_blocks`.
 
 MD5 cron fingerprints are change detectors, not security hashes.
 
