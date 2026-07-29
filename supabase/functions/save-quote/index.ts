@@ -12,6 +12,7 @@ import { sendEmail } from "../_shared/emailConfig.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
 import { computeAuthoritativeQuote } from "../_shared/authoritativeQuote.ts";
+import { toAuthoritativeServiceItems } from "../_shared/authoritativeQuotePresentation.ts";
 import { mintQuoteResumeToken, revokeQuoteResumeTokens } from "../_shared/quoteResumeTokens.ts";
 
 const corsHeaders = {
@@ -147,6 +148,16 @@ serve(async (req) => {
     });
   }
   const auth = authoritative.authoritative;
+  const authoritativeServices = toAuthoritativeServiceItems(
+    auth.lineItems,
+    quoteType,
+  );
+  if (!authoritativeServices.length) {
+    return json(422, {
+      error: "The authoritative quote did not contain any deliverable services.",
+      status: "manual_review_required",
+    });
+  }
 
   // 1) Find or create the customer by email.
   let customerId: string | null = null;
@@ -184,12 +195,20 @@ serve(async (req) => {
   const expiresAtIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   const services_json: Record<string, unknown> = {
-    services: body.services,
-    lineItems: body.lineItems ?? null,
+    services: authoritativeServices,
+    lineItems: auth.lineItems,
     mode: quoteType === "recurring_plan" ? "plan" : "one_time",
     quote_type: quoteType,
     additionalServices: body.additionalServices ?? null,
-    ...(body.planSnapshot ?? {}),
+    ...(quoteType === "recurring_plan"
+      ? {
+        payment: {
+          annualTotal: auth.annualTotal ?? auth.total,
+          monthlyPayment: auth.monthlyPayment ?? null,
+          downPayment: auth.downPayment ?? null,
+        },
+      }
+      : {}),
   };
   const home_details_json = body.homeDetails ?? {};
 
@@ -208,7 +227,7 @@ serve(async (req) => {
     if (existingQ?.id) quoteId = existingQ.id;
   }
 
-  const status = action === "email" ? "emailed" : "saved";
+  let status: "saved" | "emailed" = "saved";
   const payload: Record<string, unknown> = {
     customer_id: customerId,
     customer_email: email,
@@ -231,8 +250,6 @@ serve(async (req) => {
     pricing_engine_version: authoritative.engineVersion,
     pricing_rule_version: authoritative.ruleVersion,
   };
-  if (action === "email") payload.emailed_at = nowIso;
-
   if (quoteId) {
     const { error } = await supabase.from("quotes").update(payload).eq("id", quoteId);
     if (error) return json(500, { error: "Could not update the saved bid." });
@@ -318,7 +335,16 @@ serve(async (req) => {
     issuedReason: action === "email" ? "save_quote_email" : "save_quote",
     appUrl: getAppUrl(),
   });
-  const quoteUrl = minted?.resumeUrl ?? `${getAppUrl()}/quote/${quoteId}`;
+  if (!minted) {
+    return json(503, {
+      error:
+        "Your bid was saved, but its secure delivery link could not be created. Please retry.",
+      code: "RESUME_CAPABILITY_UNAVAILABLE",
+      quoteId,
+      status: "saved",
+    });
+  }
+  const quoteUrl = minted.resumeUrl;
 
   // 3) Optional email send. Failure here still returns the saved quote.
   //
@@ -344,8 +370,8 @@ serve(async (req) => {
       subject: "Your BluLadder bid — saved for 30 days",
       html: renderEmail({
         firstName: body.firstName || "there",
-        total: body.total,
-        services: body.services,
+        total: auth.total,
+        services: authoritativeServices,
         quoteUrl,
         expiresAt: expiresAtIso,
       }),
@@ -386,6 +412,18 @@ serve(async (req) => {
       .select("id")
       .single();
     emailAttemptId = (attempt as { id?: string } | null)?.id ?? null;
+    if (emailStatus === "accepted") {
+      const emailedAt = new Date().toISOString();
+      const { error: statusError } = await supabase
+        .from("quotes")
+        .update({
+          status: "emailed",
+          emailed_at: emailedAt,
+          last_activity_at: emailedAt,
+        })
+        .eq("id", quoteId);
+      if (!statusError) status = "emailed";
+    }
   }
 
   // 4) Emit the canonical firm-quote event so first-touch attribution and
@@ -402,7 +440,7 @@ serve(async (req) => {
   try {
     await emitCampaignEvent({
       eventName: "quote_calculated",
-      idempotencyKey: `quote_calculated:${quoteId}:v${body.ruleVersion ?? 0}`,
+      idempotencyKey: `quote_calculated:${quoteId}:v${authoritative.ruleVersion ?? 0}`,
       email,
       phone: body.phone ?? null,
       customerId,
@@ -414,10 +452,10 @@ serve(async (req) => {
         quote_status: "firm",
         quote_id: quoteId,
         quote_url: quoteUrl,
-        pricing_rule_version: body.ruleVersion ?? null,
-        pricing_engine_version: body.engineVersion ?? null,
-        total: body.total,
-        service_types: (body.services ?? []).map((s) => s?.name).filter(Boolean),
+        pricing_rule_version: authoritative.ruleVersion,
+        pricing_engine_version: authoritative.engineVersion,
+        total: auth.total,
+        service_types: authoritativeServices.map((service) => service.name),
       },
     });
   } catch (e) {
