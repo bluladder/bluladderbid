@@ -5,6 +5,8 @@ import { checkSuppression, normalizeEmail, normalizePhoneE164 } from "./suppress
 function fakeClient(opts: {
   suppressAll?: boolean;
   identities?: { email?: string; phone?: string }[];
+  configError?: boolean;
+  identityError?: boolean;
 }) {
   return {
     from(table: string) {
@@ -17,13 +19,20 @@ function fakeClient(opts: {
         limit() { return builder; },
         async maybeSingle() {
           if (table === "system_test_config") {
-            return { data: { suppress_all: !!opts.suppressAll, suppress_reason: "admin_switch" }, error: null };
+            return {
+              data: { suppress_all: !!opts.suppressAll, suppress_reason: "admin_switch" },
+              error: opts.configError ? { message: "unavailable" } : null,
+            };
           }
           return { data: null, error: null };
         },
         then(resolve: (v: any) => void) {
           // Used when the query is awaited directly (test_identities .or().limit()).
           if (table === "test_identities") {
+            if (opts.identityError) {
+              resolve({ data: null, error: { message: "unavailable" } });
+              return;
+            }
             const matches = (opts.identities ?? []).filter((id) =>
               builder._ors.some((o: string) => {
                 const idx = o.indexOf(".eq.");
@@ -75,6 +84,26 @@ Deno.test("global switch suppresses everyone", async () => {
   const r = await checkSuppression(c, { email: "real.customer@example.com" });
   assertEquals(r.suppressed, true);
   assertEquals(r.reason, "admin_switch");
+});
+
+Deno.test("config lookup errors fail closed", async () => {
+  const r = await checkSuppression(
+    fakeClient({ configError: true }),
+    { email: "real.customer@example.com" },
+  );
+  assertEquals(r.suppressed, true);
+  assertEquals(r.reason, "suppression_lookup_unavailable");
+  assertEquals(r.lookupFailed, true);
+});
+
+Deno.test("identity lookup errors fail closed", async () => {
+  const r = await checkSuppression(
+    fakeClient({ identityError: true }),
+    { email: "real.customer@example.com" },
+  );
+  assertEquals(r.suppressed, true);
+  assertEquals(r.reason, "suppression_lookup_unavailable");
+  assertEquals(r.lookupFailed, true);
 });
 
 // ============================================================================
