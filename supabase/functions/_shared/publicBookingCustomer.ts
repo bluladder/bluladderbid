@@ -26,8 +26,7 @@ export type PublicBookingCustomerValidation =
       | "INVALID_CUSTOMER_NAME"
       | "INVALID_CUSTOMER_EMAIL"
       | "INVALID_CUSTOMER_PHONE"
-      | "INCOMPLETE_SERVICE_ADDRESS"
-      | "OUTSIDE_DFW_STATE";
+      | "INCOMPLETE_SERVICE_ADDRESS";
     message: string;
   };
 
@@ -127,14 +126,6 @@ export function validatePublicBookingCustomer(
       message: "Please provide the full service street address, city, state, and ZIP code.",
     };
   }
-  if (address.province !== "TX") {
-    return {
-      ok: false,
-      code: "OUTSIDE_DFW_STATE",
-      message: "Online booking is currently available only for eligible DFW, Texas addresses.",
-    };
-  }
-
   return {
     ok: true,
     customer: {

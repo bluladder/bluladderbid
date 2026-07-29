@@ -88,8 +88,8 @@ export function BookingHelpContact({
       setOpen(false);
       toast.success(
         dedup
-          ? "We already received your request — BluLadder will reach out shortly."
-          : "Got it — BluLadder has been notified and will reach out shortly.",
+          ? "Your request was already recorded for BluLadder to review."
+          : "Your request was recorded for BluLadder to review.",
       );
     } catch (e) {
       toast.error(
@@ -126,7 +126,7 @@ export function BookingHelpContact({
       {sent ? (
         <div className="mt-3 flex items-center gap-2 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
           <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-          <span>Sent. BluLadder has been notified and will reach out shortly.</span>
+          <span>Your request was recorded for BluLadder to review.</span>
         </div>
       ) : open ? (
         <div className="mt-3 space-y-2">

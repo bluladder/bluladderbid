@@ -101,7 +101,7 @@ export function PlanPaymentSummary({
             {pricingLoading
               ? 'Calculating your plan price…'
               : pricingUnavailable
-                ? 'Pricing is temporarily unavailable. You can request a quote and our team will follow up.'
+                ? 'Pricing is temporarily unavailable. Retry or submit the contact form to record a help request.'
                 : 'Enter your home details to see your plan price.'}
           </p>
         )}

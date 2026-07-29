@@ -18,6 +18,19 @@ import {
   isResumedQuoteBookable,
   parseResumedQuoteBooking,
 } from "../_shared/resumedQuoteBooking.ts";
+import { validateServiceArea } from "../_shared/serviceArea.ts";
+import {
+  evaluatePublicBookingServiceArea,
+  hasAttemptedOrganizationOverride,
+  PUBLIC_BOOKING_ORGANIZATION_ID,
+} from "../_shared/publicBookingServiceArea.ts";
+import {
+  fingerprintPublicRequest,
+  publicReplayResult,
+  requestFingerprintMatches,
+} from "../_shared/publicRequestReplay.ts";
+import { resolvePublicBookingOrganization } from "../_shared/publicBookingOrganization.ts";
+import { recordServiceAreaIntervention } from "../_shared/serviceAreaIntervention.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,6 +39,15 @@ const corsHeaders = {
 
 // Configuration for local mirror staleness threshold
 const MIRROR_STALE_THRESHOLD_MINUTES = 30;
+
+function bookingReplayHttpStatus(
+  result: Record<string, unknown>,
+): number {
+  if (result.success !== false) return 200;
+  if (result.code === "INTERVENTION_RECORD_FAILED") return 503;
+  if (result.pendingManualConfirmation === true) return 202;
+  return 409;
+}
 
 interface UtmParams {
   utm_source?: string;
@@ -285,6 +307,22 @@ Deno.serve(async (req) => {
     console.log("=== Starting booking creation ===");
     
     const booking: BookingRequest = await req.json();
+    if (
+      hasAttemptedOrganizationOverride(
+        booking as unknown as Record<string, unknown>,
+      )
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: "Organization selection is not accepted on public booking requests.",
+          code: "ORGANIZATION_OVERRIDE_REJECTED",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
     console.log("Received booking request:", JSON.stringify({
       customerEmail: booking.customer?.email,
       technicianId: booking.technicianId,
@@ -321,6 +359,173 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const requestedCrewIds = booking.isTeamJob && booking.teamTechnicianIds?.length
+      ? [...booking.teamTechnicianIds].sort()
+      : [booking.technicianId];
+    const idempotencyKey =
+      (booking.idempotencyKey && String(booking.idempotencyKey).trim()) ||
+      `${booking.customer.email.toLowerCase()}|${booking.scheduledStart}|${requestedCrewIds.join(",")}`;
+    const requestFingerprint = await fingerprintPublicRequest({
+      organizationId: PUBLIC_BOOKING_ORGANIZATION_ID,
+      customerEmail: booking.customer.email.toLowerCase(),
+      serviceAddress: booking.customer.address,
+      scheduledStart: booking.scheduledStart,
+      scheduledEnd: booking.scheduledEnd,
+      technicianIds: requestedCrewIds,
+      services: booking.services,
+      homeDetails: booking.homeDetails,
+      additionalServices: booking.additionalServices ?? null,
+      promotion: booking.promotion ?? null,
+    });
+    // A completed request-bound replay is authoritative even if the geocoder
+    // or configuration is unavailable later. Never expose a result for a key
+    // reused with different customer/address/schedule semantics.
+    const { data: priorReservation, error: priorReservationError } =
+      await supabase
+        .from("slot_reservations")
+        .select("result_json")
+        .eq("idempotency_key", idempotencyKey)
+        .not("result_json", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (priorReservationError) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: "IDEMPOTENCY_LOOKUP_UNAVAILABLE",
+          retryable: true,
+          error:
+            "We couldn't safely verify the prior booking attempt. Please try again shortly.",
+        }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (priorReservation?.result_json) {
+      if (
+        !requestFingerprintMatches(
+          priorReservation.result_json,
+          requestFingerprint,
+        )
+      ) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "IDEMPOTENCY_KEY_REUSED",
+            retryable: false,
+            error:
+              "This request key is already bound to a different booking attempt.",
+          }),
+          {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      const replay = publicReplayResult(
+        priorReservation.result_json as Record<string, unknown>,
+      );
+      return new Response(JSON.stringify(replay), {
+        status: bookingReplayHttpStatus(replay),
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const organizationResolution = await resolvePublicBookingOrganization(
+      supabase,
+    );
+    if (organizationResolution.status !== "resolved") {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: organizationResolution.code,
+          retryable: true,
+          error:
+            "We can't verify the service organization right now. No booking or notification was created.",
+        }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+    const organizationWriteFields =
+      organizationResolution.tenantFoundationAvailable
+        ? { organization_id: organizationResolution.organizationId }
+        : {};
+
+    const serviceAreaResult = await validateServiceArea(
+      supabase,
+      booking.customer.address,
+    );
+    const serviceAreaDecision = evaluatePublicBookingServiceArea(
+      submittedServiceAddress,
+      serviceAreaResult,
+    );
+    if (serviceAreaDecision.status === "manual_review") {
+      const intervention = await recordServiceAreaIntervention(supabase, {
+        requestFingerprint,
+        source: "public_one_time_booking",
+        customerName:
+          `${booking.customer.firstName} ${booking.customer.lastName}`.trim(),
+        customerEmail: booking.customer.email,
+        customerPhone: booking.customer.phone ?? null,
+        propertyAddress: booking.customer.address,
+        services: booking.services,
+        total: Number.isFinite(booking.total) ? booking.total : null,
+        reasonCode: "configured_manual_review_county",
+      });
+      const recorded = intervention.status === "recorded";
+      return new Response(
+        JSON.stringify({
+          success: false,
+          pendingManualConfirmation: false,
+          manualReviewRequired: true,
+          interventionState: recorded
+            ? "intervention_recorded"
+            : "intervention_record_failed",
+          interventionId: recorded ? intervention.interventionId : undefined,
+          code: recorded
+            ? "SERVICE_AREA_MANUAL_REVIEW"
+            : "SERVICE_AREA_INTERVENTION_FAILED",
+          retryable: false,
+          error: recorded
+            ? "This address needs a manual service-area review. Your request was recorded, but no appointment or notification is confirmed."
+            : "This address needs a manual service-area review, but we couldn't record the request. No appointment or notification was created; contact BluLadder directly.",
+        }),
+        {
+          status: recorded ? 202 : 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (serviceAreaDecision.status !== "eligible") {
+      const httpStatus = serviceAreaDecision.status === "ineligible"
+        ? 422
+        : serviceAreaDecision.status === "ambiguous"
+        ? 422
+        : 503;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: serviceAreaDecision.code,
+          retryable: serviceAreaDecision.retryable,
+          error: serviceAreaDecision.status === "ineligible"
+            ? "Online booking is currently available only for verified DFW service addresses."
+            : serviceAreaDecision.status === "ambiguous"
+            ? "We couldn't verify that address. Please correct the street, city, state, and ZIP before trying again."
+            : "We can't verify service availability right now. No booking or notification was created; please try again later.",
+        }),
+        {
+          status: httpStatus,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
     const resumedClaim = parseResumedQuoteBooking(booking);
     let resumedQuote: {
       quoteId: string;
@@ -353,10 +558,17 @@ Deno.serve(async (req) => {
         );
       }
 
-      const { data: quoteRow, error: quoteError } = await supabase
+      let quoteLookup = supabase
         .from("quotes")
         .select("id, status, expires_at")
-        .eq("id", resumedClaim.quoteId)
+        .eq("id", resumedClaim.quoteId);
+      if (organizationResolution.tenantFoundationAvailable) {
+        quoteLookup = quoteLookup.eq(
+          "organization_id",
+          organizationResolution.organizationId,
+        );
+      }
+      const { data: quoteRow, error: quoteError } = await quoteLookup
         .maybeSingle();
       if (
         quoteError ||
@@ -531,7 +743,7 @@ Deno.serve(async (req) => {
             return new Response(
               JSON.stringify({
                 error:
-                  "This selection needs a customized quote. Our team will follow up to confirm pricing.",
+                  "This selection needs a customized quote. No follow-up request was recorded; please contact BluLadder for help.",
                 status: engineResult.status,
                 missing: engineResult.missing,
               }),
@@ -598,10 +810,6 @@ Deno.serve(async (req) => {
     const requestedStart = new Date(booking.scheduledStart);
     const requestedEnd = new Date(booking.scheduledEnd);
 
-    const idempotencyKey =
-      (booking.idempotencyKey && String(booking.idempotencyKey).trim()) ||
-      `${booking.customer.email.toLowerCase()}|${booking.scheduledStart}|${[...allJobberUserIds].sort().join(",")}`;
-
     let reservationGroupId: string | null = null;
     const releaseReservation = async () => {
       if (!reservationGroupId) return;
@@ -637,12 +845,24 @@ Deno.serve(async (req) => {
     // Idempotent replay: a prior identical request already fully succeeded.
     if (reserveRes?.idempotent && reserveRes?.result) {
       console.log("Idempotent replay — returning original booking result");
-      const replayStatus =
-        reserveRes.result.success === false &&
-          reserveRes.result.pendingManualConfirmation === true
-          ? 202
-          : 200;
-      return new Response(JSON.stringify(reserveRes.result), {
+      if (!requestFingerprintMatches(reserveRes.result, requestFingerprint)) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "IDEMPOTENCY_KEY_REUSED",
+            retryable: false,
+            error:
+              "This request key is already bound to a different or unverifiable booking attempt.",
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 409,
+          },
+        );
+      }
+      const replayResult = publicReplayResult(reserveRes.result);
+      const replayStatus = bookingReplayHttpStatus(replayResult);
+      return new Response(JSON.stringify(replayResult), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: replayStatus,
       });
@@ -684,17 +904,24 @@ Deno.serve(async (req) => {
     try {
     // Find or create customer in Supabase
     console.log("Looking up customer by email:", booking.customer.email.toLowerCase());
-    let { data: customer } = await supabase
+    let customerLookup = supabase
       .from("customers")
       .select("*")
-      .eq("email", booking.customer.email.toLowerCase())
-      .maybeSingle();
+      .eq("email", booking.customer.email.toLowerCase());
+    if (organizationResolution.tenantFoundationAvailable) {
+      customerLookup = customerLookup.eq(
+        "organization_id",
+        organizationResolution.organizationId,
+      );
+    }
+    let { data: customer } = await customerLookup.maybeSingle();
 
     if (!customer) {
       console.log("Customer not found, creating new customer record");
       const { data: newCustomer, error: customerError } = await supabase
         .from("customers")
         .insert({
+          ...organizationWriteFields,
           email: booking.customer.email.toLowerCase(),
           first_name: booking.customer.firstName,
           last_name: booking.customer.lastName,
@@ -1390,9 +1617,10 @@ Deno.serve(async (req) => {
     // the slot stays protected while staff finish the visit.
     if (!jobberVisitId) {
       console.error("Visit creation failed — recording booking as needs_attention for recovery");
-      const { data: naBooking } = await supabase
+      const { data: naBooking, error: naBookingError } = await supabase
         .from("bookings")
         .insert({
+          ...organizationWriteFields,
           customer_id: customer.id,
           quote_id: resumedQuote?.quoteId ?? null,
           technician_id: booking.technicianId,
@@ -1420,18 +1648,85 @@ Deno.serve(async (req) => {
         .select()
         .maybeSingle();
 
+      if (naBookingError || !naBooking?.id) {
+        const failedInterventionPayload = {
+          success: false,
+          pendingManualConfirmation: false,
+          interventionState: "intervention_record_failed",
+          code: "INTERVENTION_RECORD_FAILED",
+          referenceNumber,
+          retryable: false,
+          error:
+            "We couldn't complete or record this appointment request. Please do not resubmit this time slot; contact BluLadder so the provider result can be checked.",
+        };
+        if (reservationGroupId) {
+          const { error: failureReplayError } = await supabase.rpc(
+            "confirm_booking_slot",
+            {
+              p_group_id: reservationGroupId,
+              p_booking_id: null,
+              p_job_id: jobberJobId,
+              p_visit_id: null,
+              p_result: {
+                ...failedInterventionPayload,
+                _requestFingerprint: requestFingerprint,
+              },
+            },
+          );
+          if (failureReplayError) {
+            console.error(
+              "Failed to persist intervention failure replay result:",
+              failureReplayError,
+            );
+          }
+        }
+        reservationSettled = true;
+        return new Response(
+          JSON.stringify(failedInterventionPayload),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 503,
+          },
+        );
+      }
+
+      const recordedInterventionPayload = {
+        success: false,
+        pendingManualConfirmation: true,
+        interventionState: "intervention_recorded",
+        code: "VISIT_CREATION_FAILED",
+        referenceNumber,
+        bookingId: naBooking.id,
+        retryable: false,
+        error:
+          "We couldn't fully confirm this appointment automatically. Your request was recorded for manual review, but no appointment is confirmed. Please do not resubmit this time slot.",
+      };
+      if (reservationGroupId) {
+        const { error: interventionReplayError } = await supabase.rpc(
+          "confirm_booking_slot",
+          {
+            p_group_id: reservationGroupId,
+            p_booking_id: naBooking.id,
+            p_job_id: jobberJobId,
+            p_visit_id: null,
+            p_result: {
+              ...recordedInterventionPayload,
+              _requestFingerprint: requestFingerprint,
+            },
+          },
+        );
+        if (interventionReplayError) {
+          console.error(
+            "Failed to persist recorded intervention replay result:",
+            interventionReplayError,
+          );
+        }
+      }
+
       // Keep the reservation hold so the slot can't be double-booked during recovery.
       reservationSettled = true;
       return new Response(
-        JSON.stringify({
-          success: false,
-          pendingManualConfirmation: true,
-          code: "VISIT_CREATION_FAILED",
-          referenceNumber,
-          bookingId: naBooking?.id ?? null,
-          error:
-            "We couldn't fully confirm this appointment automatically. Our team has been notified and will confirm your time shortly — you don't need to rebook.",
-        }),
+        JSON.stringify(recordedInterventionPayload),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 202 },
       );
     }
@@ -1441,6 +1736,7 @@ Deno.serve(async (req) => {
     const { data: bookingRecord, error: bookingError } = await supabase
       .from("bookings")
       .insert({
+        ...organizationWriteFields,
         customer_id: customer.id,
         quote_id: resumedQuote?.quoteId ?? null,
         technician_id: booking.technicianId,
@@ -1505,7 +1801,10 @@ Deno.serve(async (req) => {
             p_booking_id: null,
             p_job_id: jobberJobId,
             p_visit_id: jobberVisitId,
-            p_result: pendingPersistencePayload,
+            p_result: {
+              ...pendingPersistencePayload,
+              _requestFingerprint: requestFingerprint,
+            },
           });
         } catch (e) {
           console.warn("Failed to persist pending booking result:", e);
@@ -1638,7 +1937,10 @@ Deno.serve(async (req) => {
                 p_booking_id: bookingRecord.id,
                 p_job_id: jobberJobId,
                 p_visit_id: jobberVisitId,
-                p_result: pendingConversionPayload,
+                p_result: {
+                  ...pendingConversionPayload,
+                  _requestFingerprint: requestFingerprint,
+                },
               });
             } catch (e) {
               console.warn("Failed to persist quote-reconciliation result:", e);
@@ -1681,7 +1983,10 @@ Deno.serve(async (req) => {
           p_booking_id: bookingRecord?.id ?? null,
           p_job_id: jobberJobId,
           p_visit_id: jobberVisitId,
-          p_result: successPayload,
+          p_result: {
+            ...successPayload,
+            _requestFingerprint: requestFingerprint,
+          },
         });
       } catch (e) {
         console.warn("Failed to confirm reservation:", e);

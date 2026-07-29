@@ -96,7 +96,7 @@ function derive(phase: ServerQuotePhase): Omit<Phaseable, 'phase'> & {
 }
 
 const UNAVAILABLE_MESSAGE =
-  "We're temporarily unable to calculate this price. You can request a quote and our team will follow up.";
+  "We're temporarily unable to calculate this price. You can retry or submit the contact form to record a help request.";
 
 export function useServerQuoteCalculation(
   input: QuoteInput | null,

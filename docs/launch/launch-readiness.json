@@ -20,9 +20,8 @@
       "id": "public-booking",
       "scope": "repository",
       "severity": "P0",
-      "status": "FAIL",
-      "evidence": ["src/components/booking/BookingFlow.tsx", "src/components/booking/CustomerInfoForm.tsx", "supabase/functions/jobber-create-booking/index.ts"],
-      "reason": "Public intake still lacks a terminal service-area gate, and a manual contact fallback can claim notification without confirmed delivery."
+      "status": "PASS",
+      "evidence": ["src/components/booking/BookingFlow.tsx", "src/components/booking/BookingHelpContact.tsx", "src/lib/bookingIntentSignature.test.ts", "supabase/functions/_shared/publicRequestReplay_test.ts", "supabase/functions/_shared/serviceAreaIntervention_test.ts", "supabase/functions/jobber-create-booking/index.ts", "supabase/functions/jobber-create-booking/launch_safety_test.ts", "supabase/functions/jobber-create-service-request/service_area_launch_test.ts"]
     },
     {
       "id": "customer-property-creation",
@@ -35,9 +34,8 @@
       "id": "service-area-validation",
       "scope": "repository",
       "severity": "P0",
-      "status": "NOT_IMPLEMENTED",
-      "evidence": ["src/components/booking/CustomerInfoForm.tsx", "supabase/functions/jobber-create-booking/index.ts"],
-      "reason": "Public booking does not yet enforce the deterministic organization territory contract before authoritative writes."
+      "status": "PASS",
+      "evidence": ["supabase/functions/_shared/serviceArea.ts", "supabase/functions/_shared/publicBookingServiceArea.ts", "supabase/functions/_shared/publicBookingServiceArea_test.ts", "supabase/functions/_shared/publicBookingOrganization_test.ts", "supabase/functions/jobber-create-booking/index.ts", "supabase/functions/jobber-create-service-request/index.ts"]
     },
     {
       "id": "bid-creation",

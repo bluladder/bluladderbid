@@ -91,12 +91,12 @@ const DECLINE_ACK =
   "No problem — that hold's released. Reply here when you're ready and I'll pull fresh options.";
 
 const BOOKING_FAILED_BODY =
-  "I hit a snag finalizing that booking. Our team will follow up shortly to lock it in.";
+  "I couldn't complete that booking, and no appointment is confirmed. Reply to try again or call BluLadder for help.";
 
 // UNKNOWN external outcome — the reservation is still held and reconciliation
 // will resolve truth. Do NOT tell the customer it failed.
 const BOOKING_UNCERTAIN_BODY =
-  "Thanks — I'm locking that in now. I'll send your confirmation as soon as it clears (usually under a minute).";
+  "The scheduling result is uncertain, so no appointment is confirmed. Please don't submit it again; call BluLadder if you need immediate help.";
 
 // Phase 6B.1 — deterministic expired-hold responses. Split by parsed intent:
 //   * YES on an expired hold → tell the customer the window lapsed and invite
