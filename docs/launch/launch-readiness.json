@@ -52,8 +52,8 @@
       "scope": "repository",
       "severity": "P0",
       "status": "FAIL",
-      "evidence": ["supabase/functions/save-quote/index.ts", "supabase/functions/send-sms/index.ts", "src/components/homeowner/OneTimeSummary.tsx"],
-      "reason": "Email status is advanced before provider acceptance, anonymous SMS reports success when no message was sent, and public delivery lacks durable request idempotency."
+      "evidence": ["supabase/functions/save-quote/index.ts", "supabase/functions/send-sms/index.ts", "src/components/homeowner/OneTimeSummary.tsx", "src/components/homeowner/OneTimeSummary.delivery.test.tsx"],
+      "reason": "Text delivery now requires a quote-scoped capability and reports provider acceptance truthfully, but email status is advanced before provider acceptance and public delivery lacks durable request idempotency."
     },
     {
       "id": "bid-customer-response",
@@ -76,8 +76,8 @@
       "scope": "repository",
       "severity": "P0",
       "status": "FAIL",
-      "evidence": ["supabase/functions/send-sms/index.ts", "supabase/functions/process-sms-queue/index.ts"],
-      "reason": "Anonymous SMS event requests can reference arbitrary quote or booking identifiers and still return success when no transactional send occurred; suppression reads and campaign email suppression are not consistently fail closed."
+      "evidence": ["supabase/functions/send-sms/index.ts", "supabase/functions/_shared/sendSmsAuthorization_test.ts", "supabase/functions/process-sms-queue/index.ts"],
+      "reason": "Public quote SMS now requires the exact quote-scoped capability and reports provider acceptance truthfully, but suppression reads and campaign email suppression are not consistently fail closed."
     },
     {
       "id": "ai-voice-workflow-entry",

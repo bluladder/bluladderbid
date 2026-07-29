@@ -186,10 +186,26 @@ export function OneTimeSummary({
       setSavedQuoteUrl(resp?.quoteUrl ?? null);
 
       if (saveDialogAction === 'text' && resp?.quoteId && normalizedPhone) {
-        const { error: smsErr } = await supabase.functions.invoke('send-sms', {
-          body: { eventType: 'quote_created', quoteId: resp.quoteId },
+        const quoteCapability = resp.quoteUrl
+          ? new URL(resp.quoteUrl, window.location.origin).searchParams.get('resume')
+          : null;
+        if (!quoteCapability) throw new Error('The secure text-delivery link could not be created. Please retry.');
+        const { data: smsData, error: smsErr } = await supabase.functions.invoke('send-sms', {
+          body: {
+            eventType: 'quote_created',
+            quoteId: resp.quoteId,
+            resumeToken: quoteCapability,
+          },
         });
         if (smsErr) throw smsErr;
+        if (!smsData?.transactionalSent || smsData?.deliveryStatus !== 'accepted') {
+          toast.error(
+            smsData?.deliveryStatus === 'suppressed'
+              ? "We can't text that number. Please use another number or choose email."
+              : "We couldn't submit that text for delivery. Please retry or choose email.",
+          );
+          return;
+        }
         const masked = maskPhone(normalizedPhone);
         setDeliveryStatus({ channel: 'text', masked });
         setDeliveredKeys((prev) => new Set(prev).add(dedupeKey!));
