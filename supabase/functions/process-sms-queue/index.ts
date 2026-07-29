@@ -19,6 +19,7 @@ import { sendEmail } from "../_shared/emailConfig.ts";
 import { processDueCallRailRetries } from "../_shared/callrailEventProcessor.ts";
 import { runPostServiceEducationSweep, runMaintenanceOpportunitySweep } from "../_shared/postServiceSweeps.ts";
 import { quoteLifecycleAllowsCampaignDelivery } from "../_shared/quoteDecline.ts";
+import { hasLifecycleBlockingBooking } from "../_shared/lifecycleBookingCheck.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -169,7 +170,7 @@ serve(async (req) => {
     if (msg.enrollment_id) {
       const { data: enr } = await supabase
         .from("campaign_enrollments")
-        .select("id, status, event_name, campaign_id, paused_until, email, phone, campaign_event:campaign_events(metadata), campaign:sms_campaigns(active, required_consent)")
+        .select("id, status, event_name, customer_id, campaign_id, paused_until, email, phone, campaign_event:campaign_events(metadata), campaign:sms_campaigns(active, required_consent)")
         .eq("id", msg.enrollment_id)
         .maybeSingle();
       const camp = (enr?.campaign as { active?: boolean; required_consent?: string } | null) ?? null;
@@ -234,6 +235,36 @@ serve(async (req) => {
             error: `Quote lifecycle advanced to ${currentQuote.status}`,
             next_retry_at: null,
           }).eq("id", msg.id);
+          continue;
+        }
+
+        // A conversion-reconciliation failure can leave quote.status active
+        // after the exact booking row is already durable. Recheck that lineage
+        // immediately before provider dispatch and fail closed if unreadable.
+        try {
+          const hasBooking = await hasLifecycleBlockingBooking(supabase, {
+            customerId: (enr.customer_id as string | null) ??
+              (msg.customer_id as string | null) ?? null,
+            quoteId: sourceQuoteId,
+            anchorIso: null,
+          });
+          if (hasBooking && eventName !== "booking_completed") {
+            await supabase.from("sms_messages").update({
+              status: "cancelled",
+              error: "Exact quote booking lineage is already durable",
+              next_retry_at: null,
+            }).eq("id", msg.id);
+            continue;
+          }
+        } catch (_e) {
+          await supabase.from("sms_messages").update(
+            failureUpdate(
+              msg.attempts,
+              msg.max_attempts,
+              "Authoritative booking lineage unavailable",
+            ),
+          ).eq("id", msg.id);
+          failed++;
           continue;
         }
       }
