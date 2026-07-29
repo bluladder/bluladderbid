@@ -1,0 +1,51 @@
+{
+  "release": {
+    "operator": "",
+    "independent_reviewer": "",
+    "approval_record": "",
+    "window_utc_start": "",
+    "window_utc_end": "",
+    "release_commit": "",
+    "migration_sha256": "",
+    "execution_mechanism": ""
+  },
+  "identity": {
+    "project_ref": "",
+    "postgres_version": "",
+    "supabase_cli_version": "",
+    "working_tree_clean": false
+  },
+  "before": {
+    "preflight_output_sha256": "",
+    "ledger_count": null,
+    "ledger_tip": "",
+    "ledger_fingerprint": "",
+    "first_wave_counts": {},
+    "cron_fingerprints": {},
+    "active_cron_runs": null
+  },
+  "execution": {
+    "payload_count": null,
+    "payload_sha256": "",
+    "started_at_utc": "",
+    "finished_at_utc": "",
+    "exit_status": null,
+    "redacted_output_sha256": ""
+  },
+  "after": {
+    "verification_output_sha256": "",
+    "ledger_delta": null,
+    "first_wave_null_count": null,
+    "lineage_mismatch_count": null,
+    "foreign_keys_validated": null,
+    "dfw_membership_count": null,
+    "oregon_active_count": null,
+    "cron_restored": false
+  },
+  "declaration": {
+    "secrets_captured": false,
+    "unexpected_payload_executed": false,
+    "incident_opened": false,
+    "notes": ""
+  }
+}

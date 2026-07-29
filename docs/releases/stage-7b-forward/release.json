@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "decision": "NO-GO",
+  "release_name": "tenant-foundation-stage-7b",
+  "source": {
+    "commit": "bb96ec9fd54e352f049dda61d694de6c09767090",
+    "path": "supabase/migrations/20260728060000_tenant_foundation_stage_7b.sql",
+    "filename": "20260728060000_tenant_foundation_stage_7b.sql",
+    "bytes": 12135,
+    "git_blob": "4823d772a456a4a40f9883c408da3d85ba3a1d9d",
+    "sha256": "b26d38b6b63d5f1fa67f0e7ae8ce0a31eb8892690c9078063fa19dc36ba9c2ca"
+  },
+  "environment": {
+    "project_ref": "gyndziiuizpgwhqwyrvn",
+    "rejected_project_refs": [
+      "fqyplaphuafbtalrxqzd"
+    ],
+    "postgres_version": "17.6",
+    "supabase_cli_version": "2.101.0",
+    "hosted_ledger_count": 145,
+    "hosted_ledger_tip": "20260726194719",
+    "hosted_ledger_version_name_fingerprint": "73ed8522db78e51049a421e1f72b18c3"
+  },
+  "allowlist": {
+    "migration_paths": [
+      "supabase/migrations/20260728060000_tenant_foundation_stage_7b.sql"
+    ],
+    "migration_versions": [
+      "20260728060000"
+    ],
+    "forbidden_flags": [
+      "--include-all"
+    ],
+    "forbidden_commands": [
+      "supabase migration repair",
+      "supabase db reset",
+      "supabase db push"
+    ],
+    "excluded_versions": [
+      "20260728070000",
+      "20260728080000"
+    ]
+  },
+  "expected_existing_rows": {
+    "customers": 16,
+    "properties": 10,
+    "quotes": 2,
+    "bookings": 2,
+    "first_wave_total": 30,
+    "platform_role_memberships": 1
+  },
+  "execution": {
+    "selected_mechanism": null,
+    "conditional_candidate": "Supabase apply_migration / Management API migration endpoint",
+    "ledger_rewrite_allowed": false,
+    "hosted_mutation_authorized": false
+  },
+  "blockers": [
+    "PostgreSQL 17.6 rehearsal confirms the organization_memberships admin RLS policy fails with infinite recursion (SQLSTATE 42P17).",
+    "Authenticated admin-management policies do not have matching table DML grants.",
+    "The SECURITY DEFINER membership helper accepts a caller-supplied user id and uses search_path=public.",
+    "The migration embeds BEGIN/COMMIT; atomic interaction with a tracked platform migration wrapper is unproven.",
+    "No supported linked CLI selector can apply exactly one explicit file while ignoring legacy history."
+  ]
+}

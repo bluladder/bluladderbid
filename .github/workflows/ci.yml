@@ -43,6 +43,8 @@ jobs:
           bun run check:stage-7d-migration-gate
           bun run check:stage-7d-independent-audit
           bun run check:stage-7d-repair-rehearsal
+          bun run check:stage-7b-forward-release
+          bun run check:stage-7d-cron-window
           bun run check:organization-routing
           bun run check:roadmap-ledger
           bun run check:organization-connectors
@@ -78,6 +80,37 @@ jobs:
 
       - name: Deno tests
         run: deno test --allow-all supabase/functions/_shared
+
+  stage-7b-postgres-rehearsal:
+    name: Stage 7B disposable PostgreSQL rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Create disposable database
+        env:
+          PGPASSWORD: postgres
+        run: createdb --host localhost --username postgres stage7b_rehearsal
+      - name: Rehearse immutable Stage 7B payload
+        env:
+          STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
+        run: ./scripts/rehearse-stage-7b-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
