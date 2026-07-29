@@ -59,6 +59,15 @@ are deterministic and explicitly no-write. Provider configuration, real-number
 connectivity, the 15-scenario real-call pack, and production monitoring remain
 separate protected/manual gates.
 
+Recurring SMS and email delivery now use the same durable recovery posture as
+public quote delivery. The queue assigns a stable semantic key and claim token
+before provider submission, finalizes through compare-and-set updates, supplies
+the stable key to Resend, and never requeues a stale or transport-uncertain
+claim. Those outcomes remain `delivery_unknown` for operator reconciliation;
+known provider rejections alone may enter the bounded retry schedule. This is
+repository and migration-contract evidence only until the additive migration is
+separately authorized and applied to the hosted database.
+
 Public one-time booking and recurring-plan creation now share a server-side,
 geocoder-backed DFW eligibility gate before any customer, quote, booking,
 provider, campaign, or communication mutation. Unknown, conflicting, partial,
