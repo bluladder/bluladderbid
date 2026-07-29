@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "decision": "NO-GO",
+  "project_ref": "gyndziiuizpgwhqwyrvn",
+  "rejected_project_refs": [
+    "fqyplaphuafbtalrxqzd"
+  ],
+  "captured_at": "2026-07-28",
+  "supabase_cli": {
+    "version": "2.101.0",
+    "version_command": "supabase --version",
+    "forbidden_flags": [
+      "--include-all"
+    ]
+  },
+  "release": {
+    "stage_7b_commit": "bb96ec9",
+    "stage_7b_full_commit": "bb96ec9fd54e352f049dda61d694de6c09767090",
+    "migration_git_tree": "82edc14803235b04f57dc212504eb5c92082ebf2",
+    "migration_count": 153,
+    "required_main_ancestor": "997df84ccc70f103748ba444b656adffd0650812",
+    "allowed_migration": {
+      "filename": "20260728060000_tenant_foundation_stage_7b.sql",
+      "sha256": "b26d38b6b63d5f1fa67f0e7ae8ce0a31eb8892690c9078063fa19dc36ba9c2ca"
+    },
+    "deferred_migrations": [
+      "20260728070000_organization_routing_stage_8a.sql",
+      "20260728080000_restrict_security_definer_execution.sql"
+    ]
+  },
+  "ledger": {
+    "reconciliation_sha256": "07b1e2aa76642a93321c27e0ed0283934e8d455b60d929e1ab265e9814b96f51",
+    "hosted_count": 145,
+    "repository_main_count": 154,
+    "first_hosted_version": "20260125015830",
+    "last_hosted_version": "20260726194719",
+    "aligned_timestamp_count": 45,
+    "claimed_shifted_count": 99,
+    "hosted_only_versions": [
+      "20260128005316"
+    ],
+    "repair_manifest": {
+      "reverted": [],
+      "applied": []
+    },
+    "rejected_bulk_proposal": {
+      "reverted_count": 99,
+      "applied_count": 107,
+      "reason": "Mappings are generated from timestamp proximity and ordering, not independently proven hosted SQL or object equivalence."
+    }
+  },
+  "never_replay": {
+    "superseded_cleanup": "20260713051500_cleanup_geocode_verify_precheck.sql",
+    "superseded_cleanup_sha256": "a64fb3ffe948a5ebacc93da35aecf7e68fcd9217bf052c588a24502212883b9e",
+    "migration_time_delete_versions": [
+      "20260712180201",
+      "20260712203829",
+      "20260713022122",
+      "20260713025636",
+      "20260713051458",
+      "20260713051500",
+      "20260713161654",
+      "20260722223422"
+    ]
+  },
+  "admission": {
+    "ledger_mutations_authorized": false,
+    "hosted_schema_mutations_authorized": false,
+    "required_dry_run_selection": [
+      "20260728060000_tenant_foundation_stage_7b.sql"
+    ],
+    "dry_run_is_sql_validation": false
+  }
+}
