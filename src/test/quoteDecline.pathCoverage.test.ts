@@ -71,7 +71,7 @@ describe("quote decline path coverage", () => {
 
   it("never treats quote email as authorization", () => {
     expect(declineFunction).toMatch(/verifyResumeToken\(supabase, quoteId, resumeToken\)/);
-    expect(declineFunction).toMatch(/if \(!authz\.ok && !tokenMatches\)/);
+    expect(declineFunction).toMatch(/if \(!canDeclineQuote\(authz\.ok, tokenMatches\)\)/);
     expect(declineFunction).not.toMatch(/emailMatches|emailOnFile/);
     expect(declineFunction.indexOf("verifyResumeToken(")).toBeLessThan(
       declineFunction.indexOf('.from("quotes")'),
