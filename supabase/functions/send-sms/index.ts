@@ -13,6 +13,8 @@ import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
+import { verifyResumeToken } from "../_shared/quoteResumeTokens.ts";
+import { authorizeSmsEventRequest } from "../_shared/sendSmsAuthorization.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +42,8 @@ interface SendSmsRequest {
   eventType?: EventType;
   bookingId?: string;
   quoteId?: string;
+  resumeToken?: string;
+  customerInitiated?: boolean;
   // ...or a direct/manual send.
   to?: string;
   body?: string;
@@ -189,22 +193,44 @@ serve(async (req) => {
     }
 
     const { eventType, bookingId, quoteId } = body;
-    if (!eventType) {
+    if (!eventType || !Object.prototype.hasOwnProperty.call(DEFAULT_TEMPLATES, eventType)) {
       return new Response(JSON.stringify({ error: "eventType or (to + body) required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    if ((!bookingId && !quoteId) || (bookingId && quoteId)) {
+      return new Response(JSON.stringify({ error: "Exactly one bookingId or quoteId is required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // The event-driven path is reachable by the public quote flow, so it cannot
-    // require auth. Internal service-role callers (booking/cancel workflows) are
-    // exempt; everyone else is throttled per-IP to prevent SMS-trigger abuse.
-    if (!isServiceRoleToken(getBearer(req))) {
+    // Booking lifecycle events are service-only. The one public event
+    // (quote_created) requires the opaque capability minted for that exact
+    // quote by save-quote; a raw UUID never authorizes a send.
+    const serviceCaller = isServiceRoleToken(getBearer(req));
+    if (!serviceCaller) {
       const rl = rateLimit(req, { limit: 5, windowMs: 60_000 });
       if (!rl.allowed) {
         return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" },
         });
       }
+    }
+    const authorized = await authorizeSmsEventRequest(
+      {
+        serviceCaller,
+        eventType,
+        bookingId,
+        quoteId,
+        resumeToken: body.resumeToken,
+      },
+      async (authorizedQuoteId, resumeToken) =>
+        (await verifyResumeToken(supabase, authorizedQuoteId, resumeToken)).ok,
+    );
+    if (!authorized) {
+      return new Response(JSON.stringify({ error: "Unauthorized event request" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // ---- Build variable context ----
@@ -287,7 +313,7 @@ serve(async (req) => {
     // quote sends require the caller to set customerInitiated on the body.
     const customerInitiated =
       eventType === "quote_created"
-        ? (body as { customerInitiated?: boolean }).customerInitiated === true
+        ? (!serviceCaller || body.customerInitiated === true)
         : true;
     const testSuppression = await checkSuppression(
       supabase,
@@ -375,10 +401,16 @@ serve(async (req) => {
     // owned exclusively by the canonical campaign-event function, reached via
     // emitCampaignEvent(). Callers that need follow-up automation must emit
     // an allowlisted campaign lifecycle event separately.
+    const deliveryStatus = transactionalSent
+      ? "accepted"
+      : smsSuppressed
+      ? "suppressed"
+      : "failed";
     return new Response(JSON.stringify({
-      success: true,
+      success: transactionalSent,
+      deliveryStatus,
       transactionalSent,
-      transactionalError,
+      transactionalError: transactionalSent ? null : "message_not_accepted",
       scheduledFollowUps: 0,
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
