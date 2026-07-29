@@ -541,6 +541,28 @@ export async function runPersistedQuoteAbandonmentSweep(
       continue;
     }
 
+    // A booking linked to this exact quote is authoritative even when the
+    // quote-conversion CAS needs manual reconciliation. Never emit abandonment
+    // from the stale quote status. Lookup failure also fails closed.
+    try {
+      const hasBooking = await hasLifecycleBlockingBooking(supabase, {
+        customerId: q.customer_id,
+        quoteId: q.id,
+        anchorIso: null,
+      });
+      if (hasBooking) {
+        result.skipped++;
+        result.reasons["booking_completed"] =
+          (result.reasons["booking_completed"] ?? 0) + 1;
+        continue;
+      }
+    } catch (_e) {
+      result.skipped++;
+      result.reasons["booking_lookup_unavailable"] =
+        (result.reasons["booking_lookup_unavailable"] ?? 0) + 1;
+      continue;
+    }
+
     const totalNum = typeof q.total === "number" ? q.total : Number(q.total);
     const svc = q.services_json && typeof q.services_json === "object" ? q.services_json as Record<string, unknown> : {};
     const svcArr = Array.isArray((svc as any).services)
