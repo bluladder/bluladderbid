@@ -30,24 +30,21 @@ hosted-environment, manual acceptance, or production-verification gates pass.
 
 ## Current launch blockers
 
-The current contract identifies nine repository-level launch gaps:
+The current contract identifies eight repository-level launch gaps:
 
 1. Public intake still lacks a terminal service-area gate, and a manual
    fallback can claim unproven notification.
 2. Public booking does not yet enforce the deterministic DFW service-area
    contract before authoritative writes.
-3. Saved-quote communications and campaign events can use caller-supplied
-   values instead of the persisted authoritative calculation.
-4. Bid email delivery can claim success without provider acceptance, and
-   public delivery lacks durable request idempotency.
-5. Decline uses weak destructive authorization and can race conversion.
-6. A quote awaiting manual conversion reconciliation can remain eligible for
+3. Public bid delivery lacks durable request idempotency.
+4. Decline uses weak destructive authorization and can race conversion.
+5. A quote awaiting manual conversion reconciliation can remain eligible for
    abandonment follow-up until repaired.
-7. Recurring provider uncertainty still requires manual recovery, and a
+6. Recurring provider uncertainty still requires manual recovery, and a
    communication crash can duplicate provider delivery.
-8. Voice remains a beta/dry-run channel and cannot enter the authoritative
+7. Voice remains a beta/dry-run channel and cannot enter the authoritative
    booking workflow.
-9. Operators lack one unified launch diagnostic view spanning booking, bid,
+8. Operators lack one unified launch diagnostic view spanning booking, bid,
    communication, follow-up, and voice outcomes.
 
 The hosted security foundation, provider configuration, controlled synthetic
