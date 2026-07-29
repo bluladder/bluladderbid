@@ -164,8 +164,11 @@ describe('OneTimeSummary — email + text delivery', () => {
 
   it('text delivery normalizes phone, invokes send-sms with the SAME quote id, and dedupes retries', async () => {
     invokeMock
-      .mockResolvedValueOnce({ data: { quoteId: 'q-42', quoteUrl: 'https://x/r' }, error: null })
-      .mockResolvedValueOnce({ data: { success: true }, error: null });
+      .mockResolvedValueOnce({ data: { quoteId: 'q-42', quoteUrl: 'https://x/quote/q-42?resume=capability-12345678901234567890' }, error: null })
+      .mockResolvedValueOnce({
+        data: { success: true, transactionalSent: true, deliveryStatus: 'accepted' },
+        error: null,
+      });
     renderSummary();
     fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
     fireEvent.change(await screen.findByLabelText(/^Email$/), { target: { value: 'jane@example.com' } });
@@ -178,7 +181,11 @@ describe('OneTimeSummary — email + text delivery', () => {
     expect(invokeMock.mock.calls[0][1].body.phone).toBe('+14697472877');
     // send-sms reuses the exact quote id returned by save-quote (same resume token).
     expect(invokeMock.mock.calls[1][0]).toBe('send-sms');
-    expect(invokeMock.mock.calls[1][1].body).toEqual({ eventType: 'quote_created', quoteId: 'q-42' });
+    expect(invokeMock.mock.calls[1][1].body).toEqual({
+      eventType: 'quote_created',
+      quoteId: 'q-42',
+      resumeToken: 'capability-12345678901234567890',
+    });
 
     // Masked destination surfaced.
     const status = await screen.findByTestId('delivery-success');
@@ -192,5 +199,32 @@ describe('OneTimeSummary — email + text delivery', () => {
       // dialog closes without any new invoke
       expect(invokeMock).not.toHaveBeenCalled();
     });
+  });
+
+  it('does not claim text success when the provider did not accept the message', async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        data: {
+          quoteId: 'q-43',
+          quoteUrl: 'https://x/quote/q-43?resume=capability-abcdefghijklmnopqrstuvwxyz',
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { success: false, transactionalSent: false, deliveryStatus: 'failed' },
+        error: null,
+      });
+    renderSummary();
+    fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
+    fireEvent.change(await screen.findByLabelText(/^Email$/), {
+      target: { value: 'jane@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText(/mobile number/i), {
+      target: { value: '(469) 747-2877' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /text me the bid/i }));
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('delivery-success')).toBeNull();
   });
 });
