@@ -9,17 +9,29 @@ Deno.test("email.delivered → delivered", () => {
   assertEquals(mapEventToAttemptStatus("email.delivered")?.status, "delivered");
 });
 Deno.test("email.delivery_delayed → delayed", () => {
-  assertEquals(mapEventToAttemptStatus("email.delivery_delayed")?.status, "delayed");
+  assertEquals(
+    mapEventToAttemptStatus("email.delivery_delayed")?.status,
+    "delayed",
+  );
 });
 Deno.test("email.bounced / email.hard_bounced → bounced", () => {
   assertEquals(mapEventToAttemptStatus("email.bounced")?.status, "bounced");
-  assertEquals(mapEventToAttemptStatus("email.hard_bounced")?.status, "bounced");
+  assertEquals(
+    mapEventToAttemptStatus("email.hard_bounced")?.status,
+    "bounced",
+  );
 });
 Deno.test("email.complained → complained", () => {
-  assertEquals(mapEventToAttemptStatus("email.complained")?.status, "complained");
+  assertEquals(
+    mapEventToAttemptStatus("email.complained")?.status,
+    "complained",
+  );
 });
 Deno.test("email.failed → failed", () => {
-  assertEquals(mapEventToAttemptStatus("email.failed")?.status, "failed");
+  assertEquals(mapEventToAttemptStatus("email.failed"), {
+    status: "failed",
+    column: "failed_at",
+  });
 });
 Deno.test("opened/clicked are ignored", () => {
   assertEquals(mapEventToAttemptStatus("email.opened"), null);

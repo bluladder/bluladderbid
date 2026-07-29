@@ -180,7 +180,7 @@ export function OneTimeSummary({
       const resp = data as {
         quoteId?: string;
         quoteUrl?: string;
-        emailStatus?: 'accepted' | 'failed' | 'suppressed' | 'skipped' | 'sent';
+        emailStatus?: 'accepted' | 'failed' | 'suppressed' | 'uncertain' | 'in_progress' | 'skipped' | 'sent';
         emailFailureReason?: string | null;
       } | null;
       setSavedQuoteUrl(resp?.quoteUrl ?? null);
@@ -224,6 +224,10 @@ export function OneTimeSummary({
           // so the customer can correct the destination and retry.
           toast.error(
             `We can't send email to ${masked} — that address is blocked by our email provider. Please use a different address.`
+          );
+        } else if (resp?.emailStatus === 'uncertain' || resp?.emailStatus === 'in_progress') {
+          toast.error(
+            "We couldn't confirm whether the email provider accepted this request. To prevent a duplicate, don't resend it yet; use the saved bid link or contact us."
           );
         } else {
           toast.error(

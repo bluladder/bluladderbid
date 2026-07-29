@@ -1,13 +1,13 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
-  getCallRailConfig,
-  sendCallRailSms,
-  renderTemplate,
   formatApptDate,
-  normalizePhone,
-  isPhoneOptedOut,
+  getCallRailConfig,
   getCustomerPause,
+  isPhoneOptedOut,
+  normalizePhone,
+  renderTemplate,
+  sendCallRailSms,
 } from "../_shared/sms.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
@@ -15,6 +15,7 @@ import { checkSuppression } from "../_shared/suppression.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
 import { verifyResumeToken } from "../_shared/quoteResumeTokens.ts";
 import { authorizeSmsEventRequest } from "../_shared/sendSmsAuthorization.ts";
+import { sendOutboxSms } from "../_shared/smsOutbox.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -52,7 +53,11 @@ interface SendSmsRequest {
 function formatPrice(n: unknown): string {
   const num = typeof n === "number" ? n : Number(n);
   if (!isFinite(num)) return "";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(num);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+  }).format(num);
 }
 
 // Default transactional templates (used when no campaign step overrides for the immediate message).
@@ -72,7 +77,8 @@ const DEFAULT_TEMPLATES: Record<EventType, string> = {
 function serviceNames(servicesJson: unknown): string {
   try {
     if (Array.isArray(servicesJson)) {
-      return servicesJson.map((s: { name?: string }) => s?.name).filter(Boolean).join(", ");
+      return servicesJson.map((s: { name?: string }) => s?.name).filter(Boolean)
+        .join(", ");
     }
     // Plan-builder quotes store { services: [...] }
     const obj = servicesJson as { services?: Array<{ name?: string }> };
@@ -103,22 +109,34 @@ serve(async (req) => {
       const authHeader = req.headers.get("Authorization");
       const token = authHeader?.replace("Bearer ", "");
       if (!token) {
-        return new Response(JSON.stringify({ error: "Authentication required" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Authentication required" }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
       const { data: userData } = await supabase.auth.getUser(token);
       const uid = userData?.user?.id;
       if (!uid) {
         return new Response(JSON.stringify({ error: "Invalid session" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const { data: isAdmin } = await supabase.rpc("has_admin_level", { _user_id: uid, _min_level: "operations_admin" });
+      const { data: isAdmin } = await supabase.rpc("has_admin_level", {
+        _user_id: uid,
+        _min_level: "operations_admin",
+      });
       if (!isAdmin) {
-        return new Response(JSON.stringify({ error: "Admin access required" }), {
-          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: "Admin access required" }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
       const toNorm = normalizePhone(body.to);
@@ -126,82 +144,135 @@ serve(async (req) => {
       // Manual admin SMS is not a customer-triggered transactional message.
       // Intentionally passed with no purpose so protected test identities stay
       // suppressed even for admin-initiated one-offs.
-      const manualSuppression = await checkSuppression(supabase, { phone: toNorm || body.to });
+      const manualSuppression = await checkSuppression(supabase, {
+        phone: toNorm || body.to,
+      });
       if (manualSuppression.suppressed) {
         await supabase.from("sms_messages").insert({
-          to_number: toNorm || body.to, body: body.body, message_kind: "manual",
-          status: "cancelled", suppressed: true, suppressed_reason: manualSuppression.reason,
+          to_number: toNorm || body.to,
+          body: body.body,
+          message_kind: "manual",
+          status: "cancelled",
+          suppressed: true,
+          suppressed_reason: manualSuppression.reason,
           error: `Suppressed (${manualSuppression.reason})`,
         });
-        return new Response(JSON.stringify({ success: false, suppressed: true, reason: manualSuppression.reason }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            suppressed: true,
+            reason: manualSuppression.reason,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
       // Respect opt-outs even for manual admin sends.
       if (await isPhoneOptedOut(supabase, toNorm)) {
         await supabase.from("sms_messages").insert({
-          to_number: toNorm || body.to, body: body.body, message_kind: "manual",
-          status: "cancelled", error: "Recipient has opted out of texts",
+          to_number: toNorm || body.to,
+          body: body.body,
+          message_kind: "manual",
+          status: "cancelled",
+          error: "Recipient has opted out of texts",
         });
-        return new Response(JSON.stringify({ success: false, error: "Recipient has opted out of texts" }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Recipient has opted out of texts",
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
       const { data: row } = await supabase
         .from("sms_messages")
-        .insert({ to_number: toNorm || body.to, body: body.body, message_kind: "manual", status: "pending" })
+        .insert({
+          to_number: toNorm || body.to,
+          body: body.body,
+          message_kind: "manual",
+          status: "pending",
+        })
         .select("id")
         .single();
 
       if (!config) {
-        await supabase.from("sms_messages").update({ status: "failed", error: "CallRail not configured" }).eq("id", row?.id);
-        return new Response(JSON.stringify({ success: false, error: "CallRail not configured" }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        await supabase.from("sms_messages").update({
+          status: "failed",
+          error: "CallRail not configured",
+        }).eq("id", row?.id);
+        return new Response(
+          JSON.stringify({ success: false, error: "CallRail not configured" }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
       const result = await sendCallRailSms(config, body.to, body.body);
       const acceptedAt = result.ok ? new Date().toISOString() : null;
       await supabase.from("sms_messages").update(
         result.ok
           ? {
-              status: "accepted",
-              sent_at: acceptedAt,
-              callrail_message_id: result.messageId ?? null,
-              provider: "callrail",
-              provider_conversation_id: result.conversationId ?? null,
-              provider_message_id: result.messageId ?? null,
-              provider_status: result.providerMessageStatus ?? "accepted",
-              provider_response_kind: result.providerResponseKind ?? null,
-              provider_accepted_at: acceptedAt,
-              error: null,
-              attempts: 1,
-              next_retry_at: null,
-            }
+            status: "accepted",
+            sent_at: acceptedAt,
+            callrail_message_id: result.messageId ?? null,
+            provider: "callrail",
+            provider_conversation_id: result.conversationId ?? null,
+            provider_message_id: result.messageId ?? null,
+            provider_status: result.providerMessageStatus ?? "accepted",
+            provider_response_kind: result.providerResponseKind ?? null,
+            provider_accepted_at: acceptedAt,
+            error: null,
+            attempts: 1,
+            next_retry_at: null,
+          }
           : {
-              // Transient send failure: requeue so the cron processor retries with backoff.
-              status: "pending",
-              error: result.error ?? "send failed",
-              attempts: 1,
-              send_at: firstRetryIso(),
-              next_retry_at: firstRetryIso(),
-            },
+            // Transient send failure: requeue so the cron processor retries with backoff.
+            status: "pending",
+            error: result.error ?? "send failed",
+            attempts: 1,
+            send_at: firstRetryIso(),
+            next_retry_at: firstRetryIso(),
+          },
       ).eq("id", row?.id);
 
-      return new Response(JSON.stringify({ success: result.ok, error: result.error }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ success: result.ok, error: result.error }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     const { eventType, bookingId, quoteId } = body;
-    if (!eventType || !Object.prototype.hasOwnProperty.call(DEFAULT_TEMPLATES, eventType)) {
-      return new Response(JSON.stringify({ error: "eventType or (to + body) required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (
+      !eventType ||
+      !Object.prototype.hasOwnProperty.call(DEFAULT_TEMPLATES, eventType)
+    ) {
+      return new Response(
+        JSON.stringify({ error: "eventType or (to + body) required" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
     if ((!bookingId && !quoteId) || (bookingId && quoteId)) {
-      return new Response(JSON.stringify({ error: "Exactly one bookingId or quoteId is required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: "Exactly one bookingId or quoteId is required",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Booking lifecycle events are service-only. The one public event
@@ -211,9 +282,19 @@ serve(async (req) => {
     if (!serviceCaller) {
       const rl = rateLimit(req, { limit: 5, windowMs: 60_000 });
       if (!rl.allowed) {
-        return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" },
-        });
+        return new Response(
+          JSON.stringify({
+            error: "Too many requests. Please try again shortly.",
+          }),
+          {
+            status: 429,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+              "Retry-After": "60",
+            },
+          },
+        );
       }
     }
     const authorized = await authorizeSmsEventRequest(
@@ -228,9 +309,13 @@ serve(async (req) => {
         (await verifyResumeToken(supabase, authorizedQuoteId, resumeToken)).ok,
     );
     if (!authorized) {
-      return new Response(JSON.stringify({ error: "Unauthorized event request" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Unauthorized event request" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // ---- Build variable context ----
@@ -243,11 +328,18 @@ serve(async (req) => {
     if (bookingId) {
       const { data: bk } = await supabase
         .from("bookings")
-        .select("reference_number, scheduled_start, total, services_json, customer:customers(first_name, last_name, phone, email)")
+        .select(
+          "reference_number, scheduled_start, total, services_json, customer:customers(first_name, last_name, phone, email)",
+        )
         .eq("id", bookingId)
         .single();
       if (bk) {
-        const cust = bk.customer as { first_name?: string; last_name?: string; phone?: string; email?: string } | null;
+        const cust = bk.customer as {
+          first_name?: string;
+          last_name?: string;
+          phone?: string;
+          email?: string;
+        } | null;
         phone = cust?.phone ?? null;
         email = cust?.email ?? null;
         firstName = cust?.first_name || firstName;
@@ -264,20 +356,48 @@ serve(async (req) => {
     } else if (quoteId) {
       const { data: q } = await supabase
         .from("quotes")
-        .select("customer_name, customer_phone, customer_email, total, services_json")
+        .select(
+          "customer_name, customer_phone, customer_email, total, services_json,status,expires_at,superseded_by,converted_booking_id",
+        )
         .eq("id", quoteId)
         .single();
       if (q) {
+        const notDeliverable =
+          !["saved", "emailed", "viewed", "pending"].includes(
+            String(q.status),
+          ) ||
+          q.superseded_by != null ||
+          q.converted_booking_id != null ||
+          (q.expires_at != null &&
+            new Date(String(q.expires_at)).getTime() <= Date.now());
+        if (notDeliverable) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              deliveryStatus: "blocked",
+              transactionalSent: false,
+              transactionalError: "quote_not_deliverable",
+            }),
+            {
+              status: 409,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
         phone = q.customer_phone as string ?? null;
         email = (q.customer_email as string) ?? null;
-        firstName = ((q.customer_name as string) || "").trim().split(/\s+/)[0] || firstName;
+        firstName =
+          ((q.customer_name as string) || "").trim().split(/\s+/)[0] ||
+          firstName;
         vars.service = serviceNames(q.services_json);
         vars.total = formatPrice(q.total);
         // Mint a fresh, opaque resume URL at send-time. The raw token is
         // only present in the outbound message body — never stored in queue
         // rows as a bare /quote/<uuid> that would expose PII to any visitor.
         const { mintResumeUrl } = await import("../_shared/resumeLink.ts");
-        const resumeUrl = await mintResumeUrl(supabase, quoteId, { reason: "send_sms_transactional" });
+        const resumeUrl = await mintResumeUrl(supabase, quoteId, {
+          reason: "send_sms_transactional",
+        });
         vars.quote_link = resumeUrl;
         vars.link = resumeUrl;
       }
@@ -302,25 +422,32 @@ serve(async (req) => {
     // customer-initiated (guards against automated follow-ups piggybacking on
     // this event type).
     const eventPurpose:
-      | "booking_confirmed" | "booking_updated" | "booking_cancelled" | "quote_requested" | undefined =
-      eventType === "appointment_scheduled" ? "booking_confirmed"
-      : eventType === "appointment_rescheduled" ? "booking_updated"
-      : eventType === "appointment_cancelled" ? "booking_cancelled"
-      : eventType === "quote_created" ? "quote_requested"
-      : undefined;
+      | "booking_confirmed"
+      | "booking_updated"
+      | "booking_cancelled"
+      | "quote_requested"
+      | undefined = eventType === "appointment_scheduled"
+        ? "booking_confirmed"
+        : eventType === "appointment_rescheduled"
+        ? "booking_updated"
+        : eventType === "appointment_cancelled"
+        ? "booking_cancelled"
+        : eventType === "quote_created"
+        ? "quote_requested"
+        : undefined;
     // Explicit customer-initiated flag from trusted callers. Event-driven
     // booking lifecycle sends are always in response to a customer action;
     // quote sends require the caller to set customerInitiated on the body.
-    const customerInitiated =
-      eventType === "quote_created"
-        ? (!serviceCaller || body.customerInitiated === true)
-        : true;
+    const customerInitiated = eventType === "quote_created"
+      ? (!serviceCaller || body.customerInitiated === true)
+      : true;
     const testSuppression = await checkSuppression(
       supabase,
       { phone: toNorm || phone, email },
       eventPurpose ? { purpose: eventPurpose, customerInitiated } : undefined,
     );
-    const smsSuppressed = optedOut || pause.sms_paused || testSuppression.suppressed;
+    const smsSuppressed = optedOut || pause.sms_paused ||
+      testSuppression.suppressed;
     const immediateBody = renderTemplate(DEFAULT_TEMPLATES[eventType], vars);
     let transactionalSent = false;
     let transactionalError: string | undefined;
@@ -330,69 +457,45 @@ serve(async (req) => {
       transactionalError = testSuppression.suppressed
         ? `Suppressed (${testSuppression.reason})`
         : optedOut
-          ? "Recipient has opted out of texts"
-          : "Texting paused for this lead";
+        ? "Recipient has opted out of texts"
+        : "Texting paused for this lead";
       await supabase.from("sms_messages").insert({
         to_number: toNorm || phone || "unknown",
         body: immediateBody,
         message_kind: "transactional",
         status: "cancelled",
         suppressed: testSuppression.suppressed,
-        suppressed_reason: testSuppression.suppressed ? testSuppression.reason : null,
+        suppressed_reason: testSuppression.suppressed
+          ? testSuppression.reason
+          : null,
         error: transactionalError,
         booking_id: bookingId ?? null,
         quote_id: quoteId ?? null,
       });
     } else {
-      const { data: txRow } = await supabase
-        .from("sms_messages")
-        .insert({
-          to_number: toNorm || phone || "unknown",
-          body: immediateBody,
-          message_kind: "transactional",
-          status: "pending",
-          booking_id: bookingId ?? null,
-          quote_id: quoteId ?? null,
-        })
-        .select("id")
-        .single();
-
       if (!toNorm) {
-        await supabase.from("sms_messages").update({ status: "failed", error: "No valid phone number" }).eq("id", txRow?.id);
         transactionalError = "No valid phone number on record";
-      } else if (!config) {
-        await supabase.from("sms_messages").update({ status: "failed", error: "CallRail not configured" }).eq("id", txRow?.id);
-        transactionalError = "CallRail not configured";
       } else {
-        const result = await sendCallRailSms(config, toNorm, immediateBody);
-        const acceptedAt = result.ok ? new Date().toISOString() : null;
-        transactionalSent = result.ok;
-        transactionalError = result.error;
-        await supabase.from("sms_messages").update(
-          result.ok
-            ? {
-                status: "accepted",
-                sent_at: acceptedAt,
-                callrail_message_id: result.messageId ?? null,
-                provider: "callrail",
-                provider_conversation_id: result.conversationId ?? null,
-                provider_message_id: result.messageId ?? null,
-                provider_status: result.providerMessageStatus ?? "accepted",
-                provider_response_kind: result.providerResponseKind ?? null,
-                provider_accepted_at: acceptedAt,
-                error: null,
-                attempts: 1,
-                next_retry_at: null,
-              }
-            : {
-                // Transient send failure: requeue for automatic retry with backoff.
-                status: "pending",
-                error: result.error ?? "send failed",
-                attempts: 1,
-                send_at: firstRetryIso(),
-                next_retry_at: firstRetryIso(),
-              },
-        ).eq("id", txRow?.id);
+        const outboundKey = quoteId
+          ? `quote_delivery:sms:${quoteId}:${toNorm.replace(/\D/g, "")}`
+          : `booking_event:${eventType}:${bookingId}:${
+            toNorm.replace(/\D/g, "")
+          }`;
+        const result = await sendOutboxSms(supabase, {
+          outboundKey,
+          toNumber: toNorm,
+          body: immediateBody,
+          messageKind: "transactional",
+          quoteId: quoteId ?? undefined,
+          callRail: config,
+        });
+        transactionalSent = result.sent;
+        transactionalError = result.error ??
+          (result.inProgress
+            ? "delivery_in_progress"
+            : result.outboxState === "delivery_unknown"
+            ? "delivery_unknown"
+            : undefined);
       }
     }
 
@@ -406,17 +509,29 @@ serve(async (req) => {
       : smsSuppressed
       ? "suppressed"
       : "failed";
-    return new Response(JSON.stringify({
-      success: transactionalSent,
-      deliveryStatus,
-      transactionalSent,
-      transactionalError: transactionalSent ? null : "message_not_accepted",
-      scheduledFollowUps: 0,
-    }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(
+      JSON.stringify({
+        success: transactionalSent,
+        deliveryStatus,
+        transactionalSent,
+        transactionalError: transactionalSent ? null : "message_not_accepted",
+        scheduledFollowUps: 0,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     console.error("send-sms error:", error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });

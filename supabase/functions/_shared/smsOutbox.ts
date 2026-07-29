@@ -17,7 +17,11 @@
 // ============================================================================
 // deno-lint-ignore-file no-explicit-any
 
-import { getCallRailConfig, sendCallRailSms, type CallRailConfig } from "./sms.ts";
+import {
+  type CallRailConfig,
+  getCallRailConfig,
+  sendCallRailSms,
+} from "./sms.ts";
 
 type SB = any;
 
@@ -47,6 +51,7 @@ export interface OutboxSendInput {
   toNumber: string;
   body: string;
   messageKind: string;
+  quoteId?: string;
   callRail?: CallRailConfig | null;
 }
 
@@ -81,45 +86,53 @@ export async function sendOutboxSms(
   input: OutboxSendInput,
 ): Promise<OutboxSendResult> {
   const callrail = input.callRail ?? getCallRailConfig();
-  if (!callrail) {
-    return {
-      sent: false, smsMessageId: null, outboxState: null,
-      replay: false, inProgress: false, escalated: false,
-      providerMessageId: null, error: "callrail_config_missing",
-    };
-  }
 
   const claimToken = crypto.randomUUID();
+  const claimRpc = input.quoteId
+    ? "claim_quote_sms_delivery"
+    : "claim_sms_outbox_send";
+  const claimArgs: Record<string, unknown> = {
+    p_outbound_key: input.outboundKey,
+    p_claim_token: claimToken,
+    p_to_number: input.toNumber,
+    p_body: input.body,
+    p_message_kind: input.messageKind,
+  };
+  if (input.quoteId) claimArgs.p_quote_id = input.quoteId;
   const { data: claimData, error: claimErr } = await supabase.rpc(
-    "claim_sms_outbox_send",
-    {
-      p_outbound_key: input.outboundKey,
-      p_claim_token: claimToken,
-      p_to_number: input.toNumber,
-      p_body: input.body,
-      p_message_kind: input.messageKind,
-    },
+    claimRpc,
+    claimArgs,
   );
   if (claimErr) {
     return {
-      sent: false, smsMessageId: null, outboxState: null,
-      replay: false, inProgress: false, escalated: false,
-      providerMessageId: null, error: `claim_error:${claimErr.message}`,
+      sent: false,
+      smsMessageId: null,
+      outboxState: null,
+      replay: false,
+      inProgress: false,
+      escalated: false,
+      providerMessageId: null,
+      error: `claim_error:${claimErr.message}`,
     };
   }
   const claim = (claimData ?? {}) as OutboxClaim;
   if (!claim.ok || !claim.id) {
     return {
-      sent: false, smsMessageId: null, outboxState: null,
-      replay: false, inProgress: false, escalated: false,
-      providerMessageId: null, error: claim.reason ?? "claim_denied",
+      sent: false,
+      smsMessageId: null,
+      outboxState: null,
+      replay: false,
+      inProgress: false,
+      escalated: false,
+      providerMessageId: null,
+      error: claim.reason ?? "claim_denied",
     };
   }
 
   // Not the winner — return existing evidence, do NOT call CallRail.
   if (!claim.may_dispatch) {
-    const priorAccepted =
-      claim.outbox_state === "provider_accepted" || claim.status === "sent";
+    const priorAccepted = claim.outbox_state === "provider_accepted" ||
+      claim.status === "sent";
     return {
       sent: priorAccepted,
       smsMessageId: claim.id,
@@ -140,38 +153,58 @@ export async function sendOutboxSms(
   let newState: OutboxState = "delivery_unknown";
   let errText: string | null = null;
 
-  try {
-    const res = await sendCallRailSms(callrail, input.toNumber, input.body);
-    providerMessageId = res.messageId ?? null;
-    providerConversationId = res.conversationId ?? null;
-    providerStatus = res.providerMessageStatus ?? null;
-    providerResponseKind = res.providerResponseKind ?? null;
-    if (res.ok) {
-      newState = "provider_accepted";
-    } else if (res.error) {
-      newState = "send_failed";
-      errText = res.error;
-    } else {
+  if (!callrail) {
+    newState = "send_failed";
+    errText = "callrail_config_missing";
+  } else {try {
+      const res = await sendCallRailSms(callrail, input.toNumber, input.body);
+      providerMessageId = res.messageId ?? null;
+      providerConversationId = res.conversationId ?? null;
+      providerStatus = res.providerMessageStatus ?? null;
+      providerResponseKind = res.providerResponseKind ?? null;
+      if (res.ok) {
+        newState = "provider_accepted";
+      } else if (
+        res.error && res.providerResponseKind !== "transport_uncertain"
+      ) {
+        newState = "send_failed";
+        errText = res.error;
+      } else {
+        newState = "delivery_unknown";
+        errText = res.error ?? "provider_ambiguous_response";
+      }
+    } catch (e) {
+      // Thrown after possibly-successful dispatch. We CANNOT know whether
+      // CallRail accepted. Mark delivery_unknown; reconciliation owns it.
       newState = "delivery_unknown";
-      errText = "provider_ambiguous_response";
-    }
-  } catch (e) {
-    // Thrown after possibly-successful dispatch. We CANNOT know whether
-    // CallRail accepted. Mark delivery_unknown; reconciliation owns it.
-    newState = "delivery_unknown";
-    errText = `dispatch_threw:${String(e).slice(0, 180)}`;
-  }
+      errText = `dispatch_threw:${String(e).slice(0, 180)}`;
+    }}
 
-  await supabase.rpc("finalize_sms_outbox_send", {
-    p_sms_message_id: claim.id,
-    p_claim_token: claimToken,
-    p_new_state: newState,
-    p_provider_message_id: providerMessageId,
-    p_provider_conversation_id: providerConversationId,
-    p_provider_status: providerStatus,
-    p_provider_response_kind: providerResponseKind,
-    p_error: errText,
-  });
+  const { data: finalized, error: finalizeError } = await supabase.rpc(
+    "finalize_sms_outbox_send",
+    {
+      p_sms_message_id: claim.id,
+      p_claim_token: claimToken,
+      p_new_state: newState,
+      p_provider_message_id: providerMessageId,
+      p_provider_conversation_id: providerConversationId,
+      p_provider_status: providerStatus,
+      p_provider_response_kind: providerResponseKind,
+      p_error: errText,
+    },
+  );
+  if (finalizeError || !finalized?.ok) {
+    return {
+      sent: false,
+      smsMessageId: claim.id,
+      outboxState: "delivery_unknown",
+      replay: false,
+      inProgress: false,
+      escalated: true,
+      providerMessageId,
+      error: "delivery_finalization_uncertain",
+    };
+  }
 
   return {
     sent: newState === "provider_accepted",

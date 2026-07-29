@@ -8,19 +8,22 @@
 // ============================================================================
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { sendEmail } from "../_shared/emailConfig.ts";
+import { deliverQuoteEmail } from "../_shared/quoteDelivery.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
 import { computeAuthoritativeQuote } from "../_shared/authoritativeQuote.ts";
 import { toAuthoritativeServiceItems } from "../_shared/authoritativeQuotePresentation.ts";
-import { mintQuoteResumeToken, revokeQuoteResumeTokens } from "../_shared/quoteResumeTokens.ts";
+import {
+  mintQuoteResumeToken,
+  revokeQuoteResumeTokens,
+} from "../_shared/quoteResumeTokens.ts";
+import { resolvePublicBookingOrganization } from "../_shared/publicBookingOrganization.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
-
 
 interface Body {
   action: "save" | "email";
@@ -55,19 +58,48 @@ function json(status: number, body: unknown) {
 }
 
 function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]));
+  return s.replace(
+    /[&<>"']/g,
+    (
+      c,
+    ) => (({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    } as Record<string, string>)[c]),
+  );
 }
 
-function money(n: number) { return `$${Math.round(n).toLocaleString("en-US")}`; }
+function money(n: number) {
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+}
 
-function renderEmail(opts: { firstName: string; total: number; services: Body["services"]; quoteUrl: string; expiresAt: string }) {
-  const expDate = new Date(opts.expiresAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const services = opts.services.map((s) => `<li style="margin:4px 0;">${escapeHtml(s.name)}</li>`).join("");
+function renderEmail(
+  opts: {
+    firstName: string;
+    total: number;
+    services: Body["services"];
+    quoteUrl: string;
+    expiresAt: string;
+  },
+) {
+  const expDate = new Date(opts.expiresAt).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const services = opts.services.map((s) =>
+    `<li style="margin:4px 0;">${escapeHtml(s.name)}</li>`
+  ).join("");
   return `<!doctype html><html><body style="font-family:Arial,sans-serif;background:#ffffff;color:#0f172a;margin:0;padding:24px;">
     <div style="max-width:560px;margin:0 auto;">
       <h1 style="color:#1e3a8a;margin:0 0 12px;">Your BluLadder bid is saved</h1>
       <p>Hi ${escapeHtml(opts.firstName)},</p>
-      <p>Here's the bid we prepared for you. It's held at <strong>${money(opts.total)}</strong> for 30 days (through <strong>${expDate}</strong>).</p>
+      <p>Here's the bid we prepared for you. It's held at <strong>${
+    money(opts.total)
+  }</strong> for 30 days (through <strong>${expDate}</strong>).</p>
       <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:16px 0;">
         <div style="font-size:14px;color:#334155;margin-bottom:8px;">Services included</div>
         <ul style="margin:0;padding-left:20px;color:#0f172a;">${services}</ul>
@@ -79,18 +111,28 @@ function renderEmail(opts: { firstName: string; total: number; services: Body["s
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") return json(405, { error: "Method not allowed" });
 
   let body: Body;
-  try { body = await req.json(); } catch { return json(400, { error: "Invalid JSON" }); }
+  try {
+    body = await req.json();
+  } catch {
+    return json(400, { error: "Invalid JSON" });
+  }
 
   const email = (body.email || "").trim().toLowerCase();
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return json(400, { error: "A valid email is required to save this bid." });
   }
-  if (!body.services?.length || typeof body.total !== "number" || body.total <= 0) {
-    return json(400, { error: "Add at least one service before saving this bid." });
+  if (
+    !body.services?.length || typeof body.total !== "number" || body.total <= 0
+  ) {
+    return json(400, {
+      error: "Add at least one service before saving this bid.",
+    });
   }
   const action: "save" | "email" = body.action === "email" ? "email" : "save";
   // Explicit discriminator. Fall back to the legacy `mode` for older callers,
@@ -105,6 +147,16 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+  const organizationResolution = await resolvePublicBookingOrganization(
+    supabase,
+  );
+  if (organizationResolution.status !== "resolved") {
+    return json(503, {
+      error: "Organization context is unavailable. Please try again later.",
+      code: organizationResolution.code,
+    });
+  }
+  const tenantScoped = organizationResolution.tenantFoundationAvailable;
 
   // -------------------------------------------------------------------------
   // SERVER-AUTHORITATIVE RECALCULATION.
@@ -115,27 +167,45 @@ serve(async (req) => {
   // -------------------------------------------------------------------------
   const authoritative = await computeAuthoritativeQuote(supabase, {
     quoteType,
-    homeDetails: body.homeDetails as unknown as Parameters<typeof computeAuthoritativeQuote>[1]["homeDetails"],
-    additionalServices: (body.additionalServices ?? {}) as unknown as Parameters<typeof computeAuthoritativeQuote>[1]["additionalServices"],
+    homeDetails: body.homeDetails as unknown as Parameters<
+      typeof computeAuthoritativeQuote
+    >[1]["homeDetails"],
+    additionalServices:
+      (body.additionalServices ?? {}) as unknown as Parameters<
+        typeof computeAuthoritativeQuote
+      >[1]["additionalServices"],
     discount: body.discount ?? null,
     promotion: body.promotion ?? null,
-    planScenario: (body.planScenario ?? null) as Parameters<typeof computeAuthoritativeQuote>[1]["planScenario"],
+    planScenario: (body.planScenario ?? null) as Parameters<
+      typeof computeAuthoritativeQuote
+    >[1]["planScenario"],
     clientDisplay: {
       total: body.total,
       subtotal: body.subtotal,
-      annualTotal: (body.planSnapshot as { payment?: { annualTotal?: number } } | null)?.payment?.annualTotal,
-      monthlyPayment: (body.planSnapshot as { payment?: { monthlyPayment?: number } } | null)?.payment?.monthlyPayment,
-      downPayment: (body.planSnapshot as { payment?: { downPayment?: number } } | null)?.payment?.downPayment,
+      annualTotal:
+        (body.planSnapshot as { payment?: { annualTotal?: number } } | null)
+          ?.payment?.annualTotal,
+      monthlyPayment:
+        (body.planSnapshot as { payment?: { monthlyPayment?: number } } | null)
+          ?.payment?.monthlyPayment,
+      downPayment:
+        (body.planSnapshot as { payment?: { downPayment?: number } } | null)
+          ?.payment?.downPayment,
     },
   });
   if (!authoritative.ok) {
     // Distinguish tamper detection (pricing_mismatch / invalid_plan) from
     // transient/data problems so the client can render the right message.
-    const status = authoritative.status === "pricing_unavailable" ? 503
-      : authoritative.status === "missing_information" ? 400
-      : authoritative.status === "pricing_mismatch" ? 409
-      : authoritative.status === "invalid_plan" ? 422
-      : authoritative.status === "manual_review_required" ? 422
+    const status = authoritative.status === "pricing_unavailable"
+      ? 503
+      : authoritative.status === "missing_information"
+      ? 400
+      : authoritative.status === "pricing_mismatch"
+      ? 409
+      : authoritative.status === "invalid_plan"
+      ? 422
+      : authoritative.status === "manual_review_required"
+      ? 422
       : 400;
     return json(status, {
       error: authoritative.message,
@@ -143,7 +213,8 @@ serve(async (req) => {
       // Never echo the client-submitted total back — surface only the safe
       // authoritative value if we have one, so the UI can re-render.
       serverTotal: authoritative.status === "pricing_mismatch"
-        ? (authoritative.detail?.serverTotal ?? authoritative.detail?.serverAnnual ?? null)
+        ? (authoritative.detail?.serverTotal ??
+          authoritative.detail?.serverAnnual ?? null)
         : null,
     });
   }
@@ -154,22 +225,31 @@ serve(async (req) => {
   );
   if (!authoritativeServices.length) {
     return json(422, {
-      error: "The authoritative quote did not contain any deliverable services.",
+      error:
+        "The authoritative quote did not contain any deliverable services.",
       status: "manual_review_required",
     });
   }
 
   // 1) Find or create the customer by email.
   let customerId: string | null = null;
-  const { data: existing } = await supabase
+  let customerLookup = supabase
     .from("customers")
     .select("id, first_name, last_name, phone")
-    .eq("email", email)
-    .maybeSingle();
+    .eq("email", email);
+  if (tenantScoped) {
+    customerLookup = customerLookup.eq(
+      "organization_id",
+      organizationResolution.organizationId,
+    );
+  }
+  const { data: existing } = await customerLookup.maybeSingle();
   if (existing?.id) {
     customerId = existing.id;
     const patch: Record<string, unknown> = {};
-    if (!existing.first_name && body.firstName) patch.first_name = body.firstName;
+    if (!existing.first_name && body.firstName) {
+      patch.first_name = body.firstName;
+    }
     if (!existing.last_name && body.lastName) patch.last_name = body.lastName;
     if (!existing.phone && body.phone) patch.phone = body.phone;
     if (Object.keys(patch).length) {
@@ -183,16 +263,22 @@ serve(async (req) => {
         first_name: body.firstName ?? null,
         last_name: body.lastName ?? null,
         phone: body.phone ?? null,
+        ...(tenantScoped
+          ? { organization_id: organizationResolution.organizationId }
+          : {}),
       })
       .select("id")
       .single();
-    if (cErr || !created) return json(500, { error: "Could not create customer record." });
+    if (cErr || !created) {
+      return json(500, { error: "Could not create customer record." });
+    }
     customerId = created.id;
   }
 
   const sessionId = body.sourceSessionId ?? null;
   const nowIso = new Date().toISOString();
-  const expiresAtIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAtIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    .toISOString();
 
   const services_json: Record<string, unknown> = {
     services: authoritativeServices,
@@ -215,15 +301,21 @@ serve(async (req) => {
   // 2) Look up an existing saved/emailed quote for this session+customer.
   let quoteId: string | null = null;
   if (sessionId) {
-    const { data: existingQ } = await supabase
+    let quoteLookup = supabase
       .from("quotes")
       .select("id, status")
       .eq("customer_id", customerId)
       .eq("source_session_id", sessionId)
       .in("status", ["saved", "emailed", "viewed", "pending"])
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    if (tenantScoped) {
+      quoteLookup = quoteLookup.eq(
+        "organization_id",
+        organizationResolution.organizationId,
+      );
+    }
+    const { data: existingQ } = await quoteLookup.maybeSingle();
     if (existingQ?.id) quoteId = existingQ.id;
   }
 
@@ -231,7 +323,8 @@ serve(async (req) => {
   const payload: Record<string, unknown> = {
     customer_id: customerId,
     customer_email: email,
-    customer_name: [body.firstName, body.lastName].filter(Boolean).join(" ") || null,
+    customer_name: [body.firstName, body.lastName].filter(Boolean).join(" ") ||
+      null,
     customer_phone: body.phone ?? null,
     services_json,
     home_details_json,
@@ -249,9 +342,15 @@ serve(async (req) => {
     attribution: body.attribution ?? null,
     pricing_engine_version: authoritative.engineVersion,
     pricing_rule_version: authoritative.ruleVersion,
+    ...(tenantScoped
+      ? { organization_id: organizationResolution.organizationId }
+      : {}),
   };
   if (quoteId) {
-    const { error } = await supabase.from("quotes").update(payload).eq("id", quoteId);
+    const { error } = await supabase.from("quotes").update(payload).eq(
+      "id",
+      quoteId,
+    );
     if (error) return json(500, { error: "Could not update the saved bid." });
   } else {
     const { data: inserted, error } = await supabase
@@ -259,7 +358,9 @@ serve(async (req) => {
       .insert(payload)
       .select("id")
       .single();
-    if (error || !inserted) return json(500, { error: "Could not save the bid." });
+    if (error || !inserted) {
+      return json(500, { error: "Could not save the bid." });
+    }
     quoteId = inserted.id;
 
     // Supersede any older unbooked, non-superseded firm quotes for the same
@@ -299,7 +400,9 @@ serve(async (req) => {
           .eq("event_name", "quote_abandoned");
         const matchingEventIds = (evs ?? [])
           .filter((e: { metadata: Record<string, unknown> | null }) => {
-            const qid = e.metadata && typeof e.metadata === "object" ? (e.metadata as Record<string, unknown>).quote_id : null;
+            const qid = e.metadata && typeof e.metadata === "object"
+              ? (e.metadata as Record<string, unknown>).quote_id
+              : null;
             return typeof qid === "string" && olderIds.includes(qid);
           })
           .map((e: { id: string }) => e.id);
@@ -316,10 +419,18 @@ serve(async (req) => {
         }
         if (enrIds.length) {
           await supabase.from("campaign_enrollments")
-            .update({ status: "stopped", stopped_reason: "superseded_by_newer_quote", stopped_at: nowIso })
+            .update({
+              status: "stopped",
+              stopped_reason: "superseded_by_newer_quote",
+              stopped_at: nowIso,
+            })
             .in("id", enrIds);
           await supabase.from("sms_messages")
-            .update({ status: "cancelled", error: "Stopped: superseded_by_newer_quote", next_retry_at: null })
+            .update({
+              status: "cancelled",
+              error: "Stopped: superseded_by_newer_quote",
+              next_retry_at: null,
+            })
             .in("enrollment_id", enrIds).eq("status", "pending");
         }
       }
@@ -360,13 +471,21 @@ serve(async (req) => {
   //
   // Every intentional send attempt is persisted to public.email_send_attempts
   // as its own row so retries / corrected destinations remain auditable.
-  let emailStatus: "accepted" | "failed" | "suppressed" | "skipped" = "skipped";
+  let emailStatus:
+    | "accepted"
+    | "failed"
+    | "suppressed"
+    | "uncertain"
+    | "in_progress"
+    | "skipped" = "skipped";
   let providerMessageId: string | null = null;
   let emailFailureReason: string | null = null;
   let emailAttemptId: string | null = null;
   if (action === "email") {
-    const res = await sendEmail({
-      to: email,
+    const delivery = await deliverQuoteEmail(supabase, {
+      quoteId: quoteId!,
+      recipientEmail: email,
+      sourceSessionId: sessionId,
       subject: "Your BluLadder bid — saved for 30 days",
       html: renderEmail({
         firstName: body.firstName || "there",
@@ -376,42 +495,23 @@ serve(async (req) => {
         expiresAt: expiresAtIso,
       }),
     });
-    const nowAttempt = new Date().toISOString();
-    if (res.ok && res.providerMessageId) {
+    emailAttemptId = delivery.attemptId;
+    providerMessageId = delivery.providerMessageId;
+    emailFailureReason = delivery.failureReason;
+    if (delivery.accepted) {
       emailStatus = "accepted";
-      providerMessageId = res.providerMessageId;
-    } else if (res.failure?.category === "suppressed") {
+    } else if (
+      delivery.state === "failed_terminal" &&
+      delivery.failureReason?.toLowerCase().includes("suppression")
+    ) {
       emailStatus = "suppressed";
-      emailFailureReason = res.failure.message;
+    } else if (delivery.state === "uncertain") {
+      emailStatus = "uncertain";
+    } else if (delivery.inProgress) {
+      emailStatus = "in_progress";
     } else {
-      // Includes: 2xx-without-id, network_error, provider_rejected,
-      // sender_not_verified, invalid_recipient, rate_limited, etc.
       emailStatus = "failed";
-      emailFailureReason = res.failure?.message ?? "No provider message id was returned.";
     }
-    const { data: attempt } = await supabase
-      .from("email_send_attempts")
-      .insert({
-        quote_id: quoteId,
-        template: "save-quote",
-        recipient_email: email,
-        provider: "resend",
-        provider_message_id: providerMessageId,
-        status: emailStatus,
-        failure_category: res.failure?.category ?? null,
-        failure_reason: emailFailureReason,
-        http_status: res.httpStatus,
-        source_session_id: sessionId,
-        submitted_at: nowAttempt,
-        accepted_at: emailStatus === "accepted" ? nowAttempt : null,
-        suppressed_at: emailStatus === "suppressed" ? nowAttempt : null,
-        last_event_at: nowAttempt,
-        last_event_type: emailStatus === "accepted" ? "submitted" : emailStatus,
-        metadata: { from: res.from, reply_to: res.replyTo },
-      })
-      .select("id")
-      .single();
-    emailAttemptId = (attempt as { id?: string } | null)?.id ?? null;
     if (emailStatus === "accepted") {
       const emailedAt = new Date().toISOString();
       const { error: statusError } = await supabase
@@ -440,7 +540,9 @@ serve(async (req) => {
   try {
     await emitCampaignEvent({
       eventName: "quote_calculated",
-      idempotencyKey: `quote_calculated:${quoteId}:v${authoritative.ruleVersion ?? 0}`,
+      idempotencyKey: `quote_calculated:${quoteId}:v${
+        authoritative.ruleVersion ?? 0
+      }`,
       email,
       phone: body.phone ?? null,
       customerId,
@@ -459,7 +561,10 @@ serve(async (req) => {
       },
     });
   } catch (e) {
-    console.warn("save-quote: quote_calculated emit failed:", e instanceof Error ? e.message : e);
+    console.warn(
+      "save-quote: quote_calculated emit failed:",
+      e instanceof Error ? e.message : e,
+    );
   }
 
   return json(200, {
