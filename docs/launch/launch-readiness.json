@@ -48,9 +48,8 @@
       "id": "bid-delivery",
       "scope": "repository",
       "severity": "P0",
-      "status": "FAIL",
-      "evidence": ["supabase/functions/save-quote/index.ts", "supabase/functions/send-sms/index.ts", "src/components/homeowner/OneTimeSummary.tsx", "src/components/homeowner/OneTimeSummary.delivery.test.tsx"],
-      "reason": "Email and text delivery now require secure quote capabilities and report provider acceptance truthfully, but public delivery lacks durable request idempotency."
+      "status": "PASS",
+      "evidence": ["supabase/functions/_shared/quoteDelivery.ts", "supabase/functions/_shared/quoteDelivery_test.ts", "supabase/functions/_shared/smsOutbox.ts", "supabase/functions/save-quote/index.ts", "supabase/functions/send-sms/index.ts", "supabase/functions/resend-webhook/index.ts", "supabase/migrations/20260729231424_launch_delivery_recovery.sql", "src/test/authoritativeQuoteDelivery.pathCoverage.test.ts", "src/components/homeowner/OneTimeSummary.delivery.test.tsx"]
     },
     {
       "id": "bid-customer-response",
@@ -95,7 +94,7 @@
       "severity": "P0",
       "status": "FAIL",
       "evidence": ["supabase/functions/jobber-create-service-request/index.ts", "supabase/functions/process-sms-queue/index.ts"],
-      "reason": "An unresolved recurring provider result requires manual verification rather than automatic recovery, and provider-accepted communication can be duplicated after a worker crash before durable acknowledgement."
+      "reason": "Public quote delivery now claims before provider submission and preserves uncertain outcomes, but recurring queue pathways still require generalized stale-claim recovery and reconciliation."
     },
     {
       "id": "production-security-foundation",

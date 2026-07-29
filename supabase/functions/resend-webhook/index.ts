@@ -9,9 +9,16 @@
 // verify_jwt is not required — this endpoint is called by Resend, not users.
 // ============================================================================
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
-import { recordSuppression, type SuppressionReason } from "../_shared/emailSuppression.ts";
+import {
+  recordSuppression,
+  type SuppressionReason,
+} from "../_shared/emailSuppression.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { mapEventToAttemptStatus, shouldApplyTransition, type AttemptStatus } from "./mapping.ts";
+import {
+  type AttemptStatus,
+  mapEventToAttemptStatus,
+  shouldApplyTransition,
+} from "./mapping.ts";
 export { mapEventToAttemptStatus, shouldApplyTransition } from "./mapping.ts";
 
 const MAX_SKEW_MS = 5 * 60 * 1000;
@@ -50,12 +57,21 @@ async function verifySignature(
   body: string,
   signatureHeader: string,
 ): Promise<boolean> {
-  const secretB64 = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret;
+  const secretB64 = secret.startsWith("whsec_")
+    ? secret.slice("whsec_".length)
+    : secret;
   let keyBytes: Uint8Array;
-  try { keyBytes = b64ToBytes(secretB64); } catch { return false; }
+  try {
+    keyBytes = b64ToBytes(secretB64);
+  } catch {
+    return false;
+  }
   const key = await crypto.subtle.importKey(
-    "raw", keyBytes,
-    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    "raw",
+    keyBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
   );
   const toSign = `${msgId}.${timestamp}.${body}`;
   const sig = new Uint8Array(
@@ -78,7 +94,6 @@ function mapEventType(type: string): SuppressionReason | null {
   return null;
 }
 
-
 // deno-lint-ignore no-explicit-any
 function serviceClient(): any {
   const url = Deno.env.get("SUPABASE_URL");
@@ -88,16 +103,23 @@ function serviceClient(): any {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   const secret = Deno.env.get("RESEND_WEBHOOK_SECRET");
   if (!secret) return json({ error: "webhook_secret_not_configured" }, 500);
 
-  const svixId = req.headers.get("svix-id") ?? req.headers.get("webhook-id") ?? "";
-  const svixTs = req.headers.get("svix-timestamp") ?? req.headers.get("webhook-timestamp") ?? "";
-  const svixSig = req.headers.get("svix-signature") ?? req.headers.get("webhook-signature") ?? "";
-  if (!svixId || !svixTs || !svixSig) return json({ error: "missing_signature_headers" }, 401);
+  const svixId = req.headers.get("svix-id") ?? req.headers.get("webhook-id") ??
+    "";
+  const svixTs = req.headers.get("svix-timestamp") ??
+    req.headers.get("webhook-timestamp") ?? "";
+  const svixSig = req.headers.get("svix-signature") ??
+    req.headers.get("webhook-signature") ?? "";
+  if (!svixId || !svixTs || !svixSig) {
+    return json({ error: "missing_signature_headers" }, 401);
+  }
 
   const tsMs = Number(svixTs) * 1000;
   if (!Number.isFinite(tsMs) || Math.abs(Date.now() - tsMs) > MAX_SKEW_MS) {
@@ -110,38 +132,59 @@ Deno.serve(async (req) => {
 
   // deno-lint-ignore no-explicit-any
   let payload: any;
-  try { payload = JSON.parse(raw); } catch { return json({ error: "invalid_json" }, 400); }
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return json({ error: "invalid_json" }, 400);
+  }
 
   const type = String(payload?.type ?? "");
   const data = payload?.data ?? {};
-  const providerMessageId: string | null =
-    typeof data?.email_id === "string" ? data.email_id
-    : typeof data?.id === "string" ? data.id
+  const providerMessageId: string | null = typeof data?.email_id === "string"
+    ? data.email_id
+    : typeof data?.id === "string"
+    ? data.id
     : null;
   const recipients: string[] = Array.isArray(data?.to)
     ? data.to.map((x: unknown) => String(x))
-    : data?.email ? [String(data.email)] : [];
+    : data?.email
+    ? [String(data.email)]
+    : [];
 
   const supabase = serviceClient();
+  if (!supabase) return json({ error: "service_database_unavailable" }, 503);
 
-  // Dedupe: refuse to reprocess a svix-id we've already logged. The unique
-  // constraint on svix_id makes this race-safe — a duplicate insert throws.
+  // Durable replay claim. A row is not considered processed until all
+  // correlated transitions and suppression effects complete. A crash leaves a
+  // stale claim that a later provider retry can safely reclaim.
+  const claimToken = crypto.randomUUID();
+  let eventClaim: {
+    id?: string;
+    may_process?: boolean;
+    replay?: boolean;
+    in_progress?: boolean;
+  } | null = null;
   if (supabase) {
-    const { error: dupErr } = await supabase
-      .from("resend_webhook_events")
-      .insert({
-        svix_id: svixId,
-        event_type: type,
-        provider_message_id: providerMessageId,
-        payload,
+    const { data, error } = await supabase.rpc(
+      "claim_resend_webhook_event",
+      {
+        p_svix_id: svixId,
+        p_event_type: type,
+        p_provider_message_id: providerMessageId,
+        p_payload: payload,
+        p_claim_token: claimToken,
+      },
+    );
+    if (error || !data?.ok || !data?.id) {
+      return json({ error: "event_claim_failed" }, 503);
+    }
+    eventClaim = data;
+    if (!data.may_process) {
+      return json({
+        ok: true,
+        duplicate: data.replay === true,
+        inProgress: data.in_progress === true,
       });
-    if (dupErr) {
-      // duplicate key → already processed; ack 200 so Resend stops retrying.
-      if (String(dupErr.message).toLowerCase().includes("duplicate")) {
-        return json({ ok: true, duplicate: true });
-      }
-      // Non-duplicate insert error is unexpected but non-fatal for suppression;
-      // continue so terminal bounce/complaint state still records.
     }
   }
 
@@ -149,11 +192,13 @@ Deno.serve(async (req) => {
   const attemptTransition = mapEventToAttemptStatus(type);
   let attemptUpdated = false;
   let attemptSkipped = false;
+  let attemptEffectFailed = false;
   if (attemptTransition && providerMessageId && supabase) {
-    const { data: rows } = await supabase
+    const { data: rows, error: selectError } = await supabase
       .from("email_send_attempts")
       .select("id,status")
       .eq("provider_message_id", providerMessageId);
+    if (selectError) attemptEffectFailed = true;
     const matched = Array.isArray(rows) ? rows : [];
     for (const row of matched) {
       if (!shouldApplyTransition(row?.status, attemptTransition.status)) {
@@ -166,14 +211,29 @@ Deno.serve(async (req) => {
         last_event_type: type,
       };
       patch[attemptTransition.column] = new Date().toISOString();
-      if (attemptTransition.status !== "delivered" && attemptTransition.status !== "sent") {
-        patch.failure_reason = String(data?.reason ?? data?.bounce?.message ?? type);
+      if (
+        attemptTransition.status !== "delivered" &&
+        attemptTransition.status !== "sent"
+      ) {
+        patch.failure_reason = String(
+          data?.reason ?? data?.bounce?.message ?? type,
+        );
+      }
+      if (attemptTransition.status === "delivered") {
+        patch.delivery_state = "delivered";
+      }
+      if (
+        ["bounced", "complained", "failed"].includes(attemptTransition.status)
+      ) {
+        patch.delivery_state = "failed_terminal";
       }
       const { error } = await supabase
         .from("email_send_attempts")
         .update(patch)
-        .eq("id", row.id);
+        .eq("id", row.id)
+        .eq("status", row.status);
       if (!error) attemptUpdated = true;
+      else attemptEffectFailed = true;
     }
   }
 
@@ -194,5 +254,30 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ ok: true, type, reason, attemptUpdated, attemptSkipped, correlated: !!providerMessageId, results });
+  if (supabase && eventClaim?.id) {
+    const effectsOk = !attemptEffectFailed &&
+      results.every((result) => result.ok);
+    const { data, error } = await supabase.rpc(
+      "finalize_resend_webhook_event",
+      {
+        p_event_id: eventClaim.id,
+        p_claim_token: claimToken,
+        p_success: effectsOk,
+        p_error: effectsOk ? null : "suppression_effect_failed",
+      },
+    );
+    if (error || !data?.ok || !effectsOk) {
+      return json({ error: "event_finalization_failed" }, 503);
+    }
+  }
+
+  return json({
+    ok: true,
+    type,
+    reason,
+    attemptUpdated,
+    attemptSkipped,
+    correlated: !!providerMessageId,
+    results,
+  });
 });

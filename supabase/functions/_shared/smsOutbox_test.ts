@@ -1,16 +1,22 @@
 // Phase 6B.3 unit tests — SMS outbox state machine + timezone rendering.
 // Uses a stubbed supabase.rpc that emulates claim/finalize semantics.
 // deno-lint-ignore-file no-explicit-any
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { sendOutboxSms } from "./smsOutbox.ts";
 import {
-  resolveBookingTimezone,
-  formatBookingWhen,
   BLULADDER_DEFAULT_TIMEZONE,
+  formatBookingWhen,
+  resolveBookingTimezone,
 } from "./bookingTimezone.ts";
 
 const callRail = {
-  apiKey: "k", accountId: "a", companyId: "c", senderNumber: "+14697472877",
+  apiKey: "k",
+  accountId: "a",
+  companyId: "c",
+  senderNumber: "+14697472877",
 };
 
 function makeSupabase(opts: {
@@ -25,17 +31,61 @@ function makeSupabase(opts: {
       if (name === "claim_sms_outbox_send") {
         switch (opts.claimBehavior ?? "new") {
           case "new":
-            return { data: { ok: true, is_new: true, id: "sms-1", outbox_state: "sending", may_dispatch: true }, error: null };
+            return {
+              data: {
+                ok: true,
+                is_new: true,
+                id: "sms-1",
+                outbox_state: "sending",
+                may_dispatch: true,
+              },
+              error: null,
+            };
           case "replay":
-            return { data: { ok: true, is_new: false, id: "sms-1", outbox_state: "provider_accepted", may_dispatch: false, replay: true, provider_message_id: "prov-x", status: "sent" }, error: null };
+            return {
+              data: {
+                ok: true,
+                is_new: false,
+                id: "sms-1",
+                outbox_state: "provider_accepted",
+                may_dispatch: false,
+                replay: true,
+                provider_message_id: "prov-x",
+                status: "sent",
+              },
+              error: null,
+            };
           case "in_progress":
-            return { data: { ok: true, is_new: false, id: "sms-1", outbox_state: "sending", may_dispatch: false, in_progress: true }, error: null };
+            return {
+              data: {
+                ok: true,
+                is_new: false,
+                id: "sms-1",
+                outbox_state: "sending",
+                may_dispatch: false,
+                in_progress: true,
+              },
+              error: null,
+            };
           case "escalated":
-            return { data: { ok: true, is_new: false, id: "sms-1", outbox_state: "delivery_unknown", may_dispatch: false, escalated: true }, error: null };
+            return {
+              data: {
+                ok: true,
+                is_new: false,
+                id: "sms-1",
+                outbox_state: "delivery_unknown",
+                may_dispatch: false,
+                escalated: true,
+              },
+              error: null,
+            };
         }
       }
       if (name === "finalize_sms_outbox_send") {
-        return { data: { ok: true, current_state: args.p_new_state }, error: null };
+        return {
+          data: { ok: true, current_state: args.p_new_state },
+          error: null,
+        };
       }
       return { data: null, error: null };
     },
@@ -53,7 +103,17 @@ let fetchMode: "ok" | "reject" | "throw" | "malformed" = "ok";
   if (fetchMode === "malformed") {
     return new Response("not-json", { status: 200 });
   }
-  return new Response(JSON.stringify({ id: "conv-1", recent_messages: [{ id: "prov-1", direction: "outgoing", status: "delivered" }] }), { status: 200 });
+  return new Response(
+    JSON.stringify({
+      id: "conv-1",
+      recent_messages: [{
+        id: "prov-1",
+        direction: "outgoing",
+        status: "delivered",
+      }],
+    }),
+    { status: 200 },
+  );
 };
 
 Deno.test("outbox #14: crash before dispatch → next call re-claims and dispatches once", async () => {
@@ -63,7 +123,13 @@ Deno.test("outbox #14: crash before dispatch → next call re-claims and dispatc
   const rpcLog: any[] = [];
   fetchMode = "ok";
   const sb = makeSupabase({ claimBehavior: "escalated", rpcLog });
-  const r = await sendOutboxSms(sb, { outboundKey: "k1", toNumber: "+15551234567", body: "hi", messageKind: "test", callRail });
+  const r = await sendOutboxSms(sb, {
+    outboundKey: "k1",
+    toNumber: "+15551234567",
+    body: "hi",
+    messageKind: "test",
+    callRail,
+  });
   assertEquals(r.sent, false);
   assertEquals(r.escalated, true);
   assertEquals(r.outboxState, "delivery_unknown");
@@ -75,8 +141,14 @@ Deno.test("outbox #15: crash after provider acceptance → replay does NOT redis
   const rpcLog: any[] = [];
   fetchMode = "ok";
   const sb = makeSupabase({ claimBehavior: "replay", rpcLog });
-  const r = await sendOutboxSms(sb, { outboundKey: "k1", toNumber: "+15551234567", body: "hi", messageKind: "test", callRail });
-  assertEquals(r.sent, true);          // prior accepted evidence is authoritative
+  const r = await sendOutboxSms(sb, {
+    outboundKey: "k1",
+    toNumber: "+15551234567",
+    body: "hi",
+    messageKind: "test",
+    callRail,
+  });
+  assertEquals(r.sent, true); // prior accepted evidence is authoritative
   assertEquals(r.replay, true);
   assertEquals(r.providerMessageId, "prov-x");
   // No finalize — nothing to finalize because we didn't win the claim.
@@ -87,7 +159,13 @@ Deno.test("outbox #16: duplicate confirmation request in-flight → sees in_prog
   const rpcLog: any[] = [];
   fetchMode = "ok";
   const sb = makeSupabase({ claimBehavior: "in_progress", rpcLog });
-  const r = await sendOutboxSms(sb, { outboundKey: "k1", toNumber: "+15551234567", body: "hi", messageKind: "test", callRail });
+  const r = await sendOutboxSms(sb, {
+    outboundKey: "k1",
+    toNumber: "+15551234567",
+    body: "hi",
+    messageKind: "test",
+    callRail,
+  });
   assertEquals(r.sent, false);
   assertEquals(r.inProgress, true);
   assert(!rpcLog.some((x) => x.name === "finalize_sms_outbox_send"));
@@ -97,7 +175,13 @@ Deno.test("outbox #17: provider rejection finalizes to send_failed; caller does 
   const rpcLog: any[] = [];
   fetchMode = "reject";
   const sb = makeSupabase({ claimBehavior: "new", rpcLog });
-  const r = await sendOutboxSms(sb, { outboundKey: "k1", toNumber: "+15551234567", body: "hi", messageKind: "test", callRail });
+  const r = await sendOutboxSms(sb, {
+    outboundKey: "k1",
+    toNumber: "+15551234567",
+    body: "hi",
+    messageKind: "test",
+    callRail,
+  });
   assertEquals(r.sent, false);
   assertEquals(r.outboxState, "send_failed");
   const fin = rpcLog.find((x) => x.name === "finalize_sms_outbox_send");
@@ -107,18 +191,50 @@ Deno.test("outbox #17: provider rejection finalizes to send_failed; caller does 
   // sms_booking_confirmations and only the confirmation SMS is unresolved.
 });
 
-Deno.test("outbox: network failure finalizes to send_failed (no re-send)", async () => {
+Deno.test("outbox: missing provider config is durably finalized", async () => {
+  const rpcLog: any[] = [];
+  const priorKey = Deno.env.get("CALLRAIL_API_KEY");
+  Deno.env.delete("CALLRAIL_API_KEY");
+  try {
+    const r = await sendOutboxSms(
+      makeSupabase({ claimBehavior: "new", rpcLog }),
+      {
+        outboundKey: "k-config",
+        toNumber: "+15551234567",
+        body: "hi",
+        messageKind: "test",
+      },
+    );
+    assertEquals(r.sent, false);
+    assertEquals(r.outboxState, "send_failed");
+    assertEquals(r.error, "callrail_config_missing");
+    assertEquals(
+      rpcLog.find((x) => x.name === "finalize_sms_outbox_send")?.args
+        ?.p_new_state,
+      "send_failed",
+    );
+  } finally {
+    if (priorKey) Deno.env.set("CALLRAIL_API_KEY", priorKey);
+  }
+});
+
+Deno.test("outbox: network failure finalizes to delivery_unknown (no re-send)", async () => {
   const rpcLog: any[] = [];
   fetchMode = "throw";
   const sb = makeSupabase({ claimBehavior: "new", rpcLog });
-  const r = await sendOutboxSms(sb, { outboundKey: "k1", toNumber: "+15551234567", body: "hi", messageKind: "test", callRail });
-  // sendCallRailSms internally traps thrown fetch errors and returns
-  // {ok:false,error}. That maps to send_failed at the outbox layer — the
-  // key invariant is that no automatic retry happens.
-  assert(r.outboxState === "delivery_unknown" || r.outboxState === "send_failed");
+  const r = await sendOutboxSms(sb, {
+    outboundKey: "k1",
+    toNumber: "+15551234567",
+    body: "hi",
+    messageKind: "test",
+    callRail,
+  });
+  // A transport exception can happen after the provider accepted the request.
+  // It must never be treated as proof of rejection or automatically retried.
+  assertEquals(r.outboxState, "delivery_unknown");
   assertEquals(r.sent, false);
   const fin = rpcLog.find((x) => x.name === "finalize_sms_outbox_send");
-  assert(fin && (fin.args.p_new_state === "delivery_unknown" || fin.args.p_new_state === "send_failed"));
+  assertEquals(fin?.args.p_new_state, "delivery_unknown");
 });
 
 Deno.test("timezone #20: property timezone renders in local zone", () => {
@@ -142,11 +258,17 @@ Deno.test("timezone #21: DST transition renders correctly", () => {
 
 Deno.test("timezone resolution order: presentation > property > default", () => {
   assertEquals(
-    resolveBookingTimezone({ presentation: { held_option: { timezone: "America/New_York" } }, property: { timezone: "America/Denver" } }),
+    resolveBookingTimezone({
+      presentation: { held_option: { timezone: "America/New_York" } },
+      property: { timezone: "America/Denver" },
+    }),
     "America/New_York",
   );
   assertEquals(
-    resolveBookingTimezone({ presentation: {}, property: { timezone: "America/Denver" } }),
+    resolveBookingTimezone({
+      presentation: {},
+      property: { timezone: "America/Denver" },
+    }),
     "America/Denver",
   );
   assertEquals(

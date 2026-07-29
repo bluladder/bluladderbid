@@ -26,7 +26,9 @@ export function getCallRailConfig(): CallRailConfig | null {
   const apiKey = Deno.env.get("CALLRAIL_API_KEY");
   const accountId = Deno.env.get("CALLRAIL_ACCOUNT_ID");
   const companyId = Deno.env.get("CALLRAIL_COMPANY_ID");
-  const configuredSender = normalizePhone(Deno.env.get("CALLRAIL_SENDER_NUMBER"));
+  const configuredSender = normalizePhone(
+    Deno.env.get("CALLRAIL_SENDER_NUMBER"),
+  );
   if (!apiKey || !accountId || !companyId) return null;
 
   // BluLadder Bid must send customer-facing SMS from the approved CallRail line.
@@ -51,7 +53,9 @@ export interface SendResult {
 }
 
 function asString(value: unknown): string | undefined {
-  return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
+  return typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : undefined;
 }
 
 function normalizeStatus(value: unknown): string | undefined {
@@ -70,14 +74,24 @@ export function parseCallRailTextResponse(json: any): {
   messageId?: string;
   providerMessageStatus?: string;
 } {
-  const conversationId = asString(json?.id ?? json?.conversation_id ?? json?.sms_thread_id ?? json?.thread_id);
+  const conversationId = asString(
+    json?.id ?? json?.conversation_id ?? json?.sms_thread_id ?? json?.thread_id,
+  );
   const messageCandidates = [
     ...(Array.isArray(json?.recent_messages) ? json.recent_messages : []),
     ...(Array.isArray(json?.messages) ? json.messages : []),
   ];
-  const outgoing = messageCandidates.find((m) => String(m?.direction ?? "").toLowerCase() === "outgoing") ?? messageCandidates[0];
-  const messageId = asString(outgoing?.id ?? json?.message?.id ?? json?.text_message?.id ?? json?.message_id);
-  const providerMessageStatus = normalizeStatus(outgoing?.status ?? json?.status);
+  const outgoing =
+    messageCandidates.find((m) =>
+      String(m?.direction ?? "").toLowerCase() === "outgoing"
+    ) ?? messageCandidates[0];
+  const messageId = asString(
+    outgoing?.id ?? json?.message?.id ?? json?.text_message?.id ??
+      json?.message_id,
+  );
+  const providerMessageStatus = normalizeStatus(
+    outgoing?.status ?? json?.status,
+  );
   return { conversationId, messageId, providerMessageStatus };
 }
 
@@ -86,7 +100,8 @@ async function fetchCallRailConversationMessageStatus(
   conversationId: string,
   sentContent: string,
 ): Promise<{ messageId?: string; providerMessageStatus?: string }> {
-  const url = `${CALLRAIL_API_BASE}/a/${config.accountId}/text-messages/${conversationId}.json`;
+  const url =
+    `${CALLRAIL_API_BASE}/a/${config.accountId}/text-messages/${conversationId}.json`;
   try {
     const res = await fetch(url, {
       method: "GET",
@@ -98,12 +113,19 @@ async function fetchCallRailConversationMessageStatus(
     const normalizedSent = sentContent.trim();
     const match = messages.find((m: any) =>
       String(m?.direction ?? "").toLowerCase() === "outgoing" &&
-      String(m?.content ?? m?.body ?? m?.message ?? m?.text ?? "").trim() === normalizedSent
-    ) ?? messages.find((m: any) => String(m?.direction ?? "").toLowerCase() === "outgoing");
-    if (!match) return {};
+      String(m?.content ?? m?.body ?? m?.message ?? m?.text ?? "").trim() ===
+        normalizedSent
+    ) ?? messages.find((m: any) =>
+      String(m?.direction ?? "").toLowerCase() === "outgoing"
+    );
+    if (!match) {
+      return {};
+    }
     return {
       messageId: asString(match.id ?? match.message_id ?? match.uuid),
-      providerMessageStatus: normalizeStatus(match.status ?? match.message_status ?? match.delivery_status),
+      providerMessageStatus: normalizeStatus(
+        match.status ?? match.message_status ?? match.delivery_status,
+      ),
     };
   } catch {
     return {};
@@ -145,7 +167,12 @@ export async function sendCallRailSms(
 
     const text = await res.text();
     if (!res.ok) {
-      return { ok: false, error: `CallRail ${res.status}: ${text}`, providerStatus: res.status };
+      return {
+        ok: false,
+        error: `CallRail ${res.status}: ${text}`,
+        providerStatus: res.status,
+        providerResponseKind: "http_rejection",
+      };
     }
 
     let conversationId: string | undefined;
@@ -160,17 +187,33 @@ export async function sendCallRailSms(
       messageId = parsed.messageId;
       providerMessageStatus = parsed.providerMessageStatus;
       if (conversationId && (!messageId || !providerMessageStatus)) {
-        const refreshed = await fetchCallRailConversationMessageStatus(config, conversationId, safeContent);
+        const refreshed = await fetchCallRailConversationMessageStatus(
+          config,
+          conversationId,
+          safeContent,
+        );
         messageId = messageId ?? refreshed.messageId;
-        providerMessageStatus = providerMessageStatus ?? refreshed.providerMessageStatus;
+        providerMessageStatus = providerMessageStatus ??
+          refreshed.providerMessageStatus;
       }
     } catch {
       // non-JSON success response; ignore
       providerResponseKind = "text";
     }
-    return { ok: true, conversationId, messageId, providerStatus: res.status, providerResponseKind, providerMessageStatus };
+    return {
+      ok: true,
+      conversationId,
+      messageId,
+      providerStatus: res.status,
+      providerResponseKind,
+      providerMessageStatus,
+    };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      providerResponseKind: "transport_uncertain",
+    };
   }
 }
 
@@ -189,7 +232,10 @@ export function stripMarkdownForSms(input: string): string {
     // images ![alt](url) → alt
     .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1")
     // links [text](url) → text (url)
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, t, u) => (t && t.trim() ? `${t} (${u})` : u))
+    .replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      (_m, t, u) => (t && t.trim() ? `${t} (${u})` : u),
+    )
     // bold/italic markers
     .replace(/(\*\*|__)(.*?)\1/g, "$2")
     .replace(/(\*|_)(?=\S)(.+?)(?<=\S)\1/g, "$2")
@@ -215,7 +261,10 @@ export function clampSmsBody(input: string, maxChars = 320): string {
 }
 
 /** Render {{variable}} placeholders in a template against a value map. Missing vars become empty strings. */
-export function renderTemplate(template: string, vars: Record<string, string | number | null | undefined>): string {
+export function renderTemplate(
+  template: string,
+  vars: Record<string, string | number | null | undefined>,
+): string {
   return template.replace(/\{\{\s*([\w]+)\s*\}\}/g, (_m, key: string) => {
     const v = vars[key];
     return v === null || v === undefined ? "" : String(v);
@@ -223,14 +272,21 @@ export function renderTemplate(template: string, vars: Record<string, string | n
 }
 
 /** Format an ISO datetime into a friendly date + arrival time for SMS. */
-export function formatApptDate(iso: string | null | undefined): { date: string; time: string } {
+export function formatApptDate(
+  iso: string | null | undefined,
+): { date: string; time: string } {
   if (!iso) return { date: "", time: "" };
   const d = new Date(iso);
   const date = d.toLocaleDateString("en-US", {
-    weekday: "short", month: "short", day: "numeric", timeZone: "America/Chicago",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "America/Chicago",
   });
   const time = d.toLocaleTimeString("en-US", {
-    hour: "numeric", minute: "2-digit", timeZone: "America/Chicago",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Chicago",
   });
   return { date, time };
 }
@@ -238,19 +294,35 @@ export function formatApptDate(iso: string | null | undefined): { date: string; 
 // ---- Opt-out (STOP) handling ----
 
 const STOP_KEYWORDS = new Set([
-  "stop", "stopall", "unsubscribe", "cancel", "end", "quit", "optout", "opt-out",
+  "stop",
+  "stopall",
+  "unsubscribe",
+  "cancel",
+  "end",
+  "quit",
+  "optout",
+  "opt-out",
 ]);
 // Explicit opt-in commands only. Bare "yes" is intentionally excluded — see
 // _shared/bookingIntent.ts. This keeps the legacy classifier from silently
 // re-subscribing customers who reply "Yes, Tuesday works".
 const START_KEYWORDS = new Set([
-  "start", "unstop", "subscribe", "optin", "opt-in",
+  "start",
+  "unstop",
+  "subscribe",
+  "optin",
+  "opt-in",
 ]);
 
 /** Returns "stop", "start", or null based on the first word of an inbound message body. */
-export function classifyInbound(body: string | null | undefined): "stop" | "start" | null {
+export function classifyInbound(
+  body: string | null | undefined,
+): "stop" | "start" | null {
   if (!body) return null;
-  const first = String(body).trim().toLowerCase().split(/\s+/)[0]?.replace(/[^a-z-]/g, "");
+  const first = String(body).trim().toLowerCase().split(/\s+/)[0]?.replace(
+    /[^a-z-]/g,
+    "",
+  );
   if (!first) return null;
   if (STOP_KEYWORDS.has(first)) return "stop";
   if (START_KEYWORDS.has(first)) return "start";
@@ -326,13 +398,22 @@ export async function getCustomerPause(
   try {
     let q;
     if (by.id) {
-      q = supabase.from("customers").select("sms_paused,email_paused").eq("id", by.id);
+      q = supabase.from("customers").select("sms_paused,email_paused").eq(
+        "id",
+        by.id,
+      );
     } else if (by.email) {
-      q = supabase.from("customers").select("sms_paused,email_paused").eq("email", String(by.email).toLowerCase().trim());
+      q = supabase.from("customers").select("sms_paused,email_paused").eq(
+        "email",
+        String(by.email).toLowerCase().trim(),
+      );
     } else if (by.phone) {
       const np = normalizePhone(by.phone);
       if (!np) return noPause;
-      q = supabase.from("customers").select("sms_paused,email_paused").eq("phone", np);
+      q = supabase.from("customers").select("sms_paused,email_paused").eq(
+        "phone",
+        np,
+      );
     } else {
       return noPause;
     }
