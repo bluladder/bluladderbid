@@ -140,7 +140,7 @@ describe("consent + channel matrix", () => {
   it("queue enforces channel presence and opt-out at send time", () => {
     const queue = read("supabase/functions/process-sms-queue/index.ts");
     expect(queue).toMatch(/if \(!msg\.to_email\)/);
-    expect(queue).toMatch(/isPhoneOptedOut/);
+    expect(queue).toMatch(/checkPhoneOptOut/);
     expect(queue).toMatch(/checkSuppression/);
   });
 });
@@ -331,7 +331,7 @@ describe("queue-time vs send-time channel gating matrix", () => {
   it("send-time gates are still wired in process-sms-queue", () => {
     const queue = read("supabase/functions/process-sms-queue/index.ts");
     expect(queue).toMatch(/checkSuppression/);
-    expect(queue).toMatch(/isPhoneOptedOut/);
+    expect(queue).toMatch(/checkPhoneOptOut/);
     expect(queue).toMatch(/if \(!msg\.to_email\)/);
     expect(queue).toMatch(/getCustomerPause/);
   });

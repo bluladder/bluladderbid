@@ -1,10 +1,15 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { getCallRailConfig, sendCallRailSms, isPhoneOptedOut, getCustomerPause } from "../_shared/sms.ts";
+import {
+  checkPhoneOptOut,
+  getCallRailConfig,
+  getCustomerPause,
+  sendCallRailSms,
+} from "../_shared/sms.ts";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { runAbandonmentSweep, recoverPendingCampaignEvents, runPersistedQuoteAbandonmentSweep, runFollowUpCompletionSweep } from "../_shared/campaignSweep.ts";
-import { getSenderConfig } from "../_shared/emailConfig.ts";
+import { sendEmail } from "../_shared/emailConfig.ts";
 import { processDueCallRailRetries } from "../_shared/callrailEventProcessor.ts";
 import { runPostServiceEducationSweep, runMaintenanceOpportunitySweep } from "../_shared/postServiceSweeps.ts";
 
@@ -45,41 +50,6 @@ function failureUpdate(
   return { status: "pending", error: errorMsg, attempts, send_at: retryAt, next_retry_at: retryAt };
 }
 
-/** Send an email through Resend. Returns a SendResult-like object. */
-async function sendEmail(
-  apiKey: string,
-  to: string,
-  subject: string,
-  text: string,
-): Promise<{ ok: boolean; messageId?: string; error?: string }> {
-  try {
-    const safeHtml = text
-      .split("\n")
-      .map((line) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
-      .join("<br />");
-    const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1f2937;">${safeHtml}</div>`;
-    const cfg = getSenderConfig();
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: cfg.fromHeader,
-        reply_to: cfg.replyTo,
-        to: [to],
-        subject: subject || "BluLadder",
-        html,
-      }),
-    });
-    const body = await res.text();
-    if (!res.ok) return { ok: false, error: `Resend ${res.status}: ${body}` };
-    let messageId: string | undefined;
-    try { messageId = JSON.parse(body)?.id; } catch { /* ignore */ }
-    return { ok: true, messageId };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
 // Processes due, pending SMS (campaign follow-ups + any retries). Invoked by cron.
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -102,17 +72,25 @@ serve(async (req) => {
   );
 
   const config = getCallRailConfig();
-  const resendKey = Deno.env.get("RESEND_API_KEY");
 
   // Global launch controls: delivery kill-switch. When on, don't claim or
   // send any queued campaign messages. Rows stay 'pending' and will send
   // once the pause is lifted. Non-campaign transactional writes bypass this
   // processor entirely, so operational SMS/email is unaffected.
-  const { data: launchControls } = await supabase
+  const { data: launchControls, error: launchControlsError } = await supabase
     .from("campaign_launch_controls")
     .select("delivery_paused")
     .eq("id", 1)
     .maybeSingle();
+  if (launchControlsError || !launchControls) {
+    return new Response(
+      JSON.stringify({ error: "Campaign delivery controls are unavailable" }),
+      {
+        status: 503,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  }
   if (launchControls?.delivery_paused) {
     return new Response(
       JSON.stringify({ paused: true, sent: 0, failed: 0, message: "Campaign delivery globally paused" }),
@@ -154,6 +132,17 @@ serve(async (req) => {
       },
       queuePurpose ? { purpose: queuePurpose } : undefined,
     );
+    if (suppression.lookupFailed) {
+      await supabase.from("sms_messages").update(
+        failureUpdate(
+          msg.attempts,
+          msg.max_attempts,
+          "Suppression state unavailable",
+        ),
+      ).eq("id", msg.id);
+      failed++;
+      continue;
+    }
     if (suppression.suppressed) {
       await supabase.from("sms_messages").update({
         status: "cancelled",
@@ -236,27 +225,45 @@ serve(async (req) => {
       }
       // Skip leads whose email channel was paused after the message was queued.
       const pauseEmail = await getCustomerPause(supabase, { id: msg.customer_id, email: msg.to_email });
+      if (!pauseEmail.readable) {
+        await supabase.from("sms_messages").update(
+          failureUpdate(
+            msg.attempts,
+            msg.max_attempts,
+            "Customer email pause state unavailable",
+          ),
+        ).eq("id", msg.id);
+        failed++;
+        continue;
+      }
       if (pauseEmail.email_paused) {
         await supabase.from("sms_messages").update({
           status: "cancelled", error: "Email paused for this lead", next_retry_at: null,
         }).eq("id", msg.id);
         continue;
       }
-      if (!resendKey) {
-        await supabase.from("sms_messages").update(
-          failureUpdate(msg.attempts, msg.max_attempts, "Email sending not configured", true),
-        ).eq("id", msg.id);
-        failed++;
-        continue;
-      }
-      const er = await sendEmail(resendKey, msg.to_email as string, msg.subject as string, msg.body as string);
+      const safeHtml = String(msg.body ?? "")
+        .split("\n")
+        .map((line) =>
+          line
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+        )
+        .join("<br />");
+      const er = await sendEmail({
+        to: msg.to_email as string,
+        subject: (msg.subject as string) || "BluLadder",
+        html:
+          `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1f2937;">${safeHtml}</div>`,
+      });
       if (er.ok) {
         const acceptedAt = new Date().toISOString();
         await supabase.from("sms_messages").update({
           status: "accepted", sent_at: acceptedAt,
-          callrail_message_id: er.messageId ?? null,
+          callrail_message_id: er.providerMessageId ?? null,
           provider: "resend",
-          provider_message_id: er.messageId ?? null,
+          provider_message_id: er.providerMessageId ?? null,
           provider_status: "accepted",
           provider_response_kind: "email",
           provider_accepted_at: acceptedAt,
@@ -265,7 +272,12 @@ serve(async (req) => {
         sent++;
       } else {
         await supabase.from("sms_messages").update(
-          failureUpdate(msg.attempts, msg.max_attempts, er.error ?? "send failed"),
+          failureUpdate(
+            msg.attempts,
+            msg.max_attempts,
+            er.failure?.message ?? "send failed",
+            er.failure ? !er.failure.retryable : false,
+          ),
         ).eq("id", msg.id);
         failed++;
       }
@@ -273,7 +285,22 @@ serve(async (req) => {
     }
 
     // Skip recipients who have opted out since the message was queued.
-    if (await isPhoneOptedOut(supabase, msg.to_number as string)) {
+    const optOut = await checkPhoneOptOut(
+      supabase,
+      msg.to_number as string,
+    );
+    if (!optOut.readable) {
+      await supabase.from("sms_messages").update(
+        failureUpdate(
+          msg.attempts,
+          msg.max_attempts,
+          "SMS opt-out state unavailable",
+        ),
+      ).eq("id", msg.id);
+      failed++;
+      continue;
+    }
+    if (optOut.optedOut) {
       await supabase.from("sms_messages").update({
         status: "cancelled", error: "Recipient has opted out of texts", next_retry_at: null,
       }).eq("id", msg.id);
@@ -281,6 +308,17 @@ serve(async (req) => {
     }
     // Skip leads whose text channel was paused after the message was queued.
     const pauseSms = await getCustomerPause(supabase, { id: msg.customer_id, phone: msg.to_number });
+    if (!pauseSms.readable) {
+      await supabase.from("sms_messages").update(
+        failureUpdate(
+          msg.attempts,
+          msg.max_attempts,
+          "Customer SMS pause state unavailable",
+        ),
+      ).eq("id", msg.id);
+      failed++;
+      continue;
+    }
     if (pauseSms.sms_paused) {
       await supabase.from("sms_messages").update({
         status: "cancelled", error: "Texting paused for this lead", next_retry_at: null,

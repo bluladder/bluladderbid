@@ -72,21 +72,20 @@ export interface GatherNurtureEntryInput {
 }
 
 // deno-lint-ignore no-explicit-any
-async function safeCount(q: any): Promise<number> {
+export async function safeCount(q: any): Promise<number> {
   try {
-    const { count } = await q;
-    return typeof count === "number" ? count : 0;
+    const { count, error } = await q;
+    if (error) return Number.POSITIVE_INFINITY;
+    return typeof count === "number" ? count : Number.POSITIVE_INFINITY;
   } catch {
-    return 0;
+    return Number.POSITIVE_INFINITY;
   }
 }
 
 /**
  * Reads exactly the rows required by the pure evaluator. Every query is
- * bounded — no `select *` and no unfiltered scans. Fails safe: on any
- * unexpected error the gate is left open ONLY for the specific check, because
- * the surrounding pipeline still enforces consent + suppression + audience
- * before writing an enrollment.
+ * bounded — no `select *` and no unfiltered scans. Every unreadable stop
+ * condition fails closed so an enrollment is never created on guessed state.
  */
 export async function gatherNurtureEntryContext(
   supabase: SupabaseClient,
@@ -146,13 +145,15 @@ export async function gatherNurtureEntryContext(
   let emailSuppressed = false;
   if (input.email) {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("email_suppressions")
         .select("reason")
         .eq("email", input.email.toLowerCase().trim())
         .maybeSingle();
-      emailSuppressed = !!data;
-    } catch { /* fail open on this check; universal gate re-checks at send */ }
+      emailSuppressed = !!error || !!data;
+    } catch {
+      emailSuppressed = true;
+    }
   }
 
   // --- Unresolved escalation
@@ -167,47 +168,63 @@ export async function gatherNurtureEntryContext(
   // --- Active human takeover on any of the customer's conversations
   let staffTakeoverActive = false;
   try {
-    const { data: conv } = await supabase
+    const { data: conv, error } = await supabase
       .from("chat_conversations")
       .select("id, staff_takeover_at")
       .eq("customer_id", input.customerId)
       .not("staff_takeover_at", "is", null)
       .order("staff_takeover_at", { ascending: false })
       .limit(1);
-    staffTakeoverActive = Array.isArray(conv) && conv.length > 0;
-  } catch { /* fail open */ }
+    staffTakeoverActive = !!error ||
+      !Array.isArray(conv) ||
+      conv.length > 0;
+  } catch {
+    staffTakeoverActive = true;
+  }
 
   // --- Newer quote supersedes: does a strictly-newer, not-superseded quote
   //     exist for this customer than the source quote / anchor?
   let newerQuoteSupersedes = false;
   try {
     if (input.sourceQuoteId) {
-      const { data: source } = await supabase
+      const { data: source, error: sourceError } = await supabase
         .from("quotes")
         .select("created_at")
         .eq("id", input.sourceQuoteId)
         .maybeSingle();
+      if (sourceError) {
+        newerQuoteSupersedes = true;
+      }
       const anchor = source?.created_at ?? input.lifecycleAnchorIso ?? null;
       if (anchor) {
-        const { count } = await supabase
+        const { count, error } = await supabase
           .from("quotes")
           .select("id", { count: "exact", head: true })
           .eq("customer_id", input.customerId)
           .is("superseded_by", null)
           .gt("created_at", anchor)
           .neq("id", input.sourceQuoteId);
-        newerQuoteSupersedes = (count ?? 0) > 0;
+        newerQuoteSupersedes = newerQuoteSupersedes ||
+          !!error ||
+          typeof count !== "number" ||
+          count > 0;
+      } else {
+        newerQuoteSupersedes = true;
       }
     } else if (input.lifecycleAnchorIso) {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from("quotes")
         .select("id", { count: "exact", head: true })
         .eq("customer_id", input.customerId)
         .is("superseded_by", null)
         .gt("created_at", input.lifecycleAnchorIso);
-      newerQuoteSupersedes = (count ?? 0) > 0;
+      newerQuoteSupersedes = !!error ||
+        typeof count !== "number" ||
+        count > 0;
     }
-  } catch { /* fail open */ }
+  } catch {
+    newerQuoteSupersedes = true;
+  }
 
   return {
     invalidCustomerRecord: false,

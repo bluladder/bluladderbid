@@ -75,9 +75,8 @@
       "id": "customer-sms-email",
       "scope": "repository",
       "severity": "P0",
-      "status": "FAIL",
-      "evidence": ["supabase/functions/send-sms/index.ts", "supabase/functions/_shared/sendSmsAuthorization_test.ts", "supabase/functions/process-sms-queue/index.ts"],
-      "reason": "Public quote SMS now requires the exact quote-scoped capability and reports provider acceptance truthfully, but suppression reads and campaign email suppression are not consistently fail closed."
+      "status": "PASS",
+      "evidence": ["supabase/functions/send-sms/index.ts", "supabase/functions/_shared/sendSmsAuthorization_test.ts", "supabase/functions/_shared/suppression_test.ts", "supabase/functions/_shared/emailSuppression_test.ts", "supabase/functions/_shared/smsSuppressionSafety_test.ts", "supabase/functions/_shared/nurtureEntryGate_test.ts", "supabase/functions/process-sms-queue/index.ts", "src/test/campaignDeliverySuppression.pathCoverage.test.ts"]
     },
     {
       "id": "ai-voice-workflow-entry",

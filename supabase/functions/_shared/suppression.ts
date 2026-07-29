@@ -41,6 +41,7 @@ export function normalizePhoneE164(raw?: string | null): string | null {
 export interface SuppressionResult {
   suppressed: boolean;
   reason: string | null;
+  lookupFailed?: boolean;
 }
 
 // Canonical transactional purposes that MAY bypass the test-identity gate.
@@ -107,17 +108,27 @@ export async function checkSuppression(
   // 2) Global administrator kill-switch. Explicit ops kill — always blocks,
   //    regardless of purpose. Owners must turn this off to send anything.
   try {
-    const { data: cfg } = await supabase
+    const { data: cfg, error } = await supabase
       .from("system_test_config")
       .select("suppress_all, suppress_reason")
       .eq("id", "default")
       .maybeSingle();
+    if (error || !cfg) {
+      return {
+        suppressed: true,
+        reason: "suppression_lookup_unavailable",
+        lookupFailed: true,
+      };
+    }
     if (cfg?.suppress_all) {
       return { suppressed: true, reason: cfg.suppress_reason || "system_test_suppression_enabled" };
     }
   } catch {
-    // Fall through to identity check — a failed config read must not silently
-    // disable the identity gate.
+    return {
+      suppressed: true,
+      reason: "suppression_lookup_unavailable",
+      lookupFailed: true,
+    };
   }
 
   // 3) Approved test identities (matched by normalized email OR E.164 phone).
@@ -131,12 +142,19 @@ export async function checkSuppression(
     const ors: string[] = [];
     if (email) ors.push(`email.eq.${email}`);
     if (phone) ors.push(`phone.eq.${phone}`);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("test_identities")
       .select("id")
       .eq("active", true)
       .or(ors.join(","))
       .limit(1);
+    if (error || !Array.isArray(data)) {
+      return {
+        suppressed: true,
+        reason: "suppression_lookup_unavailable",
+        lookupFailed: true,
+      };
+    }
     if (data && data.length > 0) {
       if (isPurposeAllowlisted(options)) {
         return { suppressed: false, reason: null };
@@ -147,7 +165,11 @@ export async function checkSuppression(
       return { suppressed: true, reason: why };
     }
   } catch {
-    // ignore — absence of a match means not a known test identity
+    return {
+      suppressed: true,
+      reason: "suppression_lookup_unavailable",
+      lookupFailed: true,
+    };
   }
 
   return { suppressed: false, reason: null };
