@@ -154,8 +154,10 @@ export async function sendEmail(opts: {
         ok: false, providerMessageId: null, ...base, httpStatus: null, reachedProvider: false,
         failure: {
           category: "suppressed",
-          message: `Recipient is on the email suppression list (${s.reason}).`,
-          retryable: false, reachedProvider: false, httpStatus: null,
+          message: s.readable
+            ? `Recipient is on the email suppression list (${s.reason}).`
+            : "Email suppression state could not be verified.",
+          retryable: !s.readable, reachedProvider: false, httpStatus: null,
         },
       };
     }
