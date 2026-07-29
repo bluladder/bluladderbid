@@ -32,8 +32,8 @@ hosted-environment, manual acceptance, or production-verification gates pass.
 
 The current contract identifies eleven repository-level launch gaps:
 
-1. Public booking can claim confirmation after the local authoritative write
-   fails and can fall through to client-supplied pricing.
+1. Public intake still has weak phone/address validation, no terminal
+   service-area gate, and a manual fallback can claim unproven notification.
 2. Existing-customer Jobber paths select the first property instead of matching
    the submitted address, and missing address data defaults to Austin.
 3. Public booking does not yet enforce the deterministic DFW service-area

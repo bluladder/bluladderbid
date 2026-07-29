@@ -21,8 +21,8 @@
       "scope": "repository",
       "severity": "P0",
       "status": "FAIL",
-      "evidence": ["src/components/booking/BookingFlow.tsx", "supabase/functions/jobber-create-booking/index.ts"],
-      "reason": "The authoritative booking endpoint can report a confirmed remote booking after the corresponding local booking insert fails, and authoritative pricing failure can fall through to client-supplied amounts."
+      "evidence": ["src/components/booking/BookingFlow.tsx", "src/components/booking/CustomerInfoForm.tsx", "supabase/functions/jobber-create-booking/index.ts"],
+      "reason": "Public intake still has weak phone and address validation, no terminal service-area gate, and a manual contact fallback can claim notification without confirmed delivery."
     },
     {
       "id": "customer-property-creation",
