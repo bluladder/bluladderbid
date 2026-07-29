@@ -57,9 +57,10 @@ All conditions are mandatory:
 
 ## Current blockers
 
-- `Organization admins manage memberships` queries
-  `organization_memberships` from a policy on that same table. PostgreSQL can
-  raise `infinite recursion detected in policy`.
+- PostgreSQL 17.6 disposable rehearsal confirms that
+  `Organization admins manage memberships` fails with
+  `infinite recursion detected in policy for relation
+  "organization_memberships"` (SQLSTATE `42P17`).
 - The authenticated admin policies lack the table DML grants needed to perform
   the operations their names describe.
 - `is_organization_member(uuid,uuid)` is `SECURITY DEFINER`, executable by
