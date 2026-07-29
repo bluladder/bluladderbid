@@ -1,6 +1,6 @@
 # Stage 7B controlled migration runbook
 
-Status: prepared, not authorized, not executed.
+Status: Stage 7D reconciliation complete; hosted mutation remains NO-GO.
 
 ## Prerequisites
 
@@ -12,6 +12,18 @@ Status: prepared, not authorized, not executed.
 - Operator has Supabase CLI, approved project link, migration-only access,
   rollback reviewer, incident channel, and a frozen deploy window.
 - Application remains on DFW-compatible code; no second organization is active.
+- Stage 7D's 99 shifted ledger versions, seven functionally-present provenance
+  gaps, and one superseded cleanup are reconciled through a separately
+  authorized ledger-only repair.
+- Hosted-only ledger version `20260128005316` has an approved repository
+  provenance disposition. Do not remove or remap it ad hoc.
+- A read-only `supabase migration list --linked` comparison matches
+  `tenant-stage-7d-migration-reconciliation.json`.
+- Cron jobs 3, 5, and 6 have a separately approved pause/restoration procedure;
+  their credential-bearing commands must never be copied into GitHub evidence.
+- The approved release checkout contains Stage 7B as the only genuinely pending
+  migration. Current main also contains Stage 8A, so current main is not that
+  release checkout.
 
 ## Dry run and execution
 
@@ -25,6 +37,9 @@ Expected: exactly
 `20260728060000_tenant_foundation_stage_7b.sql`, no unrelated migration, and no
 remote destructive statement warning. Any other output is a stop.
 
+Never use `--include-all`. Before Stage 7D reconciliation it can select up to
+110 branch-local versions, including a historical `DELETE`.
+
 Only after the separate production authorization:
 
 ```sh
@@ -35,6 +50,10 @@ Expected: one migration applied successfully. Capture redacted CLI output,
 repository SHA, migration checksum, UTC timestamps, project ref, operator, and
 reviewer. Do not use `--include-all`, repair the ledger, or bypass prompts during
 the window.
+
+Ledger repair and cron pause are distinct protected phases. They must be
+completed and verified before this command; they must not be improvised inside
+the Stage 7B schema/backfill window.
 
 ## Post-migration verification
 
@@ -48,6 +67,9 @@ read-only connection. Require:
 - zero platform-role users missing DFW membership;
 - all four foreign keys validated;
 - DFW smoke tests unchanged.
+- exactly one new hosted ledger version: `20260728060000`;
+- the three cron jobs restored only after verification, with command
+  fingerprints unchanged.
 
 Generated types are a distinct authorized repository step after verification:
 
