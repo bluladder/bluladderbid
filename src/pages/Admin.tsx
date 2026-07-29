@@ -20,6 +20,7 @@ import { OpsAlertsPanel } from '@/components/admin/ops/OpsAlertsPanel';
 import { EmailSuppressionsPanel } from '@/components/admin/ops/EmailSuppressionsPanel';
 import { CallRailDurabilityPanel } from '@/components/admin/ops/CallRailDurabilityPanel';
 import { CampaignLaunchControlsPanel } from '@/components/admin/ops/CampaignLaunchControlsPanel';
+import { LaunchDiagnosticsPanel } from '@/components/admin/ops/LaunchDiagnosticsPanel';
 import { AdminSidebar, type AdminSection } from '@/components/admin/shell/AdminSidebar';
 import { OverviewPanel } from '@/components/admin/shell/OverviewPanel';
 import { ActionInboxPanel } from '@/components/admin/shell/ActionInboxPanel';
@@ -142,6 +143,7 @@ export default function Admin({ initialTab }: { initialTab?: string }) {
               {section === 'inbox' && <ActionInboxPanel />}
               {section === 'ops' && (
                 <div className="space-y-6">
+                  <LaunchDiagnosticsPanel />
                   <OpsHealthPanel />
                   <OpsAlertsPanel />
                   <CampaignLaunchControlsPanel />

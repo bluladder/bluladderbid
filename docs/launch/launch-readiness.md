@@ -30,14 +30,12 @@ hosted-environment, manual acceptance, or production-verification gates pass.
 
 ## Current launch blockers
 
-The current contract identifies three repository-level launch gaps:
+The current contract identifies two repository-level launch gaps:
 
 1. Recurring provider uncertainty still requires generalized recovery and
    reconciliation outside the hardened public quote-delivery boundary.
 2. Voice remains a beta/dry-run channel and cannot enter the authoritative
    booking workflow.
-3. Operators lack one unified launch diagnostic view spanning booking, bid,
-   communication, follow-up, and voice outcomes.
 
 Public quote email and SMS delivery now claim a stable semantic request in the
 database before provider submission. Concurrent duplicates converge on the
@@ -46,6 +44,14 @@ retryable and terminal failures remain distinct, provider IDs are durable, and
 the quote lifecycle and recipient lineage are checked server-side. Resend
 webhooks use reclaimable processing claims, compare-and-set attempt updates,
 and only acknowledge completion after all durable effects succeed.
+
+Unified launch diagnostics now have an organization-scoped, deny-by-default
+repository contract spanning booking, intervention, bid delivery, quote
+response, communications, follow-up, voice, and launch incidents. Redacted
+fixtures prove filtering, unresolved counts, and stale/concurrent resolution
+guards. The admin surface remains explicitly disabled by default and labels
+fixture mode as non-hosted evidence; hosted persistence, deployment, and
+operator verification remain protected gates.
 
 Public one-time booking and recurring-plan creation now share a server-side,
 geocoder-backed DFW eligibility gate before any customer, quote, booking,
