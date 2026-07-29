@@ -505,10 +505,24 @@ Deno.serve(async (req) => {
             );
           }
         } else {
-          console.error("Booking recompute skipped — pricing unavailable:", loaded.error);
+          console.error("Booking blocked — authoritative pricing unavailable:", loaded.error);
+          return new Response(
+            JSON.stringify({
+              error: "We couldn't verify current pricing. Please try again shortly.",
+              code: "PRICING_UNAVAILABLE",
+            }),
+            { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
         }
       } catch (e) {
-        console.error("Server-side pricing reconciliation failed (non-fatal):", e);
+        console.error("Server-side pricing reconciliation failed:", e);
+        return new Response(
+          JSON.stringify({
+            error: "We couldn't verify current pricing. Please try again shortly.",
+            code: "PRICING_UNAVAILABLE",
+          }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
       }
     }
 
@@ -589,9 +603,14 @@ Deno.serve(async (req) => {
     // Idempotent replay: a prior identical request already fully succeeded.
     if (reserveRes?.idempotent && reserveRes?.result) {
       console.log("Idempotent replay — returning original booking result");
+      const replayStatus =
+        reserveRes.result.success === false &&
+          reserveRes.result.pendingManualConfirmation === true
+          ? 202
+          : 200;
       return new Response(JSON.stringify(reserveRes.result), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
+        status: replayStatus,
       });
     }
 
@@ -1414,7 +1433,39 @@ Deno.serve(async (req) => {
 
     if (bookingError) {
       console.error("Failed to create booking record:", bookingError);
-      // Job + visit exist in Jobber but local record failed - log for reconciliation
+      // The Jobber job and visit exist, but BluLadder cannot truthfully claim a
+      // confirmed booking until its authoritative local record is durable.
+      // Persist a non-success replay result on the reservation so retries do
+      // not create another provider job or visit.
+      const pendingPersistencePayload = {
+        success: false,
+        pendingManualConfirmation: true,
+        code: "LOCAL_BOOKING_PERSISTENCE_FAILED",
+        referenceNumber,
+        jobNumber,
+        jobberJobId,
+        jobberVisitId,
+        error:
+          "Your appointment was created with our scheduling provider, but we couldn't finish recording the confirmation. Our team must verify it before it is confirmed — please don't rebook.",
+      };
+      if (reservationGroupId) {
+        try {
+          await supabase.rpc("confirm_booking_slot", {
+            p_group_id: reservationGroupId,
+            p_booking_id: null,
+            p_job_id: jobberJobId,
+            p_visit_id: jobberVisitId,
+            p_result: pendingPersistencePayload,
+          });
+        } catch (e) {
+          console.warn("Failed to persist pending booking result:", e);
+        }
+      }
+      reservationSettled = true;
+      return new Response(
+        JSON.stringify(pendingPersistencePayload),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 202 },
+      );
     } else {
       console.log("Created booking record:", bookingRecord.id);
       // Link the attribution_events row to this booking + Jobber ids (best-effort).
