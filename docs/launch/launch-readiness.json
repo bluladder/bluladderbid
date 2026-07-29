@@ -19,16 +19,18 @@
     {
       "id": "public-booking",
       "scope": "repository",
-      "severity": "P1",
-      "status": "PASS",
-      "evidence": ["src/components/booking/BookingFlow.tsx", "src/components/homeowner/OneTimeSummary.delivery.test.tsx"]
+      "severity": "P0",
+      "status": "FAIL",
+      "evidence": ["src/components/booking/BookingFlow.tsx", "supabase/functions/jobber-create-booking/index.ts"],
+      "reason": "The authoritative booking endpoint can report a confirmed remote booking after the corresponding local booking insert fails, and authoritative pricing failure can fall through to client-supplied amounts."
     },
     {
       "id": "customer-property-creation",
       "scope": "repository",
       "severity": "P0",
-      "status": "PASS",
-      "evidence": ["supabase/functions/jobber-create-booking/index.ts", "supabase/functions/_shared/bookingPreparation_test.ts"]
+      "status": "FAIL",
+      "evidence": ["supabase/functions/jobber-create-booking/index.ts", "supabase/functions/jobber-create-service-request/index.ts"],
+      "reason": "Existing-customer booking and service-request paths select the first Jobber property instead of matching the submitted address, while missing address components default to an unrelated Austin address."
     },
     {
       "id": "service-area-validation",
@@ -70,8 +72,9 @@
       "id": "customer-sms-email",
       "scope": "repository",
       "severity": "P0",
-      "status": "PASS",
-      "evidence": ["supabase/functions/_shared/smsOutbox_test.ts", "supabase/functions/_shared/emailSuppression_test.ts"]
+      "status": "FAIL",
+      "evidence": ["supabase/functions/send-sms/index.ts", "supabase/functions/process-sms-queue/index.ts"],
+      "reason": "Anonymous SMS event requests can reference arbitrary quote or booking identifiers and still return success when no transactional send occurred; suppression reads and campaign email suppression are not consistently fail closed."
     },
     {
       "id": "ai-voice-workflow-entry",
