@@ -36,12 +36,12 @@ The current contract identifies ten repository-level launch gaps:
    fallback can claim unproven notification.
 2. Public booking does not yet enforce the deterministic DFW service-area
    contract before authoritative writes.
-3. Anonymous SMS event requests and suppression failures are not consistently
-   fail closed, and campaign email bypasses the shared suppression contract.
+3. Suppression reads do not consistently fail closed, and campaign email
+   bypasses the shared suppression contract.
 4. Saved-quote communications and campaign events can use caller-supplied
    values instead of the persisted authoritative calculation.
-5. Bid delivery state can claim email or SMS success without provider
-   acceptance and lacks durable public-request idempotency.
+5. Bid email delivery can claim success without provider acceptance, and
+   public delivery lacks durable request idempotency.
 6. Acceptance does not convert the quote, while decline uses weak destructive
    authorization and can race conversion.
 7. A booked quote can remain eligible for abandonment follow-up.
