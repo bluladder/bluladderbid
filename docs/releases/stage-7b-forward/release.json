@@ -56,7 +56,7 @@
     "hosted_mutation_authorized": false
   },
   "blockers": [
-    "The organization_memberships admin RLS policy self-queries organization_memberships and requires disposable proof against infinite recursion.",
+    "PostgreSQL 17.6 rehearsal confirms the organization_memberships admin RLS policy fails with infinite recursion (SQLSTATE 42P17).",
     "Authenticated admin-management policies do not have matching table DML grants.",
     "The SECURITY DEFINER membership helper accepts a caller-supplied user id and uses search_path=public.",
     "The migration embeds BEGIN/COMMIT; atomic interaction with a tracked platform migration wrapper is unproven.",
