@@ -60,16 +60,16 @@
       "scope": "repository",
       "severity": "P0",
       "status": "FAIL",
-      "evidence": ["src/pages/QuoteBookingView.tsx", "supabase/functions/quote-decline/index.ts", "src/test/quoteDecline.pathCoverage.test.ts"],
-      "reason": "Quote acceptance never transitions the quote to converted, while decline permits email-only destructive authorization and can race a concurrent conversion."
+      "evidence": ["src/pages/QuoteBookingView.tsx", "src/components/booking/BookingFlow.tsx", "supabase/functions/jobber-create-booking/index.ts", "src/test/quoteBookingLifecycle.pathCoverage.test.ts", "supabase/functions/quote-decline/index.ts", "src/test/quoteDecline.pathCoverage.test.ts"],
+      "reason": "Quote acceptance now requires the exact capability and compare-and-sets conversion after durable booking, but decline still permits email-only destructive authorization and can race a concurrent conversion."
     },
     {
       "id": "follow-up-automation",
       "scope": "repository",
       "severity": "P0",
       "status": "FAIL",
-      "evidence": ["supabase/functions/_shared/campaignSweep.ts", "supabase/functions/jobber-create-booking/index.ts"],
-      "reason": "A successfully booked quote is not marked converted, so the abandonment sweep can continue sending follow-up after booking."
+      "evidence": ["supabase/functions/_shared/campaignSweep.ts", "supabase/functions/jobber-create-booking/index.ts", "src/test/quoteBookingLifecycle.pathCoverage.test.ts"],
+      "reason": "The normal accepted-quote path converts before communications, but a conversion-reconciliation failure can leave the quote follow-up-eligible until manual repair."
     },
     {
       "id": "customer-sms-email",
