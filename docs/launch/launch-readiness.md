@@ -30,28 +30,26 @@ hosted-environment, manual acceptance, or production-verification gates pass.
 
 ## Current launch blockers
 
-The current contract identifies eleven repository-level launch gaps:
+The current contract identifies ten repository-level launch gaps:
 
 1. Public intake still lacks a terminal service-area gate, and a manual
    fallback can claim unproven notification.
-2. The recurring Jobber path still selects the first property instead of
-   matching the submitted address and defaults incomplete data to Austin.
-3. Public booking does not yet enforce the deterministic DFW service-area
+2. Public booking does not yet enforce the deterministic DFW service-area
    contract before authoritative writes.
-4. Anonymous SMS event requests and suppression failures are not consistently
+3. Anonymous SMS event requests and suppression failures are not consistently
    fail closed, and campaign email bypasses the shared suppression contract.
-5. Saved-quote communications and campaign events can use caller-supplied
+4. Saved-quote communications and campaign events can use caller-supplied
    values instead of the persisted authoritative calculation.
-6. Bid delivery state can claim email or SMS success without provider
+5. Bid delivery state can claim email or SMS success without provider
    acceptance and lacks durable public-request idempotency.
-7. Acceptance does not convert the quote, while decline uses weak destructive
+6. Acceptance does not convert the quote, while decline uses weak destructive
    authorization and can race conversion.
-8. A booked quote can remain eligible for abandonment follow-up.
-9. Recurring workflow replay and communication crash recovery can report false
-   success or duplicate provider delivery.
-10. Voice remains a beta/dry-run channel and cannot enter the authoritative
+7. A booked quote can remain eligible for abandonment follow-up.
+8. Recurring provider uncertainty still requires manual recovery, and a
+   communication crash can duplicate provider delivery.
+9. Voice remains a beta/dry-run channel and cannot enter the authoritative
    booking workflow.
-11. Operators lack one unified launch diagnostic view spanning booking, bid,
+10. Operators lack one unified launch diagnostic view spanning booking, bid,
    communication, follow-up, and voice outcomes.
 
 The hosted security foundation, provider configuration, controlled synthetic
