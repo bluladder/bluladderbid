@@ -43,9 +43,8 @@
       "id": "bid-creation",
       "scope": "repository",
       "severity": "P0",
-      "status": "FAIL",
-      "evidence": ["supabase/functions/save-quote/index.ts", "src/hooks/useServerQuoteCalculation.test.ts"],
-      "reason": "The saved quote uses authoritative calculations, but customer email content, campaign metadata, and event idempotency still use caller-supplied totals, services, and rule versions."
+      "status": "PASS",
+      "evidence": ["supabase/functions/save-quote/index.ts", "supabase/functions/_shared/authoritativeQuotePresentation_test.ts", "src/test/authoritativeQuoteDelivery.pathCoverage.test.ts", "src/hooks/useServerQuoteCalculation.test.ts"]
     },
     {
       "id": "bid-delivery",
@@ -53,7 +52,7 @@
       "severity": "P0",
       "status": "FAIL",
       "evidence": ["supabase/functions/save-quote/index.ts", "supabase/functions/send-sms/index.ts", "src/components/homeowner/OneTimeSummary.tsx", "src/components/homeowner/OneTimeSummary.delivery.test.tsx"],
-      "reason": "Text delivery now requires a quote-scoped capability and reports provider acceptance truthfully, but email status is advanced before provider acceptance and public delivery lacks durable request idempotency."
+      "reason": "Email and text delivery now require secure quote capabilities and report provider acceptance truthfully, but public delivery lacks durable request idempotency."
     },
     {
       "id": "bid-customer-response",
