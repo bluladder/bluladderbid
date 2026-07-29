@@ -30,6 +30,7 @@ function stubSupabase(): any {
       insertingConversation = true;
       return conversationQuery;
     },
+    upsert: () => conversationQuery,
     eq: () => conversationQuery,
     order: () => conversationQuery,
     limit: () => conversationQuery,
@@ -40,6 +41,7 @@ function stubSupabase(): any {
         : null,
       error: null,
     }),
+    then: (fn: any) => fn({ data: [], error: null }),
   };
   return {
     from: (table: string) => table === "chat_conversations" ? conversationQuery : q,
