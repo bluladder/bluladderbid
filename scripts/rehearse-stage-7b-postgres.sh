@@ -60,7 +60,14 @@ psql "$admin_url" -X -v ON_ERROR_STOP=1 \
 rollback_url=${STAGE7B_DATABASE_URL%/*}/$rollback_db
 psql "$rollback_url" -X -v ON_ERROR_STOP=1 -f "$fixture"
 failed_payload=$(mktemp)
-sed 's/^COMMIT;$/SELECT 1\\/0;\\nCOMMIT;/' "$migration" >"$failed_payload"
+awk '
+  /^COMMIT;$/ {
+    print "SELECT 1/0;"
+    print "COMMIT;"
+    next
+  }
+  { print }
+' "$migration" >"$failed_payload"
 if psql "$rollback_url" -X -v ON_ERROR_STOP=1 -f "$failed_payload"; then
   echo "injected migration failure unexpectedly succeeded" >&2
   exit 1
