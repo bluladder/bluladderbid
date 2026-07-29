@@ -65,9 +65,8 @@
       "id": "follow-up-automation",
       "scope": "repository",
       "severity": "P0",
-      "status": "FAIL",
-      "evidence": ["supabase/functions/_shared/campaignSweep.ts", "supabase/functions/jobber-create-booking/index.ts", "src/test/quoteBookingLifecycle.pathCoverage.test.ts"],
-      "reason": "The normal accepted-quote path converts before communications, but a conversion-reconciliation failure can leave the quote follow-up-eligible until manual repair."
+      "status": "PASS",
+      "evidence": ["supabase/functions/_shared/campaignSweep.ts", "supabase/functions/_shared/lifecycleBookingCheck.ts", "supabase/functions/_shared/lifecycleBookingCheck_test.ts", "supabase/functions/process-sms-queue/index.ts", "supabase/functions/jobber-create-booking/index.ts", "src/test/quoteBookingLifecycle.pathCoverage.test.ts", "src/test/quoteConversionFollowUpGuard.pathCoverage.test.ts"]
     },
     {
       "id": "customer-sms-email",
