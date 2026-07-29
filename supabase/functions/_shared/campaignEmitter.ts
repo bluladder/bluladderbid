@@ -143,8 +143,15 @@ export async function emitCampaignEvent(input: EmitEventInput): Promise<EmitResu
         metadata: { ...(input.metadata ?? {}), __recovery_payload: body },
       });
       if (!error) return { ok: false, status: lastStatus, body: lastBody, recovered: true };
-      // Unique violation => an event with this key already exists; not lost.
-      return { ok: false, status: lastStatus, body: lastBody, recovered: true };
+      // A unique violation proves an event with this key already exists and is
+      // therefore durable. Every other persistence error is unresolved and
+      // must never be reported as recovered.
+      if (error.code === "23505") {
+        return { ok: false, status: lastStatus, body: lastBody, recovered: true };
+      }
+      console.error(
+        `emitCampaignEvent recovery-persist rejected key=${input.idempotencyKey} code=${error.code ?? "unknown"}`,
+      );
     } catch (e) {
       console.error(`emitCampaignEvent recovery-persist failed key=${input.idempotencyKey}:`, e instanceof Error ? e.message : e);
     }

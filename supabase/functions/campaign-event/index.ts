@@ -520,6 +520,7 @@ serve(async (req) => {
       campaign_id: c.id,
       campaign_step_id: s.id,
       enrollment_id: enr.id,
+      quote_id: metaQuoteId,
       send_at: new Date(now + Number(s.delay_hours) * 3600 * 1000).toISOString(),
     }));
     let scheduled = 0;

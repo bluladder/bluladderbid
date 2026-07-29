@@ -43,7 +43,150 @@ export const CRITICAL_EVENTS = [
   "customer_replied",
   "consent_revoked",
   "manual_staff_takeover",
+  "quote_declined",
 ] as const;
+
+export const DECLINED_QUOTE_REPAIR_GRACE_MS = 60_000;
+export const DECLINED_QUOTE_REPAIR_BATCH_SIZE = 25;
+
+export type DeclinedQuoteRepairDecision =
+  | "emit_decline"
+  | "reconcile_conversion"
+  | "booking_reconciliation_pending"
+  | "skip";
+
+export function evaluateDeclinedQuoteRepair(
+  quote: { status?: string | null; converted_booking_id?: string | null },
+  booking: { id: string; status: string } | null,
+): DeclinedQuoteRepairDecision {
+  if (quote.status !== "declined" || quote.converted_booking_id) return "skip";
+  if (!booking || booking.status === "cancelled") return "emit_decline";
+  if (["confirmed", "scheduled", "in_progress", "completed"].includes(booking.status)) {
+    return "reconcile_conversion";
+  }
+  return "booking_reconciliation_pending";
+}
+
+export interface DeclinedQuoteRepairResult {
+  scanned: number;
+  emitted: number;
+  reconciled: number;
+  skipped: number;
+  failed: number;
+}
+
+// Reconciles the durable quotes.status='declined' outbox marker. The grace
+// allows an in-flight accepted booking to persist its exact quote_id first.
+// A durable booking always wins; otherwise the canonical decline event is
+// emitted idempotently. This closes the edge-handler crash window without a
+// second queue or hosted schema change.
+export async function runDeclinedQuoteEventRepairSweep(
+  supabase: SupabaseLike,
+  opts: { batchSize?: number; nowMs?: number; graceMs?: number } = {},
+): Promise<DeclinedQuoteRepairResult> {
+  const batchSize = opts.batchSize ?? DECLINED_QUOTE_REPAIR_BATCH_SIZE;
+  const nowMs = opts.nowMs ?? Date.now();
+  const graceMs = opts.graceMs ?? DECLINED_QUOTE_REPAIR_GRACE_MS;
+  const beforeIso = new Date(nowMs - graceMs).toISOString();
+  const result: DeclinedQuoteRepairResult = {
+    scanned: 0,
+    emitted: 0,
+    reconciled: 0,
+    skipped: 0,
+    failed: 0,
+  };
+
+  const { data: candidates, error: candidatesError } = await supabase
+    .from("quotes")
+    .select(
+      "id, status, customer_id, customer_email, customer_phone, pricing_rule_version, decline_reason, declined_at, converted_booking_id",
+    )
+    .eq("status", "declined")
+    .is("converted_booking_id", null)
+    .lt("declined_at", beforeIso)
+    .order("declined_at", { ascending: true })
+    .limit(batchSize);
+  if (candidatesError) {
+    result.failed++;
+    return result;
+  }
+
+  for (const row of (candidates ?? []) as Array<Record<string, any>>) {
+    result.scanned++;
+    const { data: fresh, error: freshError } = await supabase
+      .from("quotes")
+      .select(
+        "id, status, customer_id, customer_email, customer_phone, pricing_rule_version, decline_reason, declined_at, converted_booking_id",
+      )
+      .eq("id", row.id)
+      .maybeSingle();
+    if (freshError || !fresh) {
+      result.failed++;
+      continue;
+    }
+
+    const { data: booking, error: bookingError } = await supabase
+      .from("bookings")
+      .select("id, status")
+      .eq("quote_id", row.id)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (bookingError) {
+      result.failed++;
+      continue;
+    }
+
+    const decision = evaluateDeclinedQuoteRepair(fresh, booking);
+    if (decision === "skip" || decision === "booking_reconciliation_pending") {
+      result.skipped++;
+      continue;
+    }
+    if (decision === "reconcile_conversion") {
+      const convertedAt = new Date(nowMs).toISOString();
+      const { data: converted, error: conversionError } = await supabase
+        .from("quotes")
+        .update({
+          status: "converted",
+          converted_booking_id: booking.id,
+          converted_at: convertedAt,
+          last_activity_at: convertedAt,
+        })
+        .eq("id", row.id)
+        .eq("status", "declined")
+        .is("converted_booking_id", null)
+        .select("id")
+        .maybeSingle();
+      if (conversionError || !converted) result.failed++;
+      else result.reconciled++;
+      continue;
+    }
+
+    const emitted = await emitCampaignEvent({
+      eventName: "quote_declined",
+      idempotencyKey: `quote_declined:${row.id}`,
+      email: fresh.customer_email ?? null,
+      phone: fresh.customer_phone ?? null,
+      customerId: fresh.customer_id ?? null,
+      source: "declined-quote-repair-sweep",
+      subject: "Quote declined",
+      recoverySupabase: supabase,
+      metadata: {
+        quote_id: row.id,
+        quote_status: "declined",
+        decline_reason: fresh.decline_reason ?? null,
+        lead_source: "website_quote",
+      },
+    });
+    if (emitted.ok || emitted.recovered || (emitted.body as any)?.idempotent) {
+      result.emitted++;
+    } else {
+      result.failed++;
+    }
+  }
+  return result;
+}
 
 // Bounded work for the follow-up completion sweep. Small enough to never
 // delay normal queue processing; unfinished enrollments continue on the

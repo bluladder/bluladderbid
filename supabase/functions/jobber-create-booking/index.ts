@@ -1587,6 +1587,31 @@ Deno.serve(async (req) => {
           conversionConfirmed =
             currentQuote?.status === "converted" &&
             currentQuote?.converted_booking_id === bookingRecord.id;
+
+          // The provider visit and exact local booking lineage are already
+          // durable, so acceptance wins a simultaneous customer decline. This
+          // second CAS is intentionally narrow: only this booking can promote
+          // a currently declined quote, and no existing conversion is replaced.
+          if (
+            !conversionConfirmed &&
+            currentQuote?.status === "declined" &&
+            !currentQuote.converted_booking_id
+          ) {
+            const { data: recoveredConversion } = await supabase
+              .from("quotes")
+              .update({
+                status: "converted",
+                converted_booking_id: bookingRecord.id,
+                converted_at: convertedAt,
+                last_activity_at: convertedAt,
+              })
+              .eq("id", resumedQuote.quoteId)
+              .eq("status", "declined")
+              .is("converted_booking_id", null)
+              .select("id")
+              .maybeSingle();
+            conversionConfirmed = !!recoveredConversion?.id;
+          }
         }
 
         if (!conversionConfirmed) {

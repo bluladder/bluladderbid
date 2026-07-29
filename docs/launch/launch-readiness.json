@@ -58,9 +58,8 @@
       "id": "bid-customer-response",
       "scope": "repository",
       "severity": "P0",
-      "status": "FAIL",
-      "evidence": ["src/pages/QuoteBookingView.tsx", "src/components/booking/BookingFlow.tsx", "supabase/functions/jobber-create-booking/index.ts", "src/test/quoteBookingLifecycle.pathCoverage.test.ts", "supabase/functions/quote-decline/index.ts", "src/test/quoteDecline.pathCoverage.test.ts"],
-      "reason": "Quote acceptance now requires the exact capability and compare-and-sets conversion after durable booking, but decline still permits email-only destructive authorization and can race a concurrent conversion."
+      "status": "PASS",
+      "evidence": ["src/pages/QuoteBookingView.tsx", "src/components/booking/BookingFlow.tsx", "supabase/functions/jobber-create-booking/index.ts", "src/test/quoteBookingLifecycle.pathCoverage.test.ts", "supabase/functions/quote-decline/index.ts", "supabase/functions/_shared/quoteDecline_test.ts", "supabase/functions/_shared/campaignEmitter_test.ts", "supabase/functions/_shared/campaignSweep_test.ts", "supabase/functions/process-sms-queue/index.ts", "src/test/quoteDecline.pathCoverage.test.ts"]
     },
     {
       "id": "follow-up-automation",

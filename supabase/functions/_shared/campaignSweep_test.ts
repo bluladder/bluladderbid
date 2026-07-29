@@ -5,6 +5,7 @@ import {
   abandonmentIdempotencyKey,
   abandonmentVersionTag,
   isCriticalEvent,
+  evaluateDeclinedQuoteRepair,
   DEFAULT_ABANDONMENT_DELAY_MINUTES,
   type AbandonmentConvo,
 } from "./campaignSweep.ts";
@@ -80,5 +81,33 @@ Deno.test("idempotency key is deterministic and version-scoped", () => {
 Deno.test("critical event allowlist", () => {
   assertEquals(isCriticalEvent("booking_completed"), true);
   assertEquals(isCriticalEvent("manual_staff_takeover"), true);
+  assertEquals(isCriticalEvent("quote_declined"), true);
   assertEquals(isCriticalEvent("quote_calculated"), false);
+});
+
+Deno.test("declined quote repair emits only without durable booking lineage", () => {
+  const quote = { status: "declined", converted_booking_id: null };
+  assertEquals(evaluateDeclinedQuoteRepair(quote, null), "emit_decline");
+  assertEquals(
+    evaluateDeclinedQuoteRepair(quote, { id: "b1", status: "cancelled" }),
+    "emit_decline",
+  );
+});
+
+Deno.test("declined quote repair makes durable booking conversion win", () => {
+  const quote = { status: "declined", converted_booking_id: null };
+  for (const status of ["confirmed", "scheduled", "in_progress", "completed"]) {
+    assertEquals(
+      evaluateDeclinedQuoteRepair(quote, { id: "b1", status }),
+      "reconcile_conversion",
+    );
+  }
+  assertEquals(
+    evaluateDeclinedQuoteRepair(quote, { id: "b1", status: "needs_attention" }),
+    "booking_reconciliation_pending",
+  );
+  assertEquals(
+    evaluateDeclinedQuoteRepair({ status: "converted", converted_booking_id: "b1" }, null),
+    "skip",
+  );
 });

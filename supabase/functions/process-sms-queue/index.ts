@@ -8,10 +8,17 @@ import {
 } from "../_shared/sms.ts";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
-import { runAbandonmentSweep, recoverPendingCampaignEvents, runPersistedQuoteAbandonmentSweep, runFollowUpCompletionSweep } from "../_shared/campaignSweep.ts";
+import {
+  recoverPendingCampaignEvents,
+  runAbandonmentSweep,
+  runDeclinedQuoteEventRepairSweep,
+  runFollowUpCompletionSweep,
+  runPersistedQuoteAbandonmentSweep,
+} from "../_shared/campaignSweep.ts";
 import { sendEmail } from "../_shared/emailConfig.ts";
 import { processDueCallRailRetries } from "../_shared/callrailEventProcessor.ts";
 import { runPostServiceEducationSweep, runMaintenanceOpportunitySweep } from "../_shared/postServiceSweeps.ts";
+import { quoteLifecycleAllowsCampaignDelivery } from "../_shared/quoteDecline.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -162,7 +169,7 @@ serve(async (req) => {
     if (msg.enrollment_id) {
       const { data: enr } = await supabase
         .from("campaign_enrollments")
-        .select("id, status, campaign_id, paused_until, email, phone, campaign:sms_campaigns(active, required_consent)")
+        .select("id, status, event_name, campaign_id, paused_until, email, phone, campaign_event:campaign_events(metadata), campaign:sms_campaigns(active, required_consent)")
         .eq("id", msg.enrollment_id)
         .maybeSingle();
       const camp = (enr?.campaign as { active?: boolean; required_consent?: string } | null) ?? null;
@@ -191,6 +198,46 @@ serve(async (req) => {
         }).eq("id", msg.id);
         continue;
       }
+
+      // Authoritative quote terminal state is rechecked immediately before
+      // delivery. This protects the crash window before quote_declined is
+      // reconciled and also cancels stale decline messages if a concurrent
+      // durable booking ultimately wins.
+      const campaignEvent = enr.campaign_event as { metadata?: Record<string, unknown> } | null;
+      const eventQuoteId = typeof campaignEvent?.metadata?.quote_id === "string"
+        ? campaignEvent.metadata.quote_id
+        : null;
+      const sourceQuoteId = typeof msg.quote_id === "string" && msg.quote_id
+        ? msg.quote_id
+        : eventQuoteId;
+      if (sourceQuoteId) {
+        const { data: currentQuote, error: currentQuoteError } = await supabase
+          .from("quotes")
+          .select("status, converted_booking_id")
+          .eq("id", sourceQuoteId)
+          .maybeSingle();
+        if (currentQuoteError || !currentQuote) {
+          await supabase.from("sms_messages").update(
+            failureUpdate(
+              msg.attempts,
+              msg.max_attempts,
+              "Authoritative quote state unavailable",
+            ),
+          ).eq("id", msg.id);
+          failed++;
+          continue;
+        }
+        const eventName = String(enr.event_name ?? "");
+        if (!quoteLifecycleAllowsCampaignDelivery(currentQuote, eventName)) {
+          await supabase.from("sms_messages").update({
+            status: "cancelled",
+            error: `Quote lifecycle advanced to ${currentQuote.status}`,
+            next_retry_at: null,
+          }).eq("id", msg.id);
+          continue;
+        }
+      }
+
       if (!camp || camp.active === false) {
         await supabase.from("sms_messages").update({
           status: "cancelled", error: "Campaign deactivated", next_retry_at: null,
@@ -361,11 +408,17 @@ serve(async (req) => {
   // Logically separated in _shared/campaignSweep.ts; NO new cron/queue. =====
   let abandonment: unknown = null;
   let recovery: unknown = null;
+  let declinedQuoteRepair: unknown = null;
   let persistedAbandonment: unknown = null;
   let followUpCompletion: unknown = null;
   let callrailRetries: unknown = null;
   let postServiceEducation: unknown = null;
   let maintenanceOpportunity: unknown = null;
+  try {
+    declinedQuoteRepair = await runDeclinedQuoteEventRepairSweep(supabase);
+  } catch (e) {
+    console.error("runDeclinedQuoteEventRepairSweep error:", e instanceof Error ? e.message : e);
+  }
   try {
     recovery = await recoverPendingCampaignEvents(supabase);
   } catch (e) {
@@ -409,7 +462,7 @@ serve(async (req) => {
     console.error("runMaintenanceOpportunitySweep error:", e instanceof Error ? e.message : e);
   }
 
-  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, recovery, followUpCompletion, callrailRetries, postServiceEducation, maintenanceOpportunity }), {
+  return new Response(JSON.stringify({ processed: (due || []).length, sent, failed, abandonment, persistedAbandonment, declinedQuoteRepair, recovery, followUpCompletion, callrailRetries, postServiceEducation, maintenanceOpportunity }), {
     status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });

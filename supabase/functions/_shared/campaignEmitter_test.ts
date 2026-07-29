@@ -113,6 +113,52 @@ Deno.test("persists a pending recovery row for a critical event on final failure
   assertEquals(inserted.metadata.__recovery_payload.idempotency_key, "consent_revoked:evt-1");
 });
 
+Deno.test("treats a duplicate critical recovery row as durable", async () => {
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw new Error("network down");
+  }) as typeof fetch;
+  const recoverySupabase = {
+    from: (_t: string) => ({
+      insert: async (_v: any) => ({ error: { code: "23505" } }),
+    }),
+  };
+  const res = await emitCampaignEvent({
+    eventName: "quote_declined",
+    idempotencyKey: "quote_declined:q-1",
+    source: "test",
+    maxAttempts: 1,
+    timeoutMs: 200,
+    recoverySupabase,
+  });
+  globalThis.fetch = orig;
+  assertEquals(res.ok, false);
+  assertEquals(res.recovered, true);
+});
+
+Deno.test("does not claim recovery for a rejected critical persistence write", async () => {
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw new Error("network down");
+  }) as typeof fetch;
+  const recoverySupabase = {
+    from: (_t: string) => ({
+      insert: async (_v: any) => ({ error: { code: "42501" } }),
+    }),
+  };
+  const res = await emitCampaignEvent({
+    eventName: "quote_declined",
+    idempotencyKey: "quote_declined:q-2",
+    source: "test",
+    maxAttempts: 1,
+    timeoutMs: 200,
+    recoverySupabase,
+  });
+  globalThis.fetch = orig;
+  assertEquals(res.ok, false);
+  assertEquals(res.recovered, undefined);
+});
+
 Deno.test("does NOT persist recovery for a non-critical event", async () => {
   const orig = globalThis.fetch;
   globalThis.fetch = (async () => { throw new Error("down"); }) as typeof fetch;

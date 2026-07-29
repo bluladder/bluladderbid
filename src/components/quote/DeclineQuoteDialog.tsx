@@ -29,12 +29,11 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   quoteId: string;
-  emailOnFile: string | null;
   resumeToken?: string | null;
   onDeclined?: () => void;
 }
 
-export function DeclineQuoteDialog({ open, onOpenChange, quoteId, emailOnFile, resumeToken, onDeclined }: Props) {
+export function DeclineQuoteDialog({ open, onOpenChange, quoteId, resumeToken, onDeclined }: Props) {
   const [reason, setReason] = useState<Reason | "">("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -52,7 +51,6 @@ export function DeclineQuoteDialog({ open, onOpenChange, quoteId, emailOnFile, r
       const { data, error: fnErr } = await supabase.functions.invoke("quote-decline", {
         body: {
           quote_id: quoteId,
-          email: emailOnFile,
           resume_token: resumeToken ?? null,
           reason,
           notes: notes.trim() || null,
