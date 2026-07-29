@@ -15,6 +15,7 @@
     "check:stage-7d-independent-audit": "node scripts/check-stage-7d-independent-audit.mjs",
     "check:stage-7d-repair-rehearsal": "node scripts/check-stage-7d-repair-rehearsal.mjs",
     "check:stage-7b-forward-release": "node scripts/check-stage-7b-forward-release.mjs",
+    "check:stage-7b-corrected-release": "node scripts/check-stage-7b-corrected-release.mjs",
     "check:stage-7d-cron-window": "node scripts/check-stage-7d-cron-window.mjs",
     "check:organization-routing": "node scripts/check-organization-routing.mjs",
     "check:roadmap-ledger": "node scripts/check-roadmap-ledger.mjs",

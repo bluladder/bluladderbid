@@ -1,0 +1,33 @@
+{
+  "decision": "NO-GO",
+  "hosted_mutation_authorized": false,
+  "ledger_rewrite_allowed": false,
+  "source": {
+    "path": "supabase/migrations/20260728060000_tenant_foundation_stage_7b.sql",
+    "sha256": "b26d38b6b63d5f1fa67f0e7ae8ce0a31eb8892690c9078063fa19dc36ba9c2ca",
+    "bytes": 12135
+  },
+  "correction": {
+    "path": "supabase/release-candidates/20260729030000_tenant_foundation_stage_7b_rc_security.sql",
+    "sha256": "abcc90c9044b32fc02fce5f7c3fd445f91fe4f186c5c8a2ee93007809f3a69d0",
+    "bytes": 7154
+  },
+  "assembled": {
+    "sha256": "8c472bfdaeb0c3952f1d31c300673c365a770f628f646fb4c1133c2bf22ff9a3",
+    "bytes": 19291,
+    "transaction_count": 1
+  },
+  "execution": {
+    "selected_mechanism": null,
+    "rejected": [
+      "supabase_mcp_apply_migration",
+      "management_api_migration",
+      "supabase_cli_db_push",
+      "direct_psql_without_provenance_approval"
+    ]
+  },
+  "excluded_migrations": [
+    "20260728070000_organization_routing_stage_8a.sql",
+    "20260728080000_restrict_security_definer_execution.sql"
+  ]
+}
