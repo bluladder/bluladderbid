@@ -257,25 +257,42 @@ export function classifyInbound(body: string | null | undefined): "stop" | "star
   return null;
 }
 
+export interface PhoneOptOutCheck {
+  optedOut: boolean;
+  readable: boolean;
+}
+
 // Minimal shape of the Supabase client we rely on (avoids importing types here).
-/** Returns true if the given phone number has opted out of texts. Fails open (false) on error. */
+// deno-lint-ignore no-explicit-any
+export async function checkPhoneOptOut(
+  supabase: any,
+  phone: string | null | undefined,
+): Promise<PhoneOptOutCheck> {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return { optedOut: false, readable: true };
+  try {
+    const { data, error } = await supabase
+      .from("sms_opt_outs")
+      .select("opted_out")
+      .eq("phone", normalized)
+      .maybeSingle();
+    if (error) return { optedOut: true, readable: false };
+    return {
+      optedOut: !!(data as { opted_out?: boolean } | null)?.opted_out,
+      readable: true,
+    };
+  } catch {
+    return { optedOut: true, readable: false };
+  }
+}
+
+/** Compatibility wrapper. Unreadable suppression state is treated as opted out. */
 // deno-lint-ignore no-explicit-any
 export async function isPhoneOptedOut(
   supabase: any,
   phone: string | null | undefined,
 ): Promise<boolean> {
-  const normalized = normalizePhone(phone);
-  if (!normalized) return false;
-  try {
-    const { data } = await supabase
-      .from("sms_opt_outs")
-      .select("opted_out")
-      .eq("phone", normalized)
-      .maybeSingle();
-    return !!(data as { opted_out?: boolean } | null)?.opted_out;
-  } catch {
-    return false;
-  }
+  return (await checkPhoneOptOut(supabase, phone)).optedOut;
 }
 
 // ---- Per-lead channel pause (admin / customer self-service) ----
@@ -283,19 +300,29 @@ export async function isPhoneOptedOut(
 export interface ChannelPause {
   sms_paused: boolean;
   email_paused: boolean;
+  readable: boolean;
 }
 
 /**
  * Look up the per-lead messaging pause switches on a customer record.
  * Pausing a channel suppresses messages to that single lead without touching
- * the campaigns themselves. Fails open (nothing paused) on error.
+ * the campaigns themselves. Fails closed on unreadable database state.
  */
 // deno-lint-ignore no-explicit-any
 export async function getCustomerPause(
   supabase: any,
   by: { id?: string | null; email?: string | null; phone?: string | null },
 ): Promise<ChannelPause> {
-  const fallback: ChannelPause = { sms_paused: false, email_paused: false };
+  const noPause: ChannelPause = {
+    sms_paused: false,
+    email_paused: false,
+    readable: true,
+  };
+  const unreadable: ChannelPause = {
+    sms_paused: true,
+    email_paused: true,
+    readable: false,
+  };
   try {
     let q;
     if (by.id) {
@@ -304,15 +331,20 @@ export async function getCustomerPause(
       q = supabase.from("customers").select("sms_paused,email_paused").eq("email", String(by.email).toLowerCase().trim());
     } else if (by.phone) {
       const np = normalizePhone(by.phone);
-      if (!np) return fallback;
+      if (!np) return noPause;
       q = supabase.from("customers").select("sms_paused,email_paused").eq("phone", np);
     } else {
-      return fallback;
+      return noPause;
     }
-    const { data } = await q.maybeSingle();
-    if (!data) return fallback;
-    return { sms_paused: !!data.sms_paused, email_paused: !!data.email_paused };
+    const { data, error } = await q.maybeSingle();
+    if (error) return unreadable;
+    if (!data) return noPause;
+    return {
+      sms_paused: !!data.sms_paused,
+      email_paused: !!data.email_paused,
+      readable: true,
+    };
   } catch {
-    return fallback;
+    return unreadable;
   }
 }
