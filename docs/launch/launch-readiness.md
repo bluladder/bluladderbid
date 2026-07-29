@@ -30,13 +30,19 @@ hosted-environment, manual acceptance, or production-verification gates pass.
 
 ## Current launch blockers
 
-The initial contract identifies three repository-level launch gaps:
+The current contract identifies six repository-level launch gaps:
 
-1. Public booking does not yet enforce the deterministic DFW service-area
+1. Public booking can claim confirmation after the local authoritative write
+   fails and can fall through to client-supplied pricing.
+2. Existing-customer Jobber paths select the first property instead of matching
+   the submitted address, and missing address data defaults to Austin.
+3. Public booking does not yet enforce the deterministic DFW service-area
    contract before authoritative writes.
-2. Voice remains a beta/dry-run channel and cannot enter the authoritative
+4. Anonymous SMS event requests and suppression failures are not consistently
+   fail closed, and campaign email bypasses the shared suppression contract.
+5. Voice remains a beta/dry-run channel and cannot enter the authoritative
    booking workflow.
-3. Operators lack one unified launch diagnostic view spanning booking, bid,
+6. Operators lack one unified launch diagnostic view spanning booking, bid,
    communication, follow-up, and voice outcomes.
 
 The hosted security foundation, provider configuration, controlled synthetic
