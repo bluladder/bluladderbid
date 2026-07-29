@@ -91,12 +91,18 @@ export async function hasLifecycleBlockingBooking(
   supabase: any,
   input: { customerId: string | null } & LifecycleBookingScope,
 ): Promise<boolean> {
-  if (!input.customerId) return false;
-  const { data } = await supabase
+  if (!input.customerId && !input.quoteId) return false;
+  let query = supabase
     .from("bookings")
-    .select("status, quote_id, created_at, jobber_visit_id, jobber_job_id")
-    .eq("customer_id", input.customerId)
+    .select("status, quote_id, created_at, jobber_visit_id, jobber_job_id");
+  query = input.customerId
+    ? query.eq("customer_id", input.customerId)
+    : query.eq("quote_id", input.quoteId);
+  const { data, error } = await query
     .neq("status", "cancelled");
+  if (error) {
+    throw new Error(`authoritative booking lookup failed: ${error.code ?? "unknown"}`);
+  }
   const rows = (data ?? []) as LifecycleBookingRow[];
   for (const r of rows) {
     if (isLifecycleBlockingBooking(r, { quoteId: input.quoteId, anchorIso: input.anchorIso })) {
