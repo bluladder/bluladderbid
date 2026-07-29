@@ -44,8 +44,9 @@ describe("save-quote server-side firm-quote emitter", () => {
     expect(saveQuote).not.toMatch(/from\(["']sms_messages["']\)[\s\S]{0,120}\.insert\(/);
     expect(saveQuote).toMatch(/stopped_reason:\s*["']superseded_by_newer_quote["']/);
   });
-  it("uses a deterministic idempotency key tied to quote id + pricing rule version", () => {
-    expect(saveQuote).toMatch(/idempotencyKey:\s*`quote_calculated:\$\{quoteId\}:v\$\{body\.ruleVersion \?\? 0\}`/);
+  it("uses a deterministic idempotency key tied to quote id + the authoritative pricing rule version", () => {
+    expect(saveQuote).toMatch(/idempotencyKey:\s*`quote_calculated:\$\{quoteId\}:v\$\{authoritative\.ruleVersion \?\? 0\}`/);
+    expect(saveQuote).not.toMatch(/idempotencyKey:[^\n]*body\.ruleVersion/);
   });
   it("emits only after the quote row exists (fires after the insert branch)", () => {
     const emitIdx = saveQuote.indexOf('eventName: "quote_calculated"');
