@@ -24,6 +24,7 @@
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",
     "check:launch-contract": "node scripts/check-launch-readiness.mjs --contract-only",
+    "check:voice-booking-contract": "node scripts/check-voice-booking-contract.mjs",
     "launch:readiness": "node scripts/check-launch-readiness.mjs",
     "preview": "vite preview",
     "test": "vitest run",

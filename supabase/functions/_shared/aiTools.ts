@@ -9,7 +9,10 @@
 //     itself recalculates pricing and holds a DB reservation)
 // Every tool validates its own inputs and returns a compact JSON result.
 // ============================================================================
-import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  createClient,
+  type SupabaseClient,
+} from "https://esm.sh/@supabase/supabase-js@2";
 import { validateServiceArea } from "./serviceArea.ts";
 import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
 import { checkSuppression } from "./suppression.ts";
@@ -18,25 +21,22 @@ import { customerEscalationMessage } from "./escalationDelivery.ts";
 import { getPhoneByPurpose } from "./phoneConfig.ts";
 import { recordKnowledgeGap } from "./knowledgeGaps.ts";
 import {
-  OFFER_TTL_MS,
-  MAX_SLOT_FAILURES_BEFORE_ESCALATION,
-  computeQuoteSignature,
   buildOfferSlotId,
+  computeQuoteSignature,
+  MAX_SLOT_FAILURES_BEFORE_ESCALATION,
+  OFFER_TTL_MS,
 } from "./slotOffer.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 /**
- * Phase 7 voice-booking feature flag. Off by default — voice channel returns a
- * dry-run receipt (Phase 4C-β behavior). Set VOICE_LIVE_BOOKING_ENABLED=true to
- * route voice through the same booking pipeline used by SMS/web. Every
- * downstream Phase 6 safety guard (readiness, suppression, one-time live-Jobber
- * authorization) still applies.
+ * Compatibility export for older diagnostics. Live voice booking is
+ * structurally absent in this repository stage; environment configuration
+ * cannot unlock the shared mutation pipeline.
  */
 export function voiceLiveBookingEnabled(): boolean {
-  const v = (Deno.env.get("VOICE_LIVE_BOOKING_ENABLED") ?? "").trim().toLowerCase();
-  return v === "true" || v === "1" || v === "yes";
+  return false;
 }
 
 /**
@@ -49,7 +49,12 @@ async function recordSlotFailure(
   ctx: ToolContext,
   code: string,
   technicalReason: string,
-  convo: { prospect_name?: string | null; prospect_email?: string | null; prospect_phone?: string | null; service_address?: string | null } | null,
+  convo: {
+    prospect_name?: string | null;
+    prospect_email?: string | null;
+    prospect_phone?: string | null;
+    service_address?: string | null;
+  } | null,
 ): Promise<number> {
   const { data: row } = await ctx.supabase
     .from("chat_conversations")
@@ -80,7 +85,8 @@ async function recordSlotFailure(
         prospectPhone: convo?.prospect_phone ?? null,
         prospectEmail: convo?.prospect_email ?? null,
         serviceAddress: convo?.service_address ?? null,
-        summary: `AI could not complete scheduling after ${count} slot-selection failures (last: ${code}). Needs a human to confirm a time.`,
+        summary:
+          `AI could not complete scheduling after ${count} slot-selection failures (last: ${code}). Needs a human to confirm a time.`,
       });
     } catch (e) {
       console.error("slot-failure escalation failed:", e);
@@ -116,10 +122,15 @@ export interface ToolContext {
 }
 
 function svc(): SupabaseClient {
-  return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  return createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
 }
 
-async function callFunction(name: string, body: unknown): Promise<{ status: number; json: any }> {
+async function callFunction(
+  name: string,
+  body: unknown,
+): Promise<{ status: number; json: any }> {
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
     headers: {
@@ -131,7 +142,11 @@ async function callFunction(name: string, body: unknown): Promise<{ status: numb
     body: JSON.stringify(body),
   });
   let json: any = null;
-  try { json = await resp.json(); } catch { json = null; }
+  try {
+    json = await resp.json();
+  } catch {
+    json = null;
+  }
   return { status: resp.status, json };
 }
 
@@ -142,10 +157,14 @@ async function callFunction(name: string, body: unknown): Promise<{ status: numb
 // ---------------------------------------------------------------------------
 function buildQuoteRequest(a: Record<string, unknown>) {
   const services: string[] = Array.isArray(a.services)
-    ? (a.services as string[]).filter((s) => (ALLOWED_SERVICES as readonly string[]).includes(s))
+    ? (a.services as string[]).filter((s) =>
+      (ALLOWED_SERVICES as readonly string[]).includes(s)
+    )
     : [];
   const has = (s: string) => services.includes(s);
-  const num = (v: unknown) => (v === undefined || v === null || v === "" ? NaN : Number(v));
+  const num = (
+    v: unknown,
+  ) => (v === undefined || v === null || v === "" ? NaN : Number(v));
 
   return {
     homeDetails: {
@@ -170,7 +189,10 @@ function buildQuoteRequest(a: Record<string, unknown>) {
       pressureWashing: {
         enabled: has("pressure_washing"),
         surfaceType: (a.pressureWashSurface as string) || "concrete",
-        frontPorch: { enabled: has("pressure_washing"), sqft: num(a.pressureWashSqft) },
+        frontPorch: {
+          enabled: has("pressure_washing"),
+          sqft: num(a.pressureWashSqft),
+        },
         backPatio: { enabled: false, sqft: 0 },
         poolDeck: { enabled: false, sqft: 0 },
         walkways: { enabled: false, sqft: 0 },
@@ -187,7 +209,10 @@ function buildQuoteRequest(a: Record<string, unknown>) {
 // ---------------------------------------------------------------------------
 // TOOL: calculate_bluladder_quote — the ONLY source of prices.
 // ---------------------------------------------------------------------------
-async function calculateQuoteTool(ctx: ToolContext, args: Record<string, unknown>) {
+async function calculateQuoteTool(
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
   const req = buildQuoteRequest(args);
   const services = req.__services;
 
@@ -196,13 +221,16 @@ async function calculateQuoteTool(ctx: ToolContext, args: Record<string, unknown
       status: "missing_information",
       firm: false,
       missingQuestions: ["Which service(s) are you interested in?"],
-      customerExplanation: "Let me know which services you'd like so I can price them.",
+      customerExplanation:
+        "Let me know which services you'd like so I can price them.",
     };
   }
 
   // Flag manual-review conditions BEFORE pricing so we never present a firm price.
   const requestedText = JSON.stringify(args).toLowerCase();
-  const manualHit = MANUAL_REVIEW_SERVICES.find((m) => requestedText.includes(m.replace(/_/g, " ")) || requestedText.includes(m));
+  const manualHit = MANUAL_REVIEW_SERVICES.find((m) =>
+    requestedText.includes(m.replace(/_/g, " ")) || requestedText.includes(m)
+  );
 
   const { status, json } = await callFunction("calculate-quote", {
     homeDetails: req.homeDetails,
@@ -214,11 +242,17 @@ async function calculateQuoteTool(ctx: ToolContext, args: Record<string, unknown
     return {
       status: "pricing_unavailable",
       firm: false,
-      customerExplanation: "Our pricing system is temporarily unavailable — I can take your details and have the team follow up right away.",
+      customerExplanation:
+        "Our pricing system is temporarily unavailable — I can take your details and have the team follow up right away.",
     };
   }
   if (status !== 200 || !json) {
-    return { status: "error", firm: false, customerExplanation: "I couldn't calculate that just now. Let me get the team to follow up." };
+    return {
+      status: "error",
+      firm: false,
+      customerExplanation:
+        "I couldn't calculate that just now. Let me get the team to follow up.",
+    };
   }
 
   // Persist latest quote snapshot (with pricing version) onto the conversation.
@@ -242,7 +276,9 @@ async function calculateQuoteTool(ctx: ToolContext, args: Record<string, unknown
   if (quoteStatus === "firm" || quoteStatus === "estimated") {
     const servicesKey = [...services].sort().join(",");
     await emitCampaignEvent(ctx, "quote_calculated", {
-      idempotencyKey: `quote_calculated:${ctx.conversationId}:${json.ruleVersion ?? "v0"}:${servicesKey}`,
+      idempotencyKey: `quote_calculated:${ctx.conversationId}:${
+        json.ruleVersion ?? "v0"
+      }:${servicesKey}`,
       metadata: {
         service_types: services,
         quote_status: quoteStatus,
@@ -266,7 +302,10 @@ async function calculateQuoteTool(ctx: ToolContext, args: Record<string, unknown
     estimatedDurationMinutes: json.estimatedDurationMinutes ?? null,
     missingQuestions: json.missing ?? [],
     manualReviewReasons: manualHit
-      ? [`${manualHit} requires a manual quote`, ...(json.manualReviewReasons ?? [])]
+      ? [
+        `${manualHit} requires a manual quote`,
+        ...(json.manualReviewReasons ?? []),
+      ]
       : json.manualReviewReasons ?? [],
     customerExplanation: manualHit
       ? "That type of work needs a quick manual review by our team so we quote it correctly — I can collect your details."
@@ -277,7 +316,10 @@ async function calculateQuoteTool(ctx: ToolContext, args: Record<string, unknown
 // ---------------------------------------------------------------------------
 // TOOL: get_bluladder_availability — repaired availability, IDs stripped.
 // ---------------------------------------------------------------------------
-async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>) {
+async function availabilityTool(
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
   // Require a prior firm/estimated quote so duration/price feed scheduling.
   const { data: convo } = await ctx.supabase
     .from("chat_conversations")
@@ -288,15 +330,23 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
   if (convo?.service_area_status !== "eligible") {
     return {
       status: "need_service_area",
-      message: "Confirm the service address is in our area before offering times. Use validate_service_area first.",
+      message:
+        "Confirm the service address is in our area before offering times. Use validate_service_area first.",
     };
   }
   const quote = convo?.quote_result as any;
-  if (!quote || !Array.isArray(quote.lineItems) || quote.lineItems.length === 0) {
-    return { status: "need_quote_first", message: "Get a quote before checking availability." };
+  if (
+    !quote || !Array.isArray(quote.lineItems) || quote.lineItems.length === 0
+  ) {
+    return {
+      status: "need_quote_first",
+      message: "Get a quote before checking availability.",
+    };
   }
 
-  const services = (quote.jobberLineItems ?? quote.lineItems ?? []).map((li: any) => ({
+  const services = (quote.jobberLineItems ?? quote.lineItems ?? []).map((
+    li: any,
+  ) => ({
     service: li.name ?? li.label ?? "service",
     price: Number(li.unitPrice ?? li.amount ?? 0),
   }));
@@ -312,7 +362,9 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const rawStartDate = typeof args.startDate === "string" ? args.startDate.trim() : "";
+  const rawStartDate = typeof args.startDate === "string"
+    ? args.startDate.trim()
+    : "";
   const startDate =
     /^\d{4}-\d{2}-\d{2}$/.test(rawStartDate) && rawStartDate >= todayCentral
       ? rawStartDate
@@ -328,12 +380,20 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
   });
 
   if (status !== 200 || !json) {
-    return { status: "unavailable", message: "I couldn't load times just now. Please try again or contact BluLadder directly." };
+    return {
+      status: "unavailable",
+      message:
+        "I couldn't load times just now. Please try again or contact BluLadder directly.",
+    };
   }
   // Withhold stale / sync-in-progress availability (the function returns a
   // customer-safe message in those cases).
   if (json.unavailable || json.stale || json.syncInProgress || json.error) {
-    return { status: "unavailable", message: json.message || "Scheduling is briefly syncing. Please try again or contact BluLadder directly." };
+    return {
+      status: "unavailable",
+      message: json.message ||
+        "Scheduling is briefly syncing. Please try again or contact BluLadder directly.",
+    };
   }
 
   const rawSlots: any[] = json.recommendations || json.slots || [];
@@ -378,8 +438,14 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
   return {
     status: "ok",
     offerExpiresAt: expiresAt,
-    slots: offered.map(({ slotId, startTime, endTime, displayTime, durationMinutes }) => ({
-      slotId, startTime, endTime, displayTime, durationMinutes,
+    slots: offered.map((
+      { slotId, startTime, endTime, displayTime, durationMinutes },
+    ) => ({
+      slotId,
+      startTime,
+      endTime,
+      displayTime,
+      durationMinutes,
     })),
   };
 }
@@ -387,38 +453,55 @@ async function availabilityTool(ctx: ToolContext, args: Record<string, unknown>)
 // ---------------------------------------------------------------------------
 // TOOL: create_bluladder_booking — explicit confirmation + prior slot required.
 // ---------------------------------------------------------------------------
-async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>) {
-  // Phase 7 (voice booking) MVP: voice channel is fail-closed by default and
-  // returns a dry-run receipt, matching the Phase 4C-β safeguard. Setting
-  // VOICE_LIVE_BOOKING_ENABLED=true unlocks the same booking pipeline used by
-  // SMS/web (identity, quote, reservation, executeSmsBooking, Jobber write,
-  // outbox confirmation). All Phase 6 guards (readiness, test-identity
-  // suppression, one-time live-Jobber authorization) continue to apply
-  // downstream, so flipping this flag alone can never bypass them.
-  if (ctx.channel === "voice" && !voiceLiveBookingEnabled()) {
+async function createBookingTool(
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
+  // Live voice mutation is intentionally not representable in this stage.
+  if (ctx.channel === "voice") {
     return {
       status: "voice_beta_dry_run",
       simulated: true,
       message:
-        "Booking isn't available on this voice test line yet — the team will confirm through our normal contact options.",
+        "This voice test did not create an appointment. Please use the online booking flow or contact the office.",
     };
   }
   if (args.confirmed !== true) {
-    return { status: "not_confirmed", message: "The customer must explicitly confirm before booking." };
+    return {
+      status: "not_confirmed",
+      message: "The customer must explicitly confirm before booking.",
+    };
   }
   const slotId = String(args.slotId || "");
-  if (!slotId) return { status: "missing_slot", message: "Select an available time first." };
+  if (!slotId) {
+    return {
+      status: "missing_slot",
+      message: "Select an available time first.",
+    };
+  }
 
   const { data: convo } = await ctx.supabase
     .from("chat_conversations")
-    .select("quote_result, prospect_name, prospect_email, prospect_phone, service_address")
+    .select(
+      "quote_result, prospect_name, prospect_email, prospect_phone, service_address",
+    )
     .eq("id", ctx.conversationId)
     .maybeSingle();
   const quote = convo?.quote_result as any;
-  if (!quote) return { status: "need_quote_first", message: "A firm quote is required before booking." };
+  if (!quote) {
+    return {
+      status: "need_quote_first",
+      message: "A firm quote is required before booking.",
+    };
+  }
 
   const email = convo?.prospect_email;
-  if (!email) return { status: "missing_contact", message: "I need the customer's email to book." };
+  if (!email) {
+    return {
+      status: "missing_contact",
+      message: "I need the customer's email to book.",
+    };
+  }
 
   // Defect 2: resolve the slot against the LATEST availability offer only, and
   // validate it is genuinely current before touching Jobber. Distinct outcomes
@@ -433,26 +516,58 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
     .order("created_at", { ascending: false })
     .limit(1);
   const latest = toolMsgs?.[0]?.tool_result as
-    | { offered?: any[]; offerVersion?: string; expiresAt?: string; quoteSignature?: string }
+    | {
+      offered?: any[];
+      offerVersion?: string;
+      expiresAt?: string;
+      quoteSignature?: string;
+    }
     | undefined;
   const offered = latest?.offered;
 
   // Not in the latest offer → the id is stale (a prior offer) or absent. Refresh.
   const slot = offered?.find((s) => s.slotId === slotId);
   if (!slot) {
-    await recordSlotFailure(ctx, "slot_stale_not_in_latest_offer", `slotId ${slotId} not in latest offer ${latest?.offerVersion ?? "none"}`, convo);
-    return { status: "schedule_refresh_required", message: "That time isn't from the latest options — let me pull fresh availability and show current times." };
+    await recordSlotFailure(
+      ctx,
+      "slot_stale_not_in_latest_offer",
+      `slotId ${slotId} not in latest offer ${latest?.offerVersion ?? "none"}`,
+      convo,
+    );
+    return {
+      status: "schedule_refresh_required",
+      message:
+        "That time isn't from the latest options — let me pull fresh availability and show current times.",
+    };
   }
   // Offer expired.
   if (latest?.expiresAt && Date.now() > new Date(latest.expiresAt).getTime()) {
-    await recordSlotFailure(ctx, "offer_expired", `offer ${latest.offerVersion} expired at ${latest.expiresAt}`, convo);
-    return { status: "slot_expired", message: "That set of times has expired — let me pull fresh availability so we book a time that's genuinely open." };
+    await recordSlotFailure(
+      ctx,
+      "offer_expired",
+      `offer ${latest.offerVersion} expired at ${latest.expiresAt}`,
+      convo,
+    );
+    return {
+      status: "slot_expired",
+      message:
+        "That set of times has expired — let me pull fresh availability so we book a time that's genuinely open.",
+    };
   }
   // Quote/service details changed since the offer.
   const currentSignature = computeQuoteSignature(quote);
   if (latest?.quoteSignature && latest.quoteSignature !== currentSignature) {
-    await recordSlotFailure(ctx, "quote_changed_since_offer", "quote signature changed since availability offer", convo);
-    return { status: "quote_changed", message: "The quote or service details changed since those times were offered — let me re-check availability for the current quote." };
+    await recordSlotFailure(
+      ctx,
+      "quote_changed_since_offer",
+      "quote signature changed since availability offer",
+      convo,
+    );
+    return {
+      status: "quote_changed",
+      message:
+        "The quote or service details changed since those times were offered — let me re-check availability for the current quote.",
+    };
   }
 
   // Two related keys:
@@ -472,16 +587,22 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   // one-time, single-use authorization scoped to THIS conversation + slot +
   // idempotency key. Message suppression (SMS/email/CallRail/campaigns/internal
   // alerts) stays fully active either way; it lives at the delivery layer.
-  const suppression = await checkSuppression(ctx.supabase, { email, phone: convo?.prospect_phone });
+  const suppression = await checkSuppression(ctx.supabase, {
+    email,
+    phone: convo?.prospect_phone,
+  });
   if (suppression.suppressed) {
     let authStatus = "denied";
     try {
-      const { data: auth } = await ctx.supabase.rpc("consume_live_jobber_authorization", {
-        p_email: email,
-        p_conversation_id: ctx.conversationId,
-        p_slot_id: slotId,
-        p_idempotency_key: authKey,
-      });
+      const { data: auth } = await ctx.supabase.rpc(
+        "consume_live_jobber_authorization",
+        {
+          p_email: email,
+          p_conversation_id: ctx.conversationId,
+          p_slot_id: slotId,
+          p_idempotency_key: authKey,
+        },
+      );
       authStatus = (auth as { status?: string } | null)?.status ?? "denied";
     } catch (e) {
       console.error("consume_live_jobber_authorization failed:", e);
@@ -494,13 +615,15 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
     // conversation, slot, identity or key) stays fully simulated.
     if (authStatus !== "authorized" && authStatus !== "already_consumed") {
       await ctx.supabase.from("chat_conversations").update({
-        booking_status: "confirmed", last_activity_at: new Date().toISOString(),
+        booking_status: "confirmed",
+        last_activity_at: new Date().toISOString(),
       }).eq("id", ctx.conversationId);
       return {
         status: "confirmed",
         confirmedTime: slot.displayTime,
         simulated: true,
-        message: "Booking confirmed (test identity — no live Jobber record created).",
+        message:
+          "Booking confirmed (test identity — no live Jobber record created).",
       };
     }
     // authorized / already_consumed → fall through to the real Jobber write.
@@ -521,15 +644,25 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
     scheduledStart: slot.startTime,
     scheduledEnd: slot.endTime,
     homeDetails: quote.__homeDetails ?? quote.homeDetails ?? {},
-    additionalServices: quote.__additionalServices ?? quote.additionalServices ?? undefined,
+    additionalServices: quote.__additionalServices ??
+      quote.additionalServices ?? undefined,
     idempotencyKey,
   });
 
   if (status === 409 && json?.code === "CONFLICT") {
     // A GENUINE reservation conflict. This is the only path that may tell the
     // customer a time was actually taken.
-    await recordSlotFailure(ctx, "reservation_conflict_409", "jobber-create-booking returned 409 (real conflict)", convo);
-    return { status: "slot_taken", message: "That exact time was just booked by someone else — let me get the current openings." };
+    await recordSlotFailure(
+      ctx,
+      "reservation_conflict_409",
+      "jobber-create-booking returned 409 (real conflict)",
+      convo,
+    );
+    return {
+      status: "slot_taken",
+      message:
+        "That exact time was just booked by someone else — let me get the current openings.",
+    };
   }
   if (
     json?.code === "INTERVENTION_RECORD_FAILED" ||
@@ -548,14 +681,25 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
     };
   }
   if (status === 503) {
-    await recordSlotFailure(ctx, "provider_unavailable_503", "jobber-create-booking returned 503 (provider unavailable)", convo);
-    return { status: "temporarily_unavailable", message: "Our booking system is briefly unavailable. No appointment or follow-up request was created; please try again in a moment." };
+    await recordSlotFailure(
+      ctx,
+      "provider_unavailable_503",
+      "jobber-create-booking returned 503 (provider unavailable)",
+      convo,
+    );
+    return {
+      status: "temporarily_unavailable",
+      message:
+        "Our booking system is briefly unavailable. No appointment or follow-up request was created; please try again in a moment.",
+    };
   }
   const visitId = json?.jobberVisitId || json?.visitId;
   if (json?.status === "needs_attention" || json?.needsAttention) {
     await ctx.supabase.from("chat_conversations").update({
-      booking_status: "needs_attention", needs_attention: true,
-      last_error: "booking needs_attention", last_activity_at: new Date().toISOString(),
+      booking_status: "needs_attention",
+      needs_attention: true,
+      last_error: "booking needs_attention",
+      last_activity_at: new Date().toISOString(),
     }).eq("id", ctx.conversationId);
     // needs_attention itself is a first-class escalation path.
     try {
@@ -567,7 +711,8 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
         prospectPhone: convo?.prospect_phone ?? null,
         prospectEmail: email,
         serviceAddress: convo?.service_address ?? null,
-        summary: "Booking returned needs_attention; a human should confirm the appointment.",
+        summary:
+          "Booking returned needs_attention; a human should confirm the appointment.",
       });
       if (!escalation.escalationId) {
         return {
@@ -579,8 +724,7 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
       const office = await getPhoneByPurpose(ctx.supabase, "primary_public");
       return {
         status: "needs_attention",
-        message:
-          "Your appointment is not confirmed. " +
+        message: "Your appointment is not confirmed. " +
           customerEscalationMessage(
             escalation.deliveryState,
             escalation.severity,
@@ -596,14 +740,27 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   }
   if (status !== 200 || !visitId) {
     await ctx.supabase.from("chat_conversations").update({
-      booking_status: "failed", needs_attention: true, last_error: json?.error || "booking failed",
+      booking_status: "failed",
+      needs_attention: true,
+      last_error: json?.error || "booking failed",
     }).eq("id", ctx.conversationId);
-    await recordSlotFailure(ctx, "internal_booking_error", `status ${status}, no visit id (${json?.error ?? "unknown"})`, convo);
-    return { status: "error", message: "I couldn't finalize the booking, and no appointment is confirmed. Please try again or contact BluLadder directly." };
+    await recordSlotFailure(
+      ctx,
+      "internal_booking_error",
+      `status ${status}, no visit id (${json?.error ?? "unknown"})`,
+      convo,
+    );
+    return {
+      status: "error",
+      message:
+        "I couldn't finalize the booking, and no appointment is confirmed. Please try again or contact BluLadder directly.",
+    };
   }
 
   await ctx.supabase.from("chat_conversations").update({
-    booking_status: "confirmed", slot_failure_count: 0, last_activity_at: new Date().toISOString(),
+    booking_status: "confirmed",
+    slot_failure_count: 0,
+    last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
 
   // Persist the original result against the (now-consumed) authorization so an
@@ -612,7 +769,11 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
   try {
     await ctx.supabase.rpc("record_live_jobber_authorization_result", {
       p_email: email,
-      p_result: { status: "confirmed", jobberVisitId: visitId, confirmedTime: slot.displayTime },
+      p_result: {
+        status: "confirmed",
+        jobberVisitId: visitId,
+        confirmedTime: slot.displayTime,
+      },
     });
   } catch (_e) { /* audit-only; never block a confirmed booking */ }
 
@@ -630,7 +791,10 @@ async function createBookingTool(ctx: ToolContext, args: Record<string, unknown>
 // ---------------------------------------------------------------------------
 // TOOL: validate_service_area — geocode-based eligibility. Never rejects/books.
 // ---------------------------------------------------------------------------
-async function validateServiceAreaTool(ctx: ToolContext, args: Record<string, unknown>) {
+async function validateServiceAreaTool(
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
   const address = String(args.address || "").trim();
   if (!address) {
     return {
@@ -650,13 +814,15 @@ async function validateServiceAreaTool(ctx: ToolContext, args: Record<string, un
       .select("service_area_status, service_address")
       .eq("id", ctx.conversationId)
       .maybeSingle();
-    const sameAddress =
-      typeof prior?.service_address === "string" &&
-      prior.service_address.trim().toLowerCase().startsWith(address.trim().toLowerCase().slice(0, 8));
+    const sameAddress = typeof prior?.service_address === "string" &&
+      prior.service_address.trim().toLowerCase().startsWith(
+        address.trim().toLowerCase().slice(0, 8),
+      );
     if (prior?.service_area_status === "eligible" && sameAddress) {
       return {
         status: "eligible",
-        customerMessage: "You're all set — that address is in our service area.",
+        customerMessage:
+          "You're all set — that address is in our service area.",
       };
     }
   }
@@ -667,9 +833,12 @@ async function validateServiceAreaTool(ctx: ToolContext, args: Record<string, un
       service_address: result.formattedAddress || address,
       service_area_status: result.status,
       service_area_result: result,
-      manual_review_reason:
-        result.status === "manual_review_required" ? result.reason ?? "Outside primary service area" : undefined,
-      needs_attention: result.status === "manual_review_required" ? true : undefined,
+      manual_review_reason: result.status === "manual_review_required"
+        ? result.reason ?? "Outside primary service area"
+        : undefined,
+      needs_attention: result.status === "manual_review_required"
+        ? true
+        : undefined,
       last_activity_at: new Date().toISOString(),
     })
     .eq("id", ctx.conversationId);
@@ -688,13 +857,18 @@ async function validateServiceAreaTool(ctx: ToolContext, args: Record<string, un
 // ---------------------------------------------------------------------------
 // TOOL: request_manual_quote — unconfigured / unusual work. No firm price.
 // ---------------------------------------------------------------------------
-async function manualQuoteTool(ctx: ToolContext, args: Record<string, unknown>) {
+async function manualQuoteTool(
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
   await ctx.supabase.from("chat_conversations").update({
     prospect_name: (args.name as string) || undefined,
     prospect_email: (args.email as string) || undefined,
     prospect_phone: (args.phone as string) || undefined,
     manual_review_reason: (args.reason as string) || "Manual quote requested",
-    services_discussed: Array.isArray(args.services) ? args.services : undefined,
+    services_discussed: Array.isArray(args.services)
+      ? args.services
+      : undefined,
     summary: (args.summary as string) || undefined,
     booking_status: "quoted",
     needs_attention: true,
@@ -706,16 +880,25 @@ async function manualQuoteTool(ctx: ToolContext, args: Record<string, unknown>) 
     email: (args.email as string) || undefined,
     phone: (args.phone as string) || undefined,
     subject: "AI chat manual quote",
-    metadata: { service_types: Array.isArray(args.services) ? args.services : [] },
+    metadata: {
+      service_types: Array.isArray(args.services) ? args.services : [],
+    },
   });
 
-  return { status: "saved", event: "manual_quote_requested", message: "Flagged for the team to prepare a manual quote." };
+  return {
+    status: "saved",
+    event: "manual_quote_requested",
+    message: "Flagged for the team to prepare a manual quote.",
+  };
 }
 
 // ---------------------------------------------------------------------------
 // TOOL: request_human_callback
 // ---------------------------------------------------------------------------
-async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>) {
+async function humanCallbackTool(
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
   const email = (args.email as string) || undefined;
   const phone = (args.phone as string) || undefined;
   const method = (args.contactMethod as string) || "phone";
@@ -735,19 +918,41 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
 
   // A callback grants ONLY the consent needed to fulfil the callback request
   // (requested_follow_up), on the channel the customer chose — never marketing.
-  const followUpLang = `You asked us to contact you about this request via ${method}.`;
+  const followUpLang =
+    `You asked us to contact you about this request via ${method}.`;
   if ((method === "text" || method === "phone") && phone) {
-    await recordConsent(ctx, { channel: "sms", consentType: "requested_follow_up", granted: true, phone, email, languageShown: followUpLang, source: "chat_callback" });
+    await recordConsent(ctx, {
+      channel: "sms",
+      consentType: "requested_follow_up",
+      granted: true,
+      phone,
+      email,
+      languageShown: followUpLang,
+      source: "chat_callback",
+    });
   }
   if (method === "email" && email) {
-    await recordConsent(ctx, { channel: "email", consentType: "requested_follow_up", granted: true, phone, email, languageShown: followUpLang, source: "chat_callback" });
+    await recordConsent(ctx, {
+      channel: "email",
+      consentType: "requested_follow_up",
+      granted: true,
+      phone,
+      email,
+      languageShown: followUpLang,
+      source: "chat_callback",
+    });
   }
-  await emitCampaignEvent(ctx, "callback_requested", { email, phone, subject: "AI chat callback" });
+  await emitCampaignEvent(ctx, "callback_requested", {
+    email,
+    phone,
+    subject: "AI chat callback",
+  });
 
   // Create ONE active internal escalation for this conversation + category and
   // (if a recipient is configured) queue a suppression-checked internal alert.
   const reason = (args.reason as string) || "";
-  const unanswered = /can'?t (confirm|answer)|not sure|unsure|don'?t know|missing/i.test(reason);
+  const unanswered =
+    /can'?t (confirm|answer)|not sure|unsure|don'?t know|missing/i.test(reason);
   const cbResult = await escalateToHuman(ctx.supabase, {
     conversationId: ctx.conversationId,
     category: unanswered ? "unanswered_question" : "human_request",
@@ -770,13 +975,18 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
   // Customer-facing language is derived from the ACTUAL delivery state — never
   // a claim of delivery the workflow hasn't confirmed. Office number is resolved
   // from the centralized purpose-based phone config (never hard-coded here).
-  const cbOffice = (await getPhoneByPurpose(ctx.supabase, "primary_public")).display;
+  const cbOffice =
+    (await getPhoneByPurpose(ctx.supabase, "primary_public")).display;
   return {
     status: "saved",
     event: "callback_requested",
     deliveryState: cbResult.deliveryState,
     severity: cbResult.severity,
-    message: customerEscalationMessage(cbResult.deliveryState, cbResult.severity, cbOffice),
+    message: customerEscalationMessage(
+      cbResult.deliveryState,
+      cbResult.severity,
+      cbOffice,
+    ),
   };
 }
 
@@ -786,16 +996,27 @@ async function humanCallbackTool(ctx: ToolContext, args: Record<string, unknown>
 // suppression-checked internal alert (never spams; higher severity may add one).
 // ---------------------------------------------------------------------------
 const ESCALATION_CATEGORIES = new Set([
-  "human_request", "manual_quote", "complaint", "damage", "billing_dispute",
-  "pricing_unverified", "booking_needs_attention", "service_area_review",
-  "unanswered_question", "confused_conversation", "urgent", "other",
+  "human_request",
+  "manual_quote",
+  "complaint",
+  "damage",
+  "billing_dispute",
+  "pricing_unverified",
+  "booking_needs_attention",
+  "service_area_review",
+  "unanswered_question",
+  "confused_conversation",
+  "urgent",
+  "other",
 ]);
 
 async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
   const rawCat = String(args.category || "other");
   const category = ESCALATION_CATEGORIES.has(rawCat) ? rawCat : "other";
-  const severity = ["low", "normal", "high", "urgent"].includes(String(args.severity))
-    ? String(args.severity) : "normal";
+  const severity =
+    ["low", "normal", "high", "urgent"].includes(String(args.severity))
+      ? String(args.severity)
+      : "normal";
   const phone = (args.phone as string) || undefined;
   const email = (args.email as string) || undefined;
 
@@ -831,7 +1052,8 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
 
   if (category === "unanswered_question") {
     await recordKnowledgeGap(ctx.supabase, {
-      question: (args.summary as string) || (args.reason as string) || "unspecified",
+      question: (args.summary as string) || (args.reason as string) ||
+        "unspecified",
       reason: "Escalated as an unanswered question.",
       isHandoff: true,
     });
@@ -841,13 +1063,18 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
   // state. The model must relay this `message` and MUST NOT claim an alert was
   // sent unless deliveryState is a confirmed-sent state. Office number comes
   // from the centralized purpose-based phone config.
-  const escOffice = (await getPhoneByPurpose(ctx.supabase, "primary_public")).display;
+  const escOffice =
+    (await getPhoneByPurpose(ctx.supabase, "primary_public")).display;
   return {
     status: "escalated",
     event: "human_escalation",
     deliveryState: result.deliveryState,
     severity: result.severity,
-    message: customerEscalationMessage(result.deliveryState, result.severity, escOffice),
+    message: customerEscalationMessage(
+      result.deliveryState,
+      result.severity,
+      escOffice,
+    ),
   };
 }
 
@@ -857,7 +1084,15 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
 // ---------------------------------------------------------------------------
 async function recordConsent(
   ctx: ToolContext,
-  o: { channel: "sms" | "email"; consentType: "transactional" | "requested_follow_up" | "marketing"; granted: boolean; email?: string; phone?: string; languageShown: string; source: string },
+  o: {
+    channel: "sms" | "email";
+    consentType: "transactional" | "requested_follow_up" | "marketing";
+    granted: boolean;
+    email?: string;
+    phone?: string;
+    languageShown: string;
+    source: string;
+  },
 ) {
   try {
     await ctx.supabase.rpc("record_consent", {
@@ -880,7 +1115,13 @@ async function recordConsent(
 async function emitCampaignEvent(
   ctx: ToolContext,
   eventName: string,
-  o: { email?: string; phone?: string; subject?: string; metadata?: Record<string, unknown>; idempotencyKey?: string },
+  o: {
+    email?: string;
+    phone?: string;
+    subject?: string;
+    metadata?: Record<string, unknown>;
+    idempotencyKey?: string;
+  },
 ) {
   // Routes through the shared emitter: bounded timeout, transient retries, and
   // — for critical events like consent_revoked — persistence for cron recovery.
@@ -901,31 +1142,64 @@ async function emitCampaignEvent(
 // TOOL: record_consent — the AI records an EXPLICIT consent decision. Marketing
 // consent must be explicit and is never assumed from a phone number or chat.
 // ---------------------------------------------------------------------------
-async function recordConsentTool(ctx: ToolContext, args: Record<string, unknown>) {
+async function recordConsentTool(
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
   const channel = args.channel === "email" ? "email" : "sms";
-  const consentType = ["transactional", "requested_follow_up", "marketing"].includes(String(args.consentType))
-    ? (args.consentType as "transactional" | "requested_follow_up" | "marketing")
-    : null;
+  const consentType =
+    ["transactional", "requested_follow_up", "marketing"].includes(
+        String(args.consentType),
+      )
+      ? (args.consentType as
+        | "transactional"
+        | "requested_follow_up"
+        | "marketing")
+      : null;
   if (!consentType) return { status: "error", message: "Invalid consentType." };
   const granted = args.granted === true;
-  const languageShown = typeof args.languageShown === "string" && args.languageShown.trim()
-    ? args.languageShown.trim()
-    : "Consent language not recorded.";
+  const languageShown =
+    typeof args.languageShown === "string" && args.languageShown.trim()
+      ? args.languageShown.trim()
+      : "Consent language not recorded.";
   const email = (args.email as string) || undefined;
   const phone = (args.phone as string) || undefined;
-  if (channel === "sms" && !phone) return { status: "error", message: "Phone required for SMS consent." };
-  if (channel === "email" && !email) return { status: "error", message: "Email required for email consent." };
+  if (channel === "sms" && !phone) {
+    return { status: "error", message: "Phone required for SMS consent." };
+  }
+  if (channel === "email" && !email) {
+    return { status: "error", message: "Email required for email consent." };
+  }
 
-  await recordConsent(ctx, { channel, consentType, granted, email, phone, languageShown, source: "chat_explicit" });
+  await recordConsent(ctx, {
+    channel,
+    consentType,
+    granted,
+    email,
+    phone,
+    languageShown,
+    source: "chat_explicit",
+  });
 
   if (consentType === "marketing") {
     await ctx.supabase.from("chat_conversations").update({
-      marketing_consent: granted, last_activity_at: new Date().toISOString(),
+      marketing_consent: granted,
+      last_activity_at: new Date().toISOString(),
     }).eq("id", ctx.conversationId);
   }
-  await emitCampaignEvent(ctx, granted ? "consent_granted" : "consent_revoked", { email, phone, subject: `${consentType} ${channel}` });
+  await emitCampaignEvent(
+    ctx,
+    granted ? "consent_granted" : "consent_revoked",
+    { email, phone, subject: `${consentType} ${channel}` },
+  );
 
-  return { status: "saved", channel, consentType, granted, event: granted ? "consent_granted" : "consent_revoked" };
+  return {
+    status: "saved",
+    channel,
+    consentType,
+    granted,
+    event: granted ? "consent_granted" : "consent_revoked",
+  };
 }
 
 export type ToolName =
@@ -938,16 +1212,28 @@ export type ToolName =
   | "escalate_to_human"
   | "record_consent";
 
-export async function runTool(name: string, ctx: ToolContext, args: Record<string, unknown>) {
+export async function runTool(
+  name: string,
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
   switch (name) {
-    case "calculate_bluladder_quote": return await calculateQuoteTool(ctx, args);
-    case "get_bluladder_availability": return await availabilityTool(ctx, args);
-    case "create_bluladder_booking": return await createBookingTool(ctx, args);
-    case "validate_service_area": return await validateServiceAreaTool(ctx, args);
-    case "request_manual_quote": return await manualQuoteTool(ctx, args);
-    case "request_human_callback": return await humanCallbackTool(ctx, args);
-    case "escalate_to_human": return await escalateTool(ctx, args);
-    case "record_consent": return await recordConsentTool(ctx, args);
+    case "calculate_bluladder_quote":
+      return await calculateQuoteTool(ctx, args);
+    case "get_bluladder_availability":
+      return await availabilityTool(ctx, args);
+    case "create_bluladder_booking":
+      return await createBookingTool(ctx, args);
+    case "validate_service_area":
+      return await validateServiceAreaTool(ctx, args);
+    case "request_manual_quote":
+      return await manualQuoteTool(ctx, args);
+    case "request_human_callback":
+      return await humanCallbackTool(ctx, args);
+    case "escalate_to_human":
+      return await escalateTool(ctx, args);
+    case "record_consent":
+      return await recordConsentTool(ctx, args);
     default:
       // Hard allowlist: anything else is refused (prompt-injection safe).
       return { status: "forbidden", message: "Unknown or disallowed tool." };
@@ -960,28 +1246,52 @@ export const TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "calculate_bluladder_quote",
-      description: "Get an authoritative price for BluLadder services. This is the ONLY way to produce a price. Never state a price you did not get from this tool.",
+      description:
+        "Get an authoritative price for BluLadder services. This is the ONLY way to produce a price. Never state a price you did not get from this tool.",
       parameters: {
         type: "object",
         properties: {
-          services: { type: "array", items: { type: "string" }, description: "Service keys: window_cleaning, house_wash, gutter_cleaning, roof_cleaning, driveway_cleaning, pressure_washing." },
+          services: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Service keys: window_cleaning, house_wash, gutter_cleaning, roof_cleaning, driveway_cleaning, pressure_washing.",
+          },
           squareFootage: { type: "number" },
           stories: { type: "number", description: "1, 2, or 3" },
           windowCleaningType: { type: "string", enum: ["exterior", "both"] },
           condition: { type: "string", enum: ["maintenance", "heavy"] },
-          roofType: { type: "string", enum: ["asphalt", "tile", "metal", "flat"] },
-          roofSeverity: { type: "string", enum: ["light", "moderate", "heavy"] },
+          roofType: {
+            type: "string",
+            enum: ["asphalt", "tile", "metal", "flat"],
+          },
+          roofSeverity: {
+            type: "string",
+            enum: ["light", "moderate", "heavy"],
+          },
           drivewaySqft: { type: "number" },
-          drivewaySurface: { type: "string", enum: ["concrete", "stamped", "pavers", "brick", "stone", "tile"] },
+          drivewaySurface: {
+            type: "string",
+            enum: ["concrete", "stamped", "pavers", "brick", "stone", "tile"],
+          },
           pressureWashSqft: { type: "number" },
-          pressureWashSurface: { type: "string", enum: ["concrete", "stamped", "pavers", "brick", "stone", "tile"] },
+          pressureWashSurface: {
+            type: "string",
+            enum: ["concrete", "stamped", "pavers", "brick", "stone", "tile"],
+          },
           address: { type: "string" },
           serviceFrequency: { type: "string" },
           discountCode: { type: "string" },
           customerType: { type: "string" },
           name: { type: "string", description: "Customer name, if provided." },
-          email: { type: "string", description: "Customer email, if provided." },
-          phone: { type: "string", description: "Customer phone, if provided." },
+          email: {
+            type: "string",
+            description: "Customer email, if provided.",
+          },
+          phone: {
+            type: "string",
+            description: "Customer phone, if provided.",
+          },
         },
         required: ["services"],
         additionalProperties: false,
@@ -992,7 +1302,8 @@ export const TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "get_bluladder_availability",
-      description: "Return real available appointment times after a quote exists. Only offer times returned by this tool.",
+      description:
+        "Return real available appointment times after a quote exists. Only offer times returned by this tool.",
       parameters: {
         type: "object",
         properties: {
@@ -1001,8 +1312,14 @@ export const TOOL_DEFINITIONS = [
           daysToCheck: { type: "number" },
           preference: { type: "string", enum: ["AM", "PM", "none"] },
           name: { type: "string", description: "Customer name, if provided." },
-          email: { type: "string", description: "Customer email, if provided." },
-          phone: { type: "string", description: "Customer phone, if provided." },
+          email: {
+            type: "string",
+            description: "Customer email, if provided.",
+          },
+          phone: {
+            type: "string",
+            description: "Customer phone, if provided.",
+          },
         },
         additionalProperties: false,
       },
@@ -1012,13 +1329,18 @@ export const TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "create_bluladder_booking",
-      description: "Book an appointment. ONLY call after the customer explicitly confirms the services, total, address and time (e.g. 'Yes, book this appointment.'). Requires a slotId from get_bluladder_availability.",
+      description:
+        "Book an appointment. ONLY call after the customer explicitly confirms the services, total, address and time (e.g. 'Yes, book this appointment.'). Requires a slotId from get_bluladder_availability.",
       parameters: {
         type: "object",
         properties: {
           slotId: { type: "string" },
           address: { type: "string" },
-          confirmed: { type: "boolean", description: "Must be true and reflect an explicit customer confirmation." },
+          confirmed: {
+            type: "boolean",
+            description:
+              "Must be true and reflect an explicit customer confirmation.",
+          },
         },
         required: ["slotId", "confirmed"],
         additionalProperties: false,
@@ -1029,13 +1351,17 @@ export const TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "request_manual_quote",
-      description: "Use for services/conditions requiring manual review (screens, tracks & sills not in a package, solar-panel cleaning, mobile screen repair, commercial, unusual restoration/access). Saves details for the team. Never present a firm price for these.",
+      description:
+        "Use for services/conditions requiring manual review (screens, tracks & sills not in a package, solar-panel cleaning, mobile screen repair, commercial, unusual restoration/access). Saves details for the team. Never present a firm price for these.",
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string" }, email: { type: "string" }, phone: { type: "string" },
+          name: { type: "string" },
+          email: { type: "string" },
+          phone: { type: "string" },
           services: { type: "array", items: { type: "string" } },
-          reason: { type: "string" }, summary: { type: "string" },
+          reason: { type: "string" },
+          summary: { type: "string" },
         },
         additionalProperties: false,
       },
@@ -1045,11 +1371,15 @@ export const TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "validate_service_area",
-      description: "Check whether a service address is in BluLadder's area. Call this before offering appointment times. Returns eligible, manual_review_required, address_incomplete, or validation_unavailable. Eligibility is geocoded server-side — never decide it yourself from the typed city. Do NOT proceed to booking unless status is 'eligible'.",
+      description:
+        "Check whether a service address is in BluLadder's area. Call this before offering appointment times. Returns eligible, manual_review_required, address_incomplete, or validation_unavailable. Eligibility is geocoded server-side — never decide it yourself from the typed city. Do NOT proceed to booking unless status is 'eligible'.",
       parameters: {
         type: "object",
         properties: {
-          address: { type: "string", description: "Full street address including city, state and ZIP." },
+          address: {
+            type: "string",
+            description: "Full street address including city, state and ZIP.",
+          },
         },
         required: ["address"],
         additionalProperties: false,
@@ -1060,13 +1390,18 @@ export const TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "request_human_callback",
-      description: "Use when the customer asks for a person, or when you cannot safely answer. Saves their contact and preferences for follow-up.",
+      description:
+        "Use when the customer asks for a person, or when you cannot safely answer. Saves their contact and preferences for follow-up.",
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string" }, phone: { type: "string" }, email: { type: "string" },
+          name: { type: "string" },
+          phone: { type: "string" },
+          email: { type: "string" },
           contactMethod: { type: "string", enum: ["phone", "text", "email"] },
-          bestTime: { type: "string" }, reason: { type: "string" }, summary: { type: "string" },
+          bestTime: { type: "string" },
+          reason: { type: "string" },
+          summary: { type: "string" },
         },
         additionalProperties: false,
       },
@@ -1076,15 +1411,39 @@ export const TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "escalate_to_human",
-      description: "Escalate to a real BluLadder team member. Use for: a complaint, possible damage/restoration, a billing dispute, when pricing or availability cannot be verified, when booking/cancellation needs attention, when service-area validation is unavailable, when you cannot answer an important question, when the conversation is repeatedly confused, or an urgent/time-sensitive issue. Creates ONE internal escalation; do not call repeatedly for the same issue.",
+      description:
+        "Escalate to a real BluLadder team member. Use for: a complaint, possible damage/restoration, a billing dispute, when pricing or availability cannot be verified, when booking/cancellation needs attention, when service-area validation is unavailable, when you cannot answer an important question, when the conversation is repeatedly confused, or an urgent/time-sensitive issue. Creates ONE internal escalation; do not call repeatedly for the same issue.",
       parameters: {
         type: "object",
         properties: {
-          category: { type: "string", enum: ["human_request","manual_quote","complaint","damage","billing_dispute","pricing_unverified","booking_needs_attention","service_area_review","unanswered_question","confused_conversation","urgent","other"] },
-          severity: { type: "string", enum: ["low","normal","high","urgent"] },
-          name: { type: "string" }, phone: { type: "string" }, email: { type: "string" },
-          service: { type: "string" }, contactMethod: { type: "string", enum: ["phone","text","email"] },
-          reason: { type: "string" }, summary: { type: "string" },
+          category: {
+            type: "string",
+            enum: [
+              "human_request",
+              "manual_quote",
+              "complaint",
+              "damage",
+              "billing_dispute",
+              "pricing_unverified",
+              "booking_needs_attention",
+              "service_area_review",
+              "unanswered_question",
+              "confused_conversation",
+              "urgent",
+              "other",
+            ],
+          },
+          severity: {
+            type: "string",
+            enum: ["low", "normal", "high", "urgent"],
+          },
+          name: { type: "string" },
+          phone: { type: "string" },
+          email: { type: "string" },
+          service: { type: "string" },
+          contactMethod: { type: "string", enum: ["phone", "text", "email"] },
+          reason: { type: "string" },
+          summary: { type: "string" },
         },
         required: ["category"],
         additionalProperties: false,
@@ -1095,16 +1454,23 @@ export const TOOL_DEFINITIONS = [
     type: "function",
     function: {
       name: "record_consent",
-      description: "Record an EXPLICIT communication-consent decision the customer just made. Use a SEPARATE call for each channel/type. Never assume marketing consent from a phone number, a chat, or a quote request — only call with consentType 'marketing' when the customer explicitly opted in to occasional promotions. Use 'requested_follow_up' when they asked to be contacted about THIS request. Always pass the exact languageShown you presented. Never send SMS or email yourself.",
+      description:
+        "Record an EXPLICIT communication-consent decision the customer just made. Use a SEPARATE call for each channel/type. Never assume marketing consent from a phone number, a chat, or a quote request — only call with consentType 'marketing' when the customer explicitly opted in to occasional promotions. Use 'requested_follow_up' when they asked to be contacted about THIS request. Always pass the exact languageShown you presented. Never send SMS or email yourself.",
       parameters: {
         type: "object",
         properties: {
           channel: { type: "string", enum: ["sms", "email"] },
-          consentType: { type: "string", enum: ["transactional", "requested_follow_up", "marketing"] },
+          consentType: {
+            type: "string",
+            enum: ["transactional", "requested_follow_up", "marketing"],
+          },
           granted: { type: "boolean" },
           email: { type: "string" },
           phone: { type: "string" },
-          languageShown: { type: "string", description: "The exact consent wording shown to the customer." },
+          languageShown: {
+            type: "string",
+            description: "The exact consent wording shown to the customer.",
+          },
         },
         required: ["channel", "consentType", "granted", "languageShown"],
         additionalProperties: false,
