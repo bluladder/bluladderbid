@@ -44,7 +44,9 @@ function errorStatus(err: AdapterRequestError): number {
     case "too_large": return 413;
     case "malformed_json":
     case "missing_messages":
-    case "empty_conversation": return 400;
+    case "empty_conversation":
+    case "invalid_session_identifier":
+    case "conflicting_session_identifiers": return 400;
   }
 }
 

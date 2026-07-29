@@ -23,8 +23,28 @@ function stubSupabase(): any {
     single: async () => ({ data: null, error: null }),
     then: (fn: any) => fn({ data: [], error: null }),
   };
+  let insertingConversation = false;
+  const conversationQuery = {
+    select: () => conversationQuery,
+    insert: () => {
+      insertingConversation = true;
+      return conversationQuery;
+    },
+    upsert: () => conversationQuery,
+    eq: () => conversationQuery,
+    order: () => conversationQuery,
+    limit: () => conversationQuery,
+    maybeSingle: async () => ({ data: null, error: null }),
+    single: async () => ({
+      data: insertingConversation
+        ? { id: "conv_test", session_token: "synthetic-test" }
+        : null,
+      error: null,
+    }),
+    then: (fn: any) => fn({ data: [], error: null }),
+  };
   return {
-    from: () => q,
+    from: (table: string) => table === "chat_conversations" ? conversationQuery : q,
     rpc: async () => ({ data: [], error: null }),
   };
 }

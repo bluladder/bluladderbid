@@ -108,15 +108,39 @@ Deno.test("parseAdapterRequest: Vapi body.call.id becomes stable session id", as
   assertEquals(parsed.value.sessionIdIsSynthetic, false);
 });
 
-Deno.test("parseAdapterRequest: header overrides body.call.id", async () => {
+Deno.test("parseAdapterRequest: rejects a header that conflicts with body.call.id", async () => {
   const req = makeReq(
     { ...basicGreetingRequest, call: { id: "abc-123-vapi" } },
     { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "override-1" } },
   );
   const parsed = await parseAdapterRequest(req);
-  assert(parsed.ok);
-  if (!parsed.ok) return;
-  assertEquals(parsed.value.sessionId, "override-1");
+  assert(!parsed.ok);
+  if (!parsed.ok) assertEquals(parsed.error.kind, "conflicting_session_identifiers");
+});
+
+Deno.test("parseAdapterRequest: a repeated generic user cannot join distinct provider calls", async () => {
+  const first = await parseAdapterRequest(makeReq({
+    ...basicGreetingRequest,
+    user: "shared-caller",
+    call: { id: "provider-call-a" },
+  }));
+  const second = await parseAdapterRequest(makeReq({
+    ...basicGreetingRequest,
+    user: "shared-caller",
+    call: { id: "provider-call-b" },
+  }));
+  assert(!first.ok && !second.ok);
+  if (!first.ok) assertEquals(first.error.kind, "conflicting_session_identifiers");
+  if (!second.ok) assertEquals(second.error.kind, "conflicting_session_identifiers");
+});
+
+Deno.test("parseAdapterRequest: rejects unbounded or hostile session identifiers", async () => {
+  const parsed = await parseAdapterRequest(makeReq(
+    basicGreetingRequest,
+    { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "../ customer one" } },
+  ));
+  assert(!parsed.ok);
+  if (!parsed.ok) assertEquals(parsed.error.kind, "invalid_session_identifier");
 });
 
 Deno.test("parseAdapterRequest: two turns from same Vapi call share sessionId", async () => {
@@ -175,6 +199,56 @@ Deno.test("ensureVoiceConversation: inserts a voice conversation for new session
   const got = await ensureVoiceConversation({ supabase, request: parsed.value });
   assertEquals(got.conversationId, "conv_new");
   assertEquals(insertedBody, { session_token: "call-new", channel: "voice" });
+});
+
+Deno.test("ensureVoiceConversation: fails closed when lookup persistence is unavailable", async () => {
+  const supabase: any = {
+    from() {
+      return {
+        select() { return this; },
+        eq() { return this; },
+        order() { return this; },
+        limit() { return this; },
+        maybeSingle: async () => ({ data: null, error: { message: "database unavailable" } }),
+      };
+    },
+  };
+  const parsed = await parseAdapterRequest(makeReq({ ...basicGreetingRequest, call: { id: "db-failure" } }));
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+  let error: Error | null = null;
+  try {
+    await ensureVoiceConversation({ supabase, request: parsed.value });
+  } catch (caught) {
+    error = caught as Error;
+  }
+  assertEquals(error?.message, "voice_conversation_lookup_failed");
+});
+
+Deno.test("ensureVoiceConversation: never substitutes a session token for a failed insert", async () => {
+  const supabase: any = {
+    from() {
+      return {
+        select() { return this; },
+        eq() { return this; },
+        order() { return this; },
+        limit() { return this; },
+        maybeSingle: async () => ({ data: null, error: null }),
+        insert() { return this; },
+        single: async () => ({ data: null, error: { message: "insert failed" } }),
+      };
+    },
+  };
+  const parsed = await parseAdapterRequest(makeReq({ ...basicGreetingRequest, call: { id: "insert-failure" } }));
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+  let error: Error | null = null;
+  try {
+    await ensureVoiceConversation({ supabase, request: parsed.value });
+  } catch (caught) {
+    error = caught as Error;
+  }
+  assertEquals(error?.message, "voice_conversation_insert_failed");
 });
 
 Deno.test("mapDispositionToAction: covers all nine voice dispositions", () => {

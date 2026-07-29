@@ -240,10 +240,12 @@ export async function runControllerTurn(
         const proposed = f.callerIdProposedE164 || input.callerIdE164;
         patchFields({
           phone: proposed,
-          callerIdConfirmationStatus: "confirmed",
+          callerIdConfirmationStatus: "contact_confirmed",
         });
-        patchStatus({ phone: "verified" });
-        // Fall through to returning-customer resolution below.
+        // ANI is caller-controlled and therefore confirms only the preferred
+        // contact number. It does not verify identity or authorize lookup of a
+        // stored customer record.
+        patchStatus({ phone: "captured" });
       } else if (reply === "declined") {
         patchFields({ callerIdConfirmationStatus: "declined" });
         return {
@@ -268,7 +270,7 @@ export async function runControllerTurn(
       const parsed = normalizeSpokenPhone(input.utterance);
       if (parsed) {
         patchFields({ phone: parsed });
-        patchStatus({ phone: "verified" });
+        patchStatus({ phone: "captured" });
       } else {
         return {
           sessionId: session.id,
@@ -281,10 +283,12 @@ export async function runControllerTurn(
 
   // Step 2: returning-customer resolution — runs once per session after we
   // have a confirmed/verified phone number.
-  const nowHasPhone =
-    !!(sessionPatch.fields as Record<string, unknown> | undefined)?.phone ||
-    (!!f.phone && (session.fieldStatus.phone === "captured" || session.fieldStatus.phone === "verified"));
-  if (nowHasPhone && !f.returningCustomerResolved && !f.awaitingDisambiguator) {
+  const patchedPhoneStatus =
+    (sessionPatch.field_status as Record<string, string> | undefined)?.phone;
+  const nowHasVerifiedPhone =
+    patchedPhoneStatus === "verified" ||
+    (!!f.phone && session.fieldStatus.phone === "verified");
+  if (nowHasVerifiedPhone && !f.returningCustomerResolved && !f.awaitingDisambiguator) {
     const phone =
       (sessionPatch.fields as Record<string, unknown> | undefined)?.phone as string ||
       f.phone!;

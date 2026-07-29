@@ -76,7 +76,7 @@ function makeFake(opts: {
   return sb;
 }
 
-Deno.test("caller-ID confirmation: stores phone after 'yes' and never speaks full number", async () => {
+Deno.test("caller-ID confirmation: captures contact phone without verifying identity", async () => {
   const sb = makeFake();
   const turn1 = await runControllerTurn({
     supabase: sb, conversationId: "c1", channel: "voice",
@@ -99,7 +99,28 @@ Deno.test("caller-ID confirmation: stores phone after 'yes' and never speaks ful
   });
   await persistControllerPatch(sb, "qs_1", turn2.sessionPatch);
   assertEquals((sb._state.session.fields as any).phone, "+14697472877");
-  assertEquals((sb._state.session.field_status as any).phone, "verified");
+  assertEquals((sb._state.session.fields as any).callerIdConfirmationStatus, "contact_confirmed");
+  assertEquals((sb._state.session.field_status as any).phone, "captured");
+  assertEquals((sb._state.session.fields as any).returningCustomerId, undefined);
+});
+
+Deno.test("spoofed ANI cannot disclose or link a returning customer", async () => {
+  const sb = makeFake({ customers: [{ id: "cust_1", first_name: "Alex", phone: "+14697472877" }] });
+  sb._state.session.fields = {
+    callerIdConfirmationStatus: "pending",
+    callerIdProposedE164: "+14697472877",
+  };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes",
+    history: [],
+    callerIdE164: "+14697472877",
+  });
+  assertEquals(turn.pre.kind === "greet_returning", false);
+  assertEquals((turn.sessionPatch.fields as any).name, undefined);
+  assertEquals((turn.sessionPatch.fields as any).returningCustomerId, undefined);
 });
 
 Deno.test("caller-ID declined: asks for preferred mobile number without repeating full number", async () => {
