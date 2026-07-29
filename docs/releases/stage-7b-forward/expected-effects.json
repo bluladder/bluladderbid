@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "tables_created": [
+    "public.organizations",
+    "public.organization_memberships",
+    "public.organization_resolution_keys"
+  ],
+  "columns_added_nullable_without_default": [
+    "public.customers.organization_id",
+    "public.properties.organization_id",
+    "public.quotes.organization_id",
+    "public.bookings.organization_id"
+  ],
+  "backfills": {
+    "public.customers": 16,
+    "public.properties": 10,
+    "public.quotes": 2,
+    "public.bookings": 2,
+    "organization_id": "b1addf00-0000-4000-8000-000000000001"
+  },
+  "explicit_indexes_created": [
+    "organizations_one_legacy_default_idx",
+    "organization_memberships_user_idx",
+    "organization_resolution_keys_org_idx",
+    "customers_organization_id_idx",
+    "properties_organization_id_idx",
+    "quotes_organization_id_idx",
+    "bookings_organization_id_idx"
+  ],
+  "foreign_keys_added_and_validated": [
+    "customers_organization_id_fkey",
+    "properties_organization_id_fkey",
+    "quotes_organization_id_fkey",
+    "bookings_organization_id_fkey"
+  ],
+  "functions_created_or_replaced": [
+    "public.is_organization_member(uuid,uuid)",
+    "public.enforce_first_wave_organization_lineage()"
+  ],
+  "triggers_replaced": [
+    "public.bookings.enforce_bookings_organization_lineage",
+    "public.quotes.enforce_quotes_organization_lineage"
+  ],
+  "policies_replaced": [
+    "Members can view active organizations",
+    "Members can view memberships in their organizations",
+    "Organization admins manage memberships",
+    "Organization admins manage resolution keys",
+    "Tenant boundary customers",
+    "Tenant boundary properties",
+    "Tenant boundary quotes",
+    "Tenant boundary bookings"
+  ],
+  "data_effects": {
+    "canonical_organization_upserted": 1,
+    "organization_memberships_inserted_expected": 1,
+    "oregon_organizations_inserted": 0,
+    "first_wave_rows_updated_expected": 30
+  },
+  "lock_and_runtime_risk": [
+    "Four ALTER TABLE ADD COLUMN operations acquire table DDL locks.",
+    "Four UPDATE statements touch every first-wave row whose organization_id is null.",
+    "Seven ordinary non-concurrent indexes are created.",
+    "Four foreign keys are added NOT VALID and then synchronously validated.",
+    "Trigger and policy replacement occurs inside the migration transaction."
+  ]
+}
