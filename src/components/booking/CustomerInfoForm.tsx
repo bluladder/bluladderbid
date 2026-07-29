@@ -12,6 +12,11 @@ import { setSelfReportedSource } from '@/lib/attribution/attribution';
 
 const US_STATE_REGEX = /^[A-Za-z]{2}$/;
 const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
+const isValidUsPhone = (value: string) => {
+  if (/[A-Za-z]/.test(value)) return false;
+  const digits = value.replace(/\D/g, '');
+  return digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
+};
 
 const LEAD_SOURCES = [
   ['google_search', 'Google Search'],
@@ -33,7 +38,7 @@ const customerSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(50),
   lastName: z.string().min(1, 'Last name is required').max(50),
   email: z.string().email('Please enter a valid email'),
-  phone: z.string().min(10, 'Please enter a valid phone number').max(20),
+  phone: z.string().max(20).refine(isValidUsPhone, 'Please enter a valid 10-digit US phone number'),
   street: z.string().min(3, 'Please enter your street address').max(120),
   city: z.string().min(2, 'Please enter your city').max(80),
   state: z.string().regex(US_STATE_REGEX, 'Use 2-letter state (e.g., TX)'),
