@@ -76,9 +76,9 @@
       "id": "ai-voice-workflow-entry",
       "scope": "repository",
       "severity": "P1",
-      "status": "NOT_IMPLEMENTED",
-      "evidence": ["docs/voice-beta-vapi-provisioning.md", "supabase/functions/_shared/voiceBookingDryRun_test.ts"],
-      "reason": "The documented production assistant intentionally has no booking or Jobber tool and cannot yet enter the authoritative booking workflow."
+      "status": "PASS",
+      "evidence": ["supabase/functions/_shared/voiceBookingAdapter.ts", "supabase/functions/_shared/voiceBookingAdapter_test.ts", "supabase/functions/_shared/voiceBookingDryRun_test.ts", "supabase/functions/_shared/voiceAdapter.ts", "supabase/functions/voice-vapi-events/index.ts", "supabase/functions/_shared/voiceProviderConfig.ts", "docs/voice/real-call-acceptance.md", "scripts/check-voice-booking-contract.mjs"],
+      "reason": "The repository provides a trusted-context, deterministic disabled/dry-run adapter and adversarial acceptance pack. Live mutation is structurally absent; provider configuration, real-number connectivity, real-call acceptance, and production monitoring remain protected/manual gates."
     },
     {
       "id": "operator-launch-diagnostics",

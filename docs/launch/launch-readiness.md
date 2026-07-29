@@ -30,12 +30,10 @@ hosted-environment, manual acceptance, or production-verification gates pass.
 
 ## Current launch blockers
 
-The current contract identifies two repository-level launch gaps:
+The current contract identifies one repository-level launch gap:
 
 1. Recurring provider uncertainty still requires generalized recovery and
    reconciliation outside the hardened public quote-delivery boundary.
-2. Voice remains a beta/dry-run channel and cannot enter the authoritative
-   booking workflow.
 
 Public quote email and SMS delivery now claim a stable semantic request in the
 database before provider submission. Concurrent duplicates converge on the
@@ -52,6 +50,14 @@ fixtures prove filtering, unresolved counts, and stale/concurrent resolution
 guards. The admin surface remains explicitly disabled by default and labels
 fixture mode as non-hosted evidence; hosted persistence, deployment, and
 operator verification remain protected gates.
+
+Voice repository readiness uses a trusted-provider-context adapter with only
+`disabled` and `dry_run` modes. Unknown values including `live` fail closed,
+the legacy live flag cannot unlock the mutation pipeline, caller-supplied
+organization or confirmation cannot authorize a command, and dry-run receipts
+are deterministic and explicitly no-write. Provider configuration, real-number
+connectivity, the 15-scenario real-call pack, and production monitoring remain
+separate protected/manual gates.
 
 Public one-time booking and recurring-plan creation now share a server-side,
 geocoder-backed DFW eligibility gate before any customer, quote, booking,

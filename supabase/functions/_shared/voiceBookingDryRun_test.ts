@@ -2,7 +2,10 @@
 // to create_bluladder_booking must NEVER touch Jobber, regardless of prompt
 // content or arguments. Web and SMS behavior remains unchanged and is
 // exercised by aiOrchestrator/aiTools tests elsewhere in the suite.
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { runTool, voiceLiveBookingEnabled } from "./aiTools.ts";
 
 const stubSupabase: any = {
@@ -53,10 +56,10 @@ Deno.test("voice channel: create_bluladder_booking returns dry-run without any n
   }
 });
 
-Deno.test("voice channel: VOICE_LIVE_BOOKING_ENABLED=true unlocks the shared booking pipeline (still gated downstream)", async () => {
+Deno.test("voice channel: legacy live flag cannot unlock the booking pipeline", async () => {
   const prev = Deno.env.get("VOICE_LIVE_BOOKING_ENABLED");
   Deno.env.set("VOICE_LIVE_BOOKING_ENABLED", "true");
-  assertEquals(voiceLiveBookingEnabled(), true);
+  assertEquals(voiceLiveBookingEnabled(), false);
   const ctx = {
     supabase: stubSupabase,
     conversationId: "conv_voice_live",
@@ -70,17 +73,12 @@ Deno.test("voice channel: VOICE_LIVE_BOOKING_ENABLED=true unlocks the shared boo
     return new Response("{}", { status: 200 });
   };
   try {
-    // With no quote/slot context in the stub, the shared pipeline must NOT
-    // return the voice-beta dry-run — it must exercise the same guardrails as
-    // SMS/web (missing slot → refresh), proving the branch is unified.
     const result = await runTool("create_bluladder_booking", ctx, {
       confirmed: true,
       slotId: "slot_xyz",
       address: "123 Test St",
     }) as { status: string };
-    assert(result.status !== "voice_beta_dry_run");
-    // Never a live Jobber write on this path either — the pipeline stops at
-    // slot/quote validation before any external call.
+    assertEquals(result.status, "voice_beta_dry_run");
     assertEquals(fetchCalled, false);
   } finally {
     globalThis.fetch = originalFetch;
