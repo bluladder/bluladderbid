@@ -42,9 +42,9 @@ The current contract identifies ten repository-level launch gaps:
    values instead of the persisted authoritative calculation.
 5. Bid email delivery can claim success without provider acceptance, and
    public delivery lacks durable request idempotency.
-6. Acceptance does not convert the quote, while decline uses weak destructive
-   authorization and can race conversion.
-7. A booked quote can remain eligible for abandonment follow-up.
+6. Decline uses weak destructive authorization and can race conversion.
+7. A quote awaiting manual conversion reconciliation can remain eligible for
+   abandonment follow-up until repaired.
 8. Recurring provider uncertainty still requires manual recovery, and a
    communication crash can duplicate provider delivery.
 9. Voice remains a beta/dry-run channel and cannot enter the authoritative
