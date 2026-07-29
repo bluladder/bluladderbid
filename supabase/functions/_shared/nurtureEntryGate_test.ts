@@ -2,6 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
   evaluateNurtureEntry,
   NURTURE_RECENT_BOOKING_WINDOW_DAYS,
+  safeCount,
   type NurtureEntryContext,
 } from "./nurtureEntryGate.ts";
 
@@ -62,4 +63,18 @@ Deno.test("evaluateNurtureEntry: each remaining flag maps to its reason", () => 
 
 Deno.test("recent-booking window is 14 days", () => {
   assertEquals(NURTURE_RECENT_BOOKING_WINDOW_DAYS, 14);
+});
+
+Deno.test("unreadable nurture counts fail closed", async () => {
+  assertEquals(
+    await safeCount(Promise.resolve({
+      count: null,
+      error: { message: "unavailable" },
+    })),
+    Number.POSITIVE_INFINITY,
+  );
+  assertEquals(
+    await safeCount(Promise.reject(new Error("unavailable"))),
+    Number.POSITIVE_INFINITY,
+  );
 });
