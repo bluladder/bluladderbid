@@ -8,6 +8,11 @@ import { calculateQuote, type QuoteInput } from "../_shared/pricingEngine.ts";
 import { loadPricing } from "../_shared/loadPricing.ts";
 import { sendBookingConfirmationEmails } from "../_shared/bookingEmails.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
+import {
+  findMatchingJobberProperty,
+  validatePublicBookingCustomer,
+  type JobberPropertyCandidate,
+} from "../_shared/publicBookingCustomer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -79,44 +84,6 @@ interface BookingRequest {
 interface ResumedQuoteFields {
   resumedQuoteId?: string;
   confirmedTotal?: number;
-}
-
-// Simple address parser - extracts components from a single-line address
-function parseAddress(address: string): {
-  street1: string;
-  city: string;
-  province: string;
-  postalCode: string;
-} {
-  if (!address) {
-    return { street1: "", city: "", province: "", postalCode: "" };
-  }
-  
-  // Try to parse "123 Main St, City, ST 12345" format
-  const parts = address.split(",").map(p => p.trim());
-  
-  if (parts.length >= 3) {
-    // "123 Main St", "City", "ST 12345"
-    const street1 = parts[0];
-    const city = parts[1];
-    const stateZip = parts[2].split(" ").filter(Boolean);
-    const province = stateZip[0] || "";
-    const postalCode = stateZip.slice(1).join(" ") || "";
-    
-    return { street1, city, province, postalCode };
-  } else if (parts.length === 2) {
-    // "123 Main St", "City ST 12345"
-    const street1 = parts[0];
-    const cityStateZip = parts[1].split(" ").filter(Boolean);
-    const postalCode = cityStateZip.pop() || "";
-    const province = cityStateZip.pop() || "";
-    const city = cityStateZip.join(" ");
-    
-    return { street1, city, province, postalCode };
-  }
-  
-  // Fallback - use whole address as street
-  return { street1: address, city: "", province: "", postalCode: "" };
 }
 
 // Busy block type from database
@@ -339,6 +306,19 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
       );
     }
+
+    const customerValidation = validatePublicBookingCustomer(booking.customer);
+    if (!customerValidation.ok) {
+      return new Response(
+        JSON.stringify({
+          error: customerValidation.message,
+          code: customerValidation.code,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 422 },
+      );
+    }
+    booking.customer = customerValidation.customer;
+    const submittedServiceAddress = customerValidation.address;
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -793,15 +773,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get property for the client - use clientProperties (a connection type)
+    // Match the submitted service address across the client's properties.
+    // Selecting the first property can mutate an unrelated home.
     console.log("Getting client properties:", jobberClientId);
     const getClientPropertyQuery = `
       query GetClientProperty($clientId: EncodedId!) {
         client(id: $clientId) {
           id
-          clientProperties(first: 1) {
+          clientProperties(first: 50) {
             nodes {
               id
+              address {
+                street
+                city
+                province
+                postalCode
+              }
             }
           }
         }
@@ -811,13 +798,25 @@ Deno.serve(async (req) => {
     const propertyResult = await jobberGraphQL<{
       client: {
         id: string;
-        clientProperties: { nodes: Array<{ id: string }> };
+        clientProperties: { nodes: JobberPropertyCandidate[] };
       };
     }>(getClientPropertyQuery, { clientId: jobberClientId });
 
     console.log("Client properties result:", JSON.stringify(propertyResult));
+    if (propertyResult.errors?.length || !propertyResult.data?.client) {
+      return new Response(
+        JSON.stringify({
+          error: "We couldn't verify the service property. Please try again shortly.",
+          code: "PROPERTY_LOOKUP_UNAVAILABLE",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 },
+      );
+    }
 
-    let propertyId = propertyResult.data?.client?.clientProperties?.nodes?.[0]?.id;
+    let propertyId = findMatchingJobberProperty(
+      submittedServiceAddress,
+      propertyResult.data.client.clientProperties?.nodes ?? [],
+    )?.id;
 
     if (!propertyId) {
       // PropertyCreateInput requires a 'properties' array with PropertyInput objects
@@ -836,20 +835,15 @@ Deno.serve(async (req) => {
         }
       `;
 
-      // PropertyCreateInput.properties is a list of PropertyAttributes
-      // PropertyAttributes requires address: AddressAttributes
-      // Parse the address or use defaults
-      const addressParts = parseAddress(booking.customer.address || "");
-      
       const propertyInput = {
         properties: [
           {
             address: {
-              street1: addressParts.street1 || "Service Address",
-              city: addressParts.city || "Austin",
-              province: addressParts.province || "TX",
-              postalCode: addressParts.postalCode || "78701",
-              country: "US"
+              street1: submittedServiceAddress.street1,
+              city: submittedServiceAddress.city,
+              province: submittedServiceAddress.province,
+              postalCode: submittedServiceAddress.postalCode,
+              country: submittedServiceAddress.country,
             }
           }
         ]
