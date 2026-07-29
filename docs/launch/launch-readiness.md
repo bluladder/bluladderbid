@@ -32,10 +32,10 @@ hosted-environment, manual acceptance, or production-verification gates pass.
 
 The current contract identifies eleven repository-level launch gaps:
 
-1. Public intake still has weak phone/address validation, no terminal
-   service-area gate, and a manual fallback can claim unproven notification.
-2. Existing-customer Jobber paths select the first property instead of matching
-   the submitted address, and missing address data defaults to Austin.
+1. Public intake still lacks a terminal service-area gate, and a manual
+   fallback can claim unproven notification.
+2. The recurring Jobber path still selects the first property instead of
+   matching the submitted address and defaults incomplete data to Austin.
 3. Public booking does not yet enforce the deterministic DFW service-area
    contract before authoritative writes.
 4. Anonymous SMS event requests and suppression failures are not consistently
