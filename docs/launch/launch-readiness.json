@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "evaluated_for": "dfw_launch_candidate",
+  "status_values": [
+    "PASS",
+    "FAIL",
+    "BLOCKED_PROTECTED_ACTION",
+    "NOT_IMPLEMENTED",
+    "NOT_APPLICABLE"
+  ],
+  "gates": [
+    {
+      "id": "landing-page-integration",
+      "scope": "repository",
+      "severity": "P1",
+      "status": "PASS",
+      "evidence": ["src/pages/Index.tsx", "src/App.tsx", "docs/bluladder-bid-postmessage-sender.md"]
+    },
+    {
+      "id": "public-booking",
+      "scope": "repository",
+      "severity": "P1",
+      "status": "PASS",
+      "evidence": ["src/components/booking/BookingFlow.tsx", "src/components/homeowner/OneTimeSummary.delivery.test.tsx"]
+    },
+    {
+      "id": "customer-property-creation",
+      "scope": "repository",
+      "severity": "P0",
+      "status": "PASS",
+      "evidence": ["supabase/functions/jobber-create-booking/index.ts", "supabase/functions/_shared/bookingPreparation_test.ts"]
+    },
+    {
+      "id": "service-area-validation",
+      "scope": "repository",
+      "severity": "P0",
+      "status": "NOT_IMPLEMENTED",
+      "evidence": ["src/components/booking/CustomerInfoForm.tsx", "supabase/functions/jobber-create-booking/index.ts"],
+      "reason": "Public booking does not yet enforce the deterministic organization territory contract before authoritative writes."
+    },
+    {
+      "id": "bid-creation",
+      "scope": "repository",
+      "severity": "P1",
+      "status": "PASS",
+      "evidence": ["supabase/functions/save-quote/index.ts", "src/hooks/useServerQuoteCalculation.test.ts"]
+    },
+    {
+      "id": "bid-delivery",
+      "scope": "repository",
+      "severity": "P1",
+      "status": "PASS",
+      "evidence": ["src/components/homeowner/OneTimeSummary.delivery.test.tsx", "src/lib/email/quoteEmailStatus.test.ts"]
+    },
+    {
+      "id": "bid-customer-response",
+      "scope": "repository",
+      "severity": "P1",
+      "status": "PASS",
+      "evidence": ["src/pages/QuoteBookingView.tsx", "supabase/functions/quote-decline/index.ts", "src/test/quoteDecline.pathCoverage.test.ts"]
+    },
+    {
+      "id": "follow-up-automation",
+      "scope": "repository",
+      "severity": "P1",
+      "status": "PASS",
+      "evidence": ["src/test/unbookedQuoteFollowUp.launch.test.ts", "src/test/quoteFollowUpCompletion.transition.test.ts"]
+    },
+    {
+      "id": "customer-sms-email",
+      "scope": "repository",
+      "severity": "P0",
+      "status": "PASS",
+      "evidence": ["supabase/functions/_shared/smsOutbox_test.ts", "supabase/functions/_shared/emailSuppression_test.ts"]
+    },
+    {
+      "id": "ai-voice-workflow-entry",
+      "scope": "repository",
+      "severity": "P1",
+      "status": "NOT_IMPLEMENTED",
+      "evidence": ["docs/voice-beta-vapi-provisioning.md", "supabase/functions/_shared/voiceBookingDryRun_test.ts"],
+      "reason": "The documented production assistant intentionally has no booking or Jobber tool and cannot yet enter the authoritative booking workflow."
+    },
+    {
+      "id": "operator-launch-diagnostics",
+      "scope": "repository",
+      "severity": "P1",
+      "status": "NOT_IMPLEMENTED",
+      "evidence": ["src/components/admin/ops/OpsHealthPanel.tsx", "src/components/admin/ops/OpsAlertsPanel.tsx"],
+      "reason": "Subsystem panels exist, but no unified launch diagnostic view covers booking, bid, communication, follow-up, and voice outcomes."
+    },
+    {
+      "id": "failure-recovery",
+      "scope": "repository",
+      "severity": "P0",
+      "status": "PASS",
+      "evidence": ["supabase/functions/_shared/jobberBookingRecovery_test.ts", "supabase/functions/_shared/smsOutbox_test.ts"]
+    },
+    {
+      "id": "production-security-foundation",
+      "scope": "hosted_environment",
+      "severity": "P0",
+      "status": "BLOCKED_PROTECTED_ACTION",
+      "evidence": ["docs/releases/stage-7b-corrected/README.md"],
+      "reason": "Corrected Stage 7B is rehearsal-green but hosted execution is not authorized and migration provenance requires a business decision."
+    },
+    {
+      "id": "rollback-runbook",
+      "scope": "repository",
+      "severity": "P0",
+      "status": "PASS",
+      "evidence": ["docs/operations/tenant-stage-7b-migration-runbook.md", "docs/operations/tenant-stage-7d-cron-window-rehearsal.md"]
+    },
+    {
+      "id": "provider-configuration",
+      "scope": "configuration",
+      "severity": "P0",
+      "status": "BLOCKED_PROTECTED_ACTION",
+      "evidence": ["docs/voice-beta-vapi-provisioning.md", "docs/inbound-email-setup.md"],
+      "reason": "Repository contracts cannot prove current Vapi, Twilio, Resend, CallRail, Jobber, or hosted environment configuration."
+    },
+    {
+      "id": "hosted-booking-verification",
+      "scope": "hosted_environment",
+      "severity": "P1",
+      "status": "BLOCKED_PROTECTED_ACTION",
+      "evidence": ["docs/protected-live-test-runbook.md"],
+      "reason": "A controlled synthetic booking is a protected production-data action."
+    },
+    {
+      "id": "manual-customer-journey-acceptance",
+      "scope": "manual_acceptance",
+      "severity": "P1",
+      "status": "NOT_IMPLEMENTED",
+      "evidence": ["docs/protected-live-test-runbook.md"],
+      "reason": "No single launch acceptance script yet covers landing, booking, bid response, communications, voice, and operator evidence."
+    },
+    {
+      "id": "actual-production-verification",
+      "scope": "production_verification",
+      "severity": "P0",
+      "status": "BLOCKED_PROTECTED_ACTION",
+      "evidence": ["docs/launch/launch-readiness.json"],
+      "reason": "Production deployment and customer/provider operations are outside repository authorization."
+    }
+  ]
+}

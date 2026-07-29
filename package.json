@@ -23,6 +23,8 @@
     "check:organization-pricing": "node scripts/check-organization-pricing.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",
+    "check:launch-contract": "node scripts/check-launch-readiness.mjs --contract-only",
+    "launch:readiness": "node scripts/check-launch-readiness.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

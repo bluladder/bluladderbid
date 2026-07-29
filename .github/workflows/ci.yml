@@ -52,6 +52,7 @@ jobs:
           bun run check:organization-pricing
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
+          bun run check:launch-contract
 
       - name: Unit tests (vitest)
         run: bun run test
