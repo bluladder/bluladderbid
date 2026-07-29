@@ -3,18 +3,17 @@
 // canonical `quote_declined` event through the campaign engine. This never
 // inserts enrollments or queue rows directly — campaign-event owns that.
 //
-// Access model (mirrors QuoteView, which loads the quote by id alone):
-//   * The caller must present the quote id, AND either
-//     - the email on file for that quote (case-insensitive), OR
-//     - a valid admin / service-role token.
-// This keeps the customer-facing "Decline" action anonymous-safe (same trust
-// as opening the quote link) while still requiring possession of the shared
-// email + the shared link — no random enumeration.
+// Access model:
+//   * a customer must present the exact opaque resume capability scoped to the
+//     quote; knowing a quote id or customer email is never authorization, OR
+//   * a trusted admin / service-role caller may perform the transition.
+// The write compare-and-sets the state observed during authorization so a
+// concurrent booking conversion always wins over a late decline.
 // ============================================================================
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import { requireAdminOrService } from "../_shared/auth.ts";
+import { canDeclineQuote, classifyQuoteDecline } from "../_shared/quoteDecline.ts";
 import { verifyResumeToken } from "../_shared/quoteResumeTokens.ts";
 
 const corsHeaders = {
@@ -39,7 +38,6 @@ const ALLOWED_REASONS = new Set([
 
 interface Body {
   quote_id?: string;
-  email?: string | null;
   resume_token?: string | null;
   reason?: string;
   notes?: string | null;
@@ -55,7 +53,6 @@ serve(async (req) => {
 
   const quoteId = (body.quote_id || "").trim();
   const reason = (body.reason || "").trim();
-  const email = (body.email || "").trim().toLowerCase() || null;
   const resumeToken = typeof body.resume_token === "string" && body.resume_token
     ? body.resume_token
     : null;
@@ -72,79 +69,90 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+  // Authorize before reading the quote so an unauthenticated caller cannot
+  // distinguish an existing quote id from a nonexistent one.
+  const authz = await requireAdminOrService(req);
+  let tokenMatches = false;
+  if (!authz.ok && resumeToken) {
+    const verified = await verifyResumeToken(supabase, quoteId, resumeToken);
+    tokenMatches = !!verified.ok;
+  }
+  if (!canDeclineQuote(authz.ok, tokenMatches)) {
+    return json(403, { error: "forbidden" });
+  }
+
   const { data: quote, error: qErr } = await supabase
     .from("quotes")
-    .select("id, status, customer_id, customer_email, customer_phone, pricing_rule_version, declined_at, converted_booking_id")
+    .select("id, status, pricing_rule_version, converted_booking_id, expires_at")
     .eq("id", quoteId)
     .maybeSingle();
   if (qErr) return json(500, { error: "lookup_failed" });
   if (!quote) return json(404, { error: "quote_not_found" });
 
-  // Authorization: admin/service OR matching email on the quote OR a valid
-  // resume token for this quote (same trust model as opening the quote link).
-  const authz = await requireAdminOrService(req);
-  const emailOnFile = (quote.customer_email || "").trim().toLowerCase();
-  const emailMatches = !!email && !!emailOnFile && email === emailOnFile;
-  let tokenMatches = false;
-  if (!authz.ok && !emailMatches && resumeToken) {
-    const verified = await verifyResumeToken(supabase, quoteId, resumeToken);
-    tokenMatches = !!verified.ok;
-  }
-  if (!authz.ok && !emailMatches && !tokenMatches) {
-    return json(403, { error: "forbidden" });
-  }
-
-  // Terminal booked/converted states we refuse to overwrite. Both the status
-  // sentinel and the converted_booking_id link count as "already booked" so
-  // late-arriving decline clicks never race with a confirmed booking.
-  if (quote.status === "converted" || quote.converted_booking_id) {
+  const initialDisposition = classifyQuoteDecline(quote);
+  if (initialDisposition === "already_converted") {
     return json(409, { error: "already_booked" });
+  }
+  if (initialDisposition === "expired") return json(409, { error: "quote_expired" });
+  if (initialDisposition === "state_conflict") {
+    return json(409, { error: "quote_state_conflict" });
   }
 
   const nowIso = new Date().toISOString();
+  let idempotent = initialDisposition === "already_declined";
 
-  // Idempotent: if already declined, return the existing decline as success.
-  if (quote.status === "declined" && quote.declined_at) {
-    return json(200, { ok: true, idempotent: true, quote_id: quoteId });
-  }
-
-  const { error: updErr } = await supabase
-    .from("quotes")
-    .update({
-      status: "declined",
-      declined_at: nowIso,
-      decline_reason: reason,
-      decline_notes: notes,
-      decline_source: authz.ok && !emailMatches && !tokenMatches ? "admin" : source,
-      decline_version: quote.pricing_rule_version ?? null,
-      declined_by: authz.userId ?? null,
-      last_activity_at: nowIso,
-    })
-    .eq("id", quoteId);
-  if (updErr) return json(500, { error: "update_failed" });
-
-  // Emit through the canonical engine. Idempotency key is per-quote so a
-  // replay never double-enrolls or double-stops.
-  try {
-    await emitCampaignEvent({
-      eventName: "quote_declined",
-      idempotencyKey: `quote_declined:${quoteId}`,
-      email: quote.customer_email,
-      phone: quote.customer_phone,
-      customerId: quote.customer_id,
-      source: "quote-decline",
-      subject: "Quote declined",
-      recoverySupabase: supabase,
-      metadata: {
-        quote_id: quoteId,
-        quote_status: "declined",
+  if (!idempotent) {
+    const { data: updated, error: updErr } = await supabase
+      .from("quotes")
+      .update({
+        status: "declined",
+        declined_at: nowIso,
         decline_reason: reason,
-        lead_source: "website_quote",
-      },
-    });
-  } catch (e) {
-    console.warn("quote-decline emit failed:", e instanceof Error ? e.message : e);
+        decline_notes: notes,
+        decline_source: authz.ok ? "admin" : source,
+        decline_version: quote.pricing_rule_version ?? null,
+        declined_by: authz.userId ?? null,
+        last_activity_at: nowIso,
+      })
+      .eq("id", quoteId)
+      .eq("status", quote.status)
+      .is("converted_booking_id", null)
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+      .select("id")
+      .maybeSingle();
+    if (updErr) return json(500, { error: "update_failed" });
+
+    if (!updated) {
+      // The quote changed after the initial read. Re-read only transition
+      // sentinels; never overwrite a concurrent conversion or unknown state.
+      const { data: current, error: currentErr } = await supabase
+        .from("quotes")
+        .select("status, converted_booking_id, expires_at")
+        .eq("id", quoteId)
+        .maybeSingle();
+      if (currentErr || !current) return json(409, { error: "quote_state_conflict" });
+      const concurrentDisposition = classifyQuoteDecline(current);
+      if (concurrentDisposition === "already_converted") {
+        return json(409, { error: "already_booked" });
+      }
+      if (concurrentDisposition === "already_declined") {
+        idempotent = true;
+      } else if (concurrentDisposition === "expired") {
+        return json(409, { error: "quote_expired" });
+      } else {
+        return json(409, { error: "quote_state_conflict" });
+      }
+    }
   }
 
-  return json(200, { ok: true, quote_id: quoteId });
+  // The declined row is itself the durable outbox marker. The bounded
+  // declined-quote repair sweep emits quote_declined after a short race grace,
+  // and the delivery worker checks this authoritative status before every
+  // quote follow-up send. A crash here therefore cannot lose the stop signal.
+  return json(200, {
+    ok: true,
+    idempotent,
+    quote_id: quoteId,
+    follow_up_status: "pending_reconciliation",
+  });
 });
