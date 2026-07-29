@@ -43,30 +43,34 @@
     {
       "id": "bid-creation",
       "scope": "repository",
-      "severity": "P1",
-      "status": "PASS",
-      "evidence": ["supabase/functions/save-quote/index.ts", "src/hooks/useServerQuoteCalculation.test.ts"]
+      "severity": "P0",
+      "status": "FAIL",
+      "evidence": ["supabase/functions/save-quote/index.ts", "src/hooks/useServerQuoteCalculation.test.ts"],
+      "reason": "The saved quote uses authoritative calculations, but customer email content, campaign metadata, and event idempotency still use caller-supplied totals, services, and rule versions."
     },
     {
       "id": "bid-delivery",
       "scope": "repository",
-      "severity": "P1",
-      "status": "PASS",
-      "evidence": ["src/components/homeowner/OneTimeSummary.delivery.test.tsx", "src/lib/email/quoteEmailStatus.test.ts"]
+      "severity": "P0",
+      "status": "FAIL",
+      "evidence": ["supabase/functions/save-quote/index.ts", "supabase/functions/send-sms/index.ts", "src/components/homeowner/OneTimeSummary.tsx"],
+      "reason": "Email status is advanced before provider acceptance, anonymous SMS reports success when no message was sent, and public delivery lacks durable request idempotency."
     },
     {
       "id": "bid-customer-response",
       "scope": "repository",
-      "severity": "P1",
-      "status": "PASS",
-      "evidence": ["src/pages/QuoteBookingView.tsx", "supabase/functions/quote-decline/index.ts", "src/test/quoteDecline.pathCoverage.test.ts"]
+      "severity": "P0",
+      "status": "FAIL",
+      "evidence": ["src/pages/QuoteBookingView.tsx", "supabase/functions/quote-decline/index.ts", "src/test/quoteDecline.pathCoverage.test.ts"],
+      "reason": "Quote acceptance never transitions the quote to converted, while decline permits email-only destructive authorization and can race a concurrent conversion."
     },
     {
       "id": "follow-up-automation",
       "scope": "repository",
-      "severity": "P1",
-      "status": "PASS",
-      "evidence": ["src/test/unbookedQuoteFollowUp.launch.test.ts", "src/test/quoteFollowUpCompletion.transition.test.ts"]
+      "severity": "P0",
+      "status": "FAIL",
+      "evidence": ["supabase/functions/_shared/campaignSweep.ts", "supabase/functions/jobber-create-booking/index.ts"],
+      "reason": "A successfully booked quote is not marked converted, so the abandonment sweep can continue sending follow-up after booking."
     },
     {
       "id": "customer-sms-email",
@@ -96,8 +100,9 @@
       "id": "failure-recovery",
       "scope": "repository",
       "severity": "P0",
-      "status": "PASS",
-      "evidence": ["supabase/functions/_shared/jobberBookingRecovery_test.ts", "supabase/functions/_shared/smsOutbox_test.ts"]
+      "status": "FAIL",
+      "evidence": ["supabase/functions/jobber-create-service-request/index.ts", "supabase/functions/process-sms-queue/index.ts"],
+      "reason": "Recurring request replay can return success after a failed Jobber mutation, and provider-accepted communication can be duplicated after a worker crash before durable acknowledgement."
     },
     {
       "id": "production-security-foundation",
