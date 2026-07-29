@@ -28,9 +28,8 @@
       "id": "customer-property-creation",
       "scope": "repository",
       "severity": "P0",
-      "status": "FAIL",
-      "evidence": ["supabase/functions/jobber-create-booking/index.ts", "supabase/functions/jobber-create-service-request/index.ts"],
-      "reason": "The recurring service-request path still selects the first Jobber property instead of matching the submitted address and defaults incomplete address components to Austin."
+      "status": "PASS",
+      "evidence": ["supabase/functions/_shared/publicBookingCustomer_test.ts", "supabase/functions/jobber-create-booking/launch_safety_test.ts", "supabase/functions/jobber-create-service-request/launch_safety_test.ts"]
     },
     {
       "id": "service-area-validation",
@@ -102,7 +101,7 @@
       "severity": "P0",
       "status": "FAIL",
       "evidence": ["supabase/functions/jobber-create-service-request/index.ts", "supabase/functions/process-sms-queue/index.ts"],
-      "reason": "Recurring request replay can return success after a failed Jobber mutation, and provider-accepted communication can be duplicated after a worker crash before durable acknowledgement."
+      "reason": "An unresolved recurring provider result requires manual verification rather than automatic recovery, and provider-accepted communication can be duplicated after a worker crash before durable acknowledgement."
     },
     {
       "id": "production-security-foundation",

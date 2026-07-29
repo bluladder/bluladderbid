@@ -79,6 +79,7 @@ export function RecurringServiceRequestFlow({
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(prefillCustomerInfo || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isPendingVerification, setIsPendingVerification] = useState(false);
   const [pricingChange, setPricingChange] = useState<PricingChange | null>(null);
 
   // One idempotency key per intended plan submission (stable across retries and
@@ -118,7 +119,7 @@ export function RecurringServiceRequestFlow({
       });
       if (error) throw new Error(error.message || 'Failed to submit request');
 
-      const res = data as { status?: string; pricing_changed?: boolean; current?: { annualTotal: number; monthlyPayment: number; engineVersion: string | null; ruleVersion: number | null }; error?: string; missing?: string[]; reasons?: string[] };
+      const res = data as { status?: string; pricing_changed?: boolean; current?: { annualTotal: number; monthlyPayment: number; engineVersion: string | null; ruleVersion: number | null }; error?: string; message?: string; missing?: string[]; reasons?: string[] };
 
       if (res.status === 'pricing_changed' && res.current) {
         // Do NOT book. Show the updated summary and require fresh confirmation.
@@ -137,6 +138,11 @@ export function RecurringServiceRequestFlow({
       }
       if (res.status === 'manual_review_required') {
         toast.error('This plan needs a manual quote — our team will follow up with you.');
+        return;
+      }
+      if (res.status === 'pending_provider_confirmation') {
+        setIsPendingVerification(true);
+        toast.warning(res.message || 'Your request was saved but still needs scheduling verification.');
         return;
       }
       if (res.status === 'unknown_option' || res.status === 'pricing_unavailable' || res.status === 'error') {
@@ -170,6 +176,26 @@ export function RecurringServiceRequestFlow({
   };
 
   const progress = 100;
+
+  if (isPendingVerification) {
+    return (
+      <Card className="card-summary">
+        <CardContent className="py-12 text-center space-y-6">
+          <div className="w-16 h-16 mx-auto rounded-full bg-amber-500/15 flex items-center justify-center">
+            <AlertTriangle className="w-10 h-10 text-amber-600" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-foreground">Request Saved — Verification Needed</h2>
+            <p className="text-muted-foreground max-w-md mx-auto">
+              We saved your service-plan request, but could not verify that it reached scheduling.
+              Please do not submit it again while the existing request is reviewed.
+            </p>
+          </div>
+          <Button onClick={onCancel} variant="outline">Return to Quote</Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // Success state
   if (isSuccess) {

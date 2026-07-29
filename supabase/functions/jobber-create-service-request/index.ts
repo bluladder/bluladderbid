@@ -28,6 +28,11 @@ import { loadPricing } from "../_shared/loadPricing.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
 import {
+  findMatchingJobberProperty,
+  validatePublicBookingCustomer,
+  type JobberPropertyCandidate,
+} from "../_shared/publicBookingCustomer.ts";
+import {
   computeBundleTiers,
   evaluatePlanSelection,
   planJobberLineItemsTotal,
@@ -117,23 +122,6 @@ function sanitizeCustomizations(raw: unknown): Record<string, unknown> | undefin
   return out;
 }
 
-function parseAddress(address: string): {
-  street1: string; city: string; province: string; postalCode: string;
-} {
-  if (!address) return { street1: "", city: "", province: "", postalCode: "" };
-  const parts = address.split(",").map((p) => p.trim());
-  if (parts.length >= 3) {
-    const stateZip = parts[2].split(" ").filter(Boolean);
-    return { street1: parts[0], city: parts[1], province: stateZip[0] || "", postalCode: stateZip.slice(1).join(" ") || "" };
-  } else if (parts.length === 2) {
-    const cityStateZip = parts[1].split(" ").filter(Boolean);
-    const postalCode = cityStateZip.pop() || "";
-    const province = cityStateZip.pop() || "";
-    return { street1: parts[0], city: cityStateZip.join(" "), province, postalCode };
-  }
-  return { street1: address, city: "", province: "", postalCode: "" };
-}
-
 interface Customer {
   email: string; firstName: string; lastName: string; phone?: string; address?: string;
 }
@@ -149,10 +137,20 @@ Deno.serve(async (req) => {
     const b = body as Record<string, unknown>;
 
     // ---- Structural validation (NO trusted prices) --------------------------
-    const customer = b.customer as Customer | undefined;
-    if (!customer?.email || !customer.firstName || !customer.lastName) {
+    const rawCustomer = b.customer as Customer | undefined;
+    if (!rawCustomer?.email || !rawCustomer.firstName || !rawCustomer.lastName) {
       return json({ status: "error", error: "Missing customer information" }, 400);
     }
+    const customerValidation = validatePublicBookingCustomer(rawCustomer);
+    if (!customerValidation.ok) {
+      return json({
+        status: "error",
+        error: customerValidation.message,
+        code: customerValidation.code,
+      }, 422);
+    }
+    const customer = customerValidation.customer;
+    const submittedServiceAddress = customerValidation.address;
     const tier = typeof b.tier === "string" ? b.tier.slice(0, MAX_ID_LEN) : "";
     if (!tier) return json({ status: "error", error: "Missing plan tier" }, 400);
 
@@ -181,12 +179,46 @@ Deno.serve(async (req) => {
 
     // ---- Idempotent replay: same key never creates a duplicate --------------
     if (idempotencyKey) {
-      const { data: existing } = await supabase
+      const { data: existing, error: existingError } = await supabase
         .from("quotes")
         .select("id, jobber_quote_id, total, services_json")
         .eq("idempotency_key", idempotencyKey)
         .maybeSingle();
+      if (existingError) {
+        return json({
+          status: "error",
+          error: "We couldn't verify the prior request. Please try again shortly.",
+          code: "IDEMPOTENCY_LOOKUP_UNAVAILABLE",
+        }, 503);
+      }
       if (existing) {
+        if (!existing.jobber_quote_id) {
+          const replaySuppression = await checkSuppression(supabase, {
+            email: customer.email,
+            phone: customer.phone,
+          });
+          if (replaySuppression.suppressed) {
+            return json({
+              status: "ok",
+              idempotent: true,
+              suppressed: true,
+              suppressionReason: replaySuppression.reason,
+              quoteId: existing.id,
+              jobberQuoteId: null,
+              annualTotal: Number(existing.total),
+            });
+          }
+          return json({
+            status: "pending_provider_confirmation",
+            idempotent: true,
+            quoteId: existing.id,
+            jobberQuoteId: null,
+            annualTotal: Number(existing.total),
+            code: "PRIOR_JOBBER_RESULT_UNCONFIRMED",
+            message:
+              "We saved your plan request, but cannot confirm that it reached scheduling. Please don't submit it again while our team verifies it.",
+          }, 202);
+        }
         return json({
           status: "ok",
           idempotent: true,
@@ -363,7 +395,23 @@ Deno.serve(async (req) => {
           .eq("idempotency_key", idempotencyKey)
           .maybeSingle();
         if (won) {
-          return json({ status: "ok", idempotent: true, quoteId: won.id, jobberQuoteId: won.jobber_quote_id, annualTotal: Number(won.total) }, 200);
+          if (!won.jobber_quote_id) {
+            return json({
+              status: "pending_provider_confirmation",
+              idempotent: true,
+              quoteId: won.id,
+              jobberQuoteId: null,
+              annualTotal: Number(won.total),
+              code: "PRIOR_JOBBER_RESULT_UNCONFIRMED",
+            }, 202);
+          }
+          return json({
+            status: "ok",
+            idempotent: true,
+            quoteId: won.id,
+            jobberQuoteId: won.jobber_quote_id,
+            annualTotal: Number(won.total),
+          }, 200);
         }
       }
       console.error("Failed to persist plan quote:", insErr);
@@ -426,16 +474,48 @@ Deno.serve(async (req) => {
 
     // Find or create property.
     let propertyId: string | null = null;
-    const propRes = await jobberGraphQL<{ client: { clientProperties: { nodes: Array<{ id: string }> } } }>(
-      `query GetClientProperty($clientId: EncodedId!) { client(id: $clientId) { id clientProperties(first: 1) { nodes { id } } } }`,
+    const propRes = await jobberGraphQL<{
+      client: { clientProperties: { nodes: JobberPropertyCandidate[] } };
+    }>(
+      `query GetClientProperty($clientId: EncodedId!) {
+        client(id: $clientId) {
+          id
+          clientProperties(first: 50) {
+            nodes { id address { street city province postalCode } }
+          }
+        }
+      }`,
       { clientId: jobberClientId },
     );
-    propertyId = propRes.data?.client?.clientProperties?.nodes?.[0]?.id ?? null;
+    if (propRes.errors?.length || !propRes.data?.client) {
+      return json({
+        status: "error",
+        error: "We couldn't verify the service property. Please try again shortly.",
+        code: "PROPERTY_LOOKUP_UNAVAILABLE",
+        quoteId,
+      }, 503);
+    }
+    propertyId = findMatchingJobberProperty(
+      submittedServiceAddress,
+      propRes.data.client.clientProperties?.nodes ?? [],
+    )?.id ?? null;
     if (!propertyId) {
-      const addr = parseAddress(customer.address ?? "");
       const createProp = await jobberGraphQL<{ propertyCreate: { properties: Array<{ id: string }>; userErrors: Array<{ message: string }> } }>(
         `mutation CreateProperty($clientId: EncodedId!, $input: PropertyCreateInput!) { propertyCreate(clientId: $clientId, input: $input) { properties { id } userErrors { message path } } }`,
-        { clientId: jobberClientId, input: { properties: [{ address: { street1: addr.street1 || customer.address || "Service Address", city: addr.city || "Austin", province: addr.province || "TX", postalCode: addr.postalCode || "78701", country: "US" } }] } },
+        {
+          clientId: jobberClientId,
+          input: {
+            properties: [{
+              address: {
+                street1: submittedServiceAddress.street1,
+                city: submittedServiceAddress.city,
+                province: submittedServiceAddress.province,
+                postalCode: submittedServiceAddress.postalCode,
+                country: submittedServiceAddress.country,
+              },
+            }],
+          },
+        },
       );
       propertyId = createProp.data?.propertyCreate?.properties?.[0]?.id ?? null;
     }
