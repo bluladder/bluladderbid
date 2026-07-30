@@ -13,7 +13,7 @@
     {
       "id": "02_migration_ledger",
       "customer_tables_accessed": false,
-      "sql": "SELECT count(*) AS ledger_count, max(version) AS ledger_tip, md5(string_agg(version || ':' || name, '|' ORDER BY version)) AS ledger_fingerprint FROM supabase_migrations.schema_migrations"
+      "sql": "SELECT count(*) AS ledger_count, max(version) AS ledger_tip, md5(string_agg(version || ':' || coalesce(name, ''), E'\\n' ORDER BY version)) AS ledger_fingerprint FROM supabase_migrations.schema_migrations"
     },
     {
       "id": "03_first_wave_aggregate_counts",
