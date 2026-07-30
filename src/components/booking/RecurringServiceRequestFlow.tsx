@@ -154,6 +154,7 @@ export function RecurringServiceRequestFlow({
         return;
       }
       if (
+        res.status === 'launch_disabled' ||
         res.status === 'service_area_ineligible' ||
         res.status === 'service_area_ambiguous' ||
         res.status === 'service_area_unavailable' ||

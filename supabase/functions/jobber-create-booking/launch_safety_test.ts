@@ -27,7 +27,7 @@ Deno.test("canonical service-area decision precedes every authoritative booking 
   const areaValidation = source.indexOf("await validateServiceArea(");
   const areaDecision = source.indexOf("evaluatePublicBookingServiceArea(");
   const reservation = source.indexOf('supabase.rpc("reserve_booking_slot"');
-  const customerLookup = source.indexOf('console.log("Looking up customer by email:"');
+  const customerLookup = source.indexOf('console.log("Searching for existing Jobber client by email"');
   const providerLookup = source.indexOf('console.log("Looking up technician:"');
   const confirmationEmail = source.indexOf("sendBookingConfirmationEmails(");
 
@@ -48,6 +48,28 @@ Deno.test("canonical service-area decision precedes every authoritative booking 
   assertStringIncludes(source, '"organization_id"');
   assertStringIncludes(source, "recordServiceAreaIntervention(");
   assertStringIncludes(source, '"SERVICE_AREA_INTERVENTION_FAILED"');
+});
+
+Deno.test("protected synthetic booking suppresses every post-booking communication side effect", () => {
+  const successStart = source.indexOf("const successPayload");
+  const responseStart = source.indexOf("=== Booking creation completed successfully ===");
+  assert(successStart >= 0 && responseStart > successStart);
+  const successBoundary = source.slice(successStart, responseStart);
+
+  assertStringIncludes(successBoundary, "communicationsSuppressed: true");
+  assertStringIncludes(
+    successBoundary,
+    "bookingRecord?.id && !protectedSyntheticRunId",
+  );
+  assertStringIncludes(
+    successBoundary,
+    "bookingRecord?.id && jobberVisitId && !protectedSyntheticRunId",
+  );
+  assertStringIncludes(
+    successBoundary,
+    'event: "protected_booking_test_communications_suppressed"',
+  );
+  assertStringIncludes(successBoundary, "campaign_event_suppressed: true");
 });
 
 Deno.test("authoritative pricing failure stops before provider mutation", () => {

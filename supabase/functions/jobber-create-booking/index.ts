@@ -35,6 +35,15 @@ import {
   authoritativeBookingDurationMinutes,
   scheduledIntervalMinutes,
 } from "../_shared/bookingDuration.ts";
+import {
+  evaluatePublicBookingLaunchGate,
+  publicBookingLaunchGateResponse,
+} from "../_shared/publicBookingLaunchGate.ts";
+import {
+  evaluateProtectedBookingTestBypass,
+  type ProtectedBookingTestIdentity,
+  type ProtectedBookingTestRun,
+} from "../_shared/protectedBookingTestBypass.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -293,6 +302,57 @@ async function checkJobberConflicts(
   return { hasConflict: false, throttled: false, error: false };
 }
 
+async function protectedBookingTestBypassAuthorized(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  request: Request,
+  callerToken: string | null,
+  booking: BookingRequest,
+  idempotencyKey: string,
+): Promise<string | null> {
+  const requestedRunId = request.headers.get(
+    "X-Bluladder-Protected-Test-Run",
+  );
+  if (!requestedRunId || !isServiceRoleToken(callerToken)) return null;
+
+  const { data: run, error: runError } = await supabase
+    .from("booking_test_runs")
+    .select(
+      "id, phase, status, conversation_id, slot_id, idempotency_key, auth_key",
+    )
+    .eq("id", requestedRunId)
+    .maybeSingle();
+  if (runError || !run) return null;
+
+  const { data: identity, error: identityError } = await supabase
+    .from("test_identities")
+    .select(
+      "email, protected, active, live_jobber_test_enabled, authorized_conversation_id, authorized_slot_id, authorized_idempotency_key, authorization_expires_at, authorization_consumed_at",
+    )
+    .eq("email", booking.customer.email)
+    .eq("protected", true)
+    .maybeSingle();
+  if (identityError) return null;
+
+  const decision = evaluateProtectedBookingTestBypass({
+    callerIsServiceRole: true,
+    requestedRunId,
+    bookingEmail: booking.customer.email,
+    bookingIdempotencyKey: idempotencyKey,
+    run: run as ProtectedBookingTestRun,
+    identity: identity as ProtectedBookingTestIdentity | null,
+  });
+  if (!decision.authorized) return null;
+
+  console.warn(JSON.stringify({
+    event: "protected_booking_test_launch_gate_bypass",
+    workflow: "one_time_booking",
+    reason_code: decision.reason,
+    run_id: requestedRunId,
+  }));
+  return requestedRunId;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -362,6 +422,7 @@ Deno.serve(async (req) => {
       );
     }
     booking.customer = customerValidation.customer;
+    const validatedCustomer = customerValidation.customer;
     const submittedServiceAddress = customerValidation.address;
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -443,6 +504,25 @@ Deno.serve(async (req) => {
       });
     }
 
+    const launchGate = evaluatePublicBookingLaunchGate(
+      Deno.env.get("PUBLIC_BOOKING_ENABLED"),
+    );
+    const protectedSyntheticRunId =
+      await protectedBookingTestBypassAuthorized(
+        supabase,
+        req,
+        callerToken,
+        booking,
+        idempotencyKey,
+      );
+    if (!launchGate.enabled && !protectedSyntheticRunId) {
+      return publicBookingLaunchGateResponse(
+        "one_time_booking",
+        Deno.env.get("PUBLIC_BOOKING_ENABLED"),
+        corsHeaders,
+      )!;
+    }
+
     const organizationResolution = await resolvePublicBookingOrganization(
       supabase,
     );
@@ -468,7 +548,7 @@ Deno.serve(async (req) => {
 
     const serviceAreaResult = await validateServiceArea(
       supabase,
-      booking.customer.address,
+      validatedCustomer.address,
     );
     const serviceAreaDecision = evaluatePublicBookingServiceArea(
       submittedServiceAddress,
@@ -482,7 +562,7 @@ Deno.serve(async (req) => {
           `${booking.customer.firstName} ${booking.customer.lastName}`.trim(),
         customerEmail: booking.customer.email,
         customerPhone: booking.customer.phone ?? null,
-        propertyAddress: booking.customer.address,
+        propertyAddress: validatedCustomer.address,
         services: booking.services,
         total: Number.isFinite(booking.total) ? booking.total : null,
         reasonCode: "configured_manual_review_county",
@@ -1220,7 +1300,11 @@ Deno.serve(async (req) => {
         
         console.log("Jobber property retry completed", {
           propertyCount:
-            retryResult.data?.client?.clientProperties?.nodes?.length ?? 0,
+            retryResult.data?.client?.properties
+              ? Array.isArray(retryResult.data.client.properties)
+                ? retryResult.data.client.properties.length
+                : 1
+              : 0,
           errorCount: retryResult.errors?.length ?? 0,
         });
         const retryProps = retryResult.data?.client?.properties;
@@ -1670,7 +1754,7 @@ Deno.serve(async (req) => {
     }>(scheduleVisitMutation, { jobId: jobberJobId, input: visitInput });
 
     console.log("Jobber visit creation completed", {
-      created: !!visitResult.data?.visitCreate?.visits?.[0]?.id,
+      created: !!visitResult.data?.visitCreate?.createdVisits?.[0]?.id,
       errorCount: visitResult.errors?.length ?? 0,
       userErrorCount: visitResult.data?.visitCreate?.userErrors?.length ?? 0,
     });
@@ -2050,6 +2134,12 @@ Deno.serve(async (req) => {
       total: booking.total,
       isTeamJob: booking.isTeamJob || false,
       crewSize: technicians.length,
+      protectedTest: protectedSyntheticRunId
+        ? {
+          runId: protectedSyntheticRunId,
+          communicationsSuppressed: true,
+        }
+        : undefined,
     };
 
     // Convert the temporary hold into a confirmed reservation and store the
@@ -2073,7 +2163,7 @@ Deno.serve(async (req) => {
     reservationSettled = true;
 
     // Fire-and-forget appointment-confirmation SMS + campaign enrollment.
-    if (bookingRecord?.id) {
+    if (bookingRecord?.id && !protectedSyntheticRunId) {
       try {
         fetch(`${supabaseUrl}/functions/v1/send-sms`, {
           method: "POST",
@@ -2093,7 +2183,7 @@ Deno.serve(async (req) => {
     // others. Sends are deduplicated per (booking, channel) inside the helper
     // so refreshes, retries and idempotent replays never send twice. Only
     // fires when a real Jobber visit id exists.
-    if (bookingRecord?.id && jobberVisitId) {
+    if (bookingRecord?.id && jobberVisitId && !protectedSyntheticRunId) {
       try {
         const emailCtx = {
           bookingId: bookingRecord.id,
@@ -2143,7 +2233,16 @@ Deno.serve(async (req) => {
     // reschedule that bumps the version emits a fresh confirmation, while a
     // simple metadata refresh does not. This is a STOP event for the
     // abandoned/decline-nurture on the specific quote journey.
-    try {
+    if (protectedSyntheticRunId) {
+      console.warn(JSON.stringify({
+        event: "protected_booking_test_communications_suppressed",
+        run_id: protectedSyntheticRunId,
+        booking_id: bookingRecord?.id ?? null,
+        sms_suppressed: true,
+        email_suppressed: true,
+        campaign_event_suppressed: true,
+      }));
+    } else try {
       const bookingIdForKey = bookingRecord?.id ?? jobberVisitId;
       const bookingVersion = Number((bookingRecord as Record<string, unknown> | null)?.booking_version ?? 1);
       const linkedQuoteId = (bookingRecord as Record<string, unknown> | null)?.quote_id as string | undefined;

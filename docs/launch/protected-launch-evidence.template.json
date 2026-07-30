@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "release": {
+    "project_ref": "gyndziiuizpgwhqwyrvn",
+    "environment": "production",
+    "repository_sha": "REPLACE_WITH_40_CHARACTER_LOWERCASE_COMMIT_SHA"
+  },
+  "states": [
+    {
+      "id": "REPOSITORY_READY",
+      "status": "NOT_EXECUTED",
+      "reason": "Authoritative clean-main validation evidence has not been imported."
+    },
+    {
+      "id": "CONFIGURATION_VERIFIED",
+      "status": "NOT_EXECUTED",
+      "reason": "Hosted and provider configuration verification has not been authorized and imported."
+    },
+    {
+      "id": "DATABASE_RELEASED",
+      "status": "BLOCKED",
+      "reason": "Stage 7B hosted execution requires a separate protected authorization."
+    },
+    {
+      "id": "DEPLOYMENT_VERIFIED",
+      "status": "BLOCKED",
+      "reason": "Production deployment requires a separate protected authorization."
+    },
+    {
+      "id": "SYNTHETIC_BOOKING_PASSED",
+      "status": "BLOCKED",
+      "reason": "The protected synthetic identity and production-data write window are not authorized."
+    },
+    {
+      "id": "VOICE_CONNECTIVITY_VERIFIED",
+      "status": "BLOCKED",
+      "reason": "Provider and real-number connectivity checks require a separate protected authorization."
+    },
+    {
+      "id": "REAL_CALL_ACCEPTANCE_PASSED",
+      "status": "BLOCKED",
+      "reason": "Real AI voice calls require a separate protected authorization."
+    },
+    {
+      "id": "LANDING_PAGE_RELEASED",
+      "status": "BLOCKED",
+      "reason": "Public release and booking activation require a separate protected authorization."
+    },
+    {
+      "id": "MONITORING_STABLE",
+      "status": "NOT_EXECUTED",
+      "reason": "The post-release observation window has not run."
+    }
+  ]
+}

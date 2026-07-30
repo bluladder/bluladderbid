@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "release": {
+    "release_id": "tenant-foundation-stage-7b-corrected-v1",
+    "operator_identity": "disposable-operator",
+    "independent_reviewer": "disposable-reviewer",
+    "approval_record": "fixture-approval"
+  },
+  "artifact": {
+    "source_commit": "5904484df00d9762aa140f6a246d27078029da99",
+    "source_git_blob": "4823d772a456a4a40f9883c408da3d85ba3a1d9d",
+    "source_sha256": "b26d38b6b63d5f1fa67f0e7ae8ce0a31eb8892690c9078063fa19dc36ba9c2ca",
+    "correction_commit": "baefb482fb999558f3e5914520e6e1939c55abcf",
+    "correction_git_blob": "e37877cb8f8b67da42e2e9ed72f1919780bc9241",
+    "correction_sha256": "abcc90c9044b32fc02fce5f7c3fd445f91fe4f186c5c8a2ee93007809f3a69d0",
+    "provenance_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "provenance_commit_contains_blob": true,
+    "provenance_git_blob": "e75945a712289db69421aaedee26e47254a40212",
+    "provenance_sha256": "bd8cb82c61f47dd6d22fed6c25043c3a5e34e8abd7d5a0e51cde5ff04ee8081f",
+    "candidate_sha256": "1c1da7314771172e7ab07eb826e6ba54d00b01ae3e2e20db9a3798b0456fdb59"
+  },
+  "identity": {
+    "expected_project_ref": "gyndziiuizpgwhqwyrvn",
+    "observed_project_ref": "fqyplaphuafbtalrxqzd",
+    "expected_environment": "production",
+    "observed_environment": "production",
+    "postgres_version": "17.6",
+    "psql_version": "psql (PostgreSQL) 17.6",
+    "release_checkout_clean": true
+  },
+  "preflight": {
+    "status": "PASS",
+    "captured_at": "2026-07-29T20:00:00.000Z",
+    "output_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ledger_count": 145,
+    "ledger_tip": "20260726194719",
+    "ledger_fingerprint": "73ed8522db78e51049a421e1f72b18c3",
+    "first_wave_counts": {
+      "customers": 16,
+      "properties": 10,
+      "quotes": 2,
+      "bookings": 2
+    },
+    "stage7b_objects_absent": true,
+    "first_wave_columns_absent": true,
+    "platform_role_count": 1
+  },
+  "cron": {
+    "jobs": []
+  },
+  "execution": {
+    "started_at": "",
+    "finished_at": "",
+    "exit_status": null,
+    "transaction_outcome": "NOT_EXECUTED",
+    "redacted_output_sha256": ""
+  },
+  "verification": {
+    "status": "NOT_EXECUTED",
+    "captured_at": "",
+    "output_sha256": "",
+    "ledger_unchanged": false,
+    "first_wave_null_count": null,
+    "lineage_mismatch_count": null,
+    "validated_foreign_keys": null,
+    "canonical_dfw_count": null,
+    "active_oregon_count": null,
+    "provenance_row_count": null,
+    "provenance_matches": false,
+    "security_checks_passed": false
+  },
+  "restore": {
+    "completed_at": "",
+    "all_jobs_restored": false,
+    "jobs": []
+  },
+  "failure": {
+    "incident_opened": false,
+    "incident_id": "",
+    "containment": "",
+    "disposition": "NOT_EXECUTED",
+    "forward_repair_reference": ""
+  },
+  "append_only": {
+    "bundle_sha256": "",
+    "validated_at": "",
+    "validator_version": "stage7b-evidence-v1"
+  }
+}

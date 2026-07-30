@@ -1,30 +1,106 @@
 {
+  "schema_version": 2,
+  "release_id": "tenant-foundation-stage-7b-corrected-v1",
   "decision": "NO-GO",
   "hosted_mutation_authorized": false,
   "ledger_rewrite_allowed": false,
   "source": {
+    "commit": "5904484df00d9762aa140f6a246d27078029da99",
+    "git_blob": "4823d772a456a4a40f9883c408da3d85ba3a1d9d",
     "path": "supabase/migrations/20260728060000_tenant_foundation_stage_7b.sql",
     "sha256": "b26d38b6b63d5f1fa67f0e7ae8ce0a31eb8892690c9078063fa19dc36ba9c2ca",
     "bytes": 12135
   },
   "correction": {
+    "commit": "baefb482fb999558f3e5914520e6e1939c55abcf",
+    "git_blob": "e37877cb8f8b67da42e2e9ed72f1919780bc9241",
     "path": "supabase/release-candidates/20260729030000_tenant_foundation_stage_7b_rc_security.sql",
     "sha256": "abcc90c9044b32fc02fce5f7c3fd445f91fe4f186c5c8a2ee93007809f3a69d0",
     "bytes": 7154
   },
+  "provenance": {
+    "commit": null,
+    "commit_evidence": "artifact.provenance_commit",
+    "git_blob": "e75945a712289db69421aaedee26e47254a40212",
+    "path": "supabase/release-candidates/20260729031000_tenant_foundation_stage_7b_provenance.sql",
+    "sha256": "bd8cb82c61f47dd6d22fed6c25043c3a5e34e8abd7d5a0e51cde5ff04ee8081f",
+    "bytes": 5429,
+    "schema": "tenant_security",
+    "table": "release_provenance",
+    "append_only": true,
+    "atomic_with_candidate": true
+  },
   "assembled": {
-    "sha256": "8c472bfdaeb0c3952f1d31c300673c365a770f628f646fb4c1133c2bf22ff9a3",
-    "bytes": 19291,
-    "transaction_count": 1
+    "sha256": "1c1da7314771172e7ab07eb826e6ba54d00b01ae3e2e20db9a3798b0456fdb59",
+    "bytes": 24721,
+    "transaction_count": 1,
+    "required_psql_variables": [
+      "candidate_sha256",
+      "provenance_sha256",
+      "operator_identity",
+      "approval_record",
+      "project_ref",
+      "environment",
+      "execution_started_at"
+    ]
+  },
+  "environment": {
+    "project_ref": "gyndziiuizpgwhqwyrvn",
+    "name": "production",
+    "rejected_project_refs": [
+      "fqyplaphuafbtalrxqzd"
+    ],
+    "postgres_version": "17.6",
+    "psql_required_major": 17,
+    "hosted_ledger_count": 145,
+    "hosted_ledger_tip": "20260726194719",
+    "hosted_ledger_version_name_fingerprint": "73ed8522db78e51049a421e1f72b18c3"
+  },
+  "expected_existing_rows": {
+    "customers": 16,
+    "properties": 10,
+    "quotes": 2,
+    "bookings": 2,
+    "first_wave_total": 30,
+    "platform_role_memberships": 1
+  },
+  "cron": {
+    "jobs": [
+      {
+        "job_id": 3,
+        "command_fingerprint": "1a1b5b332626f37867e3521d2052f56b"
+      },
+      {
+        "job_id": 5,
+        "command_fingerprint": "88e143e3876903e839e7551f68dd179b"
+      },
+      {
+        "job_id": 6,
+        "command_fingerprint": "ad8c290523e2659a608e7fcb7d57bcb7"
+      }
+    ]
+  },
+  "evidence": {
+    "template": "docs/releases/stage-7b-corrected/provenance-evidence-template.json",
+    "validator": "scripts/validate-stage-7b-evidence.mjs",
+    "validator_version": "stage7b-evidence-v1",
+    "preflight": {
+      "path": "supabase/preflight/tenant_stage_7b_corrected_release.sql",
+      "sha256": "6ca27c146bac92422df488b5f6ad08ccd49cce1c35788be3fef9a8736bd30850",
+      "bytes": 3909
+    },
+    "postflight": {
+      "path": "supabase/verification/tenant_stage_7b_corrected_postflight.sql",
+      "sha256": "05af1708cc398da8a342c23799bb72378e4410411e893d6a2b46deae66935db8",
+      "bytes": 11607
+    }
   },
   "execution": {
-    "selected_mechanism": null,
-    "rejected": [
-      "supabase_mcp_apply_migration",
-      "management_api_migration",
-      "supabase_cli_db_push",
-      "direct_psql_without_provenance_approval"
-    ]
+    "selected_mechanism": "direct_psql",
+    "hosted_ledger_result": "unchanged",
+    "canonical_provenance_result": "one atomic private append-only row",
+    "authorization_required": true,
+    "runbook": "docs/releases/stage-7b-corrected/direct-execution-runbook.md"
   },
   "excluded_migrations": [
     "20260728070000_organization_routing_stage_8a.sql",

@@ -37,10 +37,53 @@ const requiredGates = new Set([
   'provider-configuration',
   'production-security-foundation',
   'rollback-runbook',
+  'hosted-booking-verification',
+  'manual-customer-journey-acceptance',
+  'actual-production-verification',
 ]);
+
+function rejectRepositoryPromotionOfProtectedScopes(gates) {
+  const promoted = gates.filter(
+    (gate) => gate.scope !== 'repository' && gate.status === 'PASS',
+  );
+  if (promoted.length > 0) {
+    throw new Error(
+      `${promoted.map((gate) => gate.id).join(', ')}: protected, hosted, ` +
+        'configuration, manual, and production gates cannot be PASS in the ' +
+        'repository-owned launch contract',
+    );
+  }
+}
 
 if (contract.schema_version !== 1 || !Array.isArray(contract.gates)) {
   throw new Error('invalid launch-readiness schema');
+}
+rejectRepositoryPromotionOfProtectedScopes(contract.gates);
+
+if (process.argv.includes('--self-test')) {
+  let rejected = 0;
+  for (const gate of contract.gates.filter((candidate) =>
+    candidate.scope !== 'repository'
+  )) {
+    try {
+      rejectRepositoryPromotionOfProtectedScopes(
+        contract.gates.map((candidate) =>
+          candidate.id === gate.id ? { ...candidate, status: 'PASS' } : candidate
+        ),
+      );
+    } catch {
+      rejected += 1;
+    }
+  }
+  const protectedGateCount = contract.gates.filter(
+    (gate) => gate.scope !== 'repository',
+  ).length;
+  if (rejected !== protectedGateCount) {
+    throw new Error('protected-scope PASS hostile self-test did not fail closed');
+  }
+  console.log(
+    `Launch contract hostile self-test: ${rejected} protected-scope promotions rejected.`,
+  );
 }
 
 const ids = new Set();

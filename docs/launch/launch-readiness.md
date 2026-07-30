@@ -27,13 +27,17 @@ passed.
 
 Mocks can establish repository readiness only. They cannot make configuration,
 hosted-environment, manual acceptance, or production-verification gates pass.
+The repository contract checker rejects `PASS` in any of those scopes. Live
+promotion happens only in the separately signed protected evidence decision; it
+never rewrites the repository-owned scorecard.
 
 ## Current launch blockers
 
-The current contract identifies one repository-level launch gap:
-
-1. Recurring provider uncertainty still requires generalized recovery and
-   reconciliation outside the hardened public quote-delivery boundary.
+The repository-verifiable launch gates are implemented and passing. Remaining
+gates require imported evidence from separately authorized hosted database,
+provider-configuration, deployment, synthetic-booking, real-call, public
+release, and monitoring windows. Documentation or fixtures cannot satisfy
+those gates.
 
 Public quote email and SMS delivery now claim a stable semantic request in the
 database before provider submission. Concurrent duplicates converge on the
@@ -94,3 +98,17 @@ PASS.
 
 The hosted security foundation, provider configuration, controlled synthetic
 booking, and production verification remain protected-action gates.
+
+The final protected launch decision uses:
+
+```bash
+node scripts/evaluate-protected-launch.mjs \
+  /path/to/captured-launch-evidence/evidence.json \
+  --go-approval /path/to/captured-launch-evidence/go-owner-approval.json \
+  --trust-key /path/to/approved-trust/go-owner-public.pem
+```
+
+It requires the nine ordered protected states to be `PASS` with current,
+identity-bound, independently reviewed, hash-verified captured evidence, plus
+an independent GO-owner Ed25519 signature over the exact bundle. Unsigned
+evidence can be structurally valid but can never return launch READY.
