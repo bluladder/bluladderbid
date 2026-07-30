@@ -26,17 +26,47 @@ import {
   MAX_SLOT_FAILURES_BEFORE_ESCALATION,
   OFFER_TTL_MS,
 } from "./slotOffer.ts";
+import { parseAllowlist } from "./workflow/rolloutRoute.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 /**
- * Compatibility export for older diagnostics. Live voice booking is
- * structurally absent in this repository stage; environment configuration
- * cannot unlock the shared mutation pipeline.
+ * Runtime switch for live voice booking. This flag ALONE is never sufficient:
+ * a confirmed voice booking additionally requires the caller to be on
+ * VOICE_WORKFLOW_CONTROLLER_ALLOWLIST (see voiceBookingCallerAllowlisted), so
+ * enabling the flag can never open real bookings to arbitrary inbound callers.
  */
 export function voiceLiveBookingEnabled(): boolean {
-  return false;
+  const raw = (Deno.env.get("VOICE_LIVE_BOOKING_ENABLED") ?? "").trim()
+    .toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes";
+}
+
+/**
+ * Second, independent constraint on live voice booking: the caller's phone
+ * number must appear verbatim (after E.164 normalization) in
+ * VOICE_WORKFLOW_CONTROLLER_ALLOWLIST. Empty allowlist → nobody is allowed.
+ */
+export function voiceBookingCallerAllowlisted(
+  phone: string | null | undefined,
+): boolean {
+  if (!phone || !phone.trim()) return false;
+  const allowlist = parseAllowlist(
+    Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST") ?? null,
+  );
+  if (allowlist.length === 0) return false;
+  const normalized = parseAllowlist(phone)[0];
+  return !!normalized && allowlist.includes(normalized);
+}
+
+/** Resolved voice booking mode for one confirmed booking attempt. */
+export function resolveVoiceBookingLane(
+  phone: string | null | undefined,
+): "live" | "dry_run" {
+  return voiceLiveBookingEnabled() && voiceBookingCallerAllowlisted(phone)
+    ? "live"
+    : "dry_run";
 }
 
 /**
