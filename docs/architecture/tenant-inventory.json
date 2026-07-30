@@ -13,6 +13,11 @@
     "quotes"
   ],
   "tables": {
+    "tenant_foundation": [
+      "organization_memberships",
+      "organization_resolution_keys",
+      "organizations"
+    ],
     "global_system_owned": [
       "booking_test_runs",
       "customer_access_test_authorizations",
