@@ -58,7 +58,8 @@ export async function planQuoteByTextResponse(args: {
       outcome: "not_sent_no_firm_quote",
       event: "voice_quote_by_text_not_sent",
       missingField: null,
-      reply: "I haven't finished pricing this yet, so there's nothing to text you at the moment. Let's finish the quote first and then I can get it to you in writing.",
+      reply:
+        "I haven't finished pricing this yet, so there's nothing to text you at the moment. Let's finish the quote first and then I can get it to you in writing.",
     };
   }
   if (!args.phoneIsFullE164 || !args.phone) {
@@ -67,7 +68,8 @@ export async function planQuoteByTextResponse(args: {
       outcome: "not_sent_missing_phone",
       event: "voice_quote_by_text_not_sent",
       missingField: "phone",
-      reply: "I haven't sent that text yet — I need the full ten-digit mobile number to send it to. What's the best number?",
+      reply:
+        "I haven't sent that text yet — I need the full ten-digit mobile number to send it to. What's the best number?",
     };
   }
   if (!args.name || !args.name.trim()) {
@@ -76,7 +78,8 @@ export async function planQuoteByTextResponse(args: {
       outcome: "not_sent_missing_name",
       event: "voice_quote_by_text_not_sent",
       missingField: "name",
-      reply: "I haven't sent that text yet — can I get your name first so the quote goes out correctly?",
+      reply:
+        "I haven't sent that text yet — can I get your name first so the quote goes out correctly?",
     };
   }
   if (!args.deliver) {
@@ -85,7 +88,10 @@ export async function planQuoteByTextResponse(args: {
       outcome: "not_sent_delivery_unavailable",
       event: "voice_quote_by_text_unavailable",
       missingField: null,
-      reply: `To be straight with you, I can't text the quote from this call yet — so no text has been sent. Your price is about $${Math.round(args.total)}. I can have someone from our team follow up with the written quote, or we can book a time right now. Which would you prefer?`,
+      reply:
+        `To be straight with you, I can't text the quote from this call yet — so no text has been sent. Your price is about $${
+          Math.round(args.total)
+        }. I can have someone from our team follow up with the written quote, or we can book a time right now. Which would you prefer?`,
     };
   }
   try {
@@ -96,7 +102,9 @@ export async function planQuoteByTextResponse(args: {
         outcome: "sent",
         event: "voice_quote_by_text_sent",
         missingField: null,
-        reply: `Done — I've texted the quote of about $${Math.round(args.total)} to your number. Would you like me to check appointment times while you have me?`,
+        reply: `Done — I've texted the quote of about $${
+          Math.round(args.total)
+        } to your number. Would you like me to check appointment times while you have me?`,
       };
     }
   } catch (_e) { /* fall through to truthful failure */ }
@@ -105,15 +113,22 @@ export async function planQuoteByTextResponse(args: {
     outcome: "not_sent_delivery_failed",
     event: "voice_quote_by_text_failed",
     missingField: null,
-    reply: `That text didn't go through, so you won't see it — I don't want to leave you waiting on something that isn't coming. Your price is about $${Math.round(args.total)}. I can have a teammate follow up with the written quote, or we can pick an appointment time now.`,
+    reply:
+      `That text didn't go through, so you won't see it — I don't want to leave you waiting on something that isn't coming. Your price is about $${
+        Math.round(args.total)
+      }. I can have a teammate follow up with the written quote, or we can pick an appointment time now.`,
   };
 }
 
 /** Strip false delivery claims from any model-authored voice reply when no
  *  customer-facing send actually succeeded this turn. */
-export function guardDeliveryClaims(reply: string, deliverySucceeded: boolean): string {
+export function guardDeliveryClaims(
+  reply: string,
+  deliverySucceeded: boolean,
+): string {
   if (deliverySucceeded) return reply;
-  const claims = /\b(?:i(?:'ve| have)?\s*(?:just\s*)?(?:sent|texted|emailed|shot)|(?:it|that|the quote|the estimate)\s*(?:is|has been|was)\s*(?:sent|texted|on its way)|sending (?:it|that|the quote) (?:now|over)|you(?:'ll| will) (?:get|receive|see) (?:a|the) (?:text|message|email) (?:shortly|now|in a moment))/i;
+  const claims =
+    /\b(?:i(?:'ve| have)?\s*(?:just\s*)?(?:sent|texted|emailed|shot)|(?:it|that|the quote|the estimate)\s*(?:is|has been|was)\s*(?:sent|texted|on its way)|sending (?:it|that|the quote) (?:now|over)|you(?:'ll| will) (?:get|receive|see) (?:a|the) (?:text|message|email) (?:shortly|now|in a moment))/i;
   if (!claims.test(reply ?? "")) return reply;
   return "Just so I'm accurate: I haven't sent anything yet. I can have a teammate follow up with the written quote, or we can pick an appointment time right now — which would you like?";
 }

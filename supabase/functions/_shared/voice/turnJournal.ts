@@ -28,7 +28,9 @@ const SECRET_PATTERNS: RegExp[] = [
 ];
 
 /** Remove anything credential-shaped and clamp length. */
-export function sanitizeTurnContent(content: string | null | undefined): string {
+export function sanitizeTurnContent(
+  content: string | null | undefined,
+): string {
   let out = String(content ?? "");
   for (const re of SECRET_PATTERNS) out = out.replace(re, "[redacted]");
   out = out.replace(/\s+/g, " ").trim();
@@ -64,7 +66,12 @@ export function buildTurnRows(args: {
 /** Best-effort persistence. Journaling must never break a live call. */
 export async function recordVoiceTurns(
   supabase: SB,
-  args: { conversationId: string; callId?: string | null; state?: string | null; turns: VoiceTurn[] },
+  args: {
+    conversationId: string;
+    callId?: string | null;
+    state?: string | null;
+    turns: VoiceTurn[];
+  },
 ): Promise<{ written: number }> {
   const rows = buildTurnRows(args);
   if (rows.length === 0) return { written: 0 };

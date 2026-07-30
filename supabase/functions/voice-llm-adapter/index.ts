@@ -24,6 +24,7 @@ import {
   persistControllerPatch,
 } from "../_shared/workflow/workflowController.ts";
 import { ensureVoiceConversation } from "../_shared/voiceAdapter.ts";
+import { normalizeVoiceMessages } from "../_shared/voice/voiceInputNormalizer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -163,6 +164,23 @@ Deno.serve(async (req) => {
   if (!supabaseUrl || !serviceKey) return jsonError(500, "supabase_env_missing");
   const supabase = createClient(supabaseUrl, serviceKey);
   const model = parsed.value.model || "bluladder-voice-adapter";
+
+  // ---- Pre-routing normalization ----------------------------------------
+  // Context-aware story / spoken-square-footage / window-side normalization
+  // runs BEFORE the deterministic controller and the legacy orchestrator so
+  // both lanes see the same unambiguous utterance. Address-shaped replies are
+  // left untouched by the normalizer.
+  try {
+    const normalized = normalizeVoiceMessages(parsed.value.messages);
+    if (normalized.applied.length) {
+      parsed.value.messages = normalized.messages;
+      console.log(JSON.stringify({
+        at: "voice-llm-adapter", buildId: BUILD_ID, normalization: normalized.applied,
+      }));
+    }
+  } catch (e) {
+    console.warn("voice input normalization skipped:", (e as Error).message);
+  }
 
   // ---- Rollout gate ------------------------------------------------------
   const decision = selectRoute({
