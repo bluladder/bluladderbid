@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "fixture": false,
+  "release": {
+    "release_id": "tenant-foundation-stage-7b-lovable-v1",
+    "release_commit": "e8000543d015dec7b6ab16110e4798f596398681",
+    "operator_identity": "benjamin-millen",
+    "owner_authorization_id": ""
+  },
+  "artifact": {
+    "canonical_sha256": "8bb4c57a031831740397339c8023c2da3521473d984de976b5c98836e26b1f9e",
+    "file_sha256": "9fe8054a768c2f92ed4f3c9ddbd95eaf0b8d60868cacca1b293f3d84ec4f18e3",
+    "bytes": 24334,
+    "complete_sql_reviewed": false,
+    "unrelated_migrations_excluded": false
+  },
+  "identity": {
+    "expected_project_ref": "gyndziiuizpgwhqwyrvn",
+    "observed_project_ref": "",
+    "expected_environment": "Live/production",
+    "observed_environment": "",
+    "postgres_version": ""
+  },
+  "preflight": {
+    "status": "NOT_EXECUTED",
+    "captured_at": "",
+    "catalog_output_sha256": "",
+    "ledger_count": null,
+    "ledger_tip": "",
+    "ledger_fingerprint": "",
+    "first_wave_counts": {},
+    "stage7b_objects_absent": false,
+    "first_wave_columns_absent": false,
+    "platform_role_count": null
+  },
+  "containment": {
+    "public_booking_enabled_false": false,
+    "secret_value_not_retained": true,
+    "jobs": []
+  },
+  "execution": {
+    "lovable_approval_history_retained": false,
+    "approved_at": "",
+    "started_at": "",
+    "finished_at": "",
+    "status": "NOT_EXECUTED",
+    "database_log_sha256": ""
+  },
+  "postflight": {
+    "status": "NOT_EXECUTED",
+    "captured_at": "",
+    "catalog_output_sha256": "",
+    "ledger_unchanged": false,
+    "first_wave_null_count": null,
+    "lineage_mismatch_count": null,
+    "validated_foreign_keys": null,
+    "canonical_dfw_count": null,
+    "active_oregon_count": null,
+    "provenance_row_count": null,
+    "provenance_matches": false,
+    "security_checks_passed": false
+  },
+  "restore": {
+    "completed_at": "",
+    "all_jobs_restored": false,
+    "jobs": []
+  },
+  "deployments": {
+    "booking_function": {"status": "NOT_EXECUTED", "evidence": ""},
+    "service_request_function": {"status": "NOT_EXECUTED", "evidence": ""},
+    "admin_diagnostics_function": {"status": "NOT_EXECUTED", "evidence": ""}
+  },
+  "retention": {
+    "git_artifact_history": false,
+    "lovable_chat_approval_history": false,
+    "database_logs": false,
+    "catalog_verification": false,
+    "atomic_provenance_row": false,
+    "bundle_sha256": "",
+    "validated_at": "",
+    "validator_version": "stage7b-lovable-evidence-v1"
+  },
+  "failure": {
+    "incident_opened": false,
+    "disposition": "NOT_EXECUTED",
+    "forward_repair_reference": ""
+  }
+}

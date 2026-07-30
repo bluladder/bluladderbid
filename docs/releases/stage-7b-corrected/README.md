@@ -1,5 +1,9 @@
 # Stage 7B corrected release candidate
 
+Historical status: this direct-`psql` package is retained for audit continuity
+but is superseded for any new execution by
+`docs/releases/stage-7b-lovable-v1/README.md`.
+
 Decision: **NO-GO for hosted execution**. Production is Lovable Cloud, so the
 prepared direct-`psql` mechanism is not a supported production control path.
 See `lovable-cloud-control-plane.md`. This package does not authorize any

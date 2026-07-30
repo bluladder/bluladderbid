@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "release_id": "tenant-foundation-stage-7b-lovable-v1",
+  "decision": "GO_FOR_SEPARATELY_AUTHORIZED_CONTROLLED_EXECUTION",
+  "hosted_mutation_authorized": false,
+  "production_control_plane": "lovable_cloud",
+  "release_commit": "e8000543d015dec7b6ab16110e4798f596398681",
+  "operator_identity": "benjamin-millen",
+  "owner_approval_record": "owner-operated-lovable-stage7b-v1",
+  "source": {
+    "path": "supabase/migrations/20260728060000_tenant_foundation_stage_7b.sql",
+    "sha256": "b26d38b6b63d5f1fa67f0e7ae8ce0a31eb8892690c9078063fa19dc36ba9c2ca",
+    "bytes": 12135
+  },
+  "correction": {
+    "path": "supabase/release-candidates/20260729030000_tenant_foundation_stage_7b_rc_security.sql",
+    "sha256": "abcc90c9044b32fc02fce5f7c3fd445f91fe4f186c5c8a2ee93007809f3a69d0",
+    "bytes": 7154
+  },
+  "provenance": {
+    "path": "supabase/release-candidates/20260730060000_tenant_foundation_stage_7b_lovable_provenance.sql",
+    "sha256": "e4f21efa939f493f8456b74272ef89ffeb9d84487a8e171152189a93058f2b70",
+    "bytes": 4997,
+    "append_only": true,
+    "atomic_with_candidate": true
+  },
+  "artifact": {
+    "path": "supabase/release-candidates/20260730061000_tenant_foundation_stage_7b_lovable.sql",
+    "canonical_sha256": "8bb4c57a031831740397339c8023c2da3521473d984de976b5c98836e26b1f9e",
+    "file_sha256": "9fe8054a768c2f92ed4f3c9ddbd95eaf0b8d60868cacca1b293f3d84ec4f18e3",
+    "bytes": 24334,
+    "transaction_count": 1,
+    "psql_substitution_count": 0,
+    "canonicalization": "replace the embedded canonical_sha256 with __ARTIFACT_SHA256__ before SHA-256"
+  },
+  "environment": {
+    "project_ref": "gyndziiuizpgwhqwyrvn",
+    "name": "Live/production",
+    "postgres_version": "17.6",
+    "hosted_ledger_count": 145,
+    "hosted_ledger_tip": "20260726194719",
+    "hosted_ledger_fingerprint": "73ed8522db78e51049a421e1f72b18c3"
+  },
+  "expected_existing_rows": {
+    "customers": 16,
+    "properties": 10,
+    "quotes": 2,
+    "bookings": 2,
+    "first_wave_total": 30,
+    "platform_role_memberships": 1
+  },
+  "jobs": [
+    {
+      "job_id": 3,
+      "command_fingerprint": "1a1b5b332626f37867e3521d2052f56b"
+    },
+    {
+      "job_id": 5,
+      "command_fingerprint": "88e143e3876903e839e7551f68dd179b"
+    },
+    {
+      "job_id": 6,
+      "command_fingerprint": "ad8c290523e2659a608e7fcb7d57bcb7"
+    }
+  ],
+  "preflight": {
+    "path": "supabase/preflight/tenant_stage_7b_lovable.sql",
+    "sha256": "ec7e8e38a8c35c3c47eff20c3572e21ff58189c8844a544f5a9139ded899ee00"
+  },
+  "postflight": {
+    "path": "supabase/verification/tenant_stage_7b_lovable_postflight.sql",
+    "sha256": "a01c3dcd8d41d2084cb527401906886b5450ad9b6275d237bdfeade227dbae0d"
+  },
+  "evidence": {
+    "template": "docs/releases/stage-7b-lovable-v1/evidence-template.json",
+    "validator": "scripts/validate-stage-7b-lovable-evidence.mjs",
+    "validator_version": "stage7b-lovable-evidence-v1",
+    "retained_sources": [
+      "lovable_chat_approval_history",
+      "git_artifact_history",
+      "database_logs",
+      "catalog_verification",
+      "atomic_provenance_row"
+    ]
+  },
+  "runbook": "docs/releases/stage-7b-lovable-v1/operator-runbook.md",
+  "excluded_migrations": [
+    "20260728070000_organization_routing_stage_8a.sql",
+    "20260728080000_restrict_security_definer_execution.sql"
+  ]
+}
