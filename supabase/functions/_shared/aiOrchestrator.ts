@@ -53,6 +53,7 @@ import {
   planQuoteByTextCancellation,
   planQuoteByTextResponse,
 } from "./voice/quoteByText.ts";
+import { parseSpokenEmail } from "./voice/spokenEmail.ts";
 import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
@@ -1166,10 +1167,10 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   // sent and offer the next concrete step. Internal escalation SMS is never
   // used as a substitute for a customer quote link.
   //
-  // Quote-by-text delivery is a customer-facing QUOTE feature and is therefore
-  // NOT gated on the live-booking rollout (flag/allowlist): it writes no
-  // appointment and touches no calendar. Its own guards are the firm quote, the
-  // confirmed phone, the eligible address and a resolvable email.
+  // Delivery is real and canonical (save-quote + send-sms) but stays behind the
+  // existing voice live flag and caller allowlist. Its own additional guards
+  // are the firm quote, the confirmed phone, the eligible address and a
+  // deterministically resolvable email.
   //
   // The request also survives across turns: when a required field is missing we
   // persist `quoteByText.pending` and resume automatically on the next turn, so

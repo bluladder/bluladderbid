@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.3-quote-by-text-live-delivery";
+export const BUILD_ID = "voice-adapter-4C-b.6.4-quote-by-text-live";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -24,7 +24,8 @@ export const BUILD_FEATURES = {
   voiceRoughQuoteReplayGuard: true,
   slowBranchAcknowledgementVariety: true,
   residentialWindowConditionIntakeParity: true,
-  // Voice quote-by-text now performs a real customer-facing delivery through
-  // save-quote + send-sms. It is NOT gated on the booking rollout flags.
+  // Voice quote-by-text performs a real customer-facing delivery through
+  // save-quote + send-sms, gated by the existing voice live flag + allowlist.
   voiceQuoteByTextDelivery: true,
+  voiceQuoteByTextLive: true,
 } as const;
