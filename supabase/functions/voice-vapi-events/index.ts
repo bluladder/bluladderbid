@@ -15,7 +15,7 @@ import {
   type VoiceVapiAllowedEvent,
 } from "../_shared/voiceProviderConfig.ts";
 import { summarizeVapiEvent, voiceProviderDebugEnabled } from "../_shared/voiceProviderDebug.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   isFinalCallEndedEvent,
   runVoiceHangupBidLinkFollowup,
