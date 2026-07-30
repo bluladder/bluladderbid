@@ -50,10 +50,13 @@ async function simulateTurn(
       missingField: facts.missingField,
       userMessage,
       phoneConfirmed: facts.phoneConfirmed === true,
-      validateAddress: async (address: string) => {
+      validateAddress: (address: string) => {
         calls.validate.push(address);
         const status = opts.addressStatus ?? "eligible";
-        return { status, formattedAddress: `${address} (verified)` };
+        return Promise.resolve({
+          status,
+          formattedAddress: `${address} (verified)`,
+        });
       },
     });
     if (continuation.kind === "contact") {
@@ -81,12 +84,14 @@ async function simulateTurn(
     phoneConfirmed: next.phoneConfirmed === true,
     address: next.address ?? null,
     addressEligible: next.addressEligible === true,
-    deliver: async () => {
+    deliver: () => {
       // Canonical order inside the delivery bridge: save-quote then send-sms.
       calls.save += 1;
-      if (!next.email) return { ok: false, reason: "email_unavailable" };
+      if (!next.email) {
+        return Promise.resolve({ ok: false, reason: "email_unavailable" });
+      }
       calls.sms += 1;
-      return { ok: opts.deliverOk !== false };
+      return Promise.resolve({ ok: opts.deliverOk !== false });
     },
   });
   return { calls, plan, facts: next };
@@ -242,9 +247,9 @@ Deno.test("planQuoteByTextResponse treats unconfirmed phone as a phone question"
     phoneConfirmed: false,
     address: "123 Main St",
     addressEligible: true,
-    deliver: async () => {
+    deliver: () => {
       delivered += 1;
-      return { ok: true };
+      return Promise.resolve({ ok: true });
     },
   });
   assertEquals(delivered, 0);

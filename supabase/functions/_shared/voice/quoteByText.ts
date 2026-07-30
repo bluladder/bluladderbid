@@ -346,7 +346,7 @@ export async function resolveQuoteByTextContinuation(args: {
   userMessage: string;
   phoneConfirmed: boolean;
   /** Canonical `validate_service_area` tool runner. */
-  validateAddress?: (address: string) => Promise<any>;
+  validateAddress?: (address: string) => Promise<unknown>;
 }): Promise<QuoteByTextContinuation> {
   switch (args.missingField) {
     case "email": {
