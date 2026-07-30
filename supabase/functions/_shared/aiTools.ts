@@ -487,15 +487,6 @@ async function createBookingTool(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ) {
-  // Live voice mutation is intentionally not representable in this stage.
-  if (ctx.channel === "voice") {
-    return {
-      status: "voice_beta_dry_run",
-      simulated: true,
-      message:
-        "This voice test did not create an appointment. Please use the online booking flow or contact the office.",
-    };
-  }
   if (args.confirmed !== true) {
     return {
       status: "not_confirmed",
@@ -517,6 +508,24 @@ async function createBookingTool(
     )
     .eq("id", ctx.conversationId)
     .maybeSingle();
+
+  // VOICE LANE GATE. Live voice booking requires BOTH the runtime flag and an
+  // allowlisted caller. Anything else stays a truthful dry run that never
+  // touches Jobber. Downstream, the voice attempt then runs the SAME
+  // validation + Jobber path as web/SMS (quote, offer freshness, service area,
+  // suppression/authorization, idempotency, audit).
+  if (ctx.channel === "voice") {
+    const lane = resolveVoiceBookingLane(convo?.prospect_phone);
+    if (lane !== "live") {
+      return {
+        status: "voice_beta_dry_run",
+        simulated: true,
+        message:
+          "This voice test did not create an appointment. Please use the online booking flow or contact the office.",
+      };
+    }
+  }
+
   const quote = convo?.quote_result as any;
   if (!quote) {
     return {
@@ -531,6 +540,32 @@ async function createBookingTool(
       status: "missing_contact",
       message: "I need the customer's email to book.",
     };
+  }
+
+  // Voice callers never type an address, so the address that will be written to
+  // Jobber must be re-validated against the live service area before any
+  // mutation. Web/SMS already collect a validated address earlier in the flow.
+  const resolvedAddress = String(
+    args.address || convo?.service_address || "",
+  ).trim();
+  if (ctx.channel === "voice") {
+    if (!resolvedAddress) {
+      return {
+        status: "address_unverified",
+        message:
+          "I still need the full service address, including city and ZIP, before I can book.",
+      };
+    }
+    const area = await validateServiceArea(ctx.supabase, resolvedAddress);
+    if (area.status !== "in_area") {
+      return {
+        status: area.status === "out_of_area"
+          ? "unsupported_territory"
+          : "address_unverified",
+        message: area.customerMessage ??
+          "I couldn't verify that address, so no appointment was created.",
+      };
+    }
   }
 
   // Defect 2: resolve the slot against the LATEST availability offer only, and
