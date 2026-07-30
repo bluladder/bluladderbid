@@ -268,16 +268,20 @@ Deno.test("without a quote session the conversation id is the stable scope", asy
   assertEquals(scopes, ["conv-1"]);
 });
 
-Deno.test("quote-by-text delivery is NOT gated on the live-booking lane", async () => {
+Deno.test("live delivery stays behind the existing voice lane gate", async () => {
   const src = await Deno.readTextFile(
     new URL("../aiOrchestrator.ts", import.meta.url),
   );
   const rail = src.slice(src.indexOf("const quoteByTextAsked"));
   const railEnd = rail.slice(0, rail.indexOf("buildSystemPrompt"));
-  assertEquals(/resolveVoiceBookingLane/.test(railEnd), false);
-  assertEquals(/deliver: async \(\) =>/.test(railEnd), true);
+  // A non-live lane passes deliver:null, which plans the truthful
+  // "can't text it from this call" answer instead of a silent no-op.
+  assertEquals(/resolveVoiceBookingLane\(facts\.contact\?\.phone/.test(railEnd), true);
+  assertEquals(/deliveryLane === "live"/.test(railEnd), true);
+  assertEquals(/: null,/.test(railEnd), true);
   assertEquals(/quoteIsFirm: isQuoteFirm\(facts\)/.test(railEnd), true);
-  assertEquals(/quoteByText: \{/.test(railEnd), true);
+  assertEquals(/parseSpokenEmail\(userMessage\)/.test(railEnd), true);
+  assertEquals(/missingField: plan\.missingField/.test(railEnd), true);
 });
 
 
