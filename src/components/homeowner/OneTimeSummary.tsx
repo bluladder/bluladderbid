@@ -521,7 +521,10 @@ export function OneTimeSummary({
 
           {/* Secondary quote actions — Book Now above stays primary. Compact
               labels with truncation guards so they never wrap or clip. */}
-          <div className="grid grid-cols-3 gap-2" data-testid="secondary-quote-actions">
+          <div
+            className={BID_BY_TEXT_ENABLED ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 gap-2'}
+            data-testid="secondary-quote-actions"
+          >
             <Button
               variant="outline"
               size="sm"
@@ -542,16 +545,18 @@ export function OneTimeSummary({
               <Mail className="w-4 h-4 mr-1.5 shrink-0" />
               <span className="truncate">Email</span>
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="min-w-0 whitespace-nowrap"
-              onClick={() => setSaveDialogAction('text')}
-              disabled={!canBook}
-            >
-              <MessageSquare className="w-4 h-4 mr-1.5 shrink-0" />
-              <span className="truncate">Text</span>
-            </Button>
+            {BID_BY_TEXT_ENABLED && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-w-0 whitespace-nowrap"
+                onClick={() => setSaveDialogAction('text')}
+                disabled={!canBook}
+              >
+                <MessageSquare className="w-4 h-4 mr-1.5 shrink-0" />
+                <span className="truncate">Text</span>
+              </Button>
+            )}
           </div>
           {deliveryStatus && (
             <p className="text-xs text-center text-success" data-testid="delivery-success">
