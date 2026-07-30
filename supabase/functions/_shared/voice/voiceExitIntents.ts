@@ -46,27 +46,58 @@ export interface VoiceExitPlan {
   event: string;
   /** Intake must stop for these dispositions. */
   stopsIntake: boolean;
+  /** True only when a canonical escalation record now exists. */
+  escalationRecorded?: boolean;
 }
 
 export function planVoiceExitIntent(
   intent: Exclude<VoiceExitIntent, null>,
-  ctx: { escalationAlreadyRecorded?: boolean; nextQuestion?: string } = {},
+  ctx: {
+    escalationAlreadyRecorded?: boolean;
+    nextQuestion?: string;
+    /** Customer-facing message returned by the escalate_to_human tool. */
+    escalationMessage?: string | null;
+    /** True only when the tool actually recorded the escalation. */
+    escalationSucceeded?: boolean;
+  } = {},
 ): VoiceExitPlan {
   if (intent === "human_request") {
+    // Already recorded earlier in this call: reuse it, never escalate twice.
+    if (ctx.escalationAlreadyRecorded) {
+      return {
+        reply:
+          "You're already on our team's list — someone from BluLadder will follow up with you.",
+        event: "voice_human_request_reused",
+        stopsIntake: true,
+        escalationRecorded: true,
+      };
+    }
+    // The spoken sentence is whatever the canonical tool says is true. No
+    // delivery claim is ever invented here.
+    if (ctx.escalationSucceeded) {
+      const message = String(ctx.escalationMessage ?? "").trim();
+      return {
+        reply: message ||
+          "I've recorded your request for a person and our team will follow up with you.",
+        event: "voice_human_request_escalated",
+        stopsIntake: true,
+        escalationRecorded: true,
+      };
+    }
     return {
-      reply: ctx.escalationAlreadyRecorded
-        ? "You're already on our team's list — Ben or someone from BluLadder will call you back shortly."
-        : "Absolutely. I've passed this to our team and someone from BluLadder will call you back shortly.",
-      event: ctx.escalationAlreadyRecorded
-        ? "voice_human_request_reused"
-        : "voice_human_request_escalated",
+      reply:
+        "I wasn't able to record that request just now. You can reach our team directly by calling our office, and I'll keep trying on my end.",
+      event: "voice_human_request_escalation_failed",
       stopsIntake: true,
+      escalationRecorded: false,
     };
   }
   if (intent === "leaving") {
     return {
+      // Truthful conditional language: the post-call SMS handoff depends on a
+      // provider call-ended event we do not control, so we never assert a send.
       reply:
-        "No problem — you can hang up whenever you like. I'll send your online quote link to the number you're calling from.",
+        "You can hang up. I'll try to text the online quote link to the number you're calling from.",
       event: "voice_caller_leaving",
       stopsIntake: true,
     };

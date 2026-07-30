@@ -55,8 +55,11 @@ import { computePartialWindowPrice } from "./partialWindowPricing.ts";
 import { isFullE164 } from "./contactIntegrity.ts";
 import {
   buildAddressReadback,
+  buildHouseNumberQuestion,
   classifyAddressConfirmation,
+  parseSpokenHouseNumber,
   planVoiceAddressGate,
+  replaceHouseNumber,
 } from "./voice/voiceAddressGate.ts";
 import {
   nextPropertyQuestion,
@@ -1243,6 +1246,7 @@ async function runVoiceRoughQuoteRail(args: {
       channel: "voice",
       facts,
       railBooked: false,
+      deterministic: true,
     });
   }
 
@@ -1279,6 +1283,7 @@ async function runVoiceRoughQuoteRail(args: {
       channel: "voice",
       facts,
       railBooked: false,
+      deterministic: true,
     });
   }
 
@@ -1314,6 +1319,7 @@ async function runVoiceRoughQuoteRail(args: {
       channel: "voice",
       facts: nextFacts,
       railBooked: false,
+      deterministic: true,
     });
   }
   if ((result as any)?.status === "manual_review_required") {
@@ -1327,6 +1333,7 @@ async function runVoiceRoughQuoteRail(args: {
       channel: "voice",
       facts: nextFacts,
       railBooked: false,
+      deterministic: true,
     });
   }
   const total = priceFromResult(result);
@@ -1341,6 +1348,7 @@ async function runVoiceRoughQuoteRail(args: {
       channel: "voice",
       facts: nextFacts,
       railBooked: false,
+      deterministic: true,
     });
   }
 
@@ -1376,10 +1384,11 @@ async function runVoiceRoughQuoteRail(args: {
     channel: "voice",
     facts: nextFacts,
     railBooked: false,
+    deterministic: true,
   });
 }
 
-function persistFacts(
+export function persistFacts(
   supabase: SupabaseClient,
   conversationId: string,
   facts: ConversationFacts,
@@ -1410,6 +1419,41 @@ function persistFacts(
   // partial value from transcript extraction can never corrupt the canonical
   // prospect_phone (regression guard for "+0144").
   if (isFullE164(c.phone)) update.prospect_phone = c.phone;
+  // VOICE address gate (6.8): the legacy service-area columns are mirrored
+  // from the authoritative facts on EVERY voice write, so they can never
+  // disagree with the gate. Web/SMS behavior is unchanged.
+  if (opts?.channel === "voice") {
+    const cand = facts.addressCandidate ?? null;
+    const sa = facts.serviceArea ?? null;
+    if (cand?.status === "confirmed") {
+      update.service_address = cand.confirmedAddress || cand.formattedAddress ||
+        facts.address || null;
+      update.service_area_status = "eligible";
+      update.service_area_result = { ...(sa ?? {}), status: "eligible" };
+    } else if (
+      cand?.status === "pending" || cand?.status === "house_number_mismatch"
+    ) {
+      update.service_address = cand.formattedAddress || facts.address || null;
+      update.service_area_status = "pending_confirmation";
+      update.service_area_result = {
+        ...(sa ?? {}),
+        status: "pending_confirmation",
+        candidateStatus: cand.status,
+      };
+    } else if (!sa || !sa.status) {
+      update.service_address = facts.address ?? null;
+      update.service_area_status = null;
+      update.service_area_result = null;
+    } else {
+      update.service_address = sa.formattedAddress || facts.address || null;
+      // Fail closed: an "eligible" fact without a confirmed candidate is still
+      // unconfirmed on the voice channel.
+      update.service_area_status = sa.status === "eligible"
+        ? "pending_confirmation"
+        : sa.status;
+      update.service_area_result = sa;
+    }
+  }
   const write = opts?.channel === "voice"
     ? supabase
       .from("chat_conversations")
@@ -1601,6 +1645,224 @@ export async function runOrchestrator(
   const toolEvents: { tool: string; result: any }[] = [];
   const events: string[] = [];
 
+  // ---- Deterministic voice rails (pre-model) -----------------------------
+  // Frustrated / leaving / "let me talk to a person" callers, and the address
+  // confirmation gate, are answered deterministically. The model never sees
+  // these turns, so it cannot loop on another intake question.
+  if (channel === "voice") {
+    const exitIntent = classifyVoiceExitIntent(userMessage);
+    if (exitIntent === "human_request") {
+      const already = facts.voiceEscalationRecorded === true;
+      let escalationSucceeded = already;
+      let escalationMessage: string | null = null;
+      if (!already) {
+        try {
+          const args = { reason: "caller requested a person" } as Record<
+            string,
+            unknown
+          >;
+          const result = await runTool("escalate_to_human", toolCtx, args);
+          toolEvents.push({ tool: "escalate_to_human", result });
+          escalationSucceeded = !!result &&
+            (result as any).status === "escalated";
+          escalationMessage = typeof (result as any)?.message === "string"
+            ? (result as any).message
+            : null;
+        } catch (_e) { /* escalation is best-effort; reply stays truthful */ }
+      }
+      const plan = planVoiceExitIntent("human_request", {
+        escalationAlreadyRecorded: already,
+        escalationSucceeded,
+        escalationMessage,
+      });
+      // The flag is set ONLY when a canonical escalation actually exists, so a
+      // failed attempt is retried on the next request instead of being lost.
+      const nextFacts = plan.escalationRecorded === true
+        ? mergeFacts(facts, { voiceEscalationRecorded: true })
+        : facts;
+      await persistFacts(supabase, conversationId, nextFacts, state, {
+        sessionToken,
+        channel,
+        windowIntent,
+      });
+      return finalize({
+        reply: plan.reply,
+        toolEvents,
+        events: [plan.event],
+        state,
+        channel,
+        facts: nextFacts,
+        railBooked: false,
+        deterministic: true,
+      });
+    }
+    if (exitIntent === "leaving") {
+      const plan = planVoiceExitIntent("leaving");
+      await persistFacts(supabase, conversationId, facts, state, {
+        sessionToken,
+        channel,
+        windowIntent,
+      });
+      return {
+        reply: plan.reply,
+        toolEvents,
+        events: [plan.event],
+        state,
+        retrievedKnowledgeKeys: [],
+        // Truthful disposition: the online-bid link is handed to the
+        // post-call SMS path, which is NOT a confirmed send.
+        voice: { type: "graceful_end", reason: "post_call_sms_handoff" },
+      };
+    }
+    if (exitIntent === "hurry") {
+      const plan = planVoiceExitIntent("hurry", {
+        nextQuestion: nextPropertyQuestion(facts),
+      });
+      return finalize({
+        reply: plan.reply,
+        toolEvents,
+        events: [plan.event],
+        state,
+        channel,
+        facts,
+        railBooked: false,
+        deterministic: true,
+      });
+    }
+
+    const candidate = facts.addressCandidate ?? null;
+    if (candidate && candidate.status === "pending") {
+      const answer = classifyAddressConfirmation(userMessage);
+      if (answer === "yes") {
+        const confirmed = mergeFacts(facts, {
+          addressCandidate: {
+            ...candidate,
+            status: "confirmed",
+            confirmedAddress: candidate.formattedAddress ?? null,
+          },
+          serviceArea: {
+            ...(facts.serviceArea ?? {}),
+            status: "eligible",
+            formattedAddress: candidate.formattedAddress,
+          },
+        });
+        const nextState = computeState(confirmed, channel);
+        await persistFacts(supabase, conversationId, confirmed, nextState, {
+          sessionToken,
+          channel,
+          windowIntent,
+        });
+        return finalize({
+          reply: `Perfect, thank you. ${nextPropertyQuestion(confirmed)}`,
+          toolEvents,
+          events: ["voice_address_confirmed"],
+          state: nextState,
+          channel,
+          facts: confirmed,
+          railBooked: false,
+          deterministic: true,
+        });
+      }
+      if (answer === "no") {
+        const cleared = mergeFacts(facts, {
+          addressCandidate: null,
+          serviceArea: null,
+          address: undefined,
+        });
+        const nextState = computeState(cleared, channel);
+        await persistFacts(supabase, conversationId, cleared, nextState, {
+          sessionToken,
+          channel,
+          windowIntent,
+        });
+        return finalize({
+          reply:
+            "Thanks for catching that. What is the correct service address, including the house number and street?",
+          toolEvents,
+          events: ["voice_address_rejected"],
+          state: nextState,
+          channel,
+          facts: cleared,
+          railBooked: false,
+          deterministic: true,
+        });
+      }
+      return finalize({
+        reply: buildAddressReadback(candidate.formattedAddress ?? ""),
+        toolEvents,
+        events: ["voice_address_confirmation_required"],
+        state,
+        channel,
+        facts,
+        railBooked: false,
+        deterministic: true,
+      });
+    }
+
+    // House-number mismatch recovery (incident 019fb423: "5612" heard as
+    // "5610"). We keep asking digit-by-digit until a clean house number is
+    // supplied, then re-run the CANONICAL validate_service_area with only the
+    // leading house number replaced. The result is a NEW pending candidate —
+    // never a silent confirmation.
+    if (candidate && candidate.status === "house_number_mismatch") {
+      const supplied = parseSpokenHouseNumber(userMessage);
+      if (!supplied) {
+        return finalize({
+          reply: buildHouseNumberQuestion(),
+          toolEvents,
+          events: ["voice_address_house_number_mismatch"],
+          state,
+          channel,
+          facts,
+          railBooked: false,
+          deterministic: true,
+        });
+      }
+      const rebuilt = replaceHouseNumber(
+        candidate.formattedAddress || candidate.spokenAddress || "",
+        supplied,
+      );
+      const vArgs = { address: rebuilt } as Record<string, unknown>;
+      const vResult = await runTool("validate_service_area", toolCtx, vArgs);
+      toolEvents.push({ tool: "validate_service_area", result: vResult });
+      facts = mergeFacts(
+        facts,
+        factPatchFromTool(
+          "validate_service_area",
+          vArgs,
+          vResult,
+          facts,
+          channel,
+        ),
+      );
+      state = computeState(facts, channel);
+      await persistFacts(supabase, conversationId, facts, state, {
+        sessionToken,
+        channel,
+        windowIntent,
+      });
+      const next = facts.addressCandidate ?? null;
+      const readback = next?.formattedAddress
+        ? buildAddressReadback(next.formattedAddress)
+        : buildHouseNumberQuestion();
+      return finalize({
+        reply: readback,
+        toolEvents,
+        events: [
+          next?.status === "pending"
+            ? "voice_address_confirmation_required"
+            : "voice_address_house_number_mismatch",
+        ],
+        state,
+        channel,
+        facts,
+        railBooked: false,
+        deterministic: true,
+      });
+    }
+  }
+  // -----------------------------------------------------------------------
+
   // Voice rough-quote rail runs before any model prompt is constructed, so the
   // address/service-area directive can never preempt the address-free quote.
   const roughQuoteRail = channel === "voice"
@@ -1661,6 +1923,7 @@ export async function runOrchestrator(
       channel,
       facts: cleared,
       railBooked: false,
+      deterministic: true,
     });
   }
   if (quoteByTextAsked || quoteByTextPending) {
@@ -1731,6 +1994,7 @@ export async function runOrchestrator(
           channel,
           facts: keptFacts,
           railBooked: false,
+          deterministic: true,
         });
       }
     }
@@ -1793,143 +2057,8 @@ export async function runOrchestrator(
       channel,
       facts: nextFacts,
       railBooked: false,
+      deterministic: true,
     });
-  }
-  // -----------------------------------------------------------------------
-
-  // ---- Deterministic voice rails (pre-model) -----------------------------
-  // Frustrated / leaving / "let me talk to a person" callers, and the address
-  // confirmation gate, are answered deterministically. The model never sees
-  // these turns, so it cannot loop on another intake question.
-  if (channel === "voice") {
-    const exitIntent = classifyVoiceExitIntent(userMessage);
-    if (exitIntent === "human_request") {
-      const already = facts.voiceEscalationRecorded === true;
-      if (!already) {
-        try {
-          const args = { reason: "caller requested a person" } as Record<
-            string,
-            unknown
-          >;
-          const result = await runTool("escalate_to_human", toolCtx, args);
-          toolEvents.push({ tool: "escalate_to_human", result });
-        } catch (_e) { /* escalation is best-effort; reply stays truthful */ }
-      }
-      const plan = planVoiceExitIntent("human_request", {
-        escalationAlreadyRecorded: already,
-      });
-      const nextFacts = mergeFacts(facts, { voiceEscalationRecorded: true });
-      await persistFacts(supabase, conversationId, nextFacts, state, {
-        sessionToken,
-        channel,
-        windowIntent,
-      });
-      return finalize({
-        reply: plan.reply,
-        toolEvents,
-        events: [plan.event],
-        state,
-        channel,
-        facts: nextFacts,
-        railBooked: false,
-      });
-    }
-    if (exitIntent === "leaving") {
-      const plan = planVoiceExitIntent("leaving");
-      await persistFacts(supabase, conversationId, facts, state, {
-        sessionToken,
-        channel,
-        windowIntent,
-      });
-      return {
-        reply: plan.reply,
-        toolEvents,
-        events: [plan.event],
-        state,
-        retrievedKnowledgeKeys: [],
-        voice: { type: "graceful_end", reason: "caller_leaving" },
-      };
-    }
-    if (exitIntent === "hurry") {
-      const plan = planVoiceExitIntent("hurry", {
-        nextQuestion: nextPropertyQuestion(facts),
-      });
-      return finalize({
-        reply: plan.reply,
-        toolEvents,
-        events: [plan.event],
-        state,
-        channel,
-        facts,
-        railBooked: false,
-      });
-    }
-
-    const candidate = facts.addressCandidate ?? null;
-    if (candidate && candidate.status === "pending") {
-      const answer = classifyAddressConfirmation(userMessage);
-      if (answer === "yes") {
-        const confirmed = mergeFacts(facts, {
-          addressCandidate: {
-            ...candidate,
-            status: "confirmed",
-            confirmedAddress: candidate.formattedAddress ?? null,
-          },
-          serviceArea: {
-            ...(facts.serviceArea ?? {}),
-            status: "eligible",
-            formattedAddress: candidate.formattedAddress,
-          },
-        });
-        const nextState = computeState(confirmed, channel);
-        await persistFacts(supabase, conversationId, confirmed, nextState, {
-          sessionToken,
-          channel,
-          windowIntent,
-        });
-        return finalize({
-          reply: `Perfect, thank you. ${nextPropertyQuestion(confirmed)}`,
-          toolEvents,
-          events: ["voice_address_confirmed"],
-          state: nextState,
-          channel,
-          facts: confirmed,
-          railBooked: false,
-        });
-      }
-      if (answer === "no") {
-        const cleared = mergeFacts(facts, {
-          addressCandidate: null,
-          serviceArea: null,
-          address: undefined,
-        });
-        const nextState = computeState(cleared, channel);
-        await persistFacts(supabase, conversationId, cleared, nextState, {
-          sessionToken,
-          channel,
-          windowIntent,
-        });
-        return finalize({
-          reply:
-            "Thanks for catching that. What is the correct service address, including the house number and street?",
-          toolEvents,
-          events: ["voice_address_rejected"],
-          state: nextState,
-          channel,
-          facts: cleared,
-          railBooked: false,
-        });
-      }
-      return finalize({
-        reply: buildAddressReadback(candidate.formattedAddress ?? ""),
-        toolEvents,
-        events: ["voice_address_confirmation_required"],
-        state,
-        channel,
-        facts,
-        railBooked: false,
-      });
-    }
   }
   // -----------------------------------------------------------------------
 
@@ -2154,21 +2283,8 @@ export async function runOrchestrator(
   reply = guardConfirmedLanguage(reply, facts, railBooked);
   if (channel === "voice") {
     reply = guardDeliveryClaims(reply, false);
-    // Never speak internal reasoning, never stack two questions in one turn.
-    reply = sanitizeVoiceReply(reply, nextPropertyQuestion(facts)).text;
-    // A freshly geocoded candidate must be read back for explicit confirmation.
-    const pending = facts.addressCandidate;
-    if (
-      pending?.status === "pending" && pending.formattedAddress &&
-      !/exactly right/i.test(reply)
-    ) {
-      reply = buildAddressReadback(pending.formattedAddress);
-      events.push("voice_address_confirmation_required");
-    } else if (pending?.status === "house_number_mismatch") {
-      reply =
-        "I want to get the house number exactly right. Can you read me the house number one digit at a time?";
-      events.push("voice_address_house_number_mismatch");
-    }
+    // Reasoning suppression, one-question enforcement and the pending-address
+    // readback override now live in finalize(), the single voice reply funnel.
   }
   await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
   return finalize({
@@ -2195,6 +2311,12 @@ function finalize(args: {
   facts: ConversationFacts;
   railBooked: boolean;
   retrievedKnowledgeKeys?: string[];
+  /**
+   * True for replies already produced by a deterministic rail. They are still
+   * sanitized, but never overridden by the pending-address readback (that
+   * would clobber an escalation / cancellation / rejection answer).
+   */
+  deterministic?: boolean;
 }): OrchestratorResult {
   const base: OrchestratorResult = {
     reply: args.reply,
@@ -2207,6 +2329,16 @@ function finalize(args: {
     base.voice = null;
     return base;
   }
+  // ---- Single voice reply funnel (6.8) ----------------------------------
+  // EVERY voice reply leaves through here, including the very common no-tool
+  // model completion, so internal reasoning can never be spoken and a turn
+  // can never stack two questions.
+  base.reply = applyVoiceReplySafety({
+    reply: args.reply,
+    facts: args.facts,
+    events: args.events,
+    deterministic: args.deterministic === true,
+  });
   base.voice = deriveVoiceDisposition({
     state: args.state,
     facts: args.facts,
@@ -2214,6 +2346,38 @@ function finalize(args: {
     toolEvents: args.toolEvents,
   });
   return base;
+}
+
+/**
+ * Sanitize one spoken reply and, for model-authored replies, override it with
+ * the outstanding address readback / house-number question when a candidate is
+ * still unconfirmed. Mutates `events` so the override stays auditable.
+ */
+export function applyVoiceReplySafety(input: {
+  reply: string;
+  facts: ConversationFacts;
+  events: string[];
+  deterministic?: boolean;
+}): string {
+  const { facts, events } = input;
+  let reply = sanitizeVoiceReply(input.reply, nextPropertyQuestion(facts)).text;
+  if (input.deterministic) return reply;
+  const pending = facts.addressCandidate;
+  if (
+    pending?.status === "pending" && pending.formattedAddress &&
+    !/exactly right/i.test(reply)
+  ) {
+    reply = buildAddressReadback(pending.formattedAddress);
+    if (!events.includes("voice_address_confirmation_required")) {
+      events.push("voice_address_confirmation_required");
+    }
+  } else if (pending?.status === "house_number_mismatch") {
+    reply = buildHouseNumberQuestion();
+    if (!events.includes("voice_address_house_number_mismatch")) {
+      events.push("voice_address_house_number_mismatch");
+    }
+  }
+  return reply;
 }
 
 // Provider-independent mapping from server-authoritative state/facts to a

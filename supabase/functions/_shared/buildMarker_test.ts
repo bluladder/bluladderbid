@@ -41,11 +41,20 @@ Deno.test("BUILD marker exposes the 6.7 voice remediation flags", () => {
   assertEquals(BUILD_FEATURES.voiceAddressConfirmationGate, true);
   assertEquals(BUILD_FEATURES.voiceReplySafety, true);
   assertEquals(BUILD_FEATURES.voiceExitIntentHandling, true);
-  assert(BUILD_ID.includes("6.7"));
+  assert(BUILD_ID.includes("6.8"));
   assertEquals(
     BUILD_ID,
-    "voice-adapter-4C-b.6.7-voice-address-and-reply-safety",
+    "voice-adapter-4C-b.6.8-address-gate-enforcement",
   );
+});
+
+Deno.test("BUILD marker exposes the 6.8 address-gate enforcement flags", () => {
+  assertEquals(BUILD_FEATURES.voiceAddressGateEnforcedPersistence, true);
+  assertEquals(BUILD_FEATURES.voiceAddressPendingConfirmationState, true);
+  assertEquals(BUILD_FEATURES.voiceDeterministicRailPriority, true);
+  assertEquals(BUILD_FEATURES.voiceReplyFinalizeFunnel, true);
+  assertEquals(BUILD_FEATURES.voiceHouseNumberMismatchRecovery, true);
+  assertEquals(BUILD_FEATURES.voiceTruthfulEscalationLanguage, true);
 });
 
 Deno.test("buildNonStreamingResponse: buildId is in bluladder diagnostics", async () => {

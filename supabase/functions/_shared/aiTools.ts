@@ -890,10 +890,15 @@ async function validateServiceAreaTool(
   // The candidate is read back for explicit confirmation — never accepted
   // silently.
   let addressConfirmationNeeded: string | null = null;
-  if (result.status === "address_incomplete" || result.status === "validation_unavailable") {
+  if (
+    result.status === "address_incomplete" ||
+    result.status === "validation_unavailable"
+  ) {
     for (const candidate of deSpacedStreetCandidates(address)) {
       const retry = await validateServiceArea(ctx.supabase, candidate);
-      if (retry.status === "eligible" || retry.status === "manual_review_required") {
+      if (
+        retry.status === "eligible" || retry.status === "manual_review_required"
+      ) {
         result = retry;
         addressConfirmationNeeded = retry.formattedAddress || candidate;
         break;
@@ -924,12 +929,26 @@ async function validateServiceAreaTool(
     }
   }
 
+  // VOICE address gate (6.8): a geocoded candidate is NEVER written as
+  // `eligible` before the caller explicitly confirms the canonical address
+  // read back to them. The legacy columns must agree with the JSON facts.
+  const voiceGated = ctx.channel === "voice" && result.status === "eligible";
+  const persistedStatus = voiceGated ? "pending_confirmation" : result.status;
+  const persistedResult = voiceGated
+    ? {
+      ...result,
+      status: "pending_confirmation",
+      gatedFrom: "eligible",
+      requiresVoiceConfirmation: true,
+    }
+    : result;
+
   await ctx.supabase
     .from("chat_conversations")
     .update({
       service_address: result.formattedAddress || address,
-      service_area_status: result.status,
-      service_area_result: result,
+      service_area_status: persistedStatus,
+      service_area_result: persistedResult,
       manual_review_reason: result.status === "manual_review_required"
         ? result.reason ?? "Outside primary service area"
         : undefined,

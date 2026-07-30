@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.7-voice-address-and-reply-safety";
+export const BUILD_ID = "voice-adapter-4C-b.6.8-address-gate-enforcement";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -38,4 +38,15 @@ export const BUILD_FEATURES = {
   voiceAddressConfirmationGate: true,
   voiceReplySafety: true,
   voiceExitIntentHandling: true,
+  // 6.8 — the gate is now enforced on every write path: the canonical
+  // service-area columns are gated + mirrored, pending_confirmation is a
+  // validating state (never manual review), the deterministic rails run first,
+  // finalize is the single voice reply funnel, house-number mismatch recovers
+  // across turns and human/hangup language is truthful.
+  voiceAddressGateEnforcedPersistence: true,
+  voiceAddressPendingConfirmationState: true,
+  voiceDeterministicRailPriority: true,
+  voiceReplyFinalizeFunnel: true,
+  voiceHouseNumberMismatchRecovery: true,
+  voiceTruthfulEscalationLanguage: true,
 } as const;
