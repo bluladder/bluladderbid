@@ -66,6 +66,18 @@ export interface OutboxSendResult {
   error?: string;
 }
 
+/** True when the backend has no such RPC (PostgREST 404 / Postgres 42883). */
+function isMissingFunctionError(err: {
+  code?: string | null;
+  message?: string | null;
+}): boolean {
+  const code = String(err?.code ?? "");
+  const msg = String(err?.message ?? "").toLowerCase();
+  return code === "PGRST202" || code === "42883" ||
+    msg.includes("could not find the function") ||
+    msg.includes("does not exist");
+}
+
 /**
  * Attempt to send an outbound SMS through the outbox state machine.
  *
