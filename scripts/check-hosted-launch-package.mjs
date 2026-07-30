@@ -11,6 +11,7 @@ const fail = (message) => {
 const [
   booking,
   recurring,
+  functionConfig,
   gate,
   adminDiagnostics,
   launchControl,
@@ -24,6 +25,7 @@ const [
 ] = await Promise.all([
   read('supabase/functions/jobber-create-booking/index.ts'),
   read('supabase/functions/jobber-create-service-request/index.ts'),
+  read('supabase/config.toml'),
   read('supabase/functions/_shared/publicBookingLaunchGate.ts'),
   read('supabase/functions/admin-diagnostics/index.ts'),
   read('docs/launch/public-booking-launch-control.md'),
@@ -35,6 +37,28 @@ const [
   read('scripts/evaluate-protected-launch.mjs'),
   read('docs/launch/protected-launch-state-reports.md'),
 ]);
+
+for (const functionName of [
+  'jobber-create-booking',
+  'jobber-create-service-request',
+  'admin-diagnostics',
+]) {
+  const explicitConfig =
+    `[functions.${functionName}]\nverify_jwt = false`;
+  if (!functionConfig.includes(explicitConfig)) {
+    fail(`${functionName} must explicitly set verify_jwt=false`);
+  }
+}
+if (
+  recurring.includes('verifyAdmin(') ||
+  recurring.includes('auth.getUser(') ||
+  recurring.includes('getBearer(req)') ||
+  !recurring.includes('publicBookingLaunchGateResponse(')
+) {
+  fail(
+    'recurring service request no longer has the reviewed public, launch-gated contract',
+  );
+}
 const evidenceTemplate = JSON.parse(
   await read('docs/launch/protected-launch-evidence.template.json'),
 );
