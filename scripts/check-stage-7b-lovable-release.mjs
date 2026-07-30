@@ -12,16 +12,18 @@ const fail = (message) => {
 const manifest = JSON.parse(
   await read('docs/releases/stage-7b-lovable-v1/release.json'),
 );
-const [source, correction, provenance, artifact, preflight, postflight, runbook] =
+const [source, correction, provenance, artifact, preflight, mcpPreflightText, postflight, runbook] =
   await Promise.all([
     read(manifest.source.path),
     read(manifest.correction.path),
     read(manifest.provenance.path),
     read(manifest.artifact.path),
     read(manifest.preflight.path),
+    read(manifest.preflight.mcp_path),
     read(manifest.postflight.path),
     read(manifest.runbook),
   ]);
+const mcpPreflight = JSON.parse(mcpPreflightText);
 
 for (const [name, value, expected] of [
   ['source', source, manifest.source],
@@ -90,6 +92,31 @@ for (const [name, sql, expected] of [
     )
   ) {
     fail(`${name} contains a mutation token`);
+  }
+}
+if (sha256(mcpPreflightText) !== manifest.preflight.mcp_sha256) {
+  fail('MCP preflight hash changed');
+}
+if (
+  mcpPreflight.submission_contract !==
+    'one SELECT statement per query_database call' ||
+  mcpPreflight.project_id !== 'b6e0d823-59c4-4b5a-afbe-182485e5458b' ||
+  mcpPreflight.project_ref !== manifest.environment.project_ref ||
+  mcpPreflight.environment !== manifest.environment.name ||
+  mcpPreflight.queries.length !== 7
+) {
+  fail('MCP preflight identity or submission contract changed');
+}
+for (const query of mcpPreflight.queries) {
+  const sql = query.sql.trim();
+  if (
+    !/^SELECT\b/i.test(sql) ||
+    /;\s*\S/.test(sql) ||
+    /\b(BEGIN|COMMIT|ROLLBACK|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE)\b/i.test(
+      sql.replace(/'(?:''|[^'])*'/g, "''"),
+    )
+  ) {
+    fail(`MCP preflight query ${query.id} is not one read-only SELECT`);
   }
 }
 if (
