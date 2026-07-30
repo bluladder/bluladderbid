@@ -52,35 +52,36 @@ export function parseSpokenEmail(text: string | null | undefined): string | null
     candidates.add(m[0]);
   }
 
-  // 2. Spoken form: collapse the separator words, then squeeze the spaces that
-  //    ASR sprinkles inside the local part and the domain labels.
+  // 2. Spoken form: collapse the separator words, drop the leading filler
+  //    ("my email is", "it's", "you can use"), then squeeze the spaces ASR
+  //    sprinkles inside the local part and the domain labels.
   const spoken = despeak(raw);
-  if (spoken.includes("@")) {
-    const parts = spoken.split("@");
-    if (parts.length === 2) {
-      const local = parts[0].trim().split(/\s{2,}|\s(?=[a-z]+\s+is\s)/).pop() ?? "";
-      const localTail = local.trim().split(/\s+/).slice(-8).join(" ");
-      const localJoined = localTail.replace(/\s+/g, "");
-      const domainTokens = parts[1].trim().split(/\s+/);
-      const domainParts: string[] = [];
-      let current = "";
-      for (const tok of domainTokens) {
-        if (tok === ".") {
-          if (current) domainParts.push(current);
-          current = "";
-          continue;
-        }
-        if (!/^[a-z0-9_+-]+$/.test(tok)) break;
-        current += tok;
-        if (domainParts.length >= 1 && SPOKEN_TLD_WORDS[tok]) {
-          // Spoken TLD closes the domain.
-        }
+  const at = spoken.split("@");
+  if (at.length === 2) {
+    let local = at[0];
+    local = local.replace(
+      /.*\b(?:e-?mail(?:\s+address)?|address|it|its|it's|that|use|is|to|send)\b/g,
+      " ",
+    );
+    const localJoined = local.trim().replace(/[^a-z0-9._%+-\s]/g, "").replace(
+      /\s+/g,
+      "",
+    );
+    const domainParts: string[] = [];
+    let current = "";
+    for (const tok of at[1].trim().split(/\s+/)) {
+      if (tok === ".") {
+        if (current) domainParts.push(current);
+        current = "";
+        continue;
       }
-      if (current) domainParts.push(current);
-      const domain = domainParts.filter(Boolean).join(".");
-      const joined = `${localJoined}@${domain}`;
-      if (EMAIL_RE.test(joined)) candidates.add(joined.toLowerCase());
+      if (!/^[a-z0-9-]+$/.test(tok)) break;
+      current += tok;
     }
+    if (current) domainParts.push(current);
+    const domain = domainParts.filter(Boolean).join(".");
+    const joined = `${localJoined}@${domain}`;
+    if (EMAIL_RE.test(joined)) candidates.add(joined.toLowerCase());
   }
 
   if (candidates.size !== 1) return null;
