@@ -10,7 +10,7 @@ import { getAppUrl } from "../_shared/appUrl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bluladder-protected-test-run, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 interface ActionRequest {
@@ -242,6 +242,27 @@ Deno.serve(async (req) => {
       );
     }
 
+    // A protected-test cleanup may suppress customer/provider communication
+    // only when an authenticated operations admin invokes the exact active
+    // run that owns this booking. The header alone has no authority.
+    const protectedTestRunId = req.headers.get(
+      "X-Bluladder-Protected-Test-Run",
+    );
+    let protectedSyntheticCleanup = false;
+    if (protectedTestRunId && isVerifiedAdmin && action === "cancel") {
+      const { data: protectedRun, error: protectedRunError } =
+        await serviceClient
+          .from("booking_test_runs")
+          .select("id, phase, status, booking_id")
+          .eq("id", protectedTestRunId)
+          .maybeSingle();
+      protectedSyntheticCleanup =
+        !protectedRunError &&
+        protectedRun?.booking_id === bookingId &&
+        protectedRun?.phase === "cancel_cleanup" &&
+        protectedRun?.status === "running";
+    }
+
     // Check 48-hour lockout (admins can bypass)
     if (!isVerifiedAdmin && isWithinLockout(typedBooking.scheduled_start)) {
       return new Response(
@@ -329,7 +350,7 @@ Deno.serve(async (req) => {
     const campaignEvent =
       rescheduleFreshlyConfirmed ? 'booking_rescheduled' :
       cancelFreshlyConfirmed ? 'booking_cancelled' : null;
-    if (smsEvent && campaignEvent) {
+    if (smsEvent && campaignEvent && !protectedSyntheticCleanup) {
       // Migration gate: once the canonical `booking_cancelled` / `booking_rescheduled`
       // campaign is ACTIVE with an sms step, it becomes the sole owner of
       // customer acknowledgment for that lifecycle event. We check at
@@ -452,6 +473,15 @@ Deno.serve(async (req) => {
         console.warn("[CustomerAction] campaign emit failed:", emitErr);
       }
     }
+    if (smsEvent && campaignEvent && protectedSyntheticCleanup) {
+      console.warn(JSON.stringify({
+        event: "protected_booking_test_cleanup_communications_suppressed",
+        run_id: protectedTestRunId,
+        booking_id: bookingId,
+        sms_suppressed: true,
+        campaign_event_suppressed: true,
+      }));
+    }
 
     // A cancellation that could not be verified with Jobber is returned as a
     // recoverable, non-error state so the UI can show a "we'll confirm shortly"
@@ -471,7 +501,16 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: true, ...result }),
+      JSON.stringify({
+        success: true,
+        ...result,
+        protectedTest: protectedSyntheticCleanup
+          ? {
+            runId: protectedTestRunId,
+            communicationsSuppressed: true,
+          }
+          : undefined,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

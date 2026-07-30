@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "decision": "GO",
+  "evidence_bundle_sha256": "REPLACE_WITH_64_CHARACTER_LOWERCASE_SHA256",
+  "project_ref": "gyndziiuizpgwhqwyrvn",
+  "environment": "production",
+  "repository_sha": "REPLACE_WITH_40_CHARACTER_LOWERCASE_COMMIT_SHA",
+  "go_owner_subject_id": "REPLACE_WITH_IMMUTABLE_SUBJECT_ID",
+  "approved_at": "REPLACE_WITH_UTC_TIMESTAMP",
+  "expires_at": "REPLACE_WITH_UTC_TIMESTAMP_NO_MORE_THAN_24_HOURS_LATER",
+  "signing_key_sha256": "REPLACE_WITH_SHA256_OF_DER_ENCODED_ED25519_PUBLIC_KEY",
+  "signature": "REPLACE_WITH_BASE64_ED25519_SIGNATURE"
+}

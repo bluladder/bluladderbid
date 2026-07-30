@@ -53,6 +53,9 @@ jobs:
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
           bun run check:launch-contract
+          bun run check:hosted-launch-package
+          bun run check:provider-config-contract
+          bun run check:protected-launch-evaluator
           bun run check:voice-booking-contract
 
       - name: Unit tests (vitest)

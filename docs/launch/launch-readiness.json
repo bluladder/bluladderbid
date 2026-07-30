@@ -21,7 +21,7 @@
       "scope": "repository",
       "severity": "P0",
       "status": "PASS",
-      "evidence": ["src/components/booking/BookingFlow.tsx", "src/components/booking/BookingHelpContact.tsx", "src/lib/bookingIntentSignature.test.ts", "supabase/functions/_shared/publicRequestReplay_test.ts", "supabase/functions/_shared/serviceAreaIntervention_test.ts", "supabase/functions/jobber-create-booking/index.ts", "supabase/functions/jobber-create-booking/launch_safety_test.ts", "supabase/functions/jobber-create-service-request/service_area_launch_test.ts"]
+      "evidence": ["src/components/booking/BookingFlow.tsx", "src/components/booking/BookingHelpContact.tsx", "src/lib/bookingIntentSignature.test.ts", "supabase/functions/_shared/publicBookingLaunchGate.ts", "supabase/functions/_shared/publicBookingLaunchGate_test.ts", "supabase/functions/_shared/publicRequestReplay_test.ts", "supabase/functions/_shared/serviceAreaIntervention_test.ts", "supabase/functions/jobber-create-booking/index.ts", "supabase/functions/jobber-create-booking/launch_safety_test.ts", "supabase/functions/jobber-create-service-request/service_area_launch_test.ts", "docs/launch/public-booking-launch-control.md"]
     },
     {
       "id": "customer-property-creation",
@@ -77,7 +77,7 @@
       "scope": "repository",
       "severity": "P1",
       "status": "PASS",
-      "evidence": ["supabase/functions/_shared/voiceBookingAdapter.ts", "supabase/functions/_shared/voiceBookingAdapter_test.ts", "supabase/functions/_shared/voiceBookingDryRun_test.ts", "supabase/functions/_shared/voiceAdapter.ts", "supabase/functions/voice-vapi-events/index.ts", "supabase/functions/_shared/voiceProviderConfig.ts", "docs/voice/real-call-acceptance.md", "scripts/check-voice-booking-contract.mjs"],
+      "evidence": ["supabase/functions/_shared/voiceBookingAdapter.ts", "supabase/functions/_shared/voiceBookingAdapter_test.ts", "supabase/functions/_shared/voiceBookingDryRun_test.ts", "supabase/functions/_shared/voiceAdapter.ts", "supabase/functions/voice-vapi-events/index.ts", "supabase/functions/_shared/voiceProviderConfig.ts", "docs/voice/real-call-acceptance.md", "docs/voice/real-call-acceptance-worksheet.md", "scripts/check-voice-booking-contract.mjs"],
       "reason": "The repository provides a trusted-context, deterministic disabled/dry-run adapter and adversarial acceptance pack. Live mutation is structurally absent; provider configuration, real-number connectivity, real-call acceptance, and production monitoring remain protected/manual gates."
     },
     {
@@ -101,46 +101,46 @@
       "scope": "hosted_environment",
       "severity": "P0",
       "status": "BLOCKED_PROTECTED_ACTION",
-      "evidence": ["docs/releases/stage-7b-corrected/README.md"],
-      "reason": "Corrected Stage 7B is rehearsal-green but hosted execution is not authorized and migration provenance requires a business decision."
+      "evidence": ["docs/releases/stage-7b-corrected/README.md", "docs/releases/stage-7b-corrected/direct-execution-runbook.md", "scripts/validate-stage-7b-evidence.mjs"],
+      "reason": "Corrected Stage 7B has an atomic private provenance design and exact direct-execution package, but hosted execution remains a separately authorized protected action."
     },
     {
       "id": "rollback-runbook",
       "scope": "repository",
       "severity": "P0",
       "status": "PASS",
-      "evidence": ["docs/operations/tenant-stage-7b-migration-runbook.md", "docs/operations/tenant-stage-7d-cron-window-rehearsal.md"]
+      "evidence": ["docs/releases/stage-7b-corrected/direct-execution-runbook.md", "docs/operations/tenant-stage-7d-cron-window-rehearsal.md", "docs/launch/hosted-launch-runbook.md"]
     },
     {
       "id": "provider-configuration",
       "scope": "configuration",
       "severity": "P0",
       "status": "BLOCKED_PROTECTED_ACTION",
-      "evidence": ["docs/voice-beta-vapi-provisioning.md", "docs/inbound-email-setup.md"],
-      "reason": "Repository contracts cannot prove current Vapi, Twilio, Resend, CallRail, Jobber, or hosted environment configuration."
+      "evidence": ["docs/launch/provider-configuration-verification.md", "scripts/check-provider-config-contract.mjs", "scripts/check-provider-config-contract.self-test.mjs"],
+      "reason": "The repository provides a redacted verification contract, but only separately authorized hosted and provider reads can prove current Supabase, Jobber, Resend, CallRail, and Vapi configuration. Twilio is not an implemented runtime dependency."
     },
     {
       "id": "hosted-booking-verification",
       "scope": "hosted_environment",
       "severity": "P1",
       "status": "BLOCKED_PROTECTED_ACTION",
-      "evidence": ["docs/protected-live-test-runbook.md"],
+      "evidence": ["docs/protected-live-test-runbook.md", "docs/launch/controlled-synthetic-booking.md"],
       "reason": "A controlled synthetic booking is a protected production-data action."
     },
     {
       "id": "manual-customer-journey-acceptance",
       "scope": "manual_acceptance",
       "severity": "P1",
-      "status": "NOT_IMPLEMENTED",
-      "evidence": ["docs/launch/manual-customer-journey-acceptance.md", "docs/voice/real-call-acceptance.md"],
-      "reason": "The consolidated acceptance pack is repository-complete, but its hosted synthetic journey and real-call phases have not been separately authorized or executed."
+      "status": "BLOCKED_PROTECTED_ACTION",
+      "evidence": ["docs/launch/manual-customer-journey-acceptance.md", "docs/voice/real-call-acceptance.md", "docs/voice/real-call-acceptance-worksheet.md"],
+      "reason": "The consolidated acceptance pack and phone-ready worksheet are repository-complete, but hosted synthetic and real-call phases have not been separately authorized or executed."
     },
     {
       "id": "actual-production-verification",
       "scope": "production_verification",
       "severity": "P0",
       "status": "BLOCKED_PROTECTED_ACTION",
-      "evidence": ["docs/launch/launch-readiness.json"],
+      "evidence": ["docs/launch/hosted-launch-runbook.md", "docs/launch/launch-control-sheet.md", "docs/launch/protected-launch-evidence.template.json", "docs/launch/protected-launch-go-approval.template.json", "docs/launch/protected-launch-state-reports.md", "scripts/evaluate-protected-launch.mjs"],
       "reason": "Production deployment and customer/provider operations are outside repository authorization."
     }
   ]

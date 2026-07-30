@@ -6,6 +6,11 @@ production monitoring. Stop every scenario on any customer/provider write,
 false confirmation, tenant fallback, Oregon activation, duplicate effect,
 unredacted transcript/PII, or missing operator outcome.
 
+Use `docs/voice/real-call-acceptance-worksheet.md` to execute and record this
+pack. The worksheet classifies real-call and offline-fault scenarios, requires
+exact result codes, and provides preflight, side-effect, stop, cleanup,
+evidence, and signoff fields.
+
 | # | Spoken scenario | Expected agent behavior | Expected state | Expected communication | Expected diagnostic | Stop conditions |
 |---|---|---|---|---|---|---|
 | 1 | Normal DFW address, service, slot, explicit “book it.” | Validate and summarize; dry-run only. | `dry_run_ready`; no booking. | States test did not create appointment; no SMS/email. | DFW org, call correlation, dry-run receipt. | Any booking/provider/message write. |
@@ -30,4 +35,3 @@ adapter decision, command hash, downstream row counts, communication counts,
 diagnostic record, and operator result. Final approval requires all scenarios
 plus explicit provider-configuration, number-connectivity, real-call, and
 monitoring evidence.
-

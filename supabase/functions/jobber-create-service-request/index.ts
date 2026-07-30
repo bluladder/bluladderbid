@@ -51,6 +51,7 @@ import {
 } from "../_shared/publicRequestReplay.ts";
 import { resolvePublicBookingOrganization } from "../_shared/publicBookingOrganization.ts";
 import { recordServiceAreaIntervention } from "../_shared/serviceAreaIntervention.ts";
+import { publicBookingLaunchGateResponse } from "../_shared/publicBookingLaunchGate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -269,6 +270,13 @@ Deno.serve(async (req) => {
         });
       }
     }
+
+    const launchGateResponse = publicBookingLaunchGateResponse(
+      "recurring_service_request",
+      Deno.env.get("PUBLIC_BOOKING_ENABLED"),
+      corsHeaders,
+    );
+    if (launchGateResponse) return launchGateResponse;
 
     const organizationResolution = await resolvePublicBookingOrganization(
       supabase,

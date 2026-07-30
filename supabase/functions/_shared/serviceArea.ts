@@ -218,6 +218,17 @@ export async function validateServiceArea(
       customerMessage: "I can't verify the service area right now — I can take your address and have the team confirm and follow up.",
     };
   }
+  // Public production routing is DFW-only. The mutable singleton may narrow
+  // service inside Texas, but configuration drift must never redefine this
+  // launch as another state (especially the inactive Oregon fixture).
+  if (config.stateCode !== "tx") {
+    return {
+      status: "validation_unavailable",
+      reason: "service_area_configuration_unavailable",
+      customerMessage:
+        "I can't verify the service area right now — please try again later.",
+    };
+  }
 
   const geo = await geocode(address);
   if (geo === "unavailable") {

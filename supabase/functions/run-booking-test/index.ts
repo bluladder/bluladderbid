@@ -62,13 +62,20 @@ function svc() {
   return createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 }
 
-async function callFn(name: string, body: unknown): Promise<{ status: number; json: any }> {
+async function callFn(
+  name: string,
+  body: unknown,
+  protectedTestRunId?: string,
+): Promise<{ status: number; json: any }> {
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${SERVICE_KEY}`,
       apikey: SERVICE_KEY,
+      ...(protectedTestRunId
+        ? { "X-Bluladder-Protected-Test-Run": protectedTestRunId }
+        : {}),
     },
     body: JSON.stringify(body),
   });
@@ -85,10 +92,16 @@ async function callFnWithHeaders(
   name: string,
   headers: Record<string, string>,
   body: unknown,
+  protectedTestRunId?: string,
 ): Promise<{ status: number; json: any }> {
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
-    headers,
+    headers: {
+      ...headers,
+      ...(protectedTestRunId
+        ? { "X-Bluladder-Protected-Test-Run": protectedTestRunId }
+        : {}),
+    },
     body: JSON.stringify(body),
   });
   let j: any = null;
@@ -266,14 +279,34 @@ async function runPrepare(supabase: any, runId: string, createdBy: string | null
   // 6) schedule freshness OK & no unsafe sync in progress
   steps = await stepStart(supabase, runId, steps, "schedule_fresh");
   try {
-    const { isScheduleDataFresh } = await import("../_shared/scheduleFreshness.ts");
-    const fresh = await isScheduleDataFresh(supabase);
-    if (!fresh) {
-      steps = await stepFail(supabase, runId, steps, "schedule_fresh", "Jobber schedule mirror is not fresh enough");
+    const { getMirrorFreshness } = await import(
+      "../_shared/scheduleFreshness.ts"
+    );
+    const freshness = await getMirrorFreshness(supabase);
+    if (!freshness.ok) {
+      steps = await stepFail(
+        supabase,
+        runId,
+        steps,
+        "schedule_fresh",
+        `Jobber schedule mirror is not fresh enough (${freshness.reason})`,
+      );
       return json({ ok: false, runId, safeStage: safeStageLabel("prepare", "schedule_fresh"), steps });
     }
   } catch (_e) {
-    // If freshness helper is unavailable, do not fail — the availability call itself gates on freshness.
+    steps = await stepFail(
+      supabase,
+      runId,
+      steps,
+      "schedule_fresh",
+      "Jobber schedule freshness could not be verified",
+    );
+    return json({
+      ok: false,
+      runId,
+      safeStage: safeStageLabel("prepare", "schedule_fresh"),
+      steps,
+    });
   }
   steps = await stepPass(supabase, runId, steps, "schedule_fresh");
 
@@ -631,7 +664,7 @@ async function runExecute(supabase: any, runId: string): Promise<Response> {
     homeDetails: quote?.__homeDetails ?? quote?.homeDetails ?? {},
     additionalServices: quote?.__additionalServices ?? quote?.additionalServices ?? undefined,
     idempotencyKey: payload.idempotencyKey,
-  });
+  }, runId);
   if (bookResp.status === 409) {
     steps = await stepFail(supabase, runId, steps, "reservation", "reservation conflict (409)");
     return json({ ok: false, runId, safeStage: safeStageLabel("execute", "reservation"), steps });
@@ -639,6 +672,24 @@ async function runExecute(supabase: any, runId: string): Promise<Response> {
   if (bookResp.status !== 200 || !bookResp.json?.jobberVisitId) {
     steps = await stepFail(supabase, runId, steps, "reservation", `booking failed (${bookResp.status})`);
     return json({ ok: false, runId, safeStage: safeStageLabel("execute", "reservation"), steps });
+  }
+  if (
+    bookResp.json?.protectedTest?.runId !== runId ||
+    bookResp.json?.protectedTest?.communicationsSuppressed !== true
+  ) {
+    steps = await stepFail(
+      supabase,
+      runId,
+      steps,
+      "no_messages",
+      "booking endpoint did not confirm protected-test communication suppression",
+    );
+    return json({
+      ok: false,
+      runId,
+      safeStage: safeStageLabel("execute", "no_messages"),
+      steps,
+    });
   }
   const visitId = bookResp.json.jobberVisitId as string;
   const jobId = (bookResp.json.jobberJobId ?? bookResp.json.jobId ?? null) as string | null;
@@ -748,7 +799,7 @@ async function runDuplicate(supabase: any, runId: string): Promise<Response> {
     homeDetails: quote?.__homeDetails ?? quote?.homeDetails ?? {},
     additionalServices: quote?.__additionalServices ?? quote?.additionalServices ?? undefined,
     idempotencyKey: run.idempotency_key,
-  });
+  }, runId);
   const replayVisit = replay.json?.jobberVisitId;
   if (replay.status !== 200 || replayVisit !== run.jobber_visit_id) {
     steps = await stepFail(supabase, runId, steps, "replay_returns_original",
@@ -815,7 +866,7 @@ async function runCancelCleanup(
     // forwarded JWT's own claims. This field is retained only as a run-id
     // breadcrumb.
     adminUserId,
-  });
+  }, runId);
   if (cancelResp.status !== 200 || cancelResp.json?.error) {
     // Distinguish an expired/invalid admin session (401/403) from a real
     // cancellation failure so the operator knows to re-authenticate rather
@@ -824,6 +875,24 @@ async function runCancelCleanup(
     const reason = authFailure ? "admin_session_expired" : safeReason(cancelResp.json?.error, "cancellation failed");
     steps = await stepFail(supabase, runId, steps, "visit_removed", reason);
     return json({ ok: false, runId, safeStage: safeStageLabel("cancel_cleanup", "visit_removed"), steps });
+  }
+  if (
+    cancelResp.json?.protectedTest?.runId !== runId ||
+    cancelResp.json?.protectedTest?.communicationsSuppressed !== true
+  ) {
+    steps = await stepFail(
+      supabase,
+      runId,
+      steps,
+      "visit_removed",
+      "cancellation endpoint did not confirm protected-test communication suppression",
+    );
+    return json({
+      ok: false,
+      runId,
+      safeStage: safeStageLabel("cancel_cleanup", "visit_removed"),
+      steps,
+    });
   }
   const cancelled = cancelResp.json?.status === "cancelled";
   const needsAttention = cancelResp.json?.needsAttention || cancelResp.json?.status === "needs_attention";

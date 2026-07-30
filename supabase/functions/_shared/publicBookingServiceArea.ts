@@ -4,6 +4,23 @@ import type { ServiceAreaResult } from "./serviceArea.ts";
 export const PUBLIC_BOOKING_ORGANIZATION_ID =
   "b1addf00-0000-4000-8000-000000000001";
 
+// The mutable service-area singleton may narrow these counties by configured
+// city, but it cannot expand public launch traffic beyond the canonical DFW
+// metropolitan counties.
+const PUBLIC_DFW_COUNTIES = new Set([
+  "collin",
+  "dallas",
+  "denton",
+  "ellis",
+  "hunt",
+  "johnson",
+  "kaufman",
+  "parker",
+  "rockwall",
+  "tarrant",
+  "wise",
+]);
+
 export type PublicBookingEligibility =
   | {
     status: "eligible";
@@ -129,10 +146,21 @@ export function evaluatePublicBookingServiceArea(
   }
 
   const providerCity = norm(resolved.city);
+  const providerCounty = norm(resolved.county);
   const providerState = norm(resolved.state);
   const providerPostalCode = zip5(resolved.postalCode);
   const providerCountryCode = norm(resolved.countryCode);
   const submittedStreetParts = submittedStreet(submitted.street1);
+  if (
+    providerCountryCode === "us" &&
+    (providerState !== "tx" || !PUBLIC_DFW_COUNTIES.has(providerCounty))
+  ) {
+    return {
+      status: "ineligible",
+      code: "OUTSIDE_DFW_SERVICE_AREA",
+      retryable: false,
+    };
+  }
   const conflicts = providerCity !== norm(submitted.city) ||
     providerState !== norm(submitted.province) ||
     providerPostalCode !== zip5(submitted.postalCode) ||
@@ -144,6 +172,7 @@ export function evaluatePublicBookingServiceArea(
   if (
     conflicts ||
     !providerCity ||
+    !providerCounty ||
     !providerState ||
     !providerPostalCode ||
     !providerCountryCode ||

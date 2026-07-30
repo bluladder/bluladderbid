@@ -664,6 +664,19 @@ async function createBookingTool(
         "That exact time was just booked by someone else — let me get the current openings.",
     };
   }
+  if (status === 503 && json?.code === "PUBLIC_BOOKING_DISABLED") {
+    await recordSlotFailure(
+      ctx,
+      "public_booking_launch_paused",
+      "jobber-create-booking rejected a new request at the launch gate",
+      convo,
+    );
+    return {
+      status: "temporarily_unavailable",
+      message:
+        "Online booking is currently paused, so this attempt was not processed. If you already submitted earlier, check your confirmation before trying again.",
+    };
+  }
   if (
     json?.code === "INTERVENTION_RECORD_FAILED" ||
     json?.retryable === false

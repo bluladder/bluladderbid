@@ -78,6 +78,48 @@ Deno.test("known Oregon and unsupported Texas geography are ineligible", () => {
   }
 });
 
+Deno.test("an erroneously eligible provider result cannot expand DFW to Oregon or Austin", () => {
+  for (
+    const outside of [
+      {
+        submitted: {
+          ...submitted,
+          city: "Portland",
+          province: "OR",
+          postalCode: "97201",
+        },
+        resolved: result({
+          city: "Portland",
+          county: "Multnomah",
+          state: "OR",
+          postalCode: "97201",
+        }),
+      },
+      {
+        submitted: {
+          ...submitted,
+          city: "Austin",
+          postalCode: "78701",
+        },
+        resolved: result({
+          city: "Austin",
+          county: "Travis",
+          postalCode: "78701",
+        }),
+      },
+    ]
+  ) {
+    assertEquals(
+      evaluatePublicBookingServiceArea(outside.submitted, outside.resolved),
+      {
+        status: "ineligible",
+        code: "OUTSIDE_DFW_SERVICE_AREA",
+        retryable: false,
+      },
+    );
+  }
+});
+
 Deno.test("configured manual-review geography stays distinct from known exclusion", () => {
   assertEquals(
     evaluatePublicBookingServiceArea(
@@ -102,7 +144,6 @@ Deno.test("missing, malformed, or conflicting provider geography is ambiguous", 
       result({ postalCode: undefined }),
       result({ postalCode: "not-a-zip" }),
       result({ city: "Denton" }),
-      result({ state: "OR" }),
       result({ postalCode: "76201" }),
       result({ countryCode: "CA" }),
       result({ streetNumber: "125" }),

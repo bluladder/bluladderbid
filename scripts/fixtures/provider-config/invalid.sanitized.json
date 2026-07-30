@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "evidenceId": "synthetic-invalid-provider-evidence",
+  "capturedAt": "not-a-timestamp",
+  "authorization": {
+    "readOnly": false,
+    "providerMutationAllowed": true,
+    "credentialInspectionAllowed": true
+  },
+  "redaction": {
+    "credentialValuesIncluded": true,
+    "customerDataIncluded": false,
+    "fullPhoneNumbersIncluded": false,
+    "operatorAttestation": false
+  },
+  "environment": {
+    "name": "production",
+    "projectIdentity": "unmasked-project",
+    "repositoryBuild": "main"
+  },
+  "surfaces": {
+    "publicBooking": {
+      "status": "verified",
+      "checks": {
+        "supabaseProjectMatches": true,
+        "serverGeocoderConfigured": false,
+        "browserKeyRestricted": true,
+        "organizationResolutionReady": true,
+        "jobberScheduleMirrorCurrent": true
+      }
+    },
+    "jobber": {
+      "status": "verified",
+      "checks": {
+        "oauthAppIdentityConfirmed": true,
+        "expectedAccountIdentityConfirmed": true,
+        "requiredReadScopeConfirmed": true,
+        "tokenMetadataCurrent": true,
+        "webhookAuthenticationConfigured": true,
+        "scheduleMirrorCurrent": true
+      }
+    },
+    "resend": {
+      "status": "verified",
+      "checks": {
+        "connectorIdentityConfirmed": true,
+        "expectedAccountIdentityConfirmed": true,
+        "sendingDomainVerified": true,
+        "senderAlignmentConfirmed": true,
+        "outboundWebhookConfigured": true,
+        "inboundDomainVerified": true,
+        "inboundWebhookConfigured": true
+      }
+    },
+    "callrail": {
+      "status": "verified",
+      "apiKey": "synthetic-forbidden-field",
+      "phoneNumber": "synthetic-full-number",
+      "notes": "Bearer synthetic-fixture-value",
+      "checks": {
+        "accountCompanyIdentityConfirmed": true,
+        "apiKeyScopeConfirmed": true,
+        "approvedSenderMatched": true,
+        "senderTextEnabled": true,
+        "inboundWebhookConfigured": true,
+        "routingUnchanged": true
+      }
+    },
+    "twilio": {
+      "status": "verified",
+      "checks": {
+        "runtimeDependencyPresent": false,
+        "providerSelectionDecisionDocumented": true
+      }
+    },
+    "vapi": {
+      "status": "blocked",
+      "checks": {
+        "organizationIdentityConfirmed": true,
+        "zeroDataRetentionEnabled": false,
+        "hipaaModeDisabled": true,
+        "assistantMatchesManifest": false,
+        "customLlmCredentialAttached": true,
+        "serverEventCredentialAttached": true,
+        "isolatedDidAssigned": false,
+        "toolsEmpty": true,
+        "transferDisabled": true,
+        "artifactsDisabled": false,
+        "allowedEventsExact": true,
+        "callrailUnlinked": true
+      }
+    },
+    "bidDelivery": {
+      "status": "verified",
+      "checks": {
+        "emailProviderIdentityConfirmed": true,
+        "smsProviderIdentityConfirmed": true,
+        "existingProviderIdsReconciled": true,
+        "suppressionsReviewed": true,
+        "uncertainClaimsReviewed": true,
+        "noSyntheticDeliveryPerformed": true
+      }
+    }
+  }
+}
