@@ -10,7 +10,13 @@ END AS environment_identity_ok;
 SELECT
   count(*) AS ledger_count,
   max(version) AS ledger_tip,
-  md5(string_agg(version || ':' || name, '|' ORDER BY version)) AS ledger_fingerprint,
+  md5(
+    string_agg(
+      version || ':' || coalesce(name, ''),
+      E'\n'
+      ORDER BY version
+    )
+  ) AS ledger_fingerprint,
   count(*) FILTER (WHERE version = '20260728060000')
     AS direct_execution_ledger_rows
 FROM supabase_migrations.schema_migrations;
@@ -195,10 +201,15 @@ ORDER BY jobid;
 
 -- Fail closed unless every signed postflight invariant is present.
 SELECT 1 / CASE WHEN (
-  SELECT count(*) = 145
-    AND max(version) = '20260726194719'
-    AND md5(string_agg(version || ':' || name, '|' ORDER BY version))
-      = '73ed8522db78e51049a421e1f72b18c3'
+  SELECT count(*) = 146
+    AND max(version) = '20260730072508'
+    AND md5(
+      string_agg(
+        version || ':' || coalesce(name, ''),
+        E'\n'
+        ORDER BY version
+      )
+    ) = '3d447d837baa2a593f45fd111fc2ac04'
     AND count(*) FILTER (WHERE version = '20260728060000') = 0
   FROM supabase_migrations.schema_migrations
 ) THEN 1 ELSE 0 END AS ledger_unchanged_asserted;
