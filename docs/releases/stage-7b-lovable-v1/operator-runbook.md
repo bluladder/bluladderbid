@@ -16,9 +16,10 @@ actions.
 3. **Set containment.** More → Cloud → Secrets. Add or replace
    `PUBLIC_BOOKING_ENABLED` with exact value `false`. Never retain the value in
    evidence. Confirm the secret-name metadata and UTC time.
-4. **Run read-only preflight.** Ask Lovable to execute only
-   `supabase/preflight/tenant_stage_7b_lovable.sql` as a read-only catalog and
-   aggregate query. It must return the pinned ledger, 16/10/2/2 first-wave
+4. **Run read-only preflight.** Through MCP `query_database`, submit each query
+   from `supabase/preflight/tenant_stage_7b_lovable_mcp.json` separately and in
+   order. Each call must contain exactly one `SELECT`; do not submit the legacy
+   transaction batch through MCP. It must return the pinned ledger, 16/10/2/2 first-wave
    counts, absent Stage 7B objects/columns, one platform role, exact job
    fingerprints, and zero Running job 3/5/6 executions. Stop on any mismatch.
 5. **Identify jobs.** More → Cloud → Jobs. Open jobs 3, 5, and 6. Match IDs,
