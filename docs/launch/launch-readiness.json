@@ -92,9 +92,9 @@
       "id": "failure-recovery",
       "scope": "repository",
       "severity": "P0",
-      "status": "FAIL",
-      "evidence": ["supabase/functions/jobber-create-service-request/index.ts", "supabase/functions/process-sms-queue/index.ts"],
-      "reason": "Public quote delivery now claims before provider submission and preserves uncertain outcomes, but recurring queue pathways still require generalized stale-claim recovery and reconciliation."
+      "status": "PASS",
+      "evidence": ["supabase/functions/_shared/queueDelivery.ts", "supabase/functions/_shared/queueDelivery_test.ts", "supabase/functions/_shared/queueDelivery_contract_test.ts", "supabase/functions/process-sms-queue/index.ts", "supabase/migrations/20260729235016_launch_recurring_recovery.sql"],
+      "reason": "Recurring SMS and email claims are now durable before provider submission, stable provider idempotency is used where supported, every worker transition is claim-token compare-and-set, and stale or transport-uncertain outcomes are held for reconciliation rather than redispatched."
     },
     {
       "id": "production-security-foundation",
