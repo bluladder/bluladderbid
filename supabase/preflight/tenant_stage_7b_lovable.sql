@@ -16,7 +16,8 @@ SELECT
 SELECT
   count(*) AS ledger_count,
   max(version) AS ledger_tip,
-  md5(string_agg(version || ':' || name, '|' ORDER BY version)) AS ledger_fingerprint
+  md5(string_agg(version || ':' || coalesce(name, ''), E'\n'
+    ORDER BY version)) AS ledger_fingerprint
 FROM supabase_migrations.schema_migrations;
 
 SELECT 'customers' AS table_name, count(*) AS row_count FROM public.customers
@@ -67,7 +68,8 @@ WHERE jobid IN (3, 5, 6)
 SELECT 1 / CASE WHEN (
   SELECT count(*) = 145
     AND max(version) = '20260726194719'
-    AND md5(string_agg(version || ':' || name, '|' ORDER BY version))
+    AND md5(string_agg(version || ':' || coalesce(name, ''), E'\n'
+      ORDER BY version))
       = '73ed8522db78e51049a421e1f72b18c3'
   FROM supabase_migrations.schema_migrations
 ) THEN 1 ELSE 0 END AS ledger_baseline_asserted;
