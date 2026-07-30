@@ -141,7 +141,12 @@ export function extractStreetParts(text: string): StreetParts {
       break;
     }
   }
-  const tail = streetIdx >= 0 ? segs.slice(streetIdx + 1).join(", ") : "";
+  let tailSegs = streetIdx >= 0 ? segs.slice(streetIdx + 1) : [];
+  const stop = tailSegs.findIndex((s) =>
+    s.includes("?") || /^(is|did|does|can|are|do)\b/i.test(s)
+  );
+  if (stop >= 0) tailSegs = tailSegs.slice(0, stop);
+  const tail = tailSegs.join(", ");
   return { houseNumber, suffix, tail };
 }
 
