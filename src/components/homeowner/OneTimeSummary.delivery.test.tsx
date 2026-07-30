@@ -1,5 +1,6 @@
 /**
-  * OneTimeSummary delivery flow — verifies Email delivery and that the
+ * OneTimeSummary delivery flow — verifies Email delivery and that the
+ * bid-by-text path is fully removed from the customer UI. Email actions:
  *  1. reuse the same saved quote id + resume token,
  *  2. do NOT re-invoke save-quote / send-sms for a repeat click on the same
  *     destination (no duplicate rows, tokens, campaign events, or messages),
