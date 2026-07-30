@@ -8,7 +8,8 @@
 //
 // It is completely provider-independent. Vapi, LiveKit, or any other
 // telephony vendor can point their custom-LLM at this adapter as long as they
-// speak the OpenAI chat-completions contract. This file MUST NOT import
+// speak the OpenAI chat-completions contract. This file MUST NOT import { suppressAcknowledgement } from "./voice/voiceExitIntents.ts";
+import
 // Vapi/CallRail/Twilio SDKs or hard-code provider-specific field names.
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -385,7 +386,11 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
   } else {
     // Slow lane: emit deterministic acknowledgement (with <flush /> so the
     // TTS provider speaks it immediately), then run full orchestrator.
-    const ack = slowBranchAcknowledgement(route.reason);
+    // Corrections, spelled answers, frustration, human requests and hangup
+    // intents get a deterministic reply — never a filler acknowledgement.
+    const ack = suppressAcknowledgement(userMessage)
+      ? null
+      : slowBranchAcknowledgement(route.reason);
     if (ack) {
       const delta = `${ack} ${FLUSH_TAG} `;
       ackEmitted = true;
