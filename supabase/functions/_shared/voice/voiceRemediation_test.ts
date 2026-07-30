@@ -133,6 +133,8 @@ Deno.test("quote-by-text never claims a send when delivery is unavailable", asyn
     name: "Ben",
     phone: "+14692150144",
     phoneIsFullE164: true,
+    address: "123 Main St, Frisco, TX",
+    addressEligible: true,
     deliver: null,
   });
   assertEquals(plan.sent, false);
@@ -160,6 +162,8 @@ Deno.test("quote-by-text confirms only after a successful send", async () => {
     name: "Ben",
     phone: "+14692150144",
     phoneIsFullE164: true,
+    address: "123 Main St, Frisco, TX",
+    addressEligible: true,
     deliver: () => Promise.resolve({ ok: true }),
   });
   assertEquals(ok.sent, true);
@@ -169,6 +173,8 @@ Deno.test("quote-by-text confirms only after a successful send", async () => {
     name: "Ben",
     phone: "+14692150144",
     phoneIsFullE164: true,
+    address: "123 Main St, Frisco, TX",
+    addressEligible: true,
     deliver: () => Promise.resolve({ ok: false }),
   });
   assertEquals(failed.sent, false);

@@ -3,63 +3,98 @@ import {
   buildVoiceSaveQuoteBody,
   deliverVoiceQuoteByText,
   resolveQuoteRecipientEmail,
+  servicesFromFacts,
 } from "./quoteByTextDelivery.ts";
+import { quoteInputsKey } from "../conversationState.ts";
 
 const facts = {
   services: ["window_cleaning"],
-  address: "123 Main St, Frisco, TX",
+  address: "123 Main St, Frisco, TX 75034",
+  serviceArea: { status: "eligible" },
   property: { squareFootage: 2500, stories: 2, windowCleaningType: "exterior" },
-  quote: { status: "firm", firm: true, total: 389 },
+  quote: {
+    status: "firm",
+    firm: true,
+    total: 389,
+    lineItems: [{ key: "window_cleaning", label: "Window Cleaning", amount: 389 }],
+    engineVersion: "v3",
+    pricingVersion: 7,
+  },
   contact: { name: "Ben Millen", phone: "+14692150144", phoneConfirmed: true },
 } as any;
+// A firm quote is only "current" while its inputs signature still matches.
+facts.quote.inputsKey = quoteInputsKey(facts);
 
-function sbWithRows(rows: Array<{ email: string; phone: string }>) {
-  return {
-    from: () => ({
-      select: () => ({
-        not: () => ({
-          ilike: () => ({
-            order: () => ({
-              limit: () => Promise.resolve({ data: rows, error: null }),
-            }),
-          }),
-        }),
+/** Minimal stub of the exact-id reads the delivery path performs. */
+function sb(opts: {
+  session?: Record<string, unknown> | null;
+  conversation?: Record<string, unknown> | null;
+  customer?: Record<string, unknown> | null;
+  reads?: string[];
+} = {}) {
+  const reads = opts.reads ?? [];
+  const table = (name: string) => ({
+    select: () => ({
+      eq: () => ({
+        maybeSingle: () => {
+          reads.push(name);
+          if (name === "quote_sessions") {
+            return Promise.resolve({ data: opts.session ?? null, error: null });
+          }
+          if (name === "chat_conversations") {
+            return Promise.resolve({ data: opts.conversation ?? null, error: null });
+          }
+          if (name === "customers") {
+            return Promise.resolve({ data: opts.customer ?? null, error: null });
+          }
+          return Promise.resolve({ data: null, error: null });
+        },
       }),
     }),
-  } as any;
+    update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+  });
+  return { from: (name: string) => table(name) } as any;
 }
 
-function sbWithEmail(email: string | null) {
-  return sbWithRows(email ? [{ email, phone: "4692150144" }] : []);
-}
+const ok = (name: string) =>
+  Promise.resolve(
+    name === "save-quote"
+      ? { status: 200, json: { quoteId: "q1" } }
+      : { status: 200, json: { transactionalSent: true, deliveryStatus: "accepted" } },
+  );
 
-Deno.test("save-quote payload never triggers an email and carries the total", () => {
+Deno.test("save-quote payload carries canonical line items and a stable scope", () => {
   const body = buildVoiceSaveQuoteBody({
     facts,
     email: "a@b.com",
     phoneE164: "+14692150144",
-    sessionId: "sess-1",
+    sourceSessionId: "sess-1",
   }) as any;
   assertEquals(body.action, "save");
   assertEquals(body.total, 389);
   assertEquals(body.additionalServices.windowCleaning, true);
   assertEquals(body.sourceSessionId, "sess-1");
-  assertEquals(body.services.length, 1);
+  assertEquals(body.services, [{ name: "Window Cleaning", amount: 389 }]);
+  assertEquals(body.engineVersion, "v3");
+  assertEquals(body.ruleVersion, 7);
+});
+
+Deno.test("line items fall back to service slugs only when absent", () => {
+  assertEquals(servicesFromFacts({ ...facts, quote: { total: 1 } } as any), [
+    { name: "window_cleaning" },
+  ]);
 });
 
 Deno.test("delivers via save-quote then send-sms and reports sent", async () => {
   const calls: string[] = [];
   const res = await deliverVoiceQuoteByText({
-    supabase: sbWithEmail("known@x.com"),
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
     facts,
-    sessionId: null,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
     callFunction: (name) => {
       calls.push(name);
-      return Promise.resolve(
-        name === "save-quote"
-          ? { status: 200, json: { quoteId: "q1" } }
-          : { status: 200, json: { transactionalSent: true } },
-      );
+      return ok(name);
     },
   });
   assertEquals(res.ok, true);
@@ -67,17 +102,19 @@ Deno.test("delivers via save-quote then send-sms and reports sent", async () => 
   assertEquals(calls, ["save-quote", "send-sms"]);
 });
 
-Deno.test("suppressed or failed SMS is never reported as sent", async () => {
+Deno.test("an unaccepted SMS is never reported as sent", async () => {
   const res = await deliverVoiceQuoteByText({
-    supabase: sbWithEmail("known@x.com"),
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
     facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
     callFunction: (name) =>
       Promise.resolve(
         name === "save-quote"
           ? { status: 200, json: { quoteId: "q1" } }
           : {
             status: 200,
-            json: { transactionalSent: false, transactionalError: "opted_out" },
+            json: { transactionalSent: false, deliveryStatus: "suppressed" },
           },
       ),
   });
@@ -88,99 +125,152 @@ Deno.test("suppressed or failed SMS is never reported as sent", async () => {
 Deno.test("no resolvable email means no send attempt at all", async () => {
   const calls: string[] = [];
   const res = await deliverVoiceQuoteByText({
-    supabase: sbWithEmail(null),
+    supabase: sb({}),
     facts,
+    conversationId: "conv-1",
     callFunction: (name) => {
       calls.push(name);
-      return Promise.resolve({ status: 200, json: {} });
+      return ok(name);
     },
   });
-  assertEquals(res.ok, false);
   assertEquals(res.reason, "email_unavailable");
   assertEquals(calls, []);
 });
 
-Deno.test("a non-firm zero total never reaches save-quote", async () => {
+Deno.test("a non-firm quote never reaches save-quote", async () => {
   const res = await deliverVoiceQuoteByText({
-    supabase: sbWithEmail("known@x.com"),
-    facts: { ...facts, quote: { total: 0 } } as any,
-    callFunction: () => Promise.resolve({ status: 200, json: {} }),
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts: { ...facts, quote: { total: 300 } } as any,
+    conversationId: "conv-1",
+    callFunction: () => ok("save-quote"),
   });
-  assertEquals(res.reason, "missing_quote_total");
+  assertEquals(res.reason, "quote_not_firm");
 });
 
-Deno.test("ambiguous phone to email never guesses a customer", async () => {
-  const calls: string[] = [];
+Deno.test("an unverified service address blocks persistence", async () => {
   const res = await deliverVoiceQuoteByText({
-    supabase: sbWithRows([
-      { email: "blmillen@gmail.com", phone: "4692150144" },
-      { email: "ben@bluladder.com", phone: "4692150144" },
-    ]),
-    facts,
-    callFunction: (name) => {
-      calls.push(name);
-      return Promise.resolve({ status: 200, json: {} });
-    },
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts: { ...facts, serviceArea: { status: "manual_review_required" } } as any,
+    conversationId: "conv-1",
+    callFunction: () => ok("save-quote"),
   });
-  assertEquals(res.ok, false);
-  assertEquals(res.reason, "email_unavailable");
-  assertEquals(calls, []);
+  assertEquals(res.reason, "missing_address");
 });
 
-Deno.test("resolves a single on-file email and ignores partial-digit matches", async () => {
+Deno.test("an unconfirmed phone never receives a quote text", async () => {
+  const res = await deliverVoiceQuoteByText({
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts: { ...facts, contact: { name: "Ben", phone: "+14692150144" } } as any,
+    conversationId: "conv-1",
+    callFunction: () => ok("save-quote"),
+  });
+  assertEquals(res.reason, "phone_not_confirmed");
+});
+
+const promoFacts = (() => {
+  const f = { ...facts, promotionId: "promo-99" } as any;
+  f.quote = { ...f.quote, inputsKey: quoteInputsKey(f) };
+  return f;
+})();
+
+Deno.test("a promotional price fails closed instead of persisting a wrong total", async () => {
+  const res = await deliverVoiceQuoteByText({
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts: promoFacts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: () => ok("save-quote"),
+  });
+  assertEquals(res.reason, "promotion_unmappable");
+});
+
+Deno.test("email resolution never searches by phone number", async () => {
+  const reads: string[] = [];
   const res = await resolveQuoteRecipientEmail(
-    sbWithRows([
-      { email: "known@x.com", phone: "(469) 215-0144" },
-      { email: "other@x.com", phone: "+1246921501441" },
-    ]),
+    sb({ conversation: { prospect_email: "prospect@x.com" }, reads }),
     facts,
-    "+14692150144",
+    { quoteSessionId: "sess-1", conversationId: "conv-1" },
   );
-  assertEquals(res, "known@x.com");
+  assertEquals(res, "prospect@x.com");
+  assertEquals(reads, ["quote_sessions", "chat_conversations"]);
 });
 
-Deno.test("a caller-spoken email always wins over on-file lookup", async () => {
+Deno.test("resolution order: session email beats conversation and customer", async () => {
   const res = await resolveQuoteRecipientEmail(
-    sbWithRows([{ email: "onfile@x.com", phone: "4692150144" }]),
+    sb({
+      session: { email_normalized: "Session@X.com" },
+      conversation: { prospect_email: "prospect@x.com" },
+    }),
+    facts,
+    { quoteSessionId: "sess-1", conversationId: "conv-1" },
+  );
+  assertEquals(res, "session@x.com");
+});
+
+Deno.test("a linked customer row is the last resort", async () => {
+  const res = await resolveQuoteRecipientEmail(
+    sb({
+      session: { customer_id: "cust-1" },
+      conversation: {},
+      customer: { email: "OnFile@X.com" },
+    }),
+    facts,
+    { quoteSessionId: "sess-1", conversationId: "conv-1" },
+  );
+  assertEquals(res, "onfile@x.com");
+});
+
+Deno.test("a caller-spoken email always wins over stored identity", async () => {
+  const reads: string[] = [];
+  const res = await resolveQuoteRecipientEmail(
+    sb({ session: { email_normalized: "onfile@x.com" }, reads }),
     { ...facts, contact: { ...facts.contact, email: "Spoken@X.com " } } as any,
-    "+14692150144",
+    { quoteSessionId: "sess-1", conversationId: "conv-1" },
   );
   assertEquals(res, "spoken@x.com");
+  assertEquals(reads, []);
 });
 
-Deno.test("a repeated ask in one call reuses the same quote session scope", async () => {
-  const sessionIds: unknown[] = [];
+Deno.test("a repeated ask in one call reuses the same idempotency scope", async () => {
+  const scopes: unknown[] = [];
   const call = () =>
     deliverVoiceQuoteByText({
-      supabase: sbWithEmail("known@x.com"),
+      supabase: sb({ session: { email_normalized: "known@x.com" } }),
       facts,
-      sessionId: "sess-live",
+      quoteSessionId: "sess-live",
+      conversationId: "conv-1",
       callFunction: (name, body: any) => {
-        if (name === "save-quote") sessionIds.push(body.sourceSessionId);
-        return Promise.resolve(
-          name === "save-quote"
-            ? { status: 200, json: { quoteId: "q1" } }
-            : { status: 200, json: { transactionalSent: true } },
-        );
+        if (name === "save-quote") scopes.push(body.sourceSessionId);
+        return ok(name);
       },
     });
   await call();
   await call();
-  // Identical sourceSessionId => save-quote updates one quote row, and the
-  // resulting SMS outbound key (quote_delivery:sms:q1:digits) is unchanged, so
-  // the outbox claim replays instead of dispatching twice.
-  assertEquals(sessionIds, ["sess-live", "sess-live"]);
+  assertEquals(scopes, ["sess-live", "sess-live"]);
 });
 
-Deno.test("orchestrator only supplies a live deliver closure on the allowlisted lane", async () => {
+Deno.test("without a quote session the conversation id is the stable scope", async () => {
+  const scopes: unknown[] = [];
+  await deliverVoiceQuoteByText({
+    supabase: sb({ conversation: { prospect_email: "known@x.com" } }),
+    facts,
+    conversationId: "conv-1",
+    callFunction: (name, body: any) => {
+      if (name === "save-quote") scopes.push(body.sourceSessionId);
+      return ok(name);
+    },
+  });
+  assertEquals(scopes, ["conv-1"]);
+});
+
+Deno.test("quote-by-text delivery is NOT gated on the live-booking lane", async () => {
   const src = await Deno.readTextFile(
     new URL("../aiOrchestrator.ts", import.meta.url),
   );
-  const rail = src.slice(src.indexOf("classifyQuoteByTextRequest(userMessage)"));
-  assertEquals(
-    /resolveVoiceBookingLane\(facts\.contact\?\.phone/.test(rail),
-    true,
-  );
-  assertEquals(/deliver: deliveryLane === "live"/.test(rail), true);
-  assertEquals(/: null,/.test(rail), true);
+  const rail = src.slice(src.indexOf("const quoteByTextAsked"));
+  const railEnd = rail.slice(0, rail.indexOf("buildSystemPrompt"));
+  assertEquals(/resolveVoiceBookingLane/.test(railEnd), false);
+  assertEquals(/deliver: async \(\) =>/.test(railEnd), true);
+  assertEquals(/quoteIsFirm: isQuoteFirm\(facts\)/.test(railEnd), true);
+  assertEquals(/quoteByText: \{/.test(railEnd), true);
 });

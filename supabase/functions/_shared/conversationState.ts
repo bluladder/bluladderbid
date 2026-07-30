@@ -98,6 +98,11 @@ export interface ConversationFacts {
     spokenInputsKey?: string;
     spokenTotal?: number;
   };
+  // Narrowly scoped, persisted state for the truthful quote-by-text rail. When
+  // pending is true the caller asked for the quote in writing but a required
+  // field (name/phone/address/email) was missing, so the rail must resume
+  // automatically on the next turn without the caller repeating the request.
+  quoteByText?: { pending?: boolean; lastReason?: string | null };
 }
 
 const MANUAL_REVIEW_STATES = ["manual_review_required"];
