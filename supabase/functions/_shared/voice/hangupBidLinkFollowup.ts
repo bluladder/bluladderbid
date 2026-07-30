@@ -250,14 +250,6 @@ export async function readJournalUserTurn(
   }
 }
 
-interface _UnusedHangupFollowupInput {
-  supabase: SB;
-  body: unknown;
-  eventType: string | null;
-  /** Injected in tests. Defaults to the durable outbox. */
-  deliver?: typeof sendOutboxSms;
-}
-
 /**
  * Authoritative entry point, called by voice-vapi-events for the final
  * call-ended event only. Always resolves — never throws into the webhook.
