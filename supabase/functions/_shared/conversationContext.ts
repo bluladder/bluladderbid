@@ -92,7 +92,7 @@ export async function resolveInboundContext(
     const { data: acct } = await supabase
       .from("customer_accounts")
       .select("id, customer_id")
-      .eq("phone", phone)
+      .eq("verified_phone", phone)
       .maybeSingle();
     if (acct?.customer_id) {
       const { data: c } = await supabase
@@ -150,39 +150,38 @@ export async function resolveInboundContext(
   if (customerId) {
     const { data: quoteRow } = await supabase
       .from("quotes")
-      .select("id, service_address")
+      .select("id")
       .eq("customer_id", customerId)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (quoteRow) {
       latestQuoteId = quoteRow.id ?? null;
-      serviceAddress = quoteRow.service_address ?? serviceAddress;
     }
     const { data: bookingRow } = await supabase
       .from("bookings")
-      .select("id, service_address")
+      .select("id, property_id")
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (bookingRow) {
       latestBookingId = bookingRow.id ?? null;
-      serviceAddress = serviceAddress ?? bookingRow.service_address ?? null;
+      serviceAddress = serviceAddress ?? await lookupPropertyAddress(supabase, bookingRow.property_id);
     }
   } else if (method !== "ambiguous") {
     // Unresolved (E): promote a solo phone-matched quote/booking as a
     // medium-confidence anchor. Ambiguous stays ambiguous.
     const { data: quoteRow } = await supabase
       .from("quotes")
-      .select("id, customer_id, service_address")
+      .select("id, customer_id, property_id")
       .eq("customer_phone", phone)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (quoteRow) {
       latestQuoteId = quoteRow.id ?? null;
-      serviceAddress = quoteRow.service_address ?? serviceAddress;
+      serviceAddress = serviceAddress ?? await lookupPropertyAddress(supabase, quoteRow.property_id);
       if (quoteRow.customer_id) {
         customerId = quoteRow.customer_id;
         method = "recent_quote";
@@ -190,21 +189,19 @@ export async function resolveInboundContext(
         unresolvedReason = null;
       }
     }
-    const { data: bookingRow } = await supabase
-      .from("bookings")
-      .select("id, customer_id, service_address")
-      .eq("customer_phone", phone)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (bookingRow) {
-      latestBookingId = bookingRow.id ?? null;
-      serviceAddress = serviceAddress ?? bookingRow.service_address ?? null;
-      if (!customerId && bookingRow.customer_id) {
-        customerId = bookingRow.customer_id;
-        method = "recent_booking";
-        confidence = "medium";
-        unresolvedReason = null;
+    // `bookings` has no phone column — the only phone-linked path to a booking
+    // is through the quote resolved above (or an anchored customer).
+    if (customerId) {
+      const { data: bookingRow } = await supabase
+        .from("bookings")
+        .select("id, property_id")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (bookingRow) {
+        latestBookingId = bookingRow.id ?? null;
+        serviceAddress = serviceAddress ?? await lookupPropertyAddress(supabase, bookingRow.property_id);
       }
     }
   }
