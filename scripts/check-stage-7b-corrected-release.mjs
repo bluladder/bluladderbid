@@ -80,9 +80,12 @@ if ((assembled.match(/\bCOMMIT;/g) ?? []).length !== 1) {
 }
 if (
   manifest.decision !== 'NO-GO' ||
-  manifest.execution.selected_mechanism !== 'direct_psql'
+  manifest.execution.selected_mechanism !== null ||
+  manifest.execution.production_control_plane !== 'lovable_cloud' ||
+  manifest.execution.compatibility !==
+    'BLOCKED_UNSUPPORTED_CLIENT_BINDINGS'
 ) {
-  fail('release must remain NO-GO with exact direct psql selected');
+  fail('release must remain NO-GO with no supported Lovable execution selected');
 }
 if (manifest.hosted_mutation_authorized || manifest.ledger_rewrite_allowed) {
   fail('repository package cannot authorize hosted or ledger mutation');
@@ -122,7 +125,8 @@ for (const required of [
   manifest.assembled.sha256,
   manifest.provenance.sha256,
   'Atomic provenance decision',
-  'Direct execution leaves',
+  'no longer selected for production',
+  'Lovable Cloud',
   'NO-GO',
 ]) {
   if (!`${readme}\n${runbook}`.includes(required)) {
@@ -251,5 +255,6 @@ await stat(resolve(root, manifest.evidence.validator));
 
 console.log(
   'Stage 7B corrected release valid: one atomic 24,721-byte candidate, ' +
-    'private append-only provenance, hardened RLS, fail-closed evidence, NO-GO.',
+    'private append-only provenance, hardened RLS, no supported Lovable ' +
+    'execution mechanism selected, NO-GO.',
 );
