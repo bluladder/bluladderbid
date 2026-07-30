@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.6-hangup-journal-fallback";
+export const BUILD_ID = "voice-adapter-4C-b.6.7-voice-address-and-reply-safety";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -31,4 +31,11 @@ export const BUILD_FEATURES = {
   // Post-hangup online-bid SMS fallback, triggered only by the authoritative
   // final call-ended event and delivered through the durable SMS outbox.
   voiceHangupBidLinkFollowup: true,
+  // 6.7 — deterministic spoken-address normalization + explicit voice address
+  // confirmation gate, spoken-reply safety (no internal reasoning, one
+  // question per turn) and deterministic exit/human-request handling.
+  voiceSpokenAddressNormalization: true,
+  voiceAddressConfirmationGate: true,
+  voiceReplySafety: true,
+  voiceExitIntentHandling: true,
 } as const;

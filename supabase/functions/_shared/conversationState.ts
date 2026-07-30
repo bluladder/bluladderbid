@@ -109,6 +109,18 @@ export interface ConversationFacts {
     // parsed as the answer to THAT question (e.g. a spoken email address).
     missingField?: "phone" | "name" | "address" | "email" | null;
   };
+  // VOICE-only deterministic address confirmation gate. A geocoded candidate
+  // stays out of eligibility until the caller explicitly confirms the exact
+  // canonical address that was read back to them.
+  addressCandidate?: {
+    formattedAddress?: string;
+    spokenAddress?: string;
+    status?: "pending" | "confirmed" | "house_number_mismatch";
+    confirmedAddress?: string | null;
+  } | null;
+  // True once exactly one canonical human escalation/callback was recorded for
+  // this conversation, so a repeated "can I talk to a person" reuses it.
+  voiceEscalationRecorded?: boolean;
 }
 
 const MANUAL_REVIEW_STATES = ["manual_review_required"];
