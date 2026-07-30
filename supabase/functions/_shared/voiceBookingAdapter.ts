@@ -1,4 +1,4 @@
-export type VoiceBookingMode = "disabled" | "dry_run";
+export type VoiceBookingMode = "disabled" | "dry_run" | "live";
 
 export type TrustedVoiceCallContext = {
   provider: "vapi";
@@ -38,16 +38,19 @@ export type VoiceBookingDecision =
       | "confirmation_missing";
   }
   | {
-    status: "dry_run_ready";
+    status: "dry_run_ready" | "live_ready";
     receiptId: string;
     idempotencyKey: string;
     commandHash: string;
-    noProviderWrite: true;
+    /** true for dry runs (nothing is written), false when a live provider
+     *  write is authorized to proceed through the shared booking pipeline. */
+    noProviderWrite: boolean;
   };
 
 export function resolveVoiceBookingMode(
   value: string | undefined,
 ): VoiceBookingMode {
+  if (value === "live") return "live";
   return value === "dry_run" ? "dry_run" : "disabled";
 }
 
@@ -66,7 +69,7 @@ export async function prepareVoiceBooking(
   context: TrustedVoiceCallContext,
   evidence: VoiceBookingEvidence,
 ): Promise<VoiceBookingDecision> {
-  if (mode !== "dry_run") {
+  if (mode !== "dry_run" && mode !== "live") {
     return { status: "blocked", code: "adapter_disabled" };
   }
   if (!context.authenticatedProviderEvent || !context.providerResourceTrusted) {
@@ -122,10 +125,12 @@ export async function prepareVoiceBooking(
     slotId: evidence.slotId,
   }));
   return {
-    status: "dry_run_ready",
-    receiptId: `dry-run:${commandHash.slice(0, 24)}`,
+    status: mode === "live" ? "live_ready" : "dry_run_ready",
+    receiptId: `${mode === "live" ? "live" : "dry-run"}:${
+      commandHash.slice(0, 24)
+    }`,
     idempotencyKey,
     commandHash,
-    noProviderWrite: true,
+    noProviderWrite: mode !== "live",
   };
 }

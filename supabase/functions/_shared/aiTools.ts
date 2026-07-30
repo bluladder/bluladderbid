@@ -26,17 +26,47 @@ import {
   MAX_SLOT_FAILURES_BEFORE_ESCALATION,
   OFFER_TTL_MS,
 } from "./slotOffer.ts";
+import { parseAllowlist } from "./workflow/rolloutRoute.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 /**
- * Compatibility export for older diagnostics. Live voice booking is
- * structurally absent in this repository stage; environment configuration
- * cannot unlock the shared mutation pipeline.
+ * Runtime switch for live voice booking. This flag ALONE is never sufficient:
+ * a confirmed voice booking additionally requires the caller to be on
+ * VOICE_WORKFLOW_CONTROLLER_ALLOWLIST (see voiceBookingCallerAllowlisted), so
+ * enabling the flag can never open real bookings to arbitrary inbound callers.
  */
 export function voiceLiveBookingEnabled(): boolean {
-  return false;
+  const raw = (Deno.env.get("VOICE_LIVE_BOOKING_ENABLED") ?? "").trim()
+    .toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes";
+}
+
+/**
+ * Second, independent constraint on live voice booking: the caller's phone
+ * number must appear verbatim (after E.164 normalization) in
+ * VOICE_WORKFLOW_CONTROLLER_ALLOWLIST. Empty allowlist → nobody is allowed.
+ */
+export function voiceBookingCallerAllowlisted(
+  phone: string | null | undefined,
+): boolean {
+  if (!phone || !phone.trim()) return false;
+  const allowlist = parseAllowlist(
+    Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST") ?? null,
+  );
+  if (allowlist.length === 0) return false;
+  const normalized = parseAllowlist(phone)[0];
+  return !!normalized && allowlist.includes(normalized);
+}
+
+/** Resolved voice booking mode for one confirmed booking attempt. */
+export function resolveVoiceBookingLane(
+  phone: string | null | undefined,
+): "live" | "dry_run" {
+  return voiceLiveBookingEnabled() && voiceBookingCallerAllowlisted(phone)
+    ? "live"
+    : "dry_run";
 }
 
 /**
@@ -457,15 +487,6 @@ async function createBookingTool(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ) {
-  // Live voice mutation is intentionally not representable in this stage.
-  if (ctx.channel === "voice") {
-    return {
-      status: "voice_beta_dry_run",
-      simulated: true,
-      message:
-        "This voice test did not create an appointment. Please use the online booking flow or contact the office.",
-    };
-  }
   if (args.confirmed !== true) {
     return {
       status: "not_confirmed",
@@ -487,6 +508,24 @@ async function createBookingTool(
     )
     .eq("id", ctx.conversationId)
     .maybeSingle();
+
+  // VOICE LANE GATE. Live voice booking requires BOTH the runtime flag and an
+  // allowlisted caller. Anything else stays a truthful dry run that never
+  // touches Jobber. Downstream, the voice attempt then runs the SAME
+  // validation + Jobber path as web/SMS (quote, offer freshness, service area,
+  // suppression/authorization, idempotency, audit).
+  if (ctx.channel === "voice") {
+    const lane = resolveVoiceBookingLane(convo?.prospect_phone);
+    if (lane !== "live") {
+      return {
+        status: "voice_beta_dry_run",
+        simulated: true,
+        message:
+          "This voice test did not create an appointment. Please use the online booking flow or contact the office.",
+      };
+    }
+  }
+
   const quote = convo?.quote_result as any;
   if (!quote) {
     return {
@@ -501,6 +540,32 @@ async function createBookingTool(
       status: "missing_contact",
       message: "I need the customer's email to book.",
     };
+  }
+
+  // Voice callers never type an address, so the address that will be written to
+  // Jobber must be re-validated against the live service area before any
+  // mutation. Web/SMS already collect a validated address earlier in the flow.
+  const resolvedAddress = String(
+    args.address || convo?.service_address || "",
+  ).trim();
+  if (ctx.channel === "voice") {
+    if (!resolvedAddress) {
+      return {
+        status: "address_unverified",
+        message:
+          "I still need the full service address, including city and ZIP, before I can book.",
+      };
+    }
+    const area = await validateServiceArea(ctx.supabase, resolvedAddress);
+    if (area.status !== "eligible") {
+      return {
+        status: area.status === "manual_review_required"
+          ? "unsupported_territory"
+          : "address_unverified",
+        message: area.customerMessage ??
+          "I couldn't verify that address, so no appointment was created.",
+      };
+    }
   }
 
   // Defect 2: resolve the slot against the LATEST availability offer only, and
@@ -578,8 +643,9 @@ async function createBookingTool(
   //    a genuine re-book of a DIFFERENT time (after an availability refetch)
   //    correctly creates a new booking instead of replaying an old one, while
   //    real retries of the SAME booking still de-duplicate.
-  const authKey = `chat|${ctx.conversationId}|${slotId}`;
-  const idempotencyKey = `chat|${ctx.conversationId}|${slot.startTime}`;
+  const keyPrefix = ctx.channel === "voice" ? "voice" : "chat";
+  const authKey = `${keyPrefix}|${ctx.conversationId}|${slotId}`;
+  const idempotencyKey = `${keyPrefix}|${ctx.conversationId}|${slot.startTime}`;
 
   // CONTROLLED TEST GUARD at the final booking boundary. If the customer is an
   // approved test identity (or global test-suppression is on), we simulate a
@@ -636,7 +702,7 @@ async function createBookingTool(
       name: convo?.prospect_name || "BluLadder Customer",
       email,
       phone: convo?.prospect_phone || "",
-      address: String(args.address || ""),
+      address: resolvedAddress,
     },
     technicianId: slot.__technicianId,
     isTeamJob: slot.__isTeamJob,
