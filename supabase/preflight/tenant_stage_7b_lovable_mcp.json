@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "submission_contract": "one SELECT statement per query_database call",
+  "project_id": "b6e0d823-59c4-4b5a-afbe-182485e5458b",
+  "project_ref": "gyndziiuizpgwhqwyrvn",
+  "environment": "Live/production",
+  "queries": [
+    {
+      "id": "01_capability_and_identity",
+      "customer_tables_accessed": false,
+      "sql": "SELECT 'gyndziiuizpgwhqwyrvn'::text AS expected_project_ref, 'Live/production'::text AS expected_environment, current_database() AS database_name, current_setting('server_version') AS postgres_version"
+    },
+    {
+      "id": "02_migration_ledger",
+      "customer_tables_accessed": false,
+      "sql": "SELECT count(*) AS ledger_count, max(version) AS ledger_tip, md5(string_agg(version || ':' || name, '|' ORDER BY version)) AS ledger_fingerprint FROM supabase_migrations.schema_migrations"
+    },
+    {
+      "id": "03_first_wave_aggregate_counts",
+      "customer_tables_accessed": true,
+      "aggregate_only": true,
+      "sql": "SELECT (SELECT count(*) FROM public.customers) AS customers, (SELECT count(*) FROM public.properties) AS properties, (SELECT count(*) FROM public.quotes) AS quotes, (SELECT count(*) FROM public.bookings) AS bookings"
+    },
+    {
+      "id": "04_stage7b_absence",
+      "customer_tables_accessed": false,
+      "sql": "SELECT to_regclass('public.organizations') IS NULL AS organizations_absent, to_regclass('public.organization_memberships') IS NULL AS memberships_absent, to_regclass('public.organization_resolution_keys') IS NULL AS resolution_keys_absent, to_regclass('tenant_security.release_provenance') IS NULL AS provenance_absent, count(*) FILTER (WHERE column_name = 'organization_id') AS first_wave_columns FROM information_schema.columns WHERE table_schema = 'public' AND table_name IN ('customers', 'properties', 'quotes', 'bookings')"
+    },
+    {
+      "id": "05_platform_roles",
+      "customer_tables_accessed": false,
+      "sql": "SELECT role::text AS platform_role, count(*) AS role_count FROM public.user_roles GROUP BY role::text ORDER BY role::text"
+    },
+    {
+      "id": "06_job_fingerprints",
+      "customer_tables_accessed": false,
+      "sensitive_command_text_returned": false,
+      "sql": "SELECT jobid, schedule, active, md5(command) AS command_fingerprint FROM cron.job WHERE jobid IN (3, 5, 6) ORDER BY jobid"
+    },
+    {
+      "id": "07_running_jobs",
+      "customer_tables_accessed": false,
+      "sql": "SELECT count(*) AS active_stage7b_cron_runs FROM cron.job_run_details WHERE jobid IN (3, 5, 6) AND status IN ('starting', 'running')"
+    }
+  ]
+}
