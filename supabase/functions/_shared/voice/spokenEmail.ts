@@ -20,6 +20,14 @@ const SPOKEN_TLD_WORDS: Record<string, string> = {
   us: "us",
 };
 
+/** Words that are never part of a spoken local part. */
+const FILLER = new Set([
+  "my", "me", "mine", "the", "a", "an", "is", "its", "it", "thats", "that",
+  "this", "email", "e-mail", "mail", "address", "use", "using", "send", "sent",
+  "to", "you", "can", "sure", "yeah", "yes", "ok", "okay", "so", "and", "well",
+  "please", "im", "i", "am", "at",
+]);
+
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
 
 /** Expand the spoken separators ("at", "dot", "underscore", ...) in place. */
@@ -55,21 +63,16 @@ export function parseSpokenEmail(text: string | null | undefined): string | null
   // 2. Spoken form: collapse the separator words, drop the leading filler
   //    ("my email is", "it's", "you can use"), then squeeze the spaces ASR
   //    sprinkles inside the local part and the domain labels.
-  const spoken = despeak(raw);
-  const at = spoken.split("@");
-  if (at.length === 2) {
-    let local = at[0];
-    local = local.replace(
-      /.*\b(?:e-?mail(?:\s+address)?|address|it|its|it's|that|use|is|to|send)\b/g,
-      " ",
-    );
-    const localJoined = local.trim().replace(/[^a-z0-9._%+-\s]/g, "").replace(
-      /\s+/g,
-      "",
-    );
+  const spoken = despeak(raw).replace(/['\u2019]/g, "");
+  const lastAt = spoken.lastIndexOf("@");
+  if (lastAt > 0) {
+    const localTokens = spoken.slice(0, lastAt).trim().split(/\s+/).filter((
+      tok,
+    ) => tok && !FILLER.has(tok));
+    const localJoined = localTokens.join("").replace(/[^a-z0-9._%+-]/g, "");
     const domainParts: string[] = [];
     let current = "";
-    for (const tok of at[1].trim().split(/\s+/)) {
+    for (const tok of spoken.slice(lastAt + 1).trim().split(/\s+/)) {
       if (tok === ".") {
         if (current) domainParts.push(current);
         current = "";
