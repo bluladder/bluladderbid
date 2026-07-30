@@ -14,6 +14,7 @@ import {
   type SupabaseClient,
 } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateServiceArea } from "./serviceArea.ts";
+import { deSpacedStreetCandidates } from "./profile/normalizeAddress.ts";
 import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
 import { checkSuppression } from "./suppression.ts";
 import { escalateToHuman } from "./escalation.ts";
@@ -881,7 +882,24 @@ async function validateServiceAreaTool(
       customerMessage: "What's the full service address (street, city, ZIP)?",
     };
   }
-  const result = await validateServiceArea(ctx.supabase, address);
+  let result = await validateServiceArea(ctx.supabase, address);
+
+  // ASR recovery (narrow): speech-to-text often splits a compound street name
+  // ("Wood Bridge Lane"), which geocoding then fails to resolve. Retry ONE
+  // de-spaced candidate that preserves the house number, city, state and ZIP.
+  // The candidate is read back for explicit confirmation — never accepted
+  // silently.
+  let addressConfirmationNeeded: string | null = null;
+  if (result.status === "address_incomplete" || result.status === "validation_unavailable") {
+    for (const candidate of deSpacedStreetCandidates(address)) {
+      const retry = await validateServiceArea(ctx.supabase, candidate);
+      if (retry.status === "eligible" || retry.status === "manual_review_required") {
+        result = retry;
+        addressConfirmationNeeded = retry.formattedAddress || candidate;
+        break;
+      }
+    }
+  }
 
   // Defense-in-depth: a transient geocode failure (validation_unavailable) must
   // never DOWNGRADE an address the same conversation already confirmed eligible.
@@ -929,7 +947,10 @@ async function validateServiceAreaTool(
     state: result.state,
     formattedAddress: result.formattedAddress,
     reason: result.reason,
-    customerMessage: result.customerMessage,
+    addressConfirmationNeeded,
+    customerMessage: addressConfirmationNeeded
+      ? `I want to make sure I have that right — did you say ${addressConfirmationNeeded}?`
+      : result.customerMessage,
   };
 }
 

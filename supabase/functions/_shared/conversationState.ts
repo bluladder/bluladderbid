@@ -6,10 +6,12 @@
 // valid, or whether booking is authorized. Those decisions are computed here
 // from server-side structured facts — not from prompt history.
 //
-// This module has ZERO external imports so it is provider-independent and can
-// be unit-tested directly (Deno). Both website chat and a future voice channel
-// share it unchanged.
+// This module imports only the dependency-free contactIntegrity leaf helper so
+// it stays provider-independent and unit-testable directly (Deno). Both website
+// chat and the voice channel share it unchanged.
 // ============================================================================
+
+import { isFullE164, resolvePhone } from "./contactIntegrity.ts";
 
 export type ConversationState =
   | "new"
@@ -72,7 +74,7 @@ export interface ConversationFacts {
     engineVersion?: string | null;
     inputsKey?: string; // signature of the inputs that produced this quote
   } | null;
-  contact?: { name?: string; email?: string; phone?: string };
+  contact?: { name?: string; email?: string; phone?: string; phoneConfirmed?: boolean };
   consent?: { marketing?: boolean };
   availability?: {
     offeredSlotIds?: string[];
@@ -91,6 +93,10 @@ export interface ConversationFacts {
     intent?: boolean;
     city?: string;
     cityStatus?: "normal_service_city" | "unknown_or_outside" | "lookup_unavailable";
+    // Signature + total of the quote we have ALREADY spoken aloud. Used to
+    // stop re-pricing/re-speaking on every turn that merely mentions "price".
+    spokenInputsKey?: string;
+    spokenTotal?: number;
   };
 }
 
@@ -153,7 +159,12 @@ export function isSelectedSlotValid(f: ConversationFacts): boolean {
 
 export function hasContact(f: ConversationFacts): boolean {
   const c = f.contact ?? {};
-  return !!(c.email && c.email.trim());
+  // P2.11: an availability lookup only needs a reachable customer. A caller
+  // whose full E.164 phone is confirmed (voice) is reachable, so we no longer
+  // stall scheduling on email. Email is still enforced at booking commit by
+  // create_bluladder_booking, which needs it for customer creation.
+  if (c.email && c.email.trim()) return true;
+  return !!(c.phoneConfirmed && isFullE164(c.phone));
 }
 
 export function isServiceAreaEligible(f: ConversationFacts): boolean {
@@ -291,11 +302,29 @@ export function isToolAllowed(
 // must clear whatever it invalidates so a stale price/slot can never be used.
 // ---------------------------------------------------------------------------
 export function mergeFacts(prev: ConversationFacts, patch: Partial<ConversationFacts>): ConversationFacts {
+  // Contact integrity first: never let a lower-provenance extraction replace a
+  // confirmed caller ID, and never store an invalid/partial phone value.
+  let contactPatch = patch.contact;
+  if (contactPatch && "phone" in contactPatch) {
+    const resolved = resolvePhone({
+      existing: prev.contact?.phone,
+      existingConfirmed: prev.contact?.phoneConfirmed === true,
+      candidate: contactPatch.phone,
+      candidateConfirmed: contactPatch.phoneConfirmed === true,
+    });
+    contactPatch = { ...contactPatch };
+    if (resolved) contactPatch.phone = resolved;
+    else delete contactPatch.phone;
+    // Confirmation is sticky: it can only be set, never silently cleared.
+    if (prev.contact?.phoneConfirmed && resolved === prev.contact.phone) {
+      contactPatch.phoneConfirmed = true;
+    }
+  }
   const next: ConversationFacts = {
     ...prev,
     ...patch,
     property: patch.property ? { ...(prev.property ?? {}), ...patch.property } : prev.property,
-    contact: patch.contact ? { ...(prev.contact ?? {}), ...patch.contact } : prev.contact,
+    contact: contactPatch ? { ...(prev.contact ?? {}), ...contactPatch } : prev.contact,
     consent: patch.consent ? { ...(prev.consent ?? {}), ...patch.consent } : prev.consent,
   };
 

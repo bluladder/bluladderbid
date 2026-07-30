@@ -27,6 +27,7 @@ import {
 import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
 import { lookupServiceCity } from "./serviceArea.ts";
 import { findOrCreateForConversation as findOrCreateQuoteSession, syncFromFacts as syncQuoteSession } from "./quoteSession.ts";
+import { findByConversation as findQuoteSessionByConversation } from "./quoteSession.ts";
 import { mergeFields as mergeSessionFields, changeWindowScope, type QuoteSessionFields } from "./quoteSession.ts";
 import {
   classifyWindowIntent,
@@ -37,6 +38,12 @@ import {
   type WindowIntentPatch,
 } from "./windowIntent.ts";
 import { computePartialWindowPrice } from "./partialWindowPricing.ts";
+import { isFullE164 } from "./contactIntegrity.ts";
+import {
+  classifyQuoteByTextRequest,
+  guardDeliveryClaims,
+  planQuoteByTextResponse,
+} from "./voice/quoteByText.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
@@ -580,28 +587,165 @@ function parseNumberWord(s: string): number | undefined {
   return map[s.toLowerCase()];
 }
 
-function parseSquareFootage(text: string): number | undefined {
-  const t = text.toLowerCase();
-  const m = t.match(/\b(?:around|about|roughly|approximately)?\s*([1-9][0-9]{2,4}(?:,[0-9]{3})?)\s*(?:sq\.?\s*ft\.?|square\s*feet|square\s*foot|sf)\b/i)
-    || t.match(/\b([1-9](?:,[0-9]{3}|[0-9]{3}))\b/);
-  if (!m) return undefined;
-  const n = Number(String(m[1]).replace(/,/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : undefined;
+// ---------------------------------------------------------------------------
+// Turn context — parsers must know what the assistant JUST asked. Voice callers
+// answer questions with bare words ("one", "2500"), which are meaningless in
+// isolation and dangerous when guessed (incident 019fb423: the street number
+// "5610" was consumed as square footage by an unconditional bare-4-digit
+// fallback).
+// ---------------------------------------------------------------------------
+export function lastAssistantQuestion(
+  history: { role: "user" | "assistant"; content: string }[],
+): string {
+  return [...(history ?? [])].reverse().find((m) => m.role === "assistant")?.content ?? "";
 }
 
-function parseStories(text: string): number | undefined {
-  const t = text.toLowerCase();
-  const numeric = t.match(/\b([123])\s*(?:story|stories|storey|storeys)\b/i);
-  if (numeric) return Number(numeric[1]);
-  const word = t.match(/\b(one|two|three)[ -]?(?:story|stories|storey|storeys)\b/i);
-  return word ? parseNumberWord(word[1]) : undefined;
+export function askedStoriesQuestion(lastAssistant: string): boolean {
+  return /\b(one[- ]?stor(?:y|ey)|two[- ]?stor(?:y|ey)|single[- ]?stor(?:y|ey)|how many stories|number of stories|stories)\b/i
+    .test(lastAssistant ?? "");
 }
 
-function parseWindowType(text: string): string | undefined {
-  const t = text.toLowerCase();
-  if (/\b(exterior|outside)\s*(?:only)?\b/.test(t) && !/inside\s*(?:and|&)\s*out(?:side)?/i.test(t)) return "exterior";
-  if (/\b(full\s*service|inside\s*(?:and|&)\s*out(?:side)?|interior\s*(?:and|&)\s*exterior|both)\b/i.test(t)) return "both";
+export function askedSquareFootageQuestion(lastAssistant: string): boolean {
+  return /\b(square\s*(?:feet|foot|footage)|sq\.?\s*ft|how large is the home|how big is the home)\b/i
+    .test(lastAssistant ?? "");
+}
+
+/** True when the text reads like a street address / ZIP rather than a bare
+ *  numeric answer. Guards the context-scoped square-footage parser. */
+export function looksLikeAddress(text: string): boolean {
+  const t = (text ?? "").toLowerCase();
+  if (/\b(?:st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|ct|court|pl|place|ter|terrace|pkwy|parkway|hwy|highway|cir|circle|trl|trail|way)\b/.test(t)) return true;
+  if (/\b[a-z]{2}\s+\d{5}\b/.test(t)) return true; // "TX 75002"
+  if (/\b\d{1,6}\s+[a-z]/.test(t) && /\b\d{5}\b/.test(t)) return true;
+  return false;
+}
+
+const ONES: Record<string, number> = {
+  zero: 0, oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9,
+};
+const TEENS_TENS: Record<string, number> = {
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+  thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+
+/** Convert spoken quantities into a number. Handles the two shapes voice
+ *  callers actually use for square footage:
+ *   - grouped:  "two thousand five hundred", "twenty five hundred"
+ *   - digit-by-digit: "two five zero zero", "two-five-oh-oh"
+ *  Returns undefined when the phrase is not a clean quantity. */
+export function spokenToNumber(text: string): number | undefined {
+  const words = (text ?? "").toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
+  if (words.length === 0) return undefined;
+
+  // Digit-by-digit: every token is a single digit word or single digit.
+  const digitTokens = words.filter((w) => w in ONES || /^[0-9]$/.test(w));
+  if (digitTokens.length === words.length && words.length >= 3 && words.length <= 5) {
+    const digits = words.map((w) => (/^[0-9]$/.test(w) ? Number(w) : ONES[w])).join("");
+    const n = Number(digits);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  }
+
+  // Grouped quantity.
+  let total = 0;
+  let current = 0;
+  let sawAny = false;
+  for (const w of words) {
+    if (w in ONES) { current += ONES[w]; sawAny = true; continue; }
+    if (w in TEENS_TENS) { current += TEENS_TENS[w]; sawAny = true; continue; }
+    if (w === "hundred") { current = (current || 1) * 100; sawAny = true; continue; }
+    if (w === "thousand") { total += (current || 1) * 1000; current = 0; sawAny = true; continue; }
+    if (w === "and") continue;
+    return undefined;
+  }
+  if (!sawAny) return undefined;
+  const n = total + current;
+  return n > 0 ? n : undefined;
+}
+
+/** Square footage. Explicit units are always accepted. Unitless numeric or
+ *  spoken answers are accepted ONLY when the assistant just asked for square
+ *  footage and the reply does not look like a street address / ZIP. */
+export function parseSquareFootage(
+  text: string,
+  opts: { askedSquareFootage?: boolean } = {},
+): number | undefined {
+  const t = (text ?? "").toLowerCase();
+  const explicit = t.match(
+    /\b(?:around|about|roughly|approximately)?\s*([1-9][0-9]{2,4}(?:,[0-9]{3})?)\s*(?:sq\.?\s*ft\.?|square\s*feet|square\s*foot|sf)\b/i,
+  );
+  if (explicit) {
+    const n = Number(String(explicit[1]).replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  }
+  if (!opts.askedSquareFootage) return undefined;
+  if (looksLikeAddress(t)) return undefined;
+  // Comma-grouped form first so "about 2,500" is not truncated to "500".
+  const numeric = t.match(/\b([1-9][0-9]{0,2},[0-9]{3}|[1-9][0-9]{2,4})\b/);
+  if (numeric && !/\b\d{1,6}\s+[a-z]+\s/.test(t)) {
+    const n = Number(String(numeric[1]).replace(/,/g, ""));
+    if (Number.isFinite(n) && n >= 100 && n <= 100000) return n;
+  }
+  const spoken = spokenToNumber(t.replace(/\b(?:around|about|roughly|approximately|it'?s|its|is|square|feet|foot|footage|sq|ft)\b/g, " "));
+  if (spoken && spoken >= 100 && spoken <= 100000) return spoken;
   return undefined;
+}
+
+/** Stories. Accepts bare answers ("one", "1", "single", "ranch") ONLY when the
+ *  assistant just asked one-story vs two-story; otherwise stays conservative
+ *  and requires the literal word "story"/"stories". */
+export function parseStories(
+  text: string,
+  opts: { askedStories?: boolean } = {},
+): number | undefined {
+  const t = (text ?? "").toLowerCase();
+  const numeric = t.match(/\b([123])\s*(?:story|stories|storey|storeys|level|levels)\b/i);
+  if (numeric) return Number(numeric[1]);
+  const word = t.match(/\b(one|two|three)[ -]?(?:story|stories|storey|storeys|level|levels)\b/i);
+  if (word) return parseNumberWord(word[1]);
+  if (/\b(single[- ]?stor(?:y|ey)|single[- ]?level|ranch|one[- ]?level)\b/.test(t)) return 1;
+  if (!opts.askedStories) return undefined;
+  if (looksLikeAddress(t)) return undefined;
+  if (/\b(single|ranch|first)\b/.test(t)) return 1;
+  const bare = t.match(/\b(one|two|three|1|2|3)\b/);
+  if (bare) {
+    const v = /^[123]$/.test(bare[1]) ? Number(bare[1]) : parseNumberWord(bare[1]);
+    if (v) return v;
+  }
+  return undefined;
+}
+
+/** Window-cleaning type — sticky and negation-aware. An established `exterior`
+ *  can NEVER become `both` from "not inside", "I don't need interior", or an
+ *  assistant question that merely mentions full service. Only an explicit
+ *  affirmative request upgrades to inside-and-out. */
+export function parseWindowType(
+  text: string,
+  established?: string | null,
+): string | undefined {
+  const t = (text ?? "").toLowerCase();
+  const NEGATION = /\b(?:not|no|don'?t|do not|doesn'?t|without|skip|exclude|never|nope)\b[^.!?]{0,30}?\b(?:inside|interior|inside\s*(?:and|&)\s*out(?:side)?|full\s*service|both)\b/;
+  // A customer QUESTION never changes an established fact. "What does full
+  // service mean?" must not silently upgrade exterior -> both.
+  const isQuestion = /\?\s*$/.test(t.trim())
+    || /^\s*(?:what|what'?s|does|do|how|is|are|can|could|would|why|which|tell me)\b/.test(t);
+  if (isQuestion && established) return established;
+  const declinesInterior = NEGATION.test(t)
+    || /\b(?:just|only)\s+(?:the\s+)?(?:exterior|outside)\b/.test(t)
+    || /\b(?:exterior|outside)\s+only\b/.test(t);
+  if (declinesInterior) return "exterior";
+
+  const affirmativeBoth = /\b(?:inside\s*(?:and|&)\s*out(?:side)?|interior\s*(?:and|&)\s*exterior|in\s*and\s*out|both\s*(?:sides)?|full\s*service)\b/.test(t)
+    && !NEGATION.test(t);
+  if (affirmativeBoth) {
+    // Bare "yes"-style confirmations are handled by the caller; here we require
+    // the phrase itself to be an affirmative request.
+    return "both";
+  }
+  if (/\b(?:exterior|outside)\b/.test(t)) return "exterior";
+  // Nothing decisive in this turn: keep whatever was already established.
+  return established ?? undefined;
 }
 
 function parseServices(text: string): string[] | undefined {
@@ -632,19 +776,36 @@ function isRoughQuoteIntent(text: string): boolean {
   return /\b(rough|ballpark|approx(?:imate|imately)?|estimate|quote|price|cost|how much)\b/i.test(text);
 }
 
-/** Regression guard for call 019f8b20-...: once we already have a current
- *  firm/estimated quote, the voice rough-quote rail must NOT re-fire and
- *  re-speak the price on unrelated turns like "when are you available?".
- *  Only re-enter when the customer explicitly asks about price/quote again.
- *  Corrections to pricing inputs invalidate the quote upstream (mergeFacts),
- *  so this predicate naturally lets the rail re-run in that case. */
+/** A direct "say the price again" request. Answered from the stored total —
+ *  never by re-invoking the pricing engine. */
+export function isRepeatPriceRequest(userMessage: string): boolean {
+  const t = (userMessage ?? "").toLowerCase();
+  if (!/\b(price|quote|estimate|cost|total|how much)\b/.test(t)) return false;
+  return /\b(again|repeat|say that|said|did you say|one more time|remind|what was|how much was|didn'?t catch|missed that)\b/.test(t)
+    // A direct price question is answered from the stored total, not a re-price.
+    || /\b(what'?s|what is|what was|how much)\b/.test(t);
+}
+
+/** Regression guard for calls 019f8b20-… and 019fb423-…: once a current
+ *  firm/estimated quote has been spoken, the voice rough-quote rail must NOT
+ *  re-price and re-speak it just because the caller says "price" or "quote".
+ *  Recalculation happens ONLY when the normalized pricing-input signature
+ *  changes (input corrections already invalidate the quote in mergeFacts). */
 export function shouldSkipRoughQuoteReplay(
   facts: ConversationFacts,
   userMessage: string,
 ): boolean {
   if (!isQuoteEstimatedOrFirm(facts)) return false;
-  const asksAgain = /\b(price|quote|estimate|cost|how much|remind|again)\b/i.test(userMessage ?? "");
-  return !asksAgain;
+  const signature = quoteInputsKey(facts);
+  // A quote already priced for these exact inputs counts as spoken, even for
+  // sessions predating `spokenInputsKey`.
+  const alreadySpoken = facts.roughQuote?.spokenInputsKey === signature
+    || facts.quote?.inputsKey === signature;
+  // Pricing inputs changed since the last spoken quote — allow a re-quote.
+  if (!alreadySpoken) return false;
+  // Same inputs. A direct repeat request is handled by the rail without a
+  // recalculation; every other turn skips the rail entirely.
+  return !isRepeatPriceRequest(userMessage ?? "");
 }
 
 export function inferVoiceRoughQuotePatch(
@@ -655,9 +816,14 @@ export function inferVoiceRoughQuotePatch(
   const patch: Partial<ConversationFacts> = {};
   const services = parseServices(userMessage);
   if (services) patch.services = services;
-  const squareFootage = parseSquareFootage(userMessage);
-  const stories = parseStories(userMessage);
-  const windowCleaningType = parseWindowType(userMessage);
+  const lastAssistant = lastAssistantQuestion(history);
+  const squareFootage = parseSquareFootage(userMessage, {
+    askedSquareFootage: askedSquareFootageQuestion(lastAssistant),
+  });
+  const stories = parseStories(userMessage, {
+    askedStories: askedStoriesQuestion(lastAssistant),
+  });
+  const windowCleaningType = parseWindowType(userMessage, facts.property?.windowCleaningType ?? null);
   if (squareFootage || stories || windowCleaningType) {
     patch.property = {
       ...(squareFootage ? { squareFootage } : {}),
@@ -739,6 +905,24 @@ async function runVoiceRoughQuoteRail(args: {
   if (state !== "voice_rough_quote" && !facts.roughQuote?.intent) return null;
   if (shouldSkipRoughQuoteReplay(facts, args.userMessage ?? "")) return null;
 
+  // Direct "say the price again" — answer from the stored total. Never
+  // re-invoke the pricing engine when no pricing input changed.
+  if (
+    isQuoteEstimatedOrFirm(facts) &&
+    facts.roughQuote?.spokenInputsKey === quoteInputsKey(facts) &&
+    typeof facts.roughQuote?.spokenTotal === "number"
+  ) {
+    return finalize({
+      reply: `Of course — that price is about $${Math.round(facts.roughQuote.spokenTotal)}. Would you like me to check appointment availability?`,
+      toolEvents: [],
+      events: ["voice_rough_quote_repeated"],
+      state,
+      channel: "voice",
+      facts,
+      railBooked: false,
+    });
+  }
+
   if (facts.roughQuote?.city && !facts.roughQuote.cityStatus) {
     const lookup = await lookupServiceCity(args.supabase, facts.roughQuote.city);
     facts = mergeFacts(facts, { roughQuote: { ...facts.roughQuote, city: lookup.city, cityStatus: lookup.status } });
@@ -781,6 +965,16 @@ async function runVoiceRoughQuoteRail(args: {
     ? ""
     : " Exact service availability will need confirmation before booking.";
   const reply = `Based on ${describeWindowAssumptions(facts)}${cityPhrase}, the rough price is approximately $${Math.round(total)}.${serviceability} Would you like to check appointment availability?`;
+  // Remember what we just spoke so unrelated turns (and bare mentions of
+  // "price") never trigger another pricing-engine call.
+  nextFacts = mergeFacts(nextFacts, {
+    roughQuote: {
+      ...(nextFacts.roughQuote ?? {}),
+      spokenInputsKey: quoteInputsKey(nextFacts),
+      spokenTotal: Math.round(total),
+    },
+  });
+  await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, { sessionToken: args.sessionToken, channel: "voice" });
   return finalize({ reply, toolEvents, events: ["quote_calculated", "voice_rough_quote_ready"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
 }
 
@@ -807,7 +1001,10 @@ function persistFacts(
   // an existing value with an empty one.
   if (c.name) update.prospect_name = c.name;
   if (c.email) update.prospect_email = c.email;
-  if (c.phone) update.prospect_phone = c.phone;
+  // Contact integrity: only a full valid NANP E.164 is ever mirrored, so a
+  // partial value from transcript extraction can never corrupt the canonical
+  // prospect_phone (regression guard for "+0144").
+  if (isFullE164(c.phone)) update.prospect_phone = c.phone;
   const write = opts?.channel === "voice"
     ? supabase
         .from("chat_conversations")
@@ -905,6 +1102,17 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
 
   let facts = factsFromRow(row);
   if (channel === "voice") {
+    // Hydrate the CONFIRMED caller ID from the canonical Quote Session so the
+    // deterministic controller's confirmation survives across turns and legacy
+    // transcript extraction can never downgrade or truncate it.
+    try {
+      const session = await findQuoteSessionByConversation(supabase, conversationId);
+      const confirmed = session?.fields?.callerIdConfirmationStatus;
+      const sessionPhone = session?.fields?.phone;
+      if ((confirmed === "confirmed" || confirmed === "contact_confirmed") && isFullE164(sessionPhone)) {
+        facts = mergeFacts(facts, { contact: { phone: sessionPhone, phoneConfirmed: true } });
+      }
+    } catch (_e) { /* best-effort hydration */ }
     const inferred = inferVoiceRoughQuotePatch(userMessage, history, facts);
     if (Object.keys(inferred).length > 0) {
       facts = mergeFacts(facts, inferred);
@@ -940,6 +1148,37 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     ? await runVoiceRoughQuoteRail({ supabase, toolCtx, conversationId, sessionToken, facts, state, history, userMessage })
     : null;
   if (roughQuoteRail) return roughQuoteRail;
+
+  // ---- Truthful quote-by-text rail (voice, pre-model) --------------------
+  // The assistant is NOT permitted to improvise a delivery promise. When the
+  // caller asks for the quote in writing we answer deterministically: either a
+  // real customer-facing send succeeded, or we say plainly that nothing was
+  // sent and offer the next concrete step. Internal escalation SMS is never
+  // used as a substitute for a customer quote link.
+  if (channel === "voice" && classifyQuoteByTextRequest(userMessage)) {
+    const plan = await planQuoteByTextResponse({
+      quoteIsFirm: isQuoteEstimatedOrFirm(facts),
+      total: facts.quote?.total ?? facts.roughQuote?.spokenTotal ?? null,
+      name: facts.contact?.name ?? null,
+      phone: facts.contact?.phone ?? null,
+      phoneIsFullE164: isFullE164(facts.contact?.phone),
+      // No canonical voice-initiated customer quote-link delivery exists yet
+      // (see report: save-quote requires the full web quote payload and
+      // bid-by-text is disabled). Until that path is migrated, this stays null
+      // so the caller always hears the truth.
+      deliver: null,
+    });
+    return finalize({
+      reply: plan.reply,
+      toolEvents: [],
+      events: [plan.event],
+      state,
+      channel,
+      facts,
+      railBooked: false,
+    });
+  }
+  // -----------------------------------------------------------------------
 
   const built = await buildSystemPrompt(supabase, state, facts, channel, userMessage);
   const system = built.prompt;
@@ -1004,7 +1243,8 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     const toolCalls = choice.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
       await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
-      const safe = guardConfirmedLanguage(choice.content || "How can I help with your exterior cleaning today?", facts, railBooked);
+      let safe = guardConfirmedLanguage(choice.content || "How can I help with your exterior cleaning today?", facts, railBooked);
+      if (channel === "voice") safe = guardDeliveryClaims(safe, false);
       return finalize({ reply: safe, toolEvents, events, state, channel, facts, railBooked, retrievedKnowledgeKeys: retrievedKeys });
     }
 
@@ -1051,6 +1291,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   const data = await callModel(messages, tools);
   let reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
   reply = guardConfirmedLanguage(reply, facts, railBooked);
+  if (channel === "voice") reply = guardDeliveryClaims(reply, false);
   await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
   return finalize({ reply, toolEvents, events, state, channel, facts, railBooked, retrievedKnowledgeKeys: retrievedKeys });
 }

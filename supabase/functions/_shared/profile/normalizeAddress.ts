@@ -88,3 +88,51 @@ export function sameAddress(a: string | null, b: string | null): boolean {
   const nb = parseAddress(b).normalized;
   return !!na && na === nb;
 }
+
+// ---------------------------------------------------------------------------
+// ASR recovery — speech-to-text frequently splits a compound street name into
+// two words ("Wood Bridge Lane" for "Woodbridge Lane"), which geocoding then
+// rejects. We generate narrow de-spaced candidates that preserve the house
+// number, city, state and ZIP exactly. Candidates are for a READ-BACK and
+// explicit confirmation; never accept one silently.
+// ---------------------------------------------------------------------------
+const SUFFIX_TOKENS = new Set(Object.keys(STREET_SUFFIX));
+const DIRECTIONAL_TOKENS = new Set(Object.keys(DIRECTIONALS));
+
+/** Alternate address strings to retry when geocoding fails on a spaced
+ *  compound street name. Returns [] when no plausible alternative exists. */
+export function deSpacedStreetCandidates(raw: string | null | undefined): string[] {
+  const parsed = parseAddress(raw);
+  if (!parsed.street) return [];
+  const parts = parsed.street.replace(/\s+/g, " ").trim().split(" ");
+  if (parts.length < 3) return [];
+
+  // Leading house number stays untouched.
+  const houseNumber = /^\d+[a-z]?$/i.test(parts[0]) ? parts[0] : "";
+  let body = houseNumber ? parts.slice(1) : parts.slice();
+
+  // Keep a trailing suffix ("Lane") and any leading directional ("North").
+  let suffix = "";
+  if (body.length > 1 && SUFFIX_TOKENS.has(body[body.length - 1].toLowerCase().replace(/\./g, ""))) {
+    suffix = body[body.length - 1];
+    body = body.slice(0, -1);
+  }
+  let directional = "";
+  if (body.length > 1 && DIRECTIONAL_TOKENS.has(body[0].toLowerCase().replace(/\./g, ""))) {
+    directional = body[0];
+    body = body.slice(1);
+  }
+  if (body.length < 2) return [];
+
+  const joined = body
+    .map((w, i) => (i === 0 ? w : w.toLowerCase()))
+    .join("");
+  const streetCandidate = [houseNumber, directional, joined, suffix].filter(Boolean).join(" ");
+  if (streetCandidate.toLowerCase() === parsed.street.toLowerCase()) return [];
+
+  const tail = [parsed.city, [parsed.state, parsed.postalCode].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+  const candidate = tail ? `${streetCandidate}, ${tail}` : streetCandidate;
+  return [candidate];
+}
