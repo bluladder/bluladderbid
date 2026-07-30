@@ -253,9 +253,10 @@ Deno.test("outbox: missing provider config is durably finalized", async () => {
 
 Deno.test("outbox: quote claim fallback supplies the complete base RPC signature", async () => {
   const rpcLog: any[] = [];
+  const lineageLog: any[] = [];
   fetchMode = "ok";
   const r = await sendOutboxSms(
-    makeSupabase({ missingQuoteClaim: true, rpcLog }),
+    makeSupabase({ missingQuoteClaim: true, rpcLog, lineageLog }),
     {
       outboundKey: "quote_delivery:sms:q1:15551234567",
       toNumber: "+15551234567",
@@ -269,6 +270,12 @@ Deno.test("outbox: quote claim fallback supplies the complete base RPC signature
   assertEquals(r.sent, true);
   const fallback = rpcLog.find((x) => x.name === "claim_sms_outbox_send");
   assertEquals(fallback?.args?.p_stale_claim_seconds, 120);
+  // Quote lineage is stitched back on the claimed row, and only when it is
+  // still unattributed.
+  assertEquals(lineageLog.length, 1);
+  assertEquals(lineageLog[0].table, "sms_messages");
+  assertEquals(lineageLog[0].values, { quote_id: "q1" });
+  assertEquals(lineageLog[0].filters, { id: "sms-1", quote_id: null });
 });
 
 Deno.test("outbox: network failure finalizes to delivery_unknown (no re-send)", async () => {
