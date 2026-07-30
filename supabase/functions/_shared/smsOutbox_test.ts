@@ -24,9 +24,32 @@ function makeSupabase(opts: {
   claimBehavior?: "new" | "replay" | "in_progress" | "escalated";
   rpcLog?: any[];
   missingQuoteClaim?: boolean;
+  lineageLog?: any[];
 }) {
   const rpcLog = opts.rpcLog ?? [];
+  const lineageLog = opts.lineageLog ?? [];
   return {
+    // Minimal PostgREST chain used by the quote-lineage fallback:
+    //   .from("sms_messages").update({...}).eq("id", …).is("quote_id", null)
+    from(table: string) {
+      return {
+        update(values: any) {
+          const filters: Record<string, unknown> = {};
+          const chain: any = {
+            eq(column: string, value: unknown) {
+              filters[column] = value;
+              return chain;
+            },
+            is(column: string, value: unknown) {
+              filters[column] = value;
+              lineageLog.push({ table, values, filters });
+              return Promise.resolve({ data: null, error: null });
+            },
+          };
+          return chain;
+        },
+      };
+    },
     async rpc(name: string, args: any) {
       rpcLog.push({ name, args });
       if (name === "claim_quote_sms_delivery" && opts.missingQuoteClaim) {
