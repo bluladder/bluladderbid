@@ -211,4 +211,4 @@ export async function handleVapiEventRequest(
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type _AllowedEvent = VoiceVapiAllowedEvent;
 
-Deno.serve(handleVapiEventRequest);
+Deno.serve((req: Request) => handleVapiEventRequest(req));
