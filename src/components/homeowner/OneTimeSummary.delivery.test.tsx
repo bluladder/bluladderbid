@@ -1,5 +1,5 @@
 /**
- * OneTimeSummary delivery flow — verifies that Email and Text quote actions
+  * OneTimeSummary delivery flow — verifies Email delivery and that the
  *  1. reuse the same saved quote id + resume token,
  *  2. do NOT re-invoke save-quote / send-sms for a repeat click on the same
  *     destination (no duplicate rows, tokens, campaign events, or messages),
@@ -91,7 +91,7 @@ function renderSummary() {
   );
 }
 
-describe('OneTimeSummary — email + text delivery', () => {
+describe('OneTimeSummary — email delivery + bid-by-text removal', () => {
   beforeEach(() => { invokeMock.mockReset(); });
 
   it('keeps Book Now as the primary action', () => {
@@ -162,77 +162,16 @@ describe('OneTimeSummary — email + text delivery', () => {
     expect(screen.queryByTestId('delivery-success')).toBeNull();
   });
 
-  it('text delivery normalizes phone, invokes send-sms with the SAME quote id, and dedupes retries', async () => {
-    const testQuoteCapability = ['quote', 'capability', 'fixture'].join('-');
-    invokeMock
-      .mockResolvedValueOnce({
-        data: {
-          quoteId: 'q-42',
-          quoteUrl: `https://x/quote/q-42?resume=${testQuoteCapability}`,
-        },
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: { success: true, transactionalSent: true, deliveryStatus: 'accepted' },
-        error: null,
-      });
+  it('does not expose any bid-by-text delivery path (launch gate off)', async () => {
     renderSummary();
-    fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
-    fireEvent.change(await screen.findByLabelText(/^Email$/), { target: { value: 'jane@example.com' } });
-    fireEvent.change(screen.getByLabelText(/mobile number/i), { target: { value: '(469) 747-2877' } });
-    fireEvent.click(screen.getByRole('button', { name: /text me the bid/i }));
-
-    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
-    expect(invokeMock.mock.calls[0][0]).toBe('save-quote');
-    // Normalized to E.164 before persistence.
-    expect(invokeMock.mock.calls[0][1].body.phone).toBe('+14697472877');
-    // send-sms reuses the exact quote id returned by save-quote (same resume token).
-    expect(invokeMock.mock.calls[1][0]).toBe('send-sms');
-    expect(invokeMock.mock.calls[1][1].body).toEqual({
-      eventType: 'quote_created',
-      quoteId: 'q-42',
-      resumeToken: testQuoteCapability,
-    });
-
-    // Masked destination surfaced.
-    const status = await screen.findByTestId('delivery-success');
-    expect(status.textContent).toMatch(/\(469\) [•]+-2877/);
-
-    // Retry to the same normalized number — no additional invokes.
-    invokeMock.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
-    fireEvent.click(screen.getByRole('button', { name: /text me the bid/i }));
-    await waitFor(() => {
-      // dialog closes without any new invoke
-      expect(invokeMock).not.toHaveBeenCalled();
-    });
-  });
-
-  it('does not claim text success when the provider did not accept the message', async () => {
-    const testQuoteCapability = ['failed', 'quote', 'capability', 'fixture'].join('-');
-    invokeMock
-      .mockResolvedValueOnce({
-        data: {
-          quoteId: 'q-43',
-          quoteUrl: `https://x/quote/q-43?resume=${testQuoteCapability}`,
-        },
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: { success: false, transactionalSent: false, deliveryStatus: 'failed' },
-        error: null,
-      });
-    renderSummary();
-    fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
-    fireEvent.change(await screen.findByLabelText(/^Email$/), {
-      target: { value: 'jane@example.com' },
-    });
-    fireEvent.change(screen.getByLabelText(/mobile number/i), {
-      target: { value: '(469) 747-2877' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /text me the bid/i }));
-
-    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
-    expect(screen.queryByTestId('delivery-success')).toBeNull();
+    // No Text action button, no SMS copy, no accessibility label for it.
+    expect(screen.queryByRole('button', { name: /^text$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /text me the bid/i })).toBeNull();
+    expect(screen.queryByText(/text me this bid/i)).toBeNull();
+    expect(screen.queryByLabelText(/mobile number/i)).toBeNull();
+    // Email + Save remain available.
+    expect(screen.getByRole('button', { name: /^email$/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeTruthy();
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });
