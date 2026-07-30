@@ -1477,24 +1477,22 @@ Deno.serve(async (req) => {
       }
 
       if (srcKey) {
-        if (srcKey) {
-          const { data: def } = await supabase
-            .from("lead_source_definitions")
-            .select("source_key, display_name, jobber_mapping_mode")
-            .eq("source_key", srcKey)
-            .maybeSingle();
-          if (def) {
-            const detail = storedDetail ? String(storedDetail).trim().slice(0, 120) : "";
-            leadSourceLabel = detail
-              ? `Lead Source: ${def.display_name} — ${detail}`
-              : `Lead Source: ${def.display_name}`;
-            leadSourceAudit = {
-              source_key: def.source_key,
-              mapping_mode: def.jobber_mapping_mode,
-              display_name: def.display_name,
-              self_reported_detail: detail || null,
-            };
-          }
+        const { data: def } = await supabase
+          .from("lead_source_definitions")
+          .select("source_key, display_name, jobber_mapping_mode")
+          .eq("source_key", srcKey)
+          .maybeSingle();
+        if (def) {
+          const detail = storedDetail ? String(storedDetail).trim().slice(0, 120) : "";
+          leadSourceLabel = detail
+            ? `Lead Source: ${def.display_name} — ${detail}`
+            : `Lead Source: ${def.display_name}`;
+          leadSourceAudit = {
+            source_key: def.source_key,
+            mapping_mode: def.jobber_mapping_mode,
+            display_name: def.display_name,
+            self_reported_detail: detail || null,
+          };
         }
       }
     } catch (e) {
