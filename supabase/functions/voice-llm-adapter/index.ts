@@ -66,6 +66,75 @@ function checkBearer(req: Request, secret: string | undefined): boolean {
   return diff === 0;
 }
 
+/**
+ * Emit one deterministic controller reply using the same OpenAI-compatible SSE
+ * contract Vapi expects for stream=true requests.
+ */
+function buildStreamingTextResponse(model: string, spoken: string): Response {
+  const encoder = new TextEncoder();
+  const id = `chatcmpl-${crypto.randomUUID()}`;
+  const created = Math.floor(Date.now() / 1000);
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const write = (obj: unknown) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+
+      write({
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: { role: "assistant" },
+          finish_reason: null,
+        }],
+      });
+      write({
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: { content: spoken },
+          finish_reason: null,
+        }],
+      });
+      write({
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: {},
+          finish_reason: "stop",
+        }],
+        bluladder: {
+          buildId: BUILD_ID,
+          action: { kind: "speak" },
+          state: "workflow_controller",
+          route: "controller",
+        },
+      });
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+    },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -148,9 +217,11 @@ Deno.serve(async (req) => {
         };
         console.log(JSON.stringify({
           at: "voice-llm-adapter", buildId: BUILD_ID, route: "controller",
-          preKind: turn.pre.kind, replyLen: spoken.length,
+          preKind: turn.pre.kind, replyLen: spoken.length, stream: parsed.value.stream,
         }));
-        return buildNonStreamingResponse(model, completion);
+        return parsed.value.stream
+          ? buildStreamingTextResponse(model, spoken)
+          : buildNonStreamingResponse(model, completion);
       }
       // Fall through to legacy for pricing / scheduling / booking.
     } catch (e) {
