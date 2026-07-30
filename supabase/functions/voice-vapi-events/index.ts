@@ -77,7 +77,15 @@ function extractEventType(body: unknown): string | null {
   return t;
 }
 
-export async function handleVapiEventRequest(req: Request): Promise<Response> {
+export interface VapiEventDeps {
+  /** Injected in tests so the receiver never touches a real backend. */
+  runHangupFollowup?: typeof runVoiceHangupBidLinkFollowup;
+}
+
+export async function handleVapiEventRequest(
+  req: Request,
+  deps: VapiEventDeps = {},
+): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
