@@ -1446,13 +1446,37 @@ Deno.serve(async (req) => {
     try {
       const attrSessionId =
         booking.attribution?.source_session_id ?? booking.sourceSessionId ?? null;
-      if (attrSessionId) {
+      // The booking row (and therefore the `persist_booking_lead_attribution`
+      // trigger that normalizes attribution_events) has NOT been inserted yet
+      // at this point, so we must resolve the self-reported source directly
+      // from the request payload. The stored attribution_events row is only a
+      // fallback for retries / server-side captured sessions.
+      const reportedSource =
+        booking.attribution?.self_reported_source?.trim() || null;
+      const reportedDetail =
+        booking.attribution?.self_reported_source_detail?.trim() || null;
+
+      let srcKey: string | null = null;
+      let storedDetail: string | null = reportedDetail;
+
+      if (reportedSource) {
+        const { data: normalized } = await supabase.rpc("normalize_lead_source", {
+          p_value: reportedSource,
+        });
+        srcKey = (normalized as string | null) ?? null;
+      }
+
+      if (!srcKey && attrSessionId) {
         const { data: attrRow } = await supabase
           .from("attribution_events")
           .select("normalized_source_key, self_reported_source_detail")
           .eq("source_session_id", attrSessionId)
           .maybeSingle();
-        const srcKey = attrRow?.normalized_source_key ?? null;
+        srcKey = attrRow?.normalized_source_key ?? null;
+        storedDetail = storedDetail ?? attrRow?.self_reported_source_detail ?? null;
+      }
+
+      if (srcKey) {
         if (srcKey) {
           const { data: def } = await supabase
             .from("lead_source_definitions")
@@ -1460,9 +1484,7 @@ Deno.serve(async (req) => {
             .eq("source_key", srcKey)
             .maybeSingle();
           if (def) {
-            const detail = attrRow?.self_reported_source_detail
-              ? String(attrRow.self_reported_source_detail).trim().slice(0, 120)
-              : "";
+            const detail = storedDetail ? String(storedDetail).trim().slice(0, 120) : "";
             leadSourceLabel = detail
               ? `Lead Source: ${def.display_name} — ${detail}`
               : `Lead Source: ${def.display_name}`;
