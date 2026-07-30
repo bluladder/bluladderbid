@@ -111,7 +111,7 @@ Deno.test("event receiver: does not log transcript or full phone number", async 
         },
       },
       { "x-vapi-secret": SECRET, "authorization": "Bearer SECRET-BEARER-TOKEN" },
-    ));
+    ), { runHangupFollowup: () => Promise.resolve({ status: "missing_phone" }) });
     assertEquals(res.status, 200);
     await res.text();
   } finally {
@@ -122,4 +122,44 @@ Deno.test("event receiver: does not log transcript or full phone number", async 
   assert(!joined.includes("SECRET SUMMARY"));
   assert(!joined.includes("+14697472877"));
   assert(!joined.includes("SECRET-BEARER-TOKEN"));
+});
+
+Deno.test("event receiver: final call-ended event runs the bid-link follow-up once", async () => {
+  setEnv("VAPI_SERVER_SECRET", SECRET);
+  let calls = 0;
+  const res = await handleVapiEventRequest(
+    post({ message: { type: "end-of-call-report", call: { id: "call_1" } } }, {
+      "x-vapi-secret": SECRET,
+    }),
+    {
+      runHangupFollowup: () => {
+        calls++;
+        return Promise.resolve({ status: "sent" });
+      },
+    },
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(calls, 1);
+  assertEquals(body.followup.status, "sent");
+});
+
+Deno.test("event receiver: non-final events never run the follow-up", async () => {
+  setEnv("VAPI_SERVER_SECRET", SECRET);
+  let calls = 0;
+  for (const type of ["status-update", "hang", "assistant.started"]) {
+    const res = await handleVapiEventRequest(
+      post({ message: { type } }, { "x-vapi-secret": SECRET }),
+      {
+        runHangupFollowup: () => {
+          calls++;
+          return Promise.resolve({ status: "sent" });
+        },
+      },
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.followup, undefined);
+  }
+  assertEquals(calls, 0);
 });
