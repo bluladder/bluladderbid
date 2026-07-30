@@ -16,7 +16,11 @@ const facts = {
     status: "firm",
     firm: true,
     total: 389,
-    lineItems: [{ key: "window_cleaning", label: "Window Cleaning", amount: 389 }],
+    lineItems: [{
+      key: "window_cleaning",
+      label: "Window Cleaning",
+      amount: 389,
+    }],
     engineVersion: "v3",
     pricingVersion: 7,
   },
@@ -47,10 +51,16 @@ function sb(opts: {
             return Promise.resolve({ data: opts.session ?? null, error: null });
           }
           if (name === "chat_conversations") {
-            return Promise.resolve({ data: opts.conversation ?? null, error: null });
+            return Promise.resolve({
+              data: opts.conversation ?? null,
+              error: null,
+            });
           }
           if (name === "customers") {
-            return Promise.resolve({ data: opts.customer ?? null, error: null });
+            return Promise.resolve({
+              data: opts.customer ?? null,
+              error: null,
+            });
           }
           return Promise.resolve({ data: null, error: null });
         },
@@ -63,9 +73,10 @@ function sb(opts: {
 
 const ok = (name: string) =>
   Promise.resolve(
-    name === "save-quote"
-      ? { status: 200, json: { quoteId: "q1" } }
-      : { status: 200, json: { transactionalSent: true, deliveryStatus: "accepted" } },
+    name === "save-quote" ? { status: 200, json: { quoteId: "q1" } } : {
+      status: 200,
+      json: { transactionalSent: true, deliveryStatus: "accepted" },
+    },
   );
 
 Deno.test("save-quote payload carries canonical line items and a stable scope", () => {
@@ -115,12 +126,10 @@ Deno.test("an unaccepted SMS is never reported as sent", async () => {
     conversationId: "conv-1",
     callFunction: (name) =>
       Promise.resolve(
-        name === "save-quote"
-          ? { status: 200, json: { quoteId: "q1" } }
-          : {
-            status: 200,
-            json: { transactionalSent: false, deliveryStatus: "suppressed" },
-          },
+        name === "save-quote" ? { status: 200, json: { quoteId: "q1" } } : {
+          status: 200,
+          json: { transactionalSent: false, deliveryStatus: "suppressed" },
+        },
       ),
   });
   assertEquals(res.ok, false);
@@ -155,7 +164,10 @@ Deno.test("a non-firm quote never reaches save-quote", async () => {
 Deno.test("an unverified service address blocks persistence", async () => {
   const res = await deliverVoiceQuoteByText({
     supabase: sb({ session: { email_normalized: "known@x.com" } }),
-    facts: { ...facts, serviceArea: { status: "manual_review_required" } } as any,
+    facts: {
+      ...facts,
+      serviceArea: { status: "manual_review_required" },
+    } as any,
     conversationId: "conv-1",
     callFunction: () => ok("save-quote"),
   });
@@ -276,7 +288,10 @@ Deno.test("live delivery stays behind the existing voice lane gate", async () =>
   const railEnd = rail.slice(0, rail.indexOf("buildSystemPrompt"));
   // A non-live lane passes deliver:null, which plans the truthful
   // "can't text it from this call" answer instead of a silent no-op.
-  assertEquals(/resolveVoiceBookingLane\(facts\.contact\?\.phone/.test(railEnd), true);
+  assertEquals(
+    /resolveVoiceBookingLane\(facts\.contact\?\.phone/.test(railEnd),
+    true,
+  );
   assertEquals(/deliveryLane === "live"/.test(railEnd), true);
   assertEquals(/: null,/.test(railEnd), true);
   assertEquals(/quoteIsFirm: isQuoteFirm\(facts\)/.test(railEnd), true);
@@ -284,11 +299,15 @@ Deno.test("live delivery stays behind the existing voice lane gate", async () =>
   assertEquals(/missingField: plan\.missingField/.test(railEnd), true);
 });
 
-
 Deno.test("email resolves from exactly one on-file email for the confirmed phone", async () => {
   const reads: string[] = [];
   const email = await resolveQuoteRecipientEmail(
-    sb({ phoneRows: [{ email: "Ben@BluLadder.com" }, { email: "ben@bluladder.com" }], reads }),
+    sb({
+      phoneRows: [{ email: "Ben@BluLadder.com" }, {
+        email: "ben@bluladder.com",
+      }],
+      reads,
+    }),
     { contact: { phone: "+14692150144", phoneConfirmed: true } } as any,
     {},
   );
@@ -300,7 +319,9 @@ Deno.test("ambiguous phone-to-email mapping resolves to null with zero upstream 
   const calls: string[] = [];
   const res = await deliverVoiceQuoteByText({
     supabase: sb({
-      phoneRows: [{ email: "ben@bluladder.com" }, { email: "someone@else.com" }],
+      phoneRows: [{ email: "ben@bluladder.com" }, {
+        email: "someone@else.com",
+      }],
     }),
     facts,
     conversationId: "c1",

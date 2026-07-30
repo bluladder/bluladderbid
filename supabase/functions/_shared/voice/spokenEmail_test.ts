@@ -18,7 +18,9 @@ Deno.test("spoken email: spelled local part and dotted local part", () => {
     "blmillen@gmail.com",
   );
   assertEquals(
-    parseSpokenEmail("sure, my e-mail address is ben dot millen at bluladder dot com"),
+    parseSpokenEmail(
+      "sure, my e-mail address is ben dot millen at bluladder dot com",
+    ),
     "ben.millen@bluladder.com",
   );
 });

@@ -22,10 +22,39 @@ const SPOKEN_TLD_WORDS: Record<string, string> = {
 
 /** Words that are never part of a spoken local part. */
 const FILLER = new Set([
-  "my", "me", "mine", "the", "is", "its", "it", "thats", "that",
-  "this", "email", "e-mail", "mail", "address", "use", "using", "send", "sent",
-  "to", "you", "can", "sure", "yeah", "yes", "ok", "okay", "so", "and", "well",
-  "please", "im", "am", "at",
+  "my",
+  "me",
+  "mine",
+  "the",
+  "is",
+  "its",
+  "it",
+  "thats",
+  "that",
+  "this",
+  "email",
+  "e-mail",
+  "mail",
+  "address",
+  "use",
+  "using",
+  "send",
+  "sent",
+  "to",
+  "you",
+  "can",
+  "sure",
+  "yeah",
+  "yes",
+  "ok",
+  "okay",
+  "so",
+  "and",
+  "well",
+  "please",
+  "im",
+  "am",
+  "at",
 ]);
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
@@ -49,7 +78,9 @@ function despeak(text: string): string {
  * Returns a lowercase address, or null when nothing unambiguous is present or
  * when the turn appears to contain more than one distinct candidate.
  */
-export function parseSpokenEmail(text: string | null | undefined): string | null {
+export function parseSpokenEmail(
+  text: string | null | undefined,
+): string | null {
   const raw = (text ?? "").trim();
   if (!raw) return null;
 
