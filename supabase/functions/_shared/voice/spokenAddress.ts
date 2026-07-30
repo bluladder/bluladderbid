@@ -130,7 +130,8 @@ export function extractStreetParts(text: string): StreetParts {
   let streetIdx = -1;
   for (let i = 0; i < segs.length; i++) {
     const words = segs[i].split(" ");
-    const numeric = words[0]?.match(/^\d+$/) ? words[0] : null;
+    const numIdx = words.findIndex((w) => /^\d{1,6}$/.test(w));
+    const numeric = numIdx >= 0 ? words[numIdx] : null;
     const spoken = numeric ? null : spokenDigitsToNumber(words);
     const last = words[words.length - 1]?.toLowerCase().replace(/[^a-z]/g, "");
     if ((numeric || spoken) && last && SUFFIXES.has(last)) {
