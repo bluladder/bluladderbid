@@ -45,6 +45,7 @@ jobs:
           bun run check:stage-7d-repair-rehearsal
           bun run check:stage-7b-forward-release
           bun run check:stage-7b-corrected-release
+          bun run check:stage-7b-lovable-release
           bun run check:stage-7d-cron-window
           bun run check:organization-routing
           bun run check:roadmap-ledger
@@ -112,11 +113,17 @@ jobs:
       - name: Create disposable database
         env:
           PGPASSWORD: postgres
-        run: createdb --host localhost --username postgres stage7b_rehearsal
-      - name: Rehearse immutable Stage 7B payload
+        run: |
+          createdb --host localhost --username postgres stage7b_rehearsal
+          createdb --host localhost --username postgres stage7b_lovable_rehearsal
+      - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
         run: ./scripts/rehearse-stage-7b-postgres.sh
+      - name: Rehearse immutable Lovable-native Stage 7B payload
+        env:
+          STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_lovable_rehearsal
+        run: ./scripts/rehearse-stage-7b-lovable-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
