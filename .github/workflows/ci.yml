@@ -123,7 +123,7 @@ jobs:
       - name: Rehearse immutable Lovable-native Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_lovable_rehearsal
-        run: ./scripts/rehearse-stage-7b-lovable-postgres.sh
+        run: bash scripts/rehearse-stage-7b-lovable-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
