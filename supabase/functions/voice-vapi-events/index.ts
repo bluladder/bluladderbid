@@ -15,6 +15,12 @@ import {
   type VoiceVapiAllowedEvent,
 } from "../_shared/voiceProviderConfig.ts";
 import { summarizeVapiEvent, voiceProviderDebugEnabled } from "../_shared/voiceProviderDebug.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import {
+  isFinalCallEndedEvent,
+  runVoiceHangupBidLinkFollowup,
+} from "../_shared/voice/hangupBidLinkFollowup.ts";
+import { BUILD_ID } from "../_shared/buildMarker.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -104,6 +110,48 @@ export async function handleVapiEventRequest(req: Request): Promise<Response> {
     };
   }
   console.log(JSON.stringify(logBase));
+
+  // Post-hangup online-bid SMS fallback. Runs ONLY for the authoritative final
+  // call-ended event, never for status-update / hang / diagnostics traffic.
+  // Fails closed and never throws into the provider response.
+  if (allowed && isFinalCallEndedEvent(eventType)) {
+    let followup: { status: string; detail?: string | null } = {
+      status: "failed",
+      detail: "not_attempted",
+    };
+    try {
+      const url = Deno.env.get("SUPABASE_URL");
+      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!url || !key) {
+        followup = { status: "failed", detail: "backend_not_configured" };
+      } else {
+        const supabase = createClient(url, key);
+        followup = await runVoiceHangupBidLinkFollowup({
+          supabase,
+          body,
+          eventType,
+        });
+      }
+    } catch (e) {
+      followup = { status: "failed", detail: String(e).slice(0, 180) };
+    }
+    console.log(JSON.stringify({
+      at: "voice-vapi-events",
+      buildId: BUILD_ID,
+      followup: "voice_call_bid_link",
+      status: followup.status,
+      detail: followup.detail ?? null,
+    }));
+    return new Response(
+      JSON.stringify({
+        received: true,
+        ignored: false,
+        eventType,
+        followup: { kind: "voice_call_bid_link", status: followup.status },
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
 
   // Vapi expects 200 for well-formed events; return an explicit ignored flag
   // for anything outside the direct-DID allowlist so misconfigurations are
