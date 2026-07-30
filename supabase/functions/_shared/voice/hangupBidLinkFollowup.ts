@@ -224,6 +224,33 @@ export interface HangupFollowupInput {
 }
 
 /**
+ * Bounded single-row lookup of the canonical internal turn journal.
+ * Returns true when at least one non-empty caller turn was persisted for the
+ * conversation, false when none exists, "unreadable" on any read failure
+ * (which the caller treats as a skip — never a send).
+ */
+export async function readJournalUserTurn(
+  supabase: SB,
+  conversationId: string,
+): Promise<boolean | "unreadable"> {
+  try {
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .select("id, content")
+      .eq("conversation_id", conversationId)
+      .eq("role", "user")
+      .limit(1);
+    if (error) return "unreadable";
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    return rows.some((r: any) =>
+      typeof r?.content === "string" && r.content.trim().length > 0
+    );
+  } catch (_e) {
+    return "unreadable";
+  }
+}
+
+/**
  * Authoritative entry point, called by voice-vapi-events for the final
  * call-ended event only. Always resolves — never throws into the webhook.
  */
@@ -238,6 +265,7 @@ export async function runVoiceHangupBidLinkFollowup(
   const phoneE164 = normalizePhoneE164(ctx.callerNumber);
 
   let facts: ConversationFacts | null = null;
+  let conversationId: string | null = null;
   if (ctx.callId) {
     try {
       const { data } = await supabase
@@ -249,6 +277,7 @@ export async function runVoiceHangupBidLinkFollowup(
         .limit(1)
         .maybeSingle();
       if (data) {
+        conversationId = typeof data.id === "string" ? data.id : null;
         const stored = (data.facts && typeof data.facts === "object")
           ? data.facts as ConversationFacts
           : {} as ConversationFacts;
@@ -266,9 +295,25 @@ export async function runVoiceHangupBidLinkFollowup(
     }
   }
 
+  // The version-controlled Vapi manifest suppresses transcript/message
+  // artifacts, so the provider payload alone can under-report a real
+  // conversation. Our own adapter journals every caller turn to canonical
+  // `chat_messages`; consult exactly one row as a second proof source.
+  let hadCustomerUtterance = ctx.hadCustomerUtterance;
+  if (!hadCustomerUtterance && conversationId) {
+    const journal = await readJournalUserTurn(supabase, conversationId);
+    if (journal === "unreadable") {
+      return {
+        status: "no_customer_interaction",
+        detail: "journal_unreadable",
+      };
+    }
+    hadCustomerUtterance = journal;
+  }
+
   const eligibility = evaluateHangupFollowupEligibility({
     phoneE164,
-    hadCustomerUtterance: ctx.hadCustomerUtterance,
+    hadCustomerUtterance,
     systemTest: ctx.systemTest,
     facts,
   });
