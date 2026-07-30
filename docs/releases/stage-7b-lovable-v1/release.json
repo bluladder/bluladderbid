@@ -41,6 +41,16 @@
     "hosted_ledger_tip": "20260726194719",
     "hosted_ledger_fingerprint": "73ed8522db78e51049a421e1f72b18c3"
   },
+  "post_execution_ledger": {
+    "count": 146,
+    "tip": "20260730072508",
+    "version_name_fingerprint": "3d447d837baa2a593f45fd111fc2ac04",
+    "new_row_count": 1,
+    "new_row_statement_count": 1,
+    "stored_statement_bytes": 24333,
+    "stored_statement_md5": "e2044ddcc7b42d37c77a8db4965b4b6d",
+    "transformation": "Lovable removed the artifact's single terminal newline when storing the one-statement migration payload"
+  },
   "expected_existing_rows": {
     "customers": 16,
     "properties": 10,
@@ -72,7 +82,7 @@
   },
   "postflight": {
     "path": "supabase/verification/tenant_stage_7b_lovable_postflight.sql",
-    "sha256": "a01c3dcd8d41d2084cb527401906886b5450ad9b6275d237bdfeade227dbae0d"
+    "sha256": "dd11a05cbfb1123f22d174ddeed7a7bc721fea2d638928febf0c98057dfe0f5d"
   },
   "evidence": {
     "template": "docs/releases/stage-7b-lovable-v1/evidence-template.json",
