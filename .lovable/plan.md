@@ -1,49 +1,43 @@
-## Assessment (read-only; no edits, deploys, secrets, schema, or sends)
+## Goal
 
-Verified against synced main. Findings below are backed by reads; the one open item is flagged as such.
+Make voice "text me the quote" genuinely deliver a real customer quote link via the existing canonical paths — no parallel provider call, no new SMS pathway, no migration.
 
-### 1. Exact reason voice quote-by-text is disabled
+## Verified current state (read-only, this turn)
 
-`_shared/aiOrchestrator.ts:1158-1180` runs the truthful rail on every voice turn where `classifyQuoteByTextRequest` matches, and passes `deliver: null` (line 1169) with an inline comment stating no canonical voice-initiated quote-link delivery exists. `quoteByText.ts:85-96` therefore always returns `not_sent_delivery_unavailable`. It is a deliberate hardcoded null, not a config flag — nothing else blocks it.
+- Synced tree already contains the wiring built in the previous turn: `supabase/functions/_shared/voice/quoteByTextDelivery.ts` (new), `quoteByTextDelivery_test.ts` (new, 5 tests), plus `aiOrchestrator.ts` and `aiTools.ts` edits. So the remaining work is hardening + verification + authorized deploy, not new plumbing.
+- `save-quote` (`index.ts:126-136`) hard-requires a valid `email`, at least one service, and `total > 0`. With `action:"save"` no email is ever sent (`emailStatus` stays `skipped`). It resolves/creates the customer by email (`:234-276`), reuses an existing open quote for the same `source_session_id` (`:301-320`), recomputes every dollar figure server-side (`:161-195`, client total used only for tamper detection), mints the resume token (`:444`), and emits `quote_calculated` with idempotency key `quote_calculated:{quoteId}:v{...}` (`:543`).
+- Production RPC inventory: `claim_sms_outbox_send` and `finalize_sms_outbox_send` exist; **`claim_quote_sms_delivery` does not exist in production.** The `smsOutbox.ts` fallback (base claim + conflict-safe `quote_id` bind) is therefore the live path. No migration needed.
+- `test_identities` has `+14692150144 / blmillen@gmail.com` with `active = false` → real transactional sends are permitted for the owner.
+- Two `customers` rows share phone digits `4692150144` with different emails (`blmillen@gmail.com`, `ben@bluladder.com`). Phone→email resolution is therefore ambiguous and must be deterministic (see safety).
+- `properties` / `property_facts` persistence lives in `_shared/profile/propertyRepo.ts` and is **not** touched by `save-quote`; the current voice delivery path does not write property rows.
 
-### 2. Is email truly required?
+## Answers to the seven questions
 
-Partly real, partly an artifact.
+**1. Paths reused.** Customer + quote persistence, org resolution, authoritative recompute, resume-token minting, and campaign emission: `save-quote` (`action:"save"`). Customer-facing SMS: `send-sms` with `eventType:"quote_created"`, which mints a fresh opaque resume URL and dispatches through `sendOutboxSms`. Property/profile persistence stays out of scope for this slice.
 
-- Artifact: `save-quote/index.ts:126-129` hard-400s on a missing/invalid email, and the quote row itself does not need it — `quotes.customer_email` and `quotes.customer_phone` are both nullable (verified via schema query).
-- Real constraint: `public.customers.email` is `NOT NULL` (verified), and save-quote resolves/creates the customer by email (`:234-276`). So a phone-only voice caller cannot create a customer through the canonical path today.
-- SMS delivery itself does not need email: `send-sms` quote path reads `quotes.customer_phone`, mints its own resume URL (`:394-402`), and only uses email for the pause lookup (`:413`).
+**2. Internal invoke vs extraction.** Keep the internal service-role invoke of `save-quote` (already implemented via the exported `callFunction`). Tradeoffs: invoking keeps one authoritative implementation, inherits `resolvePublicBookingOrganization`, tamper detection, supersede logic, and resume-token behavior for free, and needs zero refactor of a launch-critical function; costs one extra in-region HTTP hop (~100-200ms, acceptable off the speech path) and couples voice to save-quote's request contract. Extraction into a shared core would remove the hop but touches the public web booking path — unjustified risk right now.
 
-Smallest safe resolution: do not relax the email column. Instead accept a voice-initiated save only when either (a) an existing customer is matched by normalized phone (reuse their email), or (b) the caller gives an email. If neither, the rail keeps telling the truth ("I can't text it — want a teammate to follow up?"). No migration required.
+**3. Facts → authoritative input.** `ConversationFacts.services` + `facts.property.{squareFootage, stories, windowCleaningType, condition, roofType, roofSeverity, drivewaySqft, drivewaySurface, pressureWashSqft, pressureWashSurface}` + `facts.discountCode` are mapped through the **exported canonical** `buildQuoteRequest` from `aiTools.ts` (same mapper the pricing tool uses), so voice cannot introduce a divergent mapping. `facts.quote.total` is sent only as `total`/`subtotal` for tamper detection — save-quote recomputes. Missing fields voice must supply: **phone** (confirmed E.164, already gated), **name** (already gated), **email** (not collectable reliably by voice → resolved from the customer already on file for that phone, else the rail truthfully reports "not sent"), **address** (passed into `homeDetails.address` when known; not required by save-quote).
 
-### 3. Files/functions to change (all reuse, no parallel provider call)
+**4. Idempotency / replay.** Persistence: `sourceSessionId` = canonical quote-session id → repeated asks in one call update the same quote row instead of creating duplicates. Resume token: minted per save inside `save-quote`, prior tokens revoked on supersede. SMS: semantic outbound key `quote_delivery:sms:{quoteId}:{digits}` claimed via `claim_sms_outbox_send` (production fallback), so a replay returns the existing evidence and never re-dispatches; `finalize_sms_outbox_send` is claim-token guarded. Campaign event: `quote_calculated:{quoteId}:v{...}`.
 
-- `_shared/voice/quoteByText.ts` — unchanged contract; it already only claims success when `deliver()` returns `{ok:true}`.
-- New `_shared/voice/quoteByTextDelivery.ts` — builds the `deliver` closure:
-  1. read canonical `quote_sessions` fields + orchestrator `facts` (services, address, sqft, stories, window type, name, phone, total/lineItems);
-  2. resolve customer by `normalizePhone(phone)` to obtain an email, else use `fields.email`; bail (return `{ok:false}`) if neither;
-  3. call `save-quote` server-side with `action:"save"` (never `"email"`) through the existing service-role sibling-invoke helper already used by `aiTools.ts` (`callFunction`, same pattern as `calculate-quote` at `aiTools.ts:266`), passing `homeDetails`/`additionalServices` from session fields plus the voice engine total as `clientDisplay`;
-  4. on 200, call `send-sms` with `{eventType:"quote_created", quoteId, customerInitiated:true}` as a service caller (`send-sms/index.ts:281-319, 441-443` already permits exactly this) and return `{ok: transactionalSent}`.
-- `_shared/aiOrchestrator.ts:1169` — replace `deliver: null` with that closure, gated by an allowlist/flag consistent with the existing voice gating (`voiceLiveBookingEnabled` / `VOICE_WORKFLOW_CONTROLLER_ALLOWLIST` in `aiTools.ts:41-45`) so rollout matches live-booking containment.
+**5. Migration.** None required. Optional follow-up (not in this slice): apply `20260730152500_repair_claim_quote_sms_delivery.sql` so the quote-lineage wrapper exists natively; until then the tested fallback covers it.
 
-Reused as-is (no changes): `save-quote` authoritative recompute, organization resolution (`resolvePublicBookingOrganization`, server-side only — voice never supplies an org id), resume-token minting, `quote_calculated` campaign emission and supersession/abandonment logic; `send-sms` outbox key `quote_delivery:sms:{quoteId}:{digits}`, `sendOutboxSms`, `claim_quote_sms_delivery` (present in `supabase/migrations/20260730152500_repair_claim_quote_sms_delivery.sql`, with the `claim_sms_outbox_send` fallback in `_shared/smsOutbox.ts:118-186`), opt-out/pause/test-suppression gates (`send-sms/index.ts:417-450`).
+**6. Files, tests, gates, deploy.**
+- Already in tree: `_shared/voice/quoteByTextDelivery.ts`, `_shared/aiOrchestrator.ts` (deliver closure, allowlist-gated), `_shared/aiTools.ts` (export `buildQuoteRequest`, `callFunction`), `_shared/voice/quoteByTextDelivery_test.ts`.
+- To add in this slice: deterministic email resolution (below) + tests covering ambiguous phone→email, the `email_unavailable` truthful reply, replay of a second "text it to me" in the same call reusing one quote, and an `aiOrchestrator` test asserting the non-allowlisted lane still passes `deliver: null`.
+- Gates: `deno test --allow-all supabase/functions/`, `node scripts/check-voice-booking-contract.mjs`, `bunx vitest run`, `tsgo`/`bun run build`.
+- Deploy: **`ai-chat` and `voice-llm-adapter` only** (the two importers of `aiOrchestrator.ts`). `save-quote` and `send-sms` are unchanged and must not be redeployed.
 
-**Migration: none.**
+**7. Safety issues to resolve before production.**
+- **Ambiguous phone→email** (two live rows on the owner's digits). Fix: prefer an exact `phone`-digit match that also has a `customer_accounts`/auth linkage or the most recent *quote*, and if more than one distinct email matches, resolve to "not sent" rather than guessing — a wrong email would attach a real quote to the wrong customer record.
+- Verbal SMS consent is enforced only as valid E.164 + not opted out + not paused + `customerInitiated:true`; there is no explicit voice consent ledger. Confirm that is acceptable policy.
+- Voice ASR address/sqft error means the persisted quote can differ from what was spoken; the resume link lets the customer correct it, and save-quote's recompute prevents price tampering.
+- Containment preserved: `PUBLIC_BOOKING_ENABLED=false`, Oregon inactive, existing voice allowlist and `VOICE_LIVE_BOOKING_ENABLED` untouched. The live delivery lane requires **both** the existing flag and the caller-phone allowlist, so no arbitrary inbound caller can trigger a send. No Jobber call, no message/call sent, no secret/provider change, no production writes during analysis.
 
-### 4. Deployment scope (not part of this pass)
+## Technical steps
 
-Only `voice-llm-adapter` needs deployment, since the change is confined to `_shared` files it bundles plus the orchestrator. `save-quote` and `send-sms` are unchanged; they must simply already be deployed at current main (verify hashes before any future deploy). If the gating flag route is used, no new secret is required unless you choose a dedicated one.
-
-### 5. Test plan (all offline)
-
-- Unit: `quoteByTextDelivery` — no email and no phone-matched customer → `{ok:false}` and rail says "not sent"; save-quote non-200 → not sent; save-quote 200 + `transactionalSent:false` → not sent; both success → `sent` reply with the total.
-- Unit: idempotency — two rapid requests in one call produce one `save-quote` (same `sourceSessionId` = quote session id, so the row is updated not duplicated) and one outbox claim (same semantic key → replay, no second CallRail dispatch).
-- Existing suites that must stay green: `_shared/voice/voiceRemediation_test.ts`, `_shared/smsOutbox_test.ts`, `src/test/authoritativeQuoteDelivery.pathCoverage.test.ts`, `src/test/quoteSmsOutboxFallback.test.ts`, `src/test/unbookedQuoteFollowUp.*`, full `deno test`.
-- No live call, no live SMS, no Jobber write in this phase.
-
-### 6. Remaining production risk
-
-- **Pricing mismatch (medium):** save-quote re-derives from `pricing_config` and 409s on tamper detection; if the voice rough-quote inputs are looser than the web payload, the caller could be told "not sent". Mitigation: treat 409/422 as truthful failure (already the default) and log the status.
-- **ASR-derived data (medium):** a mis-heard address/sqft would persist a real quote row and fire `quote_calculated` (follow-up automation). Mitigation: require confirmed E.164 phone (already enforced) and only proceed when the session's quote is firm/estimated.
-- **Consent (needs confirmation before build):** the `quote_created` path enforces opt-out, per-lead pause, and test-identity suppression, but I did not see `consent_allows` invoked there — for a verbally-given number we should confirm whether a transactional quote SMS requires a `communication_consent` row and, if so, record it via the existing `record_consent` tool at the moment the caller asks for the text. This is the one item to settle first.
-- **Rollout blast radius (low):** gate to the owner allowlist for the first live test, exactly as live voice booking is gated.
+1. Harden `resolveQuoteRecipientEmail` in `_shared/voice/quoteByTextDelivery.ts`: exact last-10-digit match, collapse candidates, return `null` when distinct emails conflict.
+2. Add the four tests listed above.
+3. Run all gates and report exact counts.
+4. On explicit owner authorization only: deploy `ai-chat` + `voice-llm-adapter`, then verify diagnostics read-only. No live call or SMS in that step unless separately authorized.
