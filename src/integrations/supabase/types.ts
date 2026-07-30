@@ -825,6 +825,7 @@ export type Database = {
           maintenance_last_notified_at: string | null
           meta_events_fired: Json
           notes: string | null
+          organization_id: string | null
           prep_email_sent_at: string | null
           previous_scheduled_end: string | null
           previous_scheduled_start: string | null
@@ -890,6 +891,7 @@ export type Database = {
           maintenance_last_notified_at?: string | null
           meta_events_fired?: Json
           notes?: string | null
+          organization_id?: string | null
           prep_email_sent_at?: string | null
           previous_scheduled_end?: string | null
           previous_scheduled_start?: string | null
@@ -955,6 +957,7 @@ export type Database = {
           maintenance_last_notified_at?: string | null
           meta_events_fired?: Json
           notes?: string | null
+          organization_id?: string | null
           prep_email_sent_at?: string | null
           previous_scheduled_end?: string | null
           previous_scheduled_start?: string | null
@@ -989,6 +992,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -2581,6 +2591,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           notes: string | null
+          organization_id: string | null
           phone: string | null
           preferred_contact_method: string | null
           preferred_email: string | null
@@ -2605,6 +2616,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           notes?: string | null
+          organization_id?: string | null
           phone?: string | null
           preferred_contact_method?: string | null
           preferred_email?: string | null
@@ -2629,6 +2641,7 @@ export type Database = {
             | Database["public"]["Enums"]["lead_lifecycle_status"]
             | null
           notes?: string | null
+          organization_id?: string | null
           phone?: string | null
           preferred_contact_method?: string | null
           preferred_email?: string | null
@@ -2636,7 +2649,15 @@ export type Database = {
           sms_paused?: boolean
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "customers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       discount_codes: {
         Row: {
@@ -3734,6 +3755,112 @@ export type Database = {
           },
         ]
       }
+      organization_memberships: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          role: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          role: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          role?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_memberships_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_resolution_keys: {
+        Row: {
+          created_at: string
+          id: string
+          key_hash: string
+          key_type: string
+          organization_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key_hash: string
+          key_type: string
+          organization_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key_hash?: string
+          key_type?: string
+          organization_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_resolution_keys_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          display_name: string
+          id: string
+          is_legacy_default: boolean
+          slug: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          id: string
+          is_legacy_default?: boolean
+          slug: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          id?: string
+          is_legacy_default?: boolean
+          slug?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       pending_confirmations: {
         Row: {
           admin_note: string | null
@@ -3954,6 +4081,7 @@ export type Database = {
           latitude: number | null
           longitude: number | null
           normalized_address: string
+          organization_id: string | null
           postal_code: string | null
           property_type: string
           state: string | null
@@ -3969,6 +4097,7 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           normalized_address: string
+          organization_id?: string | null
           postal_code?: string | null
           property_type?: string
           state?: string | null
@@ -3984,13 +4113,22 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           normalized_address?: string
+          organization_id?: string | null
           postal_code?: string | null
           property_type?: string
           state?: string | null
           street?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "properties_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       property_facts: {
         Row: {
@@ -4227,6 +4365,7 @@ export type Database = {
           jobber_quote_id: string | null
           last_activity_at: string
           line_item_snapshot: Json | null
+          organization_id: string | null
           pricing_engine_version: string | null
           pricing_rule_version: number | null
           property_id: string | null
@@ -4277,6 +4416,7 @@ export type Database = {
           jobber_quote_id?: string | null
           last_activity_at?: string
           line_item_snapshot?: Json | null
+          organization_id?: string | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
           property_id?: string | null
@@ -4327,6 +4467,7 @@ export type Database = {
           jobber_quote_id?: string | null
           last_activity_at?: string
           line_item_snapshot?: Json | null
+          organization_id?: string | null
           pricing_engine_version?: string | null
           pricing_rule_version?: number | null
           property_id?: string | null
@@ -4365,6 +4506,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quotes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
