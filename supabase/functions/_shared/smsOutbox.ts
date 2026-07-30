@@ -66,6 +66,18 @@ export interface OutboxSendResult {
   error?: string;
 }
 
+/** True when the backend has no such RPC (PostgREST 404 / Postgres 42883). */
+function isMissingFunctionError(err: {
+  code?: string | null;
+  message?: string | null;
+}): boolean {
+  const code = String(err?.code ?? "");
+  const msg = String(err?.message ?? "").toLowerCase();
+  return code === "PGRST202" || code === "42883" ||
+    msg.includes("could not find the function") ||
+    msg.includes("does not exist");
+}
+
 /**
  * Attempt to send an outbound SMS through the outbox state machine.
  *
@@ -99,10 +111,31 @@ export async function sendOutboxSms(
     p_message_kind: input.messageKind,
   };
   if (input.quoteId) claimArgs.p_quote_id = input.quoteId;
-  const { data: claimData, error: claimErr } = await supabase.rpc(
+  let { data: claimData, error: claimErr } = await supabase.rpc(
     claimRpc,
     claimArgs,
   );
+  // Compatibility fallback: environments where the quote-specific wrapper
+  // (claim_quote_sms_delivery) has not been provisioned yet must still be able
+  // to deliver a customer-requested quote SMS. The base outbox claim keeps the
+  // same semantic outbound key (so idempotency is unchanged); quote lineage is
+  // then bound with a narrow, conflict-safe update below.
+  let quoteLineageFallback = false;
+  if (
+    claimErr && input.quoteId &&
+    isMissingFunctionError(claimErr)
+  ) {
+    quoteLineageFallback = true;
+    const base = await supabase.rpc("claim_sms_outbox_send", {
+      p_outbound_key: input.outboundKey,
+      p_claim_token: claimToken,
+      p_to_number: input.toNumber,
+      p_body: input.body,
+      p_message_kind: input.messageKind,
+    });
+    claimData = base.data;
+    claimErr = base.error;
+  }
   if (claimErr) {
     return {
       sent: false,
@@ -127,6 +160,26 @@ export async function sendOutboxSms(
       providerMessageId: null,
       error: claim.reason ?? "claim_denied",
     };
+  }
+
+  if (quoteLineageFallback && input.quoteId) {
+    const { error: lineageErr } = await supabase
+      .from("sms_messages")
+      .update({ quote_id: input.quoteId })
+      .eq("id", claim.id)
+      .is("quote_id", null);
+    if (lineageErr) {
+      return {
+        sent: false,
+        smsMessageId: claim.id,
+        outboxState: (claim.outbox_state ?? null) as OutboxState | null,
+        replay: false,
+        inProgress: false,
+        escalated: false,
+        providerMessageId: null,
+        error: "quote_lineage_conflict",
+      };
+    }
   }
 
   // Not the winner — return existing evidence, do NOT call CallRail.
