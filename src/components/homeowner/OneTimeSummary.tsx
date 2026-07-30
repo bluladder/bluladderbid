@@ -43,6 +43,14 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
+/**
+ * Launch gate — the public "Text me this bid" delivery path is disabled.
+ * All SMS infrastructure (edge functions, outbox, inbound SMS, campaigns) and
+ * the client delivery code below are intentionally retained so the option can
+ * be restored by flipping this single constant back to `true`.
+ */
+const BID_BY_TEXT_ENABLED = false;
+
 // Local helpers — SMS destination normalization + PII masking for success UI.
 // Kept in-file to avoid growing the shared surface for a single delivery flow.
 function normalizePhoneForBid(raw: string | null | undefined): string | null {
@@ -119,6 +127,9 @@ export function OneTimeSummary({
 
   const handleDelivery = async () => {
     if (!saveDialogAction || !quote || typeof total !== 'number') return;
+    // Defense in depth: the text path is not reachable from the UI while the
+    // launch gate is off, but never allow it to execute if it is.
+    if (saveDialogAction === 'text' && !BID_BY_TEXT_ENABLED) return;
     const email = saveEmail.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       toast.error('Please enter a valid email address.');
