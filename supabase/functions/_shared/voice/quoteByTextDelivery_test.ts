@@ -30,12 +30,17 @@ function sb(opts: {
   session?: Record<string, unknown> | null;
   conversation?: Record<string, unknown> | null;
   customer?: Record<string, unknown> | null;
+  phoneRows?: Array<Record<string, unknown>> | null;
   reads?: string[];
 } = {}) {
   const reads = opts.reads ?? [];
   const table = (name: string) => ({
     select: () => ({
       eq: () => ({
+        limit: () => {
+          reads.push(`${name}:by_phone`);
+          return Promise.resolve({ data: opts.phoneRows ?? [], error: null });
+        },
         maybeSingle: () => {
           reads.push(name);
           if (name === "quote_sessions") {
@@ -273,4 +278,45 @@ Deno.test("quote-by-text delivery is NOT gated on the live-booking lane", async 
   assertEquals(/deliver: async \(\) =>/.test(railEnd), true);
   assertEquals(/quoteIsFirm: isQuoteFirm\(facts\)/.test(railEnd), true);
   assertEquals(/quoteByText: \{/.test(railEnd), true);
+});
+
+
+Deno.test("email resolves from exactly one on-file email for the confirmed phone", async () => {
+  const reads: string[] = [];
+  const email = await resolveQuoteRecipientEmail(
+    sb({ phoneRows: [{ email: "Ben@BluLadder.com" }, { email: "ben@bluladder.com" }], reads }),
+    { contact: { phone: "+14692150144", phoneConfirmed: true } } as any,
+    {},
+  );
+  assertEquals(email, "ben@bluladder.com");
+  assertEquals(reads.includes("customers:by_phone"), true);
+});
+
+Deno.test("ambiguous phone-to-email mapping resolves to null with zero upstream calls", async () => {
+  const calls: string[] = [];
+  const res = await deliverVoiceQuoteByText({
+    supabase: sb({
+      phoneRows: [{ email: "ben@bluladder.com" }, { email: "someone@else.com" }],
+    }),
+    facts,
+    conversationId: "c1",
+    callFunction: (name: string) => {
+      calls.push(name);
+      return ok(name);
+    },
+  });
+  assertEquals(res.ok, false);
+  assertEquals(res.reason, "email_unavailable");
+  assertEquals(calls, []);
+});
+
+Deno.test("unconfirmed phone never triggers the on-file phone lookup", async () => {
+  const reads: string[] = [];
+  const email = await resolveQuoteRecipientEmail(
+    sb({ phoneRows: [{ email: "ben@bluladder.com" }], reads }),
+    { contact: { phone: "+14692150144", phoneConfirmed: false } } as any,
+    {},
+  );
+  assertEquals(email, null);
+  assertEquals(reads.includes("customers:by_phone"), false);
 });
