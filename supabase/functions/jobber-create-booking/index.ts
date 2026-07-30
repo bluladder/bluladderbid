@@ -106,6 +106,8 @@ interface BookingRequest {
     landing_page_slug?: string;
     fbclid?: string;
     referrer?: string;
+    self_reported_source?: string;
+    self_reported_source_detail?: string;
   };
   sourceSessionId?: string;
   resumedQuoteId?: string;
