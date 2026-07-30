@@ -557,9 +557,9 @@ async function createBookingTool(
       };
     }
     const area = await validateServiceArea(ctx.supabase, resolvedAddress);
-    if (area.status !== "in_area") {
+    if (area.status !== "eligible") {
       return {
-        status: area.status === "out_of_area"
+        status: area.status === "manual_review_required"
           ? "unsupported_territory"
           : "address_unverified",
         message: area.customerMessage ??
@@ -643,8 +643,9 @@ async function createBookingTool(
   //    a genuine re-book of a DIFFERENT time (after an availability refetch)
   //    correctly creates a new booking instead of replaying an old one, while
   //    real retries of the SAME booking still de-duplicate.
-  const authKey = `chat|${ctx.conversationId}|${slotId}`;
-  const idempotencyKey = `chat|${ctx.conversationId}|${slot.startTime}`;
+  const keyPrefix = ctx.channel === "voice" ? "voice" : "chat";
+  const authKey = `${keyPrefix}|${ctx.conversationId}|${slotId}`;
+  const idempotencyKey = `${keyPrefix}|${ctx.conversationId}|${slot.startTime}`;
 
   // CONTROLLED TEST GUARD at the final booking boundary. If the customer is an
   // approved test identity (or global test-suppression is on), we simulate a
@@ -701,7 +702,7 @@ async function createBookingTool(
       name: convo?.prospect_name || "BluLadder Customer",
       email,
       phone: convo?.prospect_phone || "",
-      address: String(args.address || ""),
+      address: resolvedAddress,
     },
     technicianId: slot.__technicianId,
     isTeamJob: slot.__isTeamJob,
