@@ -149,8 +149,10 @@ Deno.test("hangup intent stops intake, hurry does not loop on filler", () => {
 
 Deno.test("Can I talk to Ben? produces one escalation and no quote question", () => {
   assertEquals(classifyVoiceExitIntent("Can I talk to Ben?"), "human_request");
+  // 6.8: the reply is truthful about the actual escalation tool result.
   const first = planVoiceExitIntent("human_request", {
     escalationAlreadyRecorded: false,
+    escalationSucceeded: true,
   });
   assertEquals(first.event, "voice_human_request_escalated");
   assert(first.stopsIntake);

@@ -34,6 +34,93 @@ const DIGITS = [
   "nine",
 ];
 
+const DIGIT_WORDS: Record<string, string> = {
+  zero: "0",
+  oh: "0",
+  o: "0",
+  one: "1",
+  two: "2",
+  to: "2",
+  too: "2",
+  three: "3",
+  four: "4",
+  for: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  ate: "8",
+  nine: "9",
+};
+
+/**
+ * Spoken street-suffix abbreviations expanded for pronunciation. TTS reads
+ * "Ln" as "linn" and "Dr" as "doctor"; the readback must say the real word.
+ */
+const SUFFIX_EXPANSIONS: Record<string, string> = {
+  ln: "Lane",
+  st: "Street",
+  rd: "Road",
+  dr: "Drive",
+  ave: "Avenue",
+  av: "Avenue",
+  blvd: "Boulevard",
+  ct: "Court",
+  cir: "Circle",
+  pl: "Place",
+  pkwy: "Parkway",
+  hwy: "Highway",
+  trl: "Trail",
+  ter: "Terrace",
+  way: "Way",
+  sq: "Square",
+  cv: "Cove",
+  xing: "Crossing",
+  loop: "Loop",
+  run: "Run",
+};
+
+export function expandStreetSuffix(suffix: string): string {
+  const key = String(suffix ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  return SUFFIX_EXPANSIONS[key] ??
+    (suffix ? suffix.charAt(0).toUpperCase() + suffix.slice(1) : suffix);
+}
+
+/**
+ * Read a house number out of a caller utterance, accepting both digits
+ * ("5612") and the digit-by-digit spoken form ("five six one two").
+ */
+export function parseSpokenHouseNumber(utterance: string): string | null {
+  const raw = String(utterance ?? "");
+  const numeric = raw.match(/\b(\d{2,6})\b/);
+  if (numeric) return numeric[1];
+  const tokens = raw.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  let best = "";
+  let run = "";
+  for (const t of tokens) {
+    const d = /^\d$/.test(t) ? t : DIGIT_WORDS[t];
+    if (d === undefined) {
+      if (run.length > best.length) best = run;
+      run = "";
+      continue;
+    }
+    run += d;
+  }
+  if (run.length > best.length) best = run;
+  return best.length >= 2 ? best : null;
+}
+
+/** Swap ONLY the leading house number of an address, leaving the rest intact. */
+export function replaceHouseNumber(
+  address: string,
+  houseNumber: string,
+): string {
+  const a = String(address ?? "").trim();
+  if (!a) return houseNumber;
+  if (/^\d{1,6}\b/.test(a)) return a.replace(/^\d{1,6}\b/, houseNumber);
+  return `${houseNumber} ${a}`;
+}
+
 export function spellOut(word: string): string {
   return word.replace(/[^A-Za-z]/g, "").toUpperCase().split("").join("-");
 }
@@ -61,7 +148,9 @@ export function buildAddressReadback(formatted: string): string {
   const words = street.split(/\s+/).filter(Boolean);
   const house = houseNumberOf(street);
   const body = house ? words.slice(1) : words;
-  const suffix = body.length > 1 ? body[body.length - 1] : "";
+  const suffix = body.length > 1
+    ? expandStreetSuffix(body[body.length - 1])
+    : "";
   const name = (body.length > 1 ? body.slice(0, -1) : body).join(" ");
   const parts: string[] = [];
   if (house) parts.push(speakDigits(house));
