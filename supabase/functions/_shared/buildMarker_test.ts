@@ -1,7 +1,13 @@
 // Deno tests: build marker present in safe diagnostics, never in spoken content.
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { BUILD_FEATURES, BUILD_ID } from "./buildMarker.ts";
-import { buildNonStreamingResponse, type AdapterCompletion } from "./voiceAdapter.ts";
+import {
+  type AdapterCompletion,
+  buildNonStreamingResponse,
+} from "./voiceAdapter.ts";
 
 Deno.test("BUILD_ID is a non-empty stable string", () => {
   assert(typeof BUILD_ID === "string" && BUILD_ID.length > 0);
@@ -26,11 +32,22 @@ Deno.test("BUILD_FEATURES exposes Phase 4C-β.4B stable-session + workflow-contr
   assertEquals(BUILD_FEATURES.useWorkflowController, "gated");
 });
 
+Deno.test("BUILD_FEATURES exposes the post-hangup bid-link follow-up flag", () => {
+  assertEquals(BUILD_FEATURES.voiceHangupBidLinkFollowup, true);
+  assert(BUILD_ID.includes("6.5"));
+});
+
 Deno.test("buildNonStreamingResponse: buildId is in bluladder diagnostics", async () => {
   const completion: AdapterCompletion = {
     content: "Your rough exterior window quote is ready.",
     action: { kind: "tool_result_speak" },
-    orchestrator: { reply: "", toolEvents: [], events: [], state: "quote_ready", voice: null },
+    orchestrator: {
+      reply: "",
+      toolEvents: [],
+      events: [],
+      state: "quote_ready",
+      voice: null,
+    },
   };
   const res = buildNonStreamingResponse("m", completion);
   const body = await res.json();
@@ -41,10 +58,19 @@ Deno.test("buildNonStreamingResponse: buildId is NOT in the assistant content sp
   const completion: AdapterCompletion = {
     content: "Your rough exterior window quote is ready.",
     action: { kind: "tool_result_speak" },
-    orchestrator: { reply: "", toolEvents: [], events: [], state: "quote_ready", voice: null },
+    orchestrator: {
+      reply: "",
+      toolEvents: [],
+      events: [],
+      state: "quote_ready",
+      voice: null,
+    },
   };
   const res = buildNonStreamingResponse("m", completion);
   const body = await res.json();
   const spoken = body.choices[0].message.content as string;
-  assert(!spoken.includes(BUILD_ID), "build id must never appear in spoken content");
+  assert(
+    !spoken.includes(BUILD_ID),
+    "build id must never appear in spoken content",
+  );
 });

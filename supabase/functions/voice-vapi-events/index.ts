@@ -14,7 +14,16 @@ import {
   VOICE_VAPI_ALLOWED_EVENTS,
   type VoiceVapiAllowedEvent,
 } from "../_shared/voiceProviderConfig.ts";
-import { summarizeVapiEvent, voiceProviderDebugEnabled } from "../_shared/voiceProviderDebug.ts";
+import {
+  summarizeVapiEvent,
+  voiceProviderDebugEnabled,
+} from "../_shared/voiceProviderDebug.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  isFinalCallEndedEvent,
+  runVoiceHangupBidLinkFollowup,
+} from "../_shared/voice/hangupBidLinkFollowup.ts";
+import { BUILD_ID } from "../_shared/buildMarker.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,18 +41,24 @@ function jsonError(status: number, code: string): Response {
 }
 
 function isProduction(): boolean {
-  const env = (Deno.env.get("DENO_ENV") ?? Deno.env.get("NODE_ENV") ?? "").toLowerCase();
+  const env = (Deno.env.get("DENO_ENV") ?? Deno.env.get("NODE_ENV") ?? "")
+    .toLowerCase();
   return env === "production" || env === "prod";
 }
 
-function checkSharedSecret(req: Request, expected: string | undefined): boolean {
+function checkSharedSecret(
+  req: Request,
+  expected: string | undefined,
+): boolean {
   if (!expected) return false;
   // Vapi uses X-Vapi-Secret as the server-URL shared credential.
   const supplied = req.headers.get("x-vapi-secret") || "";
   if (!supplied) return false;
   if (supplied.length !== expected.length) return false;
   let diff = 0;
-  for (let i = 0; i < expected.length; i++) diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
+  for (let i = 0; i < expected.length; i++) {
+    diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
   return diff === 0;
 }
 
@@ -54,20 +69,41 @@ function extractEventType(body: unknown): string | null {
     ? (b.message as Record<string, unknown>).type
     : undefined;
   const top = b.type;
-  const t = typeof nested === "string" ? nested : typeof top === "string" ? top : null;
+  const t = typeof nested === "string"
+    ? nested
+    : typeof top === "string"
+    ? top
+    : null;
   return t;
 }
 
-export async function handleVapiEventRequest(req: Request): Promise<Response> {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+export interface VapiEventDeps {
+  /** Injected in tests so the receiver never touches a real backend. */
+  runHangupFollowup?: typeof runVoiceHangupBidLinkFollowup;
+}
+
+export async function handleVapiEventRequest(
+  req: Request,
+  deps: VapiEventDeps = {},
+): Promise<Response> {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
   if (req.method !== "POST") return jsonError(405, "unsupported_method");
   const ct = (req.headers.get("content-type") || "").toLowerCase();
-  if (!ct.includes("application/json")) return jsonError(415, "unsupported_content_type");
+  if (!ct.includes("application/json")) {
+    return jsonError(415, "unsupported_content_type");
+  }
 
   const secret = Deno.env.get("VAPI_SERVER_SECRET");
   if (!secret) {
     console.warn("voice-vapi-events: shared secret not configured");
-    return jsonError(500, isProduction() ? "shared_secret_missing_production" : "shared_secret_missing");
+    return jsonError(
+      500,
+      isProduction()
+        ? "shared_secret_missing_production"
+        : "shared_secret_missing",
+    );
   }
   if (!checkSharedSecret(req, secret)) return jsonError(401, "unauthorized");
 
@@ -81,7 +117,8 @@ export async function handleVapiEventRequest(req: Request): Promise<Response> {
   }
 
   const eventType = extractEventType(body);
-  const allowed = eventType !== null && (VOICE_VAPI_ALLOWED_EVENTS as readonly string[]).includes(eventType);
+  const allowed = eventType !== null &&
+    (VOICE_VAPI_ALLOWED_EVENTS as readonly string[]).includes(eventType);
 
   // Sanitized log line. Never emits message content, addresses, full phone
   // numbers, secrets, or the Authorization header.
@@ -105,16 +142,73 @@ export async function handleVapiEventRequest(req: Request): Promise<Response> {
   }
   console.log(JSON.stringify(logBase));
 
+  // Post-hangup online-bid SMS fallback. Runs ONLY for the authoritative final
+  // call-ended event, never for status-update / hang / diagnostics traffic.
+  // Fails closed and never throws into the provider response.
+  if (allowed && isFinalCallEndedEvent(eventType)) {
+    let followup: { status: string; detail?: string | null } = {
+      status: "failed",
+      detail: "not_attempted",
+    };
+    try {
+      const url = Deno.env.get("SUPABASE_URL");
+      const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      const run = deps.runHangupFollowup;
+      if (run) {
+        followup = await run({ supabase: null, body, eventType });
+      } else if (!url || !key) {
+        followup = { status: "failed", detail: "backend_not_configured" };
+      } else {
+        const supabase = createClient(url, key, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        });
+        followup = await runVoiceHangupBidLinkFollowup({
+          supabase,
+          body,
+          eventType,
+        });
+      }
+    } catch (e) {
+      followup = { status: "failed", detail: String(e).slice(0, 180) };
+    }
+    console.log(JSON.stringify({
+      at: "voice-vapi-events",
+      buildId: BUILD_ID,
+      followup: "voice_call_bid_link",
+      status: followup.status,
+      detail: followup.detail ?? null,
+    }));
+    return new Response(
+      JSON.stringify({
+        received: true,
+        ignored: false,
+        eventType,
+        followup: { kind: "voice_call_bid_link", status: followup.status },
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  }
+
   // Vapi expects 200 for well-formed events; return an explicit ignored flag
   // for anything outside the direct-DID allowlist so misconfigurations are
   // observable without erroring the provider.
   return new Response(
-    JSON.stringify({ received: allowed, ignored: !allowed, eventType: eventType ?? null }),
-    { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    JSON.stringify({
+      received: allowed,
+      ignored: !allowed,
+      eventType: eventType ?? null,
+    }),
+    {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    },
   );
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type _AllowedEvent = VoiceVapiAllowedEvent;
 
-Deno.serve(handleVapiEventRequest);
+Deno.serve((req: Request) => handleVapiEventRequest(req));
