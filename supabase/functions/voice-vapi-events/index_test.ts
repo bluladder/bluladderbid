@@ -1,4 +1,7 @@
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { handleVapiEventRequest } from "./index.ts";
 
 const SECRET = "test-vapi-secret-abcdef";
@@ -99,19 +102,27 @@ Deno.test("event receiver: does not log transcript or full phone number", async 
   setEnv("VAPI_SERVER_SECRET", SECRET);
   const logs: string[] = [];
   const originalLog = console.log;
-  console.log = (msg: string) => { logs.push(String(msg)); };
+  console.log = (msg: string) => {
+    logs.push(String(msg));
+  };
   try {
-    const res = await handleVapiEventRequest(post(
-      {
-        message: {
-          type: "end-of-call-report",
-          call: { id: "call_abc", customer: { number: "+14697472877" } },
-          transcript: "SECRET TRANSCRIPT CONTENT",
-          summary: "SECRET SUMMARY",
+    const res = await handleVapiEventRequest(
+      post(
+        {
+          message: {
+            type: "end-of-call-report",
+            call: { id: "call_abc", customer: { number: "+14697472877" } },
+            transcript: "SECRET TRANSCRIPT CONTENT",
+            summary: "SECRET SUMMARY",
+          },
         },
-      },
-      { "x-vapi-secret": SECRET, "authorization": "Bearer SECRET-BEARER-TOKEN" },
-    ), { runHangupFollowup: () => Promise.resolve({ status: "missing_phone" }) });
+        {
+          "x-vapi-secret": SECRET,
+          "authorization": "Bearer SECRET-BEARER-TOKEN",
+        },
+      ),
+      { runHangupFollowup: () => Promise.resolve({ status: "missing_phone" }) },
+    );
     assertEquals(res.status, 200);
     await res.text();
   } finally {
