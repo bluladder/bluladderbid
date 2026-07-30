@@ -224,6 +224,41 @@ export interface HangupFollowupInput {
 }
 
 /**
+ * Bounded single-row lookup of the canonical internal turn journal.
+ * Returns true when at least one non-empty caller turn was persisted for the
+ * conversation, false when none exists, "unreadable" on any read failure
+ * (which the caller treats as a skip — never a send).
+ */
+export async function readJournalUserTurn(
+  supabase: SB,
+  conversationId: string,
+): Promise<boolean | "unreadable"> {
+  try {
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .select("id, content")
+      .eq("conversation_id", conversationId)
+      .eq("role", "user")
+      .limit(1);
+    if (error) return "unreadable";
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    return rows.some((r: any) =>
+      typeof r?.content === "string" && r.content.trim().length > 0
+    );
+  } catch (_e) {
+    return "unreadable";
+  }
+}
+
+interface _UnusedHangupFollowupInput {
+  supabase: SB;
+  body: unknown;
+  eventType: string | null;
+  /** Injected in tests. Defaults to the durable outbox. */
+  deliver?: typeof sendOutboxSms;
+}
+
+/**
  * Authoritative entry point, called by voice-vapi-events for the final
  * call-ended event only. Always resolves — never throws into the webhook.
  */
