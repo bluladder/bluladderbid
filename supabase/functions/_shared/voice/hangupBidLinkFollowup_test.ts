@@ -1,4 +1,7 @@
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildBidLinkMessage,
   buildBidLinkOutboundKey,
@@ -22,7 +25,9 @@ function endOfCallBody(opts: {
       type: "end-of-call-report",
       endedReason: opts.endedReason ?? "customer-ended-call",
       call: { id: CALL_ID },
-      customer: opts.number === null ? {} : { number: opts.number ?? "+14692150144" },
+      customer: opts.number === null
+        ? {}
+        : { number: opts.number ?? "+14692150144" },
       artifact: {
         messages: [
           { role: "user", message: opts.transcript ?? "how much for windows" },
@@ -51,19 +56,46 @@ function stubSupabase(opts: {
     touched.push(table);
     const chain: Record<string, unknown> = {};
     const self = () => chain;
-    for (const m of ["select", "eq", "or", "order", "limit", "is", "update", "gte", "in"]) {
+    for (
+      const m of [
+        "select",
+        "eq",
+        "or",
+        "order",
+        "limit",
+        "is",
+        "update",
+        "gte",
+        "in",
+      ]
+    ) {
       (chain as any)[m] = self;
     }
     (chain as any).maybeSingle = () => {
-      if (table === "chat_conversations") return Promise.resolve({ data: conversationRow, error: null });
+      if (table === "chat_conversations") {
+        return Promise.resolve({ data: conversationRow, error: null });
+      }
       if (table === "system_test_config") {
-        return Promise.resolve({ data: { id: "default", suppress_all: !!opts.suppressAll, suppress_reason: "off" }, error: null });
+        return Promise.resolve({
+          data: {
+            id: "default",
+            suppress_all: !!opts.suppressAll,
+            suppress_reason: "off",
+          },
+          error: null,
+        });
       }
       if (table === "sms_opt_outs") {
-        return Promise.resolve({ data: { opted_out: !!opts.optedOut }, error: null });
+        return Promise.resolve({
+          data: { opted_out: !!opts.optedOut },
+          error: null,
+        });
       }
       if (table === "customers") {
-        return Promise.resolve({ data: { sms_paused: !!opts.smsPaused, email_paused: false }, error: null });
+        return Promise.resolve({
+          data: { sms_paused: !!opts.smsPaused, email_paused: false },
+          error: null,
+        });
       }
       return Promise.resolve({ data: null, error: null });
     };
@@ -71,7 +103,10 @@ function stubSupabase(opts: {
     // test_identities uses .limit() as the terminal await
     if (table === "test_identities") {
       (chain as any).limit = () =>
-        Promise.resolve({ data: opts.testIdentity ? [{ id: "t1" }] : [], error: null });
+        Promise.resolve({
+          data: opts.testIdentity ? [{ id: "t1" }] : [],
+          error: null,
+        });
     }
     return chain;
   };
@@ -141,7 +176,10 @@ Deno.test("eligible final hangup sends the exact canonical online-bid link", asy
   assertEquals(res.status, "sent");
   assertEquals(deliver.calls.length, 1);
   assertEquals(deliver.calls[0].toNumber, "+14692150144");
-  assertEquals(deliver.calls[0].body, buildBidLinkMessage(canonicalOnlineBidUrl()));
+  assertEquals(
+    deliver.calls[0].body,
+    buildBidLinkMessage(canonicalOnlineBidUrl()),
+  );
   assert(deliver.calls[0].body.includes(canonicalOnlineBidUrl()));
   assertEquals(
     deliver.calls[0].outboundKey,
@@ -194,7 +232,9 @@ Deno.test("completed booking skips the follow-up", async () => {
 Deno.test("explicit 'don't text me' cancellation skips the follow-up", async () => {
   const deliver = recordingDeliver();
   const res = await runVoiceHangupBidLinkFollowup({
-    supabase: stubSupabase({ facts: { quoteByText: { lastReason: "cancelled" } } }),
+    supabase: stubSupabase({
+      facts: { quoteByText: { lastReason: "cancelled" } },
+    }),
     body: endOfCallBody(),
     eventType: "end-of-call-report",
     deliver: deliver.fn,

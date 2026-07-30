@@ -78,7 +78,9 @@ export function buildBidLinkOutboundKey(
   callId: string,
   phoneE164: string,
 ): string {
-  return `voice_call_bid_link:${callId}:${phoneE164.replace(/\D/g, "").slice(-10)}`;
+  return `voice_call_bid_link:${callId}:${
+    phoneE164.replace(/\D/g, "").slice(-10)
+  }`;
 }
 
 export interface CallEndContext {
@@ -107,23 +109,34 @@ const NON_CONVERSATION_ENDED_REASONS = [
 ];
 
 export function extractCallEndContext(body: unknown): CallEndContext {
-  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const msg = (b.message && typeof b.message === "object" ? b.message : {}) as Record<string, unknown>;
-  const call = ((msg.call ?? b.call) && typeof (msg.call ?? b.call) === "object"
-    ? (msg.call ?? b.call)
-    : {}) as Record<string, unknown>;
+  const b = (body && typeof body === "object" ? body : {}) as Record<
+    string,
+    unknown
+  >;
+  const msg =
+    (b.message && typeof b.message === "object" ? b.message : {}) as Record<
+      string,
+      unknown
+    >;
+  const call =
+    ((msg.call ?? b.call) && typeof (msg.call ?? b.call) === "object"
+      ? (msg.call ?? b.call)
+      : {}) as Record<string, unknown>;
   const customer = ((msg.customer ?? call.customer ?? b.customer) &&
       typeof (msg.customer ?? call.customer ?? b.customer) === "object"
     ? (msg.customer ?? call.customer ?? b.customer)
     : {}) as Record<string, unknown>;
-  const artifact = ((msg.artifact) && typeof msg.artifact === "object"
-    ? msg.artifact
-    : {}) as Record<string, unknown>;
+  const artifact =
+    ((msg.artifact) && typeof msg.artifact === "object"
+      ? msg.artifact
+      : {}) as Record<string, unknown>;
 
   const callId = str(call.id) ?? str(msg.callId) ?? str(b.callId);
   const callerNumber = str(customer.number) ?? str(customer.phoneNumber) ??
     str(call.from) ?? str(call.fromNumber);
-  const endedReason = (str(msg.endedReason) ?? str(call.endedReason) ?? "")?.toLowerCase() || null;
+  const endedReason =
+    (str(msg.endedReason) ?? str(call.endedReason) ?? "")?.toLowerCase() ||
+    null;
 
   const transcript = str(msg.transcript) ?? str(artifact.transcript);
   const messages = Array.isArray(artifact.messages)
@@ -142,7 +155,8 @@ export function extractCallEndContext(body: unknown): CallEndContext {
 
   const systemTest = call.type === "webCall" && msg.isTest === true ||
     msg.isTest === true || b.isTest === true ||
-    (!!endedReason && NON_CONVERSATION_ENDED_REASONS.some((r) => endedReason.includes(r)));
+    (!!endedReason &&
+      NON_CONVERSATION_ENDED_REASONS.some((r) => endedReason.includes(r)));
 
   return {
     callId,
@@ -171,14 +185,22 @@ export function evaluateHangupFollowupEligibility(args: {
     return { eligible: false, status: "missing_phone" };
   }
   if (args.systemTest) {
-    return { eligible: false, status: "no_customer_interaction", detail: "system_or_test_call" };
+    return {
+      eligible: false,
+      status: "no_customer_interaction",
+      detail: "system_or_test_call",
+    };
   }
   if (!args.hadCustomerUtterance) {
     return { eligible: false, status: "no_customer_interaction" };
   }
   const facts = args.facts;
   if (!facts) {
-    return { eligible: false, status: "no_customer_interaction", detail: "no_conversation" };
+    return {
+      eligible: false,
+      status: "no_customer_interaction",
+      detail: "no_conversation",
+    };
   }
   if (facts.bookingStatus === "confirmed") {
     return { eligible: false, status: "already_booked" };
@@ -237,7 +259,10 @@ export async function runVoiceHangupBidLinkFollowup(
       }
     } catch (_e) {
       // Unreadable conversation state → fail closed, send nothing.
-      return { status: "no_customer_interaction", detail: "conversation_unreadable" };
+      return {
+        status: "no_customer_interaction",
+        detail: "conversation_unreadable",
+      };
     }
   }
 
@@ -259,11 +284,17 @@ export async function runVoiceHangupBidLinkFollowup(
   }
   const optOut = await checkPhoneOptOut(supabase, phone);
   if (optOut.optedOut) {
-    return { status: "opted_out", detail: optOut.readable ? null : "optout_unreadable" };
+    return {
+      status: "opted_out",
+      detail: optOut.readable ? null : "optout_unreadable",
+    };
   }
   const pause = await getCustomerPause(supabase, { phone });
   if (pause.sms_paused) {
-    return { status: "paused", detail: pause.readable ? null : "pause_unreadable" };
+    return {
+      status: "paused",
+      detail: pause.readable ? null : "pause_unreadable",
+    };
   }
 
   const outboundKey = buildBidLinkOutboundKey(ctx.callId as string, phone);
