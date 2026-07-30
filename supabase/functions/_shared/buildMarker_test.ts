@@ -26,6 +26,11 @@ Deno.test("BUILD_FEATURES exposes Phase 4C-β.4B stable-session + workflow-contr
   assertEquals(BUILD_FEATURES.useWorkflowController, "gated");
 });
 
+Deno.test("BUILD_FEATURES exposes the post-hangup bid-link follow-up flag", () => {
+  assertEquals(BUILD_FEATURES.voiceHangupBidLinkFollowup, true);
+  assert(BUILD_ID.includes("6.5"));
+});
+
 Deno.test("buildNonStreamingResponse: buildId is in bluladder diagnostics", async () => {
   const completion: AdapterCompletion = {
     content: "Your rough exterior window quote is ready.",
