@@ -101,15 +101,15 @@
       "scope": "hosted_environment",
       "severity": "P0",
       "status": "BLOCKED_PROTECTED_ACTION",
-      "evidence": ["docs/releases/stage-7b-corrected/README.md", "docs/releases/stage-7b-corrected/direct-execution-runbook.md", "scripts/validate-stage-7b-evidence.mjs"],
-      "reason": "Corrected Stage 7B has an atomic private provenance design and exact direct-execution package, but hosted execution remains a separately authorized protected action."
+      "evidence": ["docs/releases/stage-7b-corrected/README.md", "docs/releases/stage-7b-corrected/lovable-cloud-control-plane.md", "scripts/validate-stage-7b-evidence.mjs"],
+      "reason": "Corrected Stage 7B has an atomic private provenance design, but production is Lovable Cloud and the current artifact requires unsupported psql client bindings. A Lovable-supported exact-artifact, transaction, history, and evidence mechanism is not yet established."
     },
     {
       "id": "rollback-runbook",
       "scope": "repository",
       "severity": "P0",
       "status": "PASS",
-      "evidence": ["docs/releases/stage-7b-corrected/direct-execution-runbook.md", "docs/operations/tenant-stage-7d-cron-window-rehearsal.md", "docs/launch/hosted-launch-runbook.md"]
+      "evidence": ["docs/releases/stage-7b-corrected/lovable-cloud-control-plane.md", "docs/operations/tenant-stage-7d-cron-window-rehearsal.md", "docs/launch/hosted-launch-runbook.md"]
     },
     {
       "id": "provider-configuration",
