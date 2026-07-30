@@ -25,6 +25,28 @@ const [source, correction, provenance, artifact, preflight, mcpPreflightText, po
   ]);
 const mcpPreflight = JSON.parse(mcpPreflightText);
 
+if (
+  manifest.environment.hosted_ledger_count !== 145 ||
+  manifest.environment.hosted_ledger_tip !== '20260726194719' ||
+  manifest.environment.hosted_ledger_fingerprint !==
+    '73ed8522db78e51049a421e1f72b18c3'
+) {
+  fail('historical pre-execution ledger evidence changed');
+}
+if (
+  manifest.post_execution_ledger?.count !== 146 ||
+  manifest.post_execution_ledger?.tip !== '20260730072508' ||
+  manifest.post_execution_ledger?.version_name_fingerprint !==
+    '3d447d837baa2a593f45fd111fc2ac04' ||
+  manifest.post_execution_ledger?.new_row_count !== 1 ||
+  manifest.post_execution_ledger?.new_row_statement_count !== 1 ||
+  manifest.post_execution_ledger?.stored_statement_bytes !== 24333 ||
+  manifest.post_execution_ledger?.stored_statement_md5 !==
+    'e2044ddcc7b42d37c77a8db4965b4b6d'
+) {
+  fail('post-execution Lovable ledger evidence changed');
+}
+
 for (const [name, value, expected] of [
   ['source', source, manifest.source],
   ['correction', correction, manifest.correction],
@@ -92,6 +114,15 @@ for (const [name, sql, expected] of [
     )
   ) {
     fail(`${name} contains a mutation token`);
+  }
+}
+for (const required of [
+  'count(*) = 146',
+  "max(version) = '20260730072508'",
+  '3d447d837baa2a593f45fd111fc2ac04',
+]) {
+  if (!postflight.includes(required)) {
+    fail(`postflight missing post-execution ledger baseline ${required}`);
   }
 }
 if (sha256(mcpPreflightText) !== manifest.preflight.mcp_sha256) {
