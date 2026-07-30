@@ -68,7 +68,7 @@ export function parseSpokenEmail(text: string | null | undefined): string | null
   // Two separate spoken addresses in one turn are ambiguous: re-ask instead of
   // stitching them into one nonsense address.
   const ambiguous = (spoken.match(/@/g) ?? []).length > 1 &&
-    /@[^@]*\s\.\s[a-z]+\s/.test(spoken);
+    /\s(?:or|and)\s/.test(spoken);
   if (lastAt > 0 && !ambiguous) {
     const localTokens = spoken.slice(0, lastAt).trim().split(/\s+/).filter((
       tok,
