@@ -20,6 +20,8 @@ function endOfCallBody(opts: {
   number?: string | null;
   transcript?: string;
   endedReason?: string;
+  /** Omit provider artifact/transcript evidence entirely (manifest default). */
+  noArtifact?: boolean;
 } = {}) {
   return {
     message: {
@@ -29,7 +31,7 @@ function endOfCallBody(opts: {
       customer: opts.number === null
         ? {}
         : { number: opts.number ?? "+14692150144" },
-      artifact: {
+      artifact: opts.noArtifact ? {} : {
         messages: [
           { role: "user", message: opts.transcript ?? "how much for windows" },
         ],
@@ -46,8 +48,12 @@ function stubSupabase(opts: {
   testIdentity?: boolean;
   optedOut?: boolean;
   smsPaused?: boolean;
+  /** Persisted internal caller turns for the resolved conversation. */
+  journalUserRows?: Array<{ id: string; content: string }>;
+  journalError?: boolean;
 } = {}) {
   const touched: string[] = [];
+  const journalQueries: Array<Record<string, unknown>> = [];
   const conversationRow = opts.facts === null ? null : {
     id: "conv-1",
     facts: opts.facts ?? {},
@@ -109,10 +115,32 @@ function stubSupabase(opts: {
           error: null,
         });
     }
+    // chat_messages: assert the exact bounded query shape, then resolve.
+    if (table === "chat_messages") {
+      const q: Record<string, unknown> = { eq: {} as Record<string, unknown> };
+      journalQueries.push(q);
+      (chain as any).select = (cols: string) => {
+        q.select = cols;
+        return chain;
+      };
+      (chain as any).eq = (col: string, val: unknown) => {
+        (q.eq as Record<string, unknown>)[col] = val;
+        return chain;
+      };
+      (chain as any).limit = (n: number) => {
+        q.limit = n;
+        return Promise.resolve(
+          opts.journalError
+            ? { data: null, error: { message: "read failed" } }
+            : { data: opts.journalUserRows ?? [], error: null },
+        );
+      };
+    }
     return chain;
   };
   return {
     touched,
+    journalQueries,
     from: (t: string) => builder(t),
     rpc: (name: string) => {
       touched.push(`rpc:${name}`);
