@@ -132,6 +132,9 @@ export async function sendOutboxSms(
       p_to_number: input.toNumber,
       p_body: input.body,
       p_message_kind: input.messageKind,
+      // PostgREST function resolution requires the complete exposed signature,
+      // even though Postgres itself declares this argument with a default.
+      p_stale_claim_seconds: 120,
     });
     claimData = base.data;
     claimErr = base.error;

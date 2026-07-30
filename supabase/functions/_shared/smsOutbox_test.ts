@@ -23,11 +23,21 @@ function makeSupabase(opts: {
   existing?: any | null;
   claimBehavior?: "new" | "replay" | "in_progress" | "escalated";
   rpcLog?: any[];
+  missingQuoteClaim?: boolean;
 }) {
   const rpcLog = opts.rpcLog ?? [];
   return {
     async rpc(name: string, args: any) {
       rpcLog.push({ name, args });
+      if (name === "claim_quote_sms_delivery" && opts.missingQuoteClaim) {
+        return {
+          data: null,
+          error: {
+            code: "PGRST202",
+            message: "Could not find the function public.claim_quote_sms_delivery",
+          },
+        };
+      }
       if (name === "claim_sms_outbox_send") {
         switch (opts.claimBehavior ?? "new") {
           case "new":
@@ -216,6 +226,26 @@ Deno.test("outbox: missing provider config is durably finalized", async () => {
   } finally {
     if (priorKey) Deno.env.set("CALLRAIL_API_KEY", priorKey);
   }
+});
+
+Deno.test("outbox: quote claim fallback supplies the complete base RPC signature", async () => {
+  const rpcLog: any[] = [];
+  fetchMode = "ok";
+  const r = await sendOutboxSms(
+    makeSupabase({ missingQuoteClaim: true, rpcLog }),
+    {
+      outboundKey: "quote_delivery:sms:q1:15551234567",
+      toNumber: "+15551234567",
+      body: "Your bid is ready",
+      messageKind: "transactional",
+      quoteId: "q1",
+      callRail,
+    },
+  );
+
+  assertEquals(r.sent, true);
+  const fallback = rpcLog.find((x) => x.name === "claim_sms_outbox_send");
+  assertEquals(fallback?.args?.p_stale_claim_seconds, 120);
 });
 
 Deno.test("outbox: network failure finalizes to delivery_unknown (no re-send)", async () => {
