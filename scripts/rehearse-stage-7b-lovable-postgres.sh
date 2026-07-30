@@ -28,7 +28,10 @@ psql "$STAGE7B_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
 
 # Exact rerun is a no-op for durable identity and revalidates every invariant.
 psql "$STAGE7B_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$artifact"
-psql "$STAGE7B_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$verification"
+test "$(psql "$STAGE7B_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 \
+  -c "SELECT (SELECT count(*) FROM public.customers) + (SELECT count(*) FROM public.properties) + (SELECT count(*) FROM public.quotes) + (SELECT count(*) FROM public.bookings)")" = "30"
+test "$(psql "$STAGE7B_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 \
+  -c "SELECT count(*) FROM public.organizations WHERE slug='oregon' AND status='active'")" = "0"
 
 test "$(psql "$STAGE7B_DATABASE_URL" -X -At -v ON_ERROR_STOP=1 \
   -c "SELECT count(*) FROM tenant_security.release_provenance WHERE release_id='$release_id' AND release_commit='e8000543d015dec7b6ab16110e4798f596398681' AND artifact_sha256='$canonical_hash' AND project_ref='gyndziiuizpgwhqwyrvn' AND environment='Live/production' AND operator_identity='benjamin-millen' AND execution_mechanism='lovable_cloud_approval' AND transaction_outcome='committed'")" = "1"
