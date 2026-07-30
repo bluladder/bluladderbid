@@ -10,6 +10,7 @@
 
 import type { ConversationFacts } from "./conversationState.ts";
 import { quoteInputsKey } from "./conversationState.ts";
+import { normalizeUsCaE164, resolvePhone } from "./contactIntegrity.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -71,7 +72,7 @@ export interface QuoteSessionFields {
     | "awaiting_ben_review";
   // ---- Workflow controller rollout state (Phase 4C-β.6) ----
   // Persisted opaquely on quote_sessions.fields. Never exposed to the caller.
-  callerIdConfirmationStatus?: "pending" | "confirmed" | "declined";
+  callerIdConfirmationStatus?: "pending" | "confirmed" | "contact_confirmed" | "declined";
   callerIdProposedE164?: string;
   returningCustomerId?: string;
   returningCustomerResolved?: boolean;
@@ -105,12 +106,30 @@ export function mergeFields(
 ): QuoteSession {
   const nextFields: QuoteSessionFields = { ...prev.fields };
   const nextStatus = { ...prev.fieldStatus };
+  const phoneIsConfirmed = prev.fieldStatus.phone === "verified"
+    || prev.fields.callerIdConfirmationStatus === "confirmed"
+    || prev.fields.callerIdConfirmationStatus === "contact_confirmed";
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;
     const key = k as keyof QuoteSessionFields;
     const prevVal = (prev.fields as Record<string, unknown>)[key];
     const isEmpty = v === null || v === "" || (Array.isArray(v) && v.length === 0);
     if (isEmpty) continue;
+    // Contact integrity: a phone patch must be a valid full NANP E.164, and a
+    // confirmed caller ID can never be overwritten by a lower-provenance
+    // extraction (regression guard for the "+0144" corruption).
+    if (key === "phone") {
+      const resolved = resolvePhone({
+        existing: prev.fields.phone,
+        existingConfirmed: phoneIsConfirmed,
+        candidate: typeof v === "string" ? v : null,
+        candidateConfirmed: (opts.markVerified ?? []).includes("phone"),
+      });
+      if (!resolved || resolved === prev.fields.phone) continue;
+      nextFields.phone = resolved;
+      nextStatus.phone = prev.fields.phone ? "corrected" : "captured";
+      continue;
+    }
     (nextFields as Record<string, unknown>)[key] = v;
     const wasCaptured = nextStatus[key] === "captured" || nextStatus[key] === "verified";
     const changed = prevVal !== undefined && JSON.stringify(prevVal) !== JSON.stringify(v);
@@ -191,7 +210,13 @@ export function computeRequired(fields: QuoteSessionFields): string[] {
     return missing;
   }
   // Partial-window requests need only per-window inputs, never sqft.
-  if (fields.windowCleaningScope === "partial") {
+  // P2.12 guard: when the caller was actually priced on the whole-home sqft
+  // engine (square footage + window type captured), partial-window inputs are
+  // not genuinely required and must not linger in required_remaining while a
+  // firm quote exists.
+  const wholeHomePriced = fields.squareFootage != null
+    && !!(fields.windowCleaningType || fields.windowCleaningSides);
+  if (fields.windowCleaningScope === "partial" && !wholeHomePriced) {
     if (fields.windowCount == null) missing.push("windowCount");
     if (!fields.windowCleaningSides) missing.push("windowCleaningSides");
     return missing;
@@ -328,12 +353,10 @@ export function normalizeEmail(email?: string | null): string | null {
   return email.trim().toLowerCase() || null;
 }
 export function normalizePhone(phone?: string | null): string | null {
-  if (!phone) return null;
-  const digits = phone.replace(/\D/g, "");
-  if (!digits) return null;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (digits.length === 10) return `+1${digits}`;
-  return `+${digits}`;
+  // Strict: only valid US/Canada E.164 candidates are accepted. Short values
+  // such as "0144" (last four digits echoed back from a confirmation prompt)
+  // are rejected instead of being fabricated into "+0144".
+  return normalizeUsCaE164(phone);
 }
 
 /** Find an existing session for this conversation, or a matching one across

@@ -14,6 +14,9 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   runOrchestrator,
+} from "./aiOrchestrator.ts";
+import { recordVoiceTurns } from "./voice/turnJournal.ts";
+import {
   streamKnowledgeReply,
   buildVoiceSystemPrompt,
   type OrchestratorResult,
@@ -436,6 +439,17 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
   const cleanResult: OrchestratorResult = orchestrator
     ? { ...orchestrator, reply: stripVoiceControlTags(orchestrator.reply || "") }
     : { reply: cleanContent, toolEvents: [], events: [], state: "new", voice: null };
+  // Minimal sanitized turn journal so future incidents are reconstructable
+  // from our own data. Best-effort; never blocks or fails the call.
+  await recordVoiceTurns(supabase, {
+    conversationId,
+    callId: request.sessionId,
+    state: cleanResult.state ?? null,
+    turns: [
+      { role: "user", content: userMessage },
+      { role: "assistant", content: cleanContent },
+    ],
+  });
   return { content: cleanContent, action, orchestrator: cleanResult, route, ackEmitted };
 }
 
@@ -544,6 +558,15 @@ export async function runVoiceAdapter(args: {
       userMessage,
     });
     const action = mapDispositionToAction(orchestrator.voice);
+    await recordVoiceTurns(supabase, {
+      conversationId,
+      callId: request.sessionId,
+      state: orchestrator.state ?? null,
+      turns: [
+        { role: "user", content: userMessage },
+        { role: "assistant", content: orchestrator.reply || "" },
+      ],
+    });
     return { content: orchestrator.reply, action, orchestrator };
   } catch (_err) {
     // Fail closed. The transport layer will surface a safe_failure to the
