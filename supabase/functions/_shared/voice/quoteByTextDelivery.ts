@@ -117,13 +117,15 @@ async function readSessionContext(
  *   2. `quote_sessions.email_normalized` for the canonical session,
  *   3. `chat_conversations.confirmed_email` then `prospect_email`,
  *   4. the exact linked customer row (`customers.id = customer_id`).
+ *   5. exactly ONE distinct on-file email for the EXACT confirmed E.164 phone.
  *
  * There is deliberately NO phone-based search. Production contains multiple
  * customer rows sharing a phone number with DIFFERENT emails, and a fuzzy
  * `ilike '%digits%'` match could also hit an unrelated longer number — either
  * way a real quote and its resume link would be attached to the wrong person.
- * When nothing above resolves we return null and the rail truthfully tells the
- * caller nothing was sent.
+ * Step 5 is therefore an EXACT equality match on the confirmed E.164 value and
+ * fails closed the moment two distinct emails share that number. When nothing
+ * above resolves we return null and the rail asks the caller for an email.
  */
 export async function resolveQuoteRecipientEmail(
   supabase: SB,
@@ -157,14 +159,38 @@ export async function resolveQuoteRecipientEmail(
     }
   } catch { /* fall through to the linked customer */ }
 
-  if (!customerId) return null;
+  if (customerId) {
+    try {
+      const { data } = await supabase
+        .from("customers")
+        .select("email")
+        .eq("id", customerId)
+        .maybeSingle();
+      const linked = normalizeEmail(data?.email ?? null);
+      if (linked) return linked;
+    } catch { /* fall through to the exact-phone lookup */ }
+  }
+
+  // Exact confirmed-phone match only. Ambiguity (two distinct emails on the
+  // same number) resolves to null so we never text one person's quote link to
+  // another person's account.
+  const phoneE164 = facts.contact?.phoneConfirmed === true
+    ? normalizePhone(facts.contact?.phone ?? null)
+    : null;
+  if (!phoneE164) return null;
   try {
     const { data } = await supabase
       .from("customers")
       .select("email")
-      .eq("id", customerId)
-      .maybeSingle();
-    return normalizeEmail(data?.email ?? null);
+      .eq("phone", phoneE164)
+      .limit(25);
+    const distinct = new Set(
+      (Array.isArray(data) ? data : [])
+        .map((row: any) => normalizeEmail(row?.email ?? null))
+        .filter((e: string | null): e is string => !!e),
+    );
+    if (distinct.size !== 1) return null;
+    return [...distinct][0];
   } catch {
     return null;
   }
