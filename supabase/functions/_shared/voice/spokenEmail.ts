@@ -22,10 +22,10 @@ const SPOKEN_TLD_WORDS: Record<string, string> = {
 
 /** Words that are never part of a spoken local part. */
 const FILLER = new Set([
-  "my", "me", "mine", "the", "a", "an", "is", "its", "it", "thats", "that",
+  "my", "me", "mine", "the", "is", "its", "it", "thats", "that",
   "this", "email", "e-mail", "mail", "address", "use", "using", "send", "sent",
   "to", "you", "can", "sure", "yeah", "yes", "ok", "okay", "so", "and", "well",
-  "please", "im", "i", "am", "at",
+  "please", "im", "am", "at",
 ]);
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
@@ -65,7 +65,11 @@ export function parseSpokenEmail(text: string | null | undefined): string | null
   //    sprinkles inside the local part and the domain labels.
   const spoken = despeak(raw).replace(/['\u2019]/g, "");
   const lastAt = spoken.lastIndexOf("@");
-  if (lastAt > 0) {
+  // Two separate spoken addresses in one turn are ambiguous: re-ask instead of
+  // stitching them into one nonsense address.
+  const ambiguous = (spoken.match(/@/g) ?? []).length > 1 &&
+    /@[^@]*\s\.\s[a-z]+\s/.test(spoken);
+  if (lastAt > 0 && !ambiguous) {
     const localTokens = spoken.slice(0, lastAt).trim().split(/\s+/).filter((
       tok,
     ) => tok && !FILLER.has(tok));
