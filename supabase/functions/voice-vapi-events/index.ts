@@ -153,10 +153,15 @@ export async function handleVapiEventRequest(
     try {
       const url = Deno.env.get("SUPABASE_URL");
       const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-      if (!url || !key) {
+      const run = deps.runHangupFollowup;
+      if (run) {
+        followup = await run({ supabase: null, body, eventType });
+      } else if (!url || !key) {
         followup = { status: "failed", detail: "backend_not_configured" };
       } else {
-        const supabase = createClient(url, key);
+        const supabase = createClient(url, key, {
+          auth: { persistSession: false, autoRefreshToken: false },
+        });
         followup = await runVoiceHangupBidLinkFollowup({
           supabase,
           body,
