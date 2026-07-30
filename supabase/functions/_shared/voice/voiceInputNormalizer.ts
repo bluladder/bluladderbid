@@ -21,6 +21,7 @@ import {
   parseSquareFootage,
   parseStories,
 } from "../aiOrchestrator.ts";
+import { normalizeSpokenAddress } from "./spokenAddress.ts";
 
 export type VoiceTurn = { role: "user" | "assistant"; content: string };
 
@@ -75,6 +76,14 @@ export function normalizeVoiceInput(
   const sides = normalizeWindowSideShorthand(raw);
   let text = sides.text;
   if (sides.applied) applied.push("window_sides");
+
+  // Spoken address normalization runs FIRST: a digit-by-digit house number or
+  // an explicit letter-by-letter street spelling must never be re-read as a
+  // square-footage or story answer.
+  const address = normalizeSpokenAddress(text, lastAssistant);
+  if (address.applied.length) {
+    return { text: address.text, applied: [...applied, ...address.applied] };
+  }
 
   // Address-shaped answers are left completely alone.
   if (looksLikeAddress(text)) return { text, applied };
