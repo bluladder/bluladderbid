@@ -132,8 +132,8 @@
       "scope": "manual_acceptance",
       "severity": "P1",
       "status": "NOT_IMPLEMENTED",
-      "evidence": ["docs/protected-live-test-runbook.md"],
-      "reason": "No single launch acceptance script yet covers landing, booking, bid response, communications, voice, and operator evidence."
+      "evidence": ["docs/launch/manual-customer-journey-acceptance.md", "docs/voice/real-call-acceptance.md"],
+      "reason": "The consolidated acceptance pack is repository-complete, but its hosted synthetic journey and real-call phases have not been separately authorized or executed."
     },
     {
       "id": "actual-production-verification",
