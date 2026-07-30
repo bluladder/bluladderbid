@@ -238,6 +238,7 @@ export async function runVoiceHangupBidLinkFollowup(
   const phoneE164 = normalizePhoneE164(ctx.callerNumber);
 
   let facts: ConversationFacts | null = null;
+  let conversationId: string | null = null;
   if (ctx.callId) {
     try {
       const { data } = await supabase
@@ -249,6 +250,7 @@ export async function runVoiceHangupBidLinkFollowup(
         .limit(1)
         .maybeSingle();
       if (data) {
+        conversationId = typeof data.id === "string" ? data.id : null;
         const stored = (data.facts && typeof data.facts === "object")
           ? data.facts as ConversationFacts
           : {} as ConversationFacts;
@@ -266,9 +268,25 @@ export async function runVoiceHangupBidLinkFollowup(
     }
   }
 
+  // The version-controlled Vapi manifest suppresses transcript/message
+  // artifacts, so the provider payload alone can under-report a real
+  // conversation. Our own adapter journals every caller turn to canonical
+  // `chat_messages`; consult exactly one row as a second proof source.
+  let hadCustomerUtterance = ctx.hadCustomerUtterance;
+  if (!hadCustomerUtterance && conversationId) {
+    const journal = await readJournalUserTurn(supabase, conversationId);
+    if (journal === "unreadable") {
+      return {
+        status: "no_customer_interaction",
+        detail: "journal_unreadable",
+      };
+    }
+    hadCustomerUtterance = journal;
+  }
+
   const eligibility = evaluateHangupFollowupEligibility({
     phoneE164,
-    hadCustomerUtterance: ctx.hadCustomerUtterance,
+    hadCustomerUtterance,
     systemTest: ctx.systemTest,
     facts,
   });
