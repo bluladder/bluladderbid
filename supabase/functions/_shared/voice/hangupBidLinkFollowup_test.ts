@@ -351,6 +351,105 @@ Deno.test("no direct provider call exists in the new path", async () => {
   assert(src.includes("sendOutboxSms"));
 });
 
+Deno.test("suppressed transcript artifact + persisted internal caller turn is eligible", async () => {
+  const sb = stubSupabase({
+    facts: {},
+    journalUserRows: [{ id: "m1", content: "how much for windows" }],
+  });
+  const deliver = recordingDeliver();
+  const res = await runVoiceHangupBidLinkFollowup({
+    supabase: sb,
+    body: endOfCallBody({ noArtifact: true }),
+    eventType: "end-of-call-report",
+    deliver: deliver.fn,
+  });
+  assertEquals(res.status, "sent");
+  assertEquals(deliver.calls.length, 1);
+  // Exact bounded query shape is exercised, not bypassed.
+  assertEquals(sb.journalQueries.length, 1);
+  assertEquals(sb.journalQueries[0].select, "id, content");
+  assertEquals(sb.journalQueries[0].limit, 1);
+  assertEquals((sb.journalQueries[0].eq as any).conversation_id, "conv-1");
+  assertEquals((sb.journalQueries[0].eq as any).role, "user");
+});
+
+Deno.test("suppressed artifact + empty internal journal skips", async () => {
+  const sb = stubSupabase({ facts: {}, journalUserRows: [] });
+  const deliver = recordingDeliver();
+  const res = await runVoiceHangupBidLinkFollowup({
+    supabase: sb,
+    body: endOfCallBody({ noArtifact: true }),
+    eventType: "end-of-call-report",
+    deliver: deliver.fn,
+  });
+  assertEquals(res.status, "no_customer_interaction");
+  assertEquals(deliver.calls.length, 0);
+  // Whitespace-only journal rows are not proof either.
+  const blank = stubSupabase({
+    facts: {},
+    journalUserRows: [{ id: "m1", content: "   " }],
+  });
+  const res2 = await runVoiceHangupBidLinkFollowup({
+    supabase: blank,
+    body: endOfCallBody({ noArtifact: true }),
+    eventType: "end-of-call-report",
+    deliver: deliver.fn,
+  });
+  assertEquals(res2.status, "no_customer_interaction");
+  assertEquals(deliver.calls.length, 0);
+});
+
+Deno.test("chat_messages read error fails closed", async () => {
+  const sb = stubSupabase({ facts: {}, journalError: true });
+  const deliver = recordingDeliver();
+  const res = await runVoiceHangupBidLinkFollowup({
+    supabase: sb,
+    body: endOfCallBody({ noArtifact: true }),
+    eventType: "end-of-call-report",
+    deliver: deliver.fn,
+  });
+  assertEquals(res.status, "no_customer_interaction");
+  assertEquals(res.detail, "journal_unreadable");
+  assertEquals(deliver.calls.length, 0);
+});
+
+Deno.test("provider utterance evidence alone remains sufficient", async () => {
+  const sb = stubSupabase({ facts: {}, journalError: true });
+  const deliver = recordingDeliver();
+  const res = await runVoiceHangupBidLinkFollowup({
+    supabase: sb,
+    body: endOfCallBody(),
+    eventType: "end-of-call-report",
+    deliver: deliver.fn,
+  });
+  assertEquals(res.status, "sent");
+  assertEquals(deliver.calls.length, 1);
+  // Journal is not consulted when the provider already proved interaction.
+  assertEquals(sb.journalQueries.length, 0);
+});
+
+Deno.test("journal fallback never overrides completed booking / delivered / declined skips", async () => {
+  const cases: Array<[Record<string, unknown>, string]> = [
+    [{ bookingStatus: "confirmed" }, "already_booked"],
+    [{ quoteByText: { lastReason: "sent" } }, "already_delivered"],
+    [{ quoteByText: { lastReason: "cancelled" } }, "declined_texting"],
+  ];
+  for (const [facts, expected] of cases) {
+    const deliver = recordingDeliver();
+    const res = await runVoiceHangupBidLinkFollowup({
+      supabase: stubSupabase({
+        facts,
+        journalUserRows: [{ id: "m1", content: "hello" }],
+      }),
+      body: endOfCallBody({ noArtifact: true }),
+      eventType: "end-of-call-report",
+      deliver: deliver.fn,
+    });
+    assertEquals(res.status, expected);
+    assertEquals(deliver.calls.length, 0);
+  }
+});
+
 Deno.test("call-end context extraction reads provider shapes", () => {
   const ctx = extractCallEndContext(endOfCallBody());
   assertEquals(ctx.callId, CALL_ID);
