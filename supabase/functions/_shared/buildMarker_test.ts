@@ -34,8 +34,18 @@ Deno.test("BUILD_FEATURES exposes Phase 4C-β.4B stable-session + workflow-contr
 
 Deno.test("BUILD_FEATURES exposes the post-hangup bid-link follow-up flag", () => {
   assertEquals(BUILD_FEATURES.voiceHangupBidLinkFollowup, true);
-  assert(BUILD_ID.includes("6.6"));
-  assertEquals(BUILD_ID, "voice-adapter-4C-b.6.6-hangup-journal-fallback");
+});
+
+Deno.test("BUILD marker exposes the 6.7 voice remediation flags", () => {
+  assertEquals(BUILD_FEATURES.voiceSpokenAddressNormalization, true);
+  assertEquals(BUILD_FEATURES.voiceAddressConfirmationGate, true);
+  assertEquals(BUILD_FEATURES.voiceReplySafety, true);
+  assertEquals(BUILD_FEATURES.voiceExitIntentHandling, true);
+  assert(BUILD_ID.includes("6.7"));
+  assertEquals(
+    BUILD_ID,
+    "voice-adapter-4C-b.6.7-voice-address-and-reply-safety",
+  );
 });
 
 Deno.test("buildNonStreamingResponse: buildId is in bluladder diagnostics", async () => {
