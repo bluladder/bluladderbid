@@ -102,7 +102,13 @@ export interface ConversationFacts {
   // pending is true the caller asked for the quote in writing but a required
   // field (name/phone/address/email) was missing, so the rail must resume
   // automatically on the next turn without the caller repeating the request.
-  quoteByText?: { pending?: boolean; lastReason?: string | null };
+  quoteByText?: {
+    pending?: boolean;
+    lastReason?: string | null;
+    // The single field the caller was last asked for, so the next turn can be
+    // parsed as the answer to THAT question (e.g. a spoken email address).
+    missingField?: "phone" | "name" | "address" | "email" | null;
+  };
 }
 
 const MANUAL_REVIEW_STATES = ["manual_review_required"];
