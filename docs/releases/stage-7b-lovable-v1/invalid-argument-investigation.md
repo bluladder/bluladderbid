@@ -78,3 +78,19 @@ historical fingerprint `73ed8522db78e51049a421e1f72b18c3` with the historical
 recipe and `bd10491f2fcfe2579cd1bfbf9c9c534e` with the erroneous recipe. There
 were zero null names. The MCP query and transaction-form preflight now use the
 historical newline/coalesce recipe; the hosted baseline is unchanged.
+
+## Lovable migration-history behavior
+
+Lovable automatically recorded the executed migration as one
+`supabase_migrations.schema_migrations` row with version `20260730072508`.
+The row contains one stored statement with 24,333 bytes and MD5
+`e2044ddcc7b42d37c77a8db4965b4b6d`. That payload is byte-identical to the
+24,334-byte immutable release artifact except that Lovable removed its single
+terminal newline. The release ID, backend reference, and canonical artifact
+digest are present in the stored payload.
+
+The 145-row ledger count, prior tip `20260726194719`, and fingerprint
+`73ed8522db78e51049a421e1f72b18c3` remain the preserved pre-execution
+evidence. Postflight expects 146 rows, tip `20260730072508`, and fingerprint
+`3d447d837baa2a593f45fd111fc2ac04`, using the same historical
+newline/coalesce fingerprint recipe.
