@@ -295,7 +295,11 @@ Deno.test("live delivery stays behind the existing voice lane gate", async () =>
   assertEquals(/deliveryLane === "live"/.test(railEnd), true);
   assertEquals(/: null,/.test(railEnd), true);
   assertEquals(/quoteIsFirm: isQuoteFirm\(facts\)/.test(railEnd), true);
-  assertEquals(/parseSpokenEmail\(userMessage\)/.test(railEnd), true);
+  // The pending answer is consumed deterministically before any delivery retry.
+  assertEquals(
+    /resolveQuoteByTextContinuation\(\{/.test(railEnd),
+    true,
+  );
   assertEquals(/missingField: plan\.missingField/.test(railEnd), true);
 });
 

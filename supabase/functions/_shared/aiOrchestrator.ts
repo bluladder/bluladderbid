@@ -21,39 +21,46 @@ import {
 import { getPhoneByPurpose, RETIRED_PHONE_NUMBERS } from "./phoneConfig.ts";
 import { classifyInboundIntent } from "./bookingIntent.ts";
 import {
-  type ConversationFacts,
-  computeState,
   allowedToolsForState,
+  computeState,
+  type ConversationFacts,
+  isQuoteEstimatedOrFirm,
+  isQuoteFirm,
   isToolAllowed,
   mergeFacts,
   quoteInputsKey,
   stateDirective,
-  isQuoteEstimatedOrFirm,
-  isQuoteFirm,
 } from "./conversationState.ts";
 import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
 import { lookupServiceCity } from "./serviceArea.ts";
-import { findOrCreateForConversation as findOrCreateQuoteSession, syncFromFacts as syncQuoteSession } from "./quoteSession.ts";
+import {
+  findOrCreateForConversation as findOrCreateQuoteSession,
+  syncFromFacts as syncQuoteSession,
+} from "./quoteSession.ts";
 import { findByConversation as findQuoteSessionByConversation } from "./quoteSession.ts";
-import { mergeFields as mergeSessionFields, changeWindowScope, type QuoteSessionFields } from "./quoteSession.ts";
+import {
+  changeWindowScope,
+  mergeFields as mergeSessionFields,
+  type QuoteSessionFields,
+} from "./quoteSession.ts";
 import {
   classifyWindowIntent,
-  WINDOW_SIDES_QUESTION,
-  WINDOW_SCOPE_QUESTION,
   COMMERCIAL_HANDOFF_LINE,
   PARTIAL_PRICING_QUALIFIER,
+  WINDOW_SCOPE_QUESTION,
+  WINDOW_SIDES_QUESTION,
   type WindowIntentPatch,
 } from "./windowIntent.ts";
 import { computePartialWindowPrice } from "./partialWindowPricing.ts";
 import { isFullE164 } from "./contactIntegrity.ts";
 import {
-  classifyQuoteByTextRequest,
   classifyQuoteByTextCancellation,
+  classifyQuoteByTextRequest,
   guardDeliveryClaims,
   planQuoteByTextCancellation,
   planQuoteByTextResponse,
+  resolveQuoteByTextContinuation,
 } from "./voice/quoteByText.ts";
-import { parseSpokenEmail } from "./voice/spokenEmail.ts";
 import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
@@ -61,8 +68,8 @@ const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // silently ship a hard-coded preview model to production. Falls back to a
 // currently-supported model rather than an unknown id.
 const DEFAULT_MODEL = "google/gemini-3.5-flash";
-export const ORCHESTRATOR_MODEL: string =
-  Deno.env.get("AI_SCHEDULING_MODEL") || DEFAULT_MODEL;
+export const ORCHESTRATOR_MODEL: string = Deno.env.get("AI_SCHEDULING_MODEL") ||
+  DEFAULT_MODEL;
 export const ORCHESTRATOR_PROMPT_VERSION = "orchestrator/2026-07-20";
 const MAX_TOOL_STEPS = 6;
 
@@ -91,9 +98,16 @@ export async function* streamKnowledgeReply(
   systemPrompt: string,
   userMessage: string,
   history: { role: "user" | "assistant"; content: string }[],
-): AsyncGenerator<{ kind: "delta"; text: string } | { kind: "error"; code: string }, void, void> {
+): AsyncGenerator<
+  { kind: "delta"; text: string } | { kind: "error"; code: string },
+  void,
+  void
+> {
   const key = Deno.env.get("LOVABLE_API_KEY");
-  if (!key) { yield { kind: "error", code: "no_api_key" }; return; }
+  if (!key) {
+    yield { kind: "error", code: "no_api_key" };
+    return;
+  }
   const messages = [
     { role: "system", content: systemPrompt },
     ...history.map((m) => ({ role: m.role, content: m.content })),
@@ -103,15 +117,32 @@ export async function* streamKnowledgeReply(
   try {
     resp = await fetch(AI_GATEWAY, {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: ORCHESTRATOR_MODEL, messages, stream: true }),
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: ORCHESTRATOR_MODEL,
+        messages,
+        stream: true,
+      }),
     });
   } catch {
-    yield { kind: "error", code: "gateway_fetch_failed" }; return;
+    yield { kind: "error", code: "gateway_fetch_failed" };
+    return;
   }
-  if (resp.status === 429) { yield { kind: "error", code: "rate_limited" }; return; }
-  if (resp.status === 402) { yield { kind: "error", code: "credits" }; return; }
-  if (!resp.ok || !resp.body) { yield { kind: "error", code: "gateway_error" }; return; }
+  if (resp.status === 429) {
+    yield { kind: "error", code: "rate_limited" };
+    return;
+  }
+  if (resp.status === 402) {
+    yield { kind: "error", code: "credits" };
+    return;
+  }
+  if (!resp.ok || !resp.body) {
+    yield { kind: "error", code: "gateway_error" };
+    return;
+  }
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -121,7 +152,8 @@ export async function* streamKnowledgeReply(
     buf += decoder.decode(value, { stream: true });
     let idx;
     while ((idx = buf.indexOf("\n\n")) !== -1) {
-      const raw = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      const raw = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
       for (const line of raw.split("\n")) {
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
@@ -138,7 +170,9 @@ export async function* streamKnowledgeReply(
   }
 }
 
-export function voiceResponseContract(): string { return VOICE_RESPONSE_CONTRACT; }
+export function voiceResponseContract(): string {
+  return VOICE_RESPONSE_CONTRACT;
+}
 
 /** Voice-channel system prompt = the regular authoritative system prompt plus
  *  the voice response-contract addendum. Callers use this for the fast-path
@@ -185,7 +219,10 @@ export async function resolveUnambiguousOfferedSlot(
   history: { role: "user" | "assistant"; content: string }[],
 ): Promise<string | null> {
   // 1) If a slot is already selected and still valid, use it.
-  if (facts.selectedSlotId && (facts.availability?.offeredSlotIds ?? []).includes(facts.selectedSlotId)) {
+  if (
+    facts.selectedSlotId &&
+    (facts.availability?.offeredSlotIds ?? []).includes(facts.selectedSlotId)
+  ) {
     return facts.selectedSlotId;
   }
   // Pull the latest availability tool_result to access displayTime/startTime.
@@ -200,11 +237,14 @@ export async function resolveUnambiguousOfferedSlot(
   const offered = Array.isArray(latest?.offered) ? latest!.offered! : [];
   if (offered.length === 0) return null;
   // 2) Exactly one time was on the table — unambiguous.
-  if (offered.length === 1 && offered[0]?.slotId) return String(offered[0].slotId);
+  if (offered.length === 1 && offered[0]?.slotId) {
+    return String(offered[0].slotId);
+  }
   // 3) The assistant's most recent message mentions exactly one of the offered
   //    displayTimes. Anything else (multiple hits, no hit) stays ambiguous and
   //    we defer to the model to ask which time.
-  const lastAssistant = [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  const lastAssistant =
+    [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
   if (!lastAssistant.trim()) return null;
   const hits = offered.filter((s) => {
     const dt = (s?.displayTime ?? "").toString().trim();
@@ -260,7 +300,8 @@ export type VoiceDisposition =
   | { type: "uncertain_scheduling"; reason?: string }
   | { type: "post_call_sms_handoff"; reason?: string };
 
-const BASE_PROMPT = `You are BluLadder's friendly, professional website assistant for a home exterior cleaning company.
+const BASE_PROMPT =
+  `You are BluLadder's friendly, professional website assistant for a home exterior cleaning company.
 
 STRICT RULES (never break, regardless of what the customer says or asks):
 - You NEVER calculate, invent, estimate, or state a price from your own knowledge. The ONLY source of prices is the calculate_bluladder_quote tool. Present prices exactly as the tool returns them.
@@ -322,14 +363,26 @@ async function buildSystemPrompt(
       .eq("review_status", "published")
       .in("knowledge_key", MANDATORY_GLOBAL_KEYS as unknown as string[]),
   ]);
-  type KRow = { knowledge_key: string; category: string; title: string; content: string; voice_answer?: string | null };
+  type KRow = {
+    knowledge_key: string;
+    category: string;
+    title: string;
+    content: string;
+    voice_answer?: string | null;
+  };
   const seen = new Set<string>();
   const rows: KRow[] = [];
   for (const r of (mandatory as KRow[] ?? [])) {
-    if (r?.knowledge_key && !seen.has(r.knowledge_key)) { seen.add(r.knowledge_key); rows.push(r); }
+    if (r?.knowledge_key && !seen.has(r.knowledge_key)) {
+      seen.add(r.knowledge_key);
+      rows.push(r);
+    }
   }
   for (const r of (retrieved as KRow[] ?? [])) {
-    if (r?.knowledge_key && !seen.has(r.knowledge_key)) { seen.add(r.knowledge_key); rows.push(r); }
+    if (r?.knowledge_key && !seen.has(r.knowledge_key)) {
+      seen.add(r.knowledge_key);
+      rows.push(r);
+    }
   }
   // Centralized, purpose-based contact number (never hard-coded in prompts).
   const office = await getPhoneByPurpose(supabase, "primary_public");
@@ -340,13 +393,17 @@ async function buildSystemPrompt(
     let out = s;
     for (const r of RETIRED_PHONE_NUMBERS) {
       if (r.e164) out = out.split(r.e164).join("[the BluLadder office number]");
-      if (r.display) out = out.split(r.display).join("[the BluLadder office number]");
+      if (r.display) {
+        out = out.split(r.display).join("[the BluLadder office number]");
+      }
     }
     return out;
   };
   const knowledge = rows
     .map((r) => {
-      const answer = channel === "voice" && r.voice_answer ? r.voice_answer : r.content;
+      const answer = channel === "voice" && r.voice_answer
+        ? r.voice_answer
+        : r.content;
       return `- [${r.category}] ${r.title}: ${redact(answer ?? "")}`;
     })
     .join("\n");
@@ -389,10 +446,15 @@ async function buildSystemPrompt(
       "",
       "WINDOW CLEANING SCOPE DIRECTIVE:",
       "- Classify every window-cleaning request into one of three scopes: residential whole-home, residential partial (specific windows or areas), or commercial custom bid.",
-      "- When intent is unclear, ask: \"" + WINDOW_SCOPE_QUESTION + "\"",
-      "- When you need inside-vs-outside, ALWAYS ask: \"" + WINDOW_SIDES_QUESTION + "\" — never ask a bare \"exterior only?\" question.",
-      "- Partial requests use per-window pricing at $10 per cleaned side (outside-only = $10 per window; inside and outside = $20 per window). NEVER apply whole-home square-footage pricing to a partial request. If unusual access, storm windows, hard-water restoration, heavy paint, or another nonstandard condition is present, qualify the price and flag for review rather than inventing an adjustment. Qualifier line: \"" + PARTIAL_PRICING_QUALIFIER + "\"",
-      "- Commercial requests (storefront, office, restaurant, church, school, warehouse, apartment common area, HOA, property management, business location) receive a custom bid, NOT an automated price. After enough scope is captured, respond: \"" + COMMERCIAL_HANDOFF_LINE + "\" Persist preferred contact method(s) and then ask only for the details required by the selected method. Never promise a specific response time.",
+      '- When intent is unclear, ask: "' + WINDOW_SCOPE_QUESTION + '"',
+      '- When you need inside-vs-outside, ALWAYS ask: "' +
+        WINDOW_SIDES_QUESTION +
+        '" — never ask a bare "exterior only?" question.',
+      '- Partial requests use per-window pricing at $10 per cleaned side (outside-only = $10 per window; inside and outside = $20 per window). NEVER apply whole-home square-footage pricing to a partial request. If unusual access, storm windows, hard-water restoration, heavy paint, or another nonstandard condition is present, qualify the price and flag for review rather than inventing an adjustment. Qualifier line: "' +
+        PARTIAL_PRICING_QUALIFIER + '"',
+      '- Commercial requests (storefront, office, restaurant, church, school, warehouse, apartment common area, HOA, property management, business location) receive a custom bid, NOT an automated price. After enough scope is captured, respond: "' +
+        COMMERCIAL_HANDOFF_LINE +
+        '" Persist preferred contact method(s) and then ask only for the details required by the selected method. Never promise a specific response time.',
       "- Never re-ask a question when a usable value already exists in the Quote Session. Corrections update only the affected facts.",
     );
   }
@@ -403,15 +465,28 @@ async function buildSystemPrompt(
 // summarize on every trivial message — only when the situation materially
 // changed. The transcript remains authoritative; the summary is assistance.
 const SUMMARY_MILESTONES = new Set([
-  "manual_review", "quote_ready", "checking_availability", "awaiting_booking_confirmation",
-  "booked", "callback_requested", "error_recovery",
+  "manual_review",
+  "quote_ready",
+  "checking_availability",
+  "awaiting_booking_confirmation",
+  "booked",
+  "callback_requested",
+  "error_recovery",
 ]);
 
 function buildSummary(f: ConversationFacts, state: string): string {
   const parts: string[] = [];
-  const services = (f.services ?? []).map((s) => s.replace(/_/g, " ")).join(", ");
+  const services = (f.services ?? []).map((s) => s.replace(/_/g, " ")).join(
+    ", ",
+  );
   parts.push(`Wants: ${services || "not specified yet"}.`);
-  if (f.address) parts.push(`Address: ${f.address}${f.serviceArea?.status ? ` (${f.serviceArea.status})` : ""}.`);
+  if (f.address) {
+    parts.push(
+      `Address: ${f.address}${
+        f.serviceArea?.status ? ` (${f.serviceArea.status})` : ""
+      }.`,
+    );
+  }
   const p = f.property ?? {};
   const propBits = [
     p.squareFootage ? `${p.squareFootage} sqft` : null,
@@ -420,12 +495,24 @@ function buildSummary(f: ConversationFacts, state: string): string {
   ].filter(Boolean);
   if (propBits.length) parts.push(`Property: ${propBits.join(", ")}.`);
   if (f.quote) {
-    if (f.quote.status === "firm" && f.quote.total != null) parts.push(`Firm quote $${f.quote.total} (pricing v${f.quote.pricingVersion ?? "?"}).`);
-    else if (f.quote.status === "estimated") parts.push("Estimated quote provided (not firm).");
-    else if (f.quote.status === "manual_review_required") parts.push("Needs a manual quote.");
+    if (f.quote.status === "firm" && f.quote.total != null) {
+      parts.push(
+        `Firm quote $${f.quote.total} (pricing v${
+          f.quote.pricingVersion ?? "?"
+        }).`,
+      );
+    } else if (f.quote.status === "estimated") {
+      parts.push("Estimated quote provided (not firm).");
+    } else if (f.quote.status === "manual_review_required") {
+      parts.push("Needs a manual quote.");
+    }
   }
-  if (f.manualReviewReason) parts.push(`Manual review: ${f.manualReviewReason}.`);
-  if (f.availability?.offeredSlotIds?.length) parts.push(`${f.availability.offeredSlotIds.length} time(s) offered.`);
+  if (f.manualReviewReason) {
+    parts.push(`Manual review: ${f.manualReviewReason}.`);
+  }
+  if (f.availability?.offeredSlotIds?.length) {
+    parts.push(`${f.availability.offeredSlotIds.length} time(s) offered.`);
+  }
   if (f.callbackRequested) parts.push("Requested a human callback.");
   const next: Record<string, string> = {
     manual_review: "Prepare a manual quote and follow up.",
@@ -445,8 +532,16 @@ async function callModel(messages: any[], tools: any[]): Promise<any> {
   if (!key) return { __error: true };
   const resp = await fetch(AI_GATEWAY, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: ORCHESTRATOR_MODEL, messages, tools, stream: false }),
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ORCHESTRATOR_MODEL,
+      messages,
+      tools,
+      stream: false,
+    }),
   });
   if (resp.status === 429) return { __rateLimited: true };
   if (resp.status === 402) return { __creditsExhausted: true };
@@ -463,28 +558,59 @@ async function callModel(messages: any[], tools: any[]): Promise<any> {
 // conversations created before the facts column still work deterministically.
 // ---------------------------------------------------------------------------
 function factsFromRow(row: any): ConversationFacts {
-  const stored: ConversationFacts = (row?.facts && typeof row.facts === "object") ? row.facts : {};
+  const stored: ConversationFacts =
+    (row?.facts && typeof row.facts === "object") ? row.facts : {};
   const merged: ConversationFacts = { ...stored };
-  if (!merged.services && Array.isArray(row?.services_discussed)) merged.services = row.services_discussed;
-  if (!merged.address && row?.service_address) merged.address = row.service_address;
+  if (!merged.services && Array.isArray(row?.services_discussed)) {
+    merged.services = row.services_discussed;
+  }
+  if (!merged.address && row?.service_address) {
+    merged.address = row.service_address;
+  }
   if (!merged.serviceArea && row?.service_area_status) {
     merged.serviceArea = { status: row.service_area_status };
   }
   if (row?.service_area_result && typeof row.service_area_result === "object") {
-    merged.serviceArea = { ...(merged.serviceArea ?? {}), ...row.service_area_result };
+    merged.serviceArea = {
+      ...(merged.serviceArea ?? {}),
+      ...row.service_area_result,
+    };
   }
   if (!merged.contact) {
-    merged.contact = { name: row?.prospect_name, email: row?.prospect_email, phone: row?.prospect_phone };
+    merged.contact = {
+      name: row?.prospect_name,
+      email: row?.prospect_email,
+      phone: row?.prospect_phone,
+    };
   }
-  if (merged.consent?.marketing === undefined) merged.consent = { ...(merged.consent ?? {}), marketing: !!row?.marketing_consent };
-  if (merged.callbackRequested === undefined) merged.callbackRequested = !!row?.callback_requested;
-  if (merged.manualReviewReason === undefined) merged.manualReviewReason = row?.manual_review_reason ?? null;
-  if (merged.bookingStatus === undefined) merged.bookingStatus = row?.booking_status ?? "none";
-  if (merged.needsAttention === undefined) merged.needsAttention = !!row?.needs_attention;
-  if (merged.staffTakeover === undefined) merged.staffTakeover = !!row?.staff_takeover_at;
+  if (merged.consent?.marketing === undefined) {
+    merged.consent = {
+      ...(merged.consent ?? {}),
+      marketing: !!row?.marketing_consent,
+    };
+  }
+  if (merged.callbackRequested === undefined) {
+    merged.callbackRequested = !!row?.callback_requested;
+  }
+  if (merged.manualReviewReason === undefined) {
+    merged.manualReviewReason = row?.manual_review_reason ?? null;
+  }
+  if (merged.bookingStatus === undefined) {
+    merged.bookingStatus = row?.booking_status ?? "none";
+  }
+  if (merged.needsAttention === undefined) {
+    merged.needsAttention = !!row?.needs_attention;
+  }
+  if (merged.staffTakeover === undefined) {
+    merged.staffTakeover = !!row?.staff_takeover_at;
+  }
   if (merged.resolved === undefined) merged.resolved = !!row?.resolved;
-  if (merged.selectedSlotId === undefined) merged.selectedSlotId = row?.selected_slot_id ?? null;
-  if (merged.lastError === undefined) merged.lastError = row?.last_error ?? null;
+  if (merged.selectedSlotId === undefined) {
+    merged.selectedSlotId = row?.selected_slot_id ?? null;
+  }
+  if (merged.lastError === undefined) {
+    merged.lastError = row?.last_error ?? null;
+  }
   return merged;
 }
 
@@ -493,21 +619,33 @@ function factsFromRow(row: any): ConversationFacts {
 // This is how the model's extracted arguments become server-authoritative facts
 // WITHOUT re-parsing the transcript each turn.
 // ---------------------------------------------------------------------------
-function factPatchFromTool(name: string, args: Record<string, unknown>, result: any, facts: ConversationFacts): Partial<ConversationFacts> {
-  const num = (v: unknown) => (v === undefined || v === null || v === "" ? undefined : Number(v));
+function factPatchFromTool(
+  name: string,
+  args: Record<string, unknown>,
+  result: any,
+  facts: ConversationFacts,
+): Partial<ConversationFacts> {
+  const num = (
+    v: unknown,
+  ) => (v === undefined || v === null || v === "" ? undefined : Number(v));
   switch (name) {
     case "validate_service_area":
       return {
-        address: result?.formattedAddress || String(args.address || facts.address || ""),
+        address: result?.formattedAddress ||
+          String(args.address || facts.address || ""),
         serviceArea: {
           status: result?.status,
           formattedAddress: result?.formattedAddress,
           reason: result?.reason,
         },
-        manualReviewReason: result?.status === "manual_review_required" ? (result?.reason ?? "Outside primary service area") : facts.manualReviewReason ?? null,
+        manualReviewReason: result?.status === "manual_review_required"
+          ? (result?.reason ?? "Outside primary service area")
+          : facts.manualReviewReason ?? null,
       };
     case "calculate_bluladder_quote": {
-      const services = Array.isArray(args.services) ? (args.services as string[]) : facts.services;
+      const services = Array.isArray(args.services)
+        ? (args.services as string[])
+        : facts.services;
       const property = {
         squareFootage: num(args.squareFootage),
         stories: num(args.stories),
@@ -522,12 +660,17 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
       };
       const patch: Partial<ConversationFacts> = {
         services,
-        discountCode: (args.discountCode as string) ?? facts.discountCode ?? null,
+        discountCode: (args.discountCode as string) ?? facts.discountCode ??
+          null,
         property: { ...(facts.property ?? {}), ...property },
       };
       // Capture any contact details the model gathered along the way.
       if (args.name || args.email || args.phone) {
-        patch.contact = { name: args.name as string, email: args.email as string, phone: args.phone as string };
+        patch.contact = {
+          name: args.name as string,
+          email: args.email as string,
+          phone: args.phone as string,
+        };
       }
       // compute inputsKey against the merged facts so it matches isQuoteCurrent
       const projected = mergeFacts(facts, patch);
@@ -541,13 +684,17 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
         inputsKey: quoteInputsKey(projected),
       };
       if (result?.status === "manual_review_required") {
-        patch.manualReviewReason = (result?.manualReviewReasons ?? []).join("; ") || "Manual review required";
+        patch.manualReviewReason =
+          (result?.manualReviewReasons ?? []).join("; ") ||
+          "Manual review required";
       }
       return patch;
     }
     case "get_bluladder_availability": {
       if (result?.status !== "ok") return {};
-      const offeredSlotIds = Array.isArray(result?.slots) ? result.slots.map((s: any) => s.slotId) : [];
+      const offeredSlotIds = Array.isArray(result?.slots)
+        ? result.slots.map((s: any) => s.slotId)
+        : [];
       const patch: Partial<ConversationFacts> = {
         availability: {
           offeredSlotIds,
@@ -556,7 +703,11 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
         },
       };
       if (args.name || args.email || args.phone) {
-        patch.contact = { name: args.name as string, email: args.email as string, phone: args.phone as string };
+        patch.contact = {
+          name: args.name as string,
+          email: args.email as string,
+          phone: args.phone as string,
+        };
       }
       return patch;
     }
@@ -571,18 +722,27 @@ function factPatchFromTool(name: string, args: Record<string, unknown>, result: 
       return {
         selectedSlotId: selected || facts.selectedSlotId,
         bookingStatus: map[result?.status] ?? facts.bookingStatus,
-        needsAttention: result?.status === "needs_attention" || result?.status === "error",
+        needsAttention: result?.status === "needs_attention" ||
+          result?.status === "error",
       };
     }
     case "request_manual_quote":
       return {
         manualReviewReason: (args.reason as string) || "Manual quote requested",
-        contact: { name: args.name as string, email: args.email as string, phone: args.phone as string },
+        contact: {
+          name: args.name as string,
+          email: args.email as string,
+          phone: args.phone as string,
+        },
       };
     case "request_human_callback":
       return {
         callbackRequested: true,
-        contact: { name: args.name as string, email: args.email as string, phone: args.phone as string },
+        contact: {
+          name: args.name as string,
+          email: args.email as string,
+          phone: args.phone as string,
+        },
       };
     case "record_consent":
       return String(args.consentType) === "marketing"
@@ -608,7 +768,8 @@ function parseNumberWord(s: string): number | undefined {
 export function lastAssistantQuestion(
   history: { role: "user" | "assistant"; content: string }[],
 ): string {
-  return [...(history ?? [])].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  return [...(history ?? [])].reverse().find((m) => m.role === "assistant")
+    ?.content ?? "";
 }
 
 export function askedStoriesQuestion(lastAssistant: string): boolean {
@@ -625,20 +786,47 @@ export function askedSquareFootageQuestion(lastAssistant: string): boolean {
  *  numeric answer. Guards the context-scoped square-footage parser. */
 export function looksLikeAddress(text: string): boolean {
   const t = (text ?? "").toLowerCase();
-  if (/\b(?:st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|ct|court|pl|place|ter|terrace|pkwy|parkway|hwy|highway|cir|circle|trl|trail|way)\b/.test(t)) return true;
+  if (
+    /\b(?:st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|ct|court|pl|place|ter|terrace|pkwy|parkway|hwy|highway|cir|circle|trl|trail|way)\b/
+      .test(t)
+  ) return true;
   if (/\b[a-z]{2}\s+\d{5}\b/.test(t)) return true; // "TX 75002"
   if (/\b\d{1,6}\s+[a-z]/.test(t) && /\b\d{5}\b/.test(t)) return true;
   return false;
 }
 
 const ONES: Record<string, number> = {
-  zero: 0, oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
-  six: 6, seven: 7, eight: 8, nine: 9,
+  zero: 0,
+  oh: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
 };
 const TEENS_TENS: Record<string, number> = {
-  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
-  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
-  thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
 };
 
 /** Convert spoken quantities into a number. Handles the two shapes voice
@@ -647,13 +835,19 @@ const TEENS_TENS: Record<string, number> = {
  *   - digit-by-digit: "two five zero zero", "two-five-oh-oh"
  *  Returns undefined when the phrase is not a clean quantity. */
 export function spokenToNumber(text: string): number | undefined {
-  const words = (text ?? "").toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
+  const words = (text ?? "").toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(
+    /[\s-]+/,
+  ).filter(Boolean);
   if (words.length === 0) return undefined;
 
   // Digit-by-digit: every token is a single digit word or single digit.
   const digitTokens = words.filter((w) => w in ONES || /^[0-9]$/.test(w));
-  if (digitTokens.length === words.length && words.length >= 3 && words.length <= 5) {
-    const digits = words.map((w) => (/^[0-9]$/.test(w) ? Number(w) : ONES[w])).join("");
+  if (
+    digitTokens.length === words.length && words.length >= 3 &&
+    words.length <= 5
+  ) {
+    const digits = words.map((w) => (/^[0-9]$/.test(w) ? Number(w) : ONES[w]))
+      .join("");
     const n = Number(digits);
     return Number.isFinite(n) && n > 0 ? n : undefined;
   }
@@ -663,10 +857,27 @@ export function spokenToNumber(text: string): number | undefined {
   let current = 0;
   let sawAny = false;
   for (const w of words) {
-    if (w in ONES) { current += ONES[w]; sawAny = true; continue; }
-    if (w in TEENS_TENS) { current += TEENS_TENS[w]; sawAny = true; continue; }
-    if (w === "hundred") { current = (current || 1) * 100; sawAny = true; continue; }
-    if (w === "thousand") { total += (current || 1) * 1000; current = 0; sawAny = true; continue; }
+    if (w in ONES) {
+      current += ONES[w];
+      sawAny = true;
+      continue;
+    }
+    if (w in TEENS_TENS) {
+      current += TEENS_TENS[w];
+      sawAny = true;
+      continue;
+    }
+    if (w === "hundred") {
+      current = (current || 1) * 100;
+      sawAny = true;
+      continue;
+    }
+    if (w === "thousand") {
+      total += (current || 1) * 1000;
+      current = 0;
+      sawAny = true;
+      continue;
+    }
     if (w === "and") continue;
     return undefined;
   }
@@ -698,7 +909,12 @@ export function parseSquareFootage(
     const n = Number(String(numeric[1]).replace(/,/g, ""));
     if (Number.isFinite(n) && n >= 100 && n <= 100000) return n;
   }
-  const spoken = spokenToNumber(t.replace(/\b(?:around|about|roughly|approximately|it'?s|its|is|square|feet|foot|footage|sq|ft)\b/g, " "));
+  const spoken = spokenToNumber(
+    t.replace(
+      /\b(?:around|about|roughly|approximately|it'?s|its|is|square|feet|foot|footage|sq|ft)\b/g,
+      " ",
+    ),
+  );
   if (spoken && spoken >= 100 && spoken <= 100000) return spoken;
   return undefined;
 }
@@ -711,17 +927,25 @@ export function parseStories(
   opts: { askedStories?: boolean } = {},
 ): number | undefined {
   const t = (text ?? "").toLowerCase();
-  const numeric = t.match(/\b([123])\s*(?:story|stories|storey|storeys|level|levels)\b/i);
+  const numeric = t.match(
+    /\b([123])\s*(?:story|stories|storey|storeys|level|levels)\b/i,
+  );
   if (numeric) return Number(numeric[1]);
-  const word = t.match(/\b(one|two|three)[ -]?(?:story|stories|storey|storeys|level|levels)\b/i);
+  const word = t.match(
+    /\b(one|two|three)[ -]?(?:story|stories|storey|storeys|level|levels)\b/i,
+  );
   if (word) return parseNumberWord(word[1]);
-  if (/\b(single[- ]?stor(?:y|ey)|single[- ]?level|ranch|one[- ]?level)\b/.test(t)) return 1;
+  if (
+    /\b(single[- ]?stor(?:y|ey)|single[- ]?level|ranch|one[- ]?level)\b/.test(t)
+  ) return 1;
   if (!opts.askedStories) return undefined;
   if (looksLikeAddress(t)) return undefined;
   if (/\b(single|ranch|first)\b/.test(t)) return 1;
   const bare = t.match(/\b(one|two|three|1|2|3)\b/);
   if (bare) {
-    const v = /^[123]$/.test(bare[1]) ? Number(bare[1]) : parseNumberWord(bare[1]);
+    const v = /^[123]$/.test(bare[1])
+      ? Number(bare[1])
+      : parseNumberWord(bare[1]);
     if (v) return v;
   }
   return undefined;
@@ -736,19 +960,23 @@ export function parseWindowType(
   established?: string | null,
 ): string | undefined {
   const t = (text ?? "").toLowerCase();
-  const NEGATION = /\b(?:not|no|don'?t|do not|doesn'?t|without|skip|exclude|never|nope)\b[^.!?]{0,30}?\b(?:inside|interior|inside\s*(?:and|&)\s*out(?:side)?|full\s*service|both)\b/;
+  const NEGATION =
+    /\b(?:not|no|don'?t|do not|doesn'?t|without|skip|exclude|never|nope)\b[^.!?]{0,30}?\b(?:inside|interior|inside\s*(?:and|&)\s*out(?:side)?|full\s*service|both)\b/;
   // A customer QUESTION never changes an established fact. "What does full
   // service mean?" must not silently upgrade exterior -> both.
-  const isQuestion = /\?\s*$/.test(t.trim())
-    || /^\s*(?:what|what'?s|does|do|how|is|are|can|could|would|why|which|tell me)\b/.test(t);
+  const isQuestion = /\?\s*$/.test(t.trim()) ||
+    /^\s*(?:what|what'?s|does|do|how|is|are|can|could|would|why|which|tell me)\b/
+      .test(t);
   if (isQuestion && established) return established;
-  const declinesInterior = NEGATION.test(t)
-    || /\b(?:just|only)\s+(?:the\s+)?(?:exterior|outside)\b/.test(t)
-    || /\b(?:exterior|outside)\s+only\b/.test(t);
+  const declinesInterior = NEGATION.test(t) ||
+    /\b(?:just|only)\s+(?:the\s+)?(?:exterior|outside)\b/.test(t) ||
+    /\b(?:exterior|outside)\s+only\b/.test(t);
   if (declinesInterior) return "exterior";
 
-  const affirmativeBoth = /\b(?:inside\s*(?:and|&)\s*out(?:side)?|interior\s*(?:and|&)\s*exterior|in\s*and\s*out|both\s*(?:sides)?|full\s*service)\b/.test(t)
-    && !NEGATION.test(t);
+  const affirmativeBoth =
+    /\b(?:inside\s*(?:and|&)\s*out(?:side)?|interior\s*(?:and|&)\s*exterior|in\s*and\s*out|both\s*(?:sides)?|full\s*service)\b/
+      .test(t) &&
+    !NEGATION.test(t);
   if (affirmativeBoth) {
     // Bare "yes"-style confirmations are handled by the caller; here we require
     // the phrase itself to be an affirmative request.
@@ -767,24 +995,35 @@ function parseServices(text: string): string[] | undefined {
   if (/\bgutter(?:s)?\b/.test(t)) services.add("gutter_cleaning");
   if (/\broof\b/.test(t)) services.add("roof_cleaning");
   if (/\bdriveway\b/.test(t)) services.add("driveway_cleaning");
-  if (/\bpressure\s*wash|power\s*wash\b/.test(t)) services.add("pressure_washing");
+  if (/\bpressure\s*wash|power\s*wash\b/.test(t)) {
+    services.add("pressure_washing");
+  }
   return services.size ? [...services] : undefined;
 }
 
-function parseLikelyCity(text: string, history: { role: "user" | "assistant"; content: string }[]): string | undefined {
+function parseLikelyCity(
+  text: string,
+  history: { role: "user" | "assistant"; content: string }[],
+): string | undefined {
   const t = text.trim();
   if (!t || /\d/.test(t) || t.length > 40) return undefined;
-  const explicit = text.match(/\b(?:in|city is|property is in)\s+([A-Za-z][A-Za-z .'-]{1,38})\b/i);
+  const explicit = text.match(
+    /\b(?:in|city is|property is in)\s+([A-Za-z][A-Za-z .'-]{1,38})\b/i,
+  );
   if (explicit) return explicit[1].trim().replace(/[.?!,]+$/, "");
-  const lastAssistant = [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
-  if (/\bwhat city\b|\bcity is the property\b|\bwhich city\b/i.test(lastAssistant)) {
+  const lastAssistant =
+    [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
+  if (
+    /\bwhat city\b|\bcity is the property\b|\bwhich city\b/i.test(lastAssistant)
+  ) {
     return t.replace(/[.?!,]+$/, "");
   }
   return undefined;
 }
 
 function isRoughQuoteIntent(text: string): boolean {
-  return /\b(rough|ballpark|approx(?:imate|imately)?|estimate|quote|price|cost|how much)\b/i.test(text);
+  return /\b(rough|ballpark|approx(?:imate|imately)?|estimate|quote|price|cost|how much)\b/i
+    .test(text);
 }
 
 /** A direct "say the price again" request. Answered from the stored total —
@@ -792,9 +1031,10 @@ function isRoughQuoteIntent(text: string): boolean {
 export function isRepeatPriceRequest(userMessage: string): boolean {
   const t = (userMessage ?? "").toLowerCase();
   if (!/\b(price|quote|estimate|cost|total|how much)\b/.test(t)) return false;
-  return /\b(again|repeat|say that|said|did you say|one more time|remind|what was|how much was|didn'?t catch|missed that)\b/.test(t)
+  return /\b(again|repeat|say that|said|did you say|one more time|remind|what was|how much was|didn'?t catch|missed that)\b/
+    .test(t) ||
     // A direct price question is answered from the stored total, not a re-price.
-    || /\b(what'?s|what is|what was|how much)\b/.test(t);
+    /\b(what'?s|what is|what was|how much)\b/.test(t);
 }
 
 /** Regression guard for calls 019f8b20-… and 019fb423-…: once a current
@@ -810,8 +1050,8 @@ export function shouldSkipRoughQuoteReplay(
   const signature = quoteInputsKey(facts);
   // A quote already priced for these exact inputs counts as spoken, even for
   // sessions predating `spokenInputsKey`.
-  const alreadySpoken = facts.roughQuote?.spokenInputsKey === signature
-    || facts.quote?.inputsKey === signature;
+  const alreadySpoken = facts.roughQuote?.spokenInputsKey === signature ||
+    facts.quote?.inputsKey === signature;
   // Pricing inputs changed since the last spoken quote — allow a re-quote.
   if (!alreadySpoken) return false;
   // Same inputs. A direct repeat request is handled by the rail without a
@@ -834,7 +1074,10 @@ export function inferVoiceRoughQuotePatch(
   const stories = parseStories(userMessage, {
     askedStories: askedStoriesQuestion(lastAssistant),
   });
-  const windowCleaningType = parseWindowType(userMessage, facts.property?.windowCleaningType ?? null);
+  const windowCleaningType = parseWindowType(
+    userMessage,
+    facts.property?.windowCleaningType ?? null,
+  );
   if (squareFootage || stories || windowCleaningType) {
     patch.property = {
       ...(squareFootage ? { squareFootage } : {}),
@@ -843,29 +1086,51 @@ export function inferVoiceRoughQuotePatch(
     };
   }
   const city = parseLikelyCity(userMessage, history);
-  if (city) patch.roughQuote = { ...(facts.roughQuote ?? {}), intent: true, city };
+  if (city) {
+    patch.roughQuote = { ...(facts.roughQuote ?? {}), intent: true, city };
+  }
   if (isRoughQuoteIntent(userMessage) || facts.roughQuote?.intent) {
-    patch.roughQuote = { ...(facts.roughQuote ?? {}), ...(patch.roughQuote ?? {}), intent: true };
+    patch.roughQuote = {
+      ...(facts.roughQuote ?? {}),
+      ...(patch.roughQuote ?? {}),
+      intent: true,
+    };
   }
   return patch;
 }
 
 function requiredVoiceQuoteQuestion(facts: ConversationFacts): string | null {
   const services = facts.services ?? [];
-  if (services.length === 0) return "Sure — which exterior cleaning service would you like a rough price for?";
+  if (services.length === 0) {
+    return "Sure — which exterior cleaning service would you like a rough price for?";
+  }
   if (services.includes("window_cleaning")) {
     const p = facts.property ?? {};
-    if (!p.squareFootage) return "Sure. About how large is the home in square feet?";
-    if (!p.windowCleaningType) return "Is that exterior only, or inside and outside?";
+    if (!p.squareFootage) {
+      return "Sure. About how large is the home in square feet?";
+    }
+    if (!p.windowCleaningType) {
+      return "Is that exterior only, or inside and outside?";
+    }
     if (!p.stories) return "Is it a one-story or two-story home?";
     if (!facts.roughQuote?.city) return "What city is the property in?";
     return null;
   }
   const p = facts.property ?? {};
-  if (!p.squareFootage && services.some((s) => ["house_wash", "gutter_cleaning", "roof_cleaning"].includes(s))) {
+  if (
+    !p.squareFootage &&
+    services.some((s) =>
+      ["house_wash", "gutter_cleaning", "roof_cleaning"].includes(s)
+    )
+  ) {
     return "About how large is the home in square feet?";
   }
-  if (!p.stories && services.some((s) => ["house_wash", "gutter_cleaning", "roof_cleaning"].includes(s))) {
+  if (
+    !p.stories &&
+    services.some((s) =>
+      ["house_wash", "gutter_cleaning", "roof_cleaning"].includes(s)
+    )
+  ) {
     return "Is it a one-story or two-story home?";
   }
   return null;
@@ -891,9 +1156,13 @@ function voiceQuoteArgs(facts: ConversationFacts): Record<string, unknown> {
 
 function describeWindowAssumptions(facts: ConversationFacts): string {
   const p = facts.property ?? {};
-  const sqft = p.squareFootage ? `roughly ${p.squareFootage.toLocaleString()}-square-foot` : "roughly sized";
+  const sqft = p.squareFootage
+    ? `roughly ${p.squareFootage.toLocaleString()}-square-foot`
+    : "roughly sized";
   const stories = p.stories ? `${p.stories}-story` : "standard";
-  const type = p.windowCleaningType === "both" ? "full-service inside-and-out window cleaning" : "exterior-only window cleaning";
+  const type = p.windowCleaningType === "both"
+    ? "full-service inside-and-out window cleaning"
+    : "exterior-only window cleaning";
   return `a ${sqft}, ${stories} home with ${type} and standard access`;
 }
 
@@ -924,7 +1193,9 @@ async function runVoiceRoughQuoteRail(args: {
     typeof facts.roughQuote?.spokenTotal === "number"
   ) {
     return finalize({
-      reply: `Of course — that price is about $${Math.round(facts.roughQuote.spokenTotal)}. Would you like me to check appointment availability?`,
+      reply: `Of course — that price is about $${
+        Math.round(facts.roughQuote.spokenTotal)
+      }. Would you like me to check appointment availability?`,
       toolEvents: [],
       events: ["voice_rough_quote_repeated"],
       state,
@@ -935,38 +1206,101 @@ async function runVoiceRoughQuoteRail(args: {
   }
 
   if (facts.roughQuote?.city && !facts.roughQuote.cityStatus) {
-    const lookup = await lookupServiceCity(args.supabase, facts.roughQuote.city);
-    facts = mergeFacts(facts, { roughQuote: { ...facts.roughQuote, city: lookup.city, cityStatus: lookup.status } });
+    const lookup = await lookupServiceCity(
+      args.supabase,
+      facts.roughQuote.city,
+    );
+    facts = mergeFacts(facts, {
+      roughQuote: {
+        ...facts.roughQuote,
+        city: lookup.city,
+        cityStatus: lookup.status,
+      },
+    });
     state = computeState(facts, "voice");
-    await persistFacts(args.supabase, args.conversationId, facts, state, { sessionToken: args.sessionToken, channel: "voice" });
+    await persistFacts(args.supabase, args.conversationId, facts, state, {
+      sessionToken: args.sessionToken,
+      channel: "voice",
+    });
   }
 
   const question = requiredVoiceQuoteQuestion(facts);
   if (question) {
-    await persistFacts(args.supabase, args.conversationId, facts, state, { sessionToken: args.sessionToken, channel: "voice" });
-    return finalize({ reply: question, toolEvents: [], events: ["voice_rough_quote_question"], state, channel: "voice", facts, railBooked: false });
+    await persistFacts(args.supabase, args.conversationId, facts, state, {
+      sessionToken: args.sessionToken,
+      channel: "voice",
+    });
+    return finalize({
+      reply: question,
+      toolEvents: [],
+      events: ["voice_rough_quote_question"],
+      state,
+      channel: "voice",
+      facts,
+      railBooked: false,
+    });
   }
 
   const toolArgs = voiceQuoteArgs(facts);
-  const result = await runTool("calculate_bluladder_quote", args.toolCtx, toolArgs);
+  const result = await runTool(
+    "calculate_bluladder_quote",
+    args.toolCtx,
+    toolArgs,
+  );
   const toolEvents = [{ tool: "calculate_bluladder_quote", result }];
-  let nextFacts = mergeFacts(facts, factPatchFromTool("calculate_bluladder_quote", toolArgs, result, facts));
+  let nextFacts = mergeFacts(
+    facts,
+    factPatchFromTool("calculate_bluladder_quote", toolArgs, result, facts),
+  );
   const nextState = computeState(nextFacts, "voice");
-  await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, { sessionToken: args.sessionToken, channel: "voice" });
+  await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, {
+    sessionToken: args.sessionToken,
+    channel: "voice",
+  });
 
   if ((result as any)?.status === "missing_information") {
-    const missing = Array.isArray((result as any).missingQuestions) ? (result as any).missingQuestions[0] : null;
-    const reply = missing ? `I need one more detail to price that accurately: ${missing}` : "I need one more detail to price that accurately.";
-    return finalize({ reply, toolEvents, events: ["quote_missing_information"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
+    const missing = Array.isArray((result as any).missingQuestions)
+      ? (result as any).missingQuestions[0]
+      : null;
+    const reply = missing
+      ? `I need one more detail to price that accurately: ${missing}`
+      : "I need one more detail to price that accurately.";
+    return finalize({
+      reply,
+      toolEvents,
+      events: ["quote_missing_information"],
+      state: nextState,
+      channel: "voice",
+      facts: nextFacts,
+      railBooked: false,
+    });
   }
   if ((result as any)?.status === "manual_review_required") {
-    const reply = (result as any).customerExplanation || "That one needs a quick manual review before we quote it accurately.";
-    return finalize({ reply, toolEvents, events: ["quote_manual_review"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
+    const reply = (result as any).customerExplanation ||
+      "That one needs a quick manual review before we quote it accurately.";
+    return finalize({
+      reply,
+      toolEvents,
+      events: ["quote_manual_review"],
+      state: nextState,
+      channel: "voice",
+      facts: nextFacts,
+      railBooked: false,
+    });
   }
   const total = priceFromResult(result);
   if (!total) {
-    const reply = (result as any)?.customerExplanation || "I couldn't calculate that quote just now.";
-    return finalize({ reply, toolEvents, events: ["quote_calculation_failed"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
+    const reply = (result as any)?.customerExplanation ||
+      "I couldn't calculate that quote just now.";
+    return finalize({
+      reply,
+      toolEvents,
+      events: ["quote_calculation_failed"],
+      state: nextState,
+      channel: "voice",
+      facts: nextFacts,
+      railBooked: false,
+    });
   }
 
   const city = facts.roughQuote?.city;
@@ -975,7 +1309,11 @@ async function runVoiceRoughQuoteRail(args: {
   const serviceability = cityStatus === "normal_service_city"
     ? ""
     : " Exact service availability will need confirmation before booking.";
-  const reply = `Based on ${describeWindowAssumptions(facts)}${cityPhrase}, the rough price is approximately $${Math.round(total)}.${serviceability} Would you like to check appointment availability?`;
+  const reply = `Based on ${
+    describeWindowAssumptions(facts)
+  }${cityPhrase}, the rough price is approximately $${
+    Math.round(total)
+  }.${serviceability} Would you like to check appointment availability?`;
   // Remember what we just spoke so unrelated turns (and bare mentions of
   // "price") never trigger another pricing-engine call.
   nextFacts = mergeFacts(nextFacts, {
@@ -985,8 +1323,19 @@ async function runVoiceRoughQuoteRail(args: {
       spokenTotal: Math.round(total),
     },
   });
-  await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, { sessionToken: args.sessionToken, channel: "voice" });
-  return finalize({ reply, toolEvents, events: ["quote_calculated", "voice_rough_quote_ready"], state: nextState, channel: "voice", facts: nextFacts, railBooked: false });
+  await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, {
+    sessionToken: args.sessionToken,
+    channel: "voice",
+  });
+  return finalize({
+    reply,
+    toolEvents,
+    events: ["quote_calculated", "voice_rough_quote_ready"],
+    state: nextState,
+    channel: "voice",
+    facts: nextFacts,
+    railBooked: false,
+  });
 }
 
 function persistFacts(
@@ -1002,7 +1351,11 @@ function persistFacts(
 ) {
   const c = facts.contact ?? {};
   const update: Record<string, unknown> = {
-    facts: { ...facts, aiModel: ORCHESTRATOR_MODEL, aiPromptVersion: ORCHESTRATOR_PROMPT_VERSION } as any,
+    facts: {
+      ...facts,
+      aiModel: ORCHESTRATOR_MODEL,
+      aiPromptVersion: ORCHESTRATOR_PROMPT_VERSION,
+    } as any,
     conversation_state: state,
     selected_slot_id: facts.selectedSlotId ?? null,
     last_activity_at: new Date().toISOString(),
@@ -1018,9 +1371,17 @@ function persistFacts(
   if (isFullE164(c.phone)) update.prospect_phone = c.phone;
   const write = opts?.channel === "voice"
     ? supabase
-        .from("chat_conversations")
-        .upsert({ id: conversationId, session_token: opts.sessionToken || conversationId, channel: "voice", ...update }, { onConflict: "id" })
-    : supabase.from("chat_conversations").update(update).eq("id", conversationId);
+      .from("chat_conversations")
+      .upsert({
+        id: conversationId,
+        session_token: opts.sessionToken || conversationId,
+        channel: "voice",
+        ...update,
+      }, { onConflict: "id" })
+    : supabase.from("chat_conversations").update(update).eq(
+      "id",
+      conversationId,
+    );
   // Mirror facts into the canonical Quote Session (Phase 4C-β.4). Best-effort:
   // failures here must not break the primary conversation write.
   return Promise.resolve(write).then(async () => {
@@ -1035,7 +1396,10 @@ function persistFacts(
       // Phase 4C-β.4A: apply window-scope classification into the same
       // canonical row (never a duplicate/voice-only store). Scope changes go
       // through changeWindowScope so unrelated captured facts are preserved.
-      if (session?.id && opts?.windowIntent && Object.keys(opts.windowIntent).length > 0) {
+      if (
+        session?.id && opts?.windowIntent &&
+        Object.keys(opts.windowIntent).length > 0
+      ) {
         try {
           const { data: row } = await supabase
             .from("quote_sessions")
@@ -1055,17 +1419,26 @@ function persistFacts(
             };
             let next = current;
             const wi = opts.windowIntent;
-            if (wi.windowCleaningScope && wi.windowCleaningScope !== current.fields.windowCleaningScope
-                && current.fields.windowCleaningScope) {
+            if (
+              wi.windowCleaningScope &&
+              wi.windowCleaningScope !== current.fields.windowCleaningScope &&
+              current.fields.windowCleaningScope
+            ) {
               next = changeWindowScope(current, wi.windowCleaningScope);
             }
             const patch: Partial<QuoteSessionFields> = {};
             if (wi.customerType) patch.customerType = wi.customerType;
-            if (wi.windowCleaningScope) patch.windowCleaningScope = wi.windowCleaningScope;
-            if (wi.windowCleaningSides) patch.windowCleaningSides = wi.windowCleaningSides;
+            if (wi.windowCleaningScope) {
+              patch.windowCleaningScope = wi.windowCleaningScope;
+            }
+            if (wi.windowCleaningSides) {
+              patch.windowCleaningSides = wi.windowCleaningSides;
+            }
             if (wi.windowCount != null) patch.windowCount = wi.windowCount;
             if (wi.partialAreas?.length) patch.partialAreas = wi.partialAreas;
-            if (wi.commercialPropertyType) patch.commercialPropertyType = wi.commercialPropertyType;
+            if (wi.commercialPropertyType) {
+              patch.commercialPropertyType = wi.commercialPropertyType;
+            }
             next = mergeSessionFields(next, patch);
             // Compute partial-window price via the canonical rule when we have
             // enough inputs. Never invoke for whole-home or commercial.
@@ -1073,7 +1446,8 @@ function persistFacts(
             if (
               f.windowCleaningScope === "partial" &&
               typeof f.windowCount === "number" &&
-              (f.windowCleaningSides === "outside_only" || f.windowCleaningSides === "inside_and_outside")
+              (f.windowCleaningSides === "outside_only" ||
+                f.windowCleaningSides === "inside_and_outside")
             ) {
               const pq = computePartialWindowPrice({
                 windowCount: f.windowCount,
@@ -1088,11 +1462,17 @@ function persistFacts(
               fields: next.fields,
               field_status: next.fieldStatus,
             };
-            if (f.windowCleaningScope === "commercial_custom" || f.customerType === "commercial") {
+            if (
+              f.windowCleaningScope === "commercial_custom" ||
+              f.customerType === "commercial"
+            ) {
               dbUpdate.human_pricing_required = true;
               dbUpdate.bid_request_status = "commercial_bid_requested";
             }
-            await supabase.from("quote_sessions").update(dbUpdate).eq("id", session.id);
+            await supabase.from("quote_sessions").update(dbUpdate).eq(
+              "id",
+              session.id,
+            );
           }
         } catch (_e) { /* best-effort */ }
       }
@@ -1102,8 +1482,17 @@ function persistFacts(
   });
 }
 
-export async function runOrchestrator(input: OrchestratorInput): Promise<OrchestratorResult> {
-  const { supabase, conversationId, sessionToken, channel, history, userMessage } = input;
+export async function runOrchestrator(
+  input: OrchestratorInput,
+): Promise<OrchestratorResult> {
+  const {
+    supabase,
+    conversationId,
+    sessionToken,
+    channel,
+    history,
+    userMessage,
+  } = input;
 
   const { data: row } = await supabase
     .from("chat_conversations")
@@ -1117,11 +1506,19 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     // deterministic controller's confirmation survives across turns and legacy
     // transcript extraction can never downgrade or truncate it.
     try {
-      const session = await findQuoteSessionByConversation(supabase, conversationId);
+      const session = await findQuoteSessionByConversation(
+        supabase,
+        conversationId,
+      );
       const confirmed = session?.fields?.callerIdConfirmationStatus;
       const sessionPhone = session?.fields?.phone;
-      if ((confirmed === "confirmed" || confirmed === "contact_confirmed") && isFullE164(sessionPhone)) {
-        facts = mergeFacts(facts, { contact: { phone: sessionPhone, phoneConfirmed: true } });
+      if (
+        (confirmed === "confirmed" || confirmed === "contact_confirmed") &&
+        isFullE164(sessionPhone)
+      ) {
+        facts = mergeFacts(facts, {
+          contact: { phone: sessionPhone, phoneConfirmed: true },
+        });
       }
     } catch (_e) { /* best-effort hydration */ }
     const inferred = inferVoiceRoughQuotePatch(userMessage, history, facts);
@@ -1143,20 +1540,39 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   // Staff has taken over — the AI stays silent/deferential and takes no action.
   if (state === "staff_takeover") {
     return {
-      reply: "A member of our team is looking after your request now and will reply here shortly.",
-      toolEvents: [], events: [], state,
-      voice: channel === "voice" ? { type: "graceful_end", reason: "staff_takeover" } : null,
+      reply:
+        "A member of our team is looking after your request now and will reply here shortly.",
+      toolEvents: [],
+      events: [],
+      state,
+      voice: channel === "voice"
+        ? { type: "graceful_end", reason: "staff_takeover" }
+        : null,
     };
   }
 
-  const toolCtx: ToolContext = { supabase, conversationId, sessionToken, channel };
+  const toolCtx: ToolContext = {
+    supabase,
+    conversationId,
+    sessionToken,
+    channel,
+  };
   const toolEvents: { tool: string; result: any }[] = [];
   const events: string[] = [];
 
   // Voice rough-quote rail runs before any model prompt is constructed, so the
   // address/service-area directive can never preempt the address-free quote.
   const roughQuoteRail = channel === "voice"
-    ? await runVoiceRoughQuoteRail({ supabase, toolCtx, conversationId, sessionToken, facts, state, history, userMessage })
+    ? await runVoiceRoughQuoteRail({
+      supabase,
+      toolCtx,
+      conversationId,
+      sessionToken,
+      facts,
+      state,
+      history,
+      userMessage,
+    })
     : null;
   if (roughQuoteRail) return roughQuoteRail;
 
@@ -1185,26 +1601,89 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   ) {
     const plan = planQuoteByTextCancellation();
     const cleared = mergeFacts(facts, {
-      quoteByText: { pending: false, lastReason: plan.outcome, missingField: null },
+      quoteByText: {
+        pending: false,
+        lastReason: plan.outcome,
+        missingField: null,
+      },
     });
-    await persistFacts(supabase, conversationId, cleared, state, { sessionToken, channel, windowIntent });
+    await persistFacts(supabase, conversationId, cleared, state, {
+      sessionToken,
+      channel,
+      windowIntent,
+    });
     return finalize({
-      reply: plan.reply, toolEvents: [], events: [plan.event], state, channel,
-      facts: cleared, railBooked: false,
+      reply: plan.reply,
+      toolEvents: [],
+      events: [plan.event],
+      state,
+      channel,
+      facts: cleared,
+      railBooked: false,
     });
   }
   if (quoteByTextAsked || quoteByTextPending) {
-    // The turn that answers "what email should I use?" is parsed as that
-    // answer and merged into the canonical contact facts BEFORE the rail runs,
-    // so the delivery resumes immediately instead of asking again.
-    if (
-      quoteByTextPending && !facts.contact?.email &&
-      facts.quoteByText?.missingField === "email"
-    ) {
-      const spokenEmail = parseSpokenEmail(userMessage);
-      if (spokenEmail) {
+    // The turn that answers the outstanding question ("what email should I
+    // use?", "what name?", "what address?") is consumed DETERMINISTICALLY here,
+    // before any delivery retry: the captured value is merged into the
+    // canonical facts so the same turn completes the save→SMS attempt. When the
+    // answer is unusable we re-ask and make ZERO upstream calls.
+    if (quoteByTextPending && !quoteByTextAsked) {
+      const continuation = await resolveQuoteByTextContinuation({
+        missingField: facts.quoteByText?.missingField ?? null,
+        userMessage,
+        phoneConfirmed: isFullE164(facts.contact?.phone) &&
+          facts.contact?.phoneConfirmed === true,
+        validateAddress: async (address: string) => {
+          const args = { address } as Record<string, unknown>;
+          const result = await runTool("validate_service_area", toolCtx, args);
+          toolEvents.push({ tool: "validate_service_area", result });
+          facts = mergeFacts(
+            facts,
+            factPatchFromTool("validate_service_area", args, result, facts),
+          );
+          return result;
+        },
+      });
+      if (continuation.kind === "contact") {
         facts = mergeFacts(facts, {
-          contact: { ...(facts.contact ?? {}), email: spokenEmail },
+          contact: {
+            ...(facts.contact ?? {}),
+            ...(continuation.email ? { email: continuation.email } : {}),
+            ...(continuation.name ? { name: continuation.name } : {}),
+          },
+        });
+        state = computeState(facts, channel);
+      } else if (continuation.kind === "validated_address") {
+        // Facts were already merged from the canonical tool result above.
+        state = computeState(facts, channel);
+      }
+      const blocked = continuation.kind === "reask"
+        ? continuation.plan
+        : continuation.kind === "validated_address" && !continuation.eligible
+        ? continuation.plan
+        : null;
+      if (blocked) {
+        const keptFacts = mergeFacts(facts, {
+          quoteByText: {
+            pending: true,
+            lastReason: blocked.outcome,
+            missingField: blocked.missingField,
+          },
+        });
+        await persistFacts(supabase, conversationId, keptFacts, state, {
+          sessionToken,
+          channel,
+          windowIntent,
+        });
+        return finalize({
+          reply: blocked.reply,
+          toolEvents,
+          events: [blocked.event],
+          state,
+          channel,
+          facts: keptFacts,
+          railBooked: false,
         });
       }
     }
@@ -1229,6 +1708,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       name: facts.contact?.name ?? null,
       phone: facts.contact?.phone ?? null,
       phoneIsFullE164: isFullE164(facts.contact?.phone),
+      phoneConfirmed: facts.contact?.phoneConfirmed === true,
       address: facts.address ?? null,
       addressEligible: facts.serviceArea?.status === "eligible",
       // Canonical customer-facing delivery: save-quote (action:"save", never an
@@ -1253,10 +1733,14 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
         missingField: plan.missingField,
       },
     });
-    await persistFacts(supabase, conversationId, nextFacts, state, { sessionToken, channel, windowIntent });
+    await persistFacts(supabase, conversationId, nextFacts, state, {
+      sessionToken,
+      channel,
+      windowIntent,
+    });
     return finalize({
       reply: plan.reply,
-      toolEvents: [],
+      toolEvents,
       events: [plan.event],
       state,
       channel,
@@ -1266,11 +1750,22 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   }
   // -----------------------------------------------------------------------
 
-  const built = await buildSystemPrompt(supabase, state, facts, channel, userMessage);
+  const built = await buildSystemPrompt(
+    supabase,
+    state,
+    facts,
+    channel,
+    userMessage,
+  );
   const system = built.prompt;
   const retrievedKeys = built.retrievedKeys;
   const messages: any[] = [
-    { role: "system", content: channel === "voice" ? `${system}\n\n${VOICE_RESPONSE_CONTRACT}` : system },
+    {
+      role: "system",
+      content: channel === "voice"
+        ? `${system}\n\n${VOICE_RESPONSE_CONTRACT}`
+        : system,
+    },
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: userMessage },
   ];
@@ -1283,18 +1778,35 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   const intent = classifyInboundIntent(userMessage);
   let railBooked = false;
   if (intent.kind === "booking" && state === "awaiting_booking_confirmation") {
-    const slotId = await resolveUnambiguousOfferedSlot(supabase, conversationId, facts, history);
+    const slotId = await resolveUnambiguousOfferedSlot(
+      supabase,
+      conversationId,
+      facts,
+      history,
+    );
     if (slotId) {
       const args = { confirmed: true, slotId } as Record<string, unknown>;
       const result = await runTool("create_bluladder_booking", toolCtx, args);
       toolEvents.push({ tool: "create_bluladder_booking", result });
-      if (result && typeof result === "object" && "event" in result && (result as any).event) {
+      if (
+        result && typeof result === "object" && "event" in result &&
+        (result as any).event
+      ) {
         events.push((result as any).event);
       }
-      const patch = factPatchFromTool("create_bluladder_booking", args, result, facts);
+      const patch = factPatchFromTool(
+        "create_bluladder_booking",
+        args,
+        result,
+        facts,
+      );
       facts = mergeFacts(facts, patch);
       state = computeState(facts, channel);
-      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel, windowIntent });
+      await persistFacts(supabase, conversationId, facts, state, {
+        sessionToken,
+        channel,
+        windowIntent,
+      });
       railBooked = (result as any)?.status === "confirmed";
       // Give the model a system-scoped ground truth so its reply is anchored
       // in the real tool status, not a hallucinated confirmation.
@@ -1305,8 +1817,10 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
           `The customer confirmed and create_bluladder_booking was already executed server-side for slotId=${slotId}.`,
           `Tool result: ${JSON.stringify(result)}.`,
           "You MUST NOT call create_bluladder_booking again.",
-          `Only tell the customer the appointment is confirmed if status is exactly "confirmed" (currently: ${(result as any)?.status ?? "unknown"}).`,
-          "If status is not \"confirmed\", relay the tool's message plainly and offer next steps — never claim the booking is complete.",
+          `Only tell the customer the appointment is confirmed if status is exactly "confirmed" (currently: ${
+            (result as any)?.status ?? "unknown"
+          }).`,
+          'If status is not "confirmed", relay the tool\'s message plainly and offer next steps — never claim the booking is complete.',
         ].join(" "),
       });
     }
@@ -1316,34 +1830,98 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   for (let step = 0; step < MAX_TOOL_STEPS; step++) {
     // Only expose tools the deterministic state permits right now.
     const allowed = new Set(allowedToolsForState(state, channel));
-    const tools = TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name as any));
+    const tools = TOOL_DEFINITIONS.filter((t) =>
+      allowed.has(t.function.name as any)
+    );
 
     const data = await callModel(messages, tools);
-    if (data.__rateLimited) return { reply: "We're getting a lot of questions right now — please try again in a moment.", toolEvents, events, state, error: "rate_limited" };
-    if (data.__creditsExhausted) return { reply: "I'm briefly unavailable. Please try again shortly or ask for a callback.", toolEvents, events, state, error: "credits" };
-    if (data.__error) return { reply: "Sorry, I hit a snag. Would you like a team member to reach out?", toolEvents, events, state, error: "ai_error" };
+    if (data.__rateLimited) {
+      return {
+        reply:
+          "We're getting a lot of questions right now — please try again in a moment.",
+        toolEvents,
+        events,
+        state,
+        error: "rate_limited",
+      };
+    }
+    if (data.__creditsExhausted) {
+      return {
+        reply:
+          "I'm briefly unavailable. Please try again shortly or ask for a callback.",
+        toolEvents,
+        events,
+        state,
+        error: "credits",
+      };
+    }
+    if (data.__error) {
+      return {
+        reply:
+          "Sorry, I hit a snag. Would you like a team member to reach out?",
+        toolEvents,
+        events,
+        state,
+        error: "ai_error",
+      };
+    }
 
     const choice = data.choices?.[0]?.message;
-    if (!choice) return { reply: "Sorry, I didn't catch that — could you rephrase?", toolEvents, events, state };
+    if (!choice) {
+      return {
+        reply: "Sorry, I didn't catch that — could you rephrase?",
+        toolEvents,
+        events,
+        state,
+      };
+    }
 
     const toolCalls = choice.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
-      await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
-      let safe = guardConfirmedLanguage(choice.content || "How can I help with your exterior cleaning today?", facts, railBooked);
+      await maybeUpdateSummary(
+        supabase,
+        conversationId,
+        facts,
+        state,
+        priorState,
+      );
+      let safe = guardConfirmedLanguage(
+        choice.content || "How can I help with your exterior cleaning today?",
+        facts,
+        railBooked,
+      );
       if (channel === "voice") safe = guardDeliveryClaims(safe, false);
-      return finalize({ reply: safe, toolEvents, events, state, channel, facts, railBooked, retrievedKnowledgeKeys: retrievedKeys });
+      return finalize({
+        reply: safe,
+        toolEvents,
+        events,
+        state,
+        channel,
+        facts,
+        railBooked,
+        retrievedKnowledgeKeys: retrievedKeys,
+      });
     }
 
-    messages.push({ role: "assistant", content: choice.content || "", tool_calls: toolCalls });
+    messages.push({
+      role: "assistant",
+      content: choice.content || "",
+      tool_calls: toolCalls,
+    });
     for (const tc of toolCalls) {
       let args: Record<string, unknown> = {};
-      try { args = JSON.parse(tc.function?.arguments || "{}"); } catch { args = {}; }
+      try {
+        args = JSON.parse(tc.function?.arguments || "{}");
+      } catch {
+        args = {};
+      }
       const name = tc.function?.name || "";
 
       // HARD deterministic gate: refuse any out-of-order tool without executing.
       if (!isToolAllowed(state, name, channel)) {
         messages.push({
-          role: "tool", tool_call_id: tc.id,
+          role: "tool",
+          tool_call_id: tc.id,
           content: JSON.stringify({
             status: "tool_not_allowed",
             reason: `The '${name}' step isn't available yet.`,
@@ -1357,7 +1935,10 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       const result = await runTool(name, toolCtx, args);
       toolEvents.push({ tool: name, result });
       if (name === "calculate_bluladder_quote") events.push("quote_calculated");
-      if (result && typeof result === "object" && "event" in result && (result as any).event) {
+      if (
+        result && typeof result === "object" && "event" in result &&
+        (result as any).event
+      ) {
         events.push((result as any).event);
       }
 
@@ -1366,20 +1947,40 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       const patch = factPatchFromTool(name, args, result, facts);
       facts = mergeFacts(facts, patch);
       state = computeState(facts, channel);
-      await persistFacts(supabase, conversationId, facts, state, { sessionToken, channel, windowIntent });
+      await persistFacts(supabase, conversationId, facts, state, {
+        sessionToken,
+        channel,
+        windowIntent,
+      });
 
-      messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result) });
+      messages.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        content: JSON.stringify(result),
+      });
     }
   }
 
   const allowed = new Set(allowedToolsForState(state, channel));
-  const tools = TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name as any));
+  const tools = TOOL_DEFINITIONS.filter((t) =>
+    allowed.has(t.function.name as any)
+  );
   const data = await callModel(messages, tools);
-  let reply = data?.choices?.[0]?.message?.content || "Let me get a team member to help you finish this up.";
+  let reply = data?.choices?.[0]?.message?.content ||
+    "Let me get a team member to help you finish this up.";
   reply = guardConfirmedLanguage(reply, facts, railBooked);
   if (channel === "voice") reply = guardDeliveryClaims(reply, false);
   await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
-  return finalize({ reply, toolEvents, events, state, channel, facts, railBooked, retrievedKnowledgeKeys: retrievedKeys });
+  return finalize({
+    reply,
+    toolEvents,
+    events,
+    state,
+    channel,
+    facts,
+    railBooked,
+    retrievedKnowledgeKeys: retrievedKeys,
+  });
 }
 
 // Attach the optional voice disposition only when the caller asked for the
@@ -1426,16 +2027,30 @@ export function deriveVoiceDisposition(input: {
   toolEvents: { tool: string; result: any }[];
 }): VoiceDisposition {
   const { state, facts, railBooked, toolEvents } = input;
-  if (facts.bookingStatus === "confirmed" || railBooked) return { type: "tool_result_speak" };
-  if (facts.callbackRequested) return { type: "callback_confirmed" };
-  if (state === "manual_review" || facts.quote?.status === "manual_review_required") {
-    return { type: "uncertain_pricing", reason: facts.manualReviewReason ?? undefined };
+  if (facts.bookingStatus === "confirmed" || railBooked) {
+    return { type: "tool_result_speak" };
   }
-  if (state === "checking_availability" || state === "awaiting_booking_confirmation") {
+  if (facts.callbackRequested) return { type: "callback_confirmed" };
+  if (
+    state === "manual_review" ||
+    facts.quote?.status === "manual_review_required"
+  ) {
+    return {
+      type: "uncertain_pricing",
+      reason: facts.manualReviewReason ?? undefined,
+    };
+  }
+  if (
+    state === "checking_availability" ||
+    state === "awaiting_booking_confirmation"
+  ) {
     return { type: "tool_result_speak" };
   }
   if (state === "error_recovery") {
-    return { type: "safe_failure", reasonCode: facts.lastError ?? "orchestrator_error_recovery" };
+    return {
+      type: "safe_failure",
+      reasonCode: facts.lastError ?? "orchestrator_error_recovery",
+    };
   }
   if (toolEvents.some((e) => e.tool === "escalate_to_human")) {
     return { type: "transfer_human", reason: "orchestrator_escalation" };
@@ -1447,7 +2062,11 @@ export function deriveVoiceDisposition(input: {
 // booking unless the booking tool actually returned status="confirmed" (which
 // promotes facts.bookingStatus to "confirmed"). Applies even when the rail
 // didn't fire — this is the class-of-failure guard.
-export function guardConfirmedLanguage(reply: string, facts: ConversationFacts, railBooked: boolean): string {
+export function guardConfirmedLanguage(
+  reply: string,
+  facts: ConversationFacts,
+  railBooked: boolean,
+): string {
   if (!textAssertsConfirmed(reply)) return reply;
   if (facts.bookingStatus === "confirmed" || railBooked) return reply;
   return "Thanks for confirming — I'm finalizing that appointment now. I'll send a confirmation as soon as it's locked in. If you don't hear back within a few minutes, reply here and I'll pull in a teammate.";
@@ -1456,7 +2075,11 @@ export function guardConfirmedLanguage(reply: string, facts: ConversationFacts, 
 // Refresh the admin summary only when we reached a milestone state that differs
 // from where the conversation started this turn. Transcript stays authoritative.
 async function maybeUpdateSummary(
-  supabase: SupabaseClient, conversationId: string, facts: ConversationFacts, state: string, priorState: string,
+  supabase: SupabaseClient,
+  conversationId: string,
+  facts: ConversationFacts,
+  state: string,
+  priorState: string,
 ) {
   if (!SUMMARY_MILESTONES.has(state) || state === priorState) return;
   try {
