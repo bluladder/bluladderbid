@@ -158,7 +158,7 @@ function svc(): SupabaseClient {
   });
 }
 
-async function callFunction(
+export async function callFunction(
   name: string,
   body: unknown,
 ): Promise<{ status: number; json: any }> {

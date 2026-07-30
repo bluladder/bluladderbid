@@ -11,7 +11,13 @@
 // booking is authorized — computeState()/allowedToolsForState() decide that.
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { runTool, TOOL_DEFINITIONS, type ToolContext } from "./aiTools.ts";
+import {
+  callFunction as callEdgeFunction,
+  resolveVoiceBookingLane,
+  runTool,
+  TOOL_DEFINITIONS,
+  type ToolContext,
+} from "./aiTools.ts";
 import { getPhoneByPurpose, RETIRED_PHONE_NUMBERS } from "./phoneConfig.ts";
 import { classifyInboundIntent } from "./bookingIntent.ts";
 import {
@@ -44,6 +50,7 @@ import {
   guardDeliveryClaims,
   planQuoteByTextResponse,
 } from "./voice/quoteByText.ts";
+import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
