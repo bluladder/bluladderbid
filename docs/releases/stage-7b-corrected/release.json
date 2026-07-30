@@ -96,11 +96,15 @@
     }
   },
   "execution": {
-    "selected_mechanism": "direct_psql",
-    "hosted_ledger_result": "unchanged",
-    "canonical_provenance_result": "one atomic private append-only row",
+    "selected_mechanism": null,
+    "production_control_plane": "lovable_cloud",
+    "compatibility": "BLOCKED_UNSUPPORTED_CLIENT_BINDINGS",
+    "historical_prepared_mechanism": "direct_psql",
+    "hosted_ledger_result": "UNVERIFIED_LOVABLE_HISTORY_CONTRACT",
+    "canonical_provenance_result": "DESIGNED_BUT_NOT_EXECUTABLE_UNCHANGED",
     "authorization_required": true,
-    "runbook": "docs/releases/stage-7b-corrected/direct-execution-runbook.md"
+    "runbook": "docs/releases/stage-7b-corrected/lovable-cloud-control-plane.md",
+    "historical_runbook": "docs/releases/stage-7b-corrected/direct-execution-runbook.md"
   },
   "excluded_migrations": [
     "20260728070000_organization_routing_stage_8a.sql",

@@ -1,9 +1,9 @@
 # Stage 7B corrected release candidate
 
-Decision: **NO-GO for hosted execution** until a production authorization names
-the exact candidate hash, direct-psql mechanism, operator, reviewer, approval
-record, project, environment, cron window, and forward-only provenance
-disposition. This package does not authorize any hosted action.
+Decision: **NO-GO for hosted execution**. Production is Lovable Cloud, so the
+prepared direct-`psql` mechanism is not a supported production control path.
+See `lovable-cloud-control-plane.md`. This package does not authorize any
+hosted action.
 
 ## Immutable composition
 
@@ -51,19 +51,28 @@ semantics.
 
 ## Execution and history decision
 
-The only prepared mechanism is exact direct execution with:
+The candidate was prepared for exact direct execution with:
 
 ```text
 psql -X -v ON_ERROR_STOP=1 -v <reviewed variables> -f <assembled candidate>
 ```
 
-Direct execution leaves `supabase_migrations.schema_migrations` unchanged. The
+That mechanism is unavailable through the documented Lovable Cloud control
+plane and is no longer selected for production. Direct execution would leave
+`supabase_migrations.schema_migrations` unchanged. The
 atomic private provenance row is the canonical forward-only database record.
 No ledger row is inserted, repaired, deleted, or remapped. Authorization must
 explicitly accept that outcome; otherwise this release remains NO-GO.
 
-CLI `db push`, `migration up`, `--include-all`, migration repair, raw dashboard
-execution, MCP `apply_migration`, and every later migration remain excluded.
+Supabase CLI, dashboard, MCP, Management API, organization access, direct
+database credentials, and migration-ledger repair are not production
+prerequisites. Raw Cloud SQL-editor execution is also excluded until Lovable
+confirms exact artifact, transaction, evidence, and history guarantees.
+
+The SQL components and their hashes remain unchanged as the reviewed source
+baseline. A Lovable-compatible executable must replace `psql` substitutions,
+so it requires a new release identity, assembled hash, manifest, validator, and
+rehearsal.
 
 ## Repository evidence
 

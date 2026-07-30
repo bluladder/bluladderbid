@@ -1,6 +1,12 @@
 # Stage 7B corrected direct-execution runbook
 
-Status: **documentation only; NO-GO until separately authorized**.
+Status: **superseded for production; DO NOT EXECUTE**.
+
+Production is Lovable Cloud and does not expose the direct database credentials
+or `psql` control path assumed below. This file is retained only to document the
+original candidate contract. The authoritative reassessment is
+`lovable-cloud-control-plane.md`. Authorization alone does not make this
+mechanism supported.
 
 ## 1. Required authorization and evidence
 
