@@ -47,6 +47,7 @@ function stubSupabase(opts: { address?: string } = {}) {
   };
   const rows: Record<string, unknown> = {
     chat_conversations: convo,
+    system_test_config: { suppress_all: false, suppress_reason: null },
     service_area_config: {
       allowed_cities: ["McKinney"],
       manual_review_counties: ["Collin"],
@@ -61,6 +62,7 @@ function stubSupabase(opts: { address?: string } = {}) {
     const b: any = {
       select: () => b,
       eq: () => b,
+      or: () => b,
       order: () => b,
       insert: (v: unknown) => {
         updates.push({ table, insert: v });
@@ -124,6 +126,8 @@ function withLiveEnv(
     lovable: Deno.env.get("LOVABLE_API_KEY"),
     maps: Deno.env.get("GOOGLE_MAPS_API_KEY"),
   };
+  const prevEnvName = Deno.env.get("LOVABLE_ENV");
+  Deno.env.set("LOVABLE_ENV", "production");
   Deno.env.set("VOICE_LIVE_BOOKING_ENABLED", "true");
   Deno.env.set("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST", CALLER);
   Deno.env.set("LOVABLE_API_KEY", "test-lovable-key");
@@ -151,6 +155,7 @@ function withLiveEnv(
       set("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST", prev.list);
       set("LOVABLE_API_KEY", prev.lovable);
       set("GOOGLE_MAPS_API_KEY", prev.maps);
+      set("LOVABLE_ENV", prevEnvName);
     },
   };
 }
