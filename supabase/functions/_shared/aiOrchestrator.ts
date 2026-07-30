@@ -53,6 +53,7 @@ import {
   planQuoteByTextCancellation,
   planQuoteByTextResponse,
 } from "./voice/quoteByText.ts";
+import { parseSpokenEmail } from "./voice/spokenEmail.ts";
 import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
@@ -1166,10 +1167,10 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   // sent and offer the next concrete step. Internal escalation SMS is never
   // used as a substitute for a customer quote link.
   //
-  // Quote-by-text delivery is a customer-facing QUOTE feature and is therefore
-  // NOT gated on the live-booking rollout (flag/allowlist): it writes no
-  // appointment and touches no calendar. Its own guards are the firm quote, the
-  // confirmed phone, the eligible address and a resolvable email.
+  // Delivery is real and canonical (save-quote + send-sms) but stays behind the
+  // existing voice live flag and caller allowlist. Its own additional guards
+  // are the firm quote, the confirmed phone, the eligible address and a
+  // deterministically resolvable email.
   //
   // The request also survives across turns: when a required field is missing we
   // persist `quoteByText.pending` and resume automatically on the next turn, so
@@ -1184,7 +1185,7 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   ) {
     const plan = planQuoteByTextCancellation();
     const cleared = mergeFacts(facts, {
-      quoteByText: { pending: false, lastReason: plan.outcome },
+      quoteByText: { pending: false, lastReason: plan.outcome, missingField: null },
     });
     await persistFacts(supabase, conversationId, cleared, state, { sessionToken, channel, windowIntent });
     return finalize({
@@ -1193,6 +1194,20 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     });
   }
   if (quoteByTextAsked || quoteByTextPending) {
+    // The turn that answers "what email should I use?" is parsed as that
+    // answer and merged into the canonical contact facts BEFORE the rail runs,
+    // so the delivery resumes immediately instead of asking again.
+    if (
+      quoteByTextPending && !facts.contact?.email &&
+      facts.quoteByText?.missingField === "email"
+    ) {
+      const spokenEmail = parseSpokenEmail(userMessage);
+      if (spokenEmail) {
+        facts = mergeFacts(facts, {
+          contact: { ...(facts.contact ?? {}), email: spokenEmail },
+        });
+      }
+    }
     let quoteSessionId: string | null = null;
     try {
       const session = await findQuoteSessionByConversation(
@@ -1201,6 +1216,11 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       );
       quoteSessionId = session?.id ?? null;
     } catch (_e) { /* conversationId is the idempotency-scope fallback */ }
+    // Live customer-facing delivery stays behind the EXISTING voice live flag
+    // and caller allowlist. Nothing here broadens routing or the allowlist; a
+    // non-live lane resolves to the truthful "can't text it from this call"
+    // answer rather than a silent no-op.
+    const deliveryLane = resolveVoiceBookingLane(facts.contact?.phone ?? null);
     const plan = await planQuoteByTextResponse({
       // Only a FIRM canonical quote may be persisted and texted; a rough
       // spoken estimate is not a quote a customer can act on.
@@ -1214,20 +1234,23 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
       // Canonical customer-facing delivery: save-quote (action:"save", never an
       // email) followed by send-sms(quote_created, customerInitiated) through
       // the SMS outbox. No parallel provider call exists in this module.
-      deliver: async () =>
-        await deliverVoiceQuoteByText({
-          supabase,
-          facts,
-          quoteSessionId,
-          conversationId,
-          callFunction: callEdgeFunction,
-        }),
+      deliver: deliveryLane === "live"
+        ? async () =>
+          await deliverVoiceQuoteByText({
+            supabase,
+            facts,
+            quoteSessionId,
+            conversationId,
+            callFunction: callEdgeFunction,
+          })
+        : null,
     });
     // Keep the request alive only while the caller can still unblock it.
     const nextFacts = mergeFacts(facts, {
       quoteByText: {
         pending: plan.missingField !== null,
         lastReason: plan.outcome,
+        missingField: plan.missingField,
       },
     });
     await persistFacts(supabase, conversationId, nextFacts, state, { sessionToken, channel, windowIntent });
