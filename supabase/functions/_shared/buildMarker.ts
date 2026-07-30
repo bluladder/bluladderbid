@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.4-quote-by-text-live";
+export const BUILD_ID = "voice-adapter-4C-b.6.5-hangup-bid-link-followup";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -28,4 +28,7 @@ export const BUILD_FEATURES = {
   // save-quote + send-sms, gated by the existing voice live flag + allowlist.
   voiceQuoteByTextDelivery: true,
   voiceQuoteByTextLive: true,
+  // Post-hangup online-bid SMS fallback, triggered only by the authoritative
+  // final call-ended event and delivered through the durable SMS outbox.
+  voiceHangupBidLinkFollowup: true,
 } as const;
