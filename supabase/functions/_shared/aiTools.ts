@@ -158,7 +158,7 @@ function svc(): SupabaseClient {
   });
 }
 
-async function callFunction(
+export async function callFunction(
   name: string,
   body: unknown,
 ): Promise<{ status: number; json: any }> {
@@ -186,7 +186,7 @@ async function callFunction(
 // mapping. NO defaults are silently substituted: a missing required field
 // surfaces as missing_information from the engine.
 // ---------------------------------------------------------------------------
-function buildQuoteRequest(a: Record<string, unknown>) {
+export function buildQuoteRequest(a: Record<string, unknown>) {
   const services: string[] = Array.isArray(a.services)
     ? (a.services as string[]).filter((s) =>
       (ALLOWED_SERVICES as readonly string[]).includes(s)

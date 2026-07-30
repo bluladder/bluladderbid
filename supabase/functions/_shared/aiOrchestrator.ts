@@ -11,7 +11,13 @@
 // booking is authorized — computeState()/allowedToolsForState() decide that.
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { runTool, TOOL_DEFINITIONS, type ToolContext } from "./aiTools.ts";
+import {
+  callFunction as callEdgeFunction,
+  resolveVoiceBookingLane,
+  runTool,
+  TOOL_DEFINITIONS,
+  type ToolContext,
+} from "./aiTools.ts";
 import { getPhoneByPurpose, RETIRED_PHONE_NUMBERS } from "./phoneConfig.ts";
 import { classifyInboundIntent } from "./bookingIntent.ts";
 import {
@@ -44,6 +50,7 @@ import {
   guardDeliveryClaims,
   planQuoteByTextResponse,
 } from "./voice/quoteByText.ts";
+import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
@@ -1156,17 +1163,39 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   // sent and offer the next concrete step. Internal escalation SMS is never
   // used as a substitute for a customer quote link.
   if (channel === "voice" && classifyQuoteByTextRequest(userMessage)) {
+    // Live delivery is gated by the SAME two independent constraints as live
+    // voice booking: the runtime flag AND the caller-phone allowlist. When the
+    // lane is not live we pass no deliver closure, so the caller hears the
+    // truthful "not sent" answer instead of an optimistic claim.
+    const deliveryLane = resolveVoiceBookingLane(facts.contact?.phone ?? null);
+    let quoteSessionId: string | null = null;
+    if (deliveryLane === "live") {
+      try {
+        const session = await findQuoteSessionByConversation(
+          supabase,
+          conversationId,
+        );
+        quoteSessionId = session?.id ?? null;
+      } catch (_e) { /* best effort; save-quote tolerates a null session id */ }
+    }
     const plan = await planQuoteByTextResponse({
       quoteIsFirm: isQuoteEstimatedOrFirm(facts),
       total: facts.quote?.total ?? facts.roughQuote?.spokenTotal ?? null,
       name: facts.contact?.name ?? null,
       phone: facts.contact?.phone ?? null,
       phoneIsFullE164: isFullE164(facts.contact?.phone),
-      // No canonical voice-initiated customer quote-link delivery exists yet
-      // (see report: save-quote requires the full web quote payload and
-      // bid-by-text is disabled). Until that path is migrated, this stays null
-      // so the caller always hears the truth.
-      deliver: null,
+      // Canonical customer-facing delivery: save-quote (action:"save", never an
+      // email) followed by send-sms(quote_created, customerInitiated) through
+      // the SMS outbox. No parallel provider call exists in this module.
+      deliver: deliveryLane === "live"
+        ? async () =>
+          await deliverVoiceQuoteByText({
+            supabase,
+            facts,
+            sessionId: quoteSessionId,
+            callFunction: callEdgeFunction,
+          })
+        : null,
     });
     return finalize({
       reply: plan.reply,
