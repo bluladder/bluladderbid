@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildCustomerFeatureSnapshot } from './featureBuilder';
+import { buildCustomerFeatureSnapshot, type TimelineEvent } from './featureBuilder';
 
 const DFW = 'b1addf00-0000-4000-8000-000000000001';
 const OREGON = 'b1addf00-0000-4000-8000-000000000002';
 let eventSequence = 0;
-const event = (eventValue: Record<string, unknown>) => ({
+const event = (
+  eventValue: Partial<TimelineEvent> & Pick<TimelineEvent, 'eventType' | 'eventAt'>,
+): TimelineEvent => ({
   organizationId: DFW,
   canonicalEventId: `event-${eventSequence += 1}`,
   valueSemantics: 'non_revenue' as const,
