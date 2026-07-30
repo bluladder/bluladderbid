@@ -65,9 +65,9 @@
   ],
   "preflight": {
     "path": "supabase/preflight/tenant_stage_7b_lovable.sql",
-    "sha256": "ec7e8e38a8c35c3c47eff20c3572e21ff58189c8844a544f5a9139ded899ee00",
+    "sha256": "3f02e6e433856fdf67a8dd9db15cd3a4a9419f16fa573ceffb619bae6a9421e8",
     "mcp_path": "supabase/preflight/tenant_stage_7b_lovable_mcp.json",
-    "mcp_sha256": "0397d5c4c5c913f7d37c15b1d6f61411b466403caeb663a759f6a3b3e9197471",
+    "mcp_sha256": "24cada1c50908069b8042246c03fb7b625d0c8f24abee6645ad6d786e0ac1eb7",
     "mcp_submission_contract": "one SELECT statement per query_database call"
   },
   "postflight": {
