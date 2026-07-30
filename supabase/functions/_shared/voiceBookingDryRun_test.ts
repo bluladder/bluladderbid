@@ -56,10 +56,12 @@ Deno.test("voice channel: create_bluladder_booking returns dry-run without any n
   }
 });
 
-Deno.test("voice channel: legacy live flag cannot unlock the booking pipeline", async () => {
+Deno.test("voice channel: live flag alone cannot unlock the booking pipeline", async () => {
   const prev = Deno.env.get("VOICE_LIVE_BOOKING_ENABLED");
+  const prevList = Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST");
   Deno.env.set("VOICE_LIVE_BOOKING_ENABLED", "true");
-  assertEquals(voiceLiveBookingEnabled(), false);
+  Deno.env.delete("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST");
+  assertEquals(voiceLiveBookingEnabled(), true);
   const ctx = {
     supabase: stubSupabase,
     conversationId: "conv_voice_live",
@@ -84,5 +86,8 @@ Deno.test("voice channel: legacy live flag cannot unlock the booking pipeline", 
     globalThis.fetch = originalFetch;
     if (prev === undefined) Deno.env.delete("VOICE_LIVE_BOOKING_ENABLED");
     else Deno.env.set("VOICE_LIVE_BOOKING_ENABLED", prev);
+    if (prevList === undefined) {
+      Deno.env.delete("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST");
+    } else Deno.env.set("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST", prevList);
   }
 });
