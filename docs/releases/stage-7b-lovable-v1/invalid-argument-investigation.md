@@ -65,3 +65,16 @@ path is reserved for the eventual protected migration, not read-only preflight.
 The original payload could not mutate hosted state even if PostgreSQL received
 it: it began a read-only transaction and ended with `ROLLBACK`. Its execution
 status nevertheless remains unproven.
+
+## Ledger fingerprint correction
+
+The historical baseline was produced with:
+
+`md5(string_agg(version || ':' || coalesce(name, ''), E'\n' ORDER BY version))`
+
+The first MCP-compatible query accidentally used raw `name` and a pipe
+separator. A read-only comparison over the same 145 rows produced the committed
+historical fingerprint `73ed8522db78e51049a421e1f72b18c3` with the historical
+recipe and `bd10491f2fcfe2579cd1bfbf9c9c534e` with the erroneous recipe. There
+were zero null names. The MCP query and transaction-form preflight now use the
+historical newline/coalesce recipe; the hosted baseline is unchanged.
