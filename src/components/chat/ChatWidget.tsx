@@ -229,7 +229,7 @@ export default function ChatWidget() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 flex items-center justify-center"
+          className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 sm:bottom-6 sm:right-6 z-40 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 flex items-center justify-center"
           aria-label="Open chat"
         >
           <MessageCircle className="w-6 h-6" />

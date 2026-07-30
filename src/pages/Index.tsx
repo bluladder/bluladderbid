@@ -126,12 +126,6 @@ const Index = () => {
     ? customizedBundles.find(b => b.tier === selectedTier) || null 
     : null;
 
-  const handleDownloadPDF = () => {
-    toast.success('Your proposal is being generated...', {
-      description: 'The PDF will download shortly.',
-    });
-  };
-
   const handleGetStarted = () => {
     toast.success('Great choice!', {
       description: 'We\'ll be in touch to schedule your first service.',
@@ -187,7 +181,6 @@ const Index = () => {
           servicePrices={servicePrices}
           additionalServices={additionalServices}
           homeDetails={homeDetails}
-          onDownloadPDF={handleDownloadPDF}
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={prefillCustomerInfo}
           onBookingActiveChange={setBookingActive}
@@ -207,7 +200,6 @@ const Index = () => {
           engineVersion={bundleState.engineVersion}
           ruleVersion={bundleState.ruleVersion}
           customizations={customizations}
-          onDownloadPDF={handleDownloadPDF}
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={prefillCustomerInfo}
         />

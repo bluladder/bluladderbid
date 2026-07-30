@@ -79,3 +79,19 @@ export function hasAnyServiceSelected(svc: AdditionalServices): boolean {
     !!svc.screenRepair?.enabled
   );
 }
+
+/** Canonical enabled-service slugs for attribution and analytics. */
+export function selectedServiceSlugs(
+  svc: AdditionalServices,
+): string[] {
+  return [
+    svc.windowCleaning && 'windowCleaning',
+    svc.houseWash && 'houseWash',
+    svc.gutterCleaning && 'gutterCleaning',
+    svc.roofCleaning && 'roofCleaning',
+    svc.drivewayCleaning?.enabled && 'drivewayCleaning',
+    svc.pressureWashing?.enabled && 'pressureWashing',
+    svc.solarPanelCleaning?.enabled && 'solarPanelCleaning',
+    svc.screenRepair?.enabled && 'screenRepair',
+  ].filter((value): value is string => typeof value === 'string');
+}

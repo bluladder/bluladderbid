@@ -223,12 +223,6 @@ const ServiceLanding = () => {
     ? customizedBundles.find(b => b.tier === selectedTier) || null 
     : null;
 
-  const handleDownloadPDF = () => {
-    toast.success('Your proposal is being generated...', {
-      description: 'The PDF will download shortly.',
-    });
-  };
-
   const handleGetStarted = () => {
     toast.success('Great choice!', {
       description: 'We\'ll be in touch to schedule your first service.',
@@ -258,7 +252,6 @@ const ServiceLanding = () => {
           servicePrices={servicePrices}
           additionalServices={additionalServices}
           homeDetails={homeDetails}
-          onDownloadPDF={handleDownloadPDF}
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={null}
           onAdditionalServicesChange={setAdditionalServices}
@@ -276,7 +269,6 @@ const ServiceLanding = () => {
           engineVersion={bundleState.engineVersion}
           ruleVersion={bundleState.ruleVersion}
           customizations={customizations}
-          onDownloadPDF={handleDownloadPDF}
           onGetStarted={handleGetStarted}
           prefillCustomerInfo={null}
         />
@@ -298,6 +290,8 @@ const ServiceLanding = () => {
           setTierCustomization(tier, customization);
         }}
         homeSquareFootage={homeDetails.squareFootage}
+        planPhase={bundleState.phase}
+        onRetryPlan={bundleState.refetch}
       />
     );
   };

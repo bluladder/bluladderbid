@@ -318,6 +318,17 @@ export function BookingFlow({
     if (slot.isRecommended) setUsedRecommendedSlot(true);
   };
 
+  const handlePostSlotAdditionalServiceChange = (
+    updater: (prev: AdditionalServices) => AdditionalServices,
+  ) => {
+    if (!onAdditionalServicesChange) return;
+    onAdditionalServicesChange(updater);
+    setSelectedSlot(null);
+    setUsedSuggestedDay(false);
+    setUsedRecommendedSlot(false);
+    toast.info('Services updated. Please choose a new time for the updated visit length.');
+  };
+
   // Called when customer info form is submitted
   const handleCustomerInfoSubmit = (info: CustomerInfo) => {
     setCustomerInfo(info);
@@ -736,7 +747,7 @@ export function BookingFlow({
           {selectedSlot && onAdditionalServicesChange && (
             <CompleteYourRefresh
               additionalServices={additionalServices}
-              onAdd={onAdditionalServicesChange}
+              onAdd={handlePostSlotAdditionalServiceChange}
               title="Before we reserve your appointment…"
               subtitle="One last look — add anything you'd like handled during this same visit."
               variant="compact"

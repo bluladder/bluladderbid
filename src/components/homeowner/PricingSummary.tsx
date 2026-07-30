@@ -17,7 +17,7 @@ interface PricingSummaryProps {
   engineVersion: string | null;
   ruleVersion: number | null;
   customizations?: TierCustomizations;
-  onDownloadPDF: () => void;
+  onDownloadPDF?: () => void;
   onGetStarted: () => void;
   prefillCustomerInfo?: CustomerInfo | null;
 }
@@ -292,14 +292,16 @@ export function PricingSummary({
             Get Started with This Plan
           </Button>
           
-          <Button 
-            variant="outline" 
-            className="w-full btn-secondary"
-            onClick={onDownloadPDF}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download Proposal PDF
-          </Button>
+          {onDownloadPDF && (
+            <Button
+              variant="outline"
+              className="w-full btn-secondary"
+              onClick={onDownloadPDF}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download Proposal PDF
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

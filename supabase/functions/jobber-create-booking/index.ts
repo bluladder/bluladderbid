@@ -31,6 +31,10 @@ import {
 } from "../_shared/publicRequestReplay.ts";
 import { resolvePublicBookingOrganization } from "../_shared/publicBookingOrganization.ts";
 import { recordServiceAreaIntervention } from "../_shared/serviceAreaIntervention.ts";
+import {
+  authoritativeBookingDurationMinutes,
+  scheduledIntervalMinutes,
+} from "../_shared/bookingDuration.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -238,7 +242,10 @@ async function checkJobberConflicts(
     before: rangeBefore.toISOString(),
   });
   
-  console.log("Jobber conflict check result:", JSON.stringify(conflictResult));
+  console.log("Jobber conflict check completed", {
+    errorCount: conflictResult.errors?.length ?? 0,
+    hasData: !!conflictResult.data,
+  });
   
   // Check if throttled
   if (conflictResult.throttled) {
@@ -247,7 +254,9 @@ async function checkJobberConflicts(
   }
   
   if (conflictResult.errors?.length) {
-    console.error("Conflict validation failed (Jobber errors):", conflictResult.errors);
+    console.error("Conflict validation failed", {
+      errorCount: conflictResult.errors.length,
+    });
     // FAIL CLOSED: a failed conflict query must NOT be interpreted as
     // "no conflict". Signal an error so the caller stops the booking (503).
     return { hasConflict: false, throttled: false, error: true };
@@ -323,12 +332,11 @@ Deno.serve(async (req) => {
         },
       );
     }
-    console.log("Received booking request:", JSON.stringify({
-      customerEmail: booking.customer?.email,
-      technicianId: booking.technicianId,
-      scheduledStart: booking.scheduledStart,
-      servicesCount: booking.services?.length,
-    }));
+    console.log("Received booking request", {
+      hasCustomer: !!booking.customer,
+      hasTechnician: !!booking.technicianId,
+      servicesCount: booking.services?.length ?? 0,
+    });
 
     // Validate required fields
     if (!booking.customer?.email || !booking.technicianId || !booking.scheduledStart) {
@@ -679,6 +687,36 @@ Deno.serve(async (req) => {
             }
             const serverTotal = engineResult.total;
             const clientTotal = Number(booking.total);
+            const authoritativeDuration =
+              authoritativeBookingDurationMinutes(
+                engineResult.lineItems.map((item) => item.key),
+              );
+            const scheduledDuration = scheduledIntervalMinutes(
+              booking.scheduledStart,
+              booking.scheduledEnd,
+            );
+            if (
+              scheduledDuration === null ||
+              scheduledDuration < authoritativeDuration ||
+              Number(booking.durationMinutes) !== authoritativeDuration
+            ) {
+              return new Response(
+                JSON.stringify({
+                  error:
+                    "The selected appointment time no longer fits the current services. Please choose a new time.",
+                  code: "SLOT_DURATION_MISMATCH",
+                  requiredDurationMinutes: authoritativeDuration,
+                }),
+                {
+                  status: 409,
+                  headers: {
+                    ...corsHeaders,
+                    "Content-Type": "application/json",
+                  },
+                },
+              );
+            }
+            booking.durationMinutes = authoritativeDuration;
             // ---- Resumed-quote revalidation gate ----
             // If this booking is created from a stored quote link, refuse to
             // silently rewrite the price. Require an explicit reconfirmation
@@ -903,7 +941,7 @@ Deno.serve(async (req) => {
     let reservationSettled = false;
     try {
     // Find or create customer in Supabase
-    console.log("Looking up customer by email:", booking.customer.email.toLowerCase());
+    console.log("Looking up customer by normalized identity");
     let customerLookup = supabase
       .from("customers")
       .select("*")
@@ -973,7 +1011,10 @@ Deno.serve(async (req) => {
         };
       }>(searchQuery, { email: booking.customer.email });
 
-      console.log("Jobber client search result:", JSON.stringify(searchResult));
+      console.log("Jobber client search completed", {
+        matched: !!searchResult.data?.clients?.nodes?.[0],
+        errorCount: searchResult.errors?.length ?? 0,
+      });
 
       const existingClient = searchResult.data?.clients?.nodes?.[0];
 
@@ -1009,8 +1050,6 @@ Deno.serve(async (req) => {
           ...(phoneInput && { phones: phoneInput }),
         };
         
-        console.log("Client creation input:", JSON.stringify(clientInput));
-
         const createResult = await jobberGraphQL<{
           clientCreate: {
             client: { id: string } | null;
@@ -1018,10 +1057,17 @@ Deno.serve(async (req) => {
           };
         }>(createClientMutation, { input: clientInput });
 
-        console.log("Jobber client creation result:", JSON.stringify(createResult));
+        console.log("Jobber client creation completed", {
+          created: !!createResult.data?.clientCreate?.client?.id,
+          errorCount: createResult.errors?.length ?? 0,
+          userErrorCount:
+            createResult.data?.clientCreate?.userErrors?.length ?? 0,
+        });
 
         if (createResult.errors?.length) {
-          console.error("Jobber GraphQL errors:", createResult.errors);
+          console.error("Jobber client API failed", {
+            errorCount: createResult.errors.length,
+          });
           return new Response(
             JSON.stringify({ error: "Jobber API error", details: createResult.errors.map(e => e.message).join(", ") }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
@@ -1029,7 +1075,9 @@ Deno.serve(async (req) => {
         }
 
         if (createResult.data?.clientCreate?.userErrors?.length) {
-          console.error("Jobber client creation errors:", createResult.data.clientCreate.userErrors);
+          console.error("Jobber client creation rejected", {
+            errorCount: createResult.data.clientCreate.userErrors.length,
+          });
         }
 
         jobberClientId = createResult.data?.clientCreate?.client?.id;
@@ -1083,7 +1131,11 @@ Deno.serve(async (req) => {
       };
     }>(getClientPropertyQuery, { clientId: jobberClientId });
 
-    console.log("Client properties result:", JSON.stringify(propertyResult));
+    console.log("Jobber property lookup completed", {
+      propertyCount:
+        propertyResult.data?.client?.clientProperties?.nodes?.length ?? 0,
+      errorCount: propertyResult.errors?.length ?? 0,
+    });
     if (propertyResult.errors?.length || !propertyResult.data?.client) {
       return new Response(
         JSON.stringify({
@@ -1130,8 +1182,6 @@ Deno.serve(async (req) => {
         ]
       };
       
-      console.log("Property creation input:", JSON.stringify(propertyInput));
-
       const createPropertyResult = await jobberGraphQL<{
         propertyCreate: {
           properties: Array<{ id: string }>;
@@ -1139,11 +1189,20 @@ Deno.serve(async (req) => {
         };
       }>(createPropertyMutation, { clientId: jobberClientId, input: propertyInput });
 
-      console.log("Property creation result:", JSON.stringify(createPropertyResult));
+      console.log("Jobber property creation completed", {
+        created:
+          !!createPropertyResult.data?.propertyCreate?.properties?.[0]?.id,
+        errorCount: createPropertyResult.errors?.length ?? 0,
+        userErrorCount:
+          createPropertyResult.data?.propertyCreate?.userErrors?.length ?? 0,
+      });
 
       // Check userErrors for hints about what went wrong
       if (createPropertyResult.data?.propertyCreate?.userErrors?.length) {
-        console.error("Property creation user errors:", createPropertyResult.data.propertyCreate.userErrors);
+        console.error("Jobber property creation rejected", {
+          errorCount:
+            createPropertyResult.data.propertyCreate.userErrors.length,
+        });
       }
 
       propertyId = createPropertyResult.data?.propertyCreate?.properties?.[0]?.id;
@@ -1159,7 +1218,11 @@ Deno.serve(async (req) => {
           };
         }>(getClientPropertyQuery, { clientId: jobberClientId });
         
-        console.log("Retry property query result:", JSON.stringify(retryResult));
+        console.log("Jobber property retry completed", {
+          propertyCount:
+            retryResult.data?.client?.clientProperties?.nodes?.length ?? 0,
+          errorCount: retryResult.errors?.length ?? 0,
+        });
         const retryProps = retryResult.data?.client?.properties;
         if (retryProps) {
           if (Array.isArray(retryProps)) {
@@ -1401,12 +1464,10 @@ Deno.serve(async (req) => {
       },
     };
     
-    console.log("Job creation input:", JSON.stringify({ 
-      propertyId: propertyId, 
-      title: jobInput.title,
+    console.log("Job creation prepared", {
       lineItemsCount: lineItems.length,
-      invoicing: jobInput.invoicing,
-    }));
+      hasProperty: !!propertyId,
+    });
 
     let jobberJobId: string | null = existingJobId;
     let jobNumber: number | null = null;
@@ -1423,10 +1484,16 @@ Deno.serve(async (req) => {
         };
       }>(createJobMutation, { input: jobInput });
 
-      console.log("Job creation result:", JSON.stringify(jobResult));
+      console.log("Jobber job creation completed", {
+        created: !!jobResult.data?.jobCreate?.job?.id,
+        errorCount: jobResult.errors?.length ?? 0,
+        userErrorCount: jobResult.data?.jobCreate?.userErrors?.length ?? 0,
+      });
 
       if (jobResult.errors?.length) {
-        console.error("Jobber job GraphQL errors:", jobResult.errors);
+        console.error("Jobber job API failed", {
+          errorCount: jobResult.errors.length,
+        });
         return new Response(
           JSON.stringify({ error: "Failed to create job in Jobber", details: jobResult.errors.map(e => e.message).join(", ") }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
@@ -1434,7 +1501,9 @@ Deno.serve(async (req) => {
       }
 
       if (jobResult.data?.jobCreate?.userErrors?.length) {
-        console.error("Jobber job creation errors:", jobResult.data.jobCreate.userErrors);
+        console.error("Jobber job creation rejected", {
+          errorCount: jobResult.data.jobCreate.userErrors.length,
+        });
         return new Response(
           JSON.stringify({ error: "Failed to create job in Jobber", details: jobResult.data.jobCreate.userErrors.map(e => e.message).join(", ") }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
@@ -1588,7 +1657,10 @@ Deno.serve(async (req) => {
       ]
     };
     
-    console.log("Visit creation input:", JSON.stringify({ jobId: jobberJobId, ...visitInput }));
+    console.log("Jobber visit creation prepared", {
+      hasJob: !!jobberJobId,
+      visitCount: visitInput.visits?.length ?? 0,
+    });
 
     const visitResult = await jobberGraphQL<{
       visitCreate: {
@@ -1597,12 +1669,18 @@ Deno.serve(async (req) => {
       };
     }>(scheduleVisitMutation, { jobId: jobberJobId, input: visitInput });
 
-    console.log("Visit creation result:", JSON.stringify(visitResult));
+    console.log("Jobber visit creation completed", {
+      created: !!visitResult.data?.visitCreate?.visits?.[0]?.id,
+      errorCount: visitResult.errors?.length ?? 0,
+      userErrorCount: visitResult.data?.visitCreate?.userErrors?.length ?? 0,
+    });
 
     const jobberVisitId = visitResult.data?.visitCreate?.createdVisits?.[0]?.id;
 
     if (visitResult.data?.visitCreate?.userErrors?.length) {
-      console.error("Jobber visit creation errors:", visitResult.data.visitCreate.userErrors);
+      console.error("Jobber visit creation rejected", {
+        errorCount: visitResult.data.visitCreate.userErrors.length,
+      });
     }
 
     // Generate reference number
@@ -2123,8 +2201,9 @@ Deno.serve(async (req) => {
     }
 
   } catch (error) {
-    console.error("Booking creation error:", error);
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack");
+    console.error("Booking creation failed", {
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
     return new Response(
       JSON.stringify({ 
         error: "Failed to create booking", 

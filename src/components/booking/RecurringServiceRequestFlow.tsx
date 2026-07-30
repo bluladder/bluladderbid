@@ -233,7 +233,7 @@ export function RecurringServiceRequestFlow({
             <h2 className="text-2xl font-bold text-foreground">Request Submitted!</h2>
             <p className="text-muted-foreground max-w-md mx-auto">
               Thank you for your interest in our {selectedBundle.name} plan.
-              A member of our team will contact you within 1 business day to schedule your first service.
+              Your service-plan request was recorded. No appointment has been scheduled yet.
             </p>
           </div>
           <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 max-w-sm mx-auto">
@@ -242,7 +242,7 @@ export function RecurringServiceRequestFlow({
               <div>
                 <p className="font-medium text-foreground">What happens next?</p>
                 <p className="text-sm text-muted-foreground">
-                  We'll call to confirm your plan details and schedule your first appointment at a time that works for you.
+                  Our team can review the request and use the contact preference you provided. If you need immediate help, contact the office directly.
                 </p>
               </div>
             </div>
