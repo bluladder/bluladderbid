@@ -49,6 +49,27 @@ export interface ResolvedContext {
 }
 
 /**
+ * Resolve a human-readable service address from `properties` (quotes/bookings
+ * store a `property_id`, not an address column).
+ */
+async function lookupPropertyAddress(
+  supabase: Supa,
+  propertyId: string | null | undefined,
+): Promise<string | null> {
+  if (!propertyId) return null;
+  const { data } = await supabase
+    .from("properties")
+    .select("street, city, state, postal_code, normalized_address")
+    .eq("id", propertyId)
+    .maybeSingle();
+  if (!data) return null;
+  const composed = [data.street, data.city, data.state, data.postal_code]
+    .filter(Boolean)
+    .join(", ");
+  return composed || data.normalized_address || null;
+}
+
+/**
  * Resolve customer + thread for an inbound SMS. Idempotent: repeated calls
  * with the same `fromPhone` upsert into the SAME chat_conversations row.
  */
