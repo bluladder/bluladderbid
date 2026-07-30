@@ -44,10 +44,11 @@ function formatPrice(price: number) {
 }
 
 /**
- * Launch gate — the public "Text me this bid" delivery path is LIVE. All SMS
- * infrastructure (edge functions, outbox, inbound SMS, campaigns) is in place;
- * flipping this single constant back to `false` withdraws the option from the
- * public flow without removing any of that infrastructure.
+ * Launch gate — the canonical customer-requested "Text me this bid" action is
+ * LIVE: it persists through `save-quote` and dispatches through the
+ * capability-authorized `send-sms` path (suppression, opt-out and pause checks
+ * still apply). Flipping this single constant back to `false` withdraws the
+ * option from the public flow without removing any of that infrastructure.
  */
 const BID_BY_TEXT_ENABLED = true;
 
