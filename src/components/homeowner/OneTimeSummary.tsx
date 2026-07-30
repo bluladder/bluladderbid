@@ -12,7 +12,7 @@ import { DiscountCodeInput } from './DiscountCodeInput';
 import { BookingFlow } from '@/components/booking/BookingFlow';
 import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
-import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
+import { toQuoteInput, hasAnyServiceSelected, selectedServiceSlugs } from '@/lib/pricing/toQuoteInput';
 import { useWindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 import { deriveQuoteId, fireLead } from '@/lib/attribution/metaPixel';
 import { bridgeFireQuoteSubmitted } from '@/lib/bridge/bluladderBidPostMessage';
@@ -25,7 +25,7 @@ interface OneTimeSummaryProps {
   servicePrices: ServicePrices;
   additionalServices: AdditionalServices;
   homeDetails: HomeDetails;
-  onDownloadPDF: () => void;
+  onDownloadPDF?: () => void;
   onGetStarted: () => void;
   prefillCustomerInfo?: CustomerInfo | null;
   /** Notifies the page when the full booking flow opens/closes so it can widen the layout. */
@@ -251,9 +251,7 @@ export function OneTimeSummary({
   const leadFiredRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isFirm || typeof total !== 'number' || !quote) return;
-    const services = Object.entries(additionalServices)
-      .filter(([, v]) => (typeof v === 'boolean' ? v : Boolean(v)))
-      .map(([k]) => k);
+    const services = selectedServiceSlugs(additionalServices);
     const quoteId = deriveQuoteId({
       ruleVersion: quoteState.ruleVersion,
       engineVersion: quoteState.engineVersion,
@@ -498,15 +496,17 @@ export function OneTimeSummary({
             Book Now
           </Button>
 
-          <Button
-            variant="outline"
-            className="w-full btn-secondary"
-            onClick={onDownloadPDF}
-            disabled={!canBook}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download Quote PDF
-          </Button>
+          {onDownloadPDF && (
+            <Button
+              variant="outline"
+              className="w-full btn-secondary"
+              onClick={onDownloadPDF}
+              disabled={!canBook}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download Quote PDF
+            </Button>
+          )}
 
           {/* Secondary quote actions — Book Now above stays primary. Compact
               labels with truncation guards so they never wrap or clip. */}
