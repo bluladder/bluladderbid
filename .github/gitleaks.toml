@@ -20,3 +20,17 @@ regexes = [
   # Supabase publishable/anon JWTs are meant to ship in the client bundle.
   '''"role"\s*:\s*"anon"''',
 ]
+
+# The first commit in PR #50 contained this exact prose fragment. The scanner
+# interpreted a launch-region phrase as high entropy. The text has been
+# rewritten, but GitHub scans the immutable PR commit range. Keep this exception
+# exact and line-targeted; it does not exempt assignments or credential formats.
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "Historical PR #50 documentation-only false positive"
+  regexTarget = "line"
+  regexes = [
+    '''Run full authoritative validation, secret scan, Oregon/campaign guards; hash outputs''',
+  ]
