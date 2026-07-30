@@ -79,7 +79,9 @@ export function normalizeVoiceInput(
   // Address-shaped answers are left completely alone.
   if (looksLikeAddress(text)) return { text, applied };
 
-  if (askedSquareFootageQuestion(lastAssistant) && !HAS_EXPLICIT_SQFT.test(text)) {
+  if (
+    askedSquareFootageQuestion(lastAssistant) && !HAS_EXPLICIT_SQFT.test(text)
+  ) {
     const sqft = parseSquareFootage(text, { askedSquareFootage: true });
     if (sqft) {
       text = `${text.trim()} (${sqft} square feet)`;

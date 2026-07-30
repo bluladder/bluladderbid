@@ -1,4 +1,7 @@
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   normalizeVoiceInput,
   normalizeVoiceMessages,
@@ -14,19 +17,33 @@ const sqftQ = [{
 }];
 
 Deno.test("bare story answers are normalized before routing", () => {
-  for (const [utterance, expected] of [["one", 1], ["1", 1], ["single", 1], ["ranch", 1], ["two", 2], ["2", 2]] as const) {
+  for (
+    const [utterance, expected] of [
+      ["one", 1],
+      ["1", 1],
+      ["single", 1],
+      ["ranch", 1],
+      ["two", 2],
+      ["2", 2],
+    ] as const
+  ) {
     const r = normalizeVoiceInput(utterance, storiesQ);
-    assert(r.applied.includes("stories"), `expected stories for "${utterance}"`);
+    assert(
+      r.applied.includes("stories"),
+      `expected stories for "${utterance}"`,
+    );
     assert(r.text.includes(`(${expected} story)`), r.text);
   }
 });
 
 Deno.test("spoken square footage is normalized to an explicit unit phrase", () => {
-  for (const [utterance, expected] of [
-    ["two thousand five hundred", 2500],
-    ["two five zero zero", 2500],
-    ["2500", 2500],
-  ] as const) {
+  for (
+    const [utterance, expected] of [
+      ["two thousand five hundred", 2500],
+      ["two five zero zero", 2500],
+      ["2500", 2500],
+    ] as const
+  ) {
     const r = normalizeVoiceInput(utterance, sqftQ);
     assert(r.applied.includes("square_footage"), utterance);
     assert(r.text.includes(`(${expected} square feet)`), r.text);
