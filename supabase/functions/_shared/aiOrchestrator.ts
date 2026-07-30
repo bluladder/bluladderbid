@@ -29,6 +29,7 @@ import {
   quoteInputsKey,
   stateDirective,
   isQuoteEstimatedOrFirm,
+  isQuoteFirm,
 } from "./conversationState.ts";
 import { loadWeatherStatus, renderWeatherDirective } from "./weatherStatus.ts";
 import { lookupServiceCity } from "./serviceArea.ts";
@@ -47,7 +48,9 @@ import { computePartialWindowPrice } from "./partialWindowPricing.ts";
 import { isFullE164 } from "./contactIntegrity.ts";
 import {
   classifyQuoteByTextRequest,
+  classifyQuoteByTextCancellation,
   guardDeliveryClaims,
+  planQuoteByTextCancellation,
   planQuoteByTextResponse,
 } from "./voice/quoteByText.ts";
 import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
@@ -1162,48 +1165,79 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
   // real customer-facing send succeeded, or we say plainly that nothing was
   // sent and offer the next concrete step. Internal escalation SMS is never
   // used as a substitute for a customer quote link.
-  if (channel === "voice" && classifyQuoteByTextRequest(userMessage)) {
-    // Live delivery is gated by the SAME two independent constraints as live
-    // voice booking: the runtime flag AND the caller-phone allowlist. When the
-    // lane is not live we pass no deliver closure, so the caller hears the
-    // truthful "not sent" answer instead of an optimistic claim.
-    const deliveryLane = resolveVoiceBookingLane(facts.contact?.phone ?? null);
+  //
+  // Quote-by-text delivery is a customer-facing QUOTE feature and is therefore
+  // NOT gated on the live-booking rollout (flag/allowlist): it writes no
+  // appointment and touches no calendar. Its own guards are the firm quote, the
+  // confirmed phone, the eligible address and a resolvable email.
+  //
+  // The request also survives across turns: when a required field is missing we
+  // persist `quoteByText.pending` and resume automatically on the next turn, so
+  // the caller answers the question once instead of re-asking for the text.
+  const quoteByTextAsked = channel === "voice" &&
+    classifyQuoteByTextRequest(userMessage);
+  const quoteByTextPending = channel === "voice" &&
+    facts.quoteByText?.pending === true;
+  if (
+    quoteByTextPending && !quoteByTextAsked &&
+    classifyQuoteByTextCancellation(userMessage)
+  ) {
+    const plan = planQuoteByTextCancellation();
+    const cleared = mergeFacts(facts, {
+      quoteByText: { pending: false, lastReason: plan.outcome },
+    });
+    await persistFacts(supabase, conversationId, cleared, state, { sessionToken, channel, windowIntent });
+    return finalize({
+      reply: plan.reply, toolEvents: [], events: [plan.event], state, channel,
+      facts: cleared, railBooked: false,
+    });
+  }
+  if (quoteByTextAsked || quoteByTextPending) {
     let quoteSessionId: string | null = null;
-    if (deliveryLane === "live") {
-      try {
-        const session = await findQuoteSessionByConversation(
-          supabase,
-          conversationId,
-        );
-        quoteSessionId = session?.id ?? null;
-      } catch (_e) { /* best effort; save-quote tolerates a null session id */ }
-    }
+    try {
+      const session = await findQuoteSessionByConversation(
+        supabase,
+        conversationId,
+      );
+      quoteSessionId = session?.id ?? null;
+    } catch (_e) { /* conversationId is the idempotency-scope fallback */ }
     const plan = await planQuoteByTextResponse({
-      quoteIsFirm: isQuoteEstimatedOrFirm(facts),
-      total: facts.quote?.total ?? facts.roughQuote?.spokenTotal ?? null,
+      // Only a FIRM canonical quote may be persisted and texted; a rough
+      // spoken estimate is not a quote a customer can act on.
+      quoteIsFirm: isQuoteFirm(facts),
+      total: facts.quote?.total ?? null,
       name: facts.contact?.name ?? null,
       phone: facts.contact?.phone ?? null,
       phoneIsFullE164: isFullE164(facts.contact?.phone),
+      address: facts.address ?? null,
+      addressEligible: facts.serviceArea?.status === "eligible",
       // Canonical customer-facing delivery: save-quote (action:"save", never an
       // email) followed by send-sms(quote_created, customerInitiated) through
       // the SMS outbox. No parallel provider call exists in this module.
-      deliver: deliveryLane === "live"
-        ? async () =>
-          await deliverVoiceQuoteByText({
-            supabase,
-            facts,
-            sessionId: quoteSessionId,
-            callFunction: callEdgeFunction,
-          })
-        : null,
+      deliver: async () =>
+        await deliverVoiceQuoteByText({
+          supabase,
+          facts,
+          quoteSessionId,
+          conversationId,
+          callFunction: callEdgeFunction,
+        }),
     });
+    // Keep the request alive only while the caller can still unblock it.
+    const nextFacts = mergeFacts(facts, {
+      quoteByText: {
+        pending: plan.missingField !== null,
+        lastReason: plan.outcome,
+      },
+    });
+    await persistFacts(supabase, conversationId, nextFacts, state, { sessionToken, channel, windowIntent });
     return finalize({
       reply: plan.reply,
       toolEvents: [],
       events: [plan.event],
       state,
       channel,
-      facts,
+      facts: nextFacts,
       railBooked: false,
     });
   }

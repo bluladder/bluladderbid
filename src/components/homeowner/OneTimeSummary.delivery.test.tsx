@@ -92,7 +92,7 @@ function renderSummary() {
   );
 }
 
-describe('OneTimeSummary — email delivery + bid-by-text removal', () => {
+describe('OneTimeSummary — email + bid-by-text delivery', () => {
   beforeEach(() => { invokeMock.mockReset(); });
 
   it('keeps Book Now as the primary action', () => {
@@ -163,16 +163,30 @@ describe('OneTimeSummary — email delivery + bid-by-text removal', () => {
     expect(screen.queryByTestId('delivery-success')).toBeNull();
   });
 
-  it('does not expose any bid-by-text delivery path (launch gate off)', async () => {
+  it('exposes the live bid-by-text path and only confirms an accepted send', async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        data: { quoteId: 'q-4', quoteUrl: 'https://x/book?resume=tok-4' },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { transactionalSent: true, deliveryStatus: 'accepted' },
+        error: null,
+      });
     renderSummary();
-    // No Text action button, no SMS copy, no accessibility label for it.
-    expect(screen.queryByRole('button', { name: /^text$/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /text me the bid/i })).toBeNull();
-    expect(screen.queryByText(/text me this bid/i)).toBeNull();
-    expect(screen.queryByLabelText(/mobile number/i)).toBeNull();
-    // Email + Save remain available.
+    fireEvent.click(screen.getByRole('button', { name: /^text$/i }));
+    fireEvent.change(await screen.findByLabelText(/^Email$/), { target: { value: 'ben@example.com' } });
+    fireEvent.change(await screen.findByLabelText(/mobile number/i), { target: { value: '4692150144' } });
+    fireEvent.click(screen.getByRole('button', { name: /text me the bid/i }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
+    // Canonical persistence first, then the existing transactional sender.
+    expect(invokeMock.mock.calls[0][0]).toBe('save-quote');
+    expect(invokeMock.mock.calls[0][1].body.action).toBe('save');
+    expect(invokeMock.mock.calls[1][0]).toBe('send-sms');
+    expect(invokeMock.mock.calls[1][1].body.resumeToken).toBe('tok-4');
+    // Email + Save remain available alongside it.
     expect(screen.getByRole('button', { name: /^email$/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^save$/i })).toBeTruthy();
-    expect(invokeMock).not.toHaveBeenCalled();
   });
+
 });
