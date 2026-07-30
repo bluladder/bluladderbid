@@ -27,9 +27,10 @@ const evidence: VoiceBookingEvidence = {
   slotId: "slot-1",
 };
 
-Deno.test("voice mode has no live configuration value", () => {
+Deno.test("voice mode resolves live only for the explicit live value", () => {
   assertEquals(resolveVoiceBookingMode(undefined), "disabled");
-  assertEquals(resolveVoiceBookingMode("live"), "disabled");
+  // Live voice booking is intentionally enabled for the allowlisted lane.
+  assertEquals(resolveVoiceBookingMode("live"), "live");
   assertEquals(resolveVoiceBookingMode("true"), "disabled");
   assertEquals(resolveVoiceBookingMode("dry_run"), "dry_run");
 });
