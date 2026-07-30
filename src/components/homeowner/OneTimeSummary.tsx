@@ -43,6 +43,14 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
+/**
+ * Launch gate — the public "Text me this bid" delivery path is disabled.
+ * All SMS infrastructure (edge functions, outbox, inbound SMS, campaigns) and
+ * the client delivery code below are intentionally retained so the option can
+ * be restored by flipping this single constant back to `true`.
+ */
+const BID_BY_TEXT_ENABLED = false;
+
 // Local helpers — SMS destination normalization + PII masking for success UI.
 // Kept in-file to avoid growing the shared surface for a single delivery flow.
 function normalizePhoneForBid(raw: string | null | undefined): string | null {
@@ -119,6 +127,9 @@ export function OneTimeSummary({
 
   const handleDelivery = async () => {
     if (!saveDialogAction || !quote || typeof total !== 'number') return;
+    // Defense in depth: the text path is not reachable from the UI while the
+    // launch gate is off, but never allow it to execute if it is.
+    if (saveDialogAction === 'text' && !BID_BY_TEXT_ENABLED) return;
     const email = saveEmail.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       toast.error('Please enter a valid email address.');
@@ -510,7 +521,10 @@ export function OneTimeSummary({
 
           {/* Secondary quote actions — Book Now above stays primary. Compact
               labels with truncation guards so they never wrap or clip. */}
-          <div className="grid grid-cols-3 gap-2" data-testid="secondary-quote-actions">
+          <div
+            className={BID_BY_TEXT_ENABLED ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 gap-2'}
+            data-testid="secondary-quote-actions"
+          >
             <Button
               variant="outline"
               size="sm"
@@ -531,16 +545,18 @@ export function OneTimeSummary({
               <Mail className="w-4 h-4 mr-1.5 shrink-0" />
               <span className="truncate">Email</span>
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="min-w-0 whitespace-nowrap"
-              onClick={() => setSaveDialogAction('text')}
-              disabled={!canBook}
-            >
-              <MessageSquare className="w-4 h-4 mr-1.5 shrink-0" />
-              <span className="truncate">Text</span>
-            </Button>
+            {BID_BY_TEXT_ENABLED && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-w-0 whitespace-nowrap"
+                onClick={() => setSaveDialogAction('text')}
+                disabled={!canBook}
+              >
+                <MessageSquare className="w-4 h-4 mr-1.5 shrink-0" />
+                <span className="truncate">Text</span>
+              </Button>
+            )}
           </div>
           {deliveryStatus && (
             <p className="text-xs text-center text-success" data-testid="delivery-success">
