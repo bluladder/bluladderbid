@@ -9,17 +9,6 @@
 // resolves to null so the rail re-asks instead of writing the wrong identity.
 // ============================================================================
 
-const SPOKEN_TLD_WORDS: Record<string, string> = {
-  com: "com",
-  net: "net",
-  org: "org",
-  edu: "edu",
-  gov: "gov",
-  io: "io",
-  co: "co",
-  us: "us",
-};
-
 /** Words that are never part of a spoken local part. */
 const FILLER = new Set([
   "my",
