@@ -38,6 +38,18 @@ Deno.test("mergeFields: changing a captured value marks it corrected", () => {
   assertEquals(s.fieldStatus.squareFootage, "corrected");
 });
 
+Deno.test("field provenance keeps defaulted distinct from verified", () => {
+  const s = mergeFields(empty(), { stories: 1 }, { markDefaulted: ["stories"] });
+  assertEquals(s.fieldStatus.stories, "defaulted");
+  assert(s.fieldStatus.stories !== "verified");
+});
+
+Deno.test("legacy windowCleaningType normalizes to the sole writable sides field", () => {
+  const s = mergeFields(empty(), { windowCleaningType: "both" });
+  assertEquals(s.fields.windowCleaningSides, "inside_and_outside");
+  assertEquals(s.fields.windowCleaningType, undefined);
+});
+
 Deno.test("mergeFields: empty values do not overwrite existing captured values", () => {
   let s = mergeFields(empty(), { name: "Ada" });
   s = mergeFields(s, { name: "" });
@@ -49,7 +61,8 @@ Deno.test("computeRequired: services first, then property inputs", () => {
   assertEquals(computeRequired({ services: ["windowCleaning"] }), [
     "squareFootage",
     "stories",
-    "windowCleaningType",
+    "windowCleaningSides",
+    "condition",
   ]);
 });
 
@@ -59,7 +72,8 @@ Deno.test("isReadyToPrice: window cleaning ready with sqft + stories + type", ()
       services: ["windowCleaning"],
       squareFootage: 2000,
       stories: 2,
-      windowCleaningType: "exterior",
+      windowCleaningSides: "outside_only",
+      condition: "maintenance",
     }),
   );
 });
@@ -79,7 +93,8 @@ Deno.test("nextQuestion: ready to price when all inputs present, next asks for c
       services: ["windowCleaning"],
       squareFootage: 2000,
       stories: 2,
-      windowCleaningType: "exterior",
+      windowCleaningSides: "outside_only",
+      condition: "maintenance",
     },
   };
   const plan = nextQuestion(s);
@@ -88,16 +103,16 @@ Deno.test("nextQuestion: ready to price when all inputs present, next asks for c
   assertEquals(plan.readyToBook, false);
 });
 
-Deno.test("isReadyToBook: needs address + email + estimated/firm quote", () => {
+Deno.test("isReadyToBook: needs complete intake, address, email, and authoritative duration", () => {
   const priced: QuoteSession = {
     ...empty(),
     quoteStatus: "estimated",
-    fields: { services: ["windowCleaning"], squareFootage: 2000 },
+    fields: { services: ["houseWash"], squareFootage: 2000, stories: 1 },
   };
   assertEquals(isReadyToBook(priced), false);
   const readied: QuoteSession = {
     ...priced,
-    fields: { ...priced.fields, address: "123 Main St", email: "a@b.co" },
+    fields: { ...priced.fields, address: "123 Main St", email: "a@b.co", lastQuoteResult: { status:"estimated", estimatedDurationMinutes:90 } },
   };
   assertEquals(isReadyToBook(readied), true);
 });
@@ -120,7 +135,7 @@ Deno.test("fieldsFromFacts: maps ConversationFacts to the canonical shape", () =
   } as any);
   assertEquals(f.services, ["windowCleaning"]);
   assertEquals(f.squareFootage, 2000);
-  assertEquals(f.windowCleaningType, "exterior");
+  assertEquals(f.windowCleaningSides, "outside_only");
   assertEquals(f.city, "McKinney");
   assertEquals(f.name, "Ada");
 });
@@ -144,6 +159,14 @@ Deno.test("computeRequired: partial-window request needs count + sides, never sq
   assert(missing.includes("windowCount"));
   assert(missing.includes("windowCleaningSides"));
   assert(!missing.includes("squareFootage"));
+});
+
+Deno.test("computeRequired: unit and area services never inherit home fields", () => {
+  assertEquals(computeRequired({ services: ["solarPanelCleaning"] }), ["solarPanelCount"]);
+  assertEquals(computeRequired({ services: ["screenRepair"] }), ["screenRepairCount"]);
+  assertEquals(computeRequired({ services: ["drivewayCleaning"] }), ["drivewaySqft", "drivewaySurface"]);
+  const multi = computeRequired({ services: ["drivewayCleaning", "screenRepair"] });
+  assertEquals(multi.sort(), ["drivewaySqft", "drivewaySurface", "screenRepairCount"].sort());
 });
 
 Deno.test("computeRequired: commercial custom bid asks for locations + contact method, not sqft", () => {

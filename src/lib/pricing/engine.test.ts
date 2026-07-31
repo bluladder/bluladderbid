@@ -160,6 +160,21 @@ describe("pricing engine — discounts", () => {
 });
 
 describe("pricing engine — safe failure modes", () => {
+  it("missing window sides never silently becomes exterior-only", () => {
+    const r = calc({
+      homeDetails: baseHome({ windowCleaningType: undefined }),
+      additionalServices: { ...noServices(), windowCleaning: true },
+    });
+    expect(r.status).toBe("missing_information");
+    expect(r.missing).toContain("windowCleaningSides");
+  });
+  it("enabled pressure washing with no positive area is incomplete, not firm zero", () => {
+    const s = noServices();
+    s.pressureWashing = { ...s.pressureWashing, enabled: true };
+    const r = calc({ homeDetails: baseHome(), additionalServices: s });
+    expect(r.status).toBe("missing_information");
+    expect(r.missing).toContain("pressureWashingAreas");
+  });
   it("no services -> missing_information", () => {
     const r = calc({ homeDetails: baseHome(), additionalServices: noServices() });
     expect(r.status).toBe("missing_information");

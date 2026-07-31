@@ -89,10 +89,11 @@ Deno.test("all pricing fields present → calculate_price (no city required)", (
   const s = afterContact({
     fields: {
       services: ["windowCleaning"],
+      windowCleaningScope: "whole_home",
       squareFootage: 2000,
       stories: 2,
       windowCleaningSides: "outside_only",
-      condition: "average",
+      condition: "maintenance",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
@@ -103,14 +104,23 @@ Deno.test("all pricing fields present → calculate_price (no city required)", (
   assertEquals(decideResidentialQuoteAction(s, []).kind, "calculate_price");
 });
 
+Deno.test("unresolved whole-home scope policy never appears approved", () => {
+  const s = afterContact({
+    fields: { services:["windowCleaning"], squareFootage:2000, stories:2, windowCleaningSides:"outside_only", condition:"maintenance" },
+    fieldStatus: { services:"captured", squareFootage:"captured", stories:"captured", windowCleaningSides:"captured", condition:"captured" },
+  });
+  assertEquals(decideResidentialQuoteAction(s, []), { kind:"handoff", reason:"owner_decision_required" });
+});
+
 Deno.test("pricing error surfaces as handoff, never as another intake question", () => {
   const s = afterContact({
     fields: {
       services: ["windowCleaning"],
+      windowCleaningScope: "whole_home",
       squareFootage: 2000,
       stories: 2,
       windowCleaningSides: "outside_only",
-      condition: "average",
+      condition: "maintenance",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
@@ -127,10 +137,11 @@ Deno.test("priced → speak_price first, then collects booking fields", () => {
   const s = afterContact({
     fields: {
       services: ["windowCleaning"],
+      windowCleaningScope: "whole_home",
       squareFootage: 2000,
       stories: 2,
       windowCleaningSides: "outside_only",
-      condition: "average",
+      condition: "maintenance",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
@@ -145,10 +156,11 @@ Deno.test("post-quote: asks for email before booking (not before speaking the pr
   const s = afterContact({
     fields: {
       services: ["windowCleaning"],
+      windowCleaningScope: "whole_home",
       squareFootage: 2000,
       stories: 2,
       windowCleaningSides: "outside_only",
-      condition: "average",
+      condition: "maintenance",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
