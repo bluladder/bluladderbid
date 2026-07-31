@@ -4,8 +4,9 @@
   "system_version": "1.0.0",
   "shared_contract": {
     "algorithm": "sha256",
-    "sha256": "efa22d41ccb78e33fe9c6320b4107519a805caed6ac747175243e18307628c5c",
+    "sha256": "27e835fc33622a0213cca333cd109d1f0c90e857a1d9965c97f15931136e3ab3",
     "files": [
+      ".github/workflows/product-design-governance.yml",
       ".codex/agents/bluladder-product-design-director.toml",
       ".agents/skills/bluladder-product-design-review/SKILL.md",
       ".agents/skills/bluladder-product-design-review/agents/openai.yaml",
