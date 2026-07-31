@@ -1,0 +1,22 @@
+# BluLadder service question review
+
+**All proposed voice wording is unapproved.** It is reference material only and is not wired into any production prompt or controller. Existing wording is quoted from current BluLadder manifests/forms.
+
+Universal post-price fields: email to save/deliver; authorized service address before availability/booking. Verified customer/property values may satisfy contact, address, square footage, stories, roof type, and measured areas when the canonical contract permits verified/derived provenance. No default is considered verified.
+
+| Service | Required before price | Conditional/add-on | Current wording | Proposed wording (unapproved) | Pre-price recap | Manual review / unresolved |
+|---|---|---|---|---|---|---|
+| Whole-home windows | square footage; stories; canonical sides; condition | hard water %, French panes %, solar screens %, ladder category, sunroom | “How many square feet is your home?”; “Would you like exterior only, or full service inside and out?”; condition manifest question | “For the whole home, outside only or inside and outside?” then current sqft/stories/condition wording | scope, sides, sqft, stories, condition and every selected modifier | Scope policy and advanced screening pending |
+| Partial windows | count; canonical sides; partial route | areas/access notes do not currently change deterministic rule | “Is this every window…or a specific count?” | “How many windows, and outside only or inside and outside?” | count, sides, rule version | Separate versioned path; architecture pending |
+| Window promotion | explicit promotion ID from config; actual count | eligibility/cap from config | Promo card advertises configured offer | “Would you like the configured exterior-window special? How many windows?” | offer ID/version/count/cap/prep | Over limit routes review/standard choice; policy pending |
+| House wash | home sqft; stories | rust/irrigation stain modifier | “Primary Stain Type” | “Is the primary staining ordinary organic buildup or rust/irrigation staining?” | sqft, stories, rust choice | No unrelated service fields |
+| Gutters | home sqft; stories | drains→count; repairs; guards→linear feet | Web add-on labels and “Number of Drains” / “Linear Feet of Gutters” | “Any underground drains, minor repairs, or gutter guards to include?” then quantities | sqft, stories, selected add-ons | Proactive offering policy pending |
+| Roof | home sqft; stories | type and severity change math | Current web selectors | “What roof type and buildup severity should the quote use?” | sqft, stories, type, severity | Firm-without-modifiers policy pending; no automatic approval |
+| Driveway | driveway sqft; surface | none | “Driveway Size”; “Surface Type” | “About how many square feet is the driveway, and what surface is it?” | driveway sqft, surface | Defaults are not confirmation |
+| Pressure washing | at least one named area with positive sqft; shared surface type | additional named areas | Area cards and “Surface type” | “Which areas—front porch, back patio, pool deck, or walkways? About how many square feet is each, and what surface are we cleaning?” | each selected area and sqft; shared surface | Invalid/zero enabled area cannot be firm |
+| Solar panels | panel count | none | Current quantity control | “How many solar panels need cleaning?” | panel count | Firm-vs-manual pending Ben review |
+| Screen repair | screen count | none | Current quantity control | “How many screens need repair?” | screen count | Firm-vs-manual pending Ben review |
+| Commercial windows | no automated residential price | structured location(s), property/scope/frequency/access, preferred contact | No complete shared wording | “I’ll collect the property locations and scope for a custom bid.” | structured scope only | Always separate manual bid path |
+| Multi-service | deduplicated union of each selected service | union of selected modifiers/add-ons | No canonical combined sequence | Combine shared sqft/stories once; then service blocks | union, grouped by service | Any unresolved service blocks channel approval |
+
+Fields that may be deferred: contact sequence remains channel-specific; email/address are after price by contract. Fields removed from pricing: siding material and roof pitch are not current engine inputs. Derived values are allowed only where the contract says so and must retain `derived`, not `verified`, provenance.
