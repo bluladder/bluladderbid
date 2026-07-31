@@ -14,7 +14,7 @@
 //      critical path (root cause of stall in call 019f8a84-...).
 // ============================================================================
 
-import type { QuoteSession } from "../../quoteSession.ts";
+import { computeRequired, type QuoteSession } from "../../quoteSession.ts";
 import { hasUsableFact } from "../hasUsableFact.ts";
 import {
   missingResidentialBookingFields,
@@ -31,6 +31,7 @@ import {
   nextResidentialQuestion,
   type ResidentialIntakeFieldId,
 } from "../../salesEngine/residentialQuoteManifest.ts";
+import { evaluateQuoteIntake } from "../../salesEngine/quoteIntakeContract.ts";
 
 function ask(field: ResidentialIntakeFieldId): WorkflowAction {
   const spec = RESIDENTIAL_INTAKE_BY_ID[field];
@@ -57,19 +58,16 @@ function capturedIds(session: QuoteSession): ResidentialIntakeFieldId[] {
  */
 export function decideResidentialQuoteAction(
   session: QuoteSession,
-  pricingEngineMissing: readonly string[] | null = null,
+  _pricingEngineMissing: readonly string[] | null = null,
 ): WorkflowAction {
   const captured = capturedIds(session);
 
   // 1. Contact-first: name → phone → pricing intake. The next-question helper
   //    enforces manifest priority and skips already-captured fields.
-  const engineMissingForIntake =
-    pricingEngineMissing !== null
-      ? pricingEngineMissing
-      : // Fallback: ask for the always-required pricing fields when the caller
-        // has not probed the engine yet. Kept intentionally minimal — the
-        // canonical engine remains the sole authority once it responds.
-        ["services", "squareFootage", "stories"];
+  // Phase 0 contract authority. The engine probe remains useful as a parity
+  // signal, but service-specific readiness comes from quoteSession, which is
+  // itself derived from the shared Sales Engine contract.
+  const engineMissingForIntake = computeRequired(session.fields);
 
   const preQuote = nextResidentialQuestion({
     captured,
@@ -84,6 +82,16 @@ export function decideResidentialQuoteAction(
       : [],
   });
   if (preQuote) return ask(preQuote.id);
+  if (engineMissingForIntake.length > 0) {
+    return { kind: "handoff", reason: "unsupported_service" };
+  }
+  const intake = evaluateQuoteIntake(session.fields as unknown as Record<string, unknown>);
+  if (intake.manualReview.length > 0) {
+    return { kind: "handoff", reason: intake.services.includes("commercial_window_bid") ? "commercial_bid" : "unsupported_service" };
+  }
+  if (intake.ownerDecisions.length > 0) {
+    return { kind: "handoff", reason: "owner_decision_required" };
+  }
 
   // 2. Ready to price. If we haven't priced yet, do so now.
   if (session.quoteStatus === "none") return { kind: "calculate_price" };

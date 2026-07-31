@@ -34,6 +34,9 @@ import {
 } from "./profile/propertyRepo.ts";
 import { loadPricing } from "./loadPricing.ts";
 import { getMirrorFreshness } from "./scheduleFreshness.ts";
+import { resolveAuthoritativeDuration } from "./salesEngine/durationContract.ts";
+import { evaluateQuoteIntake } from "./salesEngine/quoteIntakeContract.ts";
+import { resolveQuoteDisposition, type ProductPolicyStatus } from "./salesEngine/quoteDisposition.ts";
 
 type SB = any;
 
@@ -44,7 +47,8 @@ export type ReadinessStatus =
   | "quote_incomplete"
   | "pricing_blocked"
   | "manual_review"
-  | "duration_blocked"
+  | "owner_decision_required"
+  | "duration_unavailable"
   | "schedule_blocked"
   | "system_blocked";
 
@@ -94,8 +98,12 @@ export interface BookingReadiness {
     inputs_current: boolean;
     manual_review_required: boolean;
     manual_review_reasons: string[];
+    product_policy_status: ProductPolicyStatus;
+    final_disposition: string;
+    owner_decisions: string[];
   };
   duration: {
+    status: "available" | "unavailable" | "manual_review_required";
     resolved: boolean;
     minutes: number | null;
     source: string | null;
@@ -223,6 +231,16 @@ export async function getBookingReadiness(
     : [];
   const manualReviewRequired =
     lastStatus === "manual_review_required" || manualReviewReasons.length > 0;
+  const intakeEvaluation = evaluateQuoteIntake(fields as Record<string, unknown>);
+  const productPolicyStatus: ProductPolicyStatus = intakeEvaluation.ownerDecisions.length > 0
+    ? "owner_decision_required"
+    : manualReviewRequired || intakeEvaluation.manualReview.length > 0 ? "manual_review_required" : "approved";
+  const disposition = resolveQuoteDisposition({
+    engineStatus: (lastStatus ?? "missing_information") as any,
+    productPolicyStatus,
+    channelEligibility: productPolicyStatus === "owner_decision_required" ? "owner_decision_required" : "eligible",
+    reasons: [...manualReviewReasons, ...intakeEvaluation.manualReview, ...intakeEvaluation.ownerDecisions],
+  });
 
   // ---- Authoritative inputs-freshness check --------------------------------
   // The cached lastQuoteResult must have been produced from the CURRENT
@@ -269,10 +287,10 @@ export async function getBookingReadiness(
     lastStatus === "firm" || lastStatus === "estimated";
   const rawTotal: number | null =
     typeof lastQuote?.total === "number" ? lastQuote.total : null;
-  const rawDuration: number | null =
-    typeof lastQuote?.estimatedDurationMinutes === "number"
-      ? lastQuote.estimatedDurationMinutes
-      : null;
+  const durationResult = resolveAuthoritativeDuration(lastQuote);
+  const rawDuration: number | null = durationResult.status === "available"
+    ? durationResult.minutes
+    : null;
   const cachedQuoteTrustworthy =
     lastQuote != null &&
     inputsCurrent &&
@@ -283,7 +301,7 @@ export async function getBookingReadiness(
 
   const canonicalTotal: number | null = cachedQuoteTrustworthy ? rawTotal : null;
   const durationMinutes: number | null = cachedQuoteTrustworthy ? rawDuration : null;
-  const durationResolved = durationMinutes != null && durationMinutes > 0;
+  const durationResolved = durationResult.status === "available" && durationMinutes != null;
 
   // Schedule mirror freshness (single shared reader).
   const mirror = await getMirrorFreshness(supabase);
@@ -371,21 +389,30 @@ export async function getBookingReadiness(
   }
 
   // 6. manual_review — pricing engine flagged human review.
-  if (status === "ready" && manualReviewRequired) {
+  if (status === "ready" && (manualReviewRequired || intakeEvaluation.manualReview.length > 0)) {
     status = "manual_review";
     blockers.push({
       code: "manual_review_required",
       customer_safe_message:
         "I want to make sure we get this exactly right — I'll have our team follow up shortly.",
-      staff_message: `manualReviewReasons: ${manualReviewReasons.join("; ") || "unspecified"}`,
+      staff_message: `manualReviewReasons: ${[...manualReviewReasons, ...intakeEvaluation.manualReview].join("; ") || "unspecified"}`,
     });
   }
 
-  // 7. duration_blocked — no server-computed duration to size the slot.
-  if (status === "ready" && !durationResolved) {
-    status = "duration_blocked";
+  if (status === "ready" && disposition.finalQuoteDisposition === "owner_decision_required") {
+    status = "owner_decision_required";
     blockers.push({
-      code: "duration_missing",
+      code: "owner_decision_required",
+      customer_safe_message: "I want to make sure we quote this correctly — our team will review the details.",
+      staff_message: `pending owner decisions: ${intakeEvaluation.ownerDecisions.join(", ")}`,
+    });
+  }
+
+  // 7. duration_unavailable — no authoritative duration to size the slot.
+  if (status === "ready" && !durationResolved) {
+    status = "duration_unavailable";
+    blockers.push({
+      code: "duration_unavailable",
       customer_safe_message: CUSTOMER_SAFE_GENERIC,
       staff_message:
         "pricing engine returned no estimatedDurationMinutes on the cached quote result.",
@@ -412,7 +439,8 @@ export async function getBookingReadiness(
     quote_incomplete: "collect_quote_inputs",
     pricing_blocked: "staff_intervention",
     manual_review: "send_for_manual_review",
-    duration_blocked: "staff_intervention",
+    owner_decision_required: "send_for_manual_review",
+    duration_unavailable: "staff_intervention",
     schedule_blocked: "refresh_schedule",
     system_blocked: "staff_intervention",
   };
@@ -448,13 +476,17 @@ export async function getBookingReadiness(
       pricing_current: pricingCurrent,
       inputs_key_present: inputsKeyPresent,
       inputs_current: inputsCurrent,
-      manual_review_required: manualReviewRequired,
-      manual_review_reasons: manualReviewReasons,
+      manual_review_required: manualReviewRequired || intakeEvaluation.manualReview.length > 0,
+      manual_review_reasons: [...manualReviewReasons, ...intakeEvaluation.manualReview],
+      product_policy_status: productPolicyStatus,
+      final_disposition: disposition.finalQuoteDisposition,
+      owner_decisions: intakeEvaluation.ownerDecisions,
     },
     duration: {
+      status: durationResult.status,
       resolved: durationResolved,
       minutes: durationMinutes,
-      source: durationResolved ? "pricing_engine" : null,
+      source: durationResult.status === "available" ? durationResult.source : null,
     },
     schedule: {
       readable: scheduleReadable,

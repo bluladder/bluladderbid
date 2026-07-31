@@ -11,12 +11,17 @@
 import type { ConversationFacts } from "./conversationState.ts";
 import { quoteInputsKey } from "./conversationState.ts";
 import { normalizeUsCaE164, resolvePhone } from "./contactIntegrity.ts";
+import {
+  evaluateQuoteIntake,
+  normalizeWindowCleaningSides,
+} from "./salesEngine/quoteIntakeContract.ts";
+import { resolveAuthoritativeDuration } from "./salesEngine/durationContract.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
 
 export type QuoteSessionChannel = "voice" | "web" | "sms" | "chat";
-export type FieldStatus = "unknown" | "captured" | "verified" | "corrected" | "derived";
+export type FieldStatus = "unknown" | "captured" | "verified" | "corrected" | "derived" | "defaulted" | "unanswered";
 
 export interface QuoteSessionFields {
   services?: string[];
@@ -64,6 +69,17 @@ export interface QuoteSessionFields {
   commercialFrequency?: string;
   commercialScopeNotes?: string;
   preferredContactMethods?: Array<"text" | "email" | "phone">;
+  houseWashStainType?: "organic" | "rust";
+  gutterAddons?: {
+    undergroundDrains?: { enabled: boolean; count?: "1" | "2" | "3" | "4+" };
+    minorRepairs?: boolean;
+    gutterGuards?: { enabled: boolean; linearFeet?: number };
+  };
+  pressureWashingAreas?: Partial<Record<"frontPorch" | "backPatio" | "poolDeck" | "walkways", {
+    enabled: boolean; sqft?: number; surfaceType?: string;
+  }>>;
+  solarPanelCount?: number;
+  screenRepairCount?: number;
   humanPricingRequired?: boolean;
   bidRequestStatus?:
     | "commercial_bid_requested"
@@ -77,6 +93,13 @@ export interface QuoteSessionFields {
   returningCustomerId?: string;
   returningCustomerResolved?: boolean;
   awaitingDisambiguator?: boolean;
+  lastQuoteResult?: {
+    status?: string;
+    estimatedDurationMinutes?: number | null;
+    durationSource?: string;
+    durationVersion?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface QuoteSession {
@@ -102,7 +125,7 @@ export interface QuoteSession {
 export function mergeFields(
   prev: QuoteSession,
   patch: Partial<QuoteSessionFields>,
-  opts: { markVerified?: (keyof QuoteSessionFields)[]; markDerived?: (keyof QuoteSessionFields)[] } = {},
+  opts: { markVerified?: (keyof QuoteSessionFields)[]; markDerived?: (keyof QuoteSessionFields)[]; markDefaulted?: (keyof QuoteSessionFields)[] } = {},
 ): QuoteSession {
   const nextFields: QuoteSessionFields = { ...prev.fields };
   const nextStatus = { ...prev.fieldStatus };
@@ -112,6 +135,16 @@ export function mergeFields(
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;
     const key = k as keyof QuoteSessionFields;
+    // Canonical writable field: accept the legacy field only at this boundary,
+    // normalize it, and persist windowCleaningSides. Never write both.
+    if (key === "windowCleaningType") {
+      const sides = normalizeWindowCleaningSides(v);
+      if (!sides) continue;
+      const previous = nextFields.windowCleaningSides;
+      nextFields.windowCleaningSides = sides;
+      nextStatus.windowCleaningSides = previous && previous !== sides ? "corrected" : "captured";
+      continue;
+    }
     const prevVal = (prev.fields as Record<string, unknown>)[key];
     const isEmpty = v === null || v === "" || (Array.isArray(v) && v.length === 0);
     if (isEmpty) continue;
@@ -137,6 +170,7 @@ export function mergeFields(
   }
   for (const k of opts.markVerified ?? []) nextStatus[k] = "verified";
   for (const k of opts.markDerived ?? []) nextStatus[k] = "derived";
+  for (const k of opts.markDefaulted ?? []) nextStatus[k] = "defaulted";
   return { ...prev, fields: nextFields, fieldStatus: nextStatus };
 }
 
@@ -192,44 +226,16 @@ export function addCommercialLocation(
   return mergeFields(prev, { commercialLocations: list });
 }
 
-function needsStories(service: string): boolean {
-  return service === "windowCleaning" || service === "houseWash" || service === "gutters" || service === "roofCleaning";
-}
-
 /** Which fields are still required for canonical pricing of the CURRENT
  *  selected services. Mirrors the pricing engine's declared inputs; does NOT
  *  introduce new pricing rules. */
 export function computeRequired(fields: QuoteSessionFields): string[] {
-  const missing: string[] = [];
-  const services = fields.services ?? [];
-  if (services.length === 0) return ["services"];
-  // Commercial custom-bid requests never need residential pricing inputs.
-  if (fields.windowCleaningScope === "commercial_custom" || fields.customerType === "commercial") {
-    if (!fields.commercialLocations || fields.commercialLocations.length === 0) missing.push("commercialLocations");
-    if (!fields.preferredContactMethods || fields.preferredContactMethods.length === 0) missing.push("preferredContactMethods");
-    return missing;
+  const evaluation = evaluateQuoteIntake(fields as unknown as Record<string, unknown>);
+  const missing = [...evaluation.requiredToPrice, ...evaluation.productPolicyRequired];
+  if (evaluation.services.includes("commercial_window_bid") && !(fields.preferredContactMethods?.length)) {
+    missing.push("preferredContactMethods");
   }
-  // Partial-window requests need only per-window inputs, never sqft.
-  // P2.12 guard: when the caller was actually priced on the whole-home sqft
-  // engine (square footage + window type captured), partial-window inputs are
-  // not genuinely required and must not linger in required_remaining while a
-  // firm quote exists.
-  const wholeHomePriced = fields.squareFootage != null
-    && !!(fields.windowCleaningType || fields.windowCleaningSides);
-  if (fields.windowCleaningScope === "partial" && !wholeHomePriced) {
-    if (fields.windowCount == null) missing.push("windowCount");
-    if (!fields.windowCleaningSides) missing.push("windowCleaningSides");
-    return missing;
-  }
-  // Whole-home / default residential path — unchanged canonical inputs.
-  if (fields.squareFootage == null) missing.push("squareFootage");
-  if (fields.stories == null && services.some((s) => needsStories(s))) missing.push("stories");
-  if (services.includes("windowCleaning") && !fields.windowCleaningType && !fields.windowCleaningSides) {
-    missing.push("windowCleaningType");
-  }
-  if (services.includes("driveway") && fields.drivewaySqft == null) missing.push("drivewaySqft");
-  if (services.includes("pressureWashing") && fields.pressureWashSqft == null) missing.push("pressureWashSqft");
-  return missing;
+  return [...new Set(missing)];
 }
 
 export function isReadyToPrice(fields: QuoteSessionFields): boolean {
@@ -238,8 +244,14 @@ export function isReadyToPrice(fields: QuoteSessionFields): boolean {
 
 export function isReadyToBook(session: QuoteSession): boolean {
   const f = session.fields;
+  const intake = evaluateQuoteIntake(f as unknown as Record<string, unknown>);
+  const duration = resolveAuthoritativeDuration(f.lastQuoteResult ?? null);
   return (
     (session.quoteStatus === "firm" || session.quoteStatus === "estimated") &&
+    computeRequired(f).length === 0 &&
+    intake.ownerDecisions.length === 0 &&
+    intake.manualReview.length === 0 &&
+    duration.status === "available" &&
     !!f.address &&
     !!f.email
   );
@@ -256,7 +268,12 @@ const QUESTION_PRIORITY: string[] = [
   "windowCleaningType",
   "stories",
   "drivewaySqft",
+  "drivewaySurface",
+  "pressureWashingSurface",
   "pressureWashSqft",
+  "pressureWashingAreas",
+  "solarPanelCount",
+  "screenRepairCount",
   "city",
   "address",
   "name",
@@ -296,7 +313,7 @@ export function fieldsFromFacts(facts: ConversationFacts): QuoteSessionFields {
     address: facts.address,
     squareFootage: p.squareFootage,
     stories: p.stories,
-    windowCleaningType: p.windowCleaningType,
+    windowCleaningSides: normalizeWindowCleaningSides(p.windowCleaningType) ?? undefined,
     condition: p.condition,
     roofType: p.roofType,
     roofSeverity: p.roofSeverity,
@@ -494,7 +511,11 @@ export function sessionInputsKey(fields: QuoteSessionFields): string {
     property: {
       squareFootage: fields.squareFootage,
       stories: fields.stories,
-      windowCleaningType: fields.windowCleaningType,
+      windowCleaningType: fields.windowCleaningSides === "inside_and_outside"
+        ? "both"
+        : fields.windowCleaningSides === "outside_only"
+        ? "exterior"
+        : undefined,
       condition: fields.condition,
       roofType: fields.roofType,
       roofSeverity: fields.roofSeverity,
@@ -502,6 +523,9 @@ export function sessionInputsKey(fields: QuoteSessionFields): string {
       drivewaySurface: fields.drivewaySurface,
       pressureWashSqft: fields.pressureWashSqft,
       pressureWashSurface: fields.pressureWashSurface,
+      solarPanelCount: fields.solarPanelCount,
+      screenRepairCount: fields.screenRepairCount,
+      pressureWashingAreas: fields.pressureWashingAreas,
     },
     discountCode: fields.discountCode ?? null,
     promotionId: fields.promotionId ?? null,
