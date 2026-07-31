@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "system_name": "BluLadder Product Design Director",
+  "system_version": "1.0.0",
+  "shared_contract": {
+    "algorithm": "sha256",
+    "sha256": "efa22d41ccb78e33fe9c6320b4107519a805caed6ac747175243e18307628c5c",
+    "files": [
+      ".codex/agents/bluladder-product-design-director.toml",
+      ".agents/skills/bluladder-product-design-review/SKILL.md",
+      ".agents/skills/bluladder-product-design-review/agents/openai.yaml",
+      ".agents/skills/bluladder-product-design-review/assets/audit-report-template.md",
+      ".agents/skills/bluladder-product-design-review/references/design-philosophy.md",
+      ".agents/skills/bluladder-product-design-review/references/product-boundaries.md",
+      ".agents/skills/bluladder-product-design-review/references/review-methodology.md",
+      "docs/design-system/README.md",
+      "docs/design-system/approved-patterns.md",
+      "docs/design-system/audits/README.md",
+      "docs/design-system/decision-log.md",
+      "docs/design-system/shared-system.md"
+    ]
+  },
+  "products": {
+    "bluladder_bid": {
+      "repository": "bluladder/bluladderbid",
+      "lovable_project_id": "b6e0d823-59c4-4b5a-afbe-182485e5458b",
+      "supabase_project_ref": "gyndziiuizpgwhqwyrvn",
+      "profile": "docs/design-system/product-profile.md"
+    },
+    "public_website": {
+      "repository": "bluladder/bluladder",
+      "lovable_project_id": "54853c5d-d12f-40a9-8d77-dddae0e8f699",
+      "supabase_project_ref": "cjtkezrwbjpuqysuckes",
+      "profile": "docs/design-system/product-profile.md"
+    }
+  },
+  "cross_product_runtime_package": false,
+  "required_modes": [
+    "Audit",
+    "Design Director",
+    "Implementation",
+    "Verification"
+  ]
+}
