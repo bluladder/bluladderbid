@@ -28,15 +28,23 @@ packages/sales-engine/   ← leaf. Imports NOTHING from src/ or supabase/.
 
 ## Contents (current)
 
+- `intake/quoteIntakeContract.ts` — **authoritative** service-specific fields,
+  stages, requirement categories, normalization, and readiness evaluation.
 - `intake/residentialQuoteManifest.ts` — canonical intake fields for the
-  residential quote workflow: id, canonical wording, priority order,
-  contact-first sequence (name → phone → pricing → email → address).
+  legacy residential presentation sequence. It does not own requirements.
+
+## Edge mirror synchronization
+
+Edge bundling cannot import outside `supabase/`, so Sales Engine sources have
+generated mirrors in `supabase/functions/_shared/salesEngine/`. Edit only the
+`packages/sales-engine/` source, then run `node scripts/sync-sales-engine-intake.mjs`.
+`src/lib/pricing/salesEngine.parity.test.ts` compares every mirror byte-for-byte.
 
 ## What lives here vs elsewhere
 
 | Concern | Lives here | Lives elsewhere |
 | --- | --- | --- |
-| Required pricing fields (`missing[]`) | NO | `supabase/functions/_shared/pricingEngine.ts` (canonical) |
+| Service-specific intake requirements | YES | `intake/quoteIntakeContract.ts` |
 | Question priority + customer-facing wording | YES | — |
 | Prices, modifiers, promotion rules | NO | `pricingEngine.ts` |
 | Persistence, DB access | NO | Edge functions / web |

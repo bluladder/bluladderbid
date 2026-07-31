@@ -56,7 +56,7 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
     id: "contact_name",
     prompt: "May I get your first name so I can put this quote under it?",
     label: "Customer name",
-    engineMissingTokens: [],
+    engineMissingTokens: ["windowCleaningScope"],
     purpose:
       "Personalizes the call and links the quote to the customer record before pricing.",
   },
@@ -65,7 +65,7 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
     prompt:
       "What's the best mobile number to text your quote to, in case we get disconnected?",
     label: "Mobile phone",
-    engineMissingTokens: [],
+    engineMissingTokens: ["windowCleaningSides"],
     purpose:
       "Guarantees quote delivery and preserves continuity if the call drops.",
   },
@@ -82,7 +82,7 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
     prompt:
       "Got it. Is this every window on the home, or a specific count of windows?",
     label: "Window cleaning scope",
-    engineMissingTokens: [],
+    engineMissingTokens: ["condition"],
     purpose:
       "Routes to whole-home (sqft-based) or partial (per-window) pricing rules.",
   },

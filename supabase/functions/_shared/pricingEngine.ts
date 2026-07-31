@@ -390,6 +390,30 @@ export function calculateQuote(
   if (needsStories && !VALID_STORIES.includes(stories)) {
     missing.push("stories");
   }
+  // Window sides are price-changing and must be explicit. Legacy callers may
+  // still supply `windowCleaningType`, but omission must never silently become
+  // exterior-only.
+  if (svc.windowCleaning && home.windowCleaningType !== "exterior" && home.windowCleaningType !== "both") {
+    missing.push("windowCleaningSides");
+  }
+  if (svc.drivewayCleaning?.enabled) {
+    if (!isValidNumber(svc.drivewayCleaning.sqft) || svc.drivewayCleaning.sqft <= 0) missing.push("drivewaySqft");
+    if (!svc.drivewayCleaning.surfaceType) missing.push("drivewaySurface");
+  }
+  if (svc.pressureWashing?.enabled) {
+    const pw = svc.pressureWashing;
+    if (!pw.surfaceType) missing.push("pressureWashingSurface");
+    const areas = [pw.frontPorch, pw.backPatio, pw.poolDeck, pw.walkways];
+    if (!areas.some((area) => area?.enabled && isValidNumber(area.sqft) && area.sqft > 0)) {
+      missing.push("pressureWashingAreas");
+    }
+  }
+  if (svc.solarPanelCleaning?.enabled && (!isValidNumber(svc.solarPanelCleaning.panelCount) || svc.solarPanelCleaning.panelCount <= 0)) {
+    missing.push("solarPanelCount");
+  }
+  if (svc.screenRepair?.enabled && (!isValidNumber(svc.screenRepair.screenCount) || svc.screenRepair.screenCount <= 0)) {
+    missing.push("screenRepairCount");
+  }
 
   // If we already know inputs are unusable, fail safely before doing math.
   if (missing.length > 0) {
