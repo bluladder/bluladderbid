@@ -6,11 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SqftCalculator } from './SqftCalculator';
 import type { FlatworkArea } from '@/types/homeowner';
 
-type SurfaceType = 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
+type SurfaceType = NonNullable<FlatworkArea['surfaceType']>;
 
-export interface PressureWashingAreaWithSurface extends FlatworkArea {
-  surfaceType?: SurfaceType;
-}
+export type PressureWashingAreaWithSurface = FlatworkArea;
 
 interface PressureWashingAreaCardProps {
   label: string;
@@ -23,7 +21,7 @@ interface PressureWashingAreaCardProps {
   showSurfaceType?: boolean;
 }
 
-const SURFACE_TYPE_OPTIONS: { value: SurfaceType; label: string }[] = [
+const SURFACE_TYPE_OPTIONS: { value: Extract<SurfaceType, string>; label: string }[] = [
   { value: 'concrete', label: 'Concrete' },
   { value: 'brick', label: 'Brick' },
   { value: 'pavers', label: 'Pavers' },

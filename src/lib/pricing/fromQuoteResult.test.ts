@@ -8,6 +8,7 @@ function baseQuote(partial: Partial<QuoteResult>): QuoteResult {
     lineItems: [], subtotal: 0, discount: null, total: 0,
     estimatedDurationMinutes: null, missing: [], manualReviewReasons: [],
     explanation: '', trace: [], jobberLineItems: [], promotion: null,
+    durationSource: null,
     ...partial,
   };
 }
