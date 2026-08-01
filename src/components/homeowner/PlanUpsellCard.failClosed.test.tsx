@@ -74,10 +74,10 @@ describe('PlanUpsellCard — fail-closed plan behavior', () => {
     const { rerender } = render(
       <PlanUpsellCard {...props} oneTimeTotal={250} quotePhase="firm" />,
     );
-    expect(screen.getByRole('button', { name: 'Review one-time quote · $250' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Continue with One-Time Service · $250' })).toHaveLength(2);
 
     rerender(<PlanUpsellCard {...props} oneTimeTotal={275} quotePhase="estimated" />);
-    expect(screen.getByRole('button', { name: 'Review one-time quote · $275' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Continue with One-Time Service · $275' })).toHaveLength(2);
 
     rerender(<PlanUpsellCard {...props} oneTimeTotal={275} quotePhase="loading" />);
     expect(screen.queryByTestId('persistent-quote-action')).toBeNull();
@@ -102,7 +102,7 @@ describe('PlanUpsellCard — fail-closed plan behavior', () => {
         planPhase="ready"
       />,
     );
-    const quoteHeading = screen.getByText('One-Time Service Price');
+    const quoteHeading = screen.getByText('Your One-Time Quote');
     const plansToggle = screen.getByTestId('plans-toggle');
     expect(screen.queryByTestId('plan-summary')).toBeNull();
     expect(quoteHeading.compareDocumentPosition(plansToggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

@@ -90,7 +90,7 @@ describe('Phase 1A quote foundation', () => {
     const { rerender } = render(
       <PersistentActionBar
         visible={false}
-        label="Review one-time quote · $312"
+        label="Continue with One-Time Service · $312"
         onAction={action}
       />,
     );
@@ -99,11 +99,11 @@ describe('Phase 1A quote foundation', () => {
     rerender(
       <PersistentActionBar
         visible
-        label="Review one-time quote · $312"
+        label="Continue with One-Time Service · $312"
         onAction={action}
       />,
     );
-    const button = screen.getByRole('button', { name: 'Review one-time quote · $312' });
+    const button = screen.getByRole('button', { name: 'Continue with One-Time Service · $312' });
     expect(screen.getByTestId('persistent-quote-action').className).toContain('safe-area-inset-bottom');
     fireEvent.click(button);
     expect(action).toHaveBeenCalledOnce();

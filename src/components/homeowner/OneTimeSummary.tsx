@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Calendar, Download, Check, Sparkles, Loader2, Info, HelpCircle, Bookmark, Mail, MessageSquare } from 'lucide-react';
+import { ArrowRight, Clock, Download, Check, Sparkles, Loader2, Info, HelpCircle, Bookmark, Mail, MessageSquare, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { DiscountCodeInput } from './DiscountCodeInput';
 import { BookingFlow } from '@/components/booking/BookingFlow';
 import { BookingHelpContact } from '@/components/booking/BookingHelpContact';
+import { CompleteYourRefresh } from '@/components/booking/CompleteYourRefresh';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { toQuoteInput, hasAnyServiceSelected, selectedServiceSlugs } from '@/lib/pricing/toQuoteInput';
 import { useWindowPromoConfig } from '@/hooks/useWindowPromoConfig';
@@ -26,12 +27,13 @@ interface OneTimeSummaryProps {
   additionalServices: AdditionalServices;
   homeDetails: HomeDetails;
   onDownloadPDF?: () => void;
-  onGetStarted: () => void;
   prefillCustomerInfo?: CustomerInfo | null;
   /** Notifies the page when the full booking flow opens/closes so it can widen the layout. */
   onBookingActiveChange?: (active: boolean) => void;
   /** Enables in-flow upsells that mutate parent selection state (presentation only). */
   onAdditionalServicesChange?: (updater: (prev: AdditionalServices) => AdditionalServices) => void;
+  /** Returns to the primary service editor without mutating the current selection. */
+  onEditServices?: () => void;
 }
 
 function formatPrice(price: number) {
@@ -41,6 +43,14 @@ function formatPrice(price: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(price);
+}
+
+function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours === 0) return `${remainder} min`;
+  if (remainder === 0) return `${hours} hr`;
+  return `${hours} hr ${remainder} min`;
 }
 
 /**
@@ -85,10 +95,10 @@ export function OneTimeSummary({
   additionalServices,
   homeDetails,
   onDownloadPDF,
-  onGetStarted,
   prefillCustomerInfo,
   onBookingActiveChange,
   onAdditionalServicesChange,
+  onEditServices,
 }: OneTimeSummaryProps) {
   const [appliedDiscount, setAppliedDiscount] = useState<ValidatedDiscount | null>(null);
   const [showBookingFlow, setShowBookingFlow] = useState(false);
@@ -304,6 +314,7 @@ export function OneTimeSummary({
         prefillCustomerInfo={prefillCustomerInfo}
         promotion={promoRequest}
         onAdditionalServicesChange={onAdditionalServicesChange}
+        initialStep="info"
       />
     );
   }
@@ -316,9 +327,9 @@ export function OneTimeSummary({
             <Sparkles className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <CardTitle className="text-xl">One-Time Service Quote</CardTitle>
+            <CardTitle className="text-xl">Review Services &amp; Add-ons</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {homeDetails.squareFootage.toLocaleString()} sq ft • {homeDetails.stories} {homeDetails.stories === 1 ? 'story' : 'stories'}
+              Confirm the work and total, then choose an appointment time.
             </p>
           </div>
         </div>
@@ -432,16 +443,31 @@ export function OneTimeSummary({
 
             {/* Service Breakdown — rendered from the AUTHORITATIVE server line items */}
             <div className="space-y-3">
-              <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                Services Included
-              </h4>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                  Selected Services
+                </h4>
+                {typeof quote.estimatedDurationMinutes === 'number' && quote.estimatedDurationMinutes > 0 && (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="authoritative-duration">
+                    <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                    About {formatDuration(quote.estimatedDurationMinutes)}
+                  </span>
+                )}
+              </div>
               <div className="space-y-2 text-sm">
                 {quote.lineItems.map((li) => (
                   <div key={li.key} className="space-y-1">
                     <div className="flex justify-between">
-                      <span className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-success" />
-                        {li.label}
+                      <span className="flex items-start gap-2">
+                        <Check className="mt-0.5 w-4 h-4 shrink-0 text-success" aria-hidden="true" />
+                        <span>
+                          <span className="block">{li.label}</span>
+                          {(li.customerExplanation || li.jobberLineItem?.description) && (
+                            <span className="block text-xs text-muted-foreground">
+                              {li.customerExplanation || li.jobberLineItem?.description}
+                            </span>
+                          )}
+                        </span>
                       </span>
                       <span className="font-medium">{formatPrice(li.amount)}</span>
                     </div>
@@ -484,14 +510,20 @@ export function OneTimeSummary({
               </p>
             </div>
 
+            {onAdditionalServicesChange && (
+              <CompleteYourRefresh
+                additionalServices={additionalServices}
+                onAdd={onAdditionalServicesChange}
+                authoritativePricesOnly
+                title="Optional Add-ons"
+                subtitle="Add another service if it helps. Your total will update from BluLadder pricing before you continue."
+              />
+            )}
+
             {/* Disclaimer */}
             <div className="p-3 rounded-lg bg-muted/50 border border-border">
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Firm quote based on the information provided. Final pricing may adjust only if
-                on-site conditions differ from what was entered.
-                {quote.ruleVersion != null && (
-                  <span className="block mt-1 opacity-70">Pricing version {quote.ruleVersion}</span>
-                )}
+                Your price is confirmed based on the information provided. If the actual property conditions differ materially, we’ll discuss any change with you before work begins.
               </p>
             </div>
           </>
@@ -499,14 +531,24 @@ export function OneTimeSummary({
 
         {/* Actions */}
         <div className="space-y-3 pt-2">
+          <p className="text-center text-xs text-muted-foreground">
+            Next, enter your contact and service address so we can show appointment availability.
+          </p>
           <Button
             className="w-full btn-primary h-12 text-base"
             onClick={() => setShowBookingFlow(true)}
             disabled={!canBook}
           >
-            <Calendar className="w-5 h-5 mr-2" />
-            Book Now
+            Choose Appointment Time
+            <ArrowRight className="ml-2 h-5 w-5" aria-hidden="true" />
           </Button>
+
+          {onEditServices && (
+            <Button type="button" variant="ghost" className="w-full" onClick={onEditServices}>
+              <Pencil className="mr-2 h-4 w-4" aria-hidden="true" />
+              Edit Services
+            </Button>
+          )}
 
           {onDownloadPDF && (
             <Button
@@ -520,7 +562,7 @@ export function OneTimeSummary({
             </Button>
           )}
 
-          {/* Secondary quote actions — Book Now above stays primary. Compact
+          {/* Secondary quote actions — the scheduling handoff above stays primary. Compact
               labels with truncation guards so they never wrap or clip. */}
           <div
             className={BID_BY_TEXT_ENABLED ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 gap-2'}

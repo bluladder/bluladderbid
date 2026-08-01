@@ -158,6 +158,7 @@ const ServiceLanding = () => {
   type FlowState = 'selecting' | 'one-time-booking' | 'plan-selected' | 'plan-expanded';
   const [flowState, setFlowState] = useState<FlowState>('selecting');
   const [selectedTier, setSelectedTier] = useState<'good' | 'better' | 'best' | null>('better');
+  const [bookingActive, setBookingActive] = useState(false);
 
   const { customizations, setTierCustomization } = usePlanCustomizations();
 
@@ -184,10 +185,11 @@ const ServiceLanding = () => {
   const bundles = bundleState.bundles;
 
   const currentProgressStep = useMemo<FlowStep>(() => {
+    if (bookingActive) return 'book';
     if (flowState === 'selecting') return 'services';
     if (flowState === 'one-time-booking' || flowState === 'plan-selected') return 'quote';
     return 'book';
-  }, [flowState]);
+  }, [bookingActive, flowState]);
 
   // If invalid service slug, show 404-like message
   if (!config) {
@@ -252,9 +254,10 @@ const ServiceLanding = () => {
           servicePrices={servicePrices}
           additionalServices={additionalServices}
           homeDetails={homeDetails}
-          onGetStarted={handleGetStarted}
           prefillCustomerInfo={null}
           onAdditionalServicesChange={setAdditionalServices}
+          onEditServices={handleBackToSelection}
+          onBookingActiveChange={setBookingActive}
         />
       );
     }
@@ -333,7 +336,8 @@ const ServiceLanding = () => {
           />
 
           {/* Main Content */}
-          <div className="grid gap-8 lg:grid-cols-3">
+          <div className={bookingActive ? 'flex justify-center' : 'grid gap-8 lg:grid-cols-3'}>
+            {!bookingActive && (
             <div className="lg:col-span-2 space-y-6 min-w-0">
               {flowState !== 'selecting' && (
                 <button
@@ -382,8 +386,9 @@ const ServiceLanding = () => {
                 />
               )}
             </div>
+            )}
             
-            <div className="lg:sticky lg:top-24 lg:self-start min-w-0">
+            <div className={bookingActive ? 'w-full max-w-2xl min-w-0' : 'lg:sticky lg:top-24 lg:self-start min-w-0'}>
               {renderRightColumn()}
             </div>
           </div>

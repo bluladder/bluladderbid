@@ -130,6 +130,8 @@ interface CompleteYourRefreshProps {
    * their price depends on user-entered flatwork sqft.
    */
   estimates?: UpsellEstimates | null;
+  /** Suppress non-authoritative marketing floors; show a price only when a server estimate exists. */
+  authoritativePricesOnly?: boolean;
 }
 
 /**
@@ -146,6 +148,7 @@ export function CompleteYourRefresh({
   variant = 'full',
   maxItems = 5,
   estimates = null,
+  authoritativePricesOnly = false,
 }: CompleteYourRefreshProps) {
   const missing = UPSELL_CATALOG.filter((s) => !isSelected(additionalServices, s.key));
   if (missing.length === 0) {
@@ -193,7 +196,7 @@ export function CompleteYourRefresh({
           // pricing engine can compute a precise price. Fall back to the
           // marketing "from $X" anchor for services that still need a user
           // input (driveway / pressure washing sqft, panel count, screens).
-          let priceLabel: JSX.Element;
+          let priceLabel: JSX.Element | null;
           const est =
             estimates && item.key in estimates
               ? (estimates as unknown as Record<string, number | null>)[item.key]
@@ -204,12 +207,14 @@ export function CompleteYourRefresh({
                 <span className="font-bold text-foreground">${est}</span>
               </span>
             );
-          } else {
+          } else if (!authoritativePricesOnly) {
             priceLabel = (
               <span className="text-[11px] text-muted-foreground">
                 From <span className="font-bold text-foreground">${item.from}</span>
               </span>
             );
+          } else {
+            priceLabel = null;
           }
           return (
             <div
@@ -236,14 +241,15 @@ export function CompleteYourRefresh({
                     {item.benefit}
                   </p>
                 </div>
-                <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                <div className={`mt-auto flex items-center gap-2 pt-1 ${priceLabel ? 'justify-between' : 'justify-end'}`}>
                   {priceLabel}
                   <Button
+                    type="button"
                     size="sm"
                     onClick={() => onAdd((prev) => enableService(prev, item.key))}
                     className="h-7 px-2.5 text-xs font-semibold gap-1"
                   >
-                    <Plus className="w-3 h-3" />
+                    <Plus className="w-3 h-3" aria-hidden="true" />
                     Add
                   </Button>
                 </div>

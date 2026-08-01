@@ -167,10 +167,11 @@ const Index = () => {
 
   // Map flow state to progress step
   const currentProgressStep = useMemo<FlowStep>(() => {
+    if (bookingActive) return 'book';
     if (flowState === 'selecting') return 'services';
     if (flowState === 'one-time-booking' || flowState === 'plan-selected') return 'quote';
     return 'book';
-  }, [flowState]);
+  }, [bookingActive, flowState]);
 
   // Determine what to show in the right column
   const renderRightColumn = () => {
@@ -181,10 +182,10 @@ const Index = () => {
           servicePrices={servicePrices}
           additionalServices={additionalServices}
           homeDetails={homeDetails}
-          onGetStarted={handleGetStarted}
           prefillCustomerInfo={prefillCustomerInfo}
           onBookingActiveChange={setBookingActive}
           onAdditionalServicesChange={setAdditionalServices}
+          onEditServices={handleBackToSelection}
         />
       );
     }
