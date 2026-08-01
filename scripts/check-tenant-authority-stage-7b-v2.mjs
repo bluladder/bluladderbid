@@ -129,6 +129,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/workflow/rolloutRoute.ts",
   "supabase/functions/_shared/workflow/rolloutRoute_test.ts",
   "supabase/functions/_shared/workflow/workflowSession.ts",
+  "supabase/functions/attribution-ingest/index.ts",
   "supabase/functions/voice-llm-adapter/index.ts",
 ]);
 const changedEdgePaths = changedPaths(["supabase/functions"]);
