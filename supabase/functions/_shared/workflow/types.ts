@@ -34,7 +34,8 @@ export type HandoffReason =
   | "unsupported_service"
   | "pricing_error"
   | "ambiguous_customer_match"
-  | "safety_or_access_flag";
+  | "safety_or_access_flag"
+  | "owner_decision_required";
 
 export type WorkflowAction =
   | { kind: "ask"; field: RequiredField; prompt: string }

@@ -23,6 +23,7 @@ import type { TurnResult, WorkflowAction } from "./types.ts";
 import { loadPricing } from "../loadPricing.ts";
 import { calculateQuote, type QuoteInput } from "../pricingEngine.ts";
 import type { QuoteSession } from "../quoteSession.ts";
+import { windowSidesToPricingType } from "../salesEngine/quoteIntakeContract.ts";
 import {
   confirmationPrompt,
   interpretConfirmation,
@@ -57,12 +58,12 @@ function sessionToQuoteInput(session: QuoteSession): QuoteInput {
   const f = session.fields;
   const services = f.services ?? [];
   const wants = (name: string) => services.includes(name);
-  const sidesBoth = f.windowCleaningSides === "inside_and_outside";
+  const pricingType = windowSidesToPricingType(f.windowCleaningSides ?? f.windowCleaningType);
   return {
     homeDetails: {
       squareFootage: (f.squareFootage as number) ?? undefined as unknown as number,
       stories: (f.stories as number) ?? undefined as unknown as number,
-      windowCleaningType: sidesBoth ? "both" : "exterior",
+      windowCleaningType: pricingType ?? undefined,
       // Carry the canonical window-condition modifier through to the pricing
       // engine. Same field name/value the web booking flow persists.
       condition: f.condition,

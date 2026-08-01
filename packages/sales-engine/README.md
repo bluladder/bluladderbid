@@ -28,18 +28,39 @@ packages/sales-engine/   ← leaf. Imports NOTHING from src/ or supabase/.
 
 ## Contents (current)
 
+- `intake/quoteIntakeContract.ts` — **authoritative** service-specific fields,
+  stages, requirement categories, canonical prompts, stable add-on/adjustment
+  identifiers, normalization, and readiness evaluation.
 - `intake/residentialQuoteManifest.ts` — canonical intake fields for the
-  residential quote workflow: id, canonical wording, priority order,
-  contact-first sequence (name → phone → pricing → email → address).
+  legacy residential presentation sequence. It does not own requirements.
+
+## Edge mirror synchronization
+
+Edge bundling cannot import outside `supabase/`, so Sales Engine sources have
+generated mirrors in `supabase/functions/_shared/salesEngine/`. Edit only the
+`packages/sales-engine/` source, then run `node scripts/sync-sales-engine-intake.mjs`.
+`src/lib/pricing/salesEngine.parity.test.ts` compares every mirror byte-for-byte.
 
 ## What lives here vs elsewhere
 
 | Concern | Lives here | Lives elsewhere |
 | --- | --- | --- |
-| Required pricing fields (`missing[]`) | NO | `supabase/functions/_shared/pricingEngine.ts` (canonical) |
+| Service-specific intake requirements | YES | `intake/quoteIntakeContract.ts` |
 | Question priority + customer-facing wording | YES | — |
-| Prices, modifiers, promotion rules | NO | `pricingEngine.ts` |
+| Prices, modifiers, promotion rules | NO | byte-identical canonical `pricingEngine.ts` mirrors |
+| Estimated tax and duration policy | NO | versioned policy sections consumed by the canonical pricing engine |
 | Persistence, DB access | NO | Edge functions / web |
 
 The pricing engine is the sole authority on whether enough information exists
 to price. This package translates that authority into the next question to ask.
+Owner-confirmed monetary, estimated-tax, and duration rules and their deterministic calculation order live
+in the byte-identical canonical pricing engines; display labels are never used
+as pricing keys. The configured `$99` promotion remains a mutually exclusive
+branch: the first ten exterior equivalents retain the configured flat price and
+each additional equivalent is a separate contract line. It does not stack
+unless its configured policy explicitly allows it.
+
+Final quote summaries preserve pre-tax service/Jobber lines and expose service
+subtotal, discounts/adjustments, taxable subtotal, estimated tax, and estimated
+total separately. Duration uses pre-discount/pre-tax work value, adds setup once,
+and rounds upward to the configured scheduling increment.

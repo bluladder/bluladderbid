@@ -63,10 +63,14 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
   const roofCleaning = roof?.amount ?? 0;
   const solarPanelCleaning = solar?.amount ?? 0;
   const screenRepair = screen?.amount ?? 0;
+  const canonicalAddonTotal = quote.lineItems
+    .filter((item) => item.key === 'screened_enclosure_soft_wash' || item.key === 'enclosure_window_cleaning' ||
+      item.key === 'house_wash_front_patio' || item.key === 'house_wash_back_patio')
+    .reduce((sum, item) => sum + item.amount, 0);
 
   const additionalServicesTotal =
     drivewayCleaning + pressureWashing + gutterCleaningTotal + houseWashTotal + roofCleaning +
-    solarPanelCleaning + screenRepair;
+    solarPanelCleaning + screenRepair + canonicalAddonTotal;
 
   return {
     // Window cleaning (server components)
@@ -112,6 +116,8 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
 
     // Totals — from the authoritative server line-item amounts only.
     additionalServicesTotal,
-    grandTotal: typeof quote.total === 'number' ? quote.total : windowCleaningTotal + additionalServicesTotal,
+    grandTotal: typeof quote.estimatedTotal === 'number'
+      ? quote.estimatedTotal
+      : typeof quote.total === 'number' ? quote.total : windowCleaningTotal + additionalServicesTotal,
   };
 }

@@ -361,10 +361,14 @@ Deno.test("whole-home priced session does not report partial-window fields as re
   assertEquals(
     computeRequired({
       services: ["windowCleaning"],
-      windowCleaningScope: "partial",
+      windowCleaningScope: "whole_home",
       squareFootage: 2500,
       stories: 1,
-      windowCleaningType: "exterior",
+      windowCleaningSides: "outside_only",
+      condition: "maintenance",
+      advancedWindowConditions: false,
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     }),
     [],
   );

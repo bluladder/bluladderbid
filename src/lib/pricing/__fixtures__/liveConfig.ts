@@ -13,6 +13,7 @@ export const LIVE_CONFIG: PricingConfig = {
   window_cleaning: {
     exteriorPerSqFt: 0.08,
     interiorPerSqFt: 0.075,
+    insideAndOutsidePerSqFt: 0.15,
     minimumPrice: 185,
     modifiers: {
       stories: { "1": 0, "2": 12, "3": 18 },
@@ -36,8 +37,6 @@ export const LIVE_CONFIG: PricingConfig = {
     perSqFt: 0.08,
     minimumPrice: 200,
     modifiers: { stories: { "1": 0, "2": 10, "3": 12 } },
-    undergroundDrainPricing: { "1": 75, "2": 125, "3": 175, "4+": 225 },
-    minorRepairsPrice: 85,
     gutterGuardsPerLinearFoot: 8,
   },
   roof_cleaning: {
@@ -52,12 +51,26 @@ export const LIVE_CONFIG: PricingConfig = {
   driveway_cleaning: {
     perSqFt: 0.2,
     minimumPrice: 200,
-    surfaceMultipliers: { concrete: 1, stamped: 1, pavers: 1.25, brick: 1, stone: 1, tile: 1 },
+    surfaceMultipliers: { concrete: 1, stamped: 1, pavers: 1.25, exposed_aggregate: 1, brick: 1, stone: 1, asphalt: 1, tile: 1 },
   },
   pressure_washing: {
     perSqFt: 0.25,
     minimumPrice: 75,
-    surfaceMultipliers: { concrete: 1, stamped: 1.15, pavers: 1.25, brick: 1.2, stone: 1.3, tile: 1.35 },
+    surfaceMultipliers: { concrete: 1, stamped: 1.15, pavers: 1.25, exposed_aggregate: 1.15, brick: 1.2, stone: 1.3, asphalt: 1, tile: 1.35 },
+  },
+  solar_panel_cleaning: { perPanel: 10, minimumPrice: 0 },
+  screen_repair: { perScreen: 35, minimumPrice: 0 },
+  tax_policy: {
+    version: "texas-estimated-sales-tax-2026-07-31",
+    rate: 0.0825,
+    exemptLineItemKeys: ["gutter_cleaning", "underground_gutter_drain_clearing", "minor_gutter_downspout_repairs"],
+    customerLabel: "Estimated tax",
+  },
+  duration_policy: {
+    version: "dfw-duration-productivity-2026-07-31",
+    setupMinutes: 15,
+    roundingIncrementMinutes: 15,
+    hourlyRevenueTargets: { windowsAndScreens: 120, gutterWork: 150, exteriorCleaning: 175 },
   },
   window_promo_99: {
     active: true,

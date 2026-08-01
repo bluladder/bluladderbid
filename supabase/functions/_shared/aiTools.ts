@@ -28,6 +28,7 @@ import {
   OFFER_TTL_MS,
 } from "./slotOffer.ts";
 import { parseAllowlist } from "./workflow/rolloutRoute.ts";
+import { windowSidesToPricingType } from "./salesEngine/quoteIntakeContract.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -201,25 +202,36 @@ export function buildQuoteRequest(a: Record<string, unknown>) {
     homeDetails: {
       squareFootage: num(a.squareFootage),
       stories: num(a.stories),
-      windowCleaningType: (a.windowCleaningType as string) || "exterior",
-      condition: (a.condition as string) || "maintenance",
+      windowCleaningType: windowSidesToPricingType(a.windowCleaningSides ?? a.windowCleaningType) ?? undefined,
+      condition: (a.condition as string) || undefined,
       showAdvanced: false,
+      screenProfile: (a.screenProfile as string) || undefined,
+      screenProfileProvenance: (a.screenProfileProvenance as string) || undefined,
+      solarScreenCoverage: (a.solarScreenCoverage as string) || undefined,
+      solarScreenAffectedWindowCount: a.solarScreenAffectedWindowCount == null ? undefined : num(a.solarScreenAffectedWindowCount),
+      solarScreenServiceRequested: a.solarScreenServiceRequested === true,
+      enclosedPatioProfile: (a.enclosedPatioProfile as string) || undefined,
+      screenedEnclosureSoftWash: a.screenedEnclosureSoftWash === true,
+      enclosureWindowCount: a.enclosureWindowCount == null ? undefined : num(a.enclosureWindowCount),
+      enclosureWindowSides: (a.enclosureWindowSides as string) || undefined,
     },
     additionalServices: {
       windowCleaning: has("window_cleaning"),
       houseWash: has("house_wash"),
       gutterCleaning: has("gutter_cleaning"),
+      gutterAddons: a.gutterAddons && typeof a.gutterAddons === "object" ? a.gutterAddons : undefined,
+      houseWashPatios: a.houseWashPatios && typeof a.houseWashPatios === "object" ? a.houseWashPatios : undefined,
       roofCleaning: has("roof_cleaning"),
-      roofType: (a.roofType as string) || "asphalt",
-      roofSeverity: (a.roofSeverity as string) || "light",
+      roofType: (a.roofType as string) || undefined,
+      roofSeverity: (a.roofSeverity as string) || undefined,
       drivewayCleaning: {
         enabled: has("driveway_cleaning"),
         sqft: num(a.drivewaySqft),
-        surfaceType: (a.drivewaySurface as string) || "concrete",
+        surfaceType: (a.drivewaySurface as string) || undefined,
       },
       pressureWashing: {
         enabled: has("pressure_washing"),
-        surfaceType: (a.pressureWashSurface as string) || "concrete",
+        surfaceType: (a.pressureWashSurface as string) || undefined,
         frontPorch: {
           enabled: has("pressure_washing"),
           sqft: num(a.pressureWashSqft),
@@ -228,6 +240,8 @@ export function buildQuoteRequest(a: Record<string, unknown>) {
         poolDeck: { enabled: false, sqft: 0 },
         walkways: { enabled: false, sqft: 0 },
       },
+      solarPanelCleaning: { enabled: has("solar_panel_cleaning"), panelCount: num(a.solarPanelCount) },
+      screenRepair: { enabled: has("screen_repair"), screenCount: num(a.screenRepairCount) },
     },
     discount: a.discountCode ? { code: String(a.discountCode) } : null,
     __services: services,
@@ -327,8 +341,10 @@ async function calculateQuoteTool(
     pricingVersion: json.ruleVersion ?? null,
     engineVersion: json.engineVersion,
     lineItems: json.lineItems ?? [],
-    adjustments: json.discount ?? null,
+    adjustments: json.priceAdjustments ?? [],
     discount: json.discount ?? null,
+    disclosures: json.disclosures ?? [],
+    calculationOrder: json.calculationOrder ?? [],
     total: firm ? json.total : null,
     estimatedDurationMinutes: json.estimatedDurationMinutes ?? null,
     missingQuestions: json.missing ?? [],
