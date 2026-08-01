@@ -20,6 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -39,6 +40,7 @@ jobs:
         run: |
           bun run check:tenant-inventory
           bun run check:tenant-foundation
+          bun run check:tenant-authority-stage-7b-v2
           bun run check:tenant-readiness
           bun run check:stage-7d-migration-gate
           bun run check:stage-7d-independent-audit
@@ -71,6 +73,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Deno
         uses: denoland/setup-deno@v1
@@ -106,6 +110,8 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
@@ -116,6 +122,7 @@ jobs:
         run: |
           createdb --host localhost --username postgres stage7b_rehearsal
           createdb --host localhost --username postgres stage7b_lovable_rehearsal
+          createdb --host localhost --username postgres stage7b_v2_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -124,6 +131,10 @@ jobs:
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_lovable_rehearsal
         run: bash scripts/rehearse-stage-7b-lovable-postgres.sh
+      - name: Rehearse Stage 7B v2 tenant authority migration
+        env:
+          STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_v2_rehearsal
+        run: bash scripts/rehearse-stage-7b-v2-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
@@ -131,6 +142,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Fail if a migration sets campaigns.status = 'active'
         run: |
           set -e
