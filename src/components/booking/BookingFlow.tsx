@@ -51,6 +51,8 @@ interface BookingFlowProps {
    * the actual amount. If omitted, upsell surfaces render nothing.
    */
   onAdditionalServicesChange?: (updater: (prev: AdditionalServices) => AdditionalServices) => void;
+  /** Allows a preceding combined review screen to enter scheduling without repeating service review. */
+  initialStep?: Extract<BookingStep, 'review' | 'info'>;
 }
 
 interface BookingResult {
@@ -86,8 +88,9 @@ export function BookingFlow({
   promotion,
   resumedQuote,
   onAdditionalServicesChange,
+  initialStep = 'review',
 }: BookingFlowProps) {
-  const [step, setStep] = useState<BookingStep>('review');
+  const [step, setStep] = useState<BookingStep>(initialStep);
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(prefillCustomerInfo || null);
   const [isSubmitting, setIsSubmitting] = useState(false);

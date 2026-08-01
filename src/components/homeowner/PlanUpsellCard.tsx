@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, SlidersHorizontal } from 'lucide-react';
+import { RefreshCw, Check, Sparkles, Star, ChevronDown, ArrowRight, CreditCard, SlidersHorizontal } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -117,6 +117,8 @@ export function PlanUpsellCard({
     additionalServices.roofCleaning,
     additionalServices.drivewayCleaning.enabled,
     additionalServices.pressureWashing.enabled,
+    additionalServices.solarPanelCleaning.enabled,
+    additionalServices.screenRepair.enabled,
   ].filter(Boolean).length;
 
   // Reconciled figures from the shared breakdown helper.
@@ -149,107 +151,155 @@ export function PlanUpsellCard({
   
   return (
     <div className="space-y-4">
-      {/* One-Time Price Display */}
-      <Card className="card-gradient overflow-hidden">
+      {/* Screen 1: a single, unambiguous one-time-service decision. */}
+      <Card
+        className="overflow-hidden border-[#0b2f53] bg-[#0b2f53] text-white shadow-xl"
+        data-testid="one-time-decision"
+      >
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-accent" />
+            <Sparkles className="w-5 h-5 text-cyan-300" aria-hidden="true" />
             <CardTitle className="text-lg">
-              {isEstimate ? 'Estimated One-Time Price' : 'One-Time Service Price'}
+              {isEstimate ? 'Your One-Time Estimate' : 'Your One-Time Quote'}
             </CardTitle>
           </div>
         </CardHeader>
         <CardContent className="pt-0 pb-6">
-          <div className="text-center mb-4">
+          <div className="mb-5">
             {isEstimate && (
-              <span className="text-sm font-medium text-muted-foreground">Starting at</span>
+              <span className="text-sm font-medium text-blue-100">Starting at</span>
             )}
-            <PriceDisplay value={oneTimeTotal} className="block text-4xl text-foreground" />
-            <p className="text-sm text-muted-foreground mt-1">
+            <PriceDisplay value={oneTimeTotal} className="block text-4xl text-white" />
+            <p className="mt-1 text-sm text-blue-100">
               {enabledServices} service{enabledServices !== 1 ? 's' : ''} • Single visit
             </p>
             {isEstimate && (
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="mt-1 text-xs text-blue-100">
                 Enter your home's square footage above for exact pricing.
               </p>
             )}
           </div>
           
           {/* Service breakdown */}
-          <div className="space-y-2 text-sm mb-4">
+          <div className="mb-5 space-y-2 text-sm" aria-label="Selected services and core inclusions">
             {additionalServices.windowCleaning && servicePrices.windowCleaningTotal > 0 && (
-              <div className="flex justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  Window Cleaning
+                  <Check className="w-4 h-4 shrink-0 text-cyan-300" aria-hidden="true" />
+                  <span>
+                    <span className="block font-medium">Window Cleaning</span>
+                    <span className="block text-xs text-blue-100">
+                      {homeDetails?.windowCleaningType === 'both' ? 'Interior and exterior glass' : 'Exterior glass'}
+                    </span>
+                  </span>
                 </span>
                 <span className="font-medium">{formatPrice(servicePrices.windowCleaningTotal)}</span>
               </div>
             )}
             {additionalServices.houseWash && servicePrices.houseWash > 0 && (
-              <div className="flex justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  House Wash
+                  <Check className="w-4 h-4 text-cyan-300" aria-hidden="true" />
+                  <span>
+                    <span className="block font-medium">House Wash</span>
+                    <span className="block text-xs text-blue-100">Low-pressure exterior wash</span>
+                  </span>
                 </span>
-                <span className="font-medium">{formatPrice(servicePrices.houseWash)}</span>
+                <span className="font-medium">{formatPrice(servicePrices.houseWashTotal)}</span>
               </div>
             )}
             {additionalServices.gutterCleaning && servicePrices.gutterCleaning > 0 && (
-              <div className="flex justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  Gutter Cleaning
+                  <Check className="w-4 h-4 text-cyan-300" aria-hidden="true" />
+                  <span>
+                    <span className="block font-medium">Gutter Cleaning</span>
+                    <span className="block text-xs text-blue-100">Debris removal and downspout flow check</span>
+                  </span>
                 </span>
-                <span className="font-medium">{formatPrice(servicePrices.gutterCleaning)}</span>
+                <span className="font-medium">{formatPrice(servicePrices.gutterCleaningTotal)}</span>
               </div>
             )}
             {additionalServices.roofCleaning && servicePrices.roofCleaning > 0 && (
-              <div className="flex justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  Roof Cleaning
+                  <Check className="w-4 h-4 text-cyan-300" aria-hidden="true" />
+                  <span>
+                    <span className="block font-medium">Roof Cleaning</span>
+                    <span className="block text-xs text-blue-100">Treatment matched to the selected roof details</span>
+                  </span>
                 </span>
                 <span className="font-medium">{formatPrice(servicePrices.roofCleaning)}</span>
               </div>
             )}
             {additionalServices.drivewayCleaning.enabled && servicePrices.drivewayCleaning > 0 && (
-              <div className="flex justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  Driveway Cleaning
+                  <Check className="w-4 h-4 text-cyan-300" aria-hidden="true" />
+                  <span>
+                    <span className="block font-medium">Driveway Cleaning</span>
+                    <span className="block text-xs text-blue-100">Measured driveway surface cleaning</span>
+                  </span>
                 </span>
                 <span className="font-medium">{formatPrice(servicePrices.drivewayCleaning)}</span>
               </div>
             )}
             {additionalServices.pressureWashing.enabled && servicePrices.pressureWashing > 0 && (
-              <div className="flex justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <span className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-success" />
-                  Pressure Washing
+                  <Check className="w-4 h-4 text-cyan-300" aria-hidden="true" />
+                  <span>
+                    <span className="block font-medium">Pressure Washing</span>
+                    <span className="block text-xs text-blue-100">Selected patio, porch, pool-deck, or walkway areas</span>
+                  </span>
                 </span>
                 <span className="font-medium">
                   {formatPrice(servicePrices.pressureWashing)}
                 </span>
               </div>
             )}
+            {additionalServices.solarPanelCleaning.enabled && servicePrices.solarPanelCleaning > 0 && (
+              <div className="flex items-start justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-cyan-300" aria-hidden="true" />
+                  <span>
+                    <span className="block font-medium">Solar Panel Cleaning</span>
+                    <span className="block text-xs text-blue-100">Selected panel count and access details</span>
+                  </span>
+                </span>
+                <span className="font-medium">{formatPrice(servicePrices.solarPanelCleaning)}</span>
+              </div>
+            )}
+            {additionalServices.screenRepair.enabled && servicePrices.screenRepair > 0 && (
+              <div className="flex items-start justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-cyan-300" aria-hidden="true" />
+                  <span>
+                    <span className="block font-medium">Screen Repair</span>
+                    <span className="block text-xs text-blue-100">Selected screen count and repair scope</span>
+                  </span>
+                </span>
+                <span className="font-medium">{formatPrice(servicePrices.screenRepair)}</span>
+              </div>
+            )}
           </div>
           
-          {/* Book One-Time CTA - PRIMARY with high contrast */}
+          {quotePhase === 'firm' && (
+            <p className="mb-4 text-sm leading-relaxed text-blue-50">
+              Your price is confirmed based on the information provided. If the actual property conditions differ materially, we’ll discuss any change with you before work begins.
+            </p>
+          )}
+
           <Button 
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-auto min-h-16 py-3 text-base sm:text-lg font-bold shadow-xl group transition-all duration-200 active:scale-[0.98] whitespace-normal flex-wrap"
+            className="group h-auto min-h-14 w-full whitespace-normal bg-cyan-400 px-4 py-3 text-base font-bold text-[#082642] shadow-lg transition-all duration-200 hover:bg-cyan-300 active:scale-[0.98] sm:text-lg"
             onClick={onBookOneTime}
           >
-            <Calendar className="w-5 h-5 sm:w-6 sm:h-6 mr-2 shrink-0" />
-            <span>Book One-Time Service</span>
-            <span className="font-mono bg-primary-foreground/20 px-3 py-1 rounded-lg shrink-0">
-              {formatPrice(oneTimeTotal)}
-            </span>
+            <span>Continue with One-Time Service · {formatQuotePrice(oneTimeTotal)}</span>
             <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform shrink-0" />
           </Button>
           
           {/* Trust microcopy */}
-          <p className="text-center text-xs text-muted-foreground mt-2">
+          <p className="mt-2 text-center text-xs text-blue-100">
             No payment due until service is complete
           </p>
         </CardContent>
@@ -265,8 +315,9 @@ export function PlanUpsellCard({
             className="h-auto w-full justify-between rounded-none px-5 py-4 text-left"
             data-testid="plans-toggle"
           >
-            <span>
-              <span className="block font-semibold text-foreground">Annual Maintenance Plan</span>
+            <span className="block">
+              <span className="block font-semibold text-foreground">Prefer ongoing care?</span>
+              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">Optional annual maintenance plans</span>
             </span>
             <ChevronDown className={`h-5 w-5 transition-transform ${plansOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
           </Button>
@@ -545,7 +596,7 @@ export function PlanUpsellCard({
       </p>
       <PersistentActionBar
         visible={isCanonicalQuoteActionable}
-        label={`Review one-time quote · ${formatQuotePrice(oneTimeTotal)}`}
+        label={`Continue with One-Time Service · ${formatQuotePrice(oneTimeTotal)}`}
         onAction={onBookOneTime}
       />
     </div>

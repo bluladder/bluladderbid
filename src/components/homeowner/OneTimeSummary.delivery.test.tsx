@@ -7,7 +7,7 @@
  *  3. normalize destinations before delivery, and
  *  4. surface a masked destination in the success UI.
  *
- * Book Now is asserted to remain the primary action.
+ * The scheduling handoff is asserted to remain the primary action.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -87,7 +87,6 @@ function renderSummary() {
       additionalServices={additionalServices}
       homeDetails={homeDetails}
       onDownloadPDF={vi.fn()}
-      onGetStarted={vi.fn()}
     />
   );
 }
@@ -95,10 +94,10 @@ function renderSummary() {
 describe('OneTimeSummary — email + bid-by-text delivery', () => {
   beforeEach(() => { invokeMock.mockReset(); });
 
-  it('keeps Book Now as the primary action', () => {
+  it('uses the truthful scheduling CTA as the primary action', () => {
     renderSummary();
-    const bookNow = screen.getByRole('button', { name: /book now/i });
-    expect(bookNow.className).toMatch(/btn-primary/);
+    const chooseTime = screen.getByRole('button', { name: 'Choose Appointment Time' });
+    expect(chooseTime.className).toMatch(/btn-primary/);
   });
 
   it('email delivery reuses save-quote and shows masked destination as accepted (not delivered)', async () => {
