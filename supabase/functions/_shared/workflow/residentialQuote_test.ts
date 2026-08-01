@@ -94,6 +94,8 @@ Deno.test("all pricing fields present → calculate_price (no city required)", (
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
@@ -106,7 +108,7 @@ Deno.test("all pricing fields present → calculate_price (no city required)", (
 
 Deno.test("unresolved whole-home scope policy never appears approved", () => {
   const s = afterContact({
-    fields: { services:["windowCleaning"], squareFootage:2000, stories:2, windowCleaningSides:"outside_only", condition:"maintenance" },
+    fields: { services:["windowCleaning"], squareFootage:2000, stories:2, windowCleaningSides:"outside_only", condition:"maintenance", screenProfile:"standard_removable", enclosedPatioProfile:"none" },
     fieldStatus: { services:"captured", squareFootage:"captured", stories:"captured", windowCleaningSides:"captured", condition:"captured" },
   });
   assertEquals(decideResidentialQuoteAction(s, []), { kind:"handoff", reason:"owner_decision_required" });
@@ -121,6 +123,8 @@ Deno.test("pricing error surfaces as handoff, never as another intake question",
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
@@ -142,6 +146,8 @@ Deno.test("priced → speak_price first, then collects booking fields", () => {
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",
@@ -161,6 +167,8 @@ Deno.test("post-quote: asks for email before booking (not before speaking the pr
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     },
     fieldStatus: {
       services: "captured", squareFootage: "captured", stories: "captured", windowCleaningSides: "captured",

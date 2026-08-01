@@ -17,6 +17,18 @@ export interface HomeDetails {
   ladderWork: boolean;
   ladderWorkCount: '1-3' | '4-8' | '9+';
   sunroom: 'none' | 'small' | 'medium' | 'large';
+
+  // Canonical Phase 0 amendment fields. Optional until the downstream web UI
+  // adopts the shared question contract; absence never fabricates a modifier.
+  screenProfile?: 'standard_removable' | 'no_screens' | 'solar' | 'mixed_standard_solar' | 'fixed_nonremovable_or_unknown';
+  screenProfileProvenance?: 'captured' | 'verified' | 'corrected' | 'derived' | 'defaulted' | 'unanswered' | 'unknown';
+  solarScreenCoverage?: 'all' | 'some';
+  solarScreenAffectedWindowCount?: number;
+  solarScreenServiceRequested?: boolean;
+  enclosedPatioProfile?: 'none' | 'screened' | 'window_enclosed' | 'mixed_or_uncertain';
+  screenedEnclosureSoftWash?: boolean;
+  enclosureWindowCount?: number;
+  enclosureWindowSides?: 'outside_only' | 'inside_and_outside';
 }
 
 // Driveway Cleaning - separate service with sqft-based pricing
@@ -53,7 +65,18 @@ export const FLATWORK_DEFAULT_SQFT = {
 } as const;
 
 // Underground Drain Cleaning options
+/** Legacy web control; the canonical contract for new channels uses an exact integer. */
 export type DrainCount = '1' | '2' | '3' | '4+';
+
+export type GutterRepairNeed =
+  | 'leaking_seams'
+  | 'loose_gutter_sections'
+  | 'detached_gutter_sections'
+  | 'loose_downspouts'
+  | 'detached_downspouts'
+  | 'none'
+  | 'unsure'
+  | 'another_repair_need';
 
 // Gutter Cleaning Add-ons
 export interface GutterCleaningAddons {
@@ -62,6 +85,8 @@ export interface GutterCleaningAddons {
     count: DrainCount;
   };
   minorRepairs: boolean;
+  repairNeeds?: GutterRepairNeed[];
+  repairNotes?: string;
   gutterGuards: {
     enabled: boolean;
     linearFeet: number;
@@ -105,6 +130,13 @@ export interface AdditionalServices {
   roofPitch: RoofPitch;
   solarPanelCleaning: SolarPanelCleaningOptions;
   screenRepair: ScreenRepairOptions;
+  houseWashPatios?: {
+    pricingMethod?: 'simple_selection' | 'exact_square_footage';
+    frontSelected?: boolean;
+    backSelected?: boolean;
+    frontSqft?: number;
+    backSqft?: number;
+  };
 }
 
 // All calculated service prices - the single source of truth

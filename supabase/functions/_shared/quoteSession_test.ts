@@ -6,6 +6,7 @@ import {
   nextQuestion,
   isReadyToPrice,
   isReadyToBook,
+  sessionInputsKey,
   normalizeEmail,
   normalizePhone,
   fieldsFromFacts,
@@ -44,6 +45,20 @@ Deno.test("field provenance keeps defaulted distinct from verified", () => {
   assert(s.fieldStatus.stories !== "verified");
 });
 
+Deno.test("screen profile provenance is derived and cannot be asserted independently", () => {
+  let s = mergeFields(empty(), { screenProfile: "no_screens" }, { markDefaulted: ["screenProfile"] });
+  assertEquals(s.fields.screenProfileProvenance, "defaulted");
+  s = mergeFields(s, { screenProfileProvenance: "verified" });
+  assertEquals(s.fields.screenProfileProvenance, "defaulted");
+  s = mergeFields(s, { screenProfile: "standard_removable" }, { markVerified: ["screenProfile"] });
+  assertEquals(s.fields.screenProfileProvenance, "verified");
+});
+
+Deno.test("screen-profile provenance participates in the canonical input hash", () => {
+  const base = { services:["windowCleaning"], screenProfile:"no_screens" as const };
+  assert(sessionInputsKey({ ...base, screenProfileProvenance:"captured" }) !== sessionInputsKey({ ...base, screenProfileProvenance:"defaulted" }));
+});
+
 Deno.test("legacy windowCleaningType normalizes to the sole writable sides field", () => {
   const s = mergeFields(empty(), { windowCleaningType: "both" });
   assertEquals(s.fields.windowCleaningSides, "inside_and_outside");
@@ -63,6 +78,8 @@ Deno.test("computeRequired: services first, then property inputs", () => {
     "stories",
     "windowCleaningSides",
     "condition",
+    "screenProfile",
+    "enclosedPatioProfile",
   ]);
 });
 
@@ -74,6 +91,8 @@ Deno.test("isReadyToPrice: window cleaning ready with sqft + stories + type", ()
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     }),
   );
 });
@@ -95,6 +114,8 @@ Deno.test("nextQuestion: ready to price when all inputs present, next asks for c
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     },
   };
   const plan = nextQuestion(s);
@@ -107,7 +128,7 @@ Deno.test("isReadyToBook: needs complete intake, address, email, and authoritati
   const priced: QuoteSession = {
     ...empty(),
     quoteStatus: "estimated",
-    fields: { services: ["houseWash"], squareFootage: 2000, stories: 1 },
+    fields: { services: ["houseWash"], squareFootage: 2000, stories: 1, enclosedPatioProfile: "none" },
   };
   assertEquals(isReadyToBook(priced), false);
   const readied: QuoteSession = {
@@ -234,4 +255,29 @@ Deno.test("nextQuestion: partial request routes to windowCount before other fiel
     fields: { services: ["windowCleaning"], windowCleaningScope: "partial" },
   };
   assertEquals(nextQuestion(s).nextField, "windowCount");
+});
+
+Deno.test("nextQuestion: selected add-on requirements never dead-end question selection", () => {
+  const gutter: QuoteSession = {
+    ...empty(),
+    fields: {
+      services: ["gutterCleaning"],
+      squareFootage: 2000,
+      stories: 1,
+      gutterAddons: { undergroundDrains: { enabled: true } },
+    },
+  };
+  assertEquals(nextQuestion(gutter).nextField, "gutterUndergroundDrainCount");
+
+  const patio: QuoteSession = {
+    ...empty(),
+    fields: {
+      services: ["houseWash"],
+      squareFootage: 2000,
+      stories: 1,
+      enclosedPatioProfile: "none",
+      houseWashPatios: { frontSelected: true },
+    },
+  };
+  assertEquals(nextQuestion(patio).nextField, "houseWashPatioPricingMethod");
 });

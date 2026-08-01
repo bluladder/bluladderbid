@@ -43,6 +43,15 @@ export function toQuoteInput(
       ladderWork: homeDetails.ladderWork,
       ladderWorkCount: homeDetails.ladderWorkCount,
       sunroom: homeDetails.sunroom,
+      screenProfile: homeDetails.screenProfile,
+      screenProfileProvenance: homeDetails.screenProfileProvenance,
+      solarScreenCoverage: homeDetails.solarScreenCoverage,
+      solarScreenAffectedWindowCount: homeDetails.solarScreenAffectedWindowCount,
+      solarScreenServiceRequested: homeDetails.solarScreenServiceRequested,
+      enclosedPatioProfile: homeDetails.enclosedPatioProfile,
+      screenedEnclosureSoftWash: homeDetails.screenedEnclosureSoftWash,
+      enclosureWindowCount: homeDetails.enclosureWindowCount,
+      enclosureWindowSides: homeDetails.enclosureWindowSides,
     },
     additionalServices: {
       windowCleaning: additionalServices.windowCleaning,
@@ -57,6 +66,7 @@ export function toQuoteInput(
       pressureWashing: additionalServices.pressureWashing,
       solarPanelCleaning: additionalServices.solarPanelCleaning,
       screenRepair: additionalServices.screenRepair,
+      houseWashPatios: additionalServices.houseWashPatios,
     },
     // The server RE-VALIDATES the code against the discount_codes table and
     // ignores any client-supplied type/value, so an invalid/expired code can

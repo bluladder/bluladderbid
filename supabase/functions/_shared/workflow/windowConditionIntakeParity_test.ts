@@ -65,6 +65,8 @@ Deno.test("residential window: condition captured → moves to calculate_price",
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     },
     fieldStatus: {
       name: "captured",
@@ -89,6 +91,8 @@ Deno.test("residential window: previously captured condition is not re-asked", (
       squareFootage: 2000,
       windowCleaningSides: "outside_only",
       condition: "heavy",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     },
     fieldStatus: {
       name: "captured",
@@ -115,6 +119,8 @@ Deno.test("city is never asked as a pricing prerequisite", () => {
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
     },
     fieldStatus: {
       name: "captured",
@@ -139,6 +145,7 @@ Deno.test("non-window services (e.g., house wash) do not gate on condition", () 
       services: ["houseWash"],
       squareFootage: 2000,
       stories: 2,
+      enclosedPatioProfile: "none",
     },
     fieldStatus: {
       name: "captured",

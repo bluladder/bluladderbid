@@ -132,8 +132,9 @@ describe("pricing engine — add-ons & surcharges", () => {
         },
       },
     });
-    // base min 200 + drains 125 + repairs 85 + guards 150*8=1200 = 1610
-    expect(r.total).toBe(1610);
+    // base min 200 + drains 100 + one 30% repair adjustment (60)
+    // + guards 150*8=1200 = 1560
+    expect(r.total).toBe(1560);
   });
 });
 

@@ -50,6 +50,16 @@ export interface QuoteSessionFields {
   customerType?: "residential" | "commercial" | "unknown";
   windowCleaningScope?: "whole_home" | "partial" | "commercial_custom" | "unknown";
   windowCleaningSides?: "outside_only" | "inside_and_outside";
+  screenProfile?: "standard_removable" | "no_screens" | "solar" | "mixed_standard_solar" | "fixed_nonremovable_or_unknown";
+  /** Derived from fieldStatus.screenProfile; callers cannot assert this independently. */
+  screenProfileProvenance?: FieldStatus;
+  solarScreenCoverage?: "all" | "some";
+  solarScreenAffectedWindowCount?: number;
+  solarScreenServiceRequested?: boolean;
+  enclosedPatioProfile?: "none" | "screened" | "window_enclosed" | "mixed_or_uncertain";
+  screenedEnclosureSoftWash?: boolean;
+  enclosureWindowCount?: number;
+  enclosureWindowSides?: "outside_only" | "inside_and_outside";
   windowCount?: number;
   partialAreas?: string[];
   partialAccessNotes?: string;
@@ -71,9 +81,18 @@ export interface QuoteSessionFields {
   preferredContactMethods?: Array<"text" | "email" | "phone">;
   houseWashStainType?: "organic" | "rust";
   gutterAddons?: {
-    undergroundDrains?: { enabled: boolean; count?: "1" | "2" | "3" | "4+" };
+    undergroundDrains?: { enabled: boolean; count?: number | string };
     minorRepairs?: boolean;
+    repairNeeds?: string[];
+    repairNotes?: string;
     gutterGuards?: { enabled: boolean; linearFeet?: number };
+  };
+  houseWashPatios?: {
+    pricingMethod?: "simple_selection" | "exact_square_footage";
+    frontSelected?: boolean;
+    backSelected?: boolean;
+    frontSqft?: number;
+    backSqft?: number;
   };
   pressureWashingAreas?: Partial<Record<"frontPorch" | "backPatio" | "poolDeck" | "walkways", {
     enabled: boolean; sqft?: number; surfaceType?: string;
@@ -135,6 +154,7 @@ export function mergeFields(
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;
     const key = k as keyof QuoteSessionFields;
+    if (key === "screenProfileProvenance") continue;
     // Canonical writable field: accept the legacy field only at this boundary,
     // normalize it, and persist windowCleaningSides. Never write both.
     if (key === "windowCleaningType") {
@@ -171,6 +191,7 @@ export function mergeFields(
   for (const k of opts.markVerified ?? []) nextStatus[k] = "verified";
   for (const k of opts.markDerived ?? []) nextStatus[k] = "derived";
   for (const k of opts.markDefaulted ?? []) nextStatus[k] = "defaulted";
+  if (nextFields.screenProfile) nextFields.screenProfileProvenance = nextStatus.screenProfile ?? "unknown";
   return { ...prev, fields: nextFields, fieldStatus: nextStatus };
 }
 
@@ -261,12 +282,26 @@ const QUESTION_PRIORITY: string[] = [
   "services",
   "windowCleaningScope",
   "windowCount",
-  "windowCleaningSides",
   "commercialLocations",
   "preferredContactMethods",
   "squareFootage",
-  "windowCleaningType",
   "stories",
+  "windowCleaningSides",
+  "condition",
+  "screenProfile",
+  "solarScreenCoverage",
+  "solarScreenAffectedWindowCount",
+  "enclosedPatioProfile",
+  "enclosureWindowCount",
+  "enclosureWindowSides",
+  "hardWaterPercent",
+  "frenchPanesPercent",
+  "ladderWorkCount",
+  "houseWashPatioPricingMethod",
+  "houseWashFrontPatioSqft",
+  "houseWashBackPatioSqft",
+  "gutterUndergroundDrainCount",
+  "gutterGuardsLinearFeet",
   "drivewaySqft",
   "drivewaySurface",
   "pressureWashingSurface",
@@ -299,6 +334,10 @@ export function nextQuestion(session: QuoteSession): NextQuestionPlan {
       break;
     }
   }
+  // The contract owns requirement discovery. The priority list only controls
+  // presentation order, so an added contract field must never dead-end a
+  // channel while readyToPrice is false.
+  if (!nextField && missing.length > 0) nextField = missing[0];
   return { readyToPrice, readyToBook, missing, nextField };
 }
 
@@ -526,6 +565,17 @@ export function sessionInputsKey(fields: QuoteSessionFields): string {
       solarPanelCount: fields.solarPanelCount,
       screenRepairCount: fields.screenRepairCount,
       pressureWashingAreas: fields.pressureWashingAreas,
+      screenProfile: fields.screenProfile,
+      screenProfileProvenance: fields.screenProfileProvenance,
+      solarScreenCoverage: fields.solarScreenCoverage,
+      solarScreenAffectedWindowCount: fields.solarScreenAffectedWindowCount,
+      solarScreenServiceRequested: fields.solarScreenServiceRequested,
+      enclosedPatioProfile: fields.enclosedPatioProfile,
+      screenedEnclosureSoftWash: fields.screenedEnclosureSoftWash,
+      enclosureWindowCount: fields.enclosureWindowCount,
+      enclosureWindowSides: fields.enclosureWindowSides,
+      gutterAddons: fields.gutterAddons,
+      houseWashPatios: fields.houseWashPatios,
     },
     discountCode: fields.discountCode ?? null,
     promotionId: fields.promotionId ?? null,

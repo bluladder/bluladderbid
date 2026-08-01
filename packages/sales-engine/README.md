@@ -29,7 +29,8 @@ packages/sales-engine/   ← leaf. Imports NOTHING from src/ or supabase/.
 ## Contents (current)
 
 - `intake/quoteIntakeContract.ts` — **authoritative** service-specific fields,
-  stages, requirement categories, normalization, and readiness evaluation.
+  stages, requirement categories, canonical prompts, stable add-on/adjustment
+  identifiers, normalization, and readiness evaluation.
 - `intake/residentialQuoteManifest.ts` — canonical intake fields for the
   legacy residential presentation sequence. It does not own requirements.
 
@@ -51,3 +52,8 @@ generated mirrors in `supabase/functions/_shared/salesEngine/`. Edit only the
 
 The pricing engine is the sole authority on whether enough information exists
 to price. This package translates that authority into the next question to ask.
+Owner-confirmed monetary rules and their deterministic calculation order live
+in the byte-identical canonical pricing engines; display labels are never used
+as pricing keys. The configured `$99` promotion remains a mutually exclusive
+flat-price branch, so it intentionally bypasses ordinary quote ordering and
+does not stack unless its configured policy explicitly allows it.

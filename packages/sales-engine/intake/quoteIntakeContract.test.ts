@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { evaluateQuoteIntake, normalizeWindowCleaningSides, windowSidesToPricingType } from "./quoteIntakeContract";
+import { CANONICAL_QUOTE_RULE_IDS, evaluateQuoteIntake, normalizeWindowCleaningSides, windowSidesToPricingType } from "./quoteIntakeContract";
+import { QUOTE_RULE_IDS } from "../../../src/lib/pricing/engine";
 
 const missing = (values: Record<string, unknown>) => evaluateQuoteIntake(values).requiredToPrice;
 describe("canonical quote intake service matrix", () => {
@@ -33,8 +34,35 @@ describe("canonical quote intake service matrix", () => {
   it("requires gutter quantities only for selected add-ons", () => {
     const base = {services:["gutterCleaning"], squareFootage:2000, stories:2};
     expect(missing(base)).toEqual([]);
-    expect(missing({...base, gutterAddons:{undergroundDrains:{enabled:true}}})).toContain("gutterUndergroundDrains");
+    expect(missing({...base, gutterAddons:{undergroundDrains:{enabled:true}}})).toContain("gutterUndergroundDrainCount");
     expect(missing({...base, gutterAddons:{gutterGuards:{enabled:true}}})).toContain("gutterGuardsLinearFeet");
+  });
+
+  it("requires new customer-policy questions only for applicable services", () => {
+    const windowResult = evaluateQuoteIntake({ services:["windowCleaning"], windowCleaningScope:"whole_home", windowCleaningSides:"outside_only", squareFootage:2000, stories:1, condition:"maintenance" });
+    expect(windowResult.productPolicyRequired).toEqual(expect.arrayContaining(["screenProfile", "enclosedPatioProfile"]));
+    const drivewayResult = evaluateQuoteIntake({ services:["drivewayCleaning"], drivewaySqft:400, drivewaySurface:"concrete" });
+    expect(drivewayResult.productPolicyRequired).not.toEqual(expect.arrayContaining(["screenProfile", "enclosedPatioProfile"]));
+  });
+
+  it("branches enclosure and solar-screen fields without a universal questionnaire", () => {
+    const base = { services:["windowCleaning"], windowCleaningScope:"whole_home", windowCleaningSides:"outside_only", squareFootage:2000, stories:1, condition:"maintenance", screenProfile:"standard_removable", enclosedPatioProfile:"none" };
+    expect(evaluateQuoteIntake(base).requiredToPrice).toEqual([]);
+    expect(evaluateQuoteIntake({ ...base, enclosedPatioProfile:"window_enclosed" }).requiredToPrice).toEqual(expect.arrayContaining(["enclosureWindowCount", "enclosureWindowSides"]));
+    expect(evaluateQuoteIntake({ ...base, screenProfile:"solar" }).requiredToPrice).toContain("solarScreenCoverage");
+    expect(evaluateQuoteIntake({ ...base, screenProfile:"solar", solarScreenCoverage:"some", solarScreenAffectedWindowCount:3, solarScreenServiceRequested:true }).manualReview).toContain("partialSolarScreenServiceClarification");
+  });
+
+  it("keeps patio measurement and repair clarification conditional", () => {
+    const house = { services:["houseWash"], squareFootage:2000, stories:1, enclosedPatioProfile:"none" };
+    expect(evaluateQuoteIntake(house).requiredToPrice).toEqual([]);
+    expect(evaluateQuoteIntake({ ...house, houseWashPatios:{ frontSelected:true } }).requiredToPrice).toContain("houseWashPatioPricingMethod");
+    const gutter = evaluateQuoteIntake({ services:["gutterCleaning"], squareFootage:2000, stories:1, gutterAddons:{repairNeeds:["another_repair_need"]} });
+    expect(gutter.manualReview).toContain("gutterRepairClarification");
+  });
+
+  it("keeps pricing identifiers synchronized with the engine", () => {
+    expect(CANONICAL_QUOTE_RULE_IDS).toEqual(QUOTE_RULE_IDS);
   });
 
   it("keeps commercial outside residential pricing", () => {

@@ -256,3 +256,20 @@ Commands used for discovery included `rg --files`, targeted `rg -n`, `nl -ba …
 Tests could not be executed in this checkout: `node_modules` is absent and `node`, `npm`, and `deno` are not installed/available on PATH. No dependency installation was attempted because this is a read-only discovery task. Therefore: tests passed: **0 run**; tests failed: **0 run**; tests unavailable: pricing engine, promotion, plan/bundle, manifest, quote-session, residential workflow, partial-window, booking-duration, and booking-readiness suites. Existing test sources were inspected as evidence, but are not reported as executed.
 
 No application code, tests, schema, migration, provider configuration, Supabase data, Vapi, CallRail, Jobber, deployment, test call, or production system was changed. The only authored artifact is this report.
+
+## Post-audit owner-requirement addendum — 2026-07-31
+
+This addendum does not revise the historical findings above. After the audited baseline, Ben confirmed additional Phase 0 business rules for enclosed patios, screen profiles, solar-screen service, underground-drain clearing, minor gutter/downspout repairs, house-wash patios, and the house-wash/window bundle. The authoritative implementation belongs to `packages/sales-engine/intake/quoteIntakeContract.ts` and the canonical pricing engine; the original proposed voice schema above remains historical audit evidence and is not an approved production prompt.
+
+Confirmed rules added after the audit:
+
+- one screened-enclosure soft wash: $150 flat;
+- enclosure windows: $10 each exterior-only or $20 each inside-and-out;
+- explicitly confirmed no screens: 5% off the window-cleaning service subtotal, with the approved removal disclosure;
+- all-window solar-screen removal/clean/reinstall: +50% for exterior-only or +25% for full service; partial coverage requires clarification until allocation is authoritative;
+- underground drains: $100 total for one or two, then $25 for each additional exact drain;
+- qualifying minor gutter/downspout repairs: one +30% adjustment against base gutter cleaning only;
+- house-wash patios: +10% front, +10% back, or exact measured area at $0.25/sq ft, never both methods;
+- qualifying house wash plus window cleaning: one $50 bundle discount.
+
+The possible $50 in-person consultation remains documented-only and inactive. It is not a fallback default for incomplete remote quotes.

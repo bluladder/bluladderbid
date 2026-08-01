@@ -36,8 +36,6 @@ export const LIVE_CONFIG: PricingConfig = {
     perSqFt: 0.08,
     minimumPrice: 200,
     modifiers: { stories: { "1": 0, "2": 10, "3": 12 } },
-    undergroundDrainPricing: { "1": 75, "2": 125, "3": 175, "4+": 225 },
-    minorRepairsPrice: 85,
     gutterGuardsPerLinearFoot: 8,
   },
   roof_cleaning: {

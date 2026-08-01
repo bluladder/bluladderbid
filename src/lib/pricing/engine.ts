@@ -16,7 +16,45 @@
  * instead of guessing.
  */
 
-export const PRICING_ENGINE_VERSION = "1.0.0";
+export const PRICING_ENGINE_VERSION = "1.1.0";
+
+/** Stable machine identifiers shared by quote snapshots and every channel. */
+export const QUOTE_RULE_IDS = Object.freeze({
+  screenedEnclosureSoftWash: "screened_enclosure_soft_wash",
+  enclosureWindowCleaning: "enclosure_window_cleaning",
+  noScreenDiscount: "window_no_screen_discount",
+  solarScreenService: "window_solar_screen_service",
+  undergroundDrainClearing: "underground_gutter_drain_clearing",
+  minorGutterRepairs: "minor_gutter_downspout_repairs",
+  houseWashFrontPatio: "house_wash_front_patio",
+  houseWashBackPatio: "house_wash_back_patio",
+  houseWashWindowBundle: "house_wash_window_cleaning_bundle",
+} as const);
+
+/** Owner-confirmed Phase 0 rules. These are contract rules, not UI defaults. */
+export const CONFIRMED_QUOTE_RULES = Object.freeze({
+  screenedEnclosureFlatRate: 150,
+  enclosureWindowExteriorEach: 10,
+  enclosureWindowBothEach: 20,
+  noScreenDiscountPercent: 5,
+  solarScreenExteriorPercent: 50,
+  solarScreenFullServicePercent: 25,
+  undergroundDrainFirstTwoTotal: 100,
+  undergroundDrainEachAfterTwo: 25,
+  minorGutterRepairPercent: 30,
+  houseWashPatioPercentEach: 10,
+  houseWashPatioPerSqFt: 0.25,
+  houseWashWindowBundleDiscount: 50,
+} as const);
+
+export const QUOTE_CALCULATION_ORDER = Object.freeze([
+  "base_service_prices",
+  "count_or_measurement_addons",
+  "service_specific_percentage_adjustments",
+  "fixed_bundle_discounts",
+  "other_authorized_promotions",
+  "final_total",
+] as const);
 
 // ---------------------------------------------------------------------------
 // Config shapes (mirror of the pricing_config table, keyed by config_key)
@@ -52,7 +90,9 @@ export interface PricingConfig {
     perSqFt: number;
     minimumPrice: number;
     modifiers: ServiceModifiers;
+    /** @deprecated Phase 0 owner rules use an exact count formula. Read-only legacy config. */
     undergroundDrainPricing?: Record<string, number>;
+    /** @deprecated Phase 0 owner rules use one 30% base-service adjustment. */
     minorRepairsPrice?: number;
     gutterGuardsPerLinearFoot?: number;
   };
@@ -186,6 +226,15 @@ export interface EngineHomeDetails {
   ladderWork?: boolean;
   ladderWorkCount?: string;
   sunroom?: string;
+  screenProfile?: "standard_removable" | "no_screens" | "solar" | "mixed_standard_solar" | "fixed_nonremovable_or_unknown";
+  screenProfileProvenance?: "captured" | "verified" | "corrected" | "derived" | "defaulted" | "unanswered" | "unknown";
+  solarScreenCoverage?: "all" | "some";
+  solarScreenAffectedWindowCount?: number;
+  solarScreenServiceRequested?: boolean;
+  enclosedPatioProfile?: "none" | "screened" | "window_enclosed" | "mixed_or_uncertain";
+  screenedEnclosureSoftWash?: boolean;
+  enclosureWindowCount?: number;
+  enclosureWindowSides?: "outside_only" | "inside_and_outside";
 }
 
 export interface EngineAreaSelection {
@@ -207,9 +256,27 @@ export interface EngineAdditionalServices {
   houseWashDetails?: { stainType?: string };
   gutterCleaning?: boolean;
   gutterAddons?: {
-    undergroundDrains?: { enabled: boolean; count: string };
+    undergroundDrains?: { enabled: boolean; count?: number | string };
     minorRepairs?: boolean;
+    repairNeeds?: Array<
+      | "leaking_seams"
+      | "loose_gutter_sections"
+      | "detached_gutter_sections"
+      | "loose_downspouts"
+      | "detached_downspouts"
+      | "none"
+      | "unsure"
+      | "another_repair_need"
+    >;
+    repairNotes?: string;
     gutterGuards?: { enabled: boolean; linearFeet?: number };
+  };
+  houseWashPatios?: {
+    pricingMethod?: "simple_selection" | "exact_square_footage";
+    frontSelected?: boolean;
+    backSelected?: boolean;
+    frontSqft?: number;
+    backSqft?: number;
   };
   roofCleaning?: boolean;
   roofType?: string;
@@ -268,12 +335,26 @@ export interface QuoteLineItem {
   quantity: number;
   unit: string; // 'sqft' | 'each' | 'linear_ft' | 'flat'
   baseAmount: number;
-  adjustments: { label: string; amount: number }[];
+  adjustments: { key?: string; label: string; amount: number }[];
   minimumApplied: boolean;
   amount: number;
   jobberLineItem?: { name: string; description?: string; unitPrice: number };
+  customerExplanation?: string;
   /** Optional structured sub-components (e.g. window exterior/interior split). */
   components?: Record<string, number>;
+}
+
+export interface QuotePriceAdjustment {
+  key: string;
+  label: string;
+  kind: "discount" | "surcharge";
+  amount: number;
+  appliesToLineItemKey?: string;
+}
+
+export interface QuoteDisclosure {
+  key: string;
+  text: string;
 }
 
 export interface QuoteResult {
@@ -284,6 +365,10 @@ export interface QuoteResult {
   lineItems: QuoteLineItem[];
   subtotal: number;
   discount: { code?: string; type?: string; value?: number; amount: number } | null;
+  /** Contract discounts/adjustments kept distinct from legacy discount codes. */
+  priceAdjustments?: QuotePriceAdjustment[];
+  disclosures?: QuoteDisclosure[];
+  calculationOrder?: readonly string[];
   total: number;
   estimatedDurationMinutes: number | null;
   missing: string[];
@@ -323,6 +408,10 @@ function applyModifiers(basePrice: number, modifierPercents: number[]): number {
 function isValidNumber(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n);
 }
+function exactNonNegativeInteger(value: unknown): number | null {
+  if (typeof value === "string" && /^[0-9]+$/.test(value)) value = Number(value);
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
 
 const MAX_SQFT = 100000;
 const VALID_STORIES = [1, 2, 3];
@@ -337,8 +426,11 @@ export function calculateQuote(
 ): QuoteResult {
   const trace: string[] = [];
   const missing: string[] = [];
+  const addonMissing: string[] = [];
   const manualReviewReasons: string[] = [];
   const lineItems: QuoteLineItem[] = [];
+  const priceAdjustments: QuotePriceAdjustment[] = [];
+  const disclosures: QuoteDisclosure[] = [];
 
   const home = input.homeDetails ?? ({} as EngineHomeDetails);
   const svc = input.additionalServices ?? ({} as EngineAdditionalServices);
@@ -415,6 +507,41 @@ export function calculateQuote(
     missing.push("screenRepairCount");
   }
 
+  // Optional add-ons never become universal requirements. Once selected,
+  // only the information needed to price that add-on becomes required.
+  if (home.enclosedPatioProfile === "window_enclosed" && svc.windowCleaning) {
+    if (!isValidNumber(home.enclosureWindowCount) || !Number.isInteger(home.enclosureWindowCount) || home.enclosureWindowCount <= 0) addonMissing.push("enclosureWindowCount");
+    if (home.enclosureWindowSides !== "outside_only" && home.enclosureWindowSides !== "inside_and_outside") {
+      addonMissing.push("enclosureWindowSides");
+    }
+  }
+  if (home.enclosedPatioProfile === "mixed_or_uncertain") {
+    manualReviewReasons.push("Enclosed patio type needs clarification");
+  }
+  if (home.screenedEnclosureSoftWash && home.enclosedPatioProfile !== "screened") {
+    manualReviewReasons.push("Screened-enclosure soft wash was selected without a confirmed screened enclosure");
+  }
+  if (
+    home.solarScreenServiceRequested &&
+    (home.screenProfile === "solar" || home.screenProfile === "mixed_standard_solar")
+  ) {
+    if (home.solarScreenCoverage !== "all" && home.solarScreenCoverage !== "some") {
+      addonMissing.push("solarScreenCoverage");
+    } else if (
+      home.solarScreenCoverage === "some" &&
+      (!isValidNumber(home.solarScreenAffectedWindowCount) || !Number.isInteger(home.solarScreenAffectedWindowCount) || home.solarScreenAffectedWindowCount <= 0)
+    ) {
+      addonMissing.push("solarScreenAffectedWindowCount");
+    }
+  }
+  if (home.solarScreenServiceRequested && home.screenProfile === "fixed_nonremovable_or_unknown") {
+    manualReviewReasons.push("Solar/fixed screen service needs clarification");
+  }
+  if (home.solarScreenServiceRequested && !home.screenProfile) addonMissing.push("screenProfile");
+  if (home.solarScreenServiceRequested && (home.screenProfile === "standard_removable" || home.screenProfile === "no_screens")) {
+    manualReviewReasons.push("Solar-screen service was selected without confirmed solar screens");
+  }
+
   // If we already know inputs are unusable, fail safely before doing math.
   if (missing.length > 0) {
     return finalize(
@@ -456,10 +583,11 @@ export function calculateQuote(
       const interiorWindows = roundDollars(baseInterior * (1 + conditionMod / 100));
       const adjustedWindowBase = exteriorWindows + interiorWindows;
 
-      const adjustments: { label: string; amount: number }[] = [];
+      const adjustments: { key?: string; label: string; amount: number }[] = [];
       let hardWaterAddon = 0;
       let frenchPanesAddon = 0;
       let solarScreensAddon = 0;
+      let canonicalSolarScreenAdjustment = 0;
       let ladderWorkAddon = 0;
       let sunroomAddon = 0;
 
@@ -474,7 +602,9 @@ export function calculateQuote(
             adjustedWindowBase * (mods.frenchPanes / 100) * ((home.frenchPanesPercent ?? 0) / 100),
           );
         }
-        if (home.solarScreens && mods.solarScreens) {
+        // Legacy percentage coverage remains readable for persisted records.
+        // New writes use screenProfile + solarScreenCoverage below.
+        if (!home.screenProfile && home.solarScreens && mods.solarScreens) {
           solarScreensAddon = roundDollars(
             adjustedWindowBase * (mods.solarScreens / 100) * ((home.solarScreensPercent ?? 0) / 100),
           );
@@ -493,12 +623,44 @@ export function calculateQuote(
         ladderWorkAddon +
         sunroomAddon;
       const minimum = cfg.minimumPrice ?? 0;
-      const amount = Math.max(calculated, minimum);
+      const windowServiceBeforeCanonicalSolar = Math.max(calculated, minimum);
+
+      if (
+        home.solarScreenServiceRequested &&
+        (home.screenProfile === "solar" || home.screenProfile === "mixed_standard_solar")
+      ) {
+        if (home.solarScreenCoverage === "some") {
+          manualReviewReasons.push(
+            "Partial solar-screen service requires clarification because the current whole-home architecture cannot allocate the surcharge by affected-window count",
+          );
+        } else if (home.solarScreenCoverage === "all") {
+          const percent = home.windowCleaningType === "both"
+            ? CONFIRMED_QUOTE_RULES.solarScreenFullServicePercent
+            : CONFIRMED_QUOTE_RULES.solarScreenExteriorPercent;
+          const applicablePrice = home.windowCleaningType === "both"
+            ? Math.max(adjustedWindowBase, minimum)
+            : Math.max(exteriorWindows, minimum);
+          canonicalSolarScreenAdjustment = roundDollars(applicablePrice * (percent / 100));
+        }
+      }
+      const amount = windowServiceBeforeCanonicalSolar + canonicalSolarScreenAdjustment;
 
       if (storyMod) adjustments.push({ label: `${stories}-story`, amount: 0 });
       if (hardWaterAddon) adjustments.push({ label: "Hard water", amount: hardWaterAddon });
       if (frenchPanesAddon) adjustments.push({ label: "French panes", amount: frenchPanesAddon });
       if (solarScreensAddon) adjustments.push({ label: "Solar screens", amount: solarScreensAddon });
+      if (canonicalSolarScreenAdjustment) adjustments.push({
+        key: QUOTE_RULE_IDS.solarScreenService,
+        label: "Solar-screen removal, cleaning, and reinstallation",
+        amount: canonicalSolarScreenAdjustment,
+      });
+      if (canonicalSolarScreenAdjustment) priceAdjustments.push({
+        key: QUOTE_RULE_IDS.solarScreenService,
+        label: "Solar-screen removal, cleaning, and reinstallation",
+        kind: "surcharge",
+        amount: canonicalSolarScreenAdjustment,
+        appliesToLineItemKey: "window_cleaning",
+      });
       if (ladderWorkAddon) adjustments.push({ label: "Ladder work", amount: ladderWorkAddon });
       if (sunroomAddon) adjustments.push({ label: "Sunroom", amount: sunroomAddon });
 
@@ -512,7 +674,7 @@ export function calculateQuote(
         unit: "sqft",
         baseAmount: adjustedWindowBase,
         adjustments,
-        minimumApplied: amount > calculated,
+        minimumApplied: windowServiceBeforeCanonicalSolar > calculated,
         amount,
         jobberLineItem: { name: "Window Cleaning", unitPrice: amount },
         components: {
@@ -521,14 +683,38 @@ export function calculateQuote(
           hardWaterAddon,
           frenchPanesAddon,
           solarScreensAddon,
+          canonicalSolarScreenAdjustment,
           ladderWorkAddon,
           sunroomAddon,
           windowCleaningTotal: amount,
         },
+        customerExplanation: canonicalSolarScreenAdjustment
+          ? `Window cleaning: $${windowServiceBeforeCanonicalSolar}; solar-screen removal, cleaning, and reinstallation +$${canonicalSolarScreenAdjustment}; window subtotal $${amount}.`
+          : undefined,
       });
       trace.push(
         `window: ext=${exteriorWindows} int=${interiorWindows} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`,
       );
+
+      const explicitlyConfirmed = home.screenProfileProvenance === "captured" ||
+        home.screenProfileProvenance === "verified" ||
+        home.screenProfileProvenance === "corrected";
+      if (home.screenProfile === "no_screens" && explicitlyConfirmed) {
+        const noScreenDiscount = roundCents(amount * (CONFIRMED_QUOTE_RULES.noScreenDiscountPercent / 100));
+        if (noScreenDiscount > 0) {
+          priceAdjustments.push({
+            key: QUOTE_RULE_IDS.noScreenDiscount,
+            label: "5% no-screen discount",
+            kind: "discount",
+            amount: noScreenDiscount,
+            appliesToLineItemKey: "window_cleaning",
+          });
+          disclosures.push({
+            key: QUOTE_RULE_IDS.noScreenDiscount,
+            text: "This quote includes a 5% no-screen discount. If removable screens are present when we arrive, the discount will be removed before work begins.",
+          });
+        }
+      }
     }
   }
 
@@ -603,6 +789,62 @@ export function calculateQuote(
         },
       });
       trace.push(`house_wash: base=${roundDollars(base)} storyMod=${storyMod}% rust=${rustSurcharge} -> ${amount} (min ${minimum})`);
+
+      const patios = svc.houseWashPatios;
+      const patioRequested = !!patios && (
+        patios.frontSelected === true || patios.backSelected === true ||
+        (isValidNumber(patios.frontSqft) && patios.frontSqft > 0) ||
+        (isValidNumber(patios.backSqft) && patios.backSqft > 0)
+      );
+      if (patioRequested && patios) {
+        if (patios.pricingMethod === "simple_selection") {
+          for (const [selected, key, label] of [
+            [patios.frontSelected, QUOTE_RULE_IDS.houseWashFrontPatio, "Front-patio pressure washing"],
+            [patios.backSelected, QUOTE_RULE_IDS.houseWashBackPatio, "Back-patio pressure washing"],
+          ] as const) {
+            if (!selected) continue;
+            const patioAmount = roundDollars(houseWash * (CONFIRMED_QUOTE_RULES.houseWashPatioPercentEach / 100));
+            lineItems.push({
+              key,
+              label,
+              quantity: 1,
+              unit: "flat",
+              baseAmount: patioAmount,
+              adjustments: [],
+              minimumApplied: false,
+              amount: patioAmount,
+              jobberLineItem: { name: label, description: "Simple-selection patio add-on", unitPrice: patioAmount },
+              components: { percentageOfBaseHouseWash: CONFIRMED_QUOTE_RULES.houseWashPatioPercentEach, patioTotal: patioAmount },
+            });
+          }
+        } else if (patios.pricingMethod === "exact_square_footage") {
+          for (const [selected, sqftValue, key, label, missingField] of [
+            [patios.frontSelected, patios.frontSqft, QUOTE_RULE_IDS.houseWashFrontPatio, "Front-patio pressure washing", "houseWashFrontPatioSqft"],
+            [patios.backSelected, patios.backSqft, QUOTE_RULE_IDS.houseWashBackPatio, "Back-patio pressure washing", "houseWashBackPatioSqft"],
+          ] as const) {
+            if (!selected && !isValidNumber(sqftValue)) continue;
+            if (!isValidNumber(sqftValue) || sqftValue <= 0 || sqftValue > MAX_SQFT) {
+              addonMissing.push(missingField);
+              continue;
+            }
+            const patioAmount = roundCents(sqftValue * CONFIRMED_QUOTE_RULES.houseWashPatioPerSqFt);
+            lineItems.push({
+              key,
+              label,
+              quantity: sqftValue,
+              unit: "sqft",
+              baseAmount: patioAmount,
+              adjustments: [],
+              minimumApplied: false,
+              amount: patioAmount,
+              jobberLineItem: { name: label, description: `${sqftValue} sq ft`, unitPrice: patioAmount },
+              components: { squareFootage: sqftValue, perSqFt: CONFIRMED_QUOTE_RULES.houseWashPatioPerSqFt, patioTotal: patioAmount },
+            });
+          }
+        } else {
+          addonMissing.push("houseWashPatioPricingMethod");
+        }
+      }
     }
   }
 
@@ -624,21 +866,94 @@ export function calculateQuote(
       let drain = 0;
       let repairs = 0;
       let guards = 0;
-      const adjustments: { label: string; amount: number }[] = [];
+      const adjustments: { key?: string; label: string; amount: number }[] = [];
+      const gutterAddonLineItems: QuoteLineItem[] = [];
 
       if (addons?.undergroundDrains?.enabled) {
-        const drainPricing = cfg.undergroundDrainPricing ?? {};
-        drain = drainPricing[addons.undergroundDrains.count] ?? 0;
-        if (drain) adjustments.push({ label: "Underground drains", amount: drain });
+        const drainCount = exactNonNegativeInteger(addons.undergroundDrains.count);
+        if (drainCount === null) {
+          addonMissing.push("gutterUndergroundDrainCount");
+        } else if (drainCount > 0) {
+          drain = CONFIRMED_QUOTE_RULES.undergroundDrainFirstTwoTotal +
+            Math.max(0, drainCount - 2) * CONFIRMED_QUOTE_RULES.undergroundDrainEachAfterTwo;
+          gutterAddonLineItems.push({
+            key: QUOTE_RULE_IDS.undergroundDrainClearing,
+            label: "Clear clogs or debris from underground gutter drains",
+            quantity: drainCount,
+            unit: "each",
+            baseAmount: drain,
+            adjustments: [],
+            minimumApplied: false,
+            amount: drain,
+            jobberLineItem: {
+              name: "Underground Gutter Drain Clearing",
+              description: `${drainCount} drain${drainCount === 1 ? "" : "s"}; ordinary clogs and debris only`,
+              unitPrice: drain,
+            },
+            components: { drainCount, undergroundDrainClearingTotal: drain },
+            customerExplanation: `${drainCount} underground drain${drainCount === 1 ? "" : "s"}: $${drain}.`,
+          });
+          disclosures.push({
+            key: QUOTE_RULE_IDS.undergroundDrainClearing,
+            text: "Underground-drain clearing covers ordinary clogs and debris. Damaged, collapsed, root-intruded, disconnected, or inaccessible drainage may require separate repair or specialized work; excavation and pipe replacement are not included.",
+          });
+        }
       }
-      if (addons?.minorRepairs) {
-        repairs = cfg.minorRepairsPrice ?? 0;
-        if (repairs) adjustments.push({ label: "Minor repairs", amount: repairs });
+      const repairNeeds = addons?.repairNeeds ?? [];
+      const knownRepairNeeds = new Set([
+        "leaking_seams", "loose_gutter_sections", "detached_gutter_sections",
+        "loose_downspouts", "detached_downspouts", "none", "unsure", "another_repair_need",
+      ]);
+      const qualifyingRepairNeeds = repairNeeds.filter((need) =>
+        need === "leaking_seams" || need === "loose_gutter_sections" ||
+        need === "detached_gutter_sections" || need === "loose_downspouts" ||
+        need === "detached_downspouts"
+      );
+      const repairNeedsClarification = repairNeeds.some((need) => !knownRepairNeeds.has(need)) ||
+        repairNeeds.includes("unsure") || repairNeeds.includes("another_repair_need") ||
+        (repairNeeds.includes("none") && qualifyingRepairNeeds.length > 0);
+      if (repairNeedsClarification) {
+        manualReviewReasons.push("Gutter/downspout repair scope needs clarification; base gutter cleaning remains priced independently");
+      } else if (addons?.minorRepairs || qualifyingRepairNeeds.length > 0) {
+        repairs = roundDollars(gutterCleaning * (CONFIRMED_QUOTE_RULES.minorGutterRepairPercent / 100));
+        gutterAddonLineItems.push({
+          key: QUOTE_RULE_IDS.minorGutterRepairs,
+          label: "Minor gutter/downspout repairs: +30%",
+          quantity: 1,
+          unit: "flat",
+          baseAmount: repairs,
+          adjustments: [],
+          minimumApplied: false,
+          amount: repairs,
+          jobberLineItem: {
+            name: "Minor Gutter/Downspout Repairs",
+            description: "Ordinary minor labor and materials, including sealant and a limited number of common brackets or fasteners",
+            unitPrice: repairs,
+          },
+          components: { repairPercent: CONFIRMED_QUOTE_RULES.minorGutterRepairPercent, minorRepairTotal: repairs },
+          customerExplanation: `Minor gutter/downspout repairs: +30% ($${repairs}).`,
+        });
+        disclosures.push({
+          key: QUOTE_RULE_IDS.minorGutterRepairs,
+          text: "The minor-repair adjustment covers ordinary resealing and reattachment work plus a limited number of common brackets or fasteners. Major reconstruction, long-section replacement, fascia/soffit/roof work, substantial pitch correction, underground pipe repair, specialty fabrication, storm damage, and gutter-guard work are not included.",
+        });
       }
       if (addons?.gutterGuards?.enabled) {
         const linearFeet = addons.gutterGuards.linearFeet ?? 0;
         guards = linearFeet * (cfg.gutterGuardsPerLinearFoot ?? 0);
-        if (guards) adjustments.push({ label: `Gutter guards (${linearFeet} lf)`, amount: guards });
+        if (guards) {
+          gutterAddonLineItems.push({
+            key: "gutter_guards",
+            label: `Gutter guards (${linearFeet} lf)`,
+            quantity: linearFeet,
+            unit: "linear_ft",
+            baseAmount: guards,
+            adjustments: [],
+            minimumApplied: false,
+            amount: guards,
+            jobberLineItem: { name: "Gutter Guards", description: `${linearFeet} linear feet`, unitPrice: guards },
+          });
+        }
       }
 
       const amount = gutterCleaning + drain + repairs + guards;
@@ -650,8 +965,8 @@ export function calculateQuote(
         baseAmount: gutterCleaning,
         adjustments,
         minimumApplied: gutterCleaning > calculated,
-        amount,
-        jobberLineItem: { name: "Gutter Cleaning", unitPrice: amount },
+        amount: gutterCleaning,
+        jobberLineItem: { name: "Gutter Cleaning", unitPrice: gutterCleaning },
         components: {
           gutterCleaning,
           gutterDrainCleaning: drain,
@@ -660,7 +975,8 @@ export function calculateQuote(
           gutterCleaningTotal: amount,
         },
       });
-      trace.push(`gutter: base=${roundDollars(base)} storyMod=${storyMod}% addons=${drain + repairs + guards} -> ${amount} (min ${minimum})`);
+      lineItems.push(...gutterAddonLineItems);
+      trace.push(`gutter: base=${roundDollars(base)} storyMod=${storyMod}% drains=${drain} repairs=${repairs} guards=${guards} -> ${amount} (min ${minimum})`);
     }
   }
 
@@ -888,32 +1204,114 @@ export function calculateQuote(
   }
 
   // =========================================================================
+  // ENCLOSED PATIO ADD-ONS — independent from whole-home square-footage math
+  // =========================================================================
+  const enclosureEligible = !!svc.windowCleaning || !!svc.houseWash;
+  if (enclosureEligible && home.enclosedPatioProfile === "screened" && home.screenedEnclosureSoftWash) {
+    const amount = CONFIRMED_QUOTE_RULES.screenedEnclosureFlatRate;
+    lineItems.push({
+      key: QUOTE_RULE_IDS.screenedEnclosureSoftWash,
+      label: "Screened-enclosure soft wash",
+      quantity: 1,
+      unit: "flat",
+      baseAmount: amount,
+      adjustments: [],
+      minimumApplied: false,
+      amount,
+      jobberLineItem: {
+        name: "Screened-Enclosure Soft Wash",
+        description: "One screened enclosure; flat rate",
+        unitPrice: amount,
+      },
+      components: { enclosureCount: 1, flatRate: amount, screenedEnclosureTotal: amount },
+      customerExplanation: "One screened enclosure at the confirmed $150 flat rate.",
+    });
+  }
+  if (
+    svc.windowCleaning && home.enclosedPatioProfile === "window_enclosed" &&
+    isValidNumber(home.enclosureWindowCount) && Number.isInteger(home.enclosureWindowCount) && home.enclosureWindowCount > 0 &&
+    (home.enclosureWindowSides === "outside_only" || home.enclosureWindowSides === "inside_and_outside")
+  ) {
+    const unitPrice = home.enclosureWindowSides === "inside_and_outside"
+      ? CONFIRMED_QUOTE_RULES.enclosureWindowBothEach
+      : CONFIRMED_QUOTE_RULES.enclosureWindowExteriorEach;
+    const amount = roundCents(home.enclosureWindowCount * unitPrice);
+    lineItems.push({
+      key: QUOTE_RULE_IDS.enclosureWindowCleaning,
+      label: home.enclosureWindowSides === "inside_and_outside"
+        ? "Enclosure window cleaning (inside and outside)"
+        : "Enclosure window cleaning (exterior only)",
+      quantity: home.enclosureWindowCount,
+      unit: "each",
+      baseAmount: amount,
+      adjustments: [],
+      minimumApplied: false,
+      amount,
+      jobberLineItem: {
+        name: "Enclosure Window Cleaning",
+        description: `${home.enclosureWindowCount} windows, ${home.enclosureWindowSides === "inside_and_outside" ? "inside and outside" : "exterior only"}, $${unitPrice} each`,
+        unitPrice: amount,
+      },
+      components: {
+        enclosureWindowCount: home.enclosureWindowCount,
+        enclosureWindowUnitPrice: unitPrice,
+        enclosureWindowTotal: amount,
+      },
+      customerExplanation: `${home.enclosureWindowCount} enclosure windows × $${unitPrice} each = $${amount}.`,
+    });
+  }
+
+  // =========================================================================
   // TOTALS + DISCOUNT
   // =========================================================================
   const subtotal = lineItems.reduce((s, li) => s + li.amount, 0);
 
+  const hasPricedWindows = lineItems.some((li) => li.key === "window_cleaning");
+  const hasPricedHouseWash = lineItems.some((li) => li.key === "house_wash");
+  if (hasPricedWindows && hasPricedHouseWash) {
+    const amount = Math.min(CONFIRMED_QUOTE_RULES.houseWashWindowBundleDiscount, subtotal);
+    if (amount > 0) {
+      priceAdjustments.push({
+        key: QUOTE_RULE_IDS.houseWashWindowBundle,
+        label: "House wash + window cleaning bundle",
+        kind: "discount",
+        amount,
+      });
+    }
+  }
+
+  const contractDiscountAmount = priceAdjustments
+    .filter((adjustment) => adjustment.kind === "discount")
+    .reduce((sum, adjustment) => sum + adjustment.amount, 0);
+  const discountableAfterContractRules = Math.max(0, subtotal - contractDiscountAmount);
+
   let discount: QuoteResult["discount"] = null;
   let discountAmount = 0;
-  if (input.discount && subtotal > 0) {
+  if (input.discount && discountableAfterContractRules > 0) {
     const d = input.discount;
     if (d.type === "percentage" && isValidNumber(d.value) && d.value > 0) {
-      discountAmount = roundCents(subtotal * (d.value / 100));
+      discountAmount = roundCents(discountableAfterContractRules * (d.value / 100));
     } else if (d.type === "fixed" && isValidNumber(d.value) && d.value > 0) {
-      discountAmount = Math.min(roundCents(d.value), subtotal);
+      discountAmount = Math.min(roundCents(d.value), discountableAfterContractRules);
     }
     if (discountAmount > 0) {
       discount = { code: d.code, type: d.type, value: d.value, amount: discountAmount };
     }
   }
 
-  const total = roundCents(subtotal - discountAmount);
+  missing.push(...addonMissing.filter((fieldId) => !missing.includes(fieldId)));
+  const total = Math.max(0, roundCents(subtotal - contractDiscountAmount - discountAmount));
 
   return finalize(
     {
-      status: manualReviewReasons.length > 0 ? "manual_review_required" : "firm",
+      status: missing.length > 0
+        ? "missing_information"
+        : manualReviewReasons.length > 0 ? "manual_review_required" : "firm",
       lineItems,
       subtotal,
       discount,
+      priceAdjustments,
+      disclosures,
       total,
       trace,
       missing,
@@ -930,6 +1328,8 @@ function finalize(
     lineItems: QuoteLineItem[];
     subtotal: number;
     discount: QuoteResult["discount"];
+    priceAdjustments?: QuotePriceAdjustment[];
+    disclosures?: QuoteDisclosure[];
     total: number;
     trace: string[];
     missing: string[];
@@ -941,14 +1341,23 @@ function finalize(
   const firm = partial.status === "firm";
   let explanation: string;
   if (partial.status === "missing_information") {
-    explanation = `More information is needed before a price can be given: ${partial.missing.join(", ")}.`;
+    const priced = partial.lineItems.length > 0
+      ? ` Independently priced items: ${partial.lineItems.map((li) => `${li.label} $${li.amount}`).join(", ")}.`
+      : "";
+    explanation = `More information is needed to complete the quote: ${partial.missing.join(", ")}.${priced}`;
   } else if (partial.status === "manual_review_required") {
-    explanation = `This quote requires manual review: ${partial.manualReviewReasons.join("; ")}.`;
+    const priced = partial.lineItems.length > 0
+      ? ` Independently priced items: ${partial.lineItems.map((li) => `${li.label} $${li.amount}`).join(", ")}.`
+      : "";
+    explanation = `Part of this quote requires manual review: ${partial.manualReviewReasons.join("; ")}.${priced}`;
   } else {
-    const parts = partial.lineItems.map((li) => `${li.label}: $${li.amount}`);
+    const parts = partial.lineItems.map((li) => li.customerExplanation ?? `${li.label}: $${li.amount}`);
     explanation =
       parts.join(", ") +
       (partial.discount ? `, discount -$${partial.discount.amount}` : "") +
+      ((partial.priceAdjustments?.filter((adjustment) => adjustment.kind === "discount").length ?? 0) > 0
+        ? `, ${partial.priceAdjustments!.filter((adjustment) => adjustment.kind === "discount").map((adjustment) => `${adjustment.label} -$${adjustment.amount}`).join(", ")}`
+        : "") +
       `. Total $${partial.total}.`;
   }
 
@@ -960,6 +1369,9 @@ function finalize(
     lineItems: partial.lineItems,
     subtotal: partial.subtotal,
     discount: partial.discount,
+    priceAdjustments: partial.priceAdjustments ?? [],
+    disclosures: partial.disclosures ?? [],
+    calculationOrder: QUOTE_CALCULATION_ORDER,
     total: partial.total,
     estimatedDurationMinutes: null,
     missing: partial.missing,
