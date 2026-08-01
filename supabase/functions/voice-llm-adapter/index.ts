@@ -7,52 +7,59 @@
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  type AdapterRequestError,
   buildNonStreamingResponse,
   parseAdapterRequest,
   runVoiceAdapter,
   runVoiceAdapterStream,
-  type AdapterRequestError,
   type VoiceStreamEvent,
 } from "../_shared/voiceAdapter.ts";
-import { BUILD_ID, BUILD_FEATURES } from "../_shared/buildMarker.ts";
+import { BUILD_FEATURES, BUILD_ID } from "../_shared/buildMarker.ts";
 import {
-  selectRoute,
   rolloutLogPayload,
+  selectRoute,
 } from "../_shared/workflow/rolloutRoute.ts";
 import {
-  runControllerTurn,
   persistControllerPatch,
+  runControllerTurn,
 } from "../_shared/workflow/workflowController.ts";
 import { ensureVoiceConversation } from "../_shared/voiceAdapter.ts";
 import { normalizeVoiceMessages } from "../_shared/voice/voiceInputNormalizer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, x-bluladder-session-id",
+  "Access-Control-Allow-Headers":
+    "authorization, content-type, x-bluladder-session-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 function jsonError(status: number, code: string): Response {
   return new Response(JSON.stringify({ error: { code } }), {
-    status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
 function errorStatus(err: AdapterRequestError): number {
   switch (err.kind) {
-    case "unsupported_method": return 405;
-    case "unsupported_content_type": return 415;
-    case "too_large": return 413;
+    case "unsupported_method":
+      return 405;
+    case "unsupported_content_type":
+      return 415;
+    case "too_large":
+      return 413;
     case "malformed_json":
     case "missing_messages":
     case "empty_conversation":
     case "invalid_session_identifier":
-    case "conflicting_session_identifiers": return 400;
+    case "conflicting_session_identifiers":
+      return 400;
   }
 }
 
 function isProduction(): boolean {
-  const env = (Deno.env.get("DENO_ENV") ?? Deno.env.get("NODE_ENV") ?? "").toLowerCase();
+  const env = (Deno.env.get("DENO_ENV") ?? Deno.env.get("NODE_ENV") ?? "")
+    .toLowerCase();
   return env === "production" || env === "prod";
 }
 
@@ -63,7 +70,9 @@ function checkBearer(req: Request, secret: string | undefined): boolean {
   if (!token || !secret) return false;
   if (token.length !== secret.length) return false;
   let diff = 0;
-  for (let i = 0; i < secret.length; i++) diff |= token.charCodeAt(i) ^ secret.charCodeAt(i);
+  for (let i = 0; i < secret.length; i++) {
+    diff |= token.charCodeAt(i) ^ secret.charCodeAt(i);
+  }
   return diff === 0;
 }
 
@@ -137,7 +146,9 @@ function buildStreamingTextResponse(model: string, spoken: string): Response {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
 
   // Safe diagnostics: non-authenticated GET returns the build marker only.
   // Never speaks to a caller and never exposes secrets, env values, or PII.
@@ -145,25 +156,41 @@ Deno.serve(async (req) => {
   if (req.method === "GET" && url.pathname.endsWith("/diagnostics")) {
     return new Response(
       JSON.stringify({ buildId: BUILD_ID, features: BUILD_FEATURES }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 
   const secret = Deno.env.get("VOICE_LLM_ADAPTER_SHARED_SECRET");
   if (!secret) {
     console.warn("voice-llm-adapter: shared secret not configured");
-    return jsonError(500, isProduction() ? "shared_secret_missing_production" : "shared_secret_missing");
+    return jsonError(
+      500,
+      isProduction()
+        ? "shared_secret_missing_production"
+        : "shared_secret_missing",
+    );
   }
   if (!checkBearer(req, secret)) return jsonError(401, "unauthorized");
 
   const parsed = await parseAdapterRequest(req);
-  if (!parsed.ok) return jsonError(errorStatus(parsed.error), parsed.error.kind);
+  if (!parsed.ok) {
+    return jsonError(errorStatus(parsed.error), parsed.error.kind);
+  }
+
+  // Keep one request object for both routing lanes. The canonical pre-routing
+  // normalizer below updates its message list before either lane consumes it.
+  const request = parsed.value;
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey) return jsonError(500, "supabase_env_missing");
+  if (!supabaseUrl || !serviceKey) {
+    return jsonError(500, "supabase_env_missing");
+  }
   const supabase = createClient(supabaseUrl, serviceKey);
-  const model = parsed.value.model || "bluladder-voice-adapter";
+  const model = request.model || "bluladder-voice-adapter";
 
   // ---- Pre-routing normalization ----------------------------------------
   // Context-aware story / spoken-square-footage / window-side normalization
@@ -171,11 +198,13 @@ Deno.serve(async (req) => {
   // both lanes see the same unambiguous utterance. Address-shaped replies are
   // left untouched by the normalizer.
   try {
-    const normalized = normalizeVoiceMessages(parsed.value.messages);
+    const normalized = normalizeVoiceMessages(request.messages);
     if (normalized.applied.length) {
-      parsed.value.messages = normalized.messages;
+      request.messages = normalized.messages;
       console.log(JSON.stringify({
-        at: "voice-llm-adapter", buildId: BUILD_ID, normalization: normalized.applied,
+        at: "voice-llm-adapter",
+        buildId: BUILD_ID,
+        normalization: normalized.applied,
       }));
     }
   } catch (e) {
@@ -185,7 +214,7 @@ Deno.serve(async (req) => {
   // ---- Rollout gate ------------------------------------------------------
   const decision = selectRoute({
     syntheticTestHeader: req.headers.get("x-bluladder-synthetic-test"),
-    callerIdE164: parsed.value.callerIdE164,
+    callerIdE164: request.callerIdE164,
     env: {
       enabled: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ENABLED") ?? null,
       allowlist: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST") ?? null,
@@ -193,8 +222,12 @@ Deno.serve(async (req) => {
     },
   });
   try {
-    console.log(JSON.stringify(await rolloutLogPayload(decision, parsed.value.callerIdE164)));
-  } catch { /* never throw from telemetry */ }
+    console.log(JSON.stringify(
+      await rolloutLogPayload(decision, request.callerIdE164),
+    ));
+  } catch {
+    /* never throw from telemetry */
+  }
 
   if (decision.route === "controller") {
     // Preface turn: caller-ID confirmation / returning-customer resolution /
@@ -202,24 +235,40 @@ Deno.serve(async (req) => {
     // orchestrator so the real production tools remain the source of truth
     // for pricing, availability, and booking.
     try {
-      const identity = await ensureVoiceConversation({ supabase, request: parsed.value });
+      const identity = await ensureVoiceConversation({ supabase, request });
       // Reconstruct history + last utterance the same way the legacy adapter does.
-      const nonSystem = parsed.value.messages.filter((m) => m.role !== "system" && m.role !== "tool");
+      const nonSystem = request.messages.filter((m) =>
+        m.role !== "system" && m.role !== "tool"
+      );
       let lastUserIdx = -1;
-      for (let i = nonSystem.length - 1; i >= 0; i--) if (nonSystem[i].role === "user") { lastUserIdx = i; break; }
+      for (let i = nonSystem.length - 1; i >= 0; i--) {
+        if (nonSystem[i].role === "user") {
+          lastUserIdx = i;
+          break;
+        }
+      }
       const history = lastUserIdx >= 0
-        ? nonSystem.slice(0, lastUserIdx).map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+        ? nonSystem.slice(0, lastUserIdx).map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }))
         : [];
-      const userMessage = lastUserIdx >= 0 ? nonSystem[lastUserIdx].content : "";
+      const userMessage = lastUserIdx >= 0
+        ? nonSystem[lastUserIdx].content
+        : "";
       const turn = await runControllerTurn({
         supabase,
         conversationId: identity.conversationId,
         channel: "voice",
         utterance: userMessage,
         history,
-        callerIdE164: parsed.value.callerIdE164,
+        callerIdE164: request.callerIdE164,
       });
-      await persistControllerPatch(supabase, turn.sessionId, turn.sessionPatch);
+      await persistControllerPatch(
+        supabase,
+        turn.sessionId,
+        turn.sessionPatch,
+      );
       if (turn.pre.kind !== "delegate_legacy") {
         const spoken = turn.pre.spoken;
         const completion = {
@@ -234,25 +283,37 @@ Deno.serve(async (req) => {
           },
         };
         console.log(JSON.stringify({
-          at: "voice-llm-adapter", buildId: BUILD_ID, route: "controller",
-          preKind: turn.pre.kind, replyLen: spoken.length, stream: parsed.value.stream,
+          at: "voice-llm-adapter",
+          buildId: BUILD_ID,
+          route: "controller",
+          preKind: turn.pre.kind,
+          replyLen: spoken.length,
+          stream: request.stream,
         }));
-        return parsed.value.stream
+        return request.stream
           ? buildStreamingTextResponse(model, spoken)
           : buildNonStreamingResponse(model, completion);
       }
       // Fall through to legacy for pricing / scheduling / booking.
     } catch (e) {
-      console.warn("controller turn failed; falling back to legacy:", (e as Error).message);
+      console.warn(
+        "controller turn failed; falling back to legacy:",
+        (e as Error).message,
+      );
     }
   }
 
   // Non-streaming: preserve existing behavior for provider fallbacks/tests.
-  if (!parsed.value.stream) {
-    const completion = await runVoiceAdapter({ supabase, request: parsed.value });
+  if (!request.stream) {
+    const completion = await runVoiceAdapter({ supabase, request });
     console.log(JSON.stringify({
-      at: "voice-llm-adapter", buildId: BUILD_ID, route: decision.route, stream: false, action: completion.action.kind,
-      state: completion.orchestrator.state ?? null, replyLen: completion.content.length,
+      at: "voice-llm-adapter",
+      buildId: BUILD_ID,
+      route: decision.route,
+      stream: false,
+      action: completion.action.kind,
+      state: completion.orchestrator.state ?? null,
+      replyLen: completion.content.length,
     }));
     return buildNonStreamingResponse(model, completion);
   }
@@ -272,26 +333,79 @@ Deno.serve(async (req) => {
         if (closed) return false;
         try {
           if (ev.type === "role_delta") {
-            write({ id, object: "chat.completion.chunk", created, model,
-              choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] });
+            write({
+              id,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [{
+                index: 0,
+                delta: { role: "assistant" },
+                finish_reason: null,
+              }],
+            });
           } else if (ev.type === "text_delta") {
-            write({ id, object: "chat.completion.chunk", created, model,
-              choices: [{ index: 0, delta: { content: ev.text }, finish_reason: null }] });
+            write({
+              id,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [{
+                index: 0,
+                delta: { content: ev.text },
+                finish_reason: null,
+              }],
+            });
           }
           // Other event types are internal — no SSE frame.
-        } catch { /* transport closed */ }
+        } catch {
+          /* transport closed */
+        }
       };
       try {
-        const result = await runVoiceAdapterStream({ supabase, request: parsed.value, emit });
-        write({ id, object: "chat.completion.chunk", created, model,
-          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-          bluladder: { buildId: BUILD_ID, action: result.action, state: result.orchestrator.state ?? null, route: result.route.type } });
+        const result = await runVoiceAdapterStream({
+          supabase,
+          request,
+          emit,
+        });
+        write({
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model,
+          choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: "stop",
+          }],
+          bluladder: {
+            buildId: BUILD_ID,
+            action: result.action,
+            state: result.orchestrator.state ?? null,
+            route: result.route.type,
+          },
+        });
       } catch (_e) {
-        write({ id, object: "chat.completion.chunk", created, model,
-          choices: [{ index: 0, delta: { content: "Sorry, I hit a snag." }, finish_reason: "stop" }],
-          bluladder: { buildId: BUILD_ID, action: { kind: "safe_failure", reasonCode: "adapter_exception" } } });
+        write({
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model,
+          choices: [{
+            index: 0,
+            delta: { content: "Sorry, I hit a snag." },
+            finish_reason: "stop",
+          }],
+          bluladder: {
+            buildId: BUILD_ID,
+            action: {
+              kind: "safe_failure",
+              reasonCode: "adapter_exception",
+            },
+          },
+        });
       } finally {
-        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         closed = true;
         controller.close();
       }

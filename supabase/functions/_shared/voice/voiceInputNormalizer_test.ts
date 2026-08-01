@@ -41,6 +41,7 @@ Deno.test("spoken square footage is normalized to an explicit unit phrase", () =
     const [utterance, expected] of [
       ["two thousand five hundred", 2500],
       ["two five zero zero", 2500],
+      ["twenty five hundred", 2500],
       ["2500", 2500],
     ] as const
   ) {
@@ -60,6 +61,18 @@ Deno.test("window-side shorthand is canonicalized", () => {
   assertEquals(normalizeVoiceInput("just the outside").text, "exterior only");
   assertEquals(normalizeVoiceInput("outside only").text, "exterior only");
   assertEquals(normalizeVoiceInput("in and out").text, "inside and outside");
+});
+
+Deno.test("bare window-side answers require explicit side-selection context", () => {
+  const sidesQ = [{
+    role: "assistant" as const,
+    content:
+      "Would you like all the windows cleaned both inside and outside, or outside only?",
+  }];
+  assertEquals(normalizeVoiceInput("outside", sidesQ).text, "exterior only");
+  assertEquals(normalizeVoiceInput("both", sidesQ).text, "inside and outside");
+  assertEquals(normalizeVoiceInput("outside", []).text, "outside");
+  assertEquals(normalizeVoiceInput("both", []).text, "both");
 });
 
 Deno.test("no-context utterances pass through untouched", () => {

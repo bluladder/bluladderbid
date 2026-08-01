@@ -39,6 +39,7 @@ const HAS_EXPLICIT_STORIES = /\b(?:stor(?:y|ies|ey|eys)|level|levels)\b/i;
 /** Window-side shorthand → the canonical phrasing the parsers key on. */
 function normalizeWindowSideShorthand(
   text: string,
+  lastAssistant: string,
 ): { text: string; applied: boolean } {
   let out = text;
   let applied = false;
@@ -52,6 +53,27 @@ function normalizeWindowSideShorthand(
   for (const [re, replacement] of rules) {
     if (re.test(out)) {
       out = out.replace(re, replacement);
+      applied = true;
+    }
+  }
+
+  // Bare STT replies are safe to interpret only when the preceding assistant
+  // prompt is explicitly selecting window sides. The returned customer-facing
+  // phrasing is then consumed by the canonical intake/fact normalizers; this
+  // module does not create a parallel sides enum or pricing contract.
+  const asksWindowSides =
+    /\bwindows?\b[^?.!]{0,100}\b(?:inside|outside|exterior|both|sides?|full service)\b|\b(?:inside|outside|exterior|both|sides?|full service)\b[^?.!]{0,100}\bwindows?\b/i
+      .test(lastAssistant);
+  if (asksWindowSides) {
+    const trimmed = out.trim();
+    if (/^(?:outside|exterior)(?:\s+only)?$/i.test(trimmed)) {
+      out = "exterior only";
+      applied = true;
+    } else if (
+      /^(?:both|full service|inside and outside|inside and out|interior and exterior)$/i
+        .test(trimmed)
+    ) {
+      out = "inside and outside";
       applied = true;
     }
   }
@@ -73,7 +95,7 @@ export function normalizeVoiceInput(
   if (!raw.trim()) return { text: raw, applied };
 
   const lastAssistant = lastAssistantQuestion(history ?? []);
-  const sides = normalizeWindowSideShorthand(raw);
+  const sides = normalizeWindowSideShorthand(raw, lastAssistant);
   let text = sides.text;
   if (sides.applied) applied.push("window_sides");
 
