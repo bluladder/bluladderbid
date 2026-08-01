@@ -221,14 +221,18 @@ END
 $$;
 ROLLBACK;
 
--- Exercise WITH CHECK independently from table grants. The trigger is an
--- invoker and reads parent tables even when every parent id is null, so grant
--- only the read permissions needed to reach RLS. Every temporary grant rolls
--- back with the test.
+-- Exercise WITH CHECK independently from table grants and the deliberate lack
+-- of a production INSERT-purpose policy. The trigger is an invoker and reads
+-- parent tables even when every parent id is null, so grant only the access
+-- needed to reach the restrictive tenant policy. Every temporary grant and
+-- policy rolls back with the test.
 BEGIN;
 GRANT INSERT ON public.chat_conversations TO authenticated;
 GRANT SELECT ON public.customers, public.properties, public.quote_sessions
   TO authenticated;
+CREATE POLICY "Stage7B test insert purpose"
+  ON public.chat_conversations FOR INSERT TO authenticated
+  WITH CHECK (true);
 SET LOCAL ROLE authenticated;
 SELECT set_config(
   'request.jwt.claim.sub',
