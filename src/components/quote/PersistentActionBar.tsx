@@ -13,7 +13,9 @@ export function PersistentActionBar({ label, onAction, visible, disabled = false
   useEffect(() => {
     if (!visible) return;
     document.documentElement.style.setProperty('--quote-action-height', '6.75rem');
-    return () => document.documentElement.style.removeProperty('--quote-action-height');
+    return () => {
+      document.documentElement.style.removeProperty('--quote-action-height');
+    };
   }, [visible]);
 
   if (!visible) return null;

@@ -4031,6 +4031,7 @@ export type Database = {
           created_at: string
           description: string | null
           id: string
+          is_public: boolean
           updated_at: string
         }
         Insert: {
@@ -4039,6 +4040,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_public?: boolean
           updated_at?: string
         }
         Update: {
@@ -4047,6 +4049,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           id?: string
+          is_public?: boolean
           updated_at?: string
         }
         Relationships: []
