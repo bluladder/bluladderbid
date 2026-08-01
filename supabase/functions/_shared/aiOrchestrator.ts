@@ -85,6 +85,7 @@ import {
   resolveQuoteByTextContinuation,
 } from "./voice/quoteByText.ts";
 import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
+import { formatCanonicalCurrency } from "./voice/voiceCanonicalIntake.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
@@ -755,6 +756,10 @@ function factPatchFromTool(
         status: result?.status,
         firm: result?.firm === true,
         total: result?.total ?? null,
+        serviceSubtotal: result?.serviceSubtotal ?? null,
+        estimatedTax: result?.estimatedTax ?? null,
+        estimatedTotal: result?.estimatedTotal ?? result?.total ?? null,
+        taxPolicyVersion: result?.taxPolicyVersion ?? null,
         lineItems: result?.lineItems ?? [],
         pricingVersion: result?.pricingVersion ?? null,
         engineVersion: result?.engineVersion ?? null,
@@ -1244,7 +1249,7 @@ function describeWindowAssumptions(facts: ConversationFacts): string {
 }
 
 function priceFromResult(result: any): number | null {
-  const n = Number(result?.total);
+  const n = Number(result?.estimatedTotal ?? result?.total);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
@@ -1270,8 +1275,8 @@ async function runVoiceRoughQuoteRail(args: {
     typeof facts.roughQuote?.spokenTotal === "number"
   ) {
     return finalize({
-      reply: `Of course — that price is about $${
-        Math.round(facts.roughQuote.spokenTotal)
+      reply: `Of course — that price is ${
+        formatCanonicalCurrency(facts.roughQuote.spokenTotal)
       }. Would you like me to check appointment availability?`,
       toolEvents: [],
       events: ["voice_rough_quote_repeated"],
@@ -1393,8 +1398,8 @@ async function runVoiceRoughQuoteRail(args: {
     : " Exact service availability will need confirmation before booking.";
   const reply = `Based on ${
     describeWindowAssumptions(facts)
-  }${cityPhrase}, the rough price is approximately $${
-    Math.round(total)
+  }${cityPhrase}, the rough price is approximately ${
+    formatCanonicalCurrency(total)
   }.${serviceability} Would you like to check appointment availability?`;
   // Remember what we just spoke so unrelated turns (and bare mentions of
   // "price") never trigger another pricing-engine call.
@@ -1402,7 +1407,7 @@ async function runVoiceRoughQuoteRail(args: {
     roughQuote: {
       ...(nextFacts.roughQuote ?? {}),
       spokenInputsKey: quoteInputsKey(nextFacts),
-      spokenTotal: Math.round(total),
+      spokenTotal: total,
     },
   });
   await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, {

@@ -79,6 +79,10 @@ export interface ConversationFacts {
     status?: string; // firm | estimated | missing_information | manual_review_required | pricing_unavailable | error
     firm?: boolean;
     total?: number | null;
+    serviceSubtotal?: number | null;
+    estimatedTax?: number | null;
+    estimatedTotal?: number | null;
+    taxPolicyVersion?: string | null;
     lineItems?: unknown[];
     pricingVersion?: number | null;
     engineVersion?: string | null;

@@ -24,6 +24,8 @@
 import type { ConversationFacts } from "../conversationState.ts";
 import { isQuoteFirm } from "../conversationState.ts";
 import { buildQuoteRequest } from "../aiTools.ts";
+import { quoteSessionFieldsToQuoteInput } from "../quoteSessionPricingAdapter.ts";
+import type { QuoteInput } from "../pricingEngine.ts";
 import {
   normalizeEmail,
   normalizePhone,
@@ -55,6 +57,8 @@ export interface VoiceQuoteDeliveryResult {
     | "failed_terminal";
   reason?: VoiceQuoteDeliveryReason;
   quoteId?: string | null;
+  attemptId?: string | null;
+  providerMessageId?: string | null;
   /** Raw upstream status, for journaling/diagnostics only. */
   detail?: string | null;
 }
@@ -87,6 +91,7 @@ function splitName(name?: string | null): {
 }
 
 interface SessionContext {
+  readStatus: "not_requested" | "found" | "not_found" | "error";
   emailNormalized: string | null;
   customerId: string | null;
   propertyId: string | null;
@@ -99,6 +104,7 @@ async function readSessionContext(
   quoteSessionId?: string | null,
 ): Promise<SessionContext> {
   const empty: SessionContext = {
+    readStatus: quoteSessionId ? "not_found" : "not_requested",
     emailNormalized: null,
     customerId: null,
     propertyId: null,
@@ -114,6 +120,7 @@ async function readSessionContext(
       .maybeSingle();
     if (!data) return empty;
     return {
+      readStatus: "found",
       emailNormalized: normalizeEmail(data.email_normalized ?? null),
       customerId: (data.customer_id as string | null) ?? null,
       propertyId: (data.property_id as string | null) ?? null,
@@ -121,7 +128,7 @@ async function readSessionContext(
       fields: (data.fields as QuoteSessionFields | null) ?? null,
     };
   } catch {
-    return empty;
+    return { ...empty, readStatus: "error" };
   }
 }
 
@@ -220,8 +227,11 @@ type CanonicalLineItem = { key?: string; label?: string; amount?: number };
  *  figures are only a tamper check; save-quote recomputes every one of them. */
 export function servicesFromFacts(
   facts: ConversationFacts,
+  canonicalLineItems?: unknown[] | null,
 ): Array<{ name: string; amount?: number }> {
-  const items = Array.isArray(facts.quote?.lineItems)
+  const items = Array.isArray(canonicalLineItems)
+    ? canonicalLineItems as CanonicalLineItem[]
+    : Array.isArray(facts.quote?.lineItems)
     ? (facts.quote!.lineItems as CanonicalLineItem[])
     : [];
   const mapped = items
@@ -243,26 +253,43 @@ export function buildVoiceSaveQuoteBody(args: {
   email: string;
   phoneE164: string;
   sourceSessionId: string;
+  /** When present, this is the canonical pricing-input authority. */
+  sessionFields?: QuoteSessionFields | null;
 }): Record<string, unknown> {
   const { facts } = args;
   const p = facts.property ?? {};
-  const mapped = buildQuoteRequest({
-    services: facts.services ?? [],
-    address: facts.address,
-    squareFootage: p.squareFootage,
-    stories: p.stories,
-    windowCleaningType: p.windowCleaningType,
-    condition: p.condition,
-    roofType: p.roofType,
-    roofSeverity: p.roofSeverity,
-    drivewaySqft: p.drivewaySqft,
-    drivewaySurface: p.drivewaySurface,
-    pressureWashSqft: p.pressureWashSqft,
-    pressureWashSurface: p.pressureWashSurface,
-    discountCode: facts.discountCode ?? undefined,
-  });
-  const total = Number(facts.quote?.total ?? 0);
-  const { firstName, lastName } = splitName(facts.contact?.name);
+  const mapped: QuoteInput = args.sessionFields
+    ? quoteSessionFieldsToQuoteInput(args.sessionFields)
+    : buildQuoteRequest({
+      services: facts.services ?? [],
+      address: facts.address,
+      squareFootage: p.squareFootage,
+      stories: p.stories,
+      windowCleaningType: p.windowCleaningType,
+      condition: p.condition,
+      roofType: p.roofType,
+      roofSeverity: p.roofSeverity,
+      drivewaySqft: p.drivewaySqft,
+      drivewaySurface: p.drivewaySurface,
+      pressureWashSqft: p.pressureWashSqft,
+      pressureWashSurface: p.pressureWashSurface,
+      discountCode: facts.discountCode ?? undefined,
+    }) as QuoteInput;
+  const last = args.sessionFields?.lastQuoteResult;
+  const canonicalLineItems = Array.isArray(last?.lineItems)
+    ? last.lineItems
+    : facts.quote?.lineItems;
+  const total = Number(
+    last?.estimatedTotal ?? facts.quote?.estimatedTotal ?? facts.quote?.total ??
+      0,
+  );
+  const subtotal = Number(
+    last?.serviceSubtotal ?? last?.subtotal ?? facts.quote?.serviceSubtotal ??
+      total,
+  );
+  const { firstName, lastName } = splitName(
+    args.sessionFields?.name ?? facts.contact?.name,
+  );
   return {
     action: "save",
     quoteType: "one_time",
@@ -271,17 +298,19 @@ export function buildVoiceSaveQuoteBody(args: {
     lastName,
     phone: args.phoneE164,
     total,
-    subtotal: total,
-    services: servicesFromFacts(facts),
+    subtotal,
+    services: servicesFromFacts(facts, canonicalLineItems),
     homeDetails: {
       ...mapped.homeDetails,
-      address: facts.address ?? null,
+      address: args.sessionFields?.address ?? facts.address ?? null,
     },
     additionalServices: mapped.additionalServices,
     discount: mapped.discount,
-    lineItems: facts.quote?.lineItems ?? null,
-    engineVersion: facts.quote?.engineVersion ?? null,
-    ruleVersion: facts.quote?.pricingVersion ?? null,
+    promotion: mapped.promotion,
+    lineItems: canonicalLineItems ?? null,
+    engineVersion: last?.engineVersion ?? facts.quote?.engineVersion ?? null,
+    ruleVersion: last?.ruleVersion ?? last?.pricingVersion ??
+      facts.quote?.pricingVersion ?? null,
     // Stable, non-null scope so a repeated ask in the same call updates the
     // SAME quote row instead of minting a second quote + resume token.
     sourceSessionId: args.sourceSessionId,
@@ -334,31 +363,45 @@ export async function deliverVoiceQuoteByText(
   input: VoiceQuoteDeliveryInput,
 ): Promise<VoiceQuoteDeliveryResult> {
   const facts = input.facts;
-  const phoneE164 = normalizePhone(facts.contact?.phone ?? null);
-  if (!phoneE164) return { ok: false, status: "failed_terminal", reason: "missing_phone" };
-  if (facts.contact?.phoneConfirmed !== true) {
-    return { ok: false, status: "failed_terminal", reason: "phone_not_confirmed" };
-  }
-  if (!isQuoteFirm(facts)) return { ok: false, status: "failed_terminal", reason: "quote_not_firm" };
-  const total = Number(facts.quote?.total ?? 0);
-  if (!isFinite(total) || total <= 0) {
-    return { ok: false, status: "failed_terminal", reason: "missing_quote_total" };
-  }
-  if (
-    !facts.address || !facts.address.trim() ||
-    facts.serviceArea?.status !== "eligible"
-  ) {
-    return { ok: false, status: "failed_terminal", reason: "missing_address" };
-  }
-  // A promotion changes the authoritative price and cannot be reconstructed
-  // from spoken facts (it needs the exact promo id + window count). Fail
-  // closed rather than persist a quote at the wrong price.
-  if (facts.promotionId) return { ok: false, status: "failed_terminal", reason: "promotion_unmappable" };
-
   const session = await readSessionContext(
     input.supabase,
     input.quoteSessionId ?? null,
   );
+  if (input.quoteSessionId && session.readStatus !== "found") {
+    return {
+      ok: false,
+      status: session.readStatus === "error" ? "uncertain" : "failed_terminal",
+      reason: "stale_quote_context",
+      detail: `quote_session_${session.readStatus}`,
+    };
+  }
+  const factsPhone = normalizePhone(facts.contact?.phone ?? null);
+  const canonicalPhone = normalizePhone(session.fields?.phone ?? null);
+  if (canonicalPhone && factsPhone && canonicalPhone !== factsPhone) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "phone_not_confirmed",
+    };
+  }
+  const phoneE164 = canonicalPhone ?? factsPhone;
+  if (!phoneE164) return { ok: false, status: "failed_terminal", reason: "missing_phone" };
+  if (facts.contact?.phoneConfirmed !== true) {
+    return { ok: false, status: "failed_terminal", reason: "phone_not_confirmed" };
+  }
+  // A promotion changes the authoritative price. It is deliverable only when
+  // the canonical session carries both the configured id and actual count;
+  // spoken facts alone are not enough to reconstruct it safely.
+  if (
+    (session.fields?.promotionId || facts.promotionId) &&
+    (!session.fields?.promotionId || session.fields.windowCount == null)
+  ) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "promotion_unmappable",
+    };
+  }
   if (session.fields) {
     const currentInputsKey = sessionInputsKey(session.fields);
     const quotedInputsKey = typeof session.fields.lastQuoteResult?.inputsKey === "string"
@@ -374,6 +417,66 @@ export async function deliverVoiceQuoteByText(
         status: "failed_terminal",
         reason: "stale_quote_context",
         quoteId: session.quoteId,
+      };
+    }
+    const disposition = session.fields.lastQuoteResult
+      ?.finalQuoteDisposition ??
+      session.fields.voiceJourney?.quoteContext?.finalQuoteDisposition;
+    if (disposition !== "firm") {
+      return {
+        ok: false,
+        status: "failed_terminal",
+        reason: "quote_not_firm",
+        quoteId: session.quoteId,
+      };
+    }
+    const canonicalTotal = Number(
+      session.fields.lastQuoteResult?.estimatedTotal ??
+        session.fields.voiceJourney?.quoteContext?.estimatedTotal ??
+        session.fields.lastQuoteResult?.total ?? 0,
+    );
+    if (!Number.isFinite(canonicalTotal) || canonicalTotal <= 0) {
+      return {
+        ok: false,
+        status: "failed_terminal",
+        reason: "missing_quote_total",
+        quoteId: session.quoteId,
+      };
+    }
+    if (
+      !session.fields.address?.trim() ||
+      session.fields.serviceAreaStatus !== "eligible"
+    ) {
+      return {
+        ok: false,
+        status: "failed_terminal",
+        reason: "missing_address",
+        quoteId: session.quoteId,
+      };
+    }
+  } else {
+    if (!isQuoteFirm(facts)) {
+      return {
+        ok: false,
+        status: "failed_terminal",
+        reason: "quote_not_firm",
+      };
+    }
+    const legacyTotal = Number(facts.quote?.estimatedTotal ?? facts.quote?.total ?? 0);
+    if (!Number.isFinite(legacyTotal) || legacyTotal <= 0) {
+      return {
+        ok: false,
+        status: "failed_terminal",
+        reason: "missing_quote_total",
+      };
+    }
+    if (
+      !facts.address?.trim() || facts.serviceArea?.status !== "eligible"
+    ) {
+      return {
+        ok: false,
+        status: "failed_terminal",
+        reason: "missing_address",
       };
     }
   }
@@ -396,24 +499,53 @@ export async function deliverVoiceQuoteByText(
     email,
     phoneE164,
     sourceSessionId,
+    sessionFields: session.fields,
   });
-  const saved = await input.callFunction("save-quote", saveBody);
+  let saved: { status: number; json: any };
+  try {
+    saved = await input.callFunction("save-quote", saveBody);
+  } catch {
+    // The request may have reached save-quote before the transport failed.
+    // Its stable sourceSessionId makes a later manual retry idempotent, but we
+    // cannot claim failure or automatically advance to SMS from this outcome.
+    return {
+      ok: false,
+      status: "uncertain",
+      reason: "save_quote_failed",
+      detail: "save_quote_transport_uncertain",
+    };
+  }
   const quoteId: string | null = saved.json?.quoteId ?? null;
   if (saved.status !== 200 || !quoteId) {
     return {
       ok: false,
-      status: saved.status >= 500 ? "retry_pending" : "failed_terminal",
+      status: saved.status >= 500
+        ? "retry_pending"
+        : saved.status >= 200 && saved.status < 300
+        ? "uncertain"
+        : "failed_terminal",
       reason: "save_quote_failed",
       quoteId,
       detail: String(saved.json?.status ?? saved.status),
     };
   }
 
-  const sent = await input.callFunction("send-sms", {
-    eventType: "quote_created",
-    quoteId,
-    customerInitiated: true,
-  });
+  let sent: { status: number; json: any };
+  try {
+    sent = await input.callFunction("send-sms", {
+      eventType: "quote_created",
+      quoteId,
+      customerInitiated: true,
+    });
+  } catch {
+    return {
+      ok: false,
+      status: "uncertain",
+      reason: "sms_not_sent",
+      quoteId,
+      detail: "send_sms_transport_uncertain",
+    };
+  }
   const delivered = sent.status === 200 &&
     sent.json?.transactionalSent === true &&
     sent.json?.deliveryStatus === "accepted";
@@ -422,15 +554,26 @@ export async function deliverVoiceQuoteByText(
     const deliveryStatus = upstreamStatus === "delivery_unknown" ||
         upstreamStatus === "uncertain"
       ? "uncertain"
-      : upstreamStatus === "queued" || upstreamStatus === "retry_pending" ||
-          sent.status >= 500
+      : upstreamStatus === "queued"
+      ? "queued"
+      : upstreamStatus === "retry_pending"
       ? "retry_pending"
+      : sent.status >= 500
+      ? "retry_pending"
+      : sent.status >= 200 && sent.status < 300 && !upstreamStatus
+      ? "uncertain"
       : "failed_terminal";
     return {
       ok: false,
       status: deliveryStatus,
       reason: "sms_not_sent",
       quoteId,
+      attemptId: typeof sent.json?.transactionalAttemptId === "string"
+        ? sent.json.transactionalAttemptId
+        : null,
+      providerMessageId: typeof sent.json?.providerMessageId === "string"
+        ? sent.json.providerMessageId
+        : null,
       detail: String(
         sent.json?.transactionalError ?? sent.json?.deliveryStatus ??
           sent.status,
@@ -438,5 +581,15 @@ export async function deliverVoiceQuoteByText(
     };
   }
   await linkSavedQuote(input, quoteId, session);
-  return { ok: true, status: "provider_accepted", quoteId };
+  return {
+    ok: true,
+    status: "provider_accepted",
+    quoteId,
+    attemptId: typeof sent.json?.transactionalAttemptId === "string"
+      ? sent.json.transactionalAttemptId
+      : null,
+    providerMessageId: typeof sent.json?.providerMessageId === "string"
+      ? sent.json.providerMessageId
+      : null,
+  };
 }

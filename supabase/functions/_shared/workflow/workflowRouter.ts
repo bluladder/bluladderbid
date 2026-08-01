@@ -23,6 +23,8 @@ export function classifyWorkflow(utterance: string, session: QuoteSession | null
   if (voiceIntent === "reschedule") return "reschedule";
   if (voiceIntent === "cancel") return "cancel";
   if (voiceIntent === "question_or_memo") return "question_or_memo";
+  if (voiceIntent === "new_quote") return "new_quote";
+  if (voiceIntent === "schedule") return "schedule_service";
   if (!s) {
     if (session && (session.fields.services?.length ?? 0) > 0) return "new_quote";
     return "general_inquiry";

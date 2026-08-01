@@ -207,3 +207,24 @@ Deno.test("post-quote: asks for email before booking (not before speaking the pr
   assertEquals(a.kind, "ask");
   if (a.kind === "ask") assertEquals(a.field, "contact_email");
 });
+
+Deno.test("mixed quote calculates before manual-review disposition so firm portions survive", () => {
+  const s = afterContact({
+    fields: {
+      services: ["houseWash", "screenRepair"],
+      squareFootage: 2200,
+      stories: 1,
+      enclosedPatioProfile: "none",
+      screenRepairCount: 2,
+      screenRepairScopeType: "screen_door",
+    },
+    fieldStatus: {
+      services: "captured",
+      squareFootage: "captured",
+      stories: "captured",
+      screenRepairCount: "captured",
+      screenRepairScopeType: "captured",
+    },
+  });
+  assertEquals(decideResidentialQuoteAction(s, []).kind, "calculate_price");
+});

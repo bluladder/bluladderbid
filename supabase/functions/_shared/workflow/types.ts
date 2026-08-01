@@ -32,7 +32,8 @@ export type HandoffReason =
   | "pricing_error"
   | "ambiguous_customer_match"
   | "safety_or_access_flag"
-  | "owner_decision_required";
+  | "owner_decision_required"
+  | "tenant_authority_required";
 
 export type WorkflowAction =
   | { kind: "ask"; field: RequiredField; prompt: string }

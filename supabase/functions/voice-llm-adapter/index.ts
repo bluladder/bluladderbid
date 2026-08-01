@@ -207,8 +207,12 @@ Deno.serve(async (req) => {
         normalization: normalized.applied,
       }));
     }
-  } catch (e) {
-    console.warn("voice input normalization skipped:", (e as Error).message);
+  } catch {
+    console.warn(JSON.stringify({
+      at: "voice-llm-adapter",
+      buildId: BUILD_ID,
+      reason: "voice_input_normalization_failed",
+    }));
   }
 
   // ---- Rollout gate ------------------------------------------------------
@@ -230,10 +234,9 @@ Deno.serve(async (req) => {
   }
 
   if (decision.route === "controller") {
-    // Preface turn: caller-ID confirmation / returning-customer resolution /
-    // pre-pricing FSM asks. Post-pricing actions fall through to the legacy
-    // orchestrator so the real production tools remain the source of truth
-    // for pricing, availability, and booking.
+    // Rollout-gated deterministic journey. Canonical pricing, availability,
+    // and booking tool boundaries are invoked by the controller; unsupported
+    // tenant-scoped record actions fail closed instead of falling through.
     try {
       const identity = await ensureVoiceConversation({ supabase, request });
       // Reconstruct history + last utterance the same way the legacy adapter does.
@@ -264,42 +267,94 @@ Deno.serve(async (req) => {
         history,
         callerIdE164: request.callerIdE164,
       });
-      await persistControllerPatch(
+      const persistence = await persistControllerPatch(
         supabase,
         turn.sessionId,
         turn.sessionPatch,
       );
-      if (turn.pre.kind !== "delegate_legacy") {
-        const spoken = turn.pre.spoken;
+      if (persistence.status === "conflict" || persistence.status === "error") {
+        // Never fall through to legacy after the deterministic controller has
+        // already decided or invoked a guarded tool. That could repeat a
+        // mutation against stale state. A confirmed booking remains truthful
+        // because create_bluladder_booking requires provider + local booking
+        // persistence before it returns success; only the journey cursor failed.
+        const bookingAlreadyConfirmed = turn.pre.kind === "fsm" &&
+          turn.pre.action.kind === "confirm_result" &&
+          turn.pre.action.success === true;
+        const bookingWasAttempted = turn.pre.kind === "fsm" &&
+          turn.pre.action.kind === "confirm_result";
+        const spoken = bookingAlreadyConfirmed
+          ? `${turn.pre.spoken} I couldn't save the call's progress marker, so please don't repeat the booking request.`
+          : bookingWasAttempted
+          ? `${turn.pre.spoken} I also couldn't save the call's progress marker. I will not repeat the booking request automatically; a team member should verify the result.`
+          : "I couldn't safely save that update because the call state changed. I have not repeated or advanced the request. Please try that answer once more, or a team member can help.";
+        console.warn(JSON.stringify({
+          at: "voice-llm-adapter",
+          buildId: BUILD_ID,
+          route: "controller",
+          persistence: persistence.status,
+          reason: persistence.reason,
+        }));
         const completion = {
           content: spoken,
           action: { kind: "speak" as const },
           orchestrator: {
             reply: spoken,
             toolEvents: [],
-            events: ["workflow_controller"],
+            events: ["workflow_controller_persistence_blocked"],
             state: "workflow_controller" as const,
             voice: { type: "speak" as const },
           },
         };
-        console.log(JSON.stringify({
-          at: "voice-llm-adapter",
-          buildId: BUILD_ID,
-          route: "controller",
-          preKind: turn.pre.kind,
-          replyLen: spoken.length,
-          stream: request.stream,
-        }));
         return request.stream
           ? buildStreamingTextResponse(model, spoken)
           : buildNonStreamingResponse(model, completion);
       }
-      // Fall through to legacy for pricing / scheduling / booking.
-    } catch (e) {
-      console.warn(
-        "controller turn failed; falling back to legacy:",
-        (e as Error).message,
-      );
+      const spoken = turn.pre.spoken;
+      const completion = {
+        content: spoken,
+        action: { kind: "speak" as const },
+        orchestrator: {
+          reply: spoken,
+          toolEvents: [],
+          events: ["workflow_controller"],
+          state: "workflow_controller" as const,
+          voice: { type: "speak" as const },
+        },
+      };
+      console.log(JSON.stringify({
+        at: "voice-llm-adapter",
+        buildId: BUILD_ID,
+        route: "controller",
+        preKind: turn.pre.kind,
+        replyLen: spoken.length,
+        stream: request.stream,
+      }));
+      return request.stream
+        ? buildStreamingTextResponse(model, spoken)
+        : buildNonStreamingResponse(model, completion);
+    } catch {
+      console.warn(JSON.stringify({
+        at: "voice-llm-adapter",
+        buildId: BUILD_ID,
+        route: "controller",
+        reason: "workflow_controller_failed_closed",
+      }));
+      const spoken =
+        "I couldn't safely confirm the result of that request. I will not repeat any booking or other external action automatically. A team member can verify the result.";
+      return request.stream
+        ? buildStreamingTextResponse(model, spoken)
+        : buildNonStreamingResponse(model, {
+          content: spoken,
+          action: { kind: "speak" as const },
+          orchestrator: {
+            reply: spoken,
+            toolEvents: [],
+            events: ["workflow_controller_failed_closed"],
+            state: "workflow_controller" as const,
+            voice: { type: "speak" as const },
+          },
+        });
     }
   }
 

@@ -164,6 +164,8 @@ export interface QuoteSessionFields {
       estimatedTotal?: number | null;
       authoritativeDurationMinutes?: number | null;
       durationSource?: string | null;
+      /** Set only after the current canonical total has actually been spoken. */
+      spokenAt?: string | null;
       acceptedAt?: string | null;
     } | null;
     delivery?: {
@@ -226,6 +228,8 @@ export interface QuoteSession {
   bookingReady: boolean;
   phoneE164?: string | null;
   emailNormalized?: string | null;
+  /** Optimistic-concurrency token from quote_sessions.updated_at. */
+  updatedAt?: string | null;
 }
 
 function deleteStoragePath(
@@ -364,7 +368,18 @@ export function mergeFields(
   for (const k of opts.markCustomerEstimate ?? []) nextProvenance[k] = "customer_estimate";
   for (const k of opts.markConfirmedSummary ?? []) nextProvenance[k] = "confirmed_summary";
   nextFields.answerProvenance = nextProvenance;
-  if (nextFields.screenProfile) nextFields.screenProfileProvenance = nextStatus.screenProfile ?? "unknown";
+  // Backward-compatible sessions may have a screen profile but no provenance.
+  // Do not synthesize "unknown" during an unrelated contact/address update;
+  // that would invalidate an otherwise current quote. Populate provenance only
+  // when this merge actually captures/corrects the screen profile, or when the
+  // persisted record already participates in the provenance contract.
+  if (
+    nextFields.screenProfile &&
+    (Object.prototype.hasOwnProperty.call(patch, "screenProfile") ||
+      nextFields.screenProfileProvenance != null)
+  ) {
+    nextFields.screenProfileProvenance = nextStatus.screenProfile ?? "unknown";
+  }
   const priceChanged = beforePriceKey !== sessionInputsKey(nextFields);
   const bookingChanged = beforeBookingKey !== sessionBookingInputsKey(nextFields);
   if (priceChanged) {
@@ -629,6 +644,7 @@ function rowToSession(row: Record<string, unknown>): QuoteSession {
     bookingReady: !!row.booking_ready,
     phoneE164: (row.phone_e164 as string | null) ?? null,
     emailNormalized: (row.email_normalized as string | null) ?? null,
+    updatedAt: (row.updated_at as string | null) ?? null,
   };
 }
 
@@ -816,6 +832,12 @@ export function sessionInputsKey(fields: QuoteSessionFields): string {
   );
   return JSON.stringify(stableValue({
     contractValues,
+    // Discounts predate the canonical intake manifest and are deliberately
+    // not a voice question. They are still a price-changing persisted input,
+    // so changing an authorized legacy discount must invalidate a cached quote.
+    externalPricingValues: {
+      discountCode: fields.discountCode?.trim().toUpperCase() || null,
+    },
     answerProvenance: priceProvenance,
     confirmationSummary: confirmed
       ? {

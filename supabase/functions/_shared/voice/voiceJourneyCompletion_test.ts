@@ -20,6 +20,8 @@ import {
 import {
   applyCanonicalVoiceAnswer,
   buildCanonicalPrePriceRecap,
+  buildCanonicalPriceStatement,
+  formatCanonicalCurrency,
 } from "./voiceCanonicalIntake.ts";
 import {
   describeVoiceDelivery,
@@ -59,6 +61,12 @@ Deno.test("authoritative opening and price assurance are exact", () => {
     PRICE_ASSURANCE,
     "As long as the information you provided is accurate, we’ll stand by this price. If anything is different when we arrive, we’ll discuss it with you before any additional work begins.",
   );
+});
+
+Deno.test("canonical voice currency preserves tax cents instead of rounding dollars", () => {
+  assertEquals(formatCanonicalCurrency(216.5), "$216.50");
+  assertEquals(formatCanonicalCurrency(216), "$216");
+  assertStringIncludes(buildCanonicalPriceStatement(216.5), "$216.50");
 });
 
 Deno.test("voice journey intent separates quote, existing records and destructive actions", () => {

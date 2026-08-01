@@ -14,12 +14,12 @@ Baseline: `4e1cafa78166a510b216cb063537fbe094c83f24`.
 | Quote identity | session id, quote id, canonical input key, rule/engine/tax/duration versions | legacy availability offer stores the complete identity | Delivery, availability, and booking reject an identity mismatch. |
 | Duration | pricing result plus `durationContract.ts` | none | Null, zero, stale, or guessed duration blocks scheduling. |
 | Service area | `serviceArea.ts` plus explicit voice address confirmation | `ConversationFacts.addressCandidate` holds recovery state | Availability cannot use a geocode until the caller confirms the normalized address. |
-| Delivery | existing quote email claim/finalization and SMS outbox | voice maps provider states without collapsing them | “Sent” requires the configured provider-acceptance threshold; “delivered” requires an actual delivery event. |
+| Delivery | existing quote email claim/finalization and SMS outbox | voice maps provider states without collapsing them | Provider acceptance may be described only as “accepted for delivery”; “delivered” requires an actual delivery event. |
 | Availability | `bookingReadiness.ts` then `availabilityLookup.ts` | the legacy voice tool now delegates to this path | Identity, property ownership, quote freshness, duration, area, schedule freshness, and action gate must all pass. |
 | Booking | current offer plus live booking adapter/creator and local reconciliation | rollout/live gates remain unchanged | Provider acceptance without local persistence is uncertain and non-retryable by the caller. |
-| Existing records | identity anchor plus organization-scoped customer reads | DFW unscoped legacy rows only when the existing server-side flag allows it | Caller ID is a hint, never identity proof. Cross-customer and cross-organization records fail closed. |
-| Reschedule/cancel | verified appointment, explicit final confirmation, provider result, local result | existing customer appointment/cancellation modules provide provider-specific execution | The old appointment remains authoritative unless both success requirements are met. |
-| Field-team memo | exact verified customer/booking/organization and idempotent local note | no Jobber-success claim | A memo cannot change price, duration, quote acceptance, or booking state. |
+| Existing records | identity and organization-scoping helpers exist as contract-level building blocks | not wired into the production controller in this tranche | The controller fails closed with `tenant_authority_required`; caller ID never unlocks stored records. |
+| Reschedule/cancel | appointment-recovery helpers model confirmation and provider/local evidence | not wired into the production controller in this tranche | The controller fails closed with `tenant_authority_required`; no appointment mutation is attempted. |
+| Field-team memo | bounded memo helper exists as a contract-level building block | not wired into the production controller in this tranche | The controller fails closed with `tenant_authority_required`; no note is written. |
 
 ## Canonical journey state
 
@@ -48,7 +48,7 @@ Price-changing corrections clear the cached quote, acceptance, delivery, availab
 10. Validate and explicitly confirm the normalized service address.
 11. Run canonical booking readiness and fetch a small current slot set.
 12. Bind the selected slot to the exact quote and offer; revalidate immediately before mutation.
-13. Claim booking success only after authoritative provider and local persistence evidence.
+13. Claim booking success only after authoritative provider and local persistence evidence. Existing-quote, appointment-change, and memo intents stop at the tenant-authority boundary until that production integration is separately completed.
 
 ## Address recovery
 
@@ -58,7 +58,7 @@ The address candidate retains street number, street name, optional unit, city, s
 
 | Boundary | Success that may be claimed | Retry/pending | Uncertain | Confirmed failure |
 |---|---|---|---|---|
-| SMS/email | provider accepted; delivered only after a delivery event | queued/retry pending | provider outcome or finalization unknown | permanent rejection/validation failure |
+| SMS/email | provider accepted for delivery; delivered only after a delivery event | queued/retry pending | provider outcome or finalization unknown | permanent rejection/validation failure |
 | Availability | fresh, versioned slots from the authoritative engine | refresh required/rate limited | timeout/malformed provider outcome | readiness or policy blocker |
 | Booking | provider accepted and local record persisted/reconciled | slot may be refreshed only after a confirmed rejection | accepted-local-unconfirmed or provider outcome unknown | slot lost, rejected, or disabled |
 | Reschedule/cancel | provider mutation and local versioned persistence confirmed | only an idempotent replay of a known request | outcome unknown; never auto-repeat | confirmed rejection; old appointment remains |
@@ -71,11 +71,14 @@ The pre-routing transcript normalizer still runs before both routes. The control
 
 `ConversationFacts` remains a compatibility rendering/state adapter. Its older fingerprint must not authorize voice delivery, availability, or booking. New critical authorization is based on the quote session.
 
+The existing-record, reschedule/cancel, and field-team memo modules currently prove isolated contracts only. They are not production controller integrations. Until server-derived tenant authority and identity ownership are wired through those actions, the production controller returns `tenant_authority_required` and performs no read or mutation.
+
 ## Security and operations
 
 - Organization authority is server-derived; no controller/model/client organization id is trusted.
 - Service-role reads are organization- and customer-scoped before record mapping.
 - Identity is resolved before stored prices, addresses, or appointments are disclosed.
+- The production controller performs no phone-only customer lookup or returning-customer greeting until organization authority is server-derived.
 - Existing RLS, provider authentication, action gates, suppression, and rollout configuration remain unchanged.
 - Durable work uses existing outboxes/claims. `waitUntil` is not treated as durable delivery.
 - Edge-to-Edge compatibility calls remain only where already deployed; no new chain was added. The canonical availability adapter adds a bounded timeout to its existing call.

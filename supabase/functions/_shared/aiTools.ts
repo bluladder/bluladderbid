@@ -338,7 +338,7 @@ async function calculateQuoteTool(
         pricing_version: json.ruleVersion ?? null,
         engine_version: json.engineVersion ?? null,
         manual_review: !!manualHit,
-        total: firm ? json.total : null,
+        total: firm ? (json.estimatedTotal ?? json.total) : null,
       },
     });
   }
@@ -353,7 +353,13 @@ async function calculateQuoteTool(
     discount: json.discount ?? null,
     disclosures: json.disclosures ?? [],
     calculationOrder: json.calculationOrder ?? [],
-    total: firm ? json.total : null,
+    // Customer-facing total includes the canonical estimated-tax contract.
+    // Preserve the pre-tax total separately in the returned tax breakdown.
+    total: firm ? (json.estimatedTotal ?? json.total) : null,
+    serviceSubtotal: json.serviceSubtotal ?? json.subtotal ?? null,
+    estimatedTax: json.estimatedTax ?? null,
+    estimatedTotal: json.estimatedTotal ?? json.total ?? null,
+    taxPolicyVersion: json.taxPolicyVersion ?? null,
     estimatedDurationMinutes: json.estimatedDurationMinutes ?? null,
     missingQuestions: json.missing ?? [],
     manualReviewReasons: manualHit
@@ -1071,6 +1077,12 @@ async function createBookingTool(
   return {
     status: "confirmed",
     confirmedTime: slot.displayTime,
+    bookingId: typeof json?.bookingId === "string" ? json.bookingId : null,
+    bookingReference: typeof json?.referenceNumber === "string"
+      ? json.referenceNumber
+      : null,
+    providerStatus: "accepted",
+    localStatus: "persisted",
     message: "Booking confirmed.",
     event: "booking_completed",
   };
@@ -1175,6 +1187,9 @@ async function validateServiceAreaTool(
     city: result.city,
     county: result.county,
     state: result.state,
+    streetNumber: result.streetNumber,
+    route: result.route,
+    postalCode: result.postalCode,
     formattedAddress: result.formattedAddress,
     reason: result.reason,
     addressConfirmationNeeded,

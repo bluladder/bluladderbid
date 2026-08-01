@@ -7,17 +7,20 @@
 // escalation alerts, which are NOT a substitute for a customer quote link.
 //
 // Contract enforced here:
-//   * The assistant may say the quote was sent ONLY after the canonical
-//     customer-facing quote-delivery operation reports success.
+//   * The assistant may say the provider accepted the quote for delivery only
+//     after the canonical customer-facing operation reports that exact state.
+//     It may say delivered only after a delivery callback proves delivery.
 //   * On failure or missing prerequisites it must say plainly that the text was
 //     NOT sent, and either ask for the missing data or offer human follow-up.
 //   * Internal escalation SMS must never be used to satisfy this intent.
 // ============================================================================
 
 import { parseSpokenEmail } from "./spokenEmail.ts";
+import { formatCanonicalCurrency } from "./voiceCanonicalIntake.ts";
+import { describeVoiceDelivery } from "./voiceDeliveryState.ts";
 
 export type QuoteByTextOutcome =
-  | "sent"
+  | "provider_accepted"
   | "queued"
   | "delivery_uncertain"
   | "cancelled"
@@ -30,7 +33,8 @@ export type QuoteByTextOutcome =
   | "not_sent_delivery_failed";
 
 export interface QuoteByTextPlan {
-  /** True only when a real customer-facing send succeeded. */
+  /** Legacy transport flag: true only after provider acceptance. It does not
+   * prove end-device delivery; `outcome` preserves that distinction. */
   sent: boolean;
   outcome: QuoteByTextOutcome;
   reply: string;
@@ -178,8 +182,8 @@ export async function planQuoteByTextResponse(args: {
       event: "voice_quote_by_text_unavailable",
       missingField: null,
       reply:
-        `To be straight with you, I can't text the quote from this call yet — so no text has been sent. Your price is about $${
-          Math.round(args.total)
+        `To be straight with you, I can't text the quote from this call yet — so no text has been sent. Your current price is ${
+          formatCanonicalCurrency(args.total)
         }. I can have someone from our team follow up with the written quote, or we can book a time right now. Which would you prefer?`,
     };
   }
@@ -189,34 +193,50 @@ export async function planQuoteByTextResponse(args: {
     const deliveryStatus = result?.status ??
       (result?.ok ? "provider_accepted" : "failed_terminal");
     if (deliveryStatus === "provider_accepted") {
+      const delivery = describeVoiceDelivery({
+        channel: "sms",
+        status: "provider_accepted",
+        attemptId: result?.attemptId ?? null,
+        providerMessageId: result?.providerMessageId ?? null,
+      });
       return {
         sent: true,
-        outcome: "sent",
-        event: "voice_quote_by_text_sent",
+        outcome: "provider_accepted",
+        event: "voice_quote_by_text_provider_accepted",
         missingField: null,
-        reply: `Done — I've texted the quote of about $${
-          Math.round(args.total)
-        } to your number. Would you like me to check appointment times while you have me?`,
+        reply: `${delivery.spoken} The quote total is ${
+          formatCanonicalCurrency(args.total)
+        }. Would you like me to check appointment times while you have me?`,
       };
     }
     if (deliveryStatus === "queued" || deliveryStatus === "retry_pending") {
+      const delivery = describeVoiceDelivery({
+        channel: "sms",
+        status: deliveryStatus,
+        attemptId: result?.attemptId ?? null,
+        providerMessageId: result?.providerMessageId ?? null,
+      });
       return {
         sent: false,
         outcome: "queued",
         event: "voice_quote_by_text_queued",
         missingField: null,
-        reply:
-          "Your written quote is queued for delivery, but I can't honestly say it has reached your phone yet. If the first attempt fails, the system will retry it automatically.",
+        reply: delivery.spoken,
       };
     }
     if (deliveryStatus === "uncertain") {
+      const delivery = describeVoiceDelivery({
+        channel: "sms",
+        status: "uncertain",
+        attemptId: result?.attemptId ?? null,
+        providerMessageId: result?.providerMessageId ?? null,
+      });
       return {
         sent: false,
         outcome: "delivery_uncertain",
         event: "voice_quote_by_text_uncertain",
         missingField: null,
-        reply:
-          "The delivery request was submitted, but I can't confirm that the text reached your phone. I won't call it sent until the provider confirms it; a teammate can follow up if it does not arrive.",
+        reply: delivery.spoken,
       };
     }
     reason = result?.reason ?? null;
@@ -248,8 +268,8 @@ export async function planQuoteByTextResponse(args: {
     event: "voice_quote_by_text_failed",
     missingField: null,
     reply:
-      `That text didn't go through, so you won't see it — I don't want to leave you waiting on something that isn't coming. Your price is about $${
-        Math.round(args.total)
+      `That text didn't go through, so you won't see it — I don't want to leave you waiting on something that isn't coming. Your current price is ${
+        formatCanonicalCurrency(args.total)
       }. I can have a teammate follow up with the written quote, or we can pick an appointment time now.`,
   };
 }

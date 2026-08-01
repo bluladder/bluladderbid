@@ -59,6 +59,24 @@ Deno.test("an unexplained failure is still reported truthfully", async () => {
   assert(/didn'?t go through/i.test(plan.reply));
 });
 
+Deno.test("provider acceptance is named as acceptance, never device delivery", async () => {
+  const plan = await planQuoteByTextResponse({
+    ...base,
+    total: 421.09,
+    deliver: () =>
+      Promise.resolve({
+        status: "provider_accepted" as const,
+        attemptId: "sms-1",
+      }),
+  });
+  assertEquals(plan.sent, true);
+  assertEquals(plan.outcome, "provider_accepted");
+  assertEquals(plan.event, "voice_quote_by_text_provider_accepted");
+  assert(/accepted for delivery/i.test(plan.reply));
+  assertEquals(/delivered to your (phone|device)/i.test(plan.reply), false);
+  assert(/\$421\.09/.test(plan.reply));
+});
+
 Deno.test("cancellation is detected and never confused with a new request", () => {
   assert(classifyQuoteByTextCancellation("never mind"));
   assert(classifyQuoteByTextCancellation("don't text it, thanks"));

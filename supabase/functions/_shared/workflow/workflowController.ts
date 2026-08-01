@@ -10,9 +10,10 @@
 //   6. controller invokes tool for that Action (price, availability, book)
 //   7. LLM produces natural wording ONLY for the resolved Action
 //
-// This scaffold declares the entry shape and the ordered stages. Turn B wires
-// each stage to the real modules; the current call path in aiOrchestrator.ts
-// remains authoritative until the controller is proven at parity in tests.
+// The rollout-gated controller owns quote sequencing and invokes the hardened
+// pricing/availability/booking boundaries directly. Tenant-scoped existing
+// record and destructive appointment paths remain explicitly blocked until
+// server-derived organization authority is available.
 // ============================================================================
 
 import type { QuoteSessionChannel } from "../quoteSession.ts";
@@ -36,11 +37,11 @@ import {
   normalizeSpokenPhone,
   REPROMPT_PREFERRED_NUMBER,
 } from "./callerIdConfirmation.ts";
-import { resolveCustomerByPhone } from "./customerResolver.ts";
 import {
   applyCanonicalVoiceAnswer,
   buildCanonicalPrePriceRecap,
   buildCanonicalPriceStatement,
+  formatCanonicalCurrency,
   promptForCanonicalField,
 } from "../voice/voiceCanonicalIntake.ts";
 import {
@@ -145,19 +146,15 @@ export async function runTurn(input: ControllerInput): Promise<TurnResult> {
 }
 
 // ---------------------------------------------------------------------------
-// Rollout-gated wrapper: caller-ID confirmation + returning-customer lookup
-// before delegating to the residential FSM. Post-pricing actions are the
-// caller's responsibility (see voice-llm-adapter/index.ts, which delegates
-// them to the legacy orchestrator so pricing/scheduling continue to work).
+// Rollout-gated wrapper: caller-ID contact confirmation, canonical quote
+// intake, pricing, availability, and booking continuation. Tenant-scoped
+// returning-customer lookup remains deferred.
 // ---------------------------------------------------------------------------
 
 export type ControllerPreAction =
   | { kind: "ask_intent"; spoken: string }
   | { kind: "ask_confirm_caller_id"; last4: string; spoken: string }
   | { kind: "ask_preferred_phone"; spoken: string }
-  | { kind: "ask_disambiguator"; spoken: string }
-  | { kind: "greet_returning"; firstName: string; spoken: string }
-  | { kind: "delegate_legacy" }
   | { kind: "fsm"; action: WorkflowAction; spoken: string };
 
 export interface ControllerTurnResult {
@@ -170,9 +167,26 @@ function digits(s: string): string {
   return s.replace(/\D/g, "");
 }
 
-/** Spoken text for a decided FSM action. Pricing/scheduling actions return
- *  empty spoken text — the caller is expected to `delegate_legacy` for those
- *  so the existing orchestrator handles tool invocation and wording. */
+function tenantAuthorityBlockedLanguage(
+  intent: "existing_quote" | "reschedule" | "cancel" | "field_memo",
+): string {
+  const action = intent === "existing_quote"
+    ? "access a saved quote"
+    : intent === "reschedule"
+    ? "reschedule an appointment"
+    : intent === "cancel"
+    ? "cancel an appointment"
+    : "record a field-team note";
+  return `I can't safely ${action} from this voice path until I can verify both the customer and the BluLadder account organization. Nothing was disclosed or changed. A team member will need to help with this request.`;
+}
+
+function isFieldMemoRequest(utterance: string): boolean {
+  return /\b(note|memo|message for|tell the (crew|team|technician)|left behind|touch[- ]?up|gate code|gate instruction)\b/i
+    .test(utterance);
+}
+
+/** Spoken text for simple decided FSM actions. Provider-backed actions are
+ * handled explicitly in runControllerTurn. */
 function speakForFsm(action: WorkflowAction): string {
   switch (action.kind) {
     case "ask":
@@ -206,7 +220,12 @@ export async function runControllerTurn(
     phone: input.phone,
     email: input.email,
   });
-  const sessionPatch: Record<string, unknown> = {};
+  // Controller-only metadata is stripped by persistControllerPatch. Keeping
+  // the observed row version beside the patch makes every early return use the
+  // same optimistic-concurrency boundary without writing it into JSONB.
+  const sessionPatch: Record<string, unknown> = {
+    __expected_updated_at: session.updatedAt ?? null,
+  };
   const capture = (next: QuoteSession, lastStep = next.lastStep ?? null) => {
     session = { ...next, lastStep };
     sessionPatch.fields = session.fields;
@@ -313,47 +332,19 @@ export async function runControllerTurn(
     }
   }
 
-  // Step 2: returning-customer resolution — runs once per session after we
-  // have a confirmed/verified phone number.
-  const patchedPhoneStatus = session.fieldStatus.phone;
-  const nowHasVerifiedPhone =
-    patchedPhoneStatus === "verified" ||
-    (!!f.phone && session.fieldStatus.phone === "verified");
-  if (nowHasVerifiedPhone && !f.returningCustomerResolved && !f.awaitingDisambiguator) {
-    const phone =
-      session.fields.phone || f.phone!;
-    const result = await resolveCustomerByPhone(input.supabase, phone);
-    if (result.kind === "resolved") {
-      const fn = result.customer.firstName?.trim() || null;
-      capture(mergeFields(session, {
-        returningCustomerResolved: true,
-        returningCustomerId: result.customer.customerId,
-        ...(fn ? { name: fn } : {}),
-      }, fn ? { markVerified: ["name"] } : {}), "returning_customer_resolved");
-      const greeting = fn
-        ? `Hi ${fn}, welcome back! Which property or service are you calling about today?`
-        : `Welcome back! Which property or service are you calling about today?`;
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: { kind: "greet_returning", firstName: fn || "", spoken: greeting },
-      };
-    }
-    if (result.kind === "ambiguous") {
-      capture(mergeFields(session, { awaitingDisambiguator: true }), "awaiting_identity_disambiguation");
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "ask_disambiguator",
-          // Never reveal any stored address or email before the caller confirms it.
-          spoken:
-            "I want to make sure I pull up the right account — could you share the service address or the email on file so I can confirm?",
-        },
-      };
-    }
-    // not_found (including lookup failures): mark resolved so we don't retry.
-    capture(mergeFields(session, { returningCustomerResolved: true }), "new_customer");
+  // Step 2: tenant-scoped returning-customer resolution is intentionally not
+  // wired until server-derived organization authority exists. The former
+  // phone-only service-role lookup was cross-organization and could reveal a
+  // stored first name. Remove any controller-era unscoped marker and continue
+  // as ordinary intake without reading or disclosing customer records.
+  if (f.returningCustomerId || f.awaitingDisambiguator) {
+    const {
+      returningCustomerId: _discardedCustomerId,
+      awaitingDisambiguator: _discardedDisambiguation,
+      ...safeFields
+    } = session.fields;
+    capture({ ...session, fields: safeFields }, "tenant_identity_deferred");
+    f = session.fields;
   }
 
   // Deterministic scheduling continuation. Availability and booking still run
@@ -541,7 +532,7 @@ export async function runControllerTurn(
     const total = session.fields.voiceJourney?.quoteContext?.estimatedTotal ??
       session.fields.lastQuoteResult?.total;
     const totalLanguage = typeof total === "number"
-      ? ` for $${Math.round(total)}`
+      ? ` for ${formatCanonicalCurrency(total)}`
       : "";
     const addressLanguage = session.fields.address
       ? ` at ${session.fields.address}`
@@ -704,16 +695,44 @@ export async function runControllerTurn(
   // actions remain deterministic and reveal no stored detail at this stage.
   const workflow = classifyWorkflow(input.utterance, session);
   if (workflow === "existing_quote") {
-    const action: WorkflowAction = { kind: "retrieve_existing_quote" };
-    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: speakForFsm(action) } };
+    const action: WorkflowAction = {
+      kind: "handoff",
+      reason: "tenant_authority_required",
+    };
+    capture(session, "blocked:tenant_authority_required");
+    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: tenantAuthorityBlockedLanguage(workflow) } };
   }
   if (workflow === "reschedule") {
-    const action: WorkflowAction = { kind: "prepare_reschedule" };
-    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: speakForFsm(action) } };
+    const action: WorkflowAction = {
+      kind: "handoff",
+      reason: "tenant_authority_required",
+    };
+    capture(session, "blocked:tenant_authority_required");
+    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: tenantAuthorityBlockedLanguage(workflow) } };
   }
   if (workflow === "cancel") {
-    const action: WorkflowAction = { kind: "prepare_cancel" };
-    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: speakForFsm(action) } };
+    const action: WorkflowAction = {
+      kind: "handoff",
+      reason: "tenant_authority_required",
+    };
+    capture(session, "blocked:tenant_authority_required");
+    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: tenantAuthorityBlockedLanguage(workflow) } };
+  }
+  if (workflow === "question_or_memo" && isFieldMemoRequest(input.utterance)) {
+    const action: WorkflowAction = {
+      kind: "handoff",
+      reason: "tenant_authority_required",
+    };
+    capture(session, "blocked:tenant_authority_required");
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken: tenantAuthorityBlockedLanguage("field_memo"),
+      },
+    };
   }
   if (workflow === "question_or_memo" || workflow === "general_inquiry") {
     const action: WorkflowAction = { kind: "answer_side_question", topic: input.utterance.slice(0, 120) };
@@ -809,6 +828,10 @@ export async function runControllerTurn(
       : disposition.finalQuoteDisposition === "incomplete"
       ? "none"
       : "error";
+    const canonicalCustomerTotal =
+      typeof result.estimatedTotal === "number" && result.estimatedTotal > 0
+        ? result.estimatedTotal
+        : result.total;
     const nextFields = {
       ...session.fields,
       lastQuoteResult: stamped,
@@ -830,6 +853,7 @@ export async function runControllerTurn(
           estimatedTotal: result.estimatedTotal,
           authoritativeDurationMinutes: result.estimatedDurationMinutes,
           durationSource: result.durationSource,
+          spokenAt: new Date().toISOString(),
           acceptedAt: null,
         },
         availability: null,
@@ -838,15 +862,15 @@ export async function runControllerTurn(
     };
     capture({ ...session, fields: nextFields, quoteStatus }, "priced_spoken");
     const spoken = disposition.finalQuoteDisposition === "firm" &&
-        result.total > 0
-      ? buildCanonicalPriceStatement(result.total)
-      : disposition.finalQuoteDisposition === "estimated" && result.total > 0
-      ? `The current estimate is $${Math.round(result.total)}. It is not a firm price yet.`
+        canonicalCustomerTotal > 0
+      ? buildCanonicalPriceStatement(canonicalCustomerTotal)
+      : disposition.finalQuoteDisposition === "estimated" && canonicalCustomerTotal > 0
+      ? `The current estimate is ${formatCanonicalCurrency(canonicalCustomerTotal)}. It is not a firm price yet.`
       : (disposition.finalQuoteDisposition === "manual_review" ||
           disposition.finalQuoteDisposition === "owner_decision_required")
       ? `${VOICE_RECOVERY_LANGUAGE.manual_review}${
-        result.total > 0
-          ? ` The independently priced portions currently total $${Math.round(result.total)}.`
+        canonicalCustomerTotal > 0
+          ? ` The independently priced portions currently total ${formatCanonicalCurrency(canonicalCustomerTotal)}.`
           : ""
       }`
       : VOICE_RECOVERY_LANGUAGE.quote_needs_clarification;
@@ -858,16 +882,25 @@ export async function runControllerTurn(
   }
   if (action.kind === "speak_price") {
     const last = session.fields.lastQuoteResult;
-    const total = Number(last?.total ?? 0);
+    const total = Number(last?.estimatedTotal ?? last?.total ?? 0);
     const disposition = String(last?.finalQuoteDisposition ?? "");
     const spoken = disposition === "firm" && total > 0
       ? buildCanonicalPriceStatement(total)
       : disposition === "estimated" && total > 0
-      ? `The current estimate is $${Math.round(total)}. It is not a firm price yet.`
+      ? `The current estimate is ${formatCanonicalCurrency(total)}. It is not a firm price yet.`
       : disposition === "manual_review" ||
           disposition === "owner_decision_required"
       ? VOICE_RECOVERY_LANGUAGE.manual_review
       : VOICE_RECOVERY_LANGUAGE.quote_needs_clarification;
+    const currentQuoteContext = session.fields.voiceJourney?.quoteContext;
+    capture(mergeFields(session, {
+      voiceJourney: {
+        ...(session.fields.voiceJourney ?? {}),
+        quoteContext: currentQuoteContext
+          ? { ...currentQuoteContext, spokenAt: new Date().toISOString() }
+          : null,
+      },
+    }), "priced_spoken");
     return {
       sessionId: session.id,
       sessionPatch,
@@ -897,23 +930,60 @@ export async function runControllerTurn(
       pre: { kind: "fsm", action, spoken: speakForFsm(action) },
     };
   }
-  // The remaining provider mutations stay behind the existing rollout/live
-  // gates until they can consume a trusted provider call context. This is an
-  // explicit compatibility adapter, not a competing intake or pricing path.
-  return { sessionId: session.id, sessionPatch, pre: { kind: "delegate_legacy" } };
+  // No controller-selected call may bypass deterministic safety gates through
+  // the competing legacy orchestrator. Future actions must be wired here or
+  // remain explicitly unavailable.
+  const blocked: WorkflowAction = {
+    kind: "handoff",
+    reason: "out_of_scope_workflow",
+  };
+  capture(session, "blocked:unsupported_controller_action");
+  return {
+    sessionId: session.id,
+    sessionPatch,
+    pre: {
+      kind: "fsm",
+      action: blocked,
+      spoken: "I can't safely complete that action in this call path yet. Nothing was changed.",
+    },
+  };
 }
 
-/** Persist the sessionPatch returned by runControllerTurn. Safe no-op when
- *  the patch is empty. */
+export type ControllerPatchPersistence =
+  | { status: "persisted" | "noop" }
+  | { status: "conflict" | "error"; reason: string };
+
+/** Persist the sessionPatch returned by runControllerTurn. The update is
+ * optimistic when the loaded row exposed updated_at, so interleaved turns
+ * cannot silently overwrite one another's JSONB state. */
 export async function persistControllerPatch(
   supabase: SB,
   sessionId: string,
   patch: Record<string, unknown>,
-): Promise<void> {
-  if (!sessionId || !patch || Object.keys(patch).length === 0) return;
+): Promise<ControllerPatchPersistence> {
+  if (!sessionId || !patch) return { status: "noop" };
+  const {
+    __expected_updated_at: expectedUpdatedAt,
+    ...databasePatch
+  } = patch;
+  if (Object.keys(databasePatch).length === 0) return { status: "noop" };
   try {
-    await supabase.from("quote_sessions").update(patch).eq("id", sessionId);
+    let query = supabase.from("quote_sessions").update(databasePatch).eq(
+      "id",
+      sessionId,
+    );
+    if (typeof expectedUpdatedAt === "string" && expectedUpdatedAt) {
+      query = query.eq("updated_at", expectedUpdatedAt);
+    }
+    const { data, error } = await query.select("id").maybeSingle();
+    if (error) {
+      return { status: "error", reason: "quote_session_update_failed" };
+    }
+    if (!data) {
+      return { status: "conflict", reason: "quote_session_changed" };
+    }
+    return { status: "persisted" };
   } catch {
-    /* fail-safe: do not throw from persistence */
+    return { status: "error", reason: "quote_session_update_failed" };
   }
 }

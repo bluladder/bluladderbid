@@ -673,6 +673,20 @@ export function applyCanonicalVoiceAnswer(
   return { accepted: true, session: next, fieldId };
 }
 
+/** Format the canonical engine total without independently rounding it to a
+ * whole dollar. The engine already owns cent-level arithmetic. */
+export function formatCanonicalCurrency(total: number): string {
+  if (!Number.isFinite(total)) return "$0";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: Number.isInteger(total) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(total);
+}
+
 export function buildCanonicalPriceStatement(total: number): string {
-  return `The current total is $${Math.round(total)}. ${PRICE_ASSURANCE}`;
+  return `The current total is ${
+    formatCanonicalCurrency(total)
+  }. ${PRICE_ASSURANCE}`;
 }

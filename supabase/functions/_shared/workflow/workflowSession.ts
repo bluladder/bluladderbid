@@ -33,6 +33,7 @@ export async function reloadSession(
         bookingReady: !!data.booking_ready,
         phoneE164: data.phone_e164 ?? null,
         emailNormalized: data.email_normalized ?? null,
+        updatedAt: data.updated_at ?? null,
       };
     }
   }

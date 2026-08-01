@@ -1,5 +1,5 @@
-// Provider-neutral delivery truth for voice. A provider acceptance is the only
-// state allowed to use past-tense "sent" language.
+// Provider-neutral delivery truth for voice. Provider acceptance is described
+// as accepted for delivery; only a later delivery event may be called delivered.
 
 export type VoiceDeliveryChannel = "sms" | "email";
 export type VoiceDeliveryStatus =

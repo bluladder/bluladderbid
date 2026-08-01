@@ -59,6 +59,52 @@ Deno.test("screen-profile provenance participates in the canonical input hash", 
   assert(sessionInputsKey({ ...base, screenProfileProvenance:"captured" }) !== sessionInputsKey({ ...base, screenProfileProvenance:"defaulted" }));
 });
 
+Deno.test("unrelated contact capture does not invent legacy screen provenance or stale the quote", () => {
+  const fields = {
+    services: ["windowCleaning"],
+    squareFootage: 2000,
+    stories: 1,
+    windowCleaningSides: "outside_only" as const,
+    condition: "maintenance",
+    advancedWindowConditions: false,
+    screenProfile: "standard_removable" as const,
+    enclosedPatioProfile: "none" as const,
+  };
+  const inputsKey = sessionInputsKey(fields);
+  const session: QuoteSession = {
+    ...empty(),
+    fields: {
+      ...fields,
+      lastQuoteResult: { inputsKey, total: 200 },
+      voiceJourney: {
+        intent: "new_quote",
+        quoteContext: { inputsKey, spokenAt: "2026-08-01T12:00:00.000Z" },
+      },
+    },
+    quoteStatus: "firm",
+  };
+  const next = mergeFields(session, { email: "alex@example.com" });
+  assertEquals(next.fields.screenProfileProvenance, undefined);
+  assertEquals(next.fields.lastQuoteResult?.inputsKey, inputsKey);
+  assertEquals(next.quoteStatus, "firm");
+});
+
+Deno.test("authorized legacy discount changes invalidate the canonical input hash", () => {
+  const base = {
+    services: ["houseWash"],
+    squareFootage: 2000,
+    stories: 1,
+  };
+  assert(
+    sessionInputsKey({ ...base, discountCode: "SAVE10" }) !==
+      sessionInputsKey({ ...base, discountCode: "SAVE20" }),
+  );
+  assertEquals(
+    sessionInputsKey({ ...base, discountCode: " save10 " }),
+    sessionInputsKey({ ...base, discountCode: "SAVE10" }),
+  );
+});
+
 Deno.test("legacy windowCleaningType normalizes to the sole writable sides field", () => {
   const s = mergeFields(empty(), { windowCleaningType: "both" });
   assertEquals(s.fields.windowCleaningSides, "inside_and_outside");

@@ -1,18 +1,18 @@
 # Voice End-to-End Scenario Matrix
 
-The automated contract suite is `supabase/functions/_shared/voice/voiceEndToEndScenarioMatrix_test.ts`. It uses test doubles and pure state transitions; it makes no provider or production calls. “Manual later” means the logic is automated but the final provider integration requires the separately authorized checklist.
+The automated contract suite is `supabase/functions/_shared/voice/voiceEndToEndScenarioMatrix_test.ts`. It uses test doubles and pure state transitions; it makes no provider or production calls. Passing a matrix row proves the named contract helper, not that every step is reachable through the deployed controller. Rows marked contract-only require a separate production integration before they may be advertised or enabled. “Manual later” means the provider-facing verification remains separately authorized.
 
 | # | Scenario | Deterministic expected result | Automated evidence | Manual later |
 |---:|---|---|---|---|
 | 1 | New customer, residential quote | Intent is sticky; callback then only canonical service fields; recap precedes price. | controller, canonical intake, matrix | End-to-end call only if authorized |
-| 2 | Returning customer, one safe match | Caller ID remains a hint; resolved identity unlocks the exact customer. | identity/controller tests, matrix | Provider caller-ID ingress |
-| 3 | Ambiguous customer | Ask safe disambiguation; reveal no stored PII. | customer resolver/controller tests, matrix | None |
+| 2 | Returning customer, one safe match | Contract helper can gate on resolved identity; production controller performs no phone-only lookup or greeting until tenant authority is available. | identity contract, controller rollout tests, matrix | Production tenant-authority integration, then provider caller-ID ingress |
+| 3 | Ambiguous customer | Contract helper fails closed; production controller does not query or disclose customer records. | identity contract, controller rollout tests, matrix | Production tenant-authority integration |
 | 4 | Caller-ID spoof attempt | Contact may be captured; identity and stored records remain locked. | controller rollout test, matrix | None |
 | 5 | Price-changing correction | Replace value and clear quote, duration, acceptance, delivery, slots, booking. | quote-session adapter tests, matrix | None |
 | 6 | Add/remove service after price | Canonical fingerprint changes; dependent downstream state clears. | quote-session tests, matrix | None |
 | 7 | Stale quote tool call | Full quote identity mismatch rejects delivery/availability/booking. | quote identity and delivery tests, matrix | None |
 | 8 | Stale duration | Booking readiness returns duration blocker; no slot mutation. | duration/readiness tests, matrix | None |
-| 9 | SMS provider accepted | May say accepted/sent at configured threshold; not “delivered.” | delivery tests, matrix | One approved SMS |
+| 9 | SMS provider accepted | Say accepted for delivery; do not say sent or delivered without later evidence. | delivery tests, matrix | One approved SMS |
 | 10 | SMS queued only | Say queued; do not say sent/delivered. | delivery tests, matrix | Queue observation if desired |
 | 11 | SMS timeout/rejection | Timeout is uncertain; permanent rejection is failed; no false success. | SMS outbox and delivery tests, matrix | Controlled provider failure only |
 | 12 | Email provider accepted | Durable attempt/provider id; accepted is distinct from delivered. | quote-delivery tests, matrix | One approved email |
@@ -29,15 +29,15 @@ The automated contract suite is `supabase/functions/_shared/voice/voiceEndToEndS
 | 23 | Selected slot becomes unavailable | No mutation; refresh current options. | slot revalidation tests, matrix | Fixture booking race only |
 | 24 | Successful booking | Provider and local persistence must both confirm before success language. | booking/recovery tests, matrix | One approved fixture booking |
 | 25 | Provider accepts, local persistence fails | Non-retryable reconciliation state; customer told not to rebook. | launch safety/recovery tests, matrix | Sandbox injection only |
-| 26 | Existing valid quote | Identity/org-scoped latest usable quote may be presented/continued. | existing-record tests, matrix | Read-only fixture retrieval |
-| 27 | Expired/superseded quote | Never revive silently; require current inputs/reprice. | existing-record tests, matrix | None |
-| 28 | Successful reschedule | Exact booking, current slot, explicit confirmation, provider+local success. | recovery tests, matrix | One approved fixture reschedule |
-| 29 | Reschedule provider rejection | Existing time remains; no success claim. | recovery tests, matrix | Controlled fixture rejection |
-| 30 | Successful cancellation | Exact booking, explicit confirmation, provider+local success. | cancellation/recovery tests, matrix | One approved fixture cancellation |
-| 31 | Cancellation retry | Same versioned idempotency key; already-applied outcome is safe. | cancellation/idempotency tests, matrix | Optional fixture replay |
-| 32 | Cancellation uncertain | Do not retry or claim cancellation; reconcile. | recovery tests, matrix | Controlled timeout only |
+| 26 | Existing valid quote | Contract-only helper validates identity/org-scoped selection; production controller returns `tenant_authority_required` and discloses nothing. | existing-record tests, controller rollout tests, matrix | Production tenant-authority integration, then read-only fixture retrieval |
+| 27 | Expired/superseded quote | Contract-only helper never revives silently; production controller remains fail-closed. | existing-record tests, controller rollout tests, matrix | Production tenant-authority integration |
+| 28 | Successful reschedule | Contract-only recovery helper requires exact booking, current slot, confirmation, and provider+local success; production controller performs no mutation. | recovery tests, controller rollout tests, matrix | Production integration, then one approved fixture reschedule |
+| 29 | Reschedule provider rejection | Contract-only helper preserves the existing time; production controller performs no mutation. | recovery tests, controller rollout tests, matrix | Production integration, then controlled fixture rejection |
+| 30 | Successful cancellation | Contract-only recovery helper requires exact booking, confirmation, and provider+local success; production controller performs no mutation. | cancellation/recovery tests, controller rollout tests, matrix | Production integration, then one approved fixture cancellation |
+| 31 | Cancellation retry | Contract-only helper models a versioned idempotency key; production controller performs no mutation. | cancellation/idempotency tests, controller rollout tests, matrix | Production integration, then optional fixture replay |
+| 32 | Cancellation uncertain | Contract-only helper forbids retry/success claims; production controller performs no mutation. | recovery tests, controller rollout tests, matrix | Production integration, then controlled timeout |
 | 33 | General question | Question intent remains outside quote intake; no quote mutation. | router/controller tests, matrix | None |
-| 34 | Field-team memo | Verify customer/booking/org; idempotent bounded note; quote unchanged. | memo/matrix tests | Confirm field-team surface later |
+| 34 | Field-team memo | Contract-only helper verifies customer/booking/org; production controller returns `tenant_authority_required` and writes nothing. | memo tests, controller rollout tests, matrix | Production tenant-authority integration, then confirm field-team surface |
 | 35 | Disconnect + permitted follow-up | No send without consent/contact; queued/accepted truth still applies. | exit/delivery/consent tests, matrix | One approved call/SMS only |
 | 36 | Explicit partial-window request | Enter partial path only from explicit language; never whole-home pricing. | intake/contract tests, matrix | None |
 | 37 | Whole-home default | Explicit residential window intent defaults scope; no routine scope question. | canonical intake tests, matrix | None |
