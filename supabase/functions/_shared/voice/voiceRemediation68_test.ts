@@ -18,6 +18,7 @@ import {
   type ConversationFacts,
   isToolAllowed,
 } from "../conversationState.ts";
+import { PUBLIC_BOOKING_ORGANIZATION_ID } from "../publicBookingServiceArea.ts";
 import {
   buildAddressReadback,
   expandStreetSuffix,
@@ -37,20 +38,45 @@ const CONFIG = {
   out_of_area_message: "We'll follow up.",
   is_configured: true,
 };
+const ORGANIZATION_ID = PUBLIC_BOOKING_ORGANIZATION_ID;
 
-function makeSupabase() {
+function makeSupabase(organizationId = ORGANIZATION_ID) {
   const updates: { table: string; payload: any }[] = [];
   const upserts: { table: string; payload: any }[] = [];
+  const filters: { table: string; key: string; value: unknown }[] = [];
+  const rows: Record<string, Record<string, unknown>> = {
+    chat_conversations: {
+      id: "conv-test",
+      quote_session_id: "quote-session-test",
+      organization_id: organizationId,
+    },
+    quote_sessions: {
+      id: "quote-session-test",
+      organization_id: organizationId,
+      channel: "voice",
+      conversation_ids: ["conv-test"],
+      fields: {},
+      field_status: {},
+      required_remaining: [],
+      quote_status: "none",
+      booking_ready: false,
+    },
+  };
   const api: any = {
     from(table: string) {
       const chain: any = {
         select: () => chain,
-        eq: () => chain,
+        eq(key: string, value: unknown) {
+          filters.push({ table, key, value });
+          return chain;
+        },
         order: () => chain,
         limit: () => chain,
         maybeSingle: () =>
           Promise.resolve({
-            data: table === "service_area_config" ? CONFIG : null,
+            data: table === "service_area_config"
+              ? CONFIG
+              : rows[table] ?? null,
             error: null,
           }),
         single: () => Promise.resolve({ data: null, error: null }),
@@ -71,7 +97,7 @@ function makeSupabase() {
       return chain;
     },
   };
-  return { api, updates, upserts };
+  return { api, updates, upserts, filters };
 }
 
 function stubGeocode(formatted: string, houseNumber: string) {
@@ -120,6 +146,59 @@ function stubGeocode(formatted: string, houseNumber: string) {
 
 const ADDRESS = "5612 Binbranch Lane, McKinney, TX 75071";
 
+Deno.test("every direct voice tool proves conversation organization before side effects", async () => {
+  const otherOrganizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["calculate_bluladder_quote", { services: ["house_wash"] }],
+    ["get_bluladder_availability", {}],
+    ["create_bluladder_booking", { confirmed: true, slotId: "slot-1" }],
+    ["validate_service_area", { address: ADDRESS }],
+    ["request_manual_quote", { reason: "test" }],
+    ["request_human_callback", { reason: "test" }],
+    ["escalate_to_human", { reason: "test" }],
+    [
+      "record_consent",
+      {
+        channel: "sms",
+        consentType: "requested_follow_up",
+        granted: true,
+        phone: "+14690000000",
+        languageShown: "Please contact me about this request.",
+      },
+    ],
+  ];
+
+  for (const [name, args] of cases) {
+    const { api, updates, upserts } = makeSupabase();
+    const result = await runTool(name, {
+      supabase: api,
+      conversationId: "conv-other-tenant",
+      sessionToken: "sess-other-tenant",
+      channel: "voice",
+      organizationId: otherOrganizationId,
+    }, args) as { status: string };
+    assertEquals(result.status, "tenant_authority_required", name);
+    assertEquals(updates.length, 0, name);
+    assertEquals(upserts.length, 0, name);
+  }
+});
+
+Deno.test("same-tenant voice tools cannot inherit DFW capabilities in another organization", async () => {
+  const otherOrganizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const { api, updates, upserts } = makeSupabase(otherOrganizationId);
+  const result = await runTool("validate_service_area", {
+    supabase: api,
+    conversationId: "conv-test",
+    sessionToken: "sess-other-tenant",
+    channel: "voice",
+    organizationId: otherOrganizationId,
+  }, { address: ADDRESS }) as { status: string };
+
+  assertEquals(result.status, "organization_capability_unavailable");
+  assertEquals(updates.length, 0);
+  assertEquals(upserts.length, 0);
+});
+
 // ---------------------------------------------------------------------------
 // 1) The DB write itself is gated on the voice channel.
 // ---------------------------------------------------------------------------
@@ -132,6 +211,7 @@ Deno.test("voice validate_service_area never writes service_area_status=eligible
       conversationId: "conv-1",
       sessionToken: "sess-1",
       channel: "voice",
+      organizationId: ORGANIZATION_ID,
     }, { address: ADDRESS });
     assertEquals(result.status, "eligible");
     const write = updates.find((u) => u.table === "chat_conversations");
@@ -168,7 +248,7 @@ Deno.test("web validate_service_area still writes eligible (unchanged)", async (
 // 2) persistFacts mirrors the gate into the legacy columns every time.
 // ---------------------------------------------------------------------------
 Deno.test("persistFacts mirrors pending candidate as pending_confirmation", async () => {
-  const { api, upserts } = makeSupabase();
+  const { api, filters, updates, upserts } = makeSupabase();
   const facts: ConversationFacts = {
     address: ADDRESS,
     serviceArea: { status: "pending_confirmation", formattedAddress: ADDRESS },
@@ -182,14 +262,24 @@ Deno.test("persistFacts mirrors pending candidate as pending_confirmation", asyn
   await persistFacts(api, "conv-3", facts, "validating_service_area", {
     channel: "voice",
     sessionToken: "sess-3",
+    organizationId: ORGANIZATION_ID,
   });
-  const write = upserts.find((u) => u.table === "chat_conversations");
+  const write = updates.find((u) => u.table === "chat_conversations");
   assertEquals(write!.payload.service_area_status, "pending_confirmation");
   assertEquals(write!.payload.service_address, ADDRESS);
+  assertEquals(upserts.length, 0);
+  assertEquals(
+    filters.some((filter) =>
+      filter.table === "chat_conversations" &&
+      filter.key === "organization_id" &&
+      filter.value === ORGANIZATION_ID
+    ),
+    true,
+  );
 });
 
 Deno.test("persistFacts mirrors an explicit confirmation as eligible", async () => {
-  const { api, upserts } = makeSupabase();
+  const { api, updates } = makeSupabase();
   const facts: ConversationFacts = {
     address: ADDRESS,
     serviceArea: { status: "eligible", formattedAddress: ADDRESS },
@@ -203,14 +293,15 @@ Deno.test("persistFacts mirrors an explicit confirmation as eligible", async () 
   await persistFacts(api, "conv-4", facts, "pricing", {
     channel: "voice",
     sessionToken: "sess-4",
+    organizationId: ORGANIZATION_ID,
   });
-  const write = upserts.find((u) => u.table === "chat_conversations");
+  const write = updates.find((u) => u.table === "chat_conversations");
   assertEquals(write!.payload.service_area_status, "eligible");
   assertEquals(write!.payload.service_address, ADDRESS);
 });
 
 Deno.test("persistFacts fails closed when facts claim eligible without confirmation", async () => {
-  const { api, upserts } = makeSupabase();
+  const { api, updates } = makeSupabase();
   await persistFacts(
     api,
     "conv-5",
@@ -219,14 +310,18 @@ Deno.test("persistFacts fails closed when facts claim eligible without confirmat
       serviceArea: { status: "eligible", formattedAddress: ADDRESS },
     },
     "validating_service_area",
-    { channel: "voice", sessionToken: "s" },
+    {
+      channel: "voice",
+      sessionToken: "s",
+      organizationId: ORGANIZATION_ID,
+    },
   );
-  const write = upserts.find((u) => u.table === "chat_conversations");
+  const write = updates.find((u) => u.table === "chat_conversations");
   assertEquals(write!.payload.service_area_status, "pending_confirmation");
 });
 
 Deno.test("persistFacts clears the columns when the candidate is rejected", async () => {
-  const { api, upserts } = makeSupabase();
+  const { api, updates } = makeSupabase();
   await persistFacts(
     api,
     "conv-6",
@@ -235,9 +330,13 @@ Deno.test("persistFacts clears the columns when the candidate is rejected", asyn
       addressCandidate: null,
     },
     "collecting_address",
-    { channel: "voice", sessionToken: "s" },
+    {
+      channel: "voice",
+      sessionToken: "s",
+      organizationId: ORGANIZATION_ID,
+    },
   );
-  const write = upserts.find((u) => u.table === "chat_conversations");
+  const write = updates.find((u) => u.table === "chat_conversations");
   assertEquals(write!.payload.service_area_status, null);
   assertEquals(write!.payload.service_area_result, null);
 });

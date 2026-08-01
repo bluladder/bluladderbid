@@ -1,9 +1,9 @@
 // ============================================================================
 // rolloutRoute.ts — narrow routing gate for the new workflow controller.
 //
-// Selects between "legacy" (existing runVoiceAdapter path) and "controller"
-// (new workflow controller path) per request. The default is ALWAYS legacy.
-// The controller is enabled only when one of:
+// Selects between the legacy compatibility adapter and the deterministic
+// workflow controller. Reconciled mapped-provider traffic selects the
+// controller by default; unmapped test traffic selects it only when one of:
 //   1. The request carries a valid synthetic-test header AND its shared
 //      secret matches the server-side env var VOICE_WORKFLOW_TEST_SECRET.
 //      This is the "authenticated synthetic test" lane.
@@ -11,7 +11,8 @@
 //      VOICE_WORKFLOW_CONTROLLER_ALLOWLIST (comma-separated E.164). This is
 //      the "explicit allowlisted real caller" lane.
 //
-// Caller-controlled request fields alone MUST NOT be able to bypass legacy.
+// Caller-controlled request fields alone cannot assert mapped-provider
+// authority or select the deterministic controller.
 // Rollback: unset VOICE_WORKFLOW_CONTROLLER_ALLOWLIST and/or
 // VOICE_WORKFLOW_TEST_SECRET, or set VOICE_WORKFLOW_CONTROLLER_ENABLED=false.
 // ============================================================================
@@ -22,6 +23,7 @@ export interface RolloutDecision {
   route: RolloutRoute;
   reason:
     | "disabled"
+    | "mapped_provider_authority"
     | "synthetic_test_authenticated"
     | "caller_allowlisted"
     | "not_allowlisted"
@@ -33,6 +35,12 @@ export interface RolloutInputs {
   syntheticTestHeader: string | null;
   /** Normalized E.164 caller ID extracted from the request body, if any. */
   callerIdE164: string | null;
+  /**
+   * Trusted server-side fact: an approved provider mapping and the resulting
+   * conversation lineage resolved to the same active organization. This must
+   * never be populated from caller-supplied metadata.
+   */
+  trustedProviderAuthorityResolved?: boolean;
   /** Env values (injected for testability). */
   env: {
     enabled: string | null; // VOICE_WORKFLOW_CONTROLLER_ENABLED, default "true"
@@ -69,6 +77,13 @@ export function selectRoute(inputs: RolloutInputs): RolloutDecision {
   const enabled = (inputs.env.enabled ?? "true").toLowerCase() !== "false";
   if (!enabled) return { route: "legacy", reason: "disabled" };
 
+  // An ordinary mapped provider request is production authority, not a beta
+  // caller allowlist signal. Once ingress has reconciled that authority, the
+  // deterministic controller is the only quote/booking workflow allowed.
+  if (inputs.trustedProviderAuthorityResolved === true) {
+    return { route: "controller", reason: "mapped_provider_authority" };
+  }
+
   // Lane 1: authenticated synthetic test.
   if (
     inputs.syntheticTestHeader &&
@@ -89,6 +104,18 @@ export function selectRoute(inputs: RolloutInputs): RolloutDecision {
     return { route: "controller", reason: "caller_allowlisted" };
   }
   return { route: "legacy", reason: "not_allowlisted" };
+}
+
+/**
+ * Accepted mapped-provider traffic must never fall through to the competing
+ * legacy quote/action path. If the controller is explicitly disabled, callers
+ * receive a fail-closed response instead of legacy pricing or mutations.
+ */
+export function legacyVoiceExecutionAllowed(
+  decision: RolloutDecision,
+  trustedProviderAuthorityResolved: boolean,
+): boolean {
+  return decision.route === "legacy" && !trustedProviderAuthorityResolved;
 }
 
 /** PII-safe log payload for the rollout decision. Never emits raw phone

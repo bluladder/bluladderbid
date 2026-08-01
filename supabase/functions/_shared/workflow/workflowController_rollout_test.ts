@@ -4,15 +4,34 @@
 
 import {
   assertEquals,
+  assertRejects,
   assertStringIncludes,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   persistControllerPatch,
-  runControllerTurn,
+  runControllerTurn as runControllerTurnBase,
 } from "./workflowController.ts";
 import { type QuoteSessionFields, sessionInputsKey } from "../quoteSession.ts";
+import { PUBLIC_BOOKING_ORGANIZATION_ID } from "../publicBookingServiceArea.ts";
 
 type Row = Record<string, unknown>;
+const TEST_ORGANIZATION_ID = PUBLIC_BOOKING_ORGANIZATION_ID;
+const TEST_AUTHORITY = {
+  status: "resolved" as const,
+  organizationId: TEST_ORGANIZATION_ID,
+  source: "resource" as const,
+  evidence: ["resource:conversation"],
+  sensitiveActionsAllowed: true,
+};
+
+function runControllerTurn(
+  input: Parameters<typeof runControllerTurnBase>[0],
+) {
+  return runControllerTurnBase({
+    ...input,
+    organizationAuthority: input.organizationAuthority ?? TEST_AUTHORITY,
+  });
+}
 
 function makeFake(opts: {
   customers?: Row[];
@@ -29,6 +48,7 @@ function makeFake(opts: {
       required_remaining: [],
       quote_status: "none",
       booking_ready: false,
+      organization_id: TEST_ORGANIZATION_ID,
       updated_at: "2026-08-01T12:00:00.000Z",
     } as Row,
     convo: {
@@ -36,6 +56,7 @@ function makeFake(opts: {
       quote_session_id: "qs_1",
       session_token: "tok",
       channel: "voice",
+      organization_id: TEST_ORGANIZATION_ID,
     } as Row,
     customerReads: 0,
   };
@@ -49,6 +70,10 @@ function makeFake(opts: {
           return this;
         },
         eq(k: string, v: unknown) {
+          this._filter[k] = v;
+          return this;
+        },
+        is(k: string, v: unknown) {
           this._filter[k] = v;
           return this;
         },
@@ -142,6 +167,10 @@ function makeFake(opts: {
               filters[key] = value;
               return this;
             },
+            is(key: string, value: unknown) {
+              filters[key] = value;
+              return this;
+            },
             select() {
               return this;
             },
@@ -161,10 +190,22 @@ function makeFake(opts: {
         },
         _run() {
           if (this._table === "quote_sessions") {
-            return Promise.resolve({ data: [state.session], error: null });
+            const matches = Object.entries(this._filter).every(
+              ([key, value]) => state.session[key] === value,
+            );
+            return Promise.resolve({
+              data: matches ? [state.session] : [],
+              error: null,
+            });
           }
           if (this._table === "chat_conversations") {
-            return Promise.resolve({ data: [state.convo], error: null });
+            const matches = Object.entries(this._filter).every(
+              ([key, value]) => state.convo[key] === value,
+            );
+            return Promise.resolve({
+              data: matches ? [state.convo] : [],
+              error: null,
+            });
           }
           if (this._table === "pricing_config") {
             return Promise.resolve({
@@ -198,6 +239,42 @@ function makeFake(opts: {
   };
   return sb;
 }
+
+Deno.test("voice controller rejects missing or blocked authority before any database access", async () => {
+  let databaseReads = 0;
+  const supabase = {
+    from() {
+      databaseReads += 1;
+      throw new Error("database_must_not_be_reached");
+    },
+  };
+  const base = {
+    supabase,
+    conversationId: "c1",
+    channel: "voice" as const,
+    utterance: "I need a quote",
+    history: [],
+  };
+
+  await assertRejects(
+    () => runControllerTurnBase(base),
+    Error,
+    "voice_organization_authority_required",
+  );
+  await assertRejects(
+    () =>
+      runControllerTurnBase({
+        ...base,
+        organizationAuthority: {
+          status: "blocked",
+          code: "conflicting_authority",
+        },
+      }),
+    Error,
+    "voice_organization_authority_required",
+  );
+  assertEquals(databaseReads, 0);
+});
 
 const PRICING_ROWS: Row[] = [
   {
@@ -700,6 +777,62 @@ Deno.test("reachable controller speaks the canonical tax-inclusive total with ce
   );
 });
 
+Deno.test("mapped organization without an approved pricing capability cannot inherit DFW pricing", async () => {
+  const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  sb._state.session.organization_id = organizationId;
+  sb._state.convo.organization_id = organizationId;
+  sb._state.session.fields = {
+    services: ["houseWash"],
+    squareFootage: 2000,
+    stories: 1,
+    enclosedPatioProfile: "none",
+    name: "Alex",
+    phone: "+14697472877",
+    returningCustomerResolved: true,
+    voiceJourney: { intent: "new_quote" },
+  };
+  sb._state.session.field_status = {
+    services: "captured",
+    squareFootage: "captured",
+    stories: "captured",
+    enclosedPatioProfile: "captured",
+    name: "captured",
+    phone: "captured",
+  };
+
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "that's all correct",
+    history: [],
+    organizationAuthority: {
+      status: "resolved",
+      organizationId,
+      source: "resource",
+      evidence: ["provider:vapi_assistant_id"],
+      sensitiveActionsAllowed: true,
+    },
+  });
+
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action, {
+      kind: "handoff",
+      reason: "tenant_authority_required",
+    });
+    assertStringIncludes(
+      turn.pre.spoken,
+      "will not calculate or state a price",
+    );
+  }
+  assertEquals(
+    (turn.sessionPatch.fields as QuoteSessionFields).lastQuoteResult,
+    undefined,
+  );
+});
+
 Deno.test("tenant-scoped record, appointment, and memo intents fail closed", async () => {
   const cases = [
     ["existing_quote", "yes"],
@@ -733,6 +866,41 @@ Deno.test("tenant-scoped record, appointment, and memo intents fail closed", asy
   }
 });
 
+Deno.test("resolved tenant authority does not prematurely enable deferred sensitive voice actions", async () => {
+  const sb = makeFake();
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  sb._state.session.organization_id = organizationId;
+  sb._state.convo.organization_id = organizationId;
+  sb._state.session.fields = {
+    phone: "+14697472877",
+    returningCustomerResolved: true,
+    voiceJourney: { intent: "cancel" },
+  };
+  sb._state.session.field_status = { phone: "captured" };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "cancel it",
+    history: [],
+    organizationAuthority: {
+      status: "resolved",
+      organizationId,
+      source: "resource",
+      evidence: ["resource:conversation"],
+      sensitiveActionsAllowed: true,
+    },
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action, {
+      kind: "handoff",
+      reason: "tenant_authority_required",
+    });
+    assertStringIncludes(turn.pre.spoken, "Nothing was disclosed or changed");
+  }
+});
+
 Deno.test("controller persistence rejects an interleaved stale-row update", async () => {
   const sb = makeFake();
   const turn = await runControllerTurn({
@@ -754,4 +922,73 @@ Deno.test("controller persistence rejects an interleaved stale-row update", asyn
   });
   const persistedFields = sb._state.session.fields as QuoteSessionFields;
   assertEquals(persistedFields.voiceJourney, undefined);
+});
+
+Deno.test("an explicit missing session fails instead of falling back to the conversation", async () => {
+  const sb = makeFake();
+  await assertRejects(
+    () =>
+      runControllerTurnBase({
+        supabase: sb,
+        conversationId: "c1",
+        sessionId: "qs_missing",
+        channel: "voice",
+        utterance: "I need a quote",
+        history: [],
+        organizationAuthority: TEST_AUTHORITY,
+      }),
+    Error,
+    "quote_session_explicit_session_unavailable",
+  );
+  assertEquals(sb._state.session.id, "qs_1");
+});
+
+Deno.test("controller persistence refuses a patch without organization authority", async () => {
+  let databaseWrites = 0;
+  const result = await persistControllerPatch(
+    {
+      from() {
+        databaseWrites += 1;
+        throw new Error("database_must_not_be_reached");
+      },
+    },
+    "qs_1",
+    { fields: { services: ["houseWash"] } },
+  );
+  assertEquals(result, {
+    status: "error",
+    reason: "organization_authority_required",
+  });
+  assertEquals(databaseWrites, 0);
+});
+
+Deno.test("controller persistence predicates the organization as well as row version", async () => {
+  const sb = makeFake();
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  sb._state.session.organization_id = organizationId;
+  sb._state.convo.organization_id = organizationId;
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I need a quote",
+    history: [],
+    organizationAuthority: {
+      status: "resolved",
+      organizationId,
+      source: "resource",
+      evidence: ["resource:conversation"],
+      sensitiveActionsAllowed: true,
+    },
+  });
+  sb._state.session.organization_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const result = await persistControllerPatch(
+    sb,
+    turn.sessionId,
+    turn.sessionPatch,
+  );
+  assertEquals(result, {
+    status: "conflict",
+    reason: "quote_session_changed",
+  });
 });

@@ -1,27 +1,31 @@
 // Deno tests for the provider-independent voice adapter.
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  type AdapterCompletion,
   buildNonStreamingResponse,
   buildStreamingResponse,
   chunkReply,
-  mapDispositionToAction,
-  parseAdapterRequest,
-  MAX_ADAPTER_REQUEST_BYTES,
   ensureVoiceConversation,
-  type AdapterCompletion,
+  mapDispositionToAction,
+  MAX_ADAPTER_REQUEST_BYTES,
+  parseAdapterRequest,
 } from "./voiceAdapter.ts";
+import { deterministicUuid } from "./deterministicUuid.ts";
 import {
   basicGreetingRequest,
   bookingRequestDryRun,
-  humanTransferRequest,
   callbackRequest,
-  uncertainPricingRequest,
-  uncertainSchedulingRequest,
   gracefulEndingRequest,
-  postCallSmsHandoffRequest,
-  streamingRequest,
+  humanTransferRequest,
   malformedRequestJson,
   oversizedRequestBody,
+  postCallSmsHandoffRequest,
+  streamingRequest,
+  uncertainPricingRequest,
+  uncertainSchedulingRequest,
 } from "./__fixtures__/voice/requests.ts";
 
 function makeReq(body: unknown, init: RequestInit = {}): Request {
@@ -34,6 +38,8 @@ function makeReq(body: unknown, init: RequestInit = {}): Request {
   });
 }
 
+const TEST_ORGANIZATION_ID = "11111111-1111-4111-8111-111111111111";
+
 Deno.test("parseAdapterRequest: valid OpenAI-compatible request", async () => {
   const parsed = await parseAdapterRequest(makeReq(basicGreetingRequest));
   assert(parsed.ok);
@@ -44,7 +50,9 @@ Deno.test("parseAdapterRequest: valid OpenAI-compatible request", async () => {
 });
 
 Deno.test("parseAdapterRequest: rejects unsupported method", async () => {
-  const req = new Request("http://local/v1/chat/completions", { method: "GET" });
+  const req = new Request("http://local/v1/chat/completions", {
+    method: "GET",
+  });
   const parsed = await parseAdapterRequest(req);
   assert(!parsed.ok);
   if (!parsed.ok) assertEquals(parsed.error.kind, "unsupported_method");
@@ -81,7 +89,9 @@ Deno.test("parseAdapterRequest: rejects missing messages", async () => {
 });
 
 Deno.test("parseAdapterRequest: rejects empty conversation", async () => {
-  const parsed = await parseAdapterRequest(makeReq({ messages: [{ role: "assistant", content: "hi" }] }));
+  const parsed = await parseAdapterRequest(
+    makeReq({ messages: [{ role: "assistant", content: "hi" }] }),
+  );
   assert(!parsed.ok);
   if (!parsed.ok) assertEquals(parsed.error.kind, "empty_conversation");
 });
@@ -89,7 +99,10 @@ Deno.test("parseAdapterRequest: rejects empty conversation", async () => {
 Deno.test("parseAdapterRequest: caller-supplied session id is preferred", async () => {
   const req = new Request("http://local/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-bluladder-session-id": "call-1234" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-bluladder-session-id": "call-1234",
+    },
     body: JSON.stringify(basicGreetingRequest),
   });
   const parsed = await parseAdapterRequest(req);
@@ -100,7 +113,10 @@ Deno.test("parseAdapterRequest: caller-supplied session id is preferred", async 
 });
 
 Deno.test("parseAdapterRequest: Vapi body.call.id becomes stable session id", async () => {
-  const req = makeReq({ ...basicGreetingRequest, call: { id: "abc-123-vapi" } });
+  const req = makeReq({
+    ...basicGreetingRequest,
+    call: { id: "abc-123-vapi" },
+  });
   const parsed = await parseAdapterRequest(req);
   assert(parsed.ok);
   if (!parsed.ok) return;
@@ -111,11 +127,18 @@ Deno.test("parseAdapterRequest: Vapi body.call.id becomes stable session id", as
 Deno.test("parseAdapterRequest: rejects a header that conflicts with body.call.id", async () => {
   const req = makeReq(
     { ...basicGreetingRequest, call: { id: "abc-123-vapi" } },
-    { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "override-1" } },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "x-bluladder-session-id": "override-1",
+      },
+    },
   );
   const parsed = await parseAdapterRequest(req);
   assert(!parsed.ok);
-  if (!parsed.ok) assertEquals(parsed.error.kind, "conflicting_session_identifiers");
+  if (!parsed.ok) {
+    assertEquals(parsed.error.kind, "conflicting_session_identifiers");
+  }
 });
 
 Deno.test("parseAdapterRequest: a repeated generic user cannot join distinct provider calls", async () => {
@@ -130,22 +153,35 @@ Deno.test("parseAdapterRequest: a repeated generic user cannot join distinct pro
     call: { id: "provider-call-b" },
   }));
   assert(!first.ok && !second.ok);
-  if (!first.ok) assertEquals(first.error.kind, "conflicting_session_identifiers");
-  if (!second.ok) assertEquals(second.error.kind, "conflicting_session_identifiers");
+  if (!first.ok) {
+    assertEquals(first.error.kind, "conflicting_session_identifiers");
+  }
+  if (!second.ok) {
+    assertEquals(second.error.kind, "conflicting_session_identifiers");
+  }
 });
 
 Deno.test("parseAdapterRequest: rejects unbounded or hostile session identifiers", async () => {
   const parsed = await parseAdapterRequest(makeReq(
     basicGreetingRequest,
-    { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "../ customer one" } },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "x-bluladder-session-id": "../ customer one",
+      },
+    },
   ));
   assert(!parsed.ok);
   if (!parsed.ok) assertEquals(parsed.error.kind, "invalid_session_identifier");
 });
 
 Deno.test("parseAdapterRequest: two turns from same Vapi call share sessionId", async () => {
-  const a = await parseAdapterRequest(makeReq({ ...basicGreetingRequest, call: { id: "same-call" } }));
-  const b = await parseAdapterRequest(makeReq({ ...basicGreetingRequest, call: { id: "same-call" } }));
+  const a = await parseAdapterRequest(
+    makeReq({ ...basicGreetingRequest, call: { id: "same-call" } }),
+  );
+  const b = await parseAdapterRequest(
+    makeReq({ ...basicGreetingRequest, call: { id: "same-call" } }),
+  );
   assert(a.ok && b.ok);
   if (!a.ok || !b.ok) return;
   assertEquals(a.value.sessionId, b.value.sessionId);
@@ -158,22 +194,55 @@ Deno.test("ensureVoiceConversation: reuses existing voice conversation by sessio
     from(table: string) {
       assertEquals(table, "chat_conversations");
       return {
-        select() { return this; },
-        eq() { return this; },
-        order() { return this; },
-        limit() { return this; },
-        maybeSingle: async () => ({ data: { id: "conv_existing", session_token: "call-1234" }, error: null }),
-        insert() { inserted = true; return this; },
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        order() {
+          return this;
+        },
+        limit() {
+          return this;
+        },
+        then(resolve: (value: unknown) => unknown) {
+          return resolve({
+            data: [{
+              id: "conv_existing",
+              session_token: "call-1234",
+              organization_id: TEST_ORGANIZATION_ID,
+              channel: "voice",
+            }],
+            error: null,
+          });
+        },
+        insert() {
+          inserted = true;
+          return this;
+        },
         single: async () => ({ data: null, error: null }),
       };
     },
   };
-  const parsed = await parseAdapterRequest(makeReq(basicGreetingRequest, { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "call-1234" } }));
+  const parsed = await parseAdapterRequest(
+    makeReq(basicGreetingRequest, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-bluladder-session-id": "call-1234",
+      },
+    }),
+  );
   assert(parsed.ok);
   if (!parsed.ok) return;
-  const got = await ensureVoiceConversation({ supabase, request: parsed.value });
+  const got = await ensureVoiceConversation({
+    supabase,
+    request: parsed.value,
+    organizationId: TEST_ORGANIZATION_ID,
+  });
   assertEquals(got.conversationId, "conv_existing");
   assertEquals(got.sessionToken, "call-1234");
+  assertEquals(got.organizationId, TEST_ORGANIZATION_ID);
   assertEquals(inserted, false);
 });
 
@@ -183,42 +252,219 @@ Deno.test("ensureVoiceConversation: inserts a voice conversation for new session
     from(table: string) {
       assertEquals(table, "chat_conversations");
       return {
-        select() { return this; },
-        eq() { return this; },
-        order() { return this; },
-        limit() { return this; },
-        maybeSingle: async () => ({ data: null, error: null }),
-        insert(body: any) { insertedBody = body; return this; },
-        single: async () => ({ data: { id: "conv_new", session_token: insertedBody.session_token }, error: null }),
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        order() {
+          return this;
+        },
+        limit() {
+          return this;
+        },
+        then(resolve: (value: unknown) => unknown) {
+          return resolve({ data: [], error: null });
+        },
+        insert(body: any) {
+          insertedBody = body;
+          return this;
+        },
+        single: async () => ({
+          data: {
+            id: insertedBody.id,
+            session_token: insertedBody.session_token,
+            organization_id: insertedBody.organization_id,
+            channel: insertedBody.channel,
+          },
+          error: null,
+        }),
       };
     },
   };
-  const parsed = await parseAdapterRequest(makeReq(basicGreetingRequest, { headers: { "Content-Type": "application/json", "x-bluladder-session-id": "call-new" } }));
+  const parsed = await parseAdapterRequest(
+    makeReq(basicGreetingRequest, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-bluladder-session-id": "call-new",
+      },
+    }),
+  );
   assert(parsed.ok);
   if (!parsed.ok) return;
-  const got = await ensureVoiceConversation({ supabase, request: parsed.value });
-  assertEquals(got.conversationId, "conv_new");
-  assertEquals(insertedBody, { session_token: "call-new", channel: "voice" });
+  const got = await ensureVoiceConversation({
+    supabase,
+    request: parsed.value,
+    organizationId: TEST_ORGANIZATION_ID,
+  });
+  const expectedId = await deterministicUuid(
+    "voice-conversation",
+    TEST_ORGANIZATION_ID,
+    "call-new",
+  );
+  assertEquals(got.conversationId, expectedId);
+  assertEquals(insertedBody, {
+    id: expectedId,
+    session_token: "call-new",
+    channel: "voice",
+    organization_id: TEST_ORGANIZATION_ID,
+  });
+});
+
+Deno.test("ensureVoiceConversation: concurrent deterministic insert conflict re-reads the same scoped winner", async () => {
+  let insertedBody: Record<string, unknown> | null = null;
+  const supabase: any = {
+    from() {
+      let inserting = false;
+      const chain: any = {
+        select: () => chain,
+        eq: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        then(resolve: (value: unknown) => unknown) {
+          return resolve({ data: [], error: null });
+        },
+        insert(body: Record<string, unknown>) {
+          inserting = true;
+          insertedBody = body;
+          return chain;
+        },
+        single: async () => ({
+          data: null,
+          error: inserting ? { code: "23505" } : null,
+        }),
+        maybeSingle: async () => ({
+          data: insertedBody
+            ? {
+              id: insertedBody.id,
+              session_token: insertedBody.session_token,
+              organization_id: insertedBody.organization_id,
+              channel: insertedBody.channel,
+            }
+            : null,
+          error: null,
+        }),
+      };
+      return chain;
+    },
+  };
+  const parsed = await parseAdapterRequest(
+    makeReq(basicGreetingRequest, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-bluladder-session-id": "call-concurrent",
+      },
+    }),
+  );
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+
+  const got = await ensureVoiceConversation({
+    supabase,
+    request: parsed.value,
+    organizationId: TEST_ORGANIZATION_ID,
+  });
+  const expectedId = await deterministicUuid(
+    "voice-conversation",
+    TEST_ORGANIZATION_ID,
+    "call-concurrent",
+  );
+  assertEquals(got.conversationId, expectedId);
+  assertEquals(insertedBody, {
+    id: expectedId,
+    session_token: "call-concurrent",
+    channel: "voice",
+    organization_id: TEST_ORGANIZATION_ID,
+  });
+  assertEquals(got.sessionToken, "call-concurrent");
+});
+
+Deno.test("ensureVoiceConversation: rejects post-insert organization mismatch", async () => {
+  const supabase: any = {
+    from() {
+      const chain: any = {
+        select: () => chain,
+        eq: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        then: (resolve: (value: unknown) => unknown) =>
+          resolve({ data: [], error: null }),
+        insert: () => chain,
+        single: async () => ({
+          data: {
+            id: "00000000-0000-5000-8000-000000000001",
+            session_token: "call-mismatched",
+            organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            channel: "voice",
+          },
+          error: null,
+        }),
+      };
+      return chain;
+    },
+  };
+  const parsed = await parseAdapterRequest(
+    makeReq(basicGreetingRequest, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-bluladder-session-id": "call-mismatched",
+      },
+    }),
+  );
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+
+  let error: Error | null = null;
+  try {
+    await ensureVoiceConversation({
+      supabase,
+      request: parsed.value,
+      organizationId: TEST_ORGANIZATION_ID,
+    });
+  } catch (caught) {
+    error = caught as Error;
+  }
+  assertEquals(error?.message, "voice_conversation_insert_failed");
 });
 
 Deno.test("ensureVoiceConversation: fails closed when lookup persistence is unavailable", async () => {
   const supabase: any = {
     from() {
       return {
-        select() { return this; },
-        eq() { return this; },
-        order() { return this; },
-        limit() { return this; },
-        maybeSingle: async () => ({ data: null, error: { message: "database unavailable" } }),
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        order() {
+          return this;
+        },
+        limit() {
+          return this;
+        },
+        then(resolve: (value: unknown) => unknown) {
+          return resolve({
+            data: null,
+            error: { message: "database unavailable" },
+          });
+        },
       };
     },
   };
-  const parsed = await parseAdapterRequest(makeReq({ ...basicGreetingRequest, call: { id: "db-failure" } }));
+  const parsed = await parseAdapterRequest(
+    makeReq({ ...basicGreetingRequest, call: { id: "db-failure" } }),
+  );
   assert(parsed.ok);
   if (!parsed.ok) return;
   let error: Error | null = null;
   try {
-    await ensureVoiceConversation({ supabase, request: parsed.value });
+    await ensureVoiceConversation({
+      supabase,
+      request: parsed.value,
+      organizationId: TEST_ORGANIZATION_ID,
+    });
   } catch (caught) {
     error = caught as Error;
   }
@@ -229,41 +475,169 @@ Deno.test("ensureVoiceConversation: never substitutes a session token for a fail
   const supabase: any = {
     from() {
       return {
-        select() { return this; },
-        eq() { return this; },
-        order() { return this; },
-        limit() { return this; },
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        order() {
+          return this;
+        },
+        limit() {
+          return this;
+        },
+        then(resolve: (value: unknown) => unknown) {
+          return resolve({ data: [], error: null });
+        },
+        insert() {
+          return this;
+        },
+        single: async () => ({
+          data: null,
+          error: { message: "insert failed" },
+        }),
         maybeSingle: async () => ({ data: null, error: null }),
-        insert() { return this; },
-        single: async () => ({ data: null, error: { message: "insert failed" } }),
       };
     },
   };
-  const parsed = await parseAdapterRequest(makeReq({ ...basicGreetingRequest, call: { id: "insert-failure" } }));
+  const parsed = await parseAdapterRequest(
+    makeReq({ ...basicGreetingRequest, call: { id: "insert-failure" } }),
+  );
   assert(parsed.ok);
   if (!parsed.ok) return;
   let error: Error | null = null;
   try {
-    await ensureVoiceConversation({ supabase, request: parsed.value });
+    await ensureVoiceConversation({
+      supabase,
+      request: parsed.value,
+      organizationId: TEST_ORGANIZATION_ID,
+    });
   } catch (caught) {
     error = caught as Error;
   }
   assertEquals(error?.message, "voice_conversation_insert_failed");
 });
 
+Deno.test("ensureVoiceConversation: rejects missing organization authority before database access", async () => {
+  let accessed = false;
+  const supabase: any = {
+    from() {
+      accessed = true;
+      throw new Error("must not query");
+    },
+  };
+  const parsed = await parseAdapterRequest(makeReq(basicGreetingRequest));
+  assert(parsed.ok);
+  if (!parsed.ok) return;
+  let error: Error | null = null;
+  try {
+    await ensureVoiceConversation({
+      supabase,
+      request: parsed.value,
+      organizationId: "",
+    });
+  } catch (caught) {
+    error = caught as Error;
+  }
+  assertEquals(error?.message, "voice_organization_authority_required");
+  assertEquals(accessed, false);
+});
+
+for (
+  const existingOrganizationId of [
+    null,
+    "22222222-2222-4222-8222-222222222222",
+  ]
+) {
+  Deno.test(`ensureVoiceConversation: rejects ${existingOrganizationId ? "cross-organization" : "legacy unscoped"} session rows`, async () => {
+    let inserted = false;
+    const supabase: any = {
+      from() {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          order() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          then(resolve: (value: unknown) => unknown) {
+            return resolve({
+              data: [{
+                id: "existing-other",
+                session_token: "collision",
+                organization_id: existingOrganizationId,
+                channel: "voice",
+              }],
+              error: null,
+            });
+          },
+          insert() {
+            inserted = true;
+            return this;
+          },
+        };
+      },
+    };
+    const parsed = await parseAdapterRequest(makeReq(
+      basicGreetingRequest,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-bluladder-session-id": "collision",
+        },
+      },
+    ));
+    assert(parsed.ok);
+    if (!parsed.ok) return;
+    let error: Error | null = null;
+    try {
+      await ensureVoiceConversation({
+        supabase,
+        request: parsed.value,
+        organizationId: TEST_ORGANIZATION_ID,
+      });
+    } catch (caught) {
+      error = caught as Error;
+    }
+    assertEquals(error?.message, "voice_conversation_authority_mismatch");
+    assertEquals(inserted, false);
+  });
+}
+
 Deno.test("mapDispositionToAction: covers all nine voice dispositions", () => {
   const cases = [
     { d: { type: "speak" as const }, action: "speak" },
     { d: { type: "tool_result_speak" as const }, action: "tool_result_speak" },
-    { d: { type: "transfer_human" as const, reason: "x" }, action: "request_transfer" },
+    {
+      d: { type: "transfer_human" as const, reason: "x" },
+      action: "request_transfer",
+    },
     { d: { type: "callback_confirmed" as const }, action: "callback_captured" },
     { d: { type: "graceful_end" as const }, action: "end_call" },
-    { d: { type: "safe_failure" as const, reasonCode: "x" }, action: "safe_failure" },
+    {
+      d: { type: "safe_failure" as const, reasonCode: "x" },
+      action: "safe_failure",
+    },
     { d: { type: "uncertain_pricing" as const }, action: "uncertain_pricing" },
-    { d: { type: "uncertain_scheduling" as const }, action: "uncertain_scheduling" },
-    { d: { type: "post_call_sms_handoff" as const }, action: "post_call_sms_handoff" },
+    {
+      d: { type: "uncertain_scheduling" as const },
+      action: "uncertain_scheduling",
+    },
+    {
+      d: { type: "post_call_sms_handoff" as const },
+      action: "post_call_sms_handoff",
+    },
   ];
-  for (const c of cases) assertEquals(mapDispositionToAction(c.d).kind, c.action);
+  for (const c of cases) {
+    assertEquals(mapDispositionToAction(c.d).kind, c.action);
+  }
 });
 
 Deno.test("mapDispositionToAction: fails closed on missing disposition", () => {
@@ -279,11 +653,18 @@ Deno.test("chunkReply: handles empty and long input", () => {
   assertEquals(chunks.join(""), long);
 });
 
-function fakeCompletion(overrides: Partial<AdapterCompletion> = {}): AdapterCompletion {
+function fakeCompletion(
+  overrides: Partial<AdapterCompletion> = {},
+): AdapterCompletion {
   return {
     content: "hello world",
     action: { kind: "speak" },
-    orchestrator: { reply: "hello world", toolEvents: [], events: [], state: "new" },
+    orchestrator: {
+      reply: "hello world",
+      toolEvents: [],
+      events: [],
+      state: "new",
+    },
     ...overrides,
   };
 }
@@ -300,8 +681,14 @@ Deno.test("buildNonStreamingResponse: valid OpenAI-compatible JSON", async () =>
 });
 
 Deno.test("buildStreamingResponse: emits chunks and terminates with [DONE]", async () => {
-  const res = buildStreamingResponse("m", fakeCompletion({ content: "a".repeat(200) }));
-  assertEquals(res.headers.get("Content-Type"), "text/event-stream; charset=utf-8");
+  const res = buildStreamingResponse(
+    "m",
+    fakeCompletion({ content: "a".repeat(200) }),
+  );
+  assertEquals(
+    res.headers.get("Content-Type"),
+    "text/event-stream; charset=utf-8",
+  );
   const text = await res.text();
   // Must include role delta, at least one content chunk, and a finish_reason chunk
   assert(text.includes(`"delta":{"role":"assistant"}`));
@@ -313,16 +700,18 @@ Deno.test("buildStreamingResponse: emits chunks and terminates with [DONE]", asy
 
 // Sanity fixtures used by higher-level integration checks.
 Deno.test("fixtures parse successfully", async () => {
-  for (const body of [
-    bookingRequestDryRun,
-    humanTransferRequest,
-    callbackRequest,
-    uncertainPricingRequest,
-    uncertainSchedulingRequest,
-    gracefulEndingRequest,
-    postCallSmsHandoffRequest,
-    streamingRequest,
-  ]) {
+  for (
+    const body of [
+      bookingRequestDryRun,
+      humanTransferRequest,
+      callbackRequest,
+      uncertainPricingRequest,
+      uncertainSchedulingRequest,
+      gracefulEndingRequest,
+      postCallSmsHandoffRequest,
+      streamingRequest,
+    ]
+  ) {
     const parsed = await parseAdapterRequest(makeReq(body));
     assert(parsed.ok, `${JSON.stringify(body).slice(0, 40)}...`);
   }

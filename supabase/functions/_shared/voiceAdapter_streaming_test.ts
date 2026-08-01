@@ -8,43 +8,82 @@ import {
 } from "./voiceAdapter.ts";
 import type { ParsedAdapterRequest } from "./voiceAdapter.ts";
 
+const TEST_ORGANIZATION_ID = "11111111-1111-4111-8111-111111111111";
+
 // Minimal Supabase stub — no rows anywhere. runOrchestrator will short-circuit
 // cleanly because facts/history are empty and no tools are invoked.
 function stubSupabase(): any {
-  const q = {
-    select: () => q,
-    insert: () => q,
-    upsert: () => q,
-    eq: () => q,
-    in: () => q,
-    order: () => q,
-    limit: () => q,
-    maybeSingle: async () => ({ data: null, error: null }),
-    single: async () => ({ data: null, error: null }),
-    then: (fn: any) => fn({ data: [], error: null }),
+  const quoteSession = {
+    id: "quote-session-test",
+    organization_id: TEST_ORGANIZATION_ID,
+    channel: "voice",
+    conversation_ids: ["conv_test"],
+    fields: {},
+    field_status: {},
+    required_remaining: [],
+    quote_status: "none",
+    booking_ready: false,
+  };
+  const queryFor = (table: string) => {
+    const q = {
+      select: () => q,
+      insert: () => q,
+      upsert: () => q,
+      update: () => q,
+      eq: () => q,
+      is: () => q,
+      in: () => q,
+      order: () => q,
+      limit: () => q,
+      maybeSingle: async () => ({
+        data: table === "quote_sessions" ? quoteSession : null,
+        error: null,
+      }),
+      single: async () => ({ data: null, error: null }),
+      then: (fn: any) => fn({ data: [], error: null }),
+    };
+    return q;
   };
   let insertingConversation = false;
+  let updatingConversation = false;
+  let conversation: Record<string, unknown> = {
+    id: "conv_test",
+    session_token: "synthetic-test",
+    organization_id: TEST_ORGANIZATION_ID,
+    channel: "voice",
+    quote_session_id: "quote-session-test",
+  };
   const conversationQuery = {
     select: () => conversationQuery,
-    insert: () => {
+    insert: (payload: Record<string, unknown>) => {
       insertingConversation = true;
+      conversation = {
+        ...payload,
+        quote_session_id: "quote-session-test",
+      };
       return conversationQuery;
     },
     upsert: () => conversationQuery,
+    update: () => {
+      updatingConversation = true;
+      return conversationQuery;
+    },
     eq: () => conversationQuery,
     order: () => conversationQuery,
     limit: () => conversationQuery,
-    maybeSingle: async () => ({ data: null, error: null }),
+    maybeSingle: async () => ({
+      data: insertingConversation || updatingConversation ? conversation : null,
+      error: null,
+    }),
     single: async () => ({
-      data: insertingConversation
-        ? { id: "conv_test", session_token: "synthetic-test" }
-        : null,
+      data: insertingConversation ? conversation : null,
       error: null,
     }),
     then: (fn: any) => fn({ data: [], error: null }),
   };
   return {
-    from: (table: string) => table === "chat_conversations" ? conversationQuery : q,
+    from: (table: string) =>
+      table === "chat_conversations" ? conversationQuery : queryFor(table),
     rpc: async () => ({ data: [], error: null }),
   };
 }
@@ -68,6 +107,7 @@ Deno.test("streaming adapter: slow branch emits an acknowledgement before comple
   const result = await runVoiceAdapterStream({
     supabase: stubSupabase(),
     request: makeParsed("How much does it cost to clean my windows?"),
+    organizationId: TEST_ORGANIZATION_ID,
     emit: (ev) => {
       events.push(ev);
     },
@@ -90,6 +130,7 @@ Deno.test("streaming adapter: fast path emits role delta immediately and no ackn
   await runVoiceAdapterStream({
     supabase: stubSupabase(),
     request: makeParsed("What services do you offer?"),
+    organizationId: TEST_ORGANIZATION_ID,
     emit: (ev) => {
       events.push(ev);
     },
@@ -105,6 +146,7 @@ Deno.test("streaming adapter: fast path returns fast_knowledge route", async () 
   const result = await runVoiceAdapterStream({
     supabase: stubSupabase(),
     request: makeParsed("What services do you offer?"),
+    organizationId: TEST_ORGANIZATION_ID,
     emit: (ev) => {
       events.push(ev);
     },
