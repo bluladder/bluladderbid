@@ -76,6 +76,8 @@ function makeSupabase() {
 
 function stubGeocode(formatted: string, houseNumber: string) {
   const original = globalThis.fetch;
+  const previousLovableKey = Deno.env.get("LOVABLE_API_KEY");
+  const previousMapsKey = Deno.env.get("GOOGLE_MAPS_API_KEY");
   Deno.env.set("LOVABLE_API_KEY", "test-key");
   Deno.env.set("GOOGLE_MAPS_API_KEY", "test-connection");
   globalThis.fetch = (() =>
@@ -109,6 +111,10 @@ function stubGeocode(formatted: string, houseNumber: string) {
     )) as typeof fetch;
   return () => {
     globalThis.fetch = original;
+    const restoreEnv = (key: string, value: string | undefined) =>
+      value === undefined ? Deno.env.delete(key) : Deno.env.set(key, value);
+    restoreEnv("LOVABLE_API_KEY", previousLovableKey);
+    restoreEnv("GOOGLE_MAPS_API_KEY", previousMapsKey);
   };
 }
 

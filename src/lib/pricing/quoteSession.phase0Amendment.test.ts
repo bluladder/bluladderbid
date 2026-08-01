@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeFields,
   nextQuestion,
+  sessionInputsKey,
   type QuoteSession,
 } from "../../../supabase/functions/_shared/quoteSession";
 
@@ -26,6 +27,17 @@ describe("Phase 0 amendment — quote-session contract consumption", () => {
 
     session = mergeFields(session, { screenProfile: "standard_removable" }, { markVerified: ["screenProfile"] });
     expect(session.fields.screenProfileProvenance).toBe("verified");
+  });
+
+  it("includes screen-profile provenance in canonical quote cache identity", () => {
+    const fields = {
+      services: ["windowCleaning"],
+      screenProfile: "no_screens" as const,
+    };
+    expect(sessionInputsKey({ ...fields, screenProfileProvenance: "captured" }))
+      .not.toBe(
+        sessionInputsKey({ ...fields, screenProfileProvenance: "defaulted" }),
+      );
   });
 
   it("selects the missing exact drain count for an opted-in gutter add-on", () => {

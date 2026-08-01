@@ -58,6 +58,8 @@ export interface ConversationFacts {
     stories?: number;
     windowCleaningType?: string;
     condition?: string;
+    screenProfile?: string;
+    screenProfileProvenance?: string;
     roofType?: string;
     roofSeverity?: string;
     drivewaySqft?: number;
@@ -148,6 +150,8 @@ export function quoteInputsKey(f: ConversationFacts): string {
     stories: p.stories ?? null,
     windowType: p.windowCleaningType ?? null,
     condition: p.condition ?? null,
+    screenProfile: p.screenProfile ?? null,
+    screenProfileProvenance: p.screenProfileProvenance ?? null,
     roofType: p.roofType ?? null,
     roofSeverity: p.roofSeverity ?? null,
     drivewaySqft: p.drivewaySqft ?? null,

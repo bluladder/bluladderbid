@@ -67,11 +67,33 @@ Deno.test("with service+scope known, asks for sqft next (not city)", () => {
 
 Deno.test("canonical wording: square footage prompt names the exact field", () => {
   const s = afterContact({
+    fields: {
+      services: ["windowCleaning"],
+      windowCleaningScope: "whole_home",
+    },
+    fieldStatus: {
+      services: "captured",
+      windowCleaningScope: "captured",
+    },
+  });
+  const a = decideResidentialQuoteAction(s, ["squareFootage"]);
+  if (a.kind === "ask") assertEquals(a.prompt, "How many square feet is your home?");
+});
+
+Deno.test("unresolved window scope is asked before square footage", () => {
+  const s = afterContact({
     fields: { services: ["windowCleaning"] },
     fieldStatus: { services: "captured" },
   });
   const a = decideResidentialQuoteAction(s, ["squareFootage"]);
-  if (a.kind === "ask") assertEquals(a.prompt, "How many square feet is your home?");
+  assertEquals(a.kind, "ask");
+  if (a.kind === "ask") {
+    assertEquals(a.field, "windowCleaningScope");
+    assertEquals(
+      a.prompt,
+      "Got it. Is this every window on the home, or a specific count of windows?",
+    );
+  }
 });
 
 Deno.test("never re-asks a captured field (regression: 019f8a84 repeats)", () => {
