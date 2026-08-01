@@ -1,4 +1,4 @@
-import { Calendar, Shield, CreditCard, Percent } from 'lucide-react';
+import { Calendar, Check } from 'lucide-react';
 
 export function PlanBuilderHeader() {
   return (
@@ -11,23 +11,21 @@ export function PlanBuilderHeader() {
         Build Your Custom Service Plan
       </h1>
       <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-        Create a personalized maintenance bundle with easy monthly payments. 
-        Select the services you need and choose how often you want them.
+        Compare BluLadder’s maintenance plans, review authoritative payment information and share preferences before activation.
       </p>
       
-      {/* Payment structure clarity */}
       <div className="mt-6 flex flex-wrap justify-center gap-4 text-sm">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted text-muted-foreground">
-          <Percent className="w-4 h-4 text-primary" />
-          <span><strong className="text-foreground">20%</strong> deposit today</span>
+          <Check className="w-4 h-4 text-primary" />
+          <span>Authoritative payment schedule</span>
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted text-muted-foreground">
-          <CreditCard className="w-4 h-4 text-primary" />
-          <span><strong className="text-foreground">11</strong> monthly payments</span>
+          <Check className="w-4 h-4 text-primary" />
+          <span>Preferences confirmed before activation</span>
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted text-muted-foreground">
-          <Shield className="w-4 h-4 text-primary" />
-          <span>Cancel anytime</span>
+          <Check className="w-4 h-4 text-primary" />
+          <span>No payment collected on this screen</span>
         </div>
       </div>
     </div>

@@ -1,257 +1,146 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { CustomerHeader } from '@/components/CustomerHeader';
 import { CustomerFooter } from '@/components/CustomerFooter';
-import { PlanBuilderHeader } from '@/components/plan-builder/PlanBuilderHeader';
-import { PlanTierCards } from '@/components/plan-builder/PlanTierCards';
-import { PlanCustomizationPanel } from '@/components/plan-builder/PlanCustomizationPanel';
+import { CustomerHeader } from '@/components/CustomerHeader';
 import { CompactHomeDetails } from '@/components/plan-builder/CompactHomeDetails';
-import { PlanCustomerForm } from '@/components/plan-builder/PlanCustomerForm';
-import { PlanPaymentSummary } from '@/components/plan-builder/PlanPaymentSummary';
-import { QuoteSavedSuccess } from '@/components/plan-builder/QuoteSavedSuccess';
-import { PlanCompareSheet } from '@/components/plan-builder/PlanCompareSheet';
-import { useServicePlanBuilder } from '@/hooks/useServicePlanBuilder';
-import { usePlanBuilderSession } from '@/hooks/usePlanBuilderSession';
-import { toast } from 'sonner';
-import type { PlanBuilderServiceId } from '@/types/servicePlanBuilder';
+import { PlanBuilderHeader } from '@/components/plan-builder/PlanBuilderHeader';
+import { PlanCustomizationShell } from '@/components/plan-builder/PlanCustomizationShell';
+import { PlanTierCards } from '@/components/plan-builder/PlanTierCards';
 import type { PlanTier } from '@/components/plan-builder/TierSelector';
+import { usePlanBuilderSession } from '@/hooks/usePlanBuilderSession';
+import { useServicePlanBuilder } from '@/hooks/useServicePlanBuilder';
 
-type BuilderStep = 'select' | 'customize' | 'customer';
+type BuilderStep = 'select' | 'customize';
+
+const STEPS = [
+  { id: 'select', label: 'Choose Plan', number: 1 },
+  { id: 'customize', label: 'Plan Preferences', number: 2 },
+] as const;
 
 export default function PlanBuilder() {
   const [currentStep, setCurrentStep] = useState<BuilderStep>('select');
   const [showHomeDetailsForm, setShowHomeDetailsForm] = useState(true);
-  const [showCompareSheet, setShowCompareSheet] = useState(false);
   const [searchParams] = useSearchParams();
   const embedParam = searchParams.get('embed');
   const isEmbedMode = embedParam === 'true' || embedParam === '1';
-  
+
   const { loadSession, saveSession, isInitialized, setIsInitialized } = usePlanBuilderSession();
-  
   const {
     selectedTier,
     homeDetails,
-    customer,
     services,
-    payment,
-    savedQuoteId,
-    isSaving,
     tierPrices,
-    currentTierConfig,
     selectTier,
     updateHomeDetails,
-    updateCustomer,
-    toggleService,
-    updateFrequency,
-    saveQuote,
-    resetQuote,
-    isValid,
-    hasSelectedServices,
     isLoading,
-    pricingReady,
     pricingLoading,
     pricingUnavailable,
   } = useServicePlanBuilder();
-  
-  // Restore session on mount
+
   useEffect(() => {
     if (!isInitialized && !isLoading) {
       const session = loadSession();
-      if (session) {
-        // Restore tier selection
-        if (session.selectedTier) {
-          selectTier(session.selectedTier);
-        }
-        // Restore home details
-        if (session.homeDetails && session.homeDetails.squareFootage > 0) {
-          Object.entries(session.homeDetails).forEach(([key, value]) => {
-            updateHomeDetails({ [key]: value });
-          });
-          setShowHomeDetailsForm(false);
-        }
+      if (session?.selectedTier) selectTier(session.selectedTier);
+      if (session?.homeDetails && session.homeDetails.squareFootage > 0) {
+        Object.entries(session.homeDetails).forEach(([key, value]) => {
+          updateHomeDetails({ [key]: value });
+        });
+        setShowHomeDetailsForm(false);
       }
       setIsInitialized(true);
     }
-  }, [isInitialized, isLoading, loadSession, selectTier, updateHomeDetails, setIsInitialized]);
-  
-  // Save session on changes
+  }, [isInitialized, isLoading, loadSession, selectTier, setIsInitialized, updateHomeDetails]);
+
   useEffect(() => {
-    if (isInitialized) {
-      saveSession({
-        selectedTier,
-        homeDetails: homeDetails.squareFootage > 0 ? homeDetails : null,
-        serviceSelections: services.map(s => ({
-          id: s.id,
-          enabled: s.enabled,
-          frequency: s.frequency,
-        })),
-      });
-    }
-  }, [isInitialized, selectedTier, homeDetails, services, saveSession]);
-  
+    if (!isInitialized) return;
+    saveSession({
+      selectedTier,
+      homeDetails: homeDetails.squareFootage > 0 ? homeDetails : null,
+      serviceSelections: services.map((service) => ({
+        id: service.id,
+        enabled: service.enabled,
+        frequency: service.frequency,
+      })),
+    });
+  }, [homeDetails, isInitialized, saveSession, selectedTier, services]);
+
   const handleTierSelect = (tier: PlanTier) => {
     selectTier(tier);
-    // If we have home details, go straight to customization
     if (homeDetails.squareFootage > 0) {
       setCurrentStep('customize');
       setShowHomeDetailsForm(false);
     }
   };
 
-  const handleContinueToCustomer = () => {
-    if (!hasSelectedServices) {
-      toast.error('Please select at least one service');
-      return;
-    }
-    if (homeDetails.squareFootage === 0) {
-      toast.error('Please enter your home square footage');
-      setShowHomeDetailsForm(true);
-      return;
-    }
-    setCurrentStep('customer');
-  };
-
-  const handleCompare = () => {
-    setShowCompareSheet(true);
-  };
-
-  const handleCompareSelect = (tier: PlanTier) => {
-    selectTier(tier);
-    setShowCompareSheet(false);
-  };
-
-  const handleBack = () => {
-    switch (currentStep) {
-      case 'customize':
-        setCurrentStep('select');
-        break;
-      case 'customer':
-        setCurrentStep('customize');
-        break;
-    }
-  };
-  
-  const handleSubmit = async () => {
-    if (!isValid) {
-      toast.error('Please complete all required fields');
-      return;
-    }
-    
-    const quoteId = await saveQuote();
-    
-    if (quoteId) {
-      toast.success('Quote saved successfully!');
-    } else {
-      toast.error('Failed to save quote. Please try again.');
-    }
-  };
-  
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
-          <p className="text-muted-foreground">Loading pricing...</p>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="space-y-3 text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+          <p className="text-muted-foreground">Loading pricing…</p>
         </div>
       </div>
     );
   }
-  
-  // Show success state if quote was saved
-  if (savedQuoteId) {
-    return (
-      <div className="min-h-screen bg-background">
-        <CustomerHeader embed={isEmbedMode} />
-        <div className="max-w-2xl mx-auto px-4 py-8 md:py-16">
-          <PlanBuilderHeader />
-          <QuoteSavedSuccess 
-            quoteId={savedQuoteId} 
-            onCreateNew={resetQuote} 
-          />
-        </div>
-        <CustomerFooter embed={isEmbedMode} />
-      </div>
-    );
-  }
-  
-  // Progress indicator
-  const steps = [
-    { id: 'select', label: 'Choose Plan', number: 1 },
-    { id: 'customize', label: 'Customize', number: 2 },
-    { id: 'customer', label: 'Your Info', number: 3 },
-  ];
-  const currentStepIndex = steps.findIndex(s => s.id === currentStep);
-  
+
+  const currentStepIndex = STEPS.findIndex((step) => step.id === currentStep);
+
   return (
     <div className="min-h-screen bg-background">
       <CustomerHeader embed={isEmbedMode} />
-      <div className="max-w-6xl mx-auto px-4 py-6 md:py-10">
+      <main className="mx-auto max-w-7xl px-4 py-6 md:py-10">
         <PlanBuilderHeader />
-        
-        {/* Minimal Progress Indicator */}
-        <div className="mb-8">
-          <div className="flex items-center justify-center gap-2">
-            {steps.map((step, idx) => (
-              <div key={step.id} className="flex items-center">
-                <div className={`
-                  flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all
-                  ${idx < currentStepIndex
-                    ? 'bg-success/20 text-success'
-                    : idx === currentStepIndex
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground'
-                  }
-                `}>
-                  <span className={`
-                    w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold
-                    ${idx < currentStepIndex 
-                      ? 'bg-success text-white' 
-                      : idx === currentStepIndex 
-                        ? 'bg-primary-foreground/20' 
-                        : 'bg-muted-foreground/20'
-                    }
-                  `}>
-                    {idx < currentStepIndex ? '✓' : step.number}
+
+        <nav aria-label="Maintenance plan progress" className="mb-8">
+          <ol className="flex items-center justify-center gap-2">
+            {STEPS.map((step, index) => (
+              <li key={step.id} className="flex items-center">
+                <div
+                  aria-current={index === currentStepIndex ? 'step' : undefined}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${
+                    index < currentStepIndex
+                      ? 'bg-success/20 text-success'
+                      : index === currentStepIndex
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-current/10 font-bold">
+                    {index < currentStepIndex ? '✓' : step.number}
                   </span>
-                  <span className="hidden sm:inline">{step.label}</span>
+                  <span>{step.label}</span>
                 </div>
-                {idx < steps.length - 1 && (
-                  <div className={`w-8 md:w-12 h-0.5 mx-1 ${
-                    idx < currentStepIndex ? 'bg-success' : 'bg-muted'
-                  }`} />
+                {index < STEPS.length - 1 && (
+                  <div className={`mx-1 h-0.5 w-8 md:w-12 ${index < currentStepIndex ? 'bg-success' : 'bg-muted'}`} />
                 )}
-              </div>
+              </li>
             ))}
-          </div>
-        </div>
-        
-        {/* Back Button (when not on first step) */}
-        {currentStep !== 'select' && (
+          </ol>
+        </nav>
+
+        {currentStep === 'customize' && (
           <Button
+            type="button"
             variant="ghost"
             size="sm"
-            onClick={handleBack}
-            className="mb-4 text-muted-foreground -ml-2"
+            onClick={() => setCurrentStep('select')}
+            className="mb-4 -ml-2 text-muted-foreground"
           >
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back
+            <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+            Back to plan comparison
           </Button>
         )}
 
-        {/* STEP 1: Plan Selection */}
         {currentStep === 'select' && (
           <div className="space-y-8">
-            {/* Home Details First (Required for Pricing) */}
             <CompactHomeDetails
               homeDetails={homeDetails}
               onChange={updateHomeDetails}
               isExpanded={showHomeDetailsForm || homeDetails.squareFootage === 0}
-              onToggleExpand={() => setShowHomeDetailsForm(!showHomeDetailsForm)}
+              onToggleExpand={() => setShowHomeDetailsForm((expanded) => !expanded)}
             />
-
-            {/* Tier Cards */}
             <PlanTierCards
               selectedTier={selectedTier}
               onSelectTier={handleTierSelect}
@@ -263,72 +152,23 @@ export default function PlanBuilder() {
           </div>
         )}
 
-        {/* STEP 2: Customization */}
-        {currentStep === 'customize' && currentTierConfig && (
+        {currentStep === 'customize' && (
           <div className="space-y-6">
-            {/* Compact Home Details Summary */}
             <CompactHomeDetails
               homeDetails={homeDetails}
               onChange={updateHomeDetails}
               isExpanded={showHomeDetailsForm}
-              onToggleExpand={() => setShowHomeDetailsForm(!showHomeDetailsForm)}
+              onToggleExpand={() => setShowHomeDetailsForm((expanded) => !expanded)}
             />
-
-            {/* Customization Panel */}
-            <PlanCustomizationPanel
-              tier={currentTierConfig}
-              services={services}
-              payment={payment}
-              homeSquareFootage={homeDetails.squareFootage}
-              onToggleService={(id) => toggleService(id as PlanBuilderServiceId)}
-              onChangeFrequency={(id, freq) => updateFrequency(id as PlanBuilderServiceId, freq)}
-              onContinue={handleContinueToCustomer}
-              onCompare={handleCompare}
-              pricingReady={pricingReady}
+            <PlanCustomizationShell
+              tier={selectedTier}
+              price={tierPrices[selectedTier]}
               pricingLoading={pricingLoading}
               pricingUnavailable={pricingUnavailable}
             />
           </div>
         )}
-
-        {/* STEP 3: Customer Info */}
-        {currentStep === 'customer' && (
-          <div className="grid lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2">
-              <PlanCustomerForm
-                customer={customer}
-                onChange={updateCustomer}
-              />
-            </div>
-            
-            <div className="lg:col-span-1">
-              <div className="lg:sticky lg:top-24">
-                <PlanPaymentSummary
-                  payment={payment}
-                  services={services}
-                  isValid={isValid}
-                  isSaving={isSaving}
-                  onSubmit={handleSubmit}
-                  showSubmitButton={true}
-                  selectedTierName={currentTierConfig?.name || 'Better'}
-                  pricingReady={pricingReady}
-                  pricingLoading={pricingLoading}
-                  pricingUnavailable={pricingUnavailable}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Plan Comparison Sheet */}
-      <PlanCompareSheet
-        open={showCompareSheet}
-        onOpenChange={setShowCompareSheet}
-        onSelectTier={handleCompareSelect}
-        tierPrices={tierPrices}
-        hasHomeDetails={homeDetails.squareFootage > 0}
-      />
+      </main>
       <CustomerFooter embed={isEmbedMode} />
     </div>
   );
