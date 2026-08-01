@@ -46,6 +46,14 @@
     --input: 220 15% 90%;
     --ring: 193 100% 50%;
 
+    /* Quote journey semantics — aliases of the accepted BluLadder palette. */
+    --quote-surface: var(--card);
+    --quote-surface-subtle: var(--muted);
+    --quote-selected: var(--primary);
+    --quote-complete: var(--success);
+    --quote-action: var(--primary);
+    --quote-warning: var(--warning);
+
     --radius: 0.625rem;
 
     /* Package tier colors - professional palette */
@@ -117,6 +125,13 @@
     --input: 220 15% 20%;
     --ring: 193 100% 50%;
 
+    --quote-surface: var(--card);
+    --quote-surface-subtle: var(--muted);
+    --quote-selected: var(--primary);
+    --quote-complete: var(--success);
+    --quote-action: var(--primary);
+    --quote-warning: var(--warning);
+
     --tier-good: 210 50% 50%;
     --tier-better: 193 100% 50%;
     --tier-best: 145 60% 45%;
@@ -151,6 +166,12 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  @media (max-width: 767px) {
+    body {
+      padding-bottom: var(--quote-action-height, 0rem);
+    }
   }
 
   h1, h2, h3, h4, h5, h6 {

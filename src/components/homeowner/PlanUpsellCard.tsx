@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, Zap, AlertCircle, Loader2, SlidersHorizontal } from 'lucide-react';
+import { RefreshCw, Check, Sparkles, Star, Calendar, ChevronDown, ArrowRight, CreditCard, SlidersHorizontal } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import type { BundleTier, ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
 import { PlanCustomizeDrawer, type PlanCustomization } from './PlanCustomizeDrawer';
 import { computePlanPaymentBreakdown } from '@/lib/pricing/planPaymentBreakdown';
+import { AsyncStatePanel } from '@/components/quote/AsyncStatePanel';
+import { PersistentActionBar } from '@/components/quote/PersistentActionBar';
+import { PriceDisplay } from '@/components/quote/PriceDisplay';
+import { formatQuotePrice } from '@/components/quote/priceFormat';
+import type { ServerQuotePhase } from '@/hooks/useServerQuoteCalculation';
 
 interface PlanUpsellCardProps {
   oneTimeTotal: number;
@@ -30,6 +35,8 @@ interface PlanUpsellCardProps {
   homeSquareFootage?: number;
   /** Live server-authoritative plan phase; drives fail-closed behavior. */
   planPhase?: 'idle' | 'loading' | 'ready' | 'missing_information' | 'manual_review_required' | 'unavailable';
+  /** Canonical one-time quote freshness. Mobile action is derived only from this server state. */
+  quotePhase?: ServerQuotePhase;
   onRetryPlan?: () => void;
 }
 
@@ -66,10 +73,14 @@ export function PlanUpsellCard({
   homeDetails,
   homeSquareFootage,
   planPhase,
+  quotePhase,
   onRetryPlan,
 }: PlanUpsellCardProps) {
   const [showAllPlans, setShowAllPlans] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
   const hasServices = oneTimeTotal > 0;
+  const isCanonicalQuoteActionable =
+    hasServices && (quotePhase === 'firm' || quotePhase === 'estimated');
   // When square footage hasn't been entered yet, the price is just a starting
   // minimum, so we label it clearly to avoid it reading as a final quote.
   const isEstimate = !homeSquareFootage || homeSquareFootage <= 0;
@@ -153,9 +164,7 @@ export function PlanUpsellCard({
             {isEstimate && (
               <span className="text-sm font-medium text-muted-foreground">Starting at</span>
             )}
-            <div className="text-4xl font-bold price-display text-foreground">
-              {formatPrice(oneTimeTotal)}
-            </div>
+            <PriceDisplay value={oneTimeTotal} className="block text-4xl text-foreground" />
             <p className="text-sm text-muted-foreground mt-1">
               {enabledServices} service{enabledServices !== 1 ? 's' : ''} • Single visit
             </p>
@@ -246,8 +255,23 @@ export function PlanUpsellCard({
         </CardContent>
       </Card>
       
-      {/* Plan Upsell Section */}
-      <Card className="border-2 border-primary overflow-hidden">
+      {/* Plans are intentionally subordinate to the canonical one-time quote. */}
+      <Collapsible open={plansOpen} onOpenChange={setPlansOpen}>
+      <Card className="overflow-hidden border border-border/70 bg-muted/20" data-testid="plans-card">
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-auto w-full justify-between rounded-none px-5 py-4 text-left"
+            data-testid="plans-toggle"
+          >
+            <span>
+              <span className="block font-semibold text-foreground">Annual Maintenance Plan</span>
+            </span>
+            <ChevronDown className={`h-5 w-5 transition-transform ${plansOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent data-testid="plans-content">
         <div className="bg-gradient-to-r from-primary to-accent py-2 px-4">
           <div className="flex items-center justify-center gap-2 text-primary-foreground text-sm font-semibold">
             <Star className="w-4 h-4 fill-current" />
@@ -260,39 +284,22 @@ export function PlanUpsellCard({
           {/* Fail-closed states. A plan MUST have a real annual + monthly total
               returned from the canonical server. Never show $0 or allow selection. */}
           {!hasValidPlan && (planPhase === 'loading' || planPhase === 'idle') && (
-            <div
-              className="rounded-lg border border-border bg-muted/40 p-4 flex items-center gap-3"
-              data-testid="plan-loading"
-              aria-busy="true"
-            >
-              <Loader2 className="w-4 h-4 animate-spin text-primary" aria-hidden="true" />
-              <p className="text-sm text-muted-foreground">Calculating your Annual Maintenance Plan…</p>
-            </div>
+            <AsyncStatePanel state="loading" title="Calculating your Annual Maintenance Plan…" testId="plan-loading" />
           )}
           {!hasValidPlan && (planPhase === 'unavailable' || planPhase === 'manual_review_required' || planPhase === 'missing_information' || (planPhase === 'ready' && bundles.length === 0)) && (
-            <div
-              className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 space-y-3"
-              data-testid="plan-unavailable"
-              role="status"
-            >
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" aria-hidden="true" />
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    Annual Maintenance Plan unavailable right now
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    We couldn’t calculate this plan yet. Your one-time quote above is still available.
-                  </p>
-                </div>
-              </div>
-              {onRetryPlan && (
+            <AsyncStatePanel
+              state="unavailable"
+              title="Annual Maintenance Plan unavailable right now"
+              testId="plan-unavailable"
+              action={onRetryPlan && (
                 <Button variant="outline" size="sm" onClick={onRetryPlan} data-testid="plan-retry">
                   <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
                   Try again
                 </Button>
               )}
-            </div>
+            >
+              We couldn’t calculate this plan yet. Your one-time quote above is still available.
+            </AsyncStatePanel>
           )}
 
           {/* Upgrade CTA - MOVED ABOVE PLAN CARDS */}
@@ -528,12 +535,19 @@ export function PlanUpsellCard({
             Most homeowners choose this option to keep things clean year-round.
           </p>
         </CardContent>
+        </CollapsibleContent>
       </Card>
+      </Collapsible>
       
       {/* Disclaimer */}
       <p className="text-center text-xs text-muted-foreground">
         No payment due today. Final details confirmed after booking.
       </p>
+      <PersistentActionBar
+        visible={isCanonicalQuoteActionable}
+        label={`Review one-time quote · ${formatQuotePrice(oneTimeTotal)}`}
+        onAction={onBookOneTime}
+      />
     </div>
   );
 }

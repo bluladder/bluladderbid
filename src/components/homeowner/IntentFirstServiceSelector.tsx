@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Plus, Sparkles, Droplets, Home, Cloud, Warehouse, ChevronDown, ChevronUp, Grid3X3, SunMedium, ArrowUpFromLine, Square, Car, ShieldCheck, Sun, Wrench } from 'lucide-react';
+import { Sparkles, Droplets, Home, Cloud, Warehouse, ChevronDown, ChevronUp, Grid3X3, SunMedium, ArrowUpFromLine, Square, Car, ShieldCheck, Sun, Wrench } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -18,6 +18,8 @@ import { GutterAddonsCard } from './GutterAddonsCard';
 import { HouseWashDetailsCard } from './HouseWashDetailsCard';
 import { RoofPitchSelector } from './RoofPitchSelector';
 import type { WindowPromoConfig } from '@/hooks/useWindowPromoConfig';
+import { ChoiceCard } from '@/components/quote/ChoiceCard';
+import { SummaryRow } from '@/components/quote/SummaryRow';
 
 interface IntentFirstServiceSelectorProps {
   services: AdditionalServices;
@@ -46,7 +48,10 @@ interface ServiceCardProps {
   description: string;
   price: number;
   isEnabled: boolean;
-  onToggle: () => void;
+  isExpanded: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
   children?: React.ReactNode;
   isFeatured?: boolean;
   /** Optional short benefit line shown in the compact card to justify the add. */
@@ -57,95 +62,61 @@ interface ServiceCardProps {
   badge?: string;
 }
 
-function ServiceCard({ icon: Icon, title, description, price, isEnabled, onToggle, children, isFeatured, benefit, anchorPrice, badge }: ServiceCardProps) {
-  // Compact view when not enabled
+function ServiceCard({
+  id,
+  icon: Icon,
+  title,
+  description,
+  price,
+  isEnabled,
+  isExpanded,
+  onSelect,
+  onEdit,
+  onRemove,
+  children,
+  isFeatured,
+  benefit,
+  anchorPrice,
+  badge,
+}: ServiceCardProps) {
   if (!isEnabled) {
     return (
-      <div 
-        className={`relative flex items-center gap-3 p-3 rounded-lg border transition-all duration-200 cursor-pointer ${
-          isFeatured
-            ? 'border-primary/60 bg-primary/5 ring-1 ring-primary/20'
-            : 'border-border hover:border-primary/40 hover:bg-muted/30 bg-card'
-        }`}
-        onClick={onToggle}
-      >
-        {/* Featured badge - smaller for compact */}
-        {isFeatured && (
-          <div className="absolute -top-2 left-3 px-2 py-0.5 bg-primary text-primary-foreground text-[10px] font-semibold rounded-full">
-            ✨ Featured
-          </div>
-        )}
-        
-        <div className="w-10 h-10 rounded-md flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary">
-          <Icon className="w-5 h-5" />
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm text-foreground">{title}</span>
-            {badge && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-success/15 text-success border border-success/30">
-                {badge}
-              </span>
-            )}
-          </div>
-          {benefit && (
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">{benefit}</p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {anchorPrice && anchorPrice > 0 ? (
-            <span className="text-xs text-muted-foreground">
-              from <span className="font-semibold text-foreground">{formatPrice(anchorPrice)}</span>
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground italic">Get instant pricing</span>
-          )}
-          <div className="w-6 h-6 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-sm">
-            <Plus className="w-3.5 h-3.5" />
-          </div>
-        </div>
-      </div>
+      <ChoiceCard
+        icon={Icon}
+        title={title}
+        description={benefit || description}
+        featured={isFeatured}
+        badge={badge}
+        meta={anchorPrice && anchorPrice > 0 ? <>from <strong>{formatPrice(anchorPrice)}</strong></> : 'Get instant pricing'}
+        onSelect={onSelect}
+      />
     );
   }
 
-  // Expanded view when enabled
   return (
-    <div 
-      className="relative p-4 rounded-xl border-2 border-primary bg-primary/5 shadow-md transition-all duration-200 cursor-pointer"
-      onClick={(e) => {
-        if ((e.target as HTMLElement).closest('select, input, button, [role="radio"], [role="switch"]')) return;
-        onToggle();
-      }}
-    >
-      {/* Selection indicator */}
-      <div className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-sm">
-        <Check className="w-3.5 h-3.5" />
-      </div>
-      
-      <div className="flex items-start gap-3 pr-8">
-        <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary text-primary-foreground shadow-md">
-          <Icon className="w-5 h-5" />
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="font-semibold text-foreground">{title}</h3>
-            {price > 0 && (
-              <span className="text-primary font-bold price-display">
-                {formatPrice(price)}
-              </span>
-            )}
+    <div className="space-y-3" data-service-id={id}>
+      <SummaryRow
+        icon={Icon}
+        title={title}
+        description={description}
+        price={price > 0 ? formatPrice(price) : undefined}
+        onEdit={onEdit}
+        onRemove={onRemove}
+      />
+      {isExpanded && children && (
+        <div className="rounded-xl border-2 border-primary bg-card p-4 shadow-sm" data-testid={`service-editor-${id}`}>
+          <div className="mb-4 flex items-center justify-between gap-3 border-b border-border pb-3">
+            <div>
+              <h3 className="font-semibold text-foreground">Customize {title}</h3>
+              <p className="text-xs text-muted-foreground">Your service stays selected while you edit these details.</p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+              Done
+            </Button>
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
-        </div>
-      </div>
-      
-      {/* Expandable options */}
-      {children && (
-        <div className="mt-4 pt-4 border-t border-border" onClick={e => e.stopPropagation()}>
-          {children}
+          <div>
+            {children}
+          </div>
         </div>
       )}
     </div>
@@ -209,7 +180,8 @@ export function IntentFirstServiceSelector({
   featuredService,
   windowPromo
 }: IntentFirstServiceSelectorProps) {
-  const [windowExpanded, setWindowExpanded] = useState(true);
+  const [editingService, setEditingService] = useState<string | null>(featuredService ?? null);
+  const [showInactiveServices, setShowInactiveServices] = useState(false);
 
   // Helper to check if a service is featured
   const isFeatured = (serviceId: string) => featuredService === serviceId;
@@ -218,7 +190,7 @@ export function IntentFirstServiceSelector({
   const isPromoSelected = promoActive && homeDetails.windowCleaningType === 'promo_99';
 
   // Define service order - featured service goes first
-  const serviceOrder: string[] = [
+  const serviceOrder = [
     'windowCleaning',
     'drivewayCleaning', 
     'pressureWashing',
@@ -227,12 +199,45 @@ export function IntentFirstServiceSelector({
     'roofCleaning',
     'solarPanelCleaning',
     'screenRepair',
-  ];
+  ] as const;
   
   // Reorder to put featured service first
-  const orderedServices = featuredService 
+  const orderedServices: readonly string[] = featuredService
     ? [featuredService, ...serviceOrder.filter(s => s !== featuredService)]
     : serviceOrder;
+
+  const isServiceEnabled = (serviceId: string) => {
+    switch (serviceId) {
+      case 'windowCleaning': return services.windowCleaning;
+      case 'drivewayCleaning': return services.drivewayCleaning.enabled;
+      case 'pressureWashing': return services.pressureWashing.enabled;
+      case 'gutterCleaning': return services.gutterCleaning;
+      case 'houseWash': return services.houseWash;
+      case 'roofCleaning': return services.roofCleaning;
+      case 'solarPanelCleaning': return services.solarPanelCleaning.enabled;
+      case 'screenRepair': return services.screenRepair.enabled;
+      default: return false;
+    }
+  };
+
+  const selectedServiceIds = orderedServices.filter(isServiceEnabled);
+  const inactiveServiceIds = orderedServices.filter((serviceId) => !isServiceEnabled(serviceId));
+
+  const serviceCardControls = (serviceId: string, isEnabled: boolean, toggle: () => void) => ({
+    isEnabled,
+    isExpanded: editingService === serviceId,
+    onSelect: () => {
+      if (!isEnabled) toggle();
+      setEditingService(serviceId);
+      setShowInactiveServices(false);
+    },
+    onEdit: () => setEditingService((current) => current === serviceId ? null : serviceId),
+    onRemove: () => {
+      if (isEnabled) toggle();
+      setEditingService(null);
+      if (selectedServiceIds.length <= 1) setShowInactiveServices(true);
+    },
+  });
 
   // Render individual service cards
   const renderWindowCleaning = () => (
@@ -243,8 +248,9 @@ export function IntentFirstServiceSelector({
       title="Window Cleaning"
       description="Crystal clear windows, inside or out"
       price={servicePrices.windowCleaningTotal}
-      isEnabled={services.windowCleaning}
-      onToggle={() => onChange({ windowCleaning: !services.windowCleaning })}
+      {...serviceCardControls('windowCleaning', services.windowCleaning, () =>
+        onChange({ windowCleaning: !services.windowCleaning })
+      )}
       isFeatured={isFeatured('windowCleaning')}
       benefit="Streak-free interior + exterior clean, screens included"
       anchorPrice={servicePrices.windowCleaningTotal}
@@ -579,10 +585,9 @@ export function IntentFirstServiceSelector({
       title="Driveway Cleaning"
       description="Power wash your driveway to remove stains and buildup"
       price={servicePrices.drivewayCleaning}
-      isEnabled={services.drivewayCleaning.enabled}
-      onToggle={() => onChange({ 
+      {...serviceCardControls('drivewayCleaning', services.drivewayCleaning.enabled, () => onChange({
         drivewayCleaning: { ...services.drivewayCleaning, enabled: !services.drivewayCleaning.enabled } 
-      })}
+      }))}
       isFeatured={isFeatured('drivewayCleaning')}
       benefit="Lift oil stains, mildew and buildup — instant curb appeal"
       anchorPrice={servicePrices.drivewayCleaning}
@@ -632,10 +637,9 @@ export function IntentFirstServiceSelector({
       title="Pressure Washing"
       description="Porches, patios, pool decks, and walkways"
       price={servicePrices.pressureWashing}
-      isEnabled={services.pressureWashing.enabled}
-      onToggle={() => onChange({ 
+      {...serviceCardControls('pressureWashing', services.pressureWashing.enabled, () => onChange({
         pressureWashing: { ...services.pressureWashing, enabled: !services.pressureWashing.enabled } 
-      })}
+      }))}
       isFeatured={isFeatured('pressureWashing')}
       benefit="Refresh porches, patios, pool decks and walkways"
       anchorPrice={servicePrices.pressureWashing}
@@ -708,8 +712,9 @@ export function IntentFirstServiceSelector({
       title="Gutter Cleaning"
       description="Full gutter and downspout cleaning"
       price={servicePrices.gutterCleaningTotal}
-      isEnabled={services.gutterCleaning}
-      onToggle={() => onChange({ gutterCleaning: !services.gutterCleaning })}
+      {...serviceCardControls('gutterCleaning', services.gutterCleaning, () =>
+        onChange({ gutterCleaning: !services.gutterCleaning })
+      )}
       isFeatured={isFeatured('gutterCleaning')}
       benefit="Prevent water damage and foundation issues"
       anchorPrice={servicePrices.gutterCleaningTotal}
@@ -742,8 +747,9 @@ export function IntentFirstServiceSelector({
       title="House Wash"
       description="Gentle exterior soft washing"
       price={servicePrices.houseWashTotal}
-      isEnabled={services.houseWash}
-      onToggle={() => onChange({ houseWash: !services.houseWash })}
+      {...serviceCardControls('houseWash', services.houseWash, () =>
+        onChange({ houseWash: !services.houseWash })
+      )}
       isFeatured={isFeatured('houseWash')}
       benefit="Kills mold and algae — safe soft-wash system"
       anchorPrice={servicePrices.houseWashTotal}
@@ -766,8 +772,9 @@ export function IntentFirstServiceSelector({
       title="Roof Cleaning"
       description="Safe, low-pressure roof treatment"
       price={servicePrices.roofCleaning}
-      isEnabled={services.roofCleaning}
-      onToggle={() => onChange({ roofCleaning: !services.roofCleaning })}
+      {...serviceCardControls('roofCleaning', services.roofCleaning, () =>
+        onChange({ roofCleaning: !services.roofCleaning })
+      )}
       isFeatured={isFeatured('roofCleaning')}
       benefit="Extend roof life — remove black streaks and moss"
       anchorPrice={servicePrices.roofCleaning}
@@ -826,10 +833,9 @@ export function IntentFirstServiceSelector({
       title="Solar Panel Cleaning"
       description="Restore panel efficiency — dust, pollen and bird droppings block output"
       price={servicePrices.solarPanelCleaning}
-      isEnabled={services.solarPanelCleaning.enabled}
-      onToggle={() => onChange({
+      {...serviceCardControls('solarPanelCleaning', services.solarPanelCleaning.enabled, () => onChange({
         solarPanelCleaning: { ...services.solarPanelCleaning, enabled: !services.solarPanelCleaning.enabled }
-      })}
+      }))}
       isFeatured={isFeatured('solarPanelCleaning' as any)}
       benefit="Boost energy output — $10 per panel, no minimums"
       anchorPrice={services.solarPanelCleaning.panelCount * 10}
@@ -870,10 +876,9 @@ export function IntentFirstServiceSelector({
       title="Screen Repair"
       description="We re-screen torn or damaged window screens on the same visit"
       price={servicePrices.screenRepair}
-      isEnabled={services.screenRepair.enabled}
-      onToggle={() => onChange({
+      {...serviceCardControls('screenRepair', services.screenRepair.enabled, () => onChange({
         screenRepair: { ...services.screenRepair, enabled: !services.screenRepair.enabled }
-      })}
+      }))}
       isFeatured={isFeatured('screenRepair' as any)}
       benefit="Fresh screens installed on-site — $35 per screen, all materials included"
       anchorPrice={services.screenRepair.screenCount * 35}
@@ -935,7 +940,37 @@ export function IntentFirstServiceSelector({
       </CardHeader>
       
       <CardContent className="space-y-3">
-        {orderedServices.map((serviceId) => serviceRenderers[serviceId]())}
+        {selectedServiceIds.length > 0 && (
+          <div className="space-y-3" aria-label="Selected services">
+            {selectedServiceIds.map((serviceId) => serviceRenderers[serviceId]())}
+          </div>
+        )}
+
+        {selectedServiceIds.length > 0 && !showInactiveServices && inactiveServiceIds.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-dashed"
+            onClick={() => setShowInactiveServices(true)}
+            aria-expanded="false"
+          >
+            Add another service
+          </Button>
+        )}
+
+        {(selectedServiceIds.length === 0 || showInactiveServices) && inactiveServiceIds.length > 0 && (
+          <div className="space-y-3" aria-label="Available services" data-testid="service-catalog">
+            {selectedServiceIds.length > 0 && (
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <p className="text-sm font-semibold text-foreground">Add another service</p>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setShowInactiveServices(false)}>
+                  Hide
+                </Button>
+              </div>
+            )}
+            {inactiveServiceIds.map((serviceId) => serviceRenderers[serviceId]())}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

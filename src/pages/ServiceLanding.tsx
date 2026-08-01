@@ -290,6 +290,7 @@ const ServiceLanding = () => {
           setTierCustomization(tier, customization);
         }}
         homeSquareFootage={homeDetails.squareFootage}
+        quotePhase={oneTimeQuote.phase}
         planPhase={bundleState.phase}
         onRetryPlan={bundleState.refetch}
       />
