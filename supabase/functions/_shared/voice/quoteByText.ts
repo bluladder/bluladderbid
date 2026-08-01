@@ -18,6 +18,8 @@ import { parseSpokenEmail } from "./spokenEmail.ts";
 
 export type QuoteByTextOutcome =
   | "sent"
+  | "queued"
+  | "delivery_uncertain"
   | "cancelled"
   | "not_sent_no_firm_quote"
   | "not_sent_missing_phone"
@@ -35,6 +37,20 @@ export interface QuoteByTextPlan {
   event: string;
   /** Field to ask for next, when the blocker is missing data. */
   missingField: "phone" | "name" | "address" | "email" | null;
+}
+
+export interface QuoteDeliveryOperationResult {
+  /** Legacy compatibility: true is treated as provider_accepted. */
+  ok?: boolean;
+  status?:
+    | "queued"
+    | "provider_accepted"
+    | "retry_pending"
+    | "uncertain"
+    | "failed_terminal";
+  reason?: string | null;
+  attemptId?: string | null;
+  providerMessageId?: string | null;
 }
 
 /** Does the caller explicitly ask for the quote in writing? */
@@ -96,7 +112,7 @@ export async function planQuoteByTextResponse(args: {
   address?: string | null;
   addressEligible?: boolean;
   deliver?:
-    | (() => Promise<{ ok: boolean; reason?: string | null }>)
+    | (() => Promise<QuoteDeliveryOperationResult>)
     | null;
 }): Promise<QuoteByTextPlan> {
   if (!args.quoteIsFirm || !args.total) {
@@ -170,7 +186,9 @@ export async function planQuoteByTextResponse(args: {
   let reason: string | null = null;
   try {
     const result = await args.deliver();
-    if (result?.ok) {
+    const deliveryStatus = result?.status ??
+      (result?.ok ? "provider_accepted" : "failed_terminal");
+    if (deliveryStatus === "provider_accepted") {
       return {
         sent: true,
         outcome: "sent",
@@ -179,6 +197,26 @@ export async function planQuoteByTextResponse(args: {
         reply: `Done — I've texted the quote of about $${
           Math.round(args.total)
         } to your number. Would you like me to check appointment times while you have me?`,
+      };
+    }
+    if (deliveryStatus === "queued" || deliveryStatus === "retry_pending") {
+      return {
+        sent: false,
+        outcome: "queued",
+        event: "voice_quote_by_text_queued",
+        missingField: null,
+        reply:
+          "Your written quote is queued for delivery, but I can't honestly say it has reached your phone yet. If the first attempt fails, the system will retry it automatically.",
+      };
+    }
+    if (deliveryStatus === "uncertain") {
+      return {
+        sent: false,
+        outcome: "delivery_uncertain",
+        event: "voice_quote_by_text_uncertain",
+        missingField: null,
+        reply:
+          "The delivery request was submitted, but I can't confirm that the text reached your phone. I won't call it sent until the provider confirms it; a teammate can follow up if it does not arrive.",
       };
     }
     reason = result?.reason ?? null;

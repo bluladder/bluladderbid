@@ -24,7 +24,12 @@
 import type { ConversationFacts } from "../conversationState.ts";
 import { isQuoteFirm } from "../conversationState.ts";
 import { buildQuoteRequest } from "../aiTools.ts";
-import { normalizeEmail, normalizePhone } from "../quoteSession.ts";
+import {
+  normalizeEmail,
+  normalizePhone,
+  sessionInputsKey,
+  type QuoteSessionFields,
+} from "../quoteSession.ts";
 
 type SB = any;
 
@@ -34,6 +39,7 @@ export type VoiceQuoteDeliveryReason =
   | "quote_not_firm"
   | "missing_quote_total"
   | "missing_address"
+  | "stale_quote_context"
   | "promotion_unmappable"
   | "email_unavailable"
   | "save_quote_failed"
@@ -41,6 +47,12 @@ export type VoiceQuoteDeliveryReason =
 
 export interface VoiceQuoteDeliveryResult {
   ok: boolean;
+  status:
+    | "queued"
+    | "provider_accepted"
+    | "retry_pending"
+    | "uncertain"
+    | "failed_terminal";
   reason?: VoiceQuoteDeliveryReason;
   quoteId?: string | null;
   /** Raw upstream status, for journaling/diagnostics only. */
@@ -78,6 +90,8 @@ interface SessionContext {
   emailNormalized: string | null;
   customerId: string | null;
   propertyId: string | null;
+  quoteId: string | null;
+  fields: QuoteSessionFields | null;
 }
 
 async function readSessionContext(
@@ -88,12 +102,14 @@ async function readSessionContext(
     emailNormalized: null,
     customerId: null,
     propertyId: null,
+    quoteId: null,
+    fields: null,
   };
   if (!quoteSessionId) return empty;
   try {
     const { data } = await supabase
       .from("quote_sessions")
-      .select("email_normalized, customer_id, property_id")
+      .select("email_normalized, customer_id, property_id, quote_id, fields")
       .eq("id", quoteSessionId)
       .maybeSingle();
     if (!data) return empty;
@@ -101,6 +117,8 @@ async function readSessionContext(
       emailNormalized: normalizeEmail(data.email_normalized ?? null),
       customerId: (data.customer_id as string | null) ?? null,
       propertyId: (data.property_id as string | null) ?? null,
+      quoteId: (data.quote_id as string | null) ?? null,
+      fields: (data.fields as QuoteSessionFields | null) ?? null,
     };
   } catch {
     return empty;
@@ -317,30 +335,48 @@ export async function deliverVoiceQuoteByText(
 ): Promise<VoiceQuoteDeliveryResult> {
   const facts = input.facts;
   const phoneE164 = normalizePhone(facts.contact?.phone ?? null);
-  if (!phoneE164) return { ok: false, reason: "missing_phone" };
+  if (!phoneE164) return { ok: false, status: "failed_terminal", reason: "missing_phone" };
   if (facts.contact?.phoneConfirmed !== true) {
-    return { ok: false, reason: "phone_not_confirmed" };
+    return { ok: false, status: "failed_terminal", reason: "phone_not_confirmed" };
   }
-  if (!isQuoteFirm(facts)) return { ok: false, reason: "quote_not_firm" };
+  if (!isQuoteFirm(facts)) return { ok: false, status: "failed_terminal", reason: "quote_not_firm" };
   const total = Number(facts.quote?.total ?? 0);
   if (!isFinite(total) || total <= 0) {
-    return { ok: false, reason: "missing_quote_total" };
+    return { ok: false, status: "failed_terminal", reason: "missing_quote_total" };
   }
   if (
     !facts.address || !facts.address.trim() ||
     facts.serviceArea?.status !== "eligible"
   ) {
-    return { ok: false, reason: "missing_address" };
+    return { ok: false, status: "failed_terminal", reason: "missing_address" };
   }
   // A promotion changes the authoritative price and cannot be reconstructed
   // from spoken facts (it needs the exact promo id + window count). Fail
   // closed rather than persist a quote at the wrong price.
-  if (facts.promotionId) return { ok: false, reason: "promotion_unmappable" };
+  if (facts.promotionId) return { ok: false, status: "failed_terminal", reason: "promotion_unmappable" };
 
   const session = await readSessionContext(
     input.supabase,
     input.quoteSessionId ?? null,
   );
+  if (session.fields) {
+    const currentInputsKey = sessionInputsKey(session.fields);
+    const quotedInputsKey = typeof session.fields.lastQuoteResult?.inputsKey === "string"
+      ? session.fields.lastQuoteResult.inputsKey
+      : null;
+    const journeyInputsKey = session.fields.voiceJourney?.quoteContext?.inputsKey ?? null;
+    if (
+      !quotedInputsKey || quotedInputsKey !== currentInputsKey ||
+      (journeyInputsKey != null && journeyInputsKey !== currentInputsKey)
+    ) {
+      return {
+        ok: false,
+        status: "failed_terminal",
+        reason: "stale_quote_context",
+        quoteId: session.quoteId,
+      };
+    }
+  }
   const email = await resolveQuoteRecipientEmail(
     input.supabase,
     facts,
@@ -350,10 +386,10 @@ export async function deliverVoiceQuoteByText(
       session,
     },
   );
-  if (!email) return { ok: false, reason: "email_unavailable" };
+  if (!email) return { ok: false, status: "failed_terminal", reason: "email_unavailable" };
 
   const sourceSessionId = input.quoteSessionId ?? input.conversationId ?? null;
-  if (!sourceSessionId) return { ok: false, reason: "save_quote_failed" };
+  if (!sourceSessionId) return { ok: false, status: "failed_terminal", reason: "save_quote_failed" };
 
   const saveBody = buildVoiceSaveQuoteBody({
     facts,
@@ -366,6 +402,7 @@ export async function deliverVoiceQuoteByText(
   if (saved.status !== 200 || !quoteId) {
     return {
       ok: false,
+      status: saved.status >= 500 ? "retry_pending" : "failed_terminal",
       reason: "save_quote_failed",
       quoteId,
       detail: String(saved.json?.status ?? saved.status),
@@ -381,8 +418,17 @@ export async function deliverVoiceQuoteByText(
     sent.json?.transactionalSent === true &&
     sent.json?.deliveryStatus === "accepted";
   if (!delivered) {
+    const upstreamStatus = String(sent.json?.deliveryStatus ?? "");
+    const deliveryStatus = upstreamStatus === "delivery_unknown" ||
+        upstreamStatus === "uncertain"
+      ? "uncertain"
+      : upstreamStatus === "queued" || upstreamStatus === "retry_pending" ||
+          sent.status >= 500
+      ? "retry_pending"
+      : "failed_terminal";
     return {
       ok: false,
+      status: deliveryStatus,
       reason: "sms_not_sent",
       quoteId,
       detail: String(
@@ -392,5 +438,5 @@ export async function deliverVoiceQuoteByText(
     };
   }
   await linkSavedQuote(input, quoteId, session);
-  return { ok: true, quoteId };
+  return { ok: true, status: "provider_accepted", quoteId };
 }

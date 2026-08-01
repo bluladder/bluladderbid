@@ -16,9 +16,121 @@ export interface VoiceAddressCandidate {
   /** Raw address string the caller gave us. */
   spokenAddress?: string;
   /** "pending" until the caller says yes; then "confirmed". */
-  status?: "pending" | "confirmed" | "house_number_mismatch";
+  status?: "pending" | "confirmed" | "house_number_mismatch" | "component_incomplete";
   /** The confirmed canonical address, once confirmed. */
   confirmedAddress?: string | null;
+  components?: VoiceAddressComponents;
+  pendingComponent?: AddressComponentName | null;
+  componentAttempts?: Partial<Record<AddressComponentName, number>>;
+}
+
+export interface VoiceAddressComponents {
+  house_number?: string;
+  street?: string;
+  unit?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+}
+
+export type AddressComponentName = keyof VoiceAddressComponents;
+
+export const MAX_ADDRESS_COMPONENT_ATTEMPTS = 2;
+
+export function recordAddressComponentAttempt(
+  candidate: VoiceAddressCandidate,
+  component: AddressComponentName,
+): VoiceAddressCandidate {
+  return {
+    ...candidate,
+    componentAttempts: {
+      ...(candidate.componentAttempts ?? {}),
+      [component]: (candidate.componentAttempts?.[component] ?? 0) + 1,
+    },
+  };
+}
+
+export function addressComponentAttemptsExhausted(
+  candidate: VoiceAddressCandidate,
+  component: AddressComponentName,
+): boolean {
+  return (candidate.componentAttempts?.[component] ?? 0) >=
+    MAX_ADDRESS_COMPONENT_ATTEMPTS;
+}
+
+const COMPONENT_ORDER: readonly AddressComponentName[] = [
+  "house_number",
+  "street",
+  "city",
+  "state",
+  "postal_code",
+];
+
+export function addressComponentsFromServiceAreaResult(
+  result: Record<string, unknown> | null | undefined,
+): VoiceAddressComponents {
+  return {
+    house_number: typeof result?.streetNumber === "string" ? result.streetNumber : undefined,
+    street: typeof result?.route === "string" ? result.route : undefined,
+    city: typeof result?.city === "string" ? result.city : undefined,
+    state: typeof result?.state === "string" ? result.state : undefined,
+    postal_code: typeof result?.postalCode === "string" ? result.postalCode : undefined,
+  };
+}
+
+export function nextMissingAddressComponent(
+  components: VoiceAddressComponents,
+): AddressComponentName {
+  return COMPONENT_ORDER.find((key) => !components[key]?.trim()) ?? "street";
+}
+
+export function addressComponentQuestion(component: AddressComponentName): string {
+  switch (component) {
+    case "house_number":
+      return buildHouseNumberQuestion();
+    case "street":
+      return "I have the other address details. What is the street name, including Street, Road, Drive, or Lane?";
+    case "unit":
+      return "What is the apartment, suite, or unit number?";
+    case "city":
+      return "I have the street. What city is the property in?";
+    case "state":
+      return "What state is the property in?";
+    case "postal_code":
+      return "What is the five-digit ZIP code for that address?";
+  }
+}
+
+export function normalizeAddressComponentAnswer(
+  component: AddressComponentName,
+  utterance: string,
+): string | null {
+  const raw = String(utterance ?? "").trim().replace(/\s+/g, " ");
+  if (!raw) return null;
+  if (component === "house_number") return parseSpokenHouseNumber(raw);
+  if (component === "postal_code") {
+    const numeric = raw.match(/\b\d{5}(?:-\d{4})?\b/)?.[0];
+    if (numeric) return numeric;
+    const spoken = parseSpokenHouseNumber(raw);
+    return spoken?.length === 5 ? spoken : null;
+  }
+  if (component === "state") {
+    if (/\b(texas|tx)\b/i.test(raw)) return "TX";
+    return /^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : null;
+  }
+  if (component === "unit") return raw.length <= 20 ? raw : null;
+  return raw.length <= 80 && !/@/.test(raw) ? raw : null;
+}
+
+export function formatAddressComponents(
+  components: VoiceAddressComponents,
+): string {
+  const street = [components.house_number, components.street]
+    .filter(Boolean).join(" ");
+  const unit = components.unit ? `, ${components.unit}` : "";
+  const locality = [components.city, components.state, components.postal_code]
+    .filter(Boolean).join(" ");
+  return `${street}${unit}${locality ? `, ${locality}` : ""}`.trim();
 }
 
 const DIGITS = [

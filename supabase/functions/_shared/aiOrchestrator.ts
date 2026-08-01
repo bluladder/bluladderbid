@@ -54,11 +54,18 @@ import {
 import { computePartialWindowPrice } from "./partialWindowPricing.ts";
 import { isFullE164 } from "./contactIntegrity.ts";
 import {
+  addressComponentQuestion,
+  addressComponentAttemptsExhausted,
+  addressComponentsFromServiceAreaResult,
   buildAddressReadback,
   buildHouseNumberQuestion,
   classifyAddressConfirmation,
+  formatAddressComponents,
+  nextMissingAddressComponent,
+  normalizeAddressComponentAnswer,
   parseSpokenHouseNumber,
   planVoiceAddressGate,
+  recordAddressComponentAttempt,
   replaceHouseNumber,
 } from "./voice/voiceAddressGate.ts";
 import {
@@ -672,6 +679,26 @@ function factPatchFromTool(
             confirmedAddress: null,
           };
       }
+      if (channel === "voice" && result?.status === "address_incomplete") {
+        const components = {
+          ...(facts.addressCandidate?.components ?? {}),
+          ...Object.fromEntries(
+            Object.entries(addressComponentsFromServiceAreaResult(result))
+              .filter(([, value]) => !!value),
+          ),
+        };
+        const pendingComponent = nextMissingAddressComponent(components);
+        voiceStatus = "address_incomplete";
+        addressCandidate = {
+          formattedAddress: result?.formattedAddress ?? String(args.address ?? ""),
+          spokenAddress: String(args.address ?? ""),
+          status: "component_incomplete",
+          confirmedAddress: null,
+          components,
+          pendingComponent,
+          componentAttempts: facts.addressCandidate?.componentAttempts ?? {},
+        };
+      }
       return {
         address: result?.formattedAddress ||
           String(args.address || facts.address || ""),
@@ -680,6 +707,12 @@ function factPatchFromTool(
           status: voiceStatus,
           formattedAddress: result?.formattedAddress,
           reason: result?.reason,
+          geocodingConfidence: result?.status === "eligible"
+            ? "exact"
+            : result?.status === "address_incomplete" && result?.formattedAddress
+            ? "partial"
+            : "unavailable",
+          ambiguous: result?.reason === "geocoder_ambiguous_or_partial",
         },
         manualReviewReason: result?.status === "manual_review_required"
           ? (result?.reason ?? "Outside primary service area")
@@ -1431,7 +1464,8 @@ export function persistFacts(
       update.service_area_status = "eligible";
       update.service_area_result = { ...(sa ?? {}), status: "eligible" };
     } else if (
-      cand?.status === "pending" || cand?.status === "house_number_mismatch"
+      cand?.status === "pending" || cand?.status === "house_number_mismatch" ||
+      cand?.status === "component_incomplete"
     ) {
       update.service_address = cand.formattedAddress || facts.address || null;
       update.service_area_status = "pending_confirmation";
@@ -1852,6 +1886,101 @@ export async function runOrchestrator(
           next?.status === "pending"
             ? "voice_address_confirmation_required"
             : "voice_address_house_number_mismatch",
+        ],
+        state,
+        channel,
+        facts,
+        railBooked: false,
+        deterministic: true,
+      });
+    }
+
+    // Preserve every verified address component and ask only for the one that
+    // the canonical geocoder could not resolve. The completed candidate is
+    // revalidated and still requires the normal full-address confirmation.
+    if (candidate && candidate.status === "component_incomplete") {
+      const component = candidate.pendingComponent ??
+        nextMissingAddressComponent(candidate.components ?? {});
+      const value = normalizeAddressComponentAnswer(component, userMessage);
+      if (!value) {
+        const attempted = recordAddressComponentAttempt(candidate, component);
+        facts = mergeFacts(facts, { addressCandidate: attempted });
+        await persistFacts(supabase, conversationId, facts, state, {
+          sessionToken,
+          channel,
+          windowIntent,
+        });
+        if (addressComponentAttemptsExhausted(attempted, component)) {
+          const callbackArgs = {
+            reason: `address_${component}_unresolved`,
+          } as Record<string, unknown>;
+          try {
+            const callback = await runTool(
+              "request_human_callback",
+              toolCtx,
+              callbackArgs,
+            );
+            toolEvents.push({ tool: "request_human_callback", result: callback });
+          } catch { /* persistence above still preserves the request */ }
+          return finalize({
+            reply:
+              "I still could not verify that address detail, so I have preserved the request for a teammate to confirm. I will not guess the address or offer appointment times.",
+            toolEvents,
+            events: ["voice_address_follow_up_required"],
+            state,
+            channel,
+            facts,
+            railBooked: false,
+            deterministic: true,
+          });
+        }
+        return finalize({
+          reply: addressComponentQuestion(component),
+          toolEvents,
+          events: ["voice_address_component_required"],
+          state,
+          channel,
+          facts,
+          railBooked: false,
+          deterministic: true,
+        });
+      }
+      const components = { ...(candidate.components ?? {}), [component]: value };
+      const rebuilt = formatAddressComponents(components);
+      const vArgs = { address: rebuilt } as Record<string, unknown>;
+      const vResult = await runTool("validate_service_area", toolCtx, vArgs);
+      toolEvents.push({ tool: "validate_service_area", result: vResult });
+      facts = mergeFacts(
+        facts,
+        factPatchFromTool(
+          "validate_service_area",
+          vArgs,
+          vResult,
+          facts,
+          channel,
+        ),
+      );
+      state = computeState(facts, channel);
+      await persistFacts(supabase, conversationId, facts, state, {
+        sessionToken,
+        channel,
+        windowIntent,
+      });
+      const next = facts.addressCandidate;
+      const reply = next?.status === "component_incomplete"
+        ? addressComponentQuestion(
+          next.pendingComponent ?? nextMissingAddressComponent(next.components ?? {}),
+        )
+        : next?.formattedAddress
+        ? buildAddressReadback(next.formattedAddress)
+        : "I couldn't verify that address yet. Let me have a teammate confirm it with you.";
+      return finalize({
+        reply,
+        toolEvents,
+        events: [
+          next?.status === "component_incomplete"
+            ? "voice_address_component_required"
+            : "voice_address_confirmation_required",
         ],
         state,
         channel,
