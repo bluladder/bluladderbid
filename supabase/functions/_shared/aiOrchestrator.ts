@@ -54,8 +54,8 @@ import {
 import { computePartialWindowPrice } from "./partialWindowPricing.ts";
 import { isFullE164 } from "./contactIntegrity.ts";
 import {
-  addressComponentQuestion,
   addressComponentAttemptsExhausted,
+  addressComponentQuestion,
   addressComponentsFromServiceAreaResult,
   buildAddressReadback,
   buildHouseNumberQuestion,
@@ -282,6 +282,8 @@ export interface OrchestratorInput {
   supabase: SupabaseClient;
   conversationId: string;
   sessionToken: string;
+  /** Required for voice; resolved server-side from approved provider mappings. */
+  organizationId?: string | null;
   channel: "web" | "voice" | "sms";
   history: { role: "user" | "assistant"; content: string }[];
   userMessage: string;
@@ -691,7 +693,8 @@ function factPatchFromTool(
         const pendingComponent = nextMissingAddressComponent(components);
         voiceStatus = "address_incomplete";
         addressCandidate = {
-          formattedAddress: result?.formattedAddress ?? String(args.address ?? ""),
+          formattedAddress: result?.formattedAddress ??
+            String(args.address ?? ""),
           spokenAddress: String(args.address ?? ""),
           status: "component_incomplete",
           confirmedAddress: null,
@@ -710,7 +713,8 @@ function factPatchFromTool(
           reason: result?.reason,
           geocodingConfidence: result?.status === "eligible"
             ? "exact"
-            : result?.status === "address_incomplete" && result?.formattedAddress
+            : result?.status === "address_incomplete" &&
+                result?.formattedAddress
             ? "partial"
             : "unavailable",
           ambiguous: result?.reason === "geocoder_ambiguous_or_partial",
@@ -1258,6 +1262,7 @@ async function runVoiceRoughQuoteRail(args: {
   toolCtx: ToolContext;
   conversationId: string;
   sessionToken: string;
+  organizationId: string;
   facts: ConversationFacts;
   state: string;
   history: { role: "user" | "assistant"; content: string }[];
@@ -1304,6 +1309,7 @@ async function runVoiceRoughQuoteRail(args: {
     await persistFacts(args.supabase, args.conversationId, facts, state, {
       sessionToken: args.sessionToken,
       channel: "voice",
+      organizationId: args.organizationId,
     });
   }
 
@@ -1312,6 +1318,7 @@ async function runVoiceRoughQuoteRail(args: {
     await persistFacts(args.supabase, args.conversationId, facts, state, {
       sessionToken: args.sessionToken,
       channel: "voice",
+      organizationId: args.organizationId,
     });
     return finalize({
       reply: question,
@@ -1340,6 +1347,7 @@ async function runVoiceRoughQuoteRail(args: {
   await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, {
     sessionToken: args.sessionToken,
     channel: "voice",
+    organizationId: args.organizationId,
   });
 
   if ((result as any)?.status === "missing_information") {
@@ -1413,6 +1421,7 @@ async function runVoiceRoughQuoteRail(args: {
   await persistFacts(args.supabase, args.conversationId, nextFacts, nextState, {
     sessionToken: args.sessionToken,
     channel: "voice",
+    organizationId: args.organizationId,
   });
   return finalize({
     reply,
@@ -1426,7 +1435,7 @@ async function runVoiceRoughQuoteRail(args: {
   });
 }
 
-export function persistFacts(
+export async function persistFacts(
   supabase: SupabaseClient,
   conversationId: string,
   facts: ConversationFacts,
@@ -1434,9 +1443,13 @@ export function persistFacts(
   opts?: {
     sessionToken?: string;
     channel?: "web" | "voice" | "sms";
+    organizationId?: string | null;
     windowIntent?: WindowIntentPatch;
   },
 ) {
+  if (opts?.channel === "voice" && !opts.organizationId) {
+    throw new Error("voice_organization_authority_required");
+  }
   const c = facts.contact ?? {};
   const update: Record<string, unknown> = {
     facts: {
@@ -1493,117 +1506,155 @@ export function persistFacts(
       update.service_area_result = sa;
     }
   }
-  const write = opts?.channel === "voice"
-    ? supabase
+  if (opts?.channel === "voice") {
+    // Conversation creation belongs exclusively to the authority-gated ingress.
+    // An upsert here could adopt or overwrite a null/cross-tenant row if
+    // ownership changed between the initial read and this write.
+    const { data, error } = await supabase
       .from("chat_conversations")
-      .upsert({
-        id: conversationId,
-        session_token: opts.sessionToken || conversationId,
-        channel: "voice",
-        ...update,
-      }, { onConflict: "id" })
-    : supabase.from("chat_conversations").update(update).eq(
+      .update(update)
+      .eq("id", conversationId)
+      .eq("organization_id", opts.organizationId)
+      .select("id")
+      .maybeSingle();
+    if (error || !data) {
+      throw new Error("voice_conversation_persistence_failed");
+    }
+  } else {
+    await supabase.from("chat_conversations").update(update).eq(
       "id",
       conversationId,
     );
-  // Mirror facts into the canonical Quote Session (Phase 4C-β.4). Best-effort:
-  // failures here must not break the primary conversation write.
-  return Promise.resolve(write).then(async () => {
-    try {
-      const session = await findOrCreateQuoteSession(supabase, {
-        conversationId,
-        channel: (opts?.channel ?? "web") as "voice" | "web" | "sms",
-        phone: facts.contact?.phone ?? null,
-        email: facts.contact?.email ?? null,
-      });
-      if (session?.id) await syncQuoteSession(supabase, session.id, facts);
-      // Phase 4C-β.4A: apply window-scope classification into the same
-      // canonical row (never a duplicate/voice-only store). Scope changes go
-      // through changeWindowScope so unrelated captured facts are preserved.
-      if (
-        session?.id && opts?.windowIntent &&
-        Object.keys(opts.windowIntent).length > 0
-      ) {
-        try {
-          const { data: row } = await supabase
-            .from("quote_sessions")
-            .select("*")
-            .eq("id", session.id)
-            .maybeSingle();
-          if (row) {
-            const current = {
-              id: row.id as string,
-              channel: row.channel as any,
-              conversationIds: (row.conversation_ids as string[]) ?? [],
-              fields: (row.fields as QuoteSessionFields) ?? {},
-              fieldStatus: (row.field_status as any) ?? {},
-              requiredRemaining: (row.required_remaining as string[]) ?? [],
-              quoteStatus: (row.quote_status as any) ?? "none",
-              bookingReady: !!row.booking_ready,
-            };
-            let next = current;
-            const wi = opts.windowIntent;
-            if (
-              wi.windowCleaningScope &&
-              wi.windowCleaningScope !== current.fields.windowCleaningScope &&
-              current.fields.windowCleaningScope
-            ) {
-              next = changeWindowScope(current, wi.windowCleaningScope);
-            }
-            const patch: Partial<QuoteSessionFields> = {};
-            if (wi.customerType) patch.customerType = wi.customerType;
-            if (wi.windowCleaningScope) {
-              patch.windowCleaningScope = wi.windowCleaningScope;
-            }
-            if (wi.windowCleaningSides) {
-              patch.windowCleaningSides = wi.windowCleaningSides;
-            }
-            if (wi.windowCount != null) patch.windowCount = wi.windowCount;
-            if (wi.partialAreas?.length) patch.partialAreas = wi.partialAreas;
-            if (wi.commercialPropertyType) {
-              patch.commercialPropertyType = wi.commercialPropertyType;
-            }
-            next = mergeSessionFields(next, patch);
-            // Compute partial-window price via the canonical rule when we have
-            // enough inputs. Never invoke for whole-home or commercial.
-            const f = next.fields;
-            if (
-              f.windowCleaningScope === "partial" &&
-              typeof f.windowCount === "number" &&
-              (f.windowCleaningSides === "outside_only" ||
-                f.windowCleaningSides === "inside_and_outside")
-            ) {
-              const pq = computePartialWindowPrice({
-                windowCount: f.windowCount,
-                sides: f.windowCleaningSides,
-              });
-              next = mergeSessionFields(next, {
-                partialWindowPrice: pq.price,
-                partialWindowRuleVersion: pq.ruleVersion,
-              });
-            }
-            const dbUpdate: Record<string, unknown> = {
-              fields: next.fields,
-              field_status: next.fieldStatus,
-            };
-            if (
-              f.windowCleaningScope === "commercial_custom" ||
-              f.customerType === "commercial"
-            ) {
-              dbUpdate.human_pricing_required = true;
-              dbUpdate.bid_request_status = "commercial_bid_requested";
-            }
-            await supabase.from("quote_sessions").update(dbUpdate).eq(
-              "id",
-              session.id,
+  }
+
+  // Mirror facts into the canonical Quote Session (Phase 4C-β.4). Voice is
+  // fail-closed because this row drives pricing/readiness. Web/SMS retain the
+  // historical best-effort mirror until their tenant ingress is activated.
+  try {
+    const session = await findOrCreateQuoteSession(supabase, {
+      conversationId,
+      channel: (opts?.channel ?? "web") as "voice" | "web" | "sms",
+      phone: facts.contact?.phone ?? null,
+      email: facts.contact?.email ?? null,
+      resolvedOrganizationId: opts?.organizationId ?? null,
+    });
+    if (session?.id) {
+      await syncQuoteSession(
+        supabase,
+        session.id,
+        facts,
+        opts?.organizationId ?? null,
+      );
+    }
+    // Phase 4C-β.4A: apply window-scope classification into the same
+    // canonical row (never a duplicate/voice-only store). Scope changes go
+    // through changeWindowScope so unrelated captured facts are preserved.
+    if (
+      session?.id && opts?.windowIntent &&
+      Object.keys(opts.windowIntent).length > 0
+    ) {
+      try {
+        let rowQuery = supabase
+          .from("quote_sessions")
+          .select("*")
+          .eq("id", session.id);
+        if (opts?.organizationId) {
+          rowQuery = rowQuery.eq("organization_id", opts.organizationId);
+        }
+        const { data: row, error: rowError } = await rowQuery.maybeSingle();
+        if (opts?.channel === "voice" && (rowError || !row)) {
+          throw new Error("voice_quote_session_lookup_failed");
+        }
+        if (row) {
+          const current = {
+            id: row.id as string,
+            channel: row.channel as any,
+            conversationIds: (row.conversation_ids as string[]) ?? [],
+            fields: (row.fields as QuoteSessionFields) ?? {},
+            fieldStatus: (row.field_status as any) ?? {},
+            requiredRemaining: (row.required_remaining as string[]) ?? [],
+            quoteStatus: (row.quote_status as any) ?? "none",
+            bookingReady: !!row.booking_ready,
+          };
+          let next = current;
+          const wi = opts.windowIntent;
+          if (
+            wi.windowCleaningScope &&
+            wi.windowCleaningScope !== current.fields.windowCleaningScope &&
+            current.fields.windowCleaningScope
+          ) {
+            next = changeWindowScope(current, wi.windowCleaningScope);
+          }
+          const patch: Partial<QuoteSessionFields> = {};
+          if (wi.customerType) patch.customerType = wi.customerType;
+          if (wi.windowCleaningScope) {
+            patch.windowCleaningScope = wi.windowCleaningScope;
+          }
+          if (wi.windowCleaningSides) {
+            patch.windowCleaningSides = wi.windowCleaningSides;
+          }
+          if (wi.windowCount != null) patch.windowCount = wi.windowCount;
+          if (wi.partialAreas?.length) patch.partialAreas = wi.partialAreas;
+          if (wi.commercialPropertyType) {
+            patch.commercialPropertyType = wi.commercialPropertyType;
+          }
+          next = mergeSessionFields(next, patch);
+          // Compute partial-window price via the canonical rule when we have
+          // enough inputs. Never invoke for whole-home or commercial.
+          const f = next.fields;
+          if (
+            f.windowCleaningScope === "partial" &&
+            typeof f.windowCount === "number" &&
+            (f.windowCleaningSides === "outside_only" ||
+              f.windowCleaningSides === "inside_and_outside")
+          ) {
+            const pq = computePartialWindowPrice({
+              windowCount: f.windowCount,
+              sides: f.windowCleaningSides,
+            });
+            next = mergeSessionFields(next, {
+              partialWindowPrice: pq.price,
+              partialWindowRuleVersion: pq.ruleVersion,
+            });
+          }
+          const dbUpdate: Record<string, unknown> = {
+            fields: next.fields,
+            field_status: next.fieldStatus,
+          };
+          if (
+            f.windowCleaningScope === "commercial_custom" ||
+            f.customerType === "commercial"
+          ) {
+            dbUpdate.human_pricing_required = true;
+            dbUpdate.bid_request_status = "commercial_bid_requested";
+          }
+          let updateQuery = supabase.from("quote_sessions").update(dbUpdate)
+            .eq("id", session.id);
+          if (opts?.organizationId) {
+            updateQuery = updateQuery.eq(
+              "organization_id",
+              opts.organizationId,
             );
           }
-        } catch (_e) { /* best-effort */ }
+          if (opts?.channel === "voice") {
+            const { data, error } = await updateQuery.select("id")
+              .maybeSingle();
+            if (error || !data) {
+              throw new Error("voice_quote_session_update_failed");
+            }
+          } else {
+            await updateQuery;
+          }
+        }
+      } catch (error) {
+        if (opts?.channel === "voice") throw error;
+        // Best-effort for non-voice channels.
       }
-    } catch (_e) {
-      // Non-fatal: canonical mirror is additive; primary write already committed.
     }
-  });
+  } catch (error) {
+    if (opts?.channel === "voice") throw error;
+    // Non-fatal for web/SMS: canonical mirror is additive there today.
+  }
 }
 
 export async function runOrchestrator(
@@ -1613,16 +1664,31 @@ export async function runOrchestrator(
     supabase,
     conversationId,
     sessionToken,
+    organizationId,
     channel,
     history,
     userMessage,
   } = input;
 
-  const { data: row } = await supabase
+  if (channel === "voice" && !organizationId) {
+    throw new Error("voice_organization_authority_required");
+  }
+
+  let conversationQuery = supabase
     .from("chat_conversations")
     .select("*")
-    .eq("id", conversationId)
+    .eq("id", conversationId);
+  if (channel === "voice") {
+    conversationQuery = conversationQuery.eq(
+      "organization_id",
+      organizationId,
+    );
+  }
+  const { data: row, error: conversationError } = await conversationQuery
     .maybeSingle();
+  if (channel === "voice" && (conversationError || !row)) {
+    throw new Error("voice_conversation_authority_mismatch");
+  }
 
   let facts = factsFromRow(row);
   if (channel === "voice") {
@@ -1633,6 +1699,7 @@ export async function runOrchestrator(
       const session = await findQuoteSessionByConversation(
         supabase,
         conversationId,
+        organizationId,
       );
       const confirmed = session?.fields?.callerIdConfirmationStatus;
       const sessionPhone = session?.fields?.phone;
@@ -1680,6 +1747,7 @@ export async function runOrchestrator(
     conversationId,
     sessionToken,
     channel,
+    organizationId: organizationId ?? null,
   };
   const toolEvents: { tool: string; result: any }[] = [];
   const events: string[] = [];
@@ -1722,6 +1790,7 @@ export async function runOrchestrator(
       await persistFacts(supabase, conversationId, nextFacts, state, {
         sessionToken,
         channel,
+        organizationId,
         windowIntent,
       });
       return finalize({
@@ -1740,6 +1809,7 @@ export async function runOrchestrator(
       await persistFacts(supabase, conversationId, facts, state, {
         sessionToken,
         channel,
+        organizationId,
         windowIntent,
       });
       return {
@@ -1789,6 +1859,7 @@ export async function runOrchestrator(
         await persistFacts(supabase, conversationId, confirmed, nextState, {
           sessionToken,
           channel,
+          organizationId,
           windowIntent,
         });
         return finalize({
@@ -1812,6 +1883,7 @@ export async function runOrchestrator(
         await persistFacts(supabase, conversationId, cleared, nextState, {
           sessionToken,
           channel,
+          organizationId,
           windowIntent,
         });
         return finalize({
@@ -1878,6 +1950,7 @@ export async function runOrchestrator(
       await persistFacts(supabase, conversationId, facts, state, {
         sessionToken,
         channel,
+        organizationId,
         windowIntent,
       });
       const next = facts.addressCandidate ?? null;
@@ -1913,6 +1986,7 @@ export async function runOrchestrator(
         await persistFacts(supabase, conversationId, facts, state, {
           sessionToken,
           channel,
+          organizationId,
           windowIntent,
         });
         if (addressComponentAttemptsExhausted(attempted, component)) {
@@ -1925,7 +1999,10 @@ export async function runOrchestrator(
               toolCtx,
               callbackArgs,
             );
-            toolEvents.push({ tool: "request_human_callback", result: callback });
+            toolEvents.push({
+              tool: "request_human_callback",
+              result: callback,
+            });
           } catch { /* persistence above still preserves the request */ }
           return finalize({
             reply:
@@ -1950,7 +2027,10 @@ export async function runOrchestrator(
           deterministic: true,
         });
       }
-      const components = { ...(candidate.components ?? {}), [component]: value };
+      const components = {
+        ...(candidate.components ?? {}),
+        [component]: value,
+      };
       const rebuilt = formatAddressComponents(components);
       const vArgs = { address: rebuilt } as Record<string, unknown>;
       const vResult = await runTool("validate_service_area", toolCtx, vArgs);
@@ -1969,12 +2049,14 @@ export async function runOrchestrator(
       await persistFacts(supabase, conversationId, facts, state, {
         sessionToken,
         channel,
+        organizationId,
         windowIntent,
       });
       const next = facts.addressCandidate;
       const reply = next?.status === "component_incomplete"
         ? addressComponentQuestion(
-          next.pendingComponent ?? nextMissingAddressComponent(next.components ?? {}),
+          next.pendingComponent ??
+            nextMissingAddressComponent(next.components ?? {}),
         )
         : next?.formattedAddress
         ? buildAddressReadback(next.formattedAddress)
@@ -2005,6 +2087,7 @@ export async function runOrchestrator(
       toolCtx,
       conversationId,
       sessionToken,
+      organizationId: organizationId!,
       facts,
       state,
       history,
@@ -2047,6 +2130,7 @@ export async function runOrchestrator(
     await persistFacts(supabase, conversationId, cleared, state, {
       sessionToken,
       channel,
+      organizationId,
       windowIntent,
     });
     return finalize({
@@ -2118,6 +2202,7 @@ export async function runOrchestrator(
         await persistFacts(supabase, conversationId, keptFacts, state, {
           sessionToken,
           channel,
+          organizationId,
           windowIntent,
         });
         return finalize({
@@ -2137,6 +2222,7 @@ export async function runOrchestrator(
       const session = await findQuoteSessionByConversation(
         supabase,
         conversationId,
+        organizationId,
       );
       quoteSessionId = session?.id ?? null;
     } catch (_e) { /* conversationId is the idempotency-scope fallback */ }
@@ -2181,6 +2267,7 @@ export async function runOrchestrator(
     await persistFacts(supabase, conversationId, nextFacts, state, {
       sessionToken,
       channel,
+      organizationId,
       windowIntent,
     });
     return finalize({
@@ -2251,6 +2338,7 @@ export async function runOrchestrator(
       await persistFacts(supabase, conversationId, facts, state, {
         sessionToken,
         channel,
+        organizationId,
         windowIntent,
       });
       railBooked = (result as any)?.status === "confirmed";
@@ -2330,6 +2418,7 @@ export async function runOrchestrator(
         facts,
         state,
         priorState,
+        organizationId,
       );
       let safe = guardConfirmedLanguage(
         choice.content || "How can I help with your exterior cleaning today?",
@@ -2396,6 +2485,7 @@ export async function runOrchestrator(
       await persistFacts(supabase, conversationId, facts, state, {
         sessionToken,
         channel,
+        organizationId,
         windowIntent,
       });
 
@@ -2420,7 +2510,14 @@ export async function runOrchestrator(
     // Reasoning suppression, one-question enforcement and the pending-address
     // readback override now live in finalize(), the single voice reply funnel.
   }
-  await maybeUpdateSummary(supabase, conversationId, facts, state, priorState);
+  await maybeUpdateSummary(
+    supabase,
+    conversationId,
+    facts,
+    state,
+    priorState,
+    organizationId,
+  );
   return finalize({
     reply,
     toolEvents,
@@ -2578,14 +2675,21 @@ async function maybeUpdateSummary(
   facts: ConversationFacts,
   state: string,
   priorState: string,
+  organizationId?: string | null,
 ) {
   if (!SUMMARY_MILESTONES.has(state) || state === priorState) return;
   try {
-    await supabase.from("chat_conversations").update({
+    let updateQuery = supabase.from("chat_conversations").update({
       ai_summary: buildSummary(facts, state),
       ai_summary_updated_at: new Date().toISOString(),
     }).eq("id", conversationId);
+    if (organizationId) {
+      updateQuery = updateQuery.eq("organization_id", organizationId);
+    }
+    const { error } = await updateQuery;
+    if (error && organizationId) throw error;
   } catch (e) {
+    if (organizationId) throw e;
     console.error("summary update failed:", e);
   }
 }

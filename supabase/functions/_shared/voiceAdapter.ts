@@ -12,6 +12,7 @@
 // Vapi/CallRail/Twilio SDKs or hard-code provider-specific field names.
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { deterministicUuid } from "./deterministicUuid.ts";
 import { runOrchestrator } from "./aiOrchestrator.ts";
 import { recordVoiceTurns } from "./voice/turnJournal.ts";
 import { suppressAcknowledgement } from "./voice/voiceExitIntents.ts";
@@ -292,6 +293,8 @@ export type VoiceStreamEvent =
 export interface VoiceStreamArgs {
   supabase: SupabaseClient;
   request: ParsedAdapterRequest;
+  /** Server-resolved organization authority. Never derive from ANI or body metadata. */
+  organizationId: string;
   conversationId?: string;
   sessionToken?: string;
   /** Called at each event. Return false to abort (transport disconnected). */
@@ -301,23 +304,62 @@ export interface VoiceStreamArgs {
 export async function ensureVoiceConversation(args: {
   supabase: SupabaseClient;
   request: ParsedAdapterRequest;
+  /** Server-resolved organization authority. */
+  organizationId: string;
   conversationId?: string;
   sessionToken?: string;
-}): Promise<{ conversationId: string; sessionToken: string }> {
-  const { supabase, request } = args;
+}): Promise<{
+  conversationId: string;
+  sessionToken: string;
+  organizationId: string;
+}> {
+  const { supabase, request, organizationId } = args;
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(organizationId)
+  ) {
+    throw new Error("voice_organization_authority_required");
+  }
   const sessionToken = args.sessionToken || request.sessionId;
+  const exactLineage = (
+    row: {
+      id?: string | null;
+      session_token?: string | null;
+      organization_id?: string | null;
+      channel?: string | null;
+    } | null,
+    expectedId?: string,
+  ) =>
+    !!row?.id && (!expectedId || row.id === expectedId) &&
+    row.organization_id === organizationId && row.channel === "voice" &&
+    row.session_token === sessionToken;
+
+  const rereadCreated = async (id: string) => {
+    const { data, error } = await supabase
+      .from("chat_conversations")
+      .select("id, session_token, organization_id, channel")
+      .eq("id", id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    return !error && exactLineage(data, id) ? data : null;
+  };
 
   if (args.conversationId) {
     const { data: existing, error: existingError } = await supabase
       .from("chat_conversations")
-      .select("id, session_token")
+      .select("id, session_token, organization_id, channel")
       .eq("id", args.conversationId)
+      .eq("organization_id", organizationId)
       .maybeSingle();
     if (existingError) throw new Error("voice_conversation_lookup_failed");
     if (existing?.id) {
+      if (!exactLineage(existing, args.conversationId)) {
+        throw new Error("voice_conversation_authority_mismatch");
+      }
       return {
         conversationId: existing.id,
         sessionToken: existing.session_token || sessionToken,
+        organizationId,
       };
     }
 
@@ -327,51 +369,75 @@ export async function ensureVoiceConversation(args: {
         id: args.conversationId,
         session_token: sessionToken,
         channel: "voice",
+        organization_id: organizationId,
       })
-      .select("id, session_token")
+      .select("id, session_token, organization_id, channel")
       .single();
-    if (insertError || !inserted?.id) {
-      throw new Error("voice_conversation_insert_failed");
+    const created = insertError
+      ? await rereadCreated(args.conversationId)
+      : inserted;
+    if (!exactLineage(created, args.conversationId)) {
+      throw new Error("voice_conversation_authority_mismatch");
     }
-    if (inserted?.id) {
-      return {
-        conversationId: inserted.id,
-        sessionToken: inserted.session_token || sessionToken,
-      };
-    }
+    return {
+      conversationId: created!.id!,
+      sessionToken: created!.session_token!,
+      organizationId,
+    };
   }
 
-  const { data: existing, error: existingError } = await supabase
+  // Provider call/session identifiers are globally stable capabilities. Read
+  // every match only to validate tenant lineage; never disclose row contents.
+  const { data: matches, error: existingError } = await supabase
     .from("chat_conversations")
-    .select("id, session_token")
+    .select("id, session_token, organization_id, channel")
     .eq("session_token", sessionToken)
     .eq("channel", "voice")
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
   if (existingError) throw new Error("voice_conversation_lookup_failed");
+  const existingRows = Array.isArray(matches) ? matches : [];
+  if (existingRows.length > 1) {
+    throw new Error("voice_conversation_authority_ambiguous");
+  }
+  const existing = existingRows[0] ?? null;
   if (existing?.id) {
+    if (!exactLineage(existing)) {
+      throw new Error("voice_conversation_authority_mismatch");
+    }
     return {
       conversationId: existing.id,
       sessionToken: existing.session_token || sessionToken,
+      organizationId,
     };
   }
 
+  const deterministicConversationId = await deterministicUuid(
+    "voice-conversation",
+    organizationId,
+    sessionToken,
+  );
   const { data: inserted, error: insertError } = await supabase
     .from("chat_conversations")
-    .insert({ session_token: sessionToken, channel: "voice" })
-    .select("id, session_token")
+    .insert({
+      id: deterministicConversationId,
+      session_token: sessionToken,
+      channel: "voice",
+      organization_id: organizationId,
+    })
+    .select("id, session_token, organization_id, channel")
     .single();
-  if (insertError || !inserted?.id) {
+  const created = insertError
+    ? await rereadCreated(deterministicConversationId)
+    : inserted;
+  if (!exactLineage(created, deterministicConversationId)) {
     throw new Error("voice_conversation_insert_failed");
   }
-  if (inserted?.id) {
-    return {
-      conversationId: inserted.id,
-      sessionToken: inserted.session_token || sessionToken,
-    };
-  }
-  throw new Error("voice_conversation_insert_failed");
+  return {
+    conversationId: created!.id!,
+    sessionToken: created!.session_token!,
+    organizationId,
+  };
 }
 
 /** True streaming voice run.
@@ -464,6 +530,7 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
         supabase,
         conversationId,
         sessionToken,
+        organizationId: identity.organizationId,
         channel: "voice",
         history,
         userMessage,
@@ -504,6 +571,7 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
       supabase,
       conversationId,
       sessionToken,
+      organizationId: identity.organizationId,
       channel: "voice",
       history,
       userMessage,
@@ -683,6 +751,8 @@ export function buildStreamingResponse(
 export async function runVoiceAdapter(args: {
   supabase: SupabaseClient;
   request: ParsedAdapterRequest;
+  /** Server-resolved organization authority. */
+  organizationId: string;
   /** Conversation-store id. Callers may pass one for continuity; if absent,
    *  the adapter uses the synthetic sessionId. This never crosses back to the
    *  language model — it is a server-side handle only. */
@@ -718,6 +788,7 @@ export async function runVoiceAdapter(args: {
       supabase,
       conversationId,
       sessionToken,
+      organizationId: identity.organizationId,
       channel: "voice",
       history,
       userMessage,

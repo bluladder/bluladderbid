@@ -7,20 +7,49 @@
 // see the latest persisted facts.
 // ============================================================================
 
-import { findOrCreateForConversation, type QuoteSession, type QuoteSessionChannel } from "../quoteSession.ts";
+import {
+  findOrCreateForConversation,
+  type QuoteSession,
+  type QuoteSessionChannel,
+} from "../quoteSession.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
 
 export async function reloadSession(
   supabase: SB,
-  args: { sessionId?: string | null; conversationId: string; channel: QuoteSessionChannel; phone?: string | null; email?: string | null },
+  args: {
+    sessionId?: string | null;
+    conversationId: string;
+    channel: QuoteSessionChannel;
+    phone?: string | null;
+    email?: string | null;
+    resolvedOrganizationId?: string | null;
+  },
 ): Promise<QuoteSession> {
+  const organizationId = args.resolvedOrganizationId ?? null;
+  if (args.channel === "voice" && !organizationId) {
+    throw new Error("voice_organization_authority_required");
+  }
   if (args.sessionId) {
-    const { data } = await supabase.from("quote_sessions").select("*").eq("id", args.sessionId).maybeSingle();
+    let query = supabase.from("quote_sessions").select("*").eq(
+      "id",
+      args.sessionId,
+    );
+    query = organizationId
+      ? query.eq("organization_id", organizationId)
+      : query.is("organization_id", null);
+    const { data, error } = await query.maybeSingle();
+    if (error || !data) {
+      // An explicit session capability must resolve inside the same authority
+      // boundary. Falling back to a conversation would mask stale/cross-tenant
+      // lineage and could create a competing quote session.
+      throw new Error("quote_session_explicit_session_unavailable");
+    }
     if (data) {
       return {
         id: data.id,
+        organizationId: data.organization_id ?? null,
         channel: data.channel,
         conversationIds: data.conversation_ids ?? [],
         customerId: data.customer_id ?? null,
@@ -42,5 +71,6 @@ export async function reloadSession(
     channel: args.channel,
     phone: args.phone,
     email: args.email,
+    resolvedOrganizationId: organizationId,
   });
 }

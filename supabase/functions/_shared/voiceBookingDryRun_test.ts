@@ -7,18 +7,32 @@ import {
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { runTool, voiceLiveBookingEnabled } from "./aiTools.ts";
+import { PUBLIC_BOOKING_ORGANIZATION_ID } from "./publicBookingServiceArea.ts";
+
+const ORGANIZATION_ID = PUBLIC_BOOKING_ORGANIZATION_ID;
 
 const stubSupabase: any = {
-  from() {
-    return {
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: null }),
-          order: () => ({ limit: async () => ({ data: [] }) }),
-        }),
+  from(table: string) {
+    const chain: any = {
+      select: () => chain,
+      eq: () => chain,
+      is: () => chain,
+      order: () => chain,
+      limit: async () => ({ data: [], error: null }),
+      maybeSingle: async () => ({
+        data: table === "chat_conversations"
+          ? {
+            organization_id: ORGANIZATION_ID,
+            prospect_phone: "+14692150144",
+          }
+          : null,
+        error: null,
       }),
-      update: () => ({ eq: async () => ({ data: null, error: null }) }),
+      update: () => chain,
+      then: (resolve: (value: unknown) => unknown) =>
+        Promise.resolve({ data: null, error: null }).then(resolve),
     };
+    return chain;
   },
   rpc: async () => ({ data: null, error: null }),
 };
@@ -32,6 +46,7 @@ Deno.test("voice channel: create_bluladder_booking returns dry-run without any n
     conversationId: "conv_voice",
     sessionToken: "",
     channel: "voice" as const,
+    organizationId: ORGANIZATION_ID,
   };
   const originalFetch = globalThis.fetch;
   let fetchCalled = false;
@@ -67,6 +82,7 @@ Deno.test("voice channel: live flag alone cannot unlock the booking pipeline", a
     conversationId: "conv_voice_live",
     sessionToken: "",
     channel: "voice" as const,
+    organizationId: ORGANIZATION_ID,
   };
   const originalFetch = globalThis.fetch;
   let fetchCalled = false;

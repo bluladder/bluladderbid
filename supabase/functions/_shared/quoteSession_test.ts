@@ -1,19 +1,28 @@
 // Pure-unit tests for the canonical Quote Session helpers. No DB.
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
-  mergeFields,
+  assert,
+  assertEquals,
+  assertRejects,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  addCommercialLocation,
+  changeWindowScope,
   computeRequired,
-  nextQuestion,
-  isReadyToPrice,
+  fieldsFromFacts,
+  findByConversation,
+  findByConversationStrict,
+  findOrCreateForConversation,
   isReadyToBook,
-  sessionInputsKey,
+  isReadyToPrice,
+  mergeFields,
+  nextQuestion,
   normalizeEmail,
   normalizePhone,
-  fieldsFromFacts,
-  changeWindowScope,
-  addCommercialLocation,
   type QuoteSession,
+  sessionInputsKey,
+  syncFromFacts,
 } from "./quoteSession.ts";
+import { deterministicUuid } from "./deterministicUuid.ts";
 
 const empty = (): QuoteSession => ({
   id: "s1",
@@ -40,23 +49,35 @@ Deno.test("mergeFields: changing a captured value marks it corrected", () => {
 });
 
 Deno.test("field provenance keeps defaulted distinct from verified", () => {
-  const s = mergeFields(empty(), { stories: 1 }, { markDefaulted: ["stories"] });
+  const s = mergeFields(empty(), { stories: 1 }, {
+    markDefaulted: ["stories"],
+  });
   assertEquals(s.fieldStatus.stories, "defaulted");
   assert(s.fieldStatus.stories !== "verified");
 });
 
 Deno.test("screen profile provenance is derived and cannot be asserted independently", () => {
-  let s = mergeFields(empty(), { screenProfile: "no_screens" }, { markDefaulted: ["screenProfile"] });
+  let s = mergeFields(empty(), { screenProfile: "no_screens" }, {
+    markDefaulted: ["screenProfile"],
+  });
   assertEquals(s.fields.screenProfileProvenance, "defaulted");
   s = mergeFields(s, { screenProfileProvenance: "verified" });
   assertEquals(s.fields.screenProfileProvenance, "defaulted");
-  s = mergeFields(s, { screenProfile: "standard_removable" }, { markVerified: ["screenProfile"] });
+  s = mergeFields(s, { screenProfile: "standard_removable" }, {
+    markVerified: ["screenProfile"],
+  });
   assertEquals(s.fields.screenProfileProvenance, "verified");
 });
 
 Deno.test("screen-profile provenance participates in the canonical input hash", () => {
-  const base = { services:["windowCleaning"], screenProfile:"no_screens" as const };
-  assert(sessionInputsKey({ ...base, screenProfileProvenance:"captured" }) !== sessionInputsKey({ ...base, screenProfileProvenance:"defaulted" }));
+  const base = {
+    services: ["windowCleaning"],
+    screenProfile: "no_screens" as const,
+  };
+  assert(
+    sessionInputsKey({ ...base, screenProfileProvenance: "captured" }) !==
+      sessionInputsKey({ ...base, screenProfileProvenance: "defaulted" }),
+  );
 });
 
 Deno.test("unrelated contact capture does not invent legacy screen provenance or stale the quote", () => {
@@ -146,7 +167,10 @@ Deno.test("isReadyToPrice: window cleaning ready with sqft + stories + type", ()
 });
 
 Deno.test("nextQuestion: picks the highest-priority missing field", () => {
-  const s: QuoteSession = { ...empty(), fields: { services: ["windowCleaning"], stories: 2 } };
+  const s: QuoteSession = {
+    ...empty(),
+    fields: { services: ["windowCleaning"], stories: 2 },
+  };
   const plan = nextQuestion(s);
   assertEquals(plan.nextField, "squareFootage");
   assertEquals(plan.readyToPrice, false);
@@ -177,7 +201,12 @@ Deno.test("isReadyToBook: needs complete intake, address, email, and authoritati
   const priced: QuoteSession = {
     ...empty(),
     quoteStatus: "estimated",
-    fields: { services: ["houseWash"], squareFootage: 2000, stories: 1, enclosedPatioProfile: "none" },
+    fields: {
+      services: ["houseWash"],
+      squareFootage: 2000,
+      stories: 1,
+      enclosedPatioProfile: "none",
+    },
   };
   assertEquals(isReadyToBook(priced), false);
   const readied: QuoteSession = {
@@ -187,7 +216,7 @@ Deno.test("isReadyToBook: needs complete intake, address, email, and authoritati
       address: "123 Main St",
       email: "a@b.co",
       serviceAreaStatus: "eligible",
-      lastQuoteResult: { status:"estimated", estimatedDurationMinutes:90 },
+      lastQuoteResult: { status: "estimated", estimatedDurationMinutes: 90 },
     },
   };
   assertEquals(isReadyToBook(readied), true);
@@ -205,7 +234,11 @@ Deno.test("fieldsFromFacts: maps ConversationFacts to the canonical shape", () =
   const f = fieldsFromFacts({
     services: ["windowCleaning"],
     address: "1 Main",
-    property: { squareFootage: 2000, stories: 2, windowCleaningType: "exterior" },
+    property: {
+      squareFootage: 2000,
+      stories: 2,
+      windowCleaningType: "exterior",
+    },
     contact: { name: "Ada", email: "a@b.co" },
     roughQuote: { city: "McKinney" },
   } as any);
@@ -217,7 +250,11 @@ Deno.test("fieldsFromFacts: maps ConversationFacts to the canonical shape", () =
 });
 
 Deno.test("Regression: correcting one field does not clear unrelated fields", () => {
-  let s = mergeFields(empty(), { services: ["windowCleaning"], squareFootage: 2000, stories: 2 });
+  let s = mergeFields(empty(), {
+    services: ["windowCleaning"],
+    squareFootage: 2000,
+    stories: 2,
+  });
   s = mergeFields(s, { squareFootage: 2400 });
   assertEquals(s.fields.stories, 2);
   assertEquals(s.fields.services, ["windowCleaning"]);
@@ -269,11 +306,21 @@ Deno.test("computeRequired: unit and area services never inherit home fields", (
     }),
     [],
   );
-  assertEquals(computeRequired({ services: ["drivewayCleaning"] }), ["drivewaySqft", "drivewaySurface"]);
-  const multi = computeRequired({ services: ["drivewayCleaning", "screenRepair"] });
+  assertEquals(computeRequired({ services: ["drivewayCleaning"] }), [
+    "drivewaySqft",
+    "drivewaySurface",
+  ]);
+  const multi = computeRequired({
+    services: ["drivewayCleaning", "screenRepair"],
+  });
   assertEquals(
     multi.sort(),
-    ["drivewaySqft", "drivewaySurface", "screenRepairCount", "screenRepairScopeType"].sort(),
+    [
+      "drivewaySqft",
+      "drivewaySurface",
+      "screenRepairCount",
+      "screenRepairScopeType",
+    ].sort(),
   );
 });
 
@@ -327,11 +374,20 @@ Deno.test("changeWindowScope: partial → whole_home invalidates partial pricing
 
 Deno.test("addCommercialLocation: multiple locations persist distinctly", () => {
   let s = empty();
-  s = addCommercialLocation(s, { address: "100 Main St, McKinney", sides: "outside_only" });
-  s = addCommercialLocation(s, { address: "200 Oak Ave, Frisco", sides: "outside_only" });
+  s = addCommercialLocation(s, {
+    address: "100 Main St, McKinney",
+    sides: "outside_only",
+  });
+  s = addCommercialLocation(s, {
+    address: "200 Oak Ave, Frisco",
+    sides: "outside_only",
+  });
   assertEquals(s.fields.commercialLocations?.length, 2);
   // Repeat location merges rather than duplicating
-  s = addCommercialLocation(s, { address: "100 Main St, McKinney", stories: 2 });
+  s = addCommercialLocation(s, {
+    address: "100 Main St, McKinney",
+    stories: 2,
+  });
   assertEquals(s.fields.commercialLocations?.length, 2);
   assertEquals(s.fields.commercialLocations?.[0].stories, 2);
 });
@@ -367,4 +423,464 @@ Deno.test("nextQuestion: selected add-on requirements never dead-end question se
     },
   };
   assertEquals(nextQuestion(patio).nextField, "houseWashPatioPricingMethod");
+});
+
+Deno.test("tenant authority predicates both conversation and quote-session reads", async () => {
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const filters: Array<
+    { table: string; op: string; key: string; value: unknown }
+  > = [];
+  const rows: Record<string, Record<string, unknown>> = {
+    chat_conversations: {
+      quote_session_id: "session-a",
+      organization_id: organizationId,
+    },
+    quote_sessions: {
+      id: "session-a",
+      organization_id: organizationId,
+      channel: "voice",
+      conversation_ids: ["conversation-a"],
+      fields: {},
+      field_status: {},
+      required_remaining: [],
+      quote_status: "none",
+      booking_ready: false,
+    },
+  };
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select: () => chain,
+        eq(key: string, value: unknown) {
+          filters.push({ table, op: "eq", key, value });
+          return chain;
+        },
+        is(key: string, value: unknown) {
+          filters.push({ table, op: "is", key, value });
+          return chain;
+        },
+        maybeSingle: () =>
+          Promise.resolve({ data: rows[table] ?? null, error: null }),
+      };
+      return chain;
+    },
+  };
+
+  const session = await findByConversation(
+    supabase,
+    "conversation-a",
+    organizationId,
+  );
+  assertEquals(session?.organizationId, organizationId);
+  assertEquals(
+    filters.filter((filter) =>
+      filter.key === "organization_id" && filter.op === "eq"
+    ),
+    [
+      {
+        table: "chat_conversations",
+        op: "eq",
+        key: "organization_id",
+        value: organizationId,
+      },
+      {
+        table: "quote_sessions",
+        op: "eq",
+        key: "organization_id",
+        value: organizationId,
+      },
+    ],
+  );
+});
+
+Deno.test("strict quote-session lookup distinguishes storage/lineage failure from no linked quote", async () => {
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const errorChain = {
+    select: () => errorChain,
+    eq: () => errorChain,
+    is: () => errorChain,
+    maybeSingle: () =>
+      Promise.resolve({ data: null, error: { message: "unavailable" } }),
+  };
+  await assertRejects(
+    () =>
+      findByConversationStrict(
+        { from: () => errorChain },
+        "conversation-a",
+        organizationId,
+      ),
+    Error,
+    "quote_session_conversation_unavailable",
+  );
+
+  const noSessionChain = {
+    select: () => noSessionChain,
+    eq: () => noSessionChain,
+    is: () => noSessionChain,
+    maybeSingle: () =>
+      Promise.resolve({
+        data: { quote_session_id: null, organization_id: organizationId },
+        error: null,
+      }),
+  };
+  assertEquals(
+    await findByConversationStrict(
+      { from: () => noSessionChain },
+      "conversation-a",
+      organizationId,
+    ),
+    null,
+  );
+});
+
+Deno.test("new scoped sessions write one server-resolved organization", async () => {
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const inserts: Record<string, unknown>[] = [];
+  const conversationUpdates: Record<string, unknown>[] = [];
+  let insertedValue: Record<string, unknown> | null = null;
+  const supabase = {
+    from(table: string) {
+      let updateValue: Record<string, unknown> | null = null;
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        is: () => chain,
+        maybeSingle: () =>
+          Promise.resolve({
+            data: updateValue && table === "chat_conversations"
+              ? { id: "conversation-new" }
+              : table === "chat_conversations"
+              ? {
+                id: "conversation-new",
+                quote_session_id: null,
+                organization_id: organizationId,
+              }
+              : null,
+            error: null,
+          }),
+        insert(value: Record<string, unknown>) {
+          insertedValue = value;
+          inserts.push(value);
+          return chain;
+        },
+        update(value: Record<string, unknown>) {
+          updateValue = value;
+          if (table === "chat_conversations") conversationUpdates.push(value);
+          return chain;
+        },
+        single: () =>
+          Promise.resolve({
+            data: table === "quote_sessions"
+              ? {
+                id: insertedValue?.id,
+                organization_id: organizationId,
+                channel: "voice",
+                conversation_ids: ["conversation-new"],
+                fields: {},
+                field_status: {},
+                required_remaining: [],
+                quote_status: "none",
+                booking_ready: false,
+              }
+              : null,
+            error: null,
+          }),
+      };
+      return chain;
+    },
+  };
+
+  const session = await findOrCreateForConversation(supabase, {
+    conversationId: "conversation-new",
+    channel: "voice",
+    resolvedOrganizationId: organizationId,
+  });
+  const expectedSessionId = await deterministicUuid(
+    "quote-session",
+    organizationId,
+    "conversation-new",
+  );
+  assertEquals(session.id, expectedSessionId);
+  assertEquals(session.organizationId, organizationId);
+  assertEquals(inserts[0]?.id, expectedSessionId);
+  assertEquals(inserts[0]?.organization_id, organizationId);
+  assertEquals(conversationUpdates, [{ quote_session_id: expectedSessionId }]);
+});
+
+Deno.test("concurrent scoped quote-session creation converges on one deterministic row", async () => {
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const conversationId = "conversation-concurrent";
+  const sessionId = await deterministicUuid(
+    "quote-session",
+    organizationId,
+    conversationId,
+  );
+  const sessionRow = {
+    id: sessionId,
+    organization_id: organizationId,
+    channel: "voice",
+    conversation_ids: [conversationId],
+    fields: {},
+    field_status: {},
+    required_remaining: [],
+    quote_status: "none",
+    booking_ready: false,
+  };
+  const supabase = {
+    from(table: string) {
+      let operation: "read" | "insert" | "update" = "read";
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        is: () => chain,
+        insert: () => {
+          operation = "insert";
+          return chain;
+        },
+        update: () => {
+          operation = "update";
+          return chain;
+        },
+        single: () =>
+          Promise.resolve({
+            data: null,
+            error: operation === "insert" ? { code: "23505" } : null,
+          }),
+        maybeSingle: () =>
+          Promise.resolve({
+            data: table === "chat_conversations" && operation === "read"
+              ? {
+                id: conversationId,
+                quote_session_id: null,
+                organization_id: organizationId,
+              }
+              : table === "chat_conversations" && operation === "update"
+              ? { id: conversationId, quote_session_id: sessionId }
+              : table === "quote_sessions"
+              ? sessionRow
+              : null,
+            error: null,
+          }),
+      };
+      return chain;
+    },
+  };
+
+  const session = await findOrCreateForConversation(supabase, {
+    conversationId,
+    channel: "voice",
+    resolvedOrganizationId: organizationId,
+  });
+  assertEquals(session.id, sessionId);
+  assertEquals(session.organizationId, organizationId);
+});
+
+Deno.test("voice session creation requires organization authority before database access", async () => {
+  let databaseReads = 0;
+  await assertRejects(
+    () =>
+      findOrCreateForConversation(
+        {
+          from() {
+            databaseReads += 1;
+            throw new Error("database_must_not_be_reached");
+          },
+        },
+        { conversationId: "conversation-a", channel: "voice" },
+      ),
+    Error,
+    "voice_organization_authority_required",
+  );
+  assertEquals(databaseReads, 0);
+});
+
+Deno.test("a missing or cross-organization conversation is never adopted", async () => {
+  let inserts = 0;
+  let updates = 0;
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    is: () => chain,
+    maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    insert: () => {
+      inserts += 1;
+      return chain;
+    },
+    update: () => {
+      updates += 1;
+      return chain;
+    },
+  };
+  await assertRejects(
+    () =>
+      findOrCreateForConversation(
+        { from: () => chain },
+        {
+          conversationId: "conversation-owned-elsewhere",
+          channel: "voice",
+          resolvedOrganizationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      ),
+    Error,
+    "quote_session_conversation_unavailable",
+  );
+  assertEquals(inserts, 0);
+  assertEquals(updates, 0);
+});
+
+Deno.test("a stale or cross-organization linked session fails without replacement", async () => {
+  let inserts = 0;
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        is: () => chain,
+        maybeSingle: () =>
+          Promise.resolve({
+            data: table === "chat_conversations"
+              ? {
+                id: "conversation-a",
+                quote_session_id: "session-owned-elsewhere",
+                organization_id: organizationId,
+              }
+              : null,
+            error: null,
+          }),
+        insert: () => {
+          inserts += 1;
+          return chain;
+        },
+      };
+      return chain;
+    },
+  };
+  await assertRejects(
+    () =>
+      findOrCreateForConversation(supabase, {
+        conversationId: "conversation-a",
+        channel: "voice",
+        resolvedOrganizationId: organizationId,
+      }),
+    Error,
+    "quote_session_lineage_unavailable",
+  );
+  assertEquals(inserts, 0);
+});
+
+Deno.test("voice never reuses a prior quote session from phone or email alone", async () => {
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  let crossSessionLookup = false;
+  let insertedSession = false;
+  let conversationUpdate = false;
+  let insertedValue: Record<string, unknown> | null = null;
+  const supabase = {
+    from(table: string) {
+      let operation: "read" | "insert" | "update" = "read";
+      const chain = {
+        select() {
+          return chain;
+        },
+        eq() {
+          return chain;
+        },
+        is() {
+          return chain;
+        },
+        order() {
+          if (table === "quote_sessions" && operation === "read") {
+            crossSessionLookup = true;
+          }
+          return chain;
+        },
+        limit() {
+          return chain;
+        },
+        insert(value: Record<string, unknown>) {
+          operation = "insert";
+          insertedSession = table === "quote_sessions";
+          insertedValue = value;
+          return chain;
+        },
+        update() {
+          operation = "update";
+          conversationUpdate = table === "chat_conversations";
+          return chain;
+        },
+        maybeSingle() {
+          return Promise.resolve({
+            data: table === "chat_conversations" && operation === "read"
+              ? {
+                id: "conversation-new",
+                quote_session_id: null,
+                organization_id: organizationId,
+              }
+              : table === "chat_conversations" && operation === "update"
+              ? { id: "conversation-new" }
+              : null,
+            error: null,
+          });
+        },
+        single() {
+          return Promise.resolve({
+            data: table === "quote_sessions" && operation === "insert"
+              ? {
+                id: insertedValue?.id,
+                organization_id: organizationId,
+                channel: "voice",
+                conversation_ids: ["conversation-new"],
+                fields: {},
+                field_status: {},
+                required_remaining: [],
+                quote_status: "none",
+                booking_ready: false,
+              }
+              : null,
+            error: null,
+          });
+        },
+      };
+      return chain;
+    },
+  };
+
+  const session = await findOrCreateForConversation(supabase, {
+    conversationId: "conversation-new",
+    channel: "voice",
+    phone: "+14695550123",
+    email: "caller@example.com",
+    resolvedOrganizationId: organizationId,
+  });
+  assertEquals(
+    session.id,
+    await deterministicUuid(
+      "quote-session",
+      organizationId,
+      "conversation-new",
+    ),
+  );
+  assertEquals(crossSessionLookup, false);
+  assertEquals(insertedSession, true);
+  assertEquals(conversationUpdate, true);
+});
+
+Deno.test("scoped quote-session sync fails closed when the row cannot be verified", async () => {
+  const chain = {
+    select: () => chain,
+    eq: () => chain,
+    is: () => chain,
+    maybeSingle: () => Promise.resolve({ data: null, error: null }),
+  };
+  await assertRejects(
+    () =>
+      syncFromFacts(
+        { from: () => chain },
+        "session-owned-elsewhere",
+        {},
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      ),
+    Error,
+    "quote_session_sync_lookup_failed",
+  );
 });
