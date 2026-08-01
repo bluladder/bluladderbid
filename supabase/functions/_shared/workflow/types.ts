@@ -11,22 +11,19 @@ import type { QuoteSession } from "../quoteSession.ts";
 export type WorkflowId =
   | "new_quote"
   | "schedule_service"
-  | "cancel_or_reschedule"
+  | "existing_quote"
+  | "reschedule"
+  | "cancel"
+  | "question_or_memo"
   | "general_inquiry"
   | "out_of_scope";
 
-export type RequiredField =
-  | "services"
-  | "windowCleaningScope"
-  | "squareFootage"
-  | "windowCleaningSides"
-  | "stories"
-  | "windowCleaningCondition"
-  | "address"
-  | "city"
-  | "contact_email"
-  | "contact_phone"
-  | "contact_name";
+/**
+ * Field ids come from the canonical intake contract at runtime. Keeping a
+ * second closed union here caused newly approved service fields to fall out of
+ * the controller, so this type intentionally accepts canonical string ids.
+ */
+export type RequiredField = string;
 
 export type HandoffReason =
   | "out_of_scope_workflow"
@@ -45,11 +42,27 @@ export type WorkflowAction =
   | { kind: "offer_scheduling" }
   | { kind: "collect_address_for_booking" }
   | { kind: "fetch_availability" }
-  | { kind: "offer_slots" }
-  | { kind: "confirm_slot" }
+  | {
+    kind: "offer_slots";
+    slots?: Array<{
+      slotId: string;
+      startAt: string;
+      endAt: string;
+      label: string;
+      timezone?: string;
+    }>;
+  }
+  | { kind: "confirm_slot"; slotId?: string; spoken?: string }
   | { kind: "book_dry_run" }
   | { kind: "book_real" }
-  | { kind: "confirm_result" }
+  | { kind: "confirm_result"; success?: boolean; reference?: string }
+  | { kind: "retrieve_existing_quote" }
+  | { kind: "retrieve_upcoming_bookings" }
+  | { kind: "prepare_reschedule" }
+  | { kind: "confirm_reschedule"; bookingId: string; slotId: string }
+  | { kind: "prepare_cancel" }
+  | { kind: "confirm_cancel"; bookingId: string }
+  | { kind: "record_field_memo"; bookingId: string; text: string }
   | { kind: "handoff"; reason: HandoffReason }
   | { kind: "end"; reason: string };
 

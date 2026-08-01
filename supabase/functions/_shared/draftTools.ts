@@ -20,7 +20,7 @@
 // deno-lint-ignore-file no-explicit-any
 
 import { loadPricing } from "./loadPricing.ts";
-import { calculateQuote, type QuoteInput } from "./pricingEngine.ts";
+import { calculateQuote } from "./pricingEngine.ts";
 import {
   findOrCreateForConversation,
   mergeFields,
@@ -43,6 +43,7 @@ import type { FactType, ServiceKind } from "./profile/serviceFactMap.ts";
 import { getBookingReadiness } from "./bookingReadiness.ts";
 import { getAvailableSlots } from "./availabilityLookup.ts";
 import { presentAvailability } from "./presentAvailability.ts";
+import { quoteSessionFieldsToQuoteInput } from "./quoteSessionPricingAdapter.ts";
 
 type SB = any;
 
@@ -229,41 +230,6 @@ async function ensureSession(supabase: SB, conversationId: string): Promise<Quot
   });
 }
 
-// Map QuoteSessionFields -> QuoteInput shape used by pricingEngine.
-function fieldsToQuoteInput(fields: QuoteSessionFields): QuoteInput {
-  const services = new Set(fields.services ?? []);
-  const home = {
-    squareFootage: Number(fields.squareFootage ?? 0),
-    stories: Number(fields.stories ?? 1),
-    windowCleaningType: fields.windowCleaningType,
-    condition: fields.condition,
-  };
-  const svc: any = {};
-  if (services.has("windowCleaning")) svc.windowCleaning = true;
-  if (services.has("houseWash")) svc.houseWash = true;
-  if (services.has("gutters") || services.has("gutterCleaning")) svc.gutterCleaning = true;
-  if (services.has("roofCleaning")) {
-    svc.roofCleaning = true;
-    if (fields.roofType) svc.roofType = fields.roofType;
-    if (fields.roofSeverity) svc.roofSeverity = fields.roofSeverity;
-  }
-  if (services.has("driveway") && fields.drivewaySqft) {
-    svc.drivewayCleaning = { enabled: true, sqft: fields.drivewaySqft, surfaceType: fields.drivewaySurface ?? "concrete" };
-  }
-  if (services.has("pressureWashing") && fields.pressureWashSqft) {
-    const sqft = fields.pressureWashSqft;
-    svc.pressureWashing = {
-      enabled: true,
-      surfaceType: fields.pressureWashSurface ?? "concrete",
-      frontPorch: { enabled: false, sqft: 0 },
-      backPatio: { enabled: true, sqft },
-      poolDeck: { enabled: false, sqft: 0 },
-      walkways: { enabled: false, sqft: 0 },
-    };
-  }
-  return { homeDetails: home, additionalServices: svc };
-}
-
 // -----------------------------------------------------------------------
 // Executor
 // -----------------------------------------------------------------------
@@ -400,7 +366,7 @@ export async function executeDraftTool(
         if (!loaded.ok || !loaded.pricing) {
           return { name: call.name, ok: false, error: "pricing_unavailable" };
         }
-        const input = fieldsToQuoteInput(session.fields);
+        const input = quoteSessionFieldsToQuoteInput(session.fields);
         const result = calculateQuote(input, loaded.pricing, loaded.ruleVersion);
         // Persist result on the session so the admin UI panel and future turns
         // both see the same authoritative quote. We embed the snapshot in the

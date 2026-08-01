@@ -185,3 +185,150 @@ Deno.test("lookup failure falls back safely to new-customer intake (no greeting)
   assertEquals(turn.pre.kind !== "greet_returning", true);
   assertEquals(turn.pre.kind !== "ask_disambiguator", true);
 });
+
+Deno.test("scheduling decline ends without creating an appointment", async () => {
+  const sb = makeFake();
+  sb._state.session.fields = {
+    phone: "+14697472877",
+    returningCustomerResolved: true,
+    voiceJourney: {
+      intent: "schedule",
+      availability: { status: "not_requested" },
+      booking: { status: "not_started" },
+    },
+  };
+  sb._state.session.field_status = { phone: "verified" };
+  sb._state.session.last_step = "offered_scheduling";
+
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "No, not yet",
+    history: [],
+    callerIdE164: "+14697472877",
+  });
+
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action, {
+      kind: "end",
+      reason: "scheduling_declined",
+    });
+    assertEquals(turn.pre.spoken.includes("No appointment was created"), true);
+  }
+  assertEquals(
+    (turn.sessionPatch.fields as any).voiceJourney.booking.status,
+    "not_started",
+  );
+});
+
+Deno.test("slot selection is resolved only against the current offered set", async () => {
+  const sb = makeFake();
+  sb._state.session.fields = {
+    phone: "+14697472877",
+    returningCustomerResolved: true,
+    address: "100 Main Street",
+    lastQuoteResult: { total: 250 },
+    voiceJourney: {
+      intent: "schedule",
+      quoteContext: { estimatedTotal: 250 },
+      availability: {
+        status: "offered",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        offeredSlotIds: ["slot-1", "slot-2"],
+        offeredSlots: [
+          {
+            slotId: "slot-1",
+            startAt: "2026-08-03T09:00:00-05:00",
+            endAt: "2026-08-03T11:00:00-05:00",
+            label: "Monday from 9 to 11 AM",
+            timezone: "America/Chicago",
+          },
+          {
+            slotId: "slot-2",
+            startAt: "2026-08-04T13:00:00-05:00",
+            endAt: "2026-08-04T15:00:00-05:00",
+            label: "Tuesday from 1 to 3 PM",
+            timezone: "America/Chicago",
+          },
+        ],
+      },
+      booking: { status: "not_started" },
+    },
+  };
+  sb._state.session.field_status = { phone: "verified" };
+  sb._state.session.last_step = "awaiting_slot_selection";
+
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "option two",
+    history: [],
+    callerIdE164: "+14697472877",
+  });
+
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action, {
+      kind: "confirm_slot",
+      slotId: "slot-2",
+      spoken: "Tuesday from 1 to 3 PM",
+    });
+    assertEquals(turn.pre.spoken.includes("submit that appointment now"), true);
+  }
+  assertEquals(
+    (turn.sessionPatch.fields as any).voiceJourney.availability.selectedSlotId,
+    "slot-2",
+  );
+  assertEquals(
+    (turn.sessionPatch.fields as any).voiceJourney.booking.status,
+    "confirmation_required",
+  );
+});
+
+Deno.test("ambiguous booking confirmation cannot reach the booking tool", async () => {
+  const sb = makeFake();
+  sb._state.session.fields = {
+    phone: "+14697472877",
+    returningCustomerResolved: true,
+    voiceJourney: {
+      intent: "schedule",
+      availability: {
+        status: "offered",
+        selectedSlotId: "slot-1",
+        offeredSlotIds: ["slot-1"],
+        offeredSlots: [{
+          slotId: "slot-1",
+          startAt: "2026-08-03T09:00:00-05:00",
+          endAt: "2026-08-03T11:00:00-05:00",
+          label: "Monday from 9 to 11 AM",
+          timezone: "America/Chicago",
+        }],
+      },
+      booking: { status: "confirmation_required" },
+    },
+  };
+  sb._state.session.field_status = { phone: "verified" };
+  sb._state.session.last_step = "confirming_booking";
+
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I think that should work",
+    history: [],
+    callerIdE164: "+14697472877",
+  });
+
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action.kind, "confirm_slot");
+    assertEquals(turn.pre.spoken.includes("No appointment has been created"), true);
+  }
+  assertEquals(
+    (turn.sessionPatch.fields as any)?.voiceJourney?.booking?.status,
+    undefined,
+  );
+});

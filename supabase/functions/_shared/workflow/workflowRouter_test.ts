@@ -10,8 +10,8 @@ const emptySession: QuoteSession = {
 Deno.test("price/quote keywords → new_quote", () => {
   assertEquals(classifyWorkflow("how much for window cleaning", emptySession), "new_quote");
 });
-Deno.test("cancel keywords → cancel_or_reschedule", () => {
-  assertEquals(classifyWorkflow("I need to cancel my appointment", emptySession), "cancel_or_reschedule");
+Deno.test("cancel keywords → cancel", () => {
+  assertEquals(classifyWorkflow("I need to cancel my appointment", emptySession), "cancel");
 });
 Deno.test("schedule without quote → schedule_service", () => {
   assertEquals(classifyWorkflow("when can you come out", emptySession), "schedule_service");
