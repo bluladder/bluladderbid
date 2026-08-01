@@ -1,5 +1,21 @@
 # Voice customer journey hardening plan
 
+## Completion update — 2026-08-01
+
+Branch `codex/voice-journey-completion` implements the remaining deterministic contract without changing production rollout flags:
+
+- the quote session is the authoritative journey context and invalidates stale dependent state;
+- all controller/draft pricing uses one canonical session adapter;
+- the controller owns sticky intent, question parsing, assumption recap, pricing disposition, and price language;
+- delivery preserves queued, provider-accepted, delivered, retry, uncertain, and terminal states;
+- address recovery is component-specific and bounded;
+- reachable legacy voice availability/booking verifies canonical readiness and full quote identity;
+- secure organization/customer-scoped existing-record, appointment-mutation, and memo contracts are available;
+- booking/reschedule/cancel truth requires provider and local persistence evidence;
+- forty end-to-end scenarios are executable without provider calls.
+
+Provider-specific live reschedule/cancel wiring and the final provider verification remain behind existing authorization/live gates. They must follow `docs/voice/voice-provider-verification-checklist.md`; this branch does not enable or test them live.
+
 ## Objective
 Make voice calls deterministic, brief, and truthful for four customer intents:
 
@@ -16,7 +32,7 @@ are authoritative. This plan may add voice normalization and orchestration
 safeguards, but it must not redefine or duplicate those contracts.
 
 ## Current architecture finding
-The rollout controller owns caller-ID confirmation and returning-customer lookup, then delegates pricing, quote delivery, availability, and booking back to the legacy orchestrator. That split is the main source of repeated questions, mutable facts, price drift, and promises that are not backed by durable tool results.
+At the baseline, the rollout controller owned caller-ID confirmation and returning-customer lookup, then delegated pricing, quote delivery, availability, and booking back to the legacy orchestrator. This branch moves intake, recap, pricing, disposition, and offer identity into deterministic code. The provider mutation lane remains rollout-gated and is now a compatibility adapter into canonical readiness rather than a competing quote contract.
 
 ## Phase 1 — Transcript-derived parsing and state fixes
 

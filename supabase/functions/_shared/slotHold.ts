@@ -53,6 +53,9 @@ export type RevalidationReason =
   | "not_ready"
   | "gate_blocked"
   | "schedule_drifted"
+  | "provider_timeout"
+  | "provider_rate_limited"
+  | "provider_unavailable"
   | "engine_error"
   | "slot_unavailable";
 
@@ -116,6 +119,13 @@ export async function revalidateSelectedSlot(
   }
   if (result.status === "engine_error") {
     return { ok: false, reason: "engine_error", detail: result.detail ?? null };
+  }
+  if (
+    result.status === "provider_timeout" ||
+    result.status === "provider_rate_limited" ||
+    result.status === "provider_unavailable"
+  ) {
+    return { ok: false, reason: result.status, detail: result.detail ?? null };
   }
   if (result.status !== "ok" || result.slots.length === 0) {
     return { ok: false, reason: "slot_unavailable" };

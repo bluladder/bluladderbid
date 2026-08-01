@@ -14,7 +14,11 @@
 //      critical path (root cause of stall in call 019f8a84-...).
 // ============================================================================
 
-import { computeRequired, type QuoteSession } from "../../quoteSession.ts";
+import {
+  computeRequired,
+  sessionInputsKey,
+  type QuoteSession,
+} from "../../quoteSession.ts";
 import { hasUsableFact } from "../hasUsableFact.ts";
 import {
   missingResidentialBookingFields,
@@ -88,21 +92,47 @@ export function decideResidentialQuoteAction(
     return { kind: "handoff", reason: "unsupported_service" };
   }
   const intake = evaluateQuoteIntake(session.fields as unknown as Record<string, unknown>);
-  if (intake.manualReview.length > 0) {
-    return { kind: "handoff", reason: intake.services.includes("commercial_window_bid") ? "commercial_bid" : "unsupported_service" };
+
+  // 2. Ready to price. A manual-review or owner-decision service may coexist
+  // with independently firm services. Let the canonical engine calculate once
+  // before applying product-policy disposition so those firm portions are not
+  // discarded. Pure commercial/partial-window paths remain non-automated.
+  if (session.quoteStatus === "none") {
+    const hasAutomatedResidentialPortion = intake.services.some((service) =>
+      service !== "commercial_window_bid" &&
+      service !== "partial_window_cleaning"
+    );
+    if (hasAutomatedResidentialPortion) return { kind: "calculate_price" };
+    return {
+      kind: "handoff",
+      reason: intake.services.includes("commercial_window_bid")
+        ? "commercial_bid"
+        : "unsupported_service",
+    };
+  }
+  if (session.quoteStatus === "error") return { kind: "handoff", reason: "pricing_error" };
+  if (intake.manualReview.length > 0 || session.quoteStatus === "manual_review") {
+    return {
+      kind: "handoff",
+      reason: intake.services.includes("commercial_window_bid")
+        ? "commercial_bid"
+        : "unsupported_service",
+    };
   }
   if (intake.ownerDecisions.length > 0) {
     return { kind: "handoff", reason: "owner_decision_required" };
   }
 
-  // 2. Ready to price. If we haven't priced yet, do so now.
-  if (session.quoteStatus === "none") return { kind: "calculate_price" };
-  if (session.quoteStatus === "error") return { kind: "handoff", reason: "pricing_error" };
-
   // 3. Speak the authoritative quote before asking anything else. Email is
   //    NOT required to speak a price — it is required before booking or
   //    finalizing an unbooked proposal.
-  if (session.lastStep !== "priced_spoken") return { kind: "speak_price" };
+  const quoteContext = session.fields.voiceJourney?.quoteContext;
+  const spokenForCurrentInputs =
+    quoteContext?.inputsKey === sessionInputsKey(session.fields) &&
+    !!quoteContext.spokenAt;
+  if (!spokenForCurrentInputs && session.lastStep !== "priced_spoken") {
+    return { kind: "speak_price" };
+  }
 
   // 4. Post-quote: collect email + address before offering scheduling.
   if (!session.bookingReady) {

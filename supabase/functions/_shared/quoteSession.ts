@@ -9,10 +9,10 @@
 // ============================================================================
 
 import type { ConversationFacts } from "./conversationState.ts";
-import { quoteInputsKey } from "./conversationState.ts";
 import { normalizeUsCaE164, resolvePhone } from "./contactIntegrity.ts";
 import {
   evaluateQuoteIntake,
+  CANONICAL_INTAKE_FIELDS,
   normalizeWindowCleaningSides,
   type AnswerProvenance,
 } from "./salesEngine/quoteIntakeContract.ts";
@@ -137,9 +137,80 @@ export interface QuoteSessionFields {
   lastQuoteResult?: {
     status?: string;
     estimatedDurationMinutes?: number | null;
-    durationSource?: string;
-    durationVersion?: string;
+    durationSource?: string | null;
+    durationVersion?: string | null;
     [key: string]: unknown;
+  };
+  /**
+   * Channel-neutral continuation state for the deterministic customer journey.
+   * It lives in the existing quote-session JSONB extension point so no schema
+   * migration or parallel voice-only record is required.
+   */
+  voiceJourney?: {
+    intent?: "new_quote" | "schedule" | "existing_quote" | "reschedule" | "cancel" | "question_or_memo";
+    quoteContext?: {
+      inputsKey: string;
+      quoteId?: string | null;
+      pricingVersion?: number | string | null;
+      engineVersion?: string | null;
+      taxPolicyVersion?: string | null;
+      durationVersion?: string | null;
+      engineStatus?: string | null;
+      productPolicyStatus?: "approved" | "manual_review_required" | "owner_decision_required";
+      channelEligibility?: "eligible" | "ineligible" | "owner_decision_required";
+      finalQuoteDisposition?: "firm" | "estimated" | "incomplete" | "manual_review" | "owner_decision_required" | "error";
+      serviceSubtotal?: number | null;
+      estimatedTax?: number | null;
+      estimatedTotal?: number | null;
+      authoritativeDurationMinutes?: number | null;
+      durationSource?: string | null;
+      /** Set only after the current canonical total has actually been spoken. */
+      spokenAt?: string | null;
+      acceptedAt?: string | null;
+    } | null;
+    delivery?: {
+      channel: "sms" | "email";
+      status:
+        | "not_requested"
+        | "pending"
+        | "queued"
+        | "provider_accepted"
+        | "delivered"
+        | "retry_pending"
+        | "uncertain"
+        | "failed_terminal";
+      attemptId?: string | null;
+      providerMessageId?: string | null;
+      requestedAt?: string | null;
+    } | null;
+    availability?: {
+      status: "not_requested" | "refresh_required" | "provider_unavailable" | "offered";
+      forBookingKey?: string | null;
+      offerVersion?: string | null;
+      expiresAt?: string | null;
+      offeredSlotIds?: string[];
+      selectedSlotId?: string | null;
+      offeredSlots?: Array<{
+        slotId: string;
+        startAt: string;
+        endAt: string;
+        label: string;
+        timezone?: string;
+      }>;
+    } | null;
+    booking?: {
+      status: "not_started" | "confirmation_required" | "submitting" | "confirmed" | "recovery_pending" | "failed";
+      bookingId?: string | null;
+      referenceNumber?: string | null;
+      idempotencyKey?: string | null;
+    } | null;
+    existingRecord?: {
+      kind: "quote" | "booking";
+      id: string;
+      identityVerified: boolean;
+      ownershipVerified: boolean;
+    } | null;
+    pendingAddressComponent?: "house_number" | "street" | "unit" | "city" | "state" | "postal_code" | null;
   };
 }
 
@@ -157,6 +228,29 @@ export interface QuoteSession {
   bookingReady: boolean;
   phoneE164?: string | null;
   emailNormalized?: string | null;
+  /** Optimistic-concurrency token from quote_sessions.updated_at. */
+  updatedAt?: string | null;
+}
+
+function deleteStoragePath(
+  target: Record<string, unknown>,
+  storagePath: string,
+): void {
+  const keys = storagePath.split(".");
+  let current = target;
+  for (const key of keys.slice(0, -1)) {
+    const nested = current[key];
+    if (!nested || typeof nested !== "object") return;
+    // mergeFields starts with a shallow copy of the session. Clone every
+    // traversed container before deleting a service-owned nested value so the
+    // previous session remains an immutable history snapshot.
+    const cloned = Array.isArray(nested)
+      ? [...nested]
+      : { ...(nested as Record<string, unknown>) };
+    current[key] = cloned;
+    current = cloned as Record<string, unknown>;
+  }
+  delete current[keys[keys.length - 1]];
 }
 
 /** Merge a patch of fields; track status transitions.
@@ -174,6 +268,8 @@ export function mergeFields(
     markConfirmedSummary?: (keyof QuoteSessionFields)[];
   } = {},
 ): QuoteSession {
+  const beforePriceKey = sessionInputsKey(prev.fields);
+  const beforeBookingKey = sessionBookingInputsKey(prev.fields);
   const nextFields: QuoteSessionFields = { ...prev.fields };
   const nextStatus = { ...prev.fieldStatus };
   const nextProvenance: Record<string, AnswerProvenance> = { ...(prev.fields.answerProvenance ?? {}) };
@@ -197,7 +293,7 @@ export function mergeFields(
     }
     const prevVal = (prev.fields as Record<string, unknown>)[key];
     const isEmpty = v === null || v === "" || (Array.isArray(v) && v.length === 0);
-    if (isEmpty) continue;
+    if (isEmpty && key !== "services") continue;
     // Contact integrity: a phone patch must be a valid full NANP E.164, and a
     // confirmed caller ID can never be overwritten by a lower-provenance
     // extraction (regression guard for the "+0144" corruption).
@@ -219,14 +315,99 @@ export function mergeFields(
     nextStatus[key] = wasCaptured && changed ? "corrected" : "captured";
     if (key !== "answerProvenance" && key !== "confirmationSummary") nextProvenance[key] = "explicitly_selected";
   }
+
+  // A removed service must not resurrect its old answers if it is selected
+  // again later. Clear only storage paths that no retained service uses; shared
+  // property facts such as square footage/stories survive a window + house
+  // wash quote becoming house-wash-only.
+  if (Object.prototype.hasOwnProperty.call(patch, "services")) {
+    const previousServices = evaluateQuoteIntake(
+      prev.fields as unknown as Record<string, unknown>,
+    ).services;
+    const retainedServices = evaluateQuoteIntake(
+      nextFields as unknown as Record<string, unknown>,
+    ).services;
+    const removed = previousServices.filter((service) =>
+      !retainedServices.includes(service)
+    );
+    if (removed.length > 0) {
+      const retainedPaths = new Set(
+        CANONICAL_INTAKE_FIELDS
+          .filter((spec) =>
+            spec.appliesToServices.some((service) =>
+              retainedServices.includes(service)
+            )
+          )
+          .map((spec) => spec.storagePath),
+      );
+      const retainedRoots = new Set(
+        [...retainedPaths].map((path) => path.split(".")[0]),
+      );
+      for (const spec of CANONICAL_INTAKE_FIELDS) {
+        if (
+          spec.storagePath === "services" ||
+          retainedPaths.has(spec.storagePath) ||
+          !spec.appliesToServices.some((service) => removed.includes(service))
+        ) continue;
+        const root = spec.storagePath.split(".")[0];
+        // If the retained services do not use this container at all, remove
+        // the complete root. This also clears backward-compatible legacy
+        // members that are intentionally absent from the canonical contract.
+        deleteStoragePath(
+          nextFields as unknown as Record<string, unknown>,
+          retainedRoots.has(root) ? spec.storagePath : root,
+        );
+        delete nextProvenance[spec.fieldId];
+        delete nextStatus[root as keyof QuoteSessionFields];
+      }
+    }
+  }
   for (const k of opts.markVerified ?? []) { nextStatus[k] = "verified"; nextProvenance[k] = "verified_lookup"; }
   for (const k of opts.markDerived ?? []) { nextStatus[k] = "derived"; nextProvenance[k] = "verified_lookup"; }
   for (const k of opts.markDefaulted ?? []) { nextStatus[k] = "defaulted"; nextProvenance[k] = "approved_business_default"; }
   for (const k of opts.markCustomerEstimate ?? []) nextProvenance[k] = "customer_estimate";
   for (const k of opts.markConfirmedSummary ?? []) nextProvenance[k] = "confirmed_summary";
   nextFields.answerProvenance = nextProvenance;
-  if (nextFields.screenProfile) nextFields.screenProfileProvenance = nextStatus.screenProfile ?? "unknown";
-  return { ...prev, fields: nextFields, fieldStatus: nextStatus };
+  // Backward-compatible sessions may have a screen profile but no provenance.
+  // Do not synthesize "unknown" during an unrelated contact/address update;
+  // that would invalidate an otherwise current quote. Populate provenance only
+  // when this merge actually captures/corrects the screen profile, or when the
+  // persisted record already participates in the provenance contract.
+  if (
+    nextFields.screenProfile &&
+    (Object.prototype.hasOwnProperty.call(patch, "screenProfile") ||
+      nextFields.screenProfileProvenance != null)
+  ) {
+    nextFields.screenProfileProvenance = nextStatus.screenProfile ?? "unknown";
+  }
+  const priceChanged = beforePriceKey !== sessionInputsKey(nextFields);
+  const bookingChanged = beforeBookingKey !== sessionBookingInputsKey(nextFields);
+  if (priceChanged) {
+    delete nextFields.lastQuoteResult;
+    if (nextFields.voiceJourney) {
+      nextFields.voiceJourney = {
+        ...nextFields.voiceJourney,
+        quoteContext: null,
+        delivery: null,
+        availability: null,
+        booking: { status: "not_started" },
+      };
+    }
+  } else if (bookingChanged && nextFields.voiceJourney) {
+    nextFields.voiceJourney = {
+      ...nextFields.voiceJourney,
+      availability: null,
+      booking: { status: "not_started" },
+    };
+  }
+  return {
+    ...prev,
+    fields: nextFields,
+    fieldStatus: nextStatus,
+    quoteStatus: priceChanged ? "none" : prev.quoteStatus,
+    bookingReady: priceChanged || bookingChanged ? false : prev.bookingReady,
+    lastStep: priceChanged ? null : prev.lastStep,
+  };
 }
 
 // Fields whose validity depends on WHOLE-HOME pricing (sqft-based engine).
@@ -234,7 +415,7 @@ export function mergeFields(
 // contact, notes, and conversation history are preserved.
 const WHOLE_HOME_PRICING_FIELDS: (keyof QuoteSessionFields)[] = [
   "squareFootage",
-  "windowCleaningType",
+  "windowCleaningSides",
 ];
 const PARTIAL_PRICING_FIELDS: (keyof QuoteSessionFields)[] = [
   "windowCount",
@@ -264,7 +445,24 @@ export function changeWindowScope(
   if (currentScope === "partial" && nextScope === "whole_home") invalidate(PARTIAL_PRICING_FIELDS);
   nextFields.windowCleaningScope = nextScope;
   nextStatus.windowCleaningScope = "captured";
-  return { ...prev, fields: nextFields, fieldStatus: nextStatus };
+  delete nextFields.lastQuoteResult;
+  if (nextFields.voiceJourney) {
+    nextFields.voiceJourney = {
+      ...nextFields.voiceJourney,
+      quoteContext: null,
+      delivery: null,
+      availability: null,
+      booking: { status: "not_started" },
+    };
+  }
+  return {
+    ...prev,
+    fields: nextFields,
+    fieldStatus: nextStatus,
+    quoteStatus: "none",
+    bookingReady: false,
+    lastStep: null,
+  };
 }
 
 /** Merge one commercial location into the array without flattening existing
@@ -446,6 +644,7 @@ function rowToSession(row: Record<string, unknown>): QuoteSession {
     bookingReady: !!row.booking_ready,
     phoneE164: (row.phone_e164 as string | null) ?? null,
     emailNormalized: (row.email_normalized as string | null) ?? null,
+    updatedAt: (row.updated_at as string | null) ?? null,
   };
 }
 
@@ -580,63 +779,90 @@ export async function syncFromFacts(
   await supabase.from("quote_sessions").update(update).eq("id", sessionId);
 }
 
-export const inputsKey = quoteInputsKey;
+function valueAtPath(value: Record<string, unknown>, path: string): unknown {
+  return path.split(".").reduce<unknown>((current, segment) =>
+    current && typeof current === "object"
+      ? (current as Record<string, unknown>)[segment]
+      : undefined, value);
+}
 
-// ---------------------------------------------------------------------------
-// sessionInputsKey — canonical inputs-key for a QuoteSession, computed via
-// the SAME `quoteInputsKey` used by ConversationFacts. Never introduce a
-// second hashing algorithm; always route session-shaped inputs through this
-// helper so cached quote results can be verified as still-current.
-// ---------------------------------------------------------------------------
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, nested]) => nested !== undefined)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, nested]) => [key, stableValue(nested)]),
+    );
+  }
+  return value === undefined ? null : value;
+}
+
+/**
+ * Canonical price/policy fingerprint. Field discovery comes from the shared
+ * intake contract, not a second handwritten service list. It deliberately
+ * includes provenance and confirmed recap fields because those can change a
+ * mathematically firm result into a policy-blocked result without changing the
+ * arithmetic inputs.
+ */
 export function sessionInputsKey(fields: QuoteSessionFields): string {
-  const facts = {
-    services: fields.services,
-    address: fields.address,
-    property: {
-      squareFootage: fields.squareFootage,
-      stories: fields.stories,
-      windowCleaningType: fields.windowCleaningSides === "inside_and_outside"
-        ? "both"
-        : fields.windowCleaningSides === "outside_only"
-        ? "exterior"
-        : undefined,
-      condition: fields.condition,
-      roofType: fields.roofType,
-      roofSeverity: fields.roofSeverity,
-      drivewaySqft: fields.drivewaySqft,
-      drivewaySurface: fields.drivewaySurface,
-      pressureWashSqft: fields.pressureWashSqft,
-      pressureWashSurface: fields.pressureWashSurface,
-      solarPanelCount: fields.solarPanelCount,
-      screenRepairCount: fields.screenRepairCount,
-      pressureWashingAreas: fields.pressureWashingAreas,
-      screenProfile: fields.screenProfile,
-      screenProfileProvenance: fields.screenProfileProvenance,
-      advancedWindowConditions: fields.advancedWindowConditions,
-      hardWaterStains: fields.hardWaterStains,
-      hardWaterAffectedWindowEquivalents: fields.hardWaterAffectedWindowEquivalents,
-      frenchPanes: fields.frenchPanes,
-      ladderWork: fields.ladderWork,
-      ladderAffectedWindowEquivalents: fields.ladderAffectedWindowEquivalents,
-      addedInteriorWindowSides: fields.addedInteriorWindowSides,
-      omittedWindowSides: fields.omittedWindowSides,
-      solarScreenCoverage: fields.solarScreenCoverage,
-      solarScreenAffectedWindowCount: fields.solarScreenAffectedWindowCount,
-      solarScreenServiceRequested: fields.solarScreenServiceRequested,
-      enclosedPatioProfile: fields.enclosedPatioProfile,
-      screenedEnclosureSoftWash: fields.screenedEnclosureSoftWash,
-      enclosureWindowCount: fields.enclosureWindowCount,
-      enclosureWindowSides: fields.enclosureWindowSides,
-      gutterAddons: fields.gutterAddons,
-      houseWashPatios: fields.houseWashPatios,
-      roofRiskFlags: fields.roofRiskFlags,
-      solarAccessProfile: fields.solarAccessProfile,
-      screenRepairScopeType: fields.screenRepairScopeType,
-      answerProvenance: fields.answerProvenance,
-      confirmationSummary: fields.confirmationSummary,
+  const source = fields as unknown as Record<string, unknown>;
+  const contractValues: Record<string, unknown> = {};
+  const includedFieldIds = new Set<string>();
+  const selectedServices = evaluateQuoteIntake(source).services;
+  for (const spec of CANONICAL_INTAKE_FIELDS) {
+    if (
+      spec.appliesToServices.some((service) =>
+        selectedServices.includes(service)
+      ) &&
+      (spec.stage === "service_selection" || spec.stage === "pre_price" ||
+        spec.stage === "post_price_upsell" || spec.changesPrice ||
+        spec.category === "manual_review_trigger" ||
+        spec.category === "owner_decision_required")
+    ) {
+      contractValues[spec.fieldId] = valueAtPath(source, spec.storagePath);
+      includedFieldIds.add(spec.fieldId);
+    }
+  }
+  const confirmed = fields.confirmationSummary;
+  const priceProvenance = Object.fromEntries(
+    Object.entries(fields.answerProvenance ?? {})
+      .filter(([fieldId]) => includedFieldIds.has(fieldId)),
+  );
+  return JSON.stringify(stableValue({
+    contractValues,
+    // Discounts predate the canonical intake manifest and are deliberately
+    // not a voice question. They are still a price-changing persisted input,
+    // so changing an authorized legacy discount must invalidate a cached quote.
+    externalPricingValues: {
+      discountCode: fields.discountCode?.trim().toUpperCase() || null,
     },
-    discountCode: fields.discountCode ?? null,
-    promotionId: fields.promotionId ?? null,
-  } as unknown as ConversationFacts;
-  return quoteInputsKey(facts);
+    answerProvenance: priceProvenance,
+    confirmationSummary: confirmed
+      ? {
+        confirmed: confirmed.confirmed === true,
+        confirmedFieldIds: [...(confirmed.confirmedFieldIds ?? [])]
+          .filter((fieldId) => includedFieldIds.has(fieldId))
+          .sort(),
+      }
+      : null,
+  }));
+}
+
+/** Context that must remain fixed while availability or booking is offered. */
+export function sessionBookingInputsKey(fields: QuoteSessionFields): string {
+  return JSON.stringify(stableValue({
+    priceInputsKey: sessionInputsKey(fields),
+    address: fields.address?.trim().toLowerCase() ?? null,
+    city: fields.city?.trim().toLowerCase() ?? null,
+    state: fields.state?.trim().toUpperCase() ?? null,
+    zip: fields.zip?.trim() ?? null,
+    serviceAreaStatus: fields.serviceAreaStatus ?? null,
+    customer: {
+      name: fields.name?.trim() ?? null,
+      email: fields.email?.trim().toLowerCase() ?? null,
+      phone: fields.phone ?? null,
+    },
+  }));
 }

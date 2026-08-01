@@ -10,16 +10,43 @@ import {
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { runTool, resolveVoiceBookingLane } from "./aiTools.ts";
+import { getBookingReadiness } from "./bookingReadiness.ts";
+import { sessionInputsKey } from "./quoteSession.ts";
 
 const CALLER = "+14692150144";
 const START = new Date(Date.now() + 86_400_000).toISOString();
 const END = new Date(Date.now() + 90_000_000).toISOString();
 
-const QUOTE = {
-  total: 200,
-  homeDetails: { squareFootage: 2500, stories: 1 },
-  additionalServices: [],
+const QUOTE_FIELDS = {
+  services: ["gutterCleaning"],
+  squareFootage: 2500,
+  stories: 1,
+  address: "5612 Binbranch Ln, McKinney, TX 75071",
 };
+const QUOTE_INPUTS_KEY = sessionInputsKey(QUOTE_FIELDS);
+const QUOTE = {
+  status: "firm",
+  total: 200,
+  estimatedDurationMinutes: 120,
+  durationSource: "authoritative_quote",
+  durationVersion: "duration-v1",
+  engineVersion: "1.0.0",
+  ruleVersion: 1,
+  taxPolicyVersion: null,
+  inputsKey: QUOTE_INPUTS_KEY,
+};
+
+const PRICING_ROWS = [
+  "window_cleaning",
+  "window_addons",
+  "house_wash",
+  "gutter_cleaning",
+  "roof_cleaning",
+  "driveway_cleaning",
+  "pressure_washing",
+  "solar_panel_cleaning",
+  "screen_repair",
+].map((config_key) => ({ config_key, config_value: {} }));
 
 function stubSupabase(opts: { address?: string } = {}) {
   const updates: Record<string, unknown>[] = [];
@@ -29,11 +56,28 @@ function stubSupabase(opts: { address?: string } = {}) {
     prospect_email: "owner@example.com",
     prospect_phone: CALLER,
     service_address: opts.address ?? "5612 Binbranch Ln, McKinney, TX 75071",
+    property_id: "property-live",
+    quote_session_id: "quote-session-live",
+    customer_id: "customer-live",
+    confirmed_email_customer_id: null,
+    resolution_method: "phone_exact",
+    resolution_confidence: "high",
+    awaiting_email_disambiguation: false,
   };
   const offer = {
     tool_result: {
       offerVersion: "v1",
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      quoteSignature: QUOTE_INPUTS_KEY,
+      quoteIdentity: {
+        quoteSessionId: "quote-session-live",
+        quoteId: "quote-live",
+        inputsKey: QUOTE_INPUTS_KEY,
+        pricingVersion: 1,
+        engineVersion: "1.0.0",
+        durationVersion: "duration-v1",
+        taxPolicyVersion: null,
+      },
       offered: [{
         slotId: "slot_live_1",
         startTime: START,
@@ -47,6 +91,29 @@ function stubSupabase(opts: { address?: string } = {}) {
   };
   const rows: Record<string, unknown> = {
     chat_conversations: convo,
+    quote_sessions: {
+      id: "quote-session-live",
+      quote_id: "quote-live",
+      channel: "voice",
+      conversation_ids: ["conv_live"],
+      fields: { ...QUOTE_FIELDS, lastQuoteResult: QUOTE },
+      field_status: {},
+      required_remaining: [],
+      quote_status: "firm",
+      booking_ready: true,
+    },
+    customer_properties: {
+      id: "customer-property-live",
+      customer_id: "customer-live",
+      property_id: "property-live",
+      active: true,
+    },
+    autosync_config: {
+      last_full_sync_completed_at: new Date().toISOString(),
+      lock_holder_id: null,
+      lock_acquired_at: null,
+      last_run_status: "completed",
+    },
     system_test_config: { suppress_all: false, suppress_reason: null },
     service_area_config: {
       allowed_cities: ["McKinney"],
@@ -56,7 +123,11 @@ function stubSupabase(opts: { address?: string } = {}) {
       is_configured: true,
     },
   };
-  const listRows: Record<string, unknown[]> = { chat_messages: [offer] };
+  const listRows: Record<string, unknown[]> = {
+    chat_messages: [offer],
+    pricing_config: PRICING_ROWS,
+    property_facts_current: [],
+  };
 
   function builder(table: string) {
     const b: any = {
@@ -80,7 +151,10 @@ function stubSupabase(opts: { address?: string } = {}) {
       maybeSingle: async () => ({ data: rows[table] ?? null, error: null }),
       single: async () => ({ data: rows[table] ?? null, error: null }),
       then: (res: (v: unknown) => unknown) =>
-        Promise.resolve({ data: null, error: null }).then(res),
+        Promise.resolve({
+          data: listRows[table] ?? (rows[table] ? [rows[table]] : []),
+          error: null,
+        }).then(res),
     };
     return b;
   }
@@ -88,7 +162,10 @@ function stubSupabase(opts: { address?: string } = {}) {
     updates,
     client: {
       from: (table: string) => builder(table),
-      rpc: async () => ({ data: null, error: null }),
+      rpc: async (name: string) => ({
+        data: name === "current_pricing_version" ? 1 : null,
+        error: null,
+      }),
     } as any,
   };
 }
@@ -188,11 +265,13 @@ Deno.test("live voice booking: success routes through jobber-create-booking", as
     new Response(JSON.stringify({ jobberVisitId: "visit_1" }), { status: 200 })
   );
   try {
+    const readiness = await getBookingReadiness(client, "conv_live");
+    assertEquals(readiness.ready, true, JSON.stringify(readiness));
     const result = await runTool("create_bluladder_booking", voiceCtx(client), {
       confirmed: true,
       slotId: "slot_live_1",
     }) as { status: string; confirmedTime?: string };
-    assertEquals(result.status, "confirmed");
+    assertEquals(result.status, "confirmed", JSON.stringify(result));
     assertEquals(result.confirmedTime, "Friday at 9:00 AM");
     assertEquals(h.bookingCalls.length, 1);
     const body = h.bookingCalls[0].body;

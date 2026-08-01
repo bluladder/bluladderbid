@@ -24,6 +24,7 @@ function underlyingKey(field: RequiredField): keyof QuoteSessionFields | null {
     case "contact_email": return "email";
     case "contact_phone": return "phone";
     case "contact_name": return "name";
+    default: return null;
   }
 }
 
