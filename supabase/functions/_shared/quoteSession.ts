@@ -11,10 +11,10 @@
 import type { ConversationFacts } from "./conversationState.ts";
 import { normalizeUsCaE164, resolvePhone } from "./contactIntegrity.ts";
 import {
-  evaluateQuoteIntake,
-  CANONICAL_INTAKE_FIELDS,
-  normalizeWindowCleaningSides,
   type AnswerProvenance,
+  CANONICAL_INTAKE_FIELDS,
+  evaluateQuoteIntake,
+  normalizeWindowCleaningSides,
 } from "./salesEngine/quoteIntakeContract.ts";
 import { resolveAuthoritativeDuration } from "./salesEngine/durationContract.ts";
 
@@ -22,7 +22,14 @@ import { resolveAuthoritativeDuration } from "./salesEngine/durationContract.ts"
 type SB = any;
 
 export type QuoteSessionChannel = "voice" | "web" | "sms" | "chat";
-export type FieldStatus = "unknown" | "captured" | "verified" | "corrected" | "derived" | "defaulted" | "unanswered";
+export type FieldStatus =
+  | "unknown"
+  | "captured"
+  | "verified"
+  | "corrected"
+  | "derived"
+  | "defaulted"
+  | "unanswered";
 
 export interface QuoteSessionFields {
   services?: string[];
@@ -41,7 +48,12 @@ export interface QuoteSessionFields {
   condition?: string;
   roofType?: string;
   roofSeverity?: string;
-  roofRiskFlags?: { knownDamage: boolean; extremePitch: boolean; fragileMaterial: boolean; unusualAccess: boolean };
+  roofRiskFlags?: {
+    knownDamage: boolean;
+    extremePitch: boolean;
+    fragileMaterial: boolean;
+    unusualAccess: boolean;
+  };
   drivewaySqft?: number;
   drivewaySurface?: string;
   pressureWashSqft?: number;
@@ -50,9 +62,18 @@ export interface QuoteSessionFields {
   discountCode?: string | null;
   // Phase 4C-β.4A — window-scope classification
   customerType?: "residential" | "commercial" | "unknown";
-  windowCleaningScope?: "whole_home" | "partial" | "commercial_custom" | "unknown";
+  windowCleaningScope?:
+    | "whole_home"
+    | "partial"
+    | "commercial_custom"
+    | "unknown";
   windowCleaningSides?: "outside_only" | "inside_and_outside";
-  screenProfile?: "standard_removable" | "no_screens" | "solar" | "mixed_standard_solar" | "fixed_nonremovable_or_unknown";
+  screenProfile?:
+    | "standard_removable"
+    | "no_screens"
+    | "solar"
+    | "mixed_standard_solar"
+    | "fixed_nonremovable_or_unknown";
   /** Derived from fieldStatus.screenProfile; callers cannot assert this independently. */
   screenProfileProvenance?: FieldStatus;
   advancedWindowConditions?: boolean;
@@ -66,7 +87,11 @@ export interface QuoteSessionFields {
   solarScreenCoverage?: "all" | "some";
   solarScreenAffectedWindowCount?: number;
   solarScreenServiceRequested?: boolean;
-  enclosedPatioProfile?: "none" | "screened" | "window_enclosed" | "mixed_or_uncertain";
+  enclosedPatioProfile?:
+    | "none"
+    | "screened"
+    | "window_enclosed"
+    | "mixed_or_uncertain";
   screenedEnclosureSoftWash?: boolean;
   enclosureWindowCount?: number;
   enclosureWindowSides?: "outside_only" | "inside_and_outside";
@@ -104,9 +129,13 @@ export interface QuoteSessionFields {
     frontSqft?: number;
     backSqft?: number;
   };
-  pressureWashingAreas?: Partial<Record<"frontPorch" | "backPatio" | "poolDeck" | "walkways", {
-    enabled: boolean; sqft?: number; surfaceType?: string;
-  }>>;
+  pressureWashingAreas?: Partial<
+    Record<"frontPorch" | "backPatio" | "poolDeck" | "walkways", {
+      enabled: boolean;
+      sqft?: number;
+      surfaceType?: string;
+    }>
+  >;
   solarPanelCount?: number;
   solarAccessProfile?: {
     stories: 1 | 2 | 3;
@@ -117,10 +146,21 @@ export interface QuoteSessionFields {
     unusualAccess: boolean;
   };
   screenRepairCount?: number;
-  screenRepairScopeType?: "standard_removable_reusable_frame" | "screen_door" | "new_frame" | "damaged_frame" | "solar_screen" | "specialty_or_oversized" | "unknown";
+  screenRepairScopeType?:
+    | "standard_removable_reusable_frame"
+    | "screen_door"
+    | "new_frame"
+    | "damaged_frame"
+    | "solar_screen"
+    | "specialty_or_oversized"
+    | "unknown";
   serviceAreaStatus?: "eligible" | "ineligible" | "ambiguous" | "unavailable";
   answerProvenance?: Record<string, AnswerProvenance>;
-  confirmationSummary?: { confirmed: boolean; confirmedFieldIds: string[]; confirmedAt?: string };
+  confirmationSummary?: {
+    confirmed: boolean;
+    confirmedFieldIds: string[];
+    confirmedAt?: string;
+  };
   humanPricingRequired?: boolean;
   bidRequestStatus?:
     | "commercial_bid_requested"
@@ -129,7 +169,11 @@ export interface QuoteSessionFields {
     | "awaiting_ben_review";
   // ---- Workflow controller rollout state (Phase 4C-β.6) ----
   // Persisted opaquely on quote_sessions.fields. Never exposed to the caller.
-  callerIdConfirmationStatus?: "pending" | "confirmed" | "contact_confirmed" | "declined";
+  callerIdConfirmationStatus?:
+    | "pending"
+    | "confirmed"
+    | "contact_confirmed"
+    | "declined";
   callerIdProposedE164?: string;
   returningCustomerId?: string;
   returningCustomerResolved?: boolean;
@@ -147,7 +191,13 @@ export interface QuoteSessionFields {
    * migration or parallel voice-only record is required.
    */
   voiceJourney?: {
-    intent?: "new_quote" | "schedule" | "existing_quote" | "reschedule" | "cancel" | "question_or_memo";
+    intent?:
+      | "new_quote"
+      | "schedule"
+      | "existing_quote"
+      | "reschedule"
+      | "cancel"
+      | "question_or_memo";
     quoteContext?: {
       inputsKey: string;
       quoteId?: string | null;
@@ -156,9 +206,21 @@ export interface QuoteSessionFields {
       taxPolicyVersion?: string | null;
       durationVersion?: string | null;
       engineStatus?: string | null;
-      productPolicyStatus?: "approved" | "manual_review_required" | "owner_decision_required";
-      channelEligibility?: "eligible" | "ineligible" | "owner_decision_required";
-      finalQuoteDisposition?: "firm" | "estimated" | "incomplete" | "manual_review" | "owner_decision_required" | "error";
+      productPolicyStatus?:
+        | "approved"
+        | "manual_review_required"
+        | "owner_decision_required";
+      channelEligibility?:
+        | "eligible"
+        | "ineligible"
+        | "owner_decision_required";
+      finalQuoteDisposition?:
+        | "firm"
+        | "estimated"
+        | "incomplete"
+        | "manual_review"
+        | "owner_decision_required"
+        | "error";
       serviceSubtotal?: number | null;
       estimatedTax?: number | null;
       estimatedTotal?: number | null;
@@ -184,7 +246,11 @@ export interface QuoteSessionFields {
       requestedAt?: string | null;
     } | null;
     availability?: {
-      status: "not_requested" | "refresh_required" | "provider_unavailable" | "offered";
+      status:
+        | "not_requested"
+        | "refresh_required"
+        | "provider_unavailable"
+        | "offered";
       forBookingKey?: string | null;
       offerVersion?: string | null;
       expiresAt?: string | null;
@@ -199,7 +265,13 @@ export interface QuoteSessionFields {
       }>;
     } | null;
     booking?: {
-      status: "not_started" | "confirmation_required" | "submitting" | "confirmed" | "recovery_pending" | "failed";
+      status:
+        | "not_started"
+        | "confirmation_required"
+        | "submitting"
+        | "confirmed"
+        | "recovery_pending"
+        | "failed";
       bookingId?: string | null;
       referenceNumber?: string | null;
       idempotencyKey?: string | null;
@@ -210,12 +282,20 @@ export interface QuoteSessionFields {
       identityVerified: boolean;
       ownershipVerified: boolean;
     } | null;
-    pendingAddressComponent?: "house_number" | "street" | "unit" | "city" | "state" | "postal_code" | null;
+    pendingAddressComponent?:
+      | "house_number"
+      | "street"
+      | "unit"
+      | "city"
+      | "state"
+      | "postal_code"
+      | null;
   };
 }
 
 export interface QuoteSession {
   id: string;
+  organizationId?: string | null;
   channel: QuoteSessionChannel;
   conversationIds: string[];
   customerId?: string | null;
@@ -272,10 +352,12 @@ export function mergeFields(
   const beforeBookingKey = sessionBookingInputsKey(prev.fields);
   const nextFields: QuoteSessionFields = { ...prev.fields };
   const nextStatus = { ...prev.fieldStatus };
-  const nextProvenance: Record<string, AnswerProvenance> = { ...(prev.fields.answerProvenance ?? {}) };
-  const phoneIsConfirmed = prev.fieldStatus.phone === "verified"
-    || prev.fields.callerIdConfirmationStatus === "confirmed"
-    || prev.fields.callerIdConfirmationStatus === "contact_confirmed";
+  const nextProvenance: Record<string, AnswerProvenance> = {
+    ...(prev.fields.answerProvenance ?? {}),
+  };
+  const phoneIsConfirmed = prev.fieldStatus.phone === "verified" ||
+    prev.fields.callerIdConfirmationStatus === "confirmed" ||
+    prev.fields.callerIdConfirmationStatus === "contact_confirmed";
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined) continue;
     const key = k as keyof QuoteSessionFields;
@@ -287,12 +369,15 @@ export function mergeFields(
       if (!sides) continue;
       const previous = nextFields.windowCleaningSides;
       nextFields.windowCleaningSides = sides;
-      nextStatus.windowCleaningSides = previous && previous !== sides ? "corrected" : "captured";
+      nextStatus.windowCleaningSides = previous && previous !== sides
+        ? "corrected"
+        : "captured";
       nextProvenance.windowCleaningSides = "explicitly_selected";
       continue;
     }
     const prevVal = (prev.fields as Record<string, unknown>)[key];
-    const isEmpty = v === null || v === "" || (Array.isArray(v) && v.length === 0);
+    const isEmpty = v === null || v === "" ||
+      (Array.isArray(v) && v.length === 0);
     if (isEmpty && key !== "services") continue;
     // Contact integrity: a phone patch must be a valid full NANP E.164, and a
     // confirmed caller ID can never be overwritten by a lower-provenance
@@ -310,10 +395,14 @@ export function mergeFields(
       continue;
     }
     (nextFields as Record<string, unknown>)[key] = v;
-    const wasCaptured = nextStatus[key] === "captured" || nextStatus[key] === "verified";
-    const changed = prevVal !== undefined && JSON.stringify(prevVal) !== JSON.stringify(v);
+    const wasCaptured = nextStatus[key] === "captured" ||
+      nextStatus[key] === "verified";
+    const changed = prevVal !== undefined &&
+      JSON.stringify(prevVal) !== JSON.stringify(v);
     nextStatus[key] = wasCaptured && changed ? "corrected" : "captured";
-    if (key !== "answerProvenance" && key !== "confirmationSummary") nextProvenance[key] = "explicitly_selected";
+    if (key !== "answerProvenance" && key !== "confirmationSummary") {
+      nextProvenance[key] = "explicitly_selected";
+    }
   }
 
   // A removed service must not resurrect its old answers if it is selected
@@ -362,11 +451,24 @@ export function mergeFields(
       }
     }
   }
-  for (const k of opts.markVerified ?? []) { nextStatus[k] = "verified"; nextProvenance[k] = "verified_lookup"; }
-  for (const k of opts.markDerived ?? []) { nextStatus[k] = "derived"; nextProvenance[k] = "verified_lookup"; }
-  for (const k of opts.markDefaulted ?? []) { nextStatus[k] = "defaulted"; nextProvenance[k] = "approved_business_default"; }
-  for (const k of opts.markCustomerEstimate ?? []) nextProvenance[k] = "customer_estimate";
-  for (const k of opts.markConfirmedSummary ?? []) nextProvenance[k] = "confirmed_summary";
+  for (const k of opts.markVerified ?? []) {
+    nextStatus[k] = "verified";
+    nextProvenance[k] = "verified_lookup";
+  }
+  for (const k of opts.markDerived ?? []) {
+    nextStatus[k] = "derived";
+    nextProvenance[k] = "verified_lookup";
+  }
+  for (const k of opts.markDefaulted ?? []) {
+    nextStatus[k] = "defaulted";
+    nextProvenance[k] = "approved_business_default";
+  }
+  for (const k of opts.markCustomerEstimate ?? []) {
+    nextProvenance[k] = "customer_estimate";
+  }
+  for (const k of opts.markConfirmedSummary ?? []) {
+    nextProvenance[k] = "confirmed_summary";
+  }
   nextFields.answerProvenance = nextProvenance;
   // Backward-compatible sessions may have a screen profile but no provenance.
   // Do not synthesize "unknown" during an unrelated contact/address update;
@@ -381,7 +483,8 @@ export function mergeFields(
     nextFields.screenProfileProvenance = nextStatus.screenProfile ?? "unknown";
   }
   const priceChanged = beforePriceKey !== sessionInputsKey(nextFields);
-  const bookingChanged = beforeBookingKey !== sessionBookingInputsKey(nextFields);
+  const bookingChanged =
+    beforeBookingKey !== sessionBookingInputsKey(nextFields);
   if (priceChanged) {
     delete nextFields.lastQuoteResult;
     if (nextFields.voiceJourney) {
@@ -441,8 +544,12 @@ export function changeWindowScope(
       delete nextStatus[k];
     }
   };
-  if (currentScope === "whole_home" && nextScope === "partial") invalidate(WHOLE_HOME_PRICING_FIELDS);
-  if (currentScope === "partial" && nextScope === "whole_home") invalidate(PARTIAL_PRICING_FIELDS);
+  if (currentScope === "whole_home" && nextScope === "partial") {
+    invalidate(WHOLE_HOME_PRICING_FIELDS);
+  }
+  if (currentScope === "partial" && nextScope === "whole_home") {
+    invalidate(PARTIAL_PRICING_FIELDS);
+  }
   nextFields.windowCleaningScope = nextScope;
   nextStatus.windowCleaningScope = "captured";
   delete nextFields.lastQuoteResult;
@@ -473,7 +580,9 @@ export function addCommercialLocation(
 ): QuoteSession {
   const list = [...(prev.fields.commercialLocations ?? [])];
   const norm = (s?: string) => (s ?? "").trim().toLowerCase();
-  const idx = list.findIndex((x) => norm(x.address) && norm(x.address) === norm(loc.address));
+  const idx = list.findIndex((x) =>
+    norm(x.address) && norm(x.address) === norm(loc.address)
+  );
   if (idx >= 0) list[idx] = { ...list[idx], ...loc };
   else list.push(loc);
   return mergeFields(prev, { commercialLocations: list });
@@ -483,9 +592,17 @@ export function addCommercialLocation(
  *  selected services. Mirrors the pricing engine's declared inputs; does NOT
  *  introduce new pricing rules. */
 export function computeRequired(fields: QuoteSessionFields): string[] {
-  const evaluation = evaluateQuoteIntake(fields as unknown as Record<string, unknown>);
-  const missing = [...evaluation.requiredToPrice, ...evaluation.productPolicyRequired];
-  if (evaluation.services.includes("commercial_window_bid") && !(fields.preferredContactMethods?.length)) {
+  const evaluation = evaluateQuoteIntake(
+    fields as unknown as Record<string, unknown>,
+  );
+  const missing = [
+    ...evaluation.requiredToPrice,
+    ...evaluation.productPolicyRequired,
+  ];
+  if (
+    evaluation.services.includes("commercial_window_bid") &&
+    !(fields.preferredContactMethods?.length)
+  ) {
     missing.push("preferredContactMethods");
   }
   return [...new Set(missing)];
@@ -500,9 +617,11 @@ export function isReadyToBook(session: QuoteSession): boolean {
   const intake = evaluateQuoteIntake(f as unknown as Record<string, unknown>);
   const duration = resolveAuthoritativeDuration(f.lastQuoteResult ?? null);
   const mixedReviewBookable = session.quoteStatus === "manual_review" &&
-    Array.isArray(f.lastQuoteResult?.bookableServiceKeys) && f.lastQuoteResult.bookableServiceKeys.length > 0;
+    Array.isArray(f.lastQuoteResult?.bookableServiceKeys) &&
+    f.lastQuoteResult.bookableServiceKeys.length > 0;
   return (
-    (session.quoteStatus === "firm" || session.quoteStatus === "estimated" || mixedReviewBookable) &&
+    (session.quoteStatus === "firm" || session.quoteStatus === "estimated" ||
+      mixedReviewBookable) &&
     computeRequired(f).length === 0 &&
     intake.ownerDecisions.length === 0 &&
     (intake.manualReview.length === 0 || mixedReviewBookable) &&
@@ -595,7 +714,8 @@ export function fieldsFromFacts(facts: ConversationFacts): QuoteSessionFields {
     address: facts.address,
     squareFootage: p.squareFootage,
     stories: p.stories,
-    windowCleaningSides: normalizeWindowCleaningSides(p.windowCleaningType) ?? undefined,
+    windowCleaningSides: normalizeWindowCleaningSides(p.windowCleaningType) ??
+      undefined,
     condition: p.condition,
     roofType: p.roofType,
     roofSeverity: p.roofSeverity,
@@ -609,7 +729,9 @@ export function fieldsFromFacts(facts: ConversationFacts): QuoteSessionFields {
   };
 }
 
-export function quoteStatusFromFacts(facts: ConversationFacts): QuoteSession["quoteStatus"] {
+export function quoteStatusFromFacts(
+  facts: ConversationFacts,
+): QuoteSession["quoteStatus"] {
   const s = facts.quote?.status;
   if (s === "firm") return "firm";
   if (s === "estimated") return "estimated";
@@ -618,8 +740,12 @@ export function quoteStatusFromFacts(facts: ConversationFacts): QuoteSession["qu
   return "none";
 }
 
-const EMPTY_SESSION = (channel: QuoteSessionChannel, id: string): QuoteSession => ({
+const EMPTY_SESSION = (
+  channel: QuoteSessionChannel,
+  id: string,
+): QuoteSession => ({
   id,
+  organizationId: null,
   channel,
   conversationIds: [],
   fields: {},
@@ -632,6 +758,7 @@ const EMPTY_SESSION = (channel: QuoteSessionChannel, id: string): QuoteSession =
 function rowToSession(row: Record<string, unknown>): QuoteSession {
   return {
     id: row.id as string,
+    organizationId: (row.organization_id as string | null) ?? null,
     channel: row.channel as QuoteSessionChannel,
     conversationIds: (row.conversation_ids as string[]) ?? [],
     customerId: (row.customer_id as string | null) ?? null,
@@ -668,33 +795,61 @@ export async function findOrCreateForConversation(
     channel: QuoteSessionChannel;
     phone?: string | null;
     email?: string | null;
+    resolvedOrganizationId?: string | null;
   },
 ): Promise<QuoteSession> {
   const { conversationId, channel } = args;
+  const organizationId = args.resolvedOrganizationId ?? null;
 
-  const conv = await supabase
+  let conversationQuery = supabase
     .from("chat_conversations")
-    .select("id, quote_session_id")
-    .eq("id", conversationId)
-    .maybeSingle();
+    .select("id, quote_session_id, organization_id")
+    .eq("id", conversationId);
+  conversationQuery = organizationId
+    ? conversationQuery.eq("organization_id", organizationId)
+    : conversationQuery.is("organization_id", null);
+  const conv = await conversationQuery.maybeSingle();
   const existingId: string | null = conv?.data?.quote_session_id ?? null;
   if (existingId) {
-    const { data } = await supabase.from("quote_sessions").select("*").eq("id", existingId).maybeSingle();
+    let existingQuery = supabase.from("quote_sessions").select("*").eq(
+      "id",
+      existingId,
+    );
+    existingQuery = organizationId
+      ? existingQuery.eq("organization_id", organizationId)
+      : existingQuery.is("organization_id", null);
+    const { data } = await existingQuery.maybeSingle();
     if (data) return rowToSession(data);
   }
 
   const phoneE164 = normalizePhone(args.phone);
   const emailNormalized = normalizeEmail(args.email);
-  if (phoneE164 || emailNormalized) {
-    let q = supabase.from("quote_sessions").select("*").order("updated_at", { ascending: false }).limit(1);
+  // Phone/email are identity selectors, never tenant authority. Cross-channel
+  // reuse is allowed only inside an already resolved organization.
+  if (organizationId && (phoneE164 || emailNormalized)) {
+    let q = supabase.from("quote_sessions").select("*")
+      .eq("organization_id", organizationId)
+      .order("updated_at", { ascending: false }).limit(1);
     if (phoneE164) q = q.eq("phone_e164", phoneE164);
     else if (emailNormalized) q = q.eq("email_normalized", emailNormalized);
     const { data } = await q.maybeSingle();
     if (data) {
       const session = rowToSession(data);
-      const nextIds = Array.from(new Set([...(session.conversationIds ?? []), conversationId]));
-      await supabase.from("quote_sessions").update({ conversation_ids: nextIds }).eq("id", session.id);
-      await supabase.from("chat_conversations").update({ quote_session_id: session.id }).eq("id", conversationId);
+      const nextIds = Array.from(
+        new Set([...(session.conversationIds ?? []), conversationId]),
+      );
+      await supabase.from("quote_sessions")
+        .update({ conversation_ids: nextIds })
+        .eq("id", session.id)
+        .eq("organization_id", organizationId);
+      let conversationUpdate = supabase.from("chat_conversations").update({
+        quote_session_id: session.id,
+        organization_id: organizationId,
+      }).eq("id", conversationId);
+      conversationUpdate = conv?.data?.organization_id
+        ? conversationUpdate.eq("organization_id", organizationId)
+        : conversationUpdate.is("organization_id", null);
+      await conversationUpdate;
       return { ...session, conversationIds: nextIds };
     }
   }
@@ -704,6 +859,7 @@ export async function findOrCreateForConversation(
     conversation_ids: [conversationId],
     phone_e164: phoneE164,
     email_normalized: emailNormalized,
+    ...(organizationId ? { organization_id: organizationId } : {}),
   } as Record<string, unknown>;
   const { data: created } = await supabase
     .from("quote_sessions")
@@ -711,7 +867,14 @@ export async function findOrCreateForConversation(
     .select("*")
     .single();
   if (created) {
-    await supabase.from("chat_conversations").update({ quote_session_id: created.id }).eq("id", conversationId);
+    let conversationUpdate = supabase.from("chat_conversations").update({
+      quote_session_id: created.id,
+      ...(organizationId ? { organization_id: organizationId } : {}),
+    }).eq("id", conversationId);
+    conversationUpdate = conv?.data?.organization_id
+      ? conversationUpdate.eq("organization_id", organizationId)
+      : conversationUpdate.is("organization_id", null);
+    await conversationUpdate;
     return rowToSession(created);
   }
   return EMPTY_SESSION(channel, conversationId);
@@ -726,21 +889,29 @@ export async function findOrCreateForConversation(
 export async function findByConversation(
   supabase: SB,
   conversationId: string,
+  resolvedOrganizationId?: string | null,
 ): Promise<QuoteSession | null> {
   if (!conversationId) return null;
   try {
-    const { data: conv } = await supabase
+    const organizationId = resolvedOrganizationId ?? null;
+    let conversationQuery = supabase
       .from("chat_conversations")
-      .select("quote_session_id")
-      .eq("id", conversationId)
-      .maybeSingle();
+      .select("quote_session_id, organization_id")
+      .eq("id", conversationId);
+    conversationQuery = organizationId
+      ? conversationQuery.eq("organization_id", organizationId)
+      : conversationQuery.is("organization_id", null);
+    const { data: conv } = await conversationQuery.maybeSingle();
     const sid: string | null = conv?.quote_session_id ?? null;
     if (!sid) return null;
-    const { data } = await supabase
+    let sessionQuery = supabase
       .from("quote_sessions")
       .select("*")
-      .eq("id", sid)
-      .maybeSingle();
+      .eq("id", sid);
+    sessionQuery = organizationId
+      ? sessionQuery.eq("organization_id", organizationId)
+      : sessionQuery.is("organization_id", null);
+    const { data } = await sessionQuery.maybeSingle();
     return data ? rowToSession(data) : null;
   } catch {
     return null;
@@ -756,7 +927,10 @@ export async function syncFromFacts(
   facts: ConversationFacts,
 ): Promise<void> {
   if (!sessionId) return;
-  const { data: row } = await supabase.from("quote_sessions").select("*").eq("id", sessionId).maybeSingle();
+  const { data: row } = await supabase.from("quote_sessions").select("*").eq(
+    "id",
+    sessionId,
+  ).maybeSingle();
   if (!row) return;
   const prev = rowToSession(row);
   const patch = fieldsFromFacts(facts);
@@ -770,20 +944,32 @@ export async function syncFromFacts(
     required_remaining: required,
     quote_status: quoteStatus,
     booking_ready: bookingReady,
-    last_step: facts.quote?.inputsKey ? "quoted" : (facts.services?.length ? "identifying_need" : "new"),
+    last_step: facts.quote?.inputsKey
+      ? "quoted"
+      : (facts.services?.length ? "identifying_need" : "new"),
   };
   const phone = normalizePhone(facts.contact?.phone);
   const email = normalizeEmail(facts.contact?.email);
   if (phone) update.phone_e164 = phone;
   if (email) update.email_normalized = email;
-  await supabase.from("quote_sessions").update(update).eq("id", sessionId);
+  let updateQuery = supabase.from("quote_sessions").update(update).eq(
+    "id",
+    sessionId,
+  );
+  updateQuery = prev.organizationId
+    ? updateQuery.eq("organization_id", prev.organizationId)
+    : updateQuery.is("organization_id", null);
+  await updateQuery;
 }
 
 function valueAtPath(value: Record<string, unknown>, path: string): unknown {
-  return path.split(".").reduce<unknown>((current, segment) =>
-    current && typeof current === "object"
-      ? (current as Record<string, unknown>)[segment]
-      : undefined, value);
+  return path.split(".").reduce<unknown>(
+    (current, segment) =>
+      current && typeof current === "object"
+        ? (current as Record<string, unknown>)[segment]
+        : undefined,
+    value,
+  );
 }
 
 function stableValue(value: unknown): unknown {

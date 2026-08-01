@@ -25,6 +25,7 @@ import {
 } from "../_shared/workflow/workflowController.ts";
 import { ensureVoiceConversation } from "../_shared/voiceAdapter.ts";
 import { normalizeVoiceMessages } from "../_shared/voice/voiceInputNormalizer.ts";
+import { resolveVoiceOrganizationAuthority } from "../_shared/voice/voiceOrganizationAuthority.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -239,6 +240,13 @@ Deno.serve(async (req) => {
     // tenant-scoped record actions fail closed instead of falling through.
     try {
       const identity = await ensureVoiceConversation({ supabase, request });
+      const organizationAuthority = await resolveVoiceOrganizationAuthority(
+        supabase,
+        {
+          conversationId: identity.conversationId,
+          rawBody: request.rawBody,
+        },
+      );
       // Reconstruct history + last utterance the same way the legacy adapter does.
       const nonSystem = request.messages.filter((m) =>
         m.role !== "system" && m.role !== "tool"
@@ -266,6 +274,7 @@ Deno.serve(async (req) => {
         utterance: userMessage,
         history,
         callerIdE164: request.callerIdE164,
+        organizationAuthority,
       });
       const persistence = await persistControllerPatch(
         supabase,

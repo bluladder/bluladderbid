@@ -7,20 +7,39 @@
 // see the latest persisted facts.
 // ============================================================================
 
-import { findOrCreateForConversation, type QuoteSession, type QuoteSessionChannel } from "../quoteSession.ts";
+import {
+  findOrCreateForConversation,
+  type QuoteSession,
+  type QuoteSessionChannel,
+} from "../quoteSession.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
 
 export async function reloadSession(
   supabase: SB,
-  args: { sessionId?: string | null; conversationId: string; channel: QuoteSessionChannel; phone?: string | null; email?: string | null },
+  args: {
+    sessionId?: string | null;
+    conversationId: string;
+    channel: QuoteSessionChannel;
+    phone?: string | null;
+    email?: string | null;
+    resolvedOrganizationId?: string | null;
+  },
 ): Promise<QuoteSession> {
   if (args.sessionId) {
-    const { data } = await supabase.from("quote_sessions").select("*").eq("id", args.sessionId).maybeSingle();
+    let query = supabase.from("quote_sessions").select("*").eq(
+      "id",
+      args.sessionId,
+    );
+    query = args.resolvedOrganizationId
+      ? query.eq("organization_id", args.resolvedOrganizationId)
+      : query.is("organization_id", null);
+    const { data } = await query.maybeSingle();
     if (data) {
       return {
         id: data.id,
+        organizationId: data.organization_id ?? null,
         channel: data.channel,
         conversationIds: data.conversation_ids ?? [],
         customerId: data.customer_id ?? null,
@@ -42,5 +61,6 @@ export async function reloadSession(
     channel: args.channel,
     phone: args.phone,
     email: args.email,
+    resolvedOrganizationId: args.resolvedOrganizationId,
   });
 }

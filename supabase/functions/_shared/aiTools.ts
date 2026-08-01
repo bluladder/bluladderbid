@@ -159,6 +159,8 @@ export interface ToolContext {
   conversationId: string;
   sessionToken: string;
   channel: "web" | "voice" | "sms";
+  /** Server-derived tenant authority; never populate from model tool args. */
+  organizationId?: string | null;
 }
 
 function svc(): SupabaseClient {
@@ -210,25 +212,37 @@ export function buildQuoteRequest(a: Record<string, unknown>) {
     homeDetails: {
       squareFootage: num(a.squareFootage),
       stories: num(a.stories),
-      windowCleaningType: windowSidesToPricingType(a.windowCleaningSides ?? a.windowCleaningType) ?? undefined,
+      windowCleaningType: windowSidesToPricingType(
+        a.windowCleaningSides ?? a.windowCleaningType,
+      ) ?? undefined,
       condition: (a.condition as string) || undefined,
       showAdvanced: false,
       screenProfile: (a.screenProfile as string) || undefined,
-      screenProfileProvenance: (a.screenProfileProvenance as string) || undefined,
+      screenProfileProvenance: (a.screenProfileProvenance as string) ||
+        undefined,
       solarScreenCoverage: (a.solarScreenCoverage as string) || undefined,
-      solarScreenAffectedWindowCount: a.solarScreenAffectedWindowCount == null ? undefined : num(a.solarScreenAffectedWindowCount),
+      solarScreenAffectedWindowCount: a.solarScreenAffectedWindowCount == null
+        ? undefined
+        : num(a.solarScreenAffectedWindowCount),
       solarScreenServiceRequested: a.solarScreenServiceRequested === true,
       enclosedPatioProfile: (a.enclosedPatioProfile as string) || undefined,
       screenedEnclosureSoftWash: a.screenedEnclosureSoftWash === true,
-      enclosureWindowCount: a.enclosureWindowCount == null ? undefined : num(a.enclosureWindowCount),
+      enclosureWindowCount: a.enclosureWindowCount == null
+        ? undefined
+        : num(a.enclosureWindowCount),
       enclosureWindowSides: (a.enclosureWindowSides as string) || undefined,
     },
     additionalServices: {
       windowCleaning: has("window_cleaning"),
       houseWash: has("house_wash"),
       gutterCleaning: has("gutter_cleaning"),
-      gutterAddons: a.gutterAddons && typeof a.gutterAddons === "object" ? a.gutterAddons : undefined,
-      houseWashPatios: a.houseWashPatios && typeof a.houseWashPatios === "object" ? a.houseWashPatios : undefined,
+      gutterAddons: a.gutterAddons && typeof a.gutterAddons === "object"
+        ? a.gutterAddons
+        : undefined,
+      houseWashPatios:
+        a.houseWashPatios && typeof a.houseWashPatios === "object"
+          ? a.houseWashPatios
+          : undefined,
       roofCleaning: has("roof_cleaning"),
       roofType: (a.roofType as string) || undefined,
       roofSeverity: (a.roofSeverity as string) || undefined,
@@ -248,8 +262,14 @@ export function buildQuoteRequest(a: Record<string, unknown>) {
         poolDeck: { enabled: false, sqft: 0 },
         walkways: { enabled: false, sqft: 0 },
       },
-      solarPanelCleaning: { enabled: has("solar_panel_cleaning"), panelCount: num(a.solarPanelCount) },
-      screenRepair: { enabled: has("screen_repair"), screenCount: num(a.screenRepairCount) },
+      solarPanelCleaning: {
+        enabled: has("solar_panel_cleaning"),
+        panelCount: num(a.solarPanelCount),
+      },
+      screenRepair: {
+        enabled: has("screen_repair"),
+        screenCount: num(a.screenRepairCount),
+      },
     },
     discount: a.discountCode ? { code: String(a.discountCode) } : null,
     __services: services,
@@ -395,15 +415,23 @@ async function canonicalVoiceAvailabilityTool(
   });
   if (result.status !== "ok") {
     const messages: Record<string, string> = {
-      no_slots: "I checked the current schedule and did not find an available appointment in that window.",
-      schedule_drifted: "The schedule needs to refresh before I can offer current times.",
-      provider_timeout: "The scheduling provider timed out, so I will not guess at appointment times.",
-      provider_rate_limited: "The scheduling provider is temporarily busy, so I cannot confirm times right now.",
-      provider_unavailable: "The scheduling provider is unavailable, so I cannot confirm times right now.",
-      preference_ambiguous: "I need a clearer date or day preference before I check times.",
-      not_ready: "The quote, address, identity, duration, or schedule is not ready for availability yet.",
+      no_slots:
+        "I checked the current schedule and did not find an available appointment in that window.",
+      schedule_drifted:
+        "The schedule needs to refresh before I can offer current times.",
+      provider_timeout:
+        "The scheduling provider timed out, so I will not guess at appointment times.",
+      provider_rate_limited:
+        "The scheduling provider is temporarily busy, so I cannot confirm times right now.",
+      provider_unavailable:
+        "The scheduling provider is unavailable, so I cannot confirm times right now.",
+      preference_ambiguous:
+        "I need a clearer date or day preference before I check times.",
+      not_ready:
+        "The quote, address, identity, duration, or schedule is not ready for availability yet.",
       gate_blocked: "Live scheduling is not authorized for this request.",
-      engine_error: "I could not confirm availability, so I will not offer a time.",
+      engine_error:
+        "I could not confirm availability, so I will not offer a time.",
     };
     return {
       status: result.status,
@@ -416,11 +444,13 @@ async function canonicalVoiceAvailabilityTool(
   const session = await findQuoteSessionByConversation(
     ctx.supabase,
     ctx.conversationId,
+    ctx.organizationId ?? null,
   );
   if (!session) {
     return {
       status: "not_ready",
-      message: "The canonical quote session is missing, so I cannot offer times.",
+      message:
+        "The canonical quote session is missing, so I cannot offer times.",
     };
   }
   const last = session.fields.lastQuoteResult;
@@ -428,7 +458,8 @@ async function canonicalVoiceAvailabilityTool(
   if (!last || last.inputsKey !== inputsKey) {
     return {
       status: "quote_changed",
-      message: "The quote changed before availability was offered, so I need to refresh the price first.",
+      message:
+        "The quote changed before availability was offered, so I need to refresh the price first.",
     };
   }
   const offerVersion = crypto.randomUUID();
@@ -475,7 +506,9 @@ async function canonicalVoiceAvailabilityTool(
   return {
     status: "ok",
     offerExpiresAt: expiresAt,
-    slots: offered.map(({ slotId, startTime, endTime, displayTime, durationMinutes, timezone }) => ({
+    slots: offered.map((
+      { slotId, startTime, endTime, displayTime, durationMinutes, timezone },
+    ) => ({
       slotId,
       startTime,
       endTime,
@@ -647,7 +680,7 @@ async function createBookingTool(
   const { data: convo } = await ctx.supabase
     .from("chat_conversations")
     .select(
-      "quote_result, prospect_name, prospect_email, prospect_phone, service_address",
+      "organization_id, quote_result, prospect_name, prospect_email, prospect_phone, service_address",
     )
     .eq("id", ctx.conversationId)
     .maybeSingle();
@@ -670,7 +703,9 @@ async function createBookingTool(
   }
 
   let quote = convo?.quote_result as any;
-  let canonicalBookingInput: ReturnType<typeof quoteSessionFieldsToQuoteInput> | null = null;
+  let canonicalBookingInput:
+    | ReturnType<typeof quoteSessionFieldsToQuoteInput>
+    | null = null;
   let canonicalQuoteIdentity: {
     quoteSessionId: string;
     quoteId: string | null;
@@ -696,6 +731,10 @@ async function createBookingTool(
     const session = await findQuoteSessionByConversation(
       ctx.supabase,
       ctx.conversationId,
+      ctx.organizationId ??
+        (typeof convo?.organization_id === "string"
+          ? convo.organization_id
+          : null),
     );
     const last = session?.fields.lastQuoteResult;
     if (!session || !last) {
@@ -708,7 +747,8 @@ async function createBookingTool(
     if (last.inputsKey !== inputsKey) {
       return {
         status: "quote_changed",
-        message: "The quote changed, so I need to verify the current price before booking.",
+        message:
+          "The quote changed, so I need to verify the current price before booking.",
       };
     }
     quote = last;

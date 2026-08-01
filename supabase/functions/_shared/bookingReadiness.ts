@@ -24,19 +24,22 @@ import { readIdentityAnchor } from "./identityAnchor.ts";
 import {
   computeRequired,
   findByConversation,
-  sessionInputsKey,
   type QuoteSession,
+  sessionInputsKey,
 } from "./quoteSession.ts";
 import {
+  type CurrentFact,
   customerOwnsProperty,
   getPropertyProfile,
-  type CurrentFact,
 } from "./profile/propertyRepo.ts";
 import { loadPricing } from "./loadPricing.ts";
 import { getMirrorFreshness } from "./scheduleFreshness.ts";
 import { resolveAuthoritativeDuration } from "./salesEngine/durationContract.ts";
 import { evaluateQuoteIntake } from "./salesEngine/quoteIntakeContract.ts";
-import { resolveQuoteDisposition, type ProductPolicyStatus } from "./salesEngine/quoteDisposition.ts";
+import {
+  type ProductPolicyStatus,
+  resolveQuoteDisposition,
+} from "./salesEngine/quoteDisposition.ts";
 
 type SB = any;
 
@@ -169,7 +172,7 @@ export async function getBookingReadiness(
     const { data } = await supabase
       .from("chat_conversations")
       .select(
-        "id, property_id, prospect_phone, prospect_email, quote_session_id",
+        "id, organization_id, property_id, prospect_phone, prospect_email, quote_session_id",
       )
       .eq("id", conversationId)
       .maybeSingle();
@@ -188,7 +191,10 @@ export async function getBookingReadiness(
   let reusableCount = 0;
   let staleFacts: string[] = [];
   let conflictingFacts: string[] = [];
-  if (propertyId && identityAnchor.identity_status === "resolved" && resolvedCustomerId) {
+  if (
+    propertyId && identityAnchor.identity_status === "resolved" &&
+    resolvedCustomerId
+  ) {
     propertyAuthorized = await customerOwnsProperty(
       supabase,
       resolvedCustomerId,
@@ -209,6 +215,7 @@ export async function getBookingReadiness(
   const session: QuoteSession | null = await findByConversation(
     supabase,
     conversationId,
+    typeof convo?.organization_id === "string" ? convo.organization_id : null,
   );
 
   const fields = session?.fields ?? {};
@@ -220,30 +227,43 @@ export async function getBookingReadiness(
 
   const lastQuote = extractLastQuoteResult(session);
   const lastStatus: string | null = lastQuote?.status ?? null;
-  const quotePricingVersion: string | null =
-    lastQuote?.engineVersion ?? null;
+  const quotePricingVersion: string | null = lastQuote?.engineVersion ?? null;
   const quoteRuleVersion: number | null =
     typeof lastQuote?.ruleVersion === "number" ? lastQuote.ruleVersion : null;
   const manualReviewReasons: string[] = Array.isArray(
-    lastQuote?.manualReviewReasons,
-  )
+      lastQuote?.manualReviewReasons,
+    )
     ? lastQuote.manualReviewReasons
     : [];
-  const manualReviewRequired =
-    lastStatus === "manual_review_required" || manualReviewReasons.length > 0;
-  const bookableServiceKeys: string[] = Array.isArray(lastQuote?.bookableServiceKeys)
-    ? lastQuote.bookableServiceKeys.filter((key: unknown): key is string => typeof key === "string")
-    : [];
+  const manualReviewRequired = lastStatus === "manual_review_required" ||
+    manualReviewReasons.length > 0;
+  const bookableServiceKeys: string[] =
+    Array.isArray(lastQuote?.bookableServiceKeys)
+      ? lastQuote.bookableServiceKeys.filter((key: unknown): key is string =>
+        typeof key === "string"
+      )
+      : [];
   const hasBookablePortion = bookableServiceKeys.length > 0;
-  const intakeEvaluation = evaluateQuoteIntake(fields as Record<string, unknown>);
-  const productPolicyStatus: ProductPolicyStatus = intakeEvaluation.ownerDecisions.length > 0
-    ? "owner_decision_required"
-    : manualReviewRequired || intakeEvaluation.manualReview.length > 0 ? "manual_review_required" : "approved";
+  const intakeEvaluation = evaluateQuoteIntake(
+    fields as Record<string, unknown>,
+  );
+  const productPolicyStatus: ProductPolicyStatus =
+    intakeEvaluation.ownerDecisions.length > 0
+      ? "owner_decision_required"
+      : manualReviewRequired || intakeEvaluation.manualReview.length > 0
+      ? "manual_review_required"
+      : "approved";
   const disposition = resolveQuoteDisposition({
     engineStatus: (lastStatus ?? "missing_information") as any,
     productPolicyStatus,
-    channelEligibility: productPolicyStatus === "owner_decision_required" ? "owner_decision_required" : "eligible",
-    reasons: [...manualReviewReasons, ...intakeEvaluation.manualReview, ...intakeEvaluation.ownerDecisions],
+    channelEligibility: productPolicyStatus === "owner_decision_required"
+      ? "owner_decision_required"
+      : "eligible",
+    reasons: [
+      ...manualReviewReasons,
+      ...intakeEvaluation.manualReview,
+      ...intakeEvaluation.ownerDecisions,
+    ],
   });
 
   // ---- Authoritative inputs-freshness check --------------------------------
@@ -260,8 +280,7 @@ export async function getBookingReadiness(
     ? sessionInputsKey(session.fields)
     : null;
   const inputsKeyPresent = storedInputsKey != null;
-  const inputsCurrent =
-    inputsKeyPresent &&
+  const inputsCurrent = inputsKeyPresent &&
     currentInputsKey != null &&
     storedInputsKey === currentInputsKey;
 
@@ -272,13 +291,13 @@ export async function getBookingReadiness(
   try {
     const loaded = await loadPricing(supabase);
     pricingEngineOk = !!loaded.ok && !!loaded.pricing;
-    liveRuleVersion =
-      typeof loaded.ruleVersion === "number" ? loaded.ruleVersion : null;
+    liveRuleVersion = typeof loaded.ruleVersion === "number"
+      ? loaded.ruleVersion
+      : null;
   } catch {
     pricingEngineOk = false;
   }
-  const pricingCurrent =
-    pricingEngineOk &&
+  const pricingCurrent = pricingEngineOk &&
     lastQuote != null &&
     quoteRuleVersion != null &&
     liveRuleVersion != null &&
@@ -287,27 +306,32 @@ export async function getBookingReadiness(
   // A cached quote is only trustworthy when EVERY signal aligns. Historical
   // totals (stale inputs, drifted rules, non-bookable status) must never leak
   // through to scheduling.
-  const bookableStatus =
-    lastStatus === "firm" || lastStatus === "estimated" ||
+  const bookableStatus = lastStatus === "firm" || lastStatus === "estimated" ||
     (lastStatus === "manual_review_required" && hasBookablePortion);
   const rawTotal: number | null = typeof lastQuote?.estimatedTotal === "number"
     ? lastQuote.estimatedTotal
-    : typeof lastQuote?.total === "number" ? lastQuote.total : null;
+    : typeof lastQuote?.total === "number"
+    ? lastQuote.total
+    : null;
   const durationResult = resolveAuthoritativeDuration(lastQuote);
   const rawDuration: number | null = durationResult.status === "available"
     ? durationResult.minutes
     : null;
-  const cachedQuoteTrustworthy =
-    lastQuote != null &&
+  const cachedQuoteTrustworthy = lastQuote != null &&
     inputsCurrent &&
     pricingCurrent &&
     bookableStatus &&
     rawTotal != null && rawTotal > 0 &&
     rawDuration != null && rawDuration > 0;
 
-  const canonicalTotal: number | null = cachedQuoteTrustworthy ? rawTotal : null;
-  const durationMinutes: number | null = cachedQuoteTrustworthy ? rawDuration : null;
-  const durationResolved = durationResult.status === "available" && durationMinutes != null;
+  const canonicalTotal: number | null = cachedQuoteTrustworthy
+    ? rawTotal
+    : null;
+  const durationMinutes: number | null = cachedQuoteTrustworthy
+    ? rawDuration
+    : null;
+  const durationResolved = durationResult.status === "available" &&
+    durationMinutes != null;
 
   // Schedule mirror freshness (single shared reader).
   const mirror = await getMirrorFreshness(supabase);
@@ -336,7 +360,10 @@ export async function getBookingReadiness(
       code: `identity_${identityAnchor.identity_status}`,
       customer_safe_message:
         "Before I lock in a time, can I get the email on your account so I book the right one?",
-      staff_message: `identity_status=${identityAnchor.identity_status} method=${identityAnchor.resolution_method ?? "none"} awaiting_email=${identityAnchor.awaiting_email_disambiguation}`,
+      staff_message:
+        `identity_status=${identityAnchor.identity_status} method=${
+          identityAnchor.resolution_method ?? "none"
+        } awaiting_email=${identityAnchor.awaiting_email_disambiguation}`,
     });
   }
 
@@ -344,7 +371,9 @@ export async function getBookingReadiness(
   if (status === "ready" && (!propertySelected || !propertyAuthorized)) {
     status = "property_blocked";
     blockers.push({
-      code: !propertySelected ? "no_property_selected" : "property_not_authorized",
+      code: !propertySelected
+        ? "no_property_selected"
+        : "property_not_authorized",
       customer_safe_message:
         "Which address should I book this at? I want to make sure we're headed to the right property.",
       staff_message: !propertySelected
@@ -358,8 +387,7 @@ export async function getBookingReadiness(
     status = "quote_incomplete";
     blockers.push({
       code: "quote_inputs_missing",
-      customer_safe_message:
-        "One more quick detail and I can lock this in.",
+      customer_safe_message: "One more quick detail and I can lock this in.",
       staff_message: `missing quote inputs: ${missing.join(", ")}`,
     });
   }
@@ -367,19 +395,27 @@ export async function getBookingReadiness(
   // 5. pricing_blocked — engine unavailable, no quote cached, or version drift.
   if (status === "ready") {
     const noQuoteCached = lastQuote == null;
-    const pricingErrored = lastStatus === "error" || lastStatus === "pricing_unavailable";
+    const pricingErrored = lastStatus === "error" ||
+      lastStatus === "pricing_unavailable";
     const inputsStale = lastQuote != null && !inputsCurrent;
-    if (!pricingEngineOk || noQuoteCached || pricingErrored || !pricingCurrent || inputsStale) {
+    if (
+      !pricingEngineOk || noQuoteCached || pricingErrored || !pricingCurrent ||
+      inputsStale
+    ) {
       status = "pricing_blocked";
       // Inputs-drift takes precedence over engine liveness/version drift when
       // a lastQuoteResult is cached — the cached total/duration are the actual
       // hazard we need to name for the AI, regardless of loader health.
       const code = noQuoteCached
-        ? (!pricingEngineOk ? "pricing_engine_unavailable" : "no_canonical_quote")
+        ? (!pricingEngineOk
+          ? "pricing_engine_unavailable"
+          : "no_canonical_quote")
         : pricingErrored
         ? "pricing_engine_error"
         : inputsStale
-        ? (inputsKeyPresent ? "quote_inputs_changed" : "quote_inputs_unverified")
+        ? (inputsKeyPresent
+          ? "quote_inputs_changed"
+          : "quote_inputs_unverified")
         : !pricingEngineOk
         ? "pricing_engine_unavailable"
         : "pricing_version_drift";
@@ -387,30 +423,47 @@ export async function getBookingReadiness(
         code,
         customer_safe_message: CUSTOMER_SAFE_GENERIC,
         staff_message:
-          `pricingEngineOk=${pricingEngineOk} lastStatus=${lastStatus ?? "none"} ` +
-          `quoteRuleVersion=${quoteRuleVersion ?? "null"} liveRuleVersion=${liveRuleVersion ?? "null"} ` +
+          `pricingEngineOk=${pricingEngineOk} lastStatus=${
+            lastStatus ?? "none"
+          } ` +
+          `quoteRuleVersion=${quoteRuleVersion ?? "null"} liveRuleVersion=${
+            liveRuleVersion ?? "null"
+          } ` +
           `inputsKeyPresent=${inputsKeyPresent} inputsCurrent=${inputsCurrent}`,
       });
     }
   }
 
   // 6. manual_review — pricing engine flagged human review.
-  if (status === "ready" && (manualReviewRequired || intakeEvaluation.manualReview.length > 0) && !hasBookablePortion) {
+  if (
+    status === "ready" &&
+    (manualReviewRequired || intakeEvaluation.manualReview.length > 0) &&
+    !hasBookablePortion
+  ) {
     status = "manual_review";
     blockers.push({
       code: "manual_review_required",
       customer_safe_message:
         "I want to make sure we get this exactly right — I'll have our team follow up shortly.",
-      staff_message: `manualReviewReasons: ${[...manualReviewReasons, ...intakeEvaluation.manualReview].join("; ") || "unspecified"}`,
+      staff_message: `manualReviewReasons: ${
+        [...manualReviewReasons, ...intakeEvaluation.manualReview].join("; ") ||
+        "unspecified"
+      }`,
     });
   }
 
-  if (status === "ready" && disposition.finalQuoteDisposition === "owner_decision_required") {
+  if (
+    status === "ready" &&
+    disposition.finalQuoteDisposition === "owner_decision_required"
+  ) {
     status = "owner_decision_required";
     blockers.push({
       code: "owner_decision_required",
-      customer_safe_message: "I want to make sure we quote this correctly — our team will review the details.",
-      staff_message: `pending owner decisions: ${intakeEvaluation.ownerDecisions.join(", ")}`,
+      customer_safe_message:
+        "I want to make sure we quote this correctly — our team will review the details.",
+      staff_message: `pending owner decisions: ${
+        intakeEvaluation.ownerDecisions.join(", ")
+      }`,
     });
   }
 
@@ -432,7 +485,9 @@ export async function getBookingReadiness(
       code: `schedule_${mirror.reason}`,
       customer_safe_message:
         "Live scheduling is refreshing — one moment while I pull today's availability.",
-      staff_message: `mirror.reason=${mirror.reason} ageMinutes=${mirror.ageMinutes ?? "null"} syncInProgress=${mirror.syncInProgress}`,
+      staff_message: `mirror.reason=${mirror.reason} ageMinutes=${
+        mirror.ageMinutes ?? "null"
+      } syncInProgress=${mirror.syncInProgress}`,
     });
   }
 
@@ -457,7 +512,9 @@ export async function getBookingReadiness(
   // pricing_blocked reasons remain staff_intervention.
   let nextAction: ReadinessNextAction = nextActionMap[status];
   if (status === "pricing_blocked" && lastQuote != null && !inputsCurrent) {
-    nextAction = requiredComplete ? "recalculate_quote" : "collect_quote_inputs";
+    nextAction = requiredComplete
+      ? "recalculate_quote"
+      : "collect_quote_inputs";
   }
 
   return {
@@ -482,8 +539,12 @@ export async function getBookingReadiness(
       pricing_current: pricingCurrent,
       inputs_key_present: inputsKeyPresent,
       inputs_current: inputsCurrent,
-      manual_review_required: manualReviewRequired || intakeEvaluation.manualReview.length > 0,
-      manual_review_reasons: [...manualReviewReasons, ...intakeEvaluation.manualReview],
+      manual_review_required: manualReviewRequired ||
+        intakeEvaluation.manualReview.length > 0,
+      manual_review_reasons: [
+        ...manualReviewReasons,
+        ...intakeEvaluation.manualReview,
+      ],
       product_policy_status: productPolicyStatus,
       final_disposition: disposition.finalQuoteDisposition,
       owner_decisions: intakeEvaluation.ownerDecisions,
@@ -492,7 +553,9 @@ export async function getBookingReadiness(
       status: durationResult.status,
       resolved: durationResolved,
       minutes: durationMinutes,
-      source: durationResult.status === "available" ? durationResult.source : null,
+      source: durationResult.status === "available"
+        ? durationResult.source
+        : null,
     },
     schedule: {
       readable: scheduleReadable,

@@ -37,8 +37,14 @@
 // ============================================================================
 // deno-lint-ignore-file no-explicit-any
 
-import { getBookingReadiness, type BookingReadiness } from "./bookingReadiness.ts";
-import { evaluateAutonomousSendGate, type AutonomousGateDecision } from "./autonomousSendGate.ts";
+import {
+  type BookingReadiness,
+  getBookingReadiness,
+} from "./bookingReadiness.ts";
+import {
+  type AutonomousGateDecision,
+  evaluateAutonomousSendGate,
+} from "./autonomousSendGate.ts";
 import { getMirrorFreshness } from "./scheduleFreshness.ts";
 import { findByConversation } from "./quoteSession.ts";
 import { buildOfferSlotId } from "./slotOffer.ts";
@@ -54,13 +60,23 @@ export const DEFAULT_DAYS_TO_CHECK = 14;
 export const BUSINESS_TIMEZONE = "America/Chicago";
 
 const DOW_MAP: Record<string, number> = {
-  sunday: 0, sun: 0,
-  monday: 1, mon: 1,
-  tuesday: 2, tue: 2, tues: 2,
-  wednesday: 3, wed: 3,
-  thursday: 4, thu: 4, thur: 4, thurs: 4,
-  friday: 5, fri: 5,
-  saturday: 6, sat: 6,
+  sunday: 0,
+  sun: 0,
+  monday: 1,
+  mon: 1,
+  tuesday: 2,
+  tue: 2,
+  tues: 2,
+  wednesday: 3,
+  wed: 3,
+  thursday: 4,
+  thu: 4,
+  thur: 4,
+  thurs: 4,
+  friday: 5,
+  fri: 5,
+  saturday: 6,
+  sat: 6,
 };
 
 export interface AvailabilitySlot {
@@ -92,7 +108,7 @@ export type AvailabilityStatus =
 
 export interface AvailabilityLookupInput {
   preferred_date?: string | null; // YYYY-MM-DD
-  preferred_day?: string | null;  // "monday" | "tomorrow" | "next week" ...
+  preferred_day?: string | null; // "monday" | "tomorrow" | "next week" ...
   time_of_day?: "morning" | "afternoon" | null;
   max_options?: number | null;
 }
@@ -159,18 +175,33 @@ export function normalizePreference(
   input: AvailabilityLookupInput,
   today: string = todayInBusinessTz(),
 ): NormalizedPreference {
-  const timeOfDay = input.time_of_day === "morning" || input.time_of_day === "afternoon"
-    ? input.time_of_day
-    : null;
+  const timeOfDay =
+    input.time_of_day === "morning" || input.time_of_day === "afternoon"
+      ? input.time_of_day
+      : null;
 
   // 1. Explicit YYYY-MM-DD wins. Must be today or later.
-  const rawDate = typeof input.preferred_date === "string" ? input.preferred_date.trim() : "";
+  const rawDate = typeof input.preferred_date === "string"
+    ? input.preferred_date.trim()
+    : "";
   if (rawDate) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-      return { ambiguous: true, ambiguous_reason: "preferred_date_format", daysToCheck: 1, range: "single_day", timeOfDay };
+      return {
+        ambiguous: true,
+        ambiguous_reason: "preferred_date_format",
+        daysToCheck: 1,
+        range: "single_day",
+        timeOfDay,
+      };
     }
     if (rawDate < today) {
-      return { ambiguous: true, ambiguous_reason: "preferred_date_in_past", daysToCheck: 1, range: "single_day", timeOfDay };
+      return {
+        ambiguous: true,
+        ambiguous_reason: "preferred_date_in_past",
+        daysToCheck: 1,
+        range: "single_day",
+        timeOfDay,
+      };
     }
     return {
       ambiguous: false,
@@ -183,14 +214,30 @@ export function normalizePreference(
   }
 
   // 2. Textual day preference.
-  const rawDay = typeof input.preferred_day === "string" ? input.preferred_day.trim().toLowerCase() : "";
+  const rawDay = typeof input.preferred_day === "string"
+    ? input.preferred_day.trim().toLowerCase()
+    : "";
   if (rawDay) {
     if (rawDay === "today") {
-      return { ambiguous: false, startDate: today, daysToCheck: 1, range: "single_day", timeOfDay, preferenceMatchDate: today };
+      return {
+        ambiguous: false,
+        startDate: today,
+        daysToCheck: 1,
+        range: "single_day",
+        timeOfDay,
+        preferenceMatchDate: today,
+      };
     }
     if (rawDay === "tomorrow") {
       const t = addDaysISO(today, 1);
-      return { ambiguous: false, startDate: t, daysToCheck: 1, range: "single_day", timeOfDay, preferenceMatchDate: t };
+      return {
+        ambiguous: false,
+        startDate: t,
+        daysToCheck: 1,
+        range: "single_day",
+        timeOfDay,
+        preferenceMatchDate: t,
+      };
     }
     if (rawDay === "next week") {
       // Next Monday, then Mon-Fri window.
@@ -198,23 +245,53 @@ export function normalizePreference(
       // Days until next Monday (never today; always the FOLLOWING week).
       const delta = ((1 - dow + 7) % 7) || 7;
       const start = addDaysISO(today, delta);
-      return { ambiguous: false, startDate: start, daysToCheck: 5, range: "next_week", timeOfDay };
+      return {
+        ambiguous: false,
+        startDate: start,
+        daysToCheck: 5,
+        range: "next_week",
+        timeOfDay,
+      };
     }
     if (rawDay === "this week") {
-      return { ambiguous: false, startDate: today, daysToCheck: 7, range: "default", timeOfDay };
+      return {
+        ambiguous: false,
+        startDate: today,
+        daysToCheck: 7,
+        range: "default",
+        timeOfDay,
+      };
     }
     if (rawDay in DOW_MAP) {
       const targetDow = DOW_MAP[rawDay];
       const dow = businessDayOfWeek(today);
       const delta = ((targetDow - dow + 7) % 7) || 7; // never "today"; nearest FUTURE occurrence
       const start = addDaysISO(today, delta);
-      return { ambiguous: false, startDate: start, daysToCheck: 1, range: "single_day", timeOfDay, preferenceMatchDate: start };
+      return {
+        ambiguous: false,
+        startDate: start,
+        daysToCheck: 1,
+        range: "single_day",
+        timeOfDay,
+        preferenceMatchDate: start,
+      };
     }
-    return { ambiguous: true, ambiguous_reason: "preferred_day_unrecognized", daysToCheck: DEFAULT_DAYS_TO_CHECK, range: "default", timeOfDay };
+    return {
+      ambiguous: true,
+      ambiguous_reason: "preferred_day_unrecognized",
+      daysToCheck: DEFAULT_DAYS_TO_CHECK,
+      range: "default",
+      timeOfDay,
+    };
   }
 
   // 3. No preference: normal next-available window.
-  return { ambiguous: false, daysToCheck: DEFAULT_DAYS_TO_CHECK, range: "default", timeOfDay };
+  return {
+    ambiguous: false,
+    daysToCheck: DEFAULT_DAYS_TO_CHECK,
+    range: "default",
+    timeOfDay,
+  };
 }
 
 function ymdInBusinessTz(iso: string): string {
@@ -262,8 +339,9 @@ function extractCrewIds(raw: any): string[] {
   };
   push(raw?.technicianId);
   push(raw?.secondaryTechnicianId);
-  const arr = raw?.additionalTechnicianIds ?? raw?.crewIds ?? raw?.assignedTechnicians;
-  if (Array.isArray(arr)) for (const v of arr) push(v);
+  const arr = raw?.additionalTechnicianIds ?? raw?.crewIds ??
+    raw?.assignedTechnicians;
+  if (Array.isArray(arr)) { for (const v of arr) push(v); }
   return ids;
 }
 
@@ -273,14 +351,17 @@ function extractCrewIds(raw: any): string[] {
 // bookableStatus + positive total + positive duration before this runs, so we
 // can trust the cached line items.
 // ----------------------------------------------------------------------------
-function extractServicesFromSession(session: any): { service: string; price: number }[] {
+function extractServicesFromSession(
+  session: any,
+): { service: string; price: number }[] {
   const fields = (session?.fields ?? {}) as Record<string, unknown>;
   const last = (fields as any).lastQuoteResult;
-  const items = Array.isArray(last?.jobberLineItems) && last.jobberLineItems.length > 0
-    ? last.jobberLineItems
-    : Array.isArray(last?.lineItems)
-    ? last.lineItems
-    : [];
+  const items =
+    Array.isArray(last?.jobberLineItems) && last.jobberLineItems.length > 0
+      ? last.jobberLineItems
+      : Array.isArray(last?.lineItems)
+      ? last.lineItems
+      : [];
   return items
     .map((li: any) => ({
       service: String(li.name ?? li.label ?? "service"),
@@ -292,23 +373,32 @@ function extractServicesFromSession(session: any): { service: string; price: num
 async function fetchConversationContext(supabase: SB, conversationId: string) {
   const { data } = await supabase
     .from("chat_conversations")
-    .select("id, prospect_phone, service_address, property_id")
+    .select("id, organization_id, prospect_phone, service_address, property_id")
     .eq("id", conversationId)
     .maybeSingle();
   return data ?? null;
 }
 
-async function fetchPropertyAddress(supabase: SB, propertyId: string | null): Promise<string | null> {
+async function fetchPropertyAddress(
+  supabase: SB,
+  propertyId: string | null,
+  organizationId: string | null,
+): Promise<string | null> {
   if (!propertyId) return null;
   try {
-    const { data } = await supabase
+    let query = supabase
       .from("properties")
       .select("street, city, state, postal_code, formatted_address")
-      .eq("id", propertyId)
-      .maybeSingle();
+      .eq("id", propertyId);
+    query = organizationId
+      ? query.eq("organization_id", organizationId)
+      : query.is("organization_id", null);
+    const { data } = await query.maybeSingle();
     if (!data) return null;
     if (data.formatted_address) return String(data.formatted_address);
-    const parts = [data.street, data.city, data.state, data.postal_code].filter(Boolean);
+    const parts = [data.street, data.city, data.state, data.postal_code].filter(
+      Boolean,
+    );
     return parts.length ? parts.join(", ") : null;
   } catch {
     return null;
@@ -319,9 +409,13 @@ async function fetchPropertyAddress(supabase: SB, propertyId: string | null): Pr
 // Wire call to the single production availability engine. Never invoked
 // unless every precondition passes.
 // ----------------------------------------------------------------------------
-export type AvailabilityFetcher = (body: Record<string, unknown>) => Promise<{ status: number; json: any }>;
+export type AvailabilityFetcher = (
+  body: Record<string, unknown>,
+) => Promise<{ status: number; json: any }>;
 
-async function defaultFetcher(body: Record<string, unknown>): Promise<{ status: number; json: any }> {
+async function defaultFetcher(
+  body: Record<string, unknown>,
+): Promise<{ status: number; json: any }> {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   let resp: Response;
@@ -343,7 +437,9 @@ async function defaultFetcher(body: Record<string, unknown>): Promise<{ status: 
     };
   }
   let json: any = null;
-  try { json = await resp.json(); } catch { /* keep null */ }
+  try {
+    json = await resp.json();
+  } catch { /* keep null */ }
   return { status: resp.status, json };
 }
 
@@ -362,8 +458,8 @@ export async function getAvailableSlots(
 ): Promise<AvailabilityLookupResult> {
   // ---- 1. Autonomous send / scheduling action gate (fail-closed) ----------
   const convo = await fetchConversationContext(supabase, conversationId);
-  const gate = deps.gateOverride
-    ?? (await evaluateAutonomousSendGate(supabase, {
+  const gate = deps.gateOverride ??
+    (await evaluateAutonomousSendGate(supabase, {
       conversationId,
       phone: convo?.prospect_phone ?? null,
       actionClass: "scheduling",
@@ -378,8 +474,8 @@ export async function getAvailableSlots(
   }
 
   // ---- 2. Authoritative readiness ----------------------------------------
-  const readiness = deps.readinessOverride
-    ?? (await getBookingReadiness(supabase, conversationId));
+  const readiness = deps.readinessOverride ??
+    (await getBookingReadiness(supabase, conversationId));
   if (
     !readiness.ready ||
     readiness.next_action !== "show_availability" ||
@@ -437,7 +533,14 @@ export async function getAvailableSlots(
 
   // ---- 5. Build the availability request from AUTHORITATIVE context -----
   // Session read is strict read-only via findByConversation (no writes).
-  const session = await findByConversation(supabase, conversationId);
+  const organizationId = typeof convo?.organization_id === "string"
+    ? convo.organization_id
+    : null;
+  const session = await findByConversation(
+    supabase,
+    conversationId,
+    organizationId,
+  );
   const services = extractServicesFromSession(session);
   if (services.length === 0) {
     // Should have been caught by readiness; belt-and-suspenders.
@@ -449,9 +552,13 @@ export async function getAvailableSlots(
       next_action: "collect_quote_inputs",
     };
   }
-  const address = (await fetchPropertyAddress(supabase, convo?.property_id ?? null))
-    ?? convo?.service_address
-    ?? null;
+  const address = (await fetchPropertyAddress(
+    supabase,
+    convo?.property_id ?? null,
+    organizationId,
+  )) ??
+    convo?.service_address ??
+    null;
 
   const requestedMax = Number(input.max_options);
   const cap = Number.isFinite(requestedMax) && requestedMax > 0
@@ -506,7 +613,10 @@ export async function getAvailableSlots(
       detail: `availability_engine_status_${status}`,
     };
   }
-  if (json.availability_unavailable || json.stale || json.syncInProgress || json.error) {
+  if (
+    json.availability_unavailable || json.stale || json.syncInProgress ||
+    json.error
+  ) {
     return {
       status: "schedule_drifted",
       slots: [],
@@ -538,11 +648,15 @@ export async function getAvailableSlots(
     seen.add(key);
 
     let matches = true;
-    if (pref.preferenceMatchDate) matches = matches && date === pref.preferenceMatchDate;
+    if (pref.preferenceMatchDate) {
+      matches = matches && date === pref.preferenceMatchDate;
+    }
     if (pref.timeOfDay) {
       const h = hourInBusinessTz(startAt);
       const isAM = h < 12;
-      matches = matches && ((pref.timeOfDay === "morning" && isAM) || (pref.timeOfDay === "afternoon" && !isAM));
+      matches = matches &&
+        ((pref.timeOfDay === "morning" && isAM) ||
+          (pref.timeOfDay === "afternoon" && !isAM));
     }
 
     slots.push({
