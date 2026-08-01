@@ -279,7 +279,7 @@ Deno.test("getAvailableSlots: happy path returns structured slots capped at MAX_
   assertEquals(log.invocations.length, 0);
 });
 
-Deno.test("getAvailableSlots: engine reporting unavailable => schedule_drifted + refresh_schedule, no writes", async () => {
+Deno.test("getAvailableSlots: provider unavailable is explicit and performs no writes", async () => {
   const { sb, log } = makeSpySupabase({
     conversation: { id: "c1", prospect_phone: "+14690000000", service_address: "x", property_id: "p1", quote_session_id: "qs-1" },
     session: {
@@ -298,6 +298,66 @@ Deno.test("getAvailableSlots: engine reporting unavailable => schedule_drifted +
     json: { availability_unavailable: true, reason: "stale", slots: [], recommendations: [] },
   });
   const res = await getAvailableSlots(sb as any, "c1", {}, { readinessOverride: readyReadiness(), fetcher, gateOverride: ALLOW_GATE });
-  assertEquals(res.status, "engine_error");
+  assertEquals(res.status, "provider_unavailable");
   assertEquals(log.inserts.length + log.updates.length + log.upserts.length + log.rpc.length + log.invocations.length, 0);
 });
+
+for (const providerCase of [
+  { name: "timeout", status: 599, json: { error: "provider_timeout" }, expected: "provider_timeout" },
+  { name: "rate limit", status: 429, json: {}, expected: "provider_rate_limited" },
+  { name: "gateway failure", status: 502, json: {}, expected: "provider_unavailable" },
+  { name: "malformed/rejected request", status: 400, json: { error: "bad request" }, expected: "engine_error" },
+] as const) {
+  Deno.test(`getAvailableSlots: ${providerCase.name} remains distinguishable`, async () => {
+    const { sb, log } = makeSpySupabase({
+      conversation: {
+        id: "c1",
+        prospect_phone: "+14690000000",
+        service_address: "x",
+        property_id: "p1",
+        quote_session_id: "qs-1",
+      },
+      session: {
+        id: "qs-1",
+        conversation_id: "c1",
+        fields: {
+          services: ["gutterCleaning"],
+          squareFootage: 2400,
+          stories: 2,
+          lastQuoteResult: {
+            status: "firm",
+            total: 260,
+            estimatedDurationMinutes: 90,
+            jobberLineItems: [{ name: "Gutter Cleaning", unitPrice: 260 }],
+          },
+        },
+        field_status: {},
+        required_remaining: [],
+        quote_status: "firm",
+      },
+      autosync: {
+        last_full_sync_completed_at: new Date().toISOString(),
+        lock_holder_id: null,
+        lock_acquired_at: null,
+        last_run_status: "success",
+      },
+      property: { formatted_address: "x" },
+    });
+    const fetcher: AvailabilityFetcher = async () => ({
+      status: providerCase.status,
+      json: providerCase.json,
+    });
+    const result = await getAvailableSlots(
+      sb as any,
+      "c1",
+      {},
+      { readinessOverride: readyReadiness(), fetcher, gateOverride: ALLOW_GATE },
+    );
+    assertEquals(result.status, providerCase.expected);
+    assertEquals(
+      log.inserts.length + log.updates.length + log.upserts.length +
+        log.rpc.length + log.invocations.length,
+      0,
+    );
+  });
+}

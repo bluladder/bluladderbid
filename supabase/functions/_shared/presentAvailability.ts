@@ -57,6 +57,9 @@ export type PresentAvailabilityStatus =
   | "preference_ambiguous"
   | "gate_blocked"
   | "schedule_drifted"
+  | "provider_timeout"
+  | "provider_rate_limited"
+  | "provider_unavailable"
   | "engine_error"
   | "send_failed"
   | "callrail_unconfigured";
@@ -153,6 +156,17 @@ export async function presentAvailability(
   }
   if (availability.status === "engine_error") {
     return { status: "engine_error", availability, detail: availability.detail ?? null };
+  }
+  if (
+    availability.status === "provider_timeout" ||
+    availability.status === "provider_rate_limited" ||
+    availability.status === "provider_unavailable"
+  ) {
+    return {
+      status: availability.status,
+      availability,
+      detail: availability.detail ?? null,
+    };
   }
   if (availability.status !== "ok" || availability.slots.length === 0) {
     return { status: "no_slots", availability };
