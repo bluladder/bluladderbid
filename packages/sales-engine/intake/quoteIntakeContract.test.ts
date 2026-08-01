@@ -21,14 +21,14 @@ describe("canonical quote intake service matrix", () => {
 
   it("requires valid pressure-washing area details", () => {
     expect(missing({services:["pressureWashing"]})).toEqual(["pressureWashingSurface", "pressureWashingAreas"]);
-    expect(missing({services:["pressureWashing"], pressureWashSurface:"concrete", pressureWashingAreas:{frontPorch:{enabled:true,sqft:80}}})).toEqual([]);
+    expect(missing({services:["pressureWashing"], pressureWashSurface:"concrete", pressureWashingAreas:{frontPorch:{enabled:true,sqft:80,surfaceType:"concrete"}}})).toEqual([]);
   });
 
   it("requires modifier quantities only after the modifier is selected", () => {
     const base = { services:["windowCleaning"], windowCleaningScope:"whole_home", windowCleaningSides:"outside_only", squareFootage:2000, stories:1, condition:"maintenance" };
     expect(missing(base)).toEqual([]);
-    expect(missing({ ...base, hardWaterStains:true })).toContain("hardWaterPercent");
-    expect(missing({ ...base, ladderWork:true })).toContain("ladderWorkCount");
+    expect(missing({ ...base, hardWaterStains:true })).toContain("hardWaterAffectedWindowEquivalents");
+    expect(missing({ ...base, ladderWork:true })).toContain("ladderAffectedWindowEquivalents");
   });
 
   it("requires gutter quantities only for selected add-ons", () => {
@@ -88,5 +88,110 @@ describe("canonical window vocabulary", () => {
   it("never defaults a missing value", () => {
     expect(normalizeWindowCleaningSides(undefined)).toBeNull();
     expect(windowSidesToPricingType(undefined)).toBeNull();
+  });
+});
+
+describe("approved QD policy resolution", () => {
+  const completeWindow = {
+    services: ["windowCleaning"],
+    windowCleaningSides: "outside_only",
+    squareFootage: 2500,
+    stories: 2,
+    condition: "maintenance",
+    advancedWindowConditions: false,
+    screenProfile: "standard_removable",
+    enclosedPatioProfile: "none",
+  };
+
+  it("uses whole-home as the approved residential default without a routine scope question", () => {
+    const result = evaluateQuoteIntake(completeWindow);
+    expect(result.services).toEqual(["window_cleaning"]);
+    expect(result.ownerDecisions).toEqual([]);
+    expect(result.requiredToPrice).not.toContain("windowCleaningScope");
+  });
+
+  it("requires final-summary confirmation only for defaulted or estimated price-changing answers", () => {
+    const unconfirmed = evaluateQuoteIntake({
+      ...completeWindow,
+      answerProvenance: { condition: "approved_business_default" },
+    });
+    expect(unconfirmed.productPolicyRequired).toContain("priceChangingAssumptionConfirmation");
+    const confirmed = evaluateQuoteIntake({
+      ...completeWindow,
+      answerProvenance: { condition: "approved_business_default" },
+      confirmationSummary: { confirmed: true, confirmedFieldIds: ["condition"] },
+    });
+    expect(confirmed.productPolicyRequired).not.toContain("priceChangingAssumptionConfirmation");
+    const explicit = evaluateQuoteIntake({
+      ...completeWindow,
+      answerProvenance: { condition: "explicitly_selected" },
+    });
+    expect(explicit.productPolicyRequired).not.toContain("priceChangingAssumptionConfirmation");
+  });
+
+  it("never lets an approved default stand in for explicit window sides", () => {
+    const result = evaluateQuoteIntake({
+      ...completeWindow,
+      answerProvenance: { windowCleaningSides: "approved_business_default" },
+      confirmationSummary: { confirmed: true, confirmedFieldIds: ["windowCleaningSides"] },
+    });
+    expect(result.requiredToPrice).toContain("windowCleaningSides");
+  });
+
+  it("branches one advanced-window screen into only applicable count follow-ups", () => {
+    expect(evaluateQuoteIntake({ ...completeWindow, advancedWindowConditions: true, frenchPanes: true }).requiredToPrice)
+      .not.toContain("hardWaterAffectedWindowEquivalents");
+    expect(evaluateQuoteIntake({ ...completeWindow, advancedWindowConditions: true, hardWaterStains: true }).requiredToPrice)
+      .toContain("hardWaterAffectedWindowEquivalents");
+  });
+
+  it("routes only exceptional roof, driveway, solar, and screen portions to review", () => {
+    const roof = evaluateQuoteIntake({ services: ["windowCleaning", "roofCleaning"], windowCleaningSides: "outside_only", squareFootage: 2500, stories: 2, condition: "maintenance", advancedWindowConditions: false, screenProfile: "standard_removable", enclosedPatioProfile: "none", roofType: "tile", roofSeverity: "light", roofRiskFlags: { knownDamage: false, extremePitch: false, fragileMaterial: false, unusualAccess: false } });
+    expect(roof.manualReview).toContain("roofCleaningRemoteReview");
+    const driveway = evaluateQuoteIntake({ services: ["drivewayCleaning"], drivewaySqft: 400, drivewaySurface: "unknown", answerProvenance: { drivewaySqft: "customer_estimate", drivewaySurface: "explicitly_selected" }, confirmationSummary: { confirmed: true, confirmedFieldIds: ["drivewaySqft"] } });
+    expect(driveway.manualReview).toContain("drivewaySurfaceClarification");
+    const solar = evaluateQuoteIntake({ services: ["solarPanelCleaning"], solarPanelCount: 20, solarAccessProfile: { stories: 3, accessType: "standard_residential", knownDamage: false, extremePitch: false, fragileMaterial: false, unusualAccess: false } });
+    expect(solar.manualReview).toContain("solarPanelRemoteReview");
+    const screen = evaluateQuoteIntake({ services: ["screenRepair"], screenRepairCount: 2, screenRepairScopeType: "screen_door" });
+    expect(screen.manualReview).toContain("screenRepairRemoteReview");
+  });
+
+  it("does not price a driveway from an unconfirmed 400-sq-ft business default", () => {
+    const result = evaluateQuoteIntake({
+      services: ["drivewayCleaning"],
+      drivewaySqft: 400,
+      drivewaySurface: "concrete",
+      answerProvenance: { drivewaySqft: "approved_business_default", drivewaySurface: "approved_business_default" },
+    });
+    expect(result.requiredToPrice).toContain("drivewaySqft");
+    expect(result.productPolicyRequired).toContain("priceChangingAssumptionConfirmation");
+  });
+
+  it("requires a positive measured area and per-area surface for flatwork", () => {
+    const result = evaluateQuoteIntake({ services: ["pressureWashing"], pressureWashSurface: "concrete", pressureWashingAreas: { frontPorch: { enabled: true, sqft: 80 } } });
+    expect(result.requiredToPrice).toContain("pressureWashingAreas.frontPorch.surfaceType");
+    expect(evaluateQuoteIntake({ services: ["pressureWashing"], pressureWashSurface: "concrete", pressureWashingAreas: { frontPorch: { enabled: true, sqft: 80, surfaceType: "concrete" } } }).requiredToPrice).toEqual([]);
+  });
+
+  it("keeps an unanswered gutter-guard post-quote offer non-blocking", () => {
+    const result = evaluateQuoteIntake({ services: ["gutterCleaning"], squareFootage: 2000, stories: 1 });
+    expect(result.requiredToPrice).not.toContain("gutterGuardsLinearFeet");
+    expect(result.productPolicyRequired).not.toContain("gutterGuardsLinearFeet");
+  });
+
+  it("accepts lookup and confirmed customer-estimate square footage, but never unknown", () => {
+    const verified = evaluateQuoteIntake({ ...completeWindow, answerProvenance: { squareFootage: "verified_lookup" } });
+    expect(verified.productPolicyRequired).not.toContain("squareFootage");
+    const estimate = evaluateQuoteIntake({ ...completeWindow, answerProvenance: { squareFootage: "customer_estimate" }, confirmationSummary: { confirmed: true, confirmedFieldIds: ["squareFootage"] } });
+    expect(estimate.productPolicyRequired).not.toContain("priceChangingAssumptionConfirmation");
+    const unknown = evaluateQuoteIntake({ ...completeWindow, answerProvenance: { squareFootage: "unknown" } });
+    expect(unknown.productPolicyRequired).toContain("squareFootage");
+  });
+
+  it("requires service-area eligibility before booking but never as a price modifier", () => {
+    const result = evaluateQuoteIntake({ ...completeWindow, address: "1 Main St", email: "a@example.com" });
+    expect(result.requiredToPrice).not.toContain("serviceAreaStatus");
+    expect(result.bookingRequired).toContain("serviceAreaStatus");
+    expect(evaluateQuoteIntake({ ...completeWindow, address: "1 Main St", email: "a@example.com", serviceAreaStatus: "eligible" }).bookingRequired).toEqual([]);
   });
 });

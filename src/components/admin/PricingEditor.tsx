@@ -29,6 +29,7 @@ const FIELD_CONFIGS: Record<string, Record<string, FieldConfig>> = {
   window_cleaning: {
     exteriorPerSqFt: { label: 'Exterior Rate', type: 'rate', description: 'Per sq ft for exterior windows' },
     interiorPerSqFt: { label: 'Interior Rate', type: 'rate', description: 'Per sq ft for interior windows' },
+    insideAndOutsidePerSqFt: { label: 'Inside & Outside Rate', type: 'rate', description: 'Canonical whole-home combined rate per sq ft' },
     minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge regardless of house size' },
   },
   house_wash: {

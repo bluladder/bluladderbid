@@ -10,12 +10,14 @@ import {
 } from "./residentialQuoteManifest";
 
 describe("residentialQuoteManifest", () => {
-  it("puts contact-first fields ahead of pricing fields", () => {
-    const nameIdx = RESIDENTIAL_INTAKE_PRIORITY.indexOf("contact_name");
+  it("puts service intent first, callback phone early, and remaining contact after pricing", () => {
+    const servicesIdx = RESIDENTIAL_INTAKE_PRIORITY.indexOf("services");
     const phoneIdx = RESIDENTIAL_INTAKE_PRIORITY.indexOf("contact_phone");
     const sqftIdx = RESIDENTIAL_INTAKE_PRIORITY.indexOf("squareFootage");
-    expect(nameIdx).toBeLessThan(phoneIdx);
+    const nameIdx = RESIDENTIAL_INTAKE_PRIORITY.indexOf("contact_name");
+    expect(servicesIdx).toBeLessThan(phoneIdx);
     expect(phoneIdx).toBeLessThan(sqftIdx);
+    expect(sqftIdx).toBeLessThan(nameIdx);
   });
 
   it("email comes after pricing but before address", () => {
@@ -47,14 +49,14 @@ describe("residentialQuoteManifest", () => {
     expect(fieldsForEngineMissing([])).toEqual([]);
   });
 
-  it("nextResidentialQuestion asks name first when nothing captured", () => {
+  it("voice asks service intent first when nothing is captured", () => {
     const q = nextResidentialQuestion({ captured: [], engineMissing: ["squareFootage"] });
-    expect(q?.id).toBe("contact_name");
+    expect(q?.id).toBe("services");
   });
 
-  it("nextResidentialQuestion asks phone once name is captured", () => {
+  it("voice asks callback phone after intent", () => {
     const q = nextResidentialQuestion({
-      captured: ["contact_name"],
+      captured: ["services"],
       engineMissing: ["squareFootage", "stories"],
     });
     expect(q?.id).toBe("contact_phone");
@@ -62,7 +64,7 @@ describe("residentialQuoteManifest", () => {
 
   it("nextResidentialQuestion never asks a previously captured field", () => {
     const q = nextResidentialQuestion({
-      captured: ["contact_name", "contact_phone", "squareFootage"],
+      captured: ["services", "contact_phone", "squareFootage"],
       engineMissing: ["squareFootage", "stories"],
     });
     expect(q?.id).toBe("stories");
@@ -72,13 +74,13 @@ describe("residentialQuoteManifest", () => {
     // Engine says squareFootage is sufficient (no stories missing). We do NOT
     // ask stories, even though it exists in the manifest.
     const q = nextResidentialQuestion({
-      captured: ["contact_name", "contact_phone"],
+      captured: ["services", "contact_name", "contact_phone"],
       engineMissing: ["squareFootage"],
     });
     expect(q?.id).toBe("squareFootage");
 
     const done = nextResidentialQuestion({
-      captured: ["contact_name", "contact_phone", "squareFootage"],
+      captured: ["services", "contact_name", "contact_phone", "squareFootage"],
       engineMissing: [],
     });
     expect(done).toBeNull();
@@ -88,7 +90,7 @@ describe("residentialQuoteManifest", () => {
     // City is in the manifest for later serviceability but never surfaces as a
     // pricing gate. It only appears when explicitly injected via additionallyRequired.
     const q = nextResidentialQuestion({
-      captured: ["contact_name", "contact_phone", "squareFootage", "stories"],
+      captured: ["services", "contact_name", "contact_phone", "squareFootage", "stories"],
       engineMissing: [],
     });
     expect(q).toBeNull();
@@ -96,10 +98,27 @@ describe("residentialQuoteManifest", () => {
 
   it("additionallyRequired injects booking-stage fields after price is spoken", () => {
     const q = nextResidentialQuestion({
-      captured: ["contact_name", "contact_phone", "squareFootage", "stories"],
+      captured: ["services", "contact_name", "contact_phone", "squareFootage", "stories"],
       engineMissing: [],
       additionallyRequired: ["contact_email", "address"],
     });
     expect(q?.id).toBe("contact_email");
+  });
+
+  it("web can begin pricing without an early contact wall", () => {
+    const q = nextResidentialQuestion({ captured: ["services"], engineMissing: ["squareFootage"], channel: "web" });
+    expect(q?.id).toBe("squareFootage");
+  });
+
+  it("uses the exact approved explicit window-side question and never the routine scope question", () => {
+    expect(RESIDENTIAL_INTAKE_BY_ID.windowCleaningSides.prompt).toBe(
+      "Would you like all the windows cleaned both inside and outside, or outside only?",
+    );
+    const q = nextResidentialQuestion({
+      captured: ["services", "contact_phone"],
+      engineMissing: ["windowCleaningSides"],
+    });
+    expect(q?.id).toBe("windowCleaningSides");
+    expect(q?.id).not.toBe("windowCleaningScope");
   });
 });

@@ -29,6 +29,15 @@ describe("Phase 0 amendment — quote-session contract consumption", () => {
     expect(session.fields.screenProfileProvenance).toBe("verified");
   });
 
+  it("stores canonical answer provenance and lets explicit answers override defaults", () => {
+    let session = mergeFields(empty(), { condition: "maintenance" }, { markDefaulted: ["condition"] });
+    expect(session.fields.answerProvenance?.condition).toBe("approved_business_default");
+    session = mergeFields(session, { condition: "heavy" });
+    expect(session.fields.answerProvenance?.condition).toBe("explicitly_selected");
+    session = mergeFields(session, { squareFootage: 2400 }, { markCustomerEstimate: ["squareFootage"] });
+    expect(session.fields.answerProvenance?.squareFootage).toBe("customer_estimate");
+  });
+
   it("includes screen-profile provenance in canonical quote cache identity", () => {
     const fields = {
       services: ["windowCleaning"],

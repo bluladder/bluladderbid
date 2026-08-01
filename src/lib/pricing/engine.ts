@@ -16,7 +16,7 @@
  * instead of guessing.
  */
 
-export const PRICING_ENGINE_VERSION = "1.1.0";
+export const PRICING_ENGINE_VERSION = "1.2.0";
 
 /** Stable machine identifiers shared by quote snapshots and every channel. */
 export const QUOTE_RULE_IDS = Object.freeze({
@@ -29,6 +29,12 @@ export const QUOTE_RULE_IDS = Object.freeze({
   houseWashFrontPatio: "house_wash_front_patio",
   houseWashBackPatio: "house_wash_back_patio",
   houseWashWindowBundle: "house_wash_window_cleaning_bundle",
+  addedInteriorWindowSides: "window_added_interior_sides",
+  omittedWindowSides: "window_omitted_sides",
+  hardWaterRemoval: "window_hard_water_removal",
+  frenchPaneAdjustment: "window_french_pane_adjustment",
+  unusualLadderAccess: "window_unusual_ladder_access",
+  promotionAdditionalWindows: "window_promo_additional_windows",
 } as const);
 
 /** Owner-confirmed Phase 0 rules. These are contract rules, not UI defaults. */
@@ -45,7 +51,55 @@ export const CONFIRMED_QUOTE_RULES = Object.freeze({
   houseWashPatioPercentEach: 10,
   houseWashPatioPerSqFt: 0.25,
   houseWashWindowBundleDiscount: 50,
+  wholeHomeOutsidePerSqFt: 0.08,
+  wholeHomeInsideAndOutsidePerSqFt: 0.15,
+  addedInteriorWindowSideEach: 10,
+  omittedWindowSideEach: 8,
+  hardWaterAffectedWindowEach: 10,
+  frenchPaneBasePercent: 50,
+  unusualLadderAffectedWindowEach: 5,
+  promotionAdditionalWindowEach: 10,
 } as const);
+
+export interface TaxPolicyConfig {
+  version: string;
+  rate: number;
+  exemptLineItemKeys: string[];
+  customerLabel?: string;
+}
+
+export interface DurationPolicyConfig {
+  version: string;
+  setupMinutes: number;
+  roundingIncrementMinutes: number;
+  hourlyRevenueTargets: {
+    windowsAndScreens: number;
+    gutterWork: number;
+    exteriorCleaning: number;
+  };
+}
+
+export const APPROVED_TAX_POLICY: Readonly<TaxPolicyConfig> = Object.freeze({
+  version: "texas-estimated-sales-tax-2026-07-31",
+  rate: 0.0825,
+  exemptLineItemKeys: [
+    "gutter_cleaning",
+    "underground_gutter_drain_clearing",
+    "minor_gutter_downspout_repairs",
+  ],
+  customerLabel: "Estimated tax",
+});
+
+export const APPROVED_DURATION_POLICY: Readonly<DurationPolicyConfig> = Object.freeze({
+  version: "dfw-duration-productivity-2026-07-31",
+  setupMinutes: 15,
+  roundingIncrementMinutes: 15,
+  hourlyRevenueTargets: {
+    windowsAndScreens: 120,
+    gutterWork: 150,
+    exteriorCleaning: 175,
+  },
+});
 
 export const QUOTE_CALCULATION_ORDER = Object.freeze([
   "base_service_prices",
@@ -73,7 +127,10 @@ export interface PricingConfig {
   window_cleaning: {
     exteriorPerSqFt: number;
     interiorPerSqFt: number;
+    /** Canonical whole-home combined rate. Legacy configs may omit it. */
+    insideAndOutsidePerSqFt?: number;
     minimumPrice: number;
+    omissionMinimumPrice?: number;
     modifiers: ServiceModifiers;
   };
   window_addons: {
@@ -135,6 +192,9 @@ export interface PricingConfig {
    * BundleRulesConfig). Stored under the `bundle_rules` key in pricing_config.
    */
   bundle_rules?: BundleRulesConfig;
+  /** Versioned policy sections; approved constants are the compatibility fallback. */
+  tax_policy?: TaxPolicyConfig;
+  duration_policy?: DurationPolicyConfig;
 }
 
 export interface BundleConfigEntry {
@@ -235,11 +295,17 @@ export interface EngineHomeDetails {
   screenedEnclosureSoftWash?: boolean;
   enclosureWindowCount?: number;
   enclosureWindowSides?: "outside_only" | "inside_and_outside";
+  advancedWindowConditions?: boolean;
+  hardWaterAffectedWindowEquivalents?: number;
+  ladderAffectedWindowEquivalents?: number;
+  addedInteriorWindowSides?: number;
+  omittedWindowSides?: number | "unknown";
 }
 
 export interface EngineAreaSelection {
   enabled: boolean;
   sqft: number;
+  surfaceType?: string;
 }
 
 export interface EngineAdditionalServices {
@@ -281,6 +347,12 @@ export interface EngineAdditionalServices {
   roofCleaning?: boolean;
   roofType?: string;
   roofSeverity?: string;
+  roofRiskFlags?: {
+    knownDamage: boolean;
+    extremePitch: boolean;
+    fragileMaterial: boolean;
+    unusualAccess: boolean;
+  };
   drivewayCleaning?: { enabled: boolean; sqft: number; surfaceType: string };
   pressureWashing?: {
     enabled: boolean;
@@ -290,8 +362,21 @@ export interface EngineAdditionalServices {
     poolDeck: EngineAreaSelection;
     walkways: EngineAreaSelection;
   };
-  solarPanelCleaning?: { enabled: boolean; panelCount: number };
-  screenRepair?: { enabled: boolean; screenCount: number };
+  solarPanelCleaning?: {
+    enabled: boolean;
+    panelCount: number;
+    stories?: number;
+    accessType?: "standard_residential" | "unusual_or_uncertain";
+    knownDamage?: boolean;
+    extremePitch?: boolean;
+    fragileMaterial?: boolean;
+    unusualAccess?: boolean;
+  };
+  screenRepair?: {
+    enabled: boolean;
+    screenCount: number;
+    scopeType?: "standard_removable_reusable_frame" | "screen_door" | "new_frame" | "damaged_frame" | "solar_screen" | "specialty_or_oversized" | "unknown";
+  };
 }
 
 export interface EngineDiscount {
@@ -371,6 +456,18 @@ export interface QuoteResult {
   calculationOrder?: readonly string[];
   total: number;
   estimatedDurationMinutes: number | null;
+  durationSource: "deterministic_duration_engine" | null;
+  durationVersion: string | null;
+  serviceSubtotal: number;
+  discountsAndAdjustments: number;
+  taxableSubtotal: number;
+  estimatedTax: number;
+  estimatedTotal: number;
+  taxRate: number;
+  taxPolicyVersion: string;
+  taxLabel: string;
+  bookableServiceKeys: string[];
+  manualReviewServiceKeys: string[];
   missing: string[];
   manualReviewReasons: string[];
   explanation: string;
@@ -413,6 +510,89 @@ function exactNonNegativeInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
+/** Canonical window-equivalent quantity: positive, finite, and in 0.5 steps. */
+export function isValidWindowEquivalentCount(value: unknown, allowZero = false): value is number {
+  return typeof value === "number" && Number.isFinite(value) &&
+    (allowZero ? value >= 0 : value > 0) && Number.isInteger(value * 2);
+}
+
+const APPROVED_FLATWORK_SURFACES = new Set([
+  "concrete", "pavers", "exposed_aggregate", "stone", "asphalt",
+  // Persisted compatibility values remain priceable.
+  "stamped", "brick", "tile",
+]);
+
+function durationTargetForLineItem(key: string, policy: DurationPolicyConfig): number {
+  if (key === "window_cleaning" || key === "interior_windows" || key === "window_promo_99" ||
+    key === QUOTE_RULE_IDS.promotionAdditionalWindows || key === QUOTE_RULE_IDS.addedInteriorWindowSides ||
+    key === "enclosure_window_cleaning" || key === "screen_repair") {
+    return policy.hourlyRevenueTargets.windowsAndScreens;
+  }
+  if (key === "gutter_cleaning" || key === QUOTE_RULE_IDS.undergroundDrainClearing ||
+    key === QUOTE_RULE_IDS.minorGutterRepairs || key === "gutter_guards") {
+    return policy.hourlyRevenueTargets.gutterWork;
+  }
+  return policy.hourlyRevenueTargets.exteriorCleaning;
+}
+
+export function calculateDeterministicDuration(args: {
+  lineItems: readonly QuoteLineItem[];
+  manualReviewServiceKeys?: readonly string[];
+  policy?: DurationPolicyConfig;
+}): { minutes: number | null; version: string; bookableServiceKeys: string[] } {
+  const policy = args.policy ?? APPROVED_DURATION_POLICY;
+  const reviewed = new Set(args.manualReviewServiceKeys ?? []);
+  const bookable = args.lineItems.filter((line) => !reviewed.has(line.key) && line.amount > 0);
+  if (bookable.length === 0) return { minutes: null, version: policy.version, bookableServiceKeys: [] };
+  const serviceMinutes = bookable.reduce((sum, line) => {
+    // `baseAmount` and `amount` are both pre-discount/pre-tax. Use the larger so
+    // a minimum or promotion never makes actual work appear faster.
+    const workValue = Math.max(line.baseAmount, line.amount);
+    return sum + (workValue / durationTargetForLineItem(line.key, policy)) * 60;
+  }, 0);
+  const increment = Math.max(1, policy.roundingIncrementMinutes);
+  const minutes = Math.ceil((serviceMinutes + policy.setupMinutes) / increment) * increment;
+  return { minutes: Math.max(increment, minutes), version: policy.version, bookableServiceKeys: bookable.map((line) => line.key) };
+}
+
+function calculateTaxSummary(args: {
+  lineItems: readonly QuoteLineItem[];
+  priceAdjustments: readonly QuotePriceAdjustment[];
+  discountAmount: number;
+  policy?: TaxPolicyConfig;
+}) {
+  const policy = args.policy ?? APPROVED_TAX_POLICY;
+  const exempt = new Set(policy.exemptLineItemKeys);
+  const subtotal = roundCents(args.lineItems.reduce((sum, line) => sum + line.amount, 0));
+  const taxableBeforeDiscounts = roundCents(args.lineItems
+    .filter((line) => !exempt.has(line.key))
+    .reduce((sum, line) => sum + line.amount, 0));
+  const contractDiscounts = args.priceAdjustments.filter((item) => item.kind === "discount");
+  const taxableContractDiscount = roundCents(contractDiscounts.reduce((sum, item) => {
+    if (item.appliesToLineItemKey) return sum + (exempt.has(item.appliesToLineItemKey) ? 0 : item.amount);
+    // Unscoped bundle discounts in the current contract apply to taxable services.
+    return sum + item.amount;
+  }, 0));
+  const contractDiscountTotal = roundCents(contractDiscounts.reduce((sum, item) => sum + item.amount, 0));
+  const afterContract = Math.max(0, subtotal - contractDiscountTotal);
+  const taxableAfterContract = Math.max(0, taxableBeforeDiscounts - taxableContractDiscount);
+  const taxableShare = afterContract > 0 ? taxableAfterContract / afterContract : 0;
+  const taxableGeneralDiscount = roundCents(args.discountAmount * taxableShare);
+  const taxableSubtotal = roundCents(Math.max(0, taxableAfterContract - taxableGeneralDiscount));
+  const estimatedTax = roundCents(taxableSubtotal * policy.rate);
+  const preTaxTotal = roundCents(Math.max(0, afterContract - args.discountAmount));
+  return {
+    serviceSubtotal: subtotal,
+    discountsAndAdjustments: roundCents(-(contractDiscountTotal + args.discountAmount)),
+    taxableSubtotal,
+    estimatedTax,
+    estimatedTotal: roundCents(preTaxTotal + estimatedTax),
+    taxRate: policy.rate,
+    taxPolicyVersion: policy.version,
+    taxLabel: policy.customerLabel ?? "Estimated tax",
+  };
+}
+
 const MAX_SQFT = 100000;
 const VALID_STORIES = [1, 2, 3];
 
@@ -428,9 +608,14 @@ export function calculateQuote(
   const missing: string[] = [];
   const addonMissing: string[] = [];
   const manualReviewReasons: string[] = [];
+  const manualReviewServiceKeys = new Set<string>();
   const lineItems: QuoteLineItem[] = [];
   const priceAdjustments: QuotePriceAdjustment[] = [];
   const disclosures: QuoteDisclosure[] = [];
+  const markServiceReview = (serviceKey: string, reason: string) => {
+    manualReviewServiceKeys.add(serviceKey);
+    manualReviewReasons.push(reason);
+  };
 
   const home = input.homeDetails ?? ({} as EngineHomeDetails);
   const svc = input.additionalServices ?? ({} as EngineAdditionalServices);
@@ -441,7 +626,7 @@ export function calculateQuote(
   // normal window-cleaning price. It is handled in isolation and returns early.
   // =========================================================================
   if (input.promotion && input.promotion.id) {
-    return calculatePromotion(input.promotion, pricing, ruleVersion, trace);
+    return calculatePromotion(input, pricing, ruleVersion, trace);
   }
 
   const anyServiceSelected =
@@ -488,9 +673,31 @@ export function calculateQuote(
   if (svc.windowCleaning && home.windowCleaningType !== "exterior" && home.windowCleaningType !== "both") {
     missing.push("windowCleaningSides");
   }
+  if (svc.windowCleaning) {
+    if (home.hardWaterStains === true && !isValidWindowEquivalentCount(home.hardWaterAffectedWindowEquivalents)) {
+      missing.push("hardWaterAffectedWindowEquivalents");
+    }
+    if (home.ladderWork === true && !isValidWindowEquivalentCount(home.ladderAffectedWindowEquivalents)) {
+      missing.push("ladderAffectedWindowEquivalents");
+    }
+    if (home.addedInteriorWindowSides !== undefined && !isValidWindowEquivalentCount(home.addedInteriorWindowSides)) {
+      missing.push("addedInteriorWindowSides");
+    }
+    if (home.omittedWindowSides !== undefined && home.omittedWindowSides !== "unknown" &&
+      !isValidWindowEquivalentCount(home.omittedWindowSides)) {
+      missing.push("omittedWindowSides");
+    }
+    if (home.advancedWindowConditions === false &&
+      (home.hardWaterStains || home.frenchPanes || home.ladderWork)) {
+      markServiceReview("window_cleaning", "Advanced window answers contradict the confirmed no-conditions screening response");
+    }
+  }
   if (svc.drivewayCleaning?.enabled) {
     if (!isValidNumber(svc.drivewayCleaning.sqft) || svc.drivewayCleaning.sqft <= 0) missing.push("drivewaySqft");
     if (!svc.drivewayCleaning.surfaceType) missing.push("drivewaySurface");
+    else if (!APPROVED_FLATWORK_SURFACES.has(svc.drivewayCleaning.surfaceType)) {
+      markServiceReview("driveway_cleaning", `Driveway surface ${svc.drivewayCleaning.surfaceType} needs clarification`);
+    }
   }
   if (svc.pressureWashing?.enabled) {
     const pw = svc.pressureWashing;
@@ -503,8 +710,36 @@ export function calculateQuote(
   if (svc.solarPanelCleaning?.enabled && (!isValidNumber(svc.solarPanelCleaning.panelCount) || svc.solarPanelCleaning.panelCount <= 0)) {
     missing.push("solarPanelCount");
   }
+  if (svc.solarPanelCleaning?.enabled && svc.solarPanelCleaning.panelCount > 0) {
+    const solar = svc.solarPanelCleaning;
+    const canonicalAccessProvided = solar.stories !== undefined || solar.accessType !== undefined ||
+      solar.knownDamage !== undefined || solar.extremePitch !== undefined ||
+      solar.fragileMaterial !== undefined || solar.unusualAccess !== undefined;
+    if (canonicalAccessProvided && solar.stories !== 1 && solar.stories !== 2 && solar.stories !== 3) missing.push("solarAccessStories");
+    if (canonicalAccessProvided && !solar.accessType) missing.push("solarAccessType");
+    if (solar.stories === 3 || solar.accessType === "unusual_or_uncertain" || solar.knownDamage ||
+      solar.extremePitch || solar.fragileMaterial || solar.unusualAccess) {
+      markServiceReview("solar_panel_cleaning", "Solar-panel cleaning access or safety scope requires photo-assisted remote review");
+    }
+  }
   if (svc.screenRepair?.enabled && (!isValidNumber(svc.screenRepair.screenCount) || svc.screenRepair.screenCount <= 0)) {
     missing.push("screenRepairCount");
+  }
+  if (svc.screenRepair?.enabled && svc.screenRepair.screenCount > 0) {
+    if (svc.screenRepair.scopeType && svc.screenRepair.scopeType !== "standard_removable_reusable_frame") {
+      markServiceReview("screen_repair", "Screen-repair scope is outside standard removable-screen mesh replacement");
+    }
+  }
+  if (svc.roofCleaning) {
+    if (!svc.roofType) missing.push("roofType");
+    if (!svc.roofSeverity) missing.push("roofSeverity");
+    const ordinaryAsphalt = svc.roofType === "asphalt" || svc.roofType === "asphalt_shingle";
+    const ordinarySeverity = svc.roofSeverity === "light" || svc.roofSeverity === "moderate";
+    const risk = svc.roofRiskFlags;
+    if ((svc.roofType && !ordinaryAsphalt) || (svc.roofSeverity && !ordinarySeverity) || stories === 3 ||
+      (risk && (risk.knownDamage || risk.extremePitch || risk.fragileMaterial || risk.unusualAccess))) {
+      markServiceReview("roof_cleaning", "Roof-wash material, severity, height, condition, pitch, or access requires photo-assisted remote review");
+    }
   }
 
   // Optional add-ons never become universal requirements. Once selected,
@@ -554,8 +789,10 @@ export function calculateQuote(
         trace,
         missing,
         manualReviewReasons,
+        manualReviewServiceKeys: [...manualReviewServiceKeys],
       },
       ruleVersion,
+      pricing,
     );
   }
 
@@ -571,8 +808,11 @@ export function calculateQuote(
     } else {
       const mods = cfg.modifiers;
       const baseExterior = sqft * cfg.exteriorPerSqFt;
-      const baseInterior =
-        home.windowCleaningType === "both" ? sqft * cfg.interiorPerSqFt : 0;
+      const combinedRate = cfg.insideAndOutsidePerSqFt ??
+        (cfg.exteriorPerSqFt + cfg.interiorPerSqFt);
+      const baseInterior = home.windowCleaningType === "both"
+        ? sqft * Math.max(0, combinedRate - cfg.exteriorPerSqFt)
+        : 0;
 
       const storyMod = mods.stories[stories.toString()] ?? 0;
       const conditionMod = mods.condition?.[home.condition ?? ""] ?? 0;
@@ -591,17 +831,28 @@ export function calculateQuote(
       let ladderWorkAddon = 0;
       let sunroomAddon = 0;
 
+      if (home.hardWaterStains && isValidWindowEquivalentCount(home.hardWaterAffectedWindowEquivalents)) {
+        hardWaterAddon = roundCents(
+          home.hardWaterAffectedWindowEquivalents * CONFIRMED_QUOTE_RULES.hardWaterAffectedWindowEach,
+        );
+      } else if (home.showAdvanced && home.hardWaterStains && mods.hardWater && isValidNumber(home.hardWaterPercent)) {
+        // Read-only compatibility for persisted percentage-based answers.
+        hardWaterAddon = roundDollars(
+          adjustedWindowBase * (mods.hardWater / 100) * (home.hardWaterPercent / 100),
+        );
+      }
+      if (home.frenchPanes) {
+        frenchPanesAddon = roundDollars(
+          Math.max(adjustedWindowBase, cfg.minimumPrice ?? 0) *
+            (CONFIRMED_QUOTE_RULES.frenchPaneBasePercent / 100),
+        );
+      }
+      if (home.ladderWork && isValidWindowEquivalentCount(home.ladderAffectedWindowEquivalents)) {
+        ladderWorkAddon = roundCents(
+          home.ladderAffectedWindowEquivalents * CONFIRMED_QUOTE_RULES.unusualLadderAffectedWindowEach,
+        );
+      }
       if (home.showAdvanced) {
-        if (home.hardWaterStains && mods.hardWater) {
-          hardWaterAddon = roundDollars(
-            adjustedWindowBase * (mods.hardWater / 100) * ((home.hardWaterPercent ?? 0) / 100),
-          );
-        }
-        if (home.frenchPanes && mods.frenchPanes) {
-          frenchPanesAddon = roundDollars(
-            adjustedWindowBase * (mods.frenchPanes / 100) * ((home.frenchPanesPercent ?? 0) / 100),
-          );
-        }
         // Legacy percentage coverage remains readable for persisted records.
         // New writes use screenProfile + solarScreenCoverage below.
         if (!home.screenProfile && home.solarScreens && mods.solarScreens) {
@@ -609,7 +860,7 @@ export function calculateQuote(
             adjustedWindowBase * (mods.solarScreens / 100) * ((home.solarScreensPercent ?? 0) / 100),
           );
         }
-        if (home.ladderWork) {
+        if (home.ladderWork && !isValidWindowEquivalentCount(home.ladderAffectedWindowEquivalents)) {
           ladderWorkAddon = pricing.window_addons?.ladderWork[home.ladderWorkCount ?? ""] ?? 0;
         }
         sunroomAddon = pricing.window_addons?.sunroom[home.sunroom ?? ""] ?? 0;
@@ -646,8 +897,8 @@ export function calculateQuote(
       const amount = windowServiceBeforeCanonicalSolar + canonicalSolarScreenAdjustment;
 
       if (storyMod) adjustments.push({ label: `${stories}-story`, amount: 0 });
-      if (hardWaterAddon) adjustments.push({ label: "Hard water", amount: hardWaterAddon });
-      if (frenchPanesAddon) adjustments.push({ label: "French panes", amount: frenchPanesAddon });
+      if (hardWaterAddon) adjustments.push({ key: QUOTE_RULE_IDS.hardWaterRemoval, label: "Hard-water stain removal", amount: hardWaterAddon });
+      if (frenchPanesAddon) adjustments.push({ key: QUOTE_RULE_IDS.frenchPaneAdjustment, label: "Small French panes (+50% of base window service)", amount: frenchPanesAddon });
       if (solarScreensAddon) adjustments.push({ label: "Solar screens", amount: solarScreensAddon });
       if (canonicalSolarScreenAdjustment) adjustments.push({
         key: QUOTE_RULE_IDS.solarScreenService,
@@ -661,7 +912,7 @@ export function calculateQuote(
         amount: canonicalSolarScreenAdjustment,
         appliesToLineItemKey: "window_cleaning",
       });
-      if (ladderWorkAddon) adjustments.push({ label: "Ladder work", amount: ladderWorkAddon });
+      if (ladderWorkAddon) adjustments.push({ key: QUOTE_RULE_IDS.unusualLadderAccess, label: "Unusual dedicated ladder access", amount: ladderWorkAddon });
       if (sunroomAddon) adjustments.push({ label: "Sunroom", amount: sunroomAddon });
 
       lineItems.push({
@@ -695,6 +946,39 @@ export function calculateQuote(
       trace.push(
         `window: ext=${exteriorWindows} int=${interiorWindows} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`,
       );
+
+      if (isValidWindowEquivalentCount(home.addedInteriorWindowSides)) {
+        const addedAmount = roundCents(home.addedInteriorWindowSides * CONFIRMED_QUOTE_RULES.addedInteriorWindowSideEach);
+        lineItems.push({
+          key: QUOTE_RULE_IDS.addedInteriorWindowSides,
+          label: "Added interior window-sides",
+          quantity: home.addedInteriorWindowSides,
+          unit: "window_side",
+          baseAmount: addedAmount,
+          adjustments: [],
+          minimumApplied: false,
+          amount: addedAmount,
+          jobberLineItem: { name: "Added Interior Window-Sides", description: `${home.addedInteriorWindowSides} window-side equivalents`, unitPrice: addedAmount },
+          customerExplanation: `${home.addedInteriorWindowSides} added interior window-side equivalents × $${CONFIRMED_QUOTE_RULES.addedInteriorWindowSideEach} = $${addedAmount}.`,
+        });
+      }
+      if (isValidWindowEquivalentCount(home.omittedWindowSides)) {
+        const requestedDeduction = roundCents(home.omittedWindowSides * CONFIRMED_QUOTE_RULES.omittedWindowSideEach);
+        const omissionFloor = cfg.omissionMinimumPrice ?? cfg.minimumPrice ?? 0;
+        const deduction = Math.min(requestedDeduction, Math.max(0, amount - omissionFloor));
+        if (deduction > 0) priceAdjustments.push({
+          key: QUOTE_RULE_IDS.omittedWindowSides,
+          label: "Customer-requested omitted window-sides",
+          kind: "discount",
+          amount: deduction,
+          appliesToLineItemKey: "window_cleaning",
+        });
+      } else if (home.omittedWindowSides === "unknown") {
+        disclosures.push({
+          key: QUOTE_RULE_IDS.omittedWindowSides,
+          text: `The onsite pre-tax price will be reduced by $${CONFIRMED_QUOTE_RULES.omittedWindowSideEach} for each confirmed omitted window-side, subject to the configured window-service minimum.`,
+        });
+      }
 
       const explicitlyConfirmed = home.screenProfileProvenance === "captured" ||
         home.screenProfileProvenance === "verified" ||
@@ -986,7 +1270,9 @@ export function calculateQuote(
   if (svc.roofCleaning) {
     const cfg = pricing.roof_cleaning;
     if (!cfg) {
-      manualReviewReasons.push("roof_cleaning pricing not configured");
+      markServiceReview("roof_cleaning", "roof_cleaning pricing not configured");
+    } else if (manualReviewServiceKeys.has("roof_cleaning")) {
+      trace.push("roof: held for photo-assisted remote review; other services remain independently priceable");
     } else {
       const base = sqft * cfg.perSqFt;
       const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
@@ -1018,9 +1304,11 @@ export function calculateQuote(
     const cfg = pricing.driveway_cleaning;
     const { sqft: dSqft, surfaceType } = svc.drivewayCleaning;
     if (!cfg) {
-      manualReviewReasons.push("driveway_cleaning pricing not configured");
+      markServiceReview("driveway_cleaning", "driveway_cleaning pricing not configured");
     } else if (!isValidNumber(dSqft) || dSqft <= 0 || dSqft > MAX_SQFT) {
-      manualReviewReasons.push("Invalid driveway square footage");
+      markServiceReview("driveway_cleaning", "Invalid driveway square footage");
+    } else if (manualReviewServiceKeys.has("driveway_cleaning")) {
+      trace.push("driveway: held for surface clarification; other services remain independently priceable");
     } else {
       const base = dSqft * cfg.perSqFt;
       const mult = cfg.surfaceMultipliers[surfaceType] ?? 1;
@@ -1075,11 +1363,17 @@ export function calculateQuote(
       };
       for (const [label, area] of areas) {
         if (area?.enabled) {
-          if (!isValidNumber(area.sqft) || area.sqft < 0 || area.sqft > MAX_SQFT) {
+          if (!isValidNumber(area.sqft) || area.sqft <= 0 || area.sqft > MAX_SQFT) {
             invalid = true;
             continue;
           }
-          const areaPrice = roundDollars(area.sqft * cfg.perSqFt * mult);
+          const areaSurface = area.surfaceType ?? pw.surfaceType;
+          if (!APPROVED_FLATWORK_SURFACES.has(areaSurface)) {
+            markServiceReview(`pressure_washing:${areaKeyByLabel[label]}`, `${label} surface ${areaSurface} needs clarification`);
+            continue;
+          }
+          const areaMultiplier = cfg.surfaceMultipliers[areaSurface] ?? mult;
+          const areaPrice = roundDollars(area.sqft * cfg.perSqFt * areaMultiplier);
           adjustments.push({ label, amount: areaPrice });
           breakdown[areaKeyByLabel[label]] = areaPrice;
           sum += areaPrice;
@@ -1119,7 +1413,9 @@ export function calculateQuote(
   if (svc.solarPanelCleaning?.enabled) {
     const cfg = pricing.solar_panel_cleaning;
     if (!cfg) {
-      manualReviewReasons.push("solar_panel_cleaning pricing not configured");
+      markServiceReview("solar_panel_cleaning", "solar_panel_cleaning pricing not configured");
+    } else if (manualReviewServiceKeys.has("solar_panel_cleaning")) {
+      trace.push("solar: held for photo-assisted remote review; other services remain independently priceable");
     } else {
       const panels = Math.floor(svc.solarPanelCleaning.panelCount ?? 0);
       if (!isValidNumber(panels) || panels <= 0) {
@@ -1164,7 +1460,9 @@ export function calculateQuote(
   if (svc.screenRepair?.enabled) {
     const cfg = pricing.screen_repair;
     if (!cfg) {
-      manualReviewReasons.push("screen_repair pricing not configured");
+      markServiceReview("screen_repair", "screen_repair pricing not configured");
+    } else if (manualReviewServiceKeys.has("screen_repair")) {
+      trace.push("screen repair: held for scope review; other services remain independently priceable");
     } else {
       const screens = Math.floor(svc.screenRepair.screenCount ?? 0);
       if (!isValidNumber(screens) || screens <= 0) {
@@ -1316,8 +1614,10 @@ export function calculateQuote(
       trace,
       missing,
       manualReviewReasons,
+      manualReviewServiceKeys: [...manualReviewServiceKeys],
     },
     ruleVersion,
+    pricing,
   );
 }
 
@@ -1334,11 +1634,27 @@ function finalize(
     trace: string[];
     missing: string[];
     manualReviewReasons: string[];
+    manualReviewServiceKeys?: string[];
     promotion?: QuoteResult["promotion"];
   },
   ruleVersion: number | null,
+  pricing: PricingConfig,
 ): QuoteResult {
   const firm = partial.status === "firm";
+  const priceAdjustments = partial.priceAdjustments ?? [];
+  const tax = calculateTaxSummary({
+    lineItems: partial.lineItems,
+    priceAdjustments,
+    discountAmount: partial.discount?.amount ?? 0,
+    policy: pricing.tax_policy,
+  });
+  const duration = partial.status === "missing_information"
+    ? { minutes: null, version: (pricing.duration_policy ?? APPROVED_DURATION_POLICY).version, bookableServiceKeys: [] as string[] }
+    : calculateDeterministicDuration({
+        lineItems: partial.lineItems,
+        manualReviewServiceKeys: partial.manualReviewServiceKeys,
+        policy: pricing.duration_policy,
+      });
   let explanation: string;
   if (partial.status === "missing_information") {
     const priced = partial.lineItems.length > 0
@@ -1358,7 +1674,8 @@ function finalize(
       ((partial.priceAdjustments?.filter((adjustment) => adjustment.kind === "discount").length ?? 0) > 0
         ? `, ${partial.priceAdjustments!.filter((adjustment) => adjustment.kind === "discount").map((adjustment) => `${adjustment.label} -$${adjustment.amount}`).join(", ")}`
         : "") +
-      `. Total $${partial.total}.`;
+      `. Service subtotal $${tax.serviceSubtotal}; discounts and adjustments $${tax.discountsAndAdjustments}; ` +
+      `taxable subtotal $${tax.taxableSubtotal}; estimated tax $${tax.estimatedTax}; estimated total $${tax.estimatedTotal}.`;
   }
 
   return {
@@ -1369,11 +1686,16 @@ function finalize(
     lineItems: partial.lineItems,
     subtotal: partial.subtotal,
     discount: partial.discount,
-    priceAdjustments: partial.priceAdjustments ?? [],
+    priceAdjustments,
     disclosures: partial.disclosures ?? [],
     calculationOrder: QUOTE_CALCULATION_ORDER,
     total: partial.total,
-    estimatedDurationMinutes: null,
+    estimatedDurationMinutes: duration.minutes,
+    durationSource: duration.minutes == null ? null : "deterministic_duration_engine",
+    durationVersion: duration.minutes == null ? null : duration.version,
+    ...tax,
+    bookableServiceKeys: duration.bookableServiceKeys,
+    manualReviewServiceKeys: partial.manualReviewServiceKeys ?? [],
     missing: partial.missing,
     manualReviewReasons: partial.manualReviewReasons,
     explanation,
@@ -1392,11 +1714,13 @@ function finalize(
 // other discounts unless an administrator sets an explicit stacking policy, and
 // it never silently covers more than the configured number of windows.
 function calculatePromotion(
-  req: PromotionRequest,
+  input: QuoteInput,
   pricing: PricingConfig,
   ruleVersion: number | null,
   trace: string[],
 ): QuoteResult {
+  const req = input.promotion!;
+  const home = input.homeDetails ?? ({} as EngineHomeDetails);
   const promo = pricing.window_promo_99;
 
   // Reject unknown / unconfigured promotions — never invent a price.
@@ -1413,6 +1737,7 @@ function calculatePromotion(
         manualReviewReasons: ["Requested promotion is not available"],
       },
       ruleVersion,
+      pricing,
     );
   }
 
@@ -1430,6 +1755,7 @@ function calculatePromotion(
         manualReviewReasons: ["Requested promotion identifier is not recognized"],
       },
       ruleVersion,
+      pricing,
     );
   }
 
@@ -1447,6 +1773,7 @@ function calculatePromotion(
         manualReviewReasons: ["This promotion is not currently active"],
       },
       ruleVersion,
+      pricing,
     );
   }
 
@@ -1467,6 +1794,7 @@ function calculatePromotion(
           manualReviewReasons: ["This promotion has not started yet"],
         },
         ruleVersion,
+        pricing,
       );
     }
   }
@@ -1485,13 +1813,14 @@ function calculatePromotion(
           manualReviewReasons: ["This promotion has ended"],
         },
         ruleVersion,
+        pricing,
       );
     }
   }
 
   // Window count is required to validate the offer's window cap.
   const count = req.windowCount;
-  if (!isValidNumber(count) || count <= 0) {
+  if (!isValidWindowEquivalentCount(count)) {
     return finalize(
       {
         status: "missing_information",
@@ -1504,28 +1833,11 @@ function calculatePromotion(
         manualReviewReasons: [],
       },
       ruleVersion,
+      pricing,
     );
   }
 
   const maxWindows = isValidNumber(promo.maxWindows) ? promo.maxWindows : 10;
-  // More than the cap must NOT silently remain $99 — send to a standard quote.
-  if (count > maxWindows) {
-    return finalize(
-      {
-        status: "manual_review_required",
-        lineItems: [],
-        subtotal: 0,
-        discount: null,
-        total: 0,
-        trace,
-        missing: [],
-        manualReviewReasons: [
-          `The ${promo.promoId} promotion covers up to ${maxWindows} exterior windows; ${count} windows require a standard quote`,
-        ],
-      },
-      ruleVersion,
-    );
-  }
 
   if (!isValidNumber(promo.flatPrice) || promo.flatPrice <= 0) {
     return finalize(
@@ -1540,6 +1852,7 @@ function calculatePromotion(
         manualReviewReasons: ["Promotion price is not configured"],
       },
       ruleVersion,
+      pricing,
     );
   }
 
@@ -1551,32 +1864,73 @@ function calculatePromotion(
     ? `${count} exterior windows. PREP REQUIRED: ${prep}`
     : `${count} exterior windows`;
 
-  trace.push(`promo: ${promo.promoId} v${promo.version} count=${count}/${maxWindows} -> $${amount}`);
+  const lineItems: QuoteLineItem[] = [{
+    key: "window_promo_99",
+    label,
+    quantity: Math.min(count, maxWindows),
+    unit: "window_equivalent",
+    // Work-value floor ensures the promotion cannot shorten duration.
+    baseAmount: Math.max(amount, Math.min(count, maxWindows) * CONFIRMED_QUOTE_RULES.promotionAdditionalWindowEach),
+    adjustments: [],
+    minimumApplied: false,
+    amount,
+    jobberLineItem: { name: label, description: jobberDescription, unitPrice: amount },
+  }];
+  if (count > maxWindows) {
+    const additionalCount = count - maxWindows;
+    const additionalAmount = roundCents(additionalCount * CONFIRMED_QUOTE_RULES.promotionAdditionalWindowEach);
+    lineItems.push({
+      key: QUOTE_RULE_IDS.promotionAdditionalWindows,
+      label: "Additional exterior window equivalents",
+      quantity: additionalCount,
+      unit: "window_equivalent",
+      baseAmount: additionalAmount,
+      adjustments: [],
+      minimumApplied: false,
+      amount: additionalAmount,
+      jobberLineItem: { name: "Additional Exterior Windows", description: `${additionalCount} window equivalents beyond the first ${maxWindows}`, unitPrice: additionalAmount },
+      customerExplanation: `${additionalCount} additional exterior window equivalents × $${CONFIRMED_QUOTE_RULES.promotionAdditionalWindowEach} = $${additionalAmount}.`,
+    });
+  }
+  if (home.hardWaterStains && isValidWindowEquivalentCount(home.hardWaterAffectedWindowEquivalents)) {
+    const hardWaterAmount = roundCents(home.hardWaterAffectedWindowEquivalents * CONFIRMED_QUOTE_RULES.hardWaterAffectedWindowEach);
+    lineItems.push({
+      key: QUOTE_RULE_IDS.hardWaterRemoval, label: "Hard-water stain removal",
+      quantity: home.hardWaterAffectedWindowEquivalents, unit: "window_equivalent", baseAmount: hardWaterAmount,
+      adjustments: [], minimumApplied: false, amount: hardWaterAmount,
+      jobberLineItem: { name: "Hard-Water Stain Removal", description: `${home.hardWaterAffectedWindowEquivalents} affected window equivalents`, unitPrice: hardWaterAmount },
+    });
+  }
+  if (home.frenchPanes) {
+    const baseWindowPrice = lineItems.reduce((sum, item) =>
+      item.key === "window_promo_99" || item.key === QUOTE_RULE_IDS.promotionAdditionalWindows ? sum + item.amount : sum, 0);
+    const frenchAmount = roundCents(baseWindowPrice * (CONFIRMED_QUOTE_RULES.frenchPaneBasePercent / 100));
+    lineItems.push({
+      key: QUOTE_RULE_IDS.frenchPaneAdjustment, label: "Small French panes (+50% of base window service)",
+      quantity: 1, unit: "flat", baseAmount: frenchAmount, adjustments: [], minimumApplied: false, amount: frenchAmount,
+      jobberLineItem: { name: "French-Pane Window Adjustment", unitPrice: frenchAmount },
+    });
+  }
+  if (home.ladderWork && isValidWindowEquivalentCount(home.ladderAffectedWindowEquivalents)) {
+    const ladderAmount = roundCents(home.ladderAffectedWindowEquivalents * CONFIRMED_QUOTE_RULES.unusualLadderAffectedWindowEach);
+    lineItems.push({
+      key: QUOTE_RULE_IDS.unusualLadderAccess, label: "Unusual dedicated ladder access",
+      quantity: home.ladderAffectedWindowEquivalents, unit: "window_equivalent", baseAmount: ladderAmount,
+      adjustments: [], minimumApplied: false, amount: ladderAmount,
+      jobberLineItem: { name: "Unusual Ladder Access", description: `${home.ladderAffectedWindowEquivalents} affected window equivalents`, unitPrice: ladderAmount },
+    });
+  }
+  const subtotal = roundCents(lineItems.reduce((sum, item) => sum + item.amount, 0));
+  trace.push(`promo: ${promo.promoId} v${promo.version} count=${count}/${maxWindows} -> $${subtotal}`);
 
   return finalize(
     {
       status: "firm",
-      lineItems: [
-        {
-          key: "window_promo_99",
-          label,
-          quantity: count,
-          unit: "each",
-          baseAmount: amount,
-          adjustments: [],
-          minimumApplied: false,
-          amount,
-          jobberLineItem: {
-            name: label,
-            description: jobberDescription,
-            unitPrice: amount,
-          },
-        },
-      ],
-      subtotal: amount,
+      lineItems,
+      subtotal,
       // Stacking is disabled by default; the promotion is a flat, all-in price.
       discount: null,
-      total: amount,
+      total: subtotal,
       trace,
       missing: [],
       manualReviewReasons: [],
@@ -1591,6 +1945,7 @@ function calculatePromotion(
       },
     },
     ruleVersion,
+    pricing,
   );
 }
 // ===========================================================================

@@ -6,6 +6,8 @@ Audited commit: `127da891712bf0127e151705dd4fce1afa6a55aa` (`main`)
 
 This is a read-only discovery report. “Required” below means observed runtime behavior, not the presence of a TypeScript property. Prices themselves remain configuration-driven; this report describes inputs and rules, not live monetary configuration.
 
+> Addendum — 2026-07-31: Ben approved QD-01 through QD-16 after this historical audit. The original findings below are preserved unchanged. The implemented resolution is recorded in `bluladder-owner-decisions.md`, the updated question contract in `bluladder-service-question-review.md`, and the canonical engine/contracts in PR #62. Historical references to pending review, null duration, over-limit promotion review, percentage-based advanced-window pricing, routine window-scope questions, and channel conflicts describe the audited commit—not the amended contract.
+
 ## 1 — Executive summary
 
 ### Supported automated paths

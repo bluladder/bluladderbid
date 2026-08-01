@@ -81,9 +81,9 @@ describe("Phase 0 amendment — solar screens", () => {
     });
     const windowLine = result.lineItems.find((item) => item.key === "window_cleaning")!;
     expect(windowLine.components?.exteriorWindows).toBe(240);
-    expect(windowLine.components?.interiorWindows).toBe(225);
-    expect(windowLine.components?.canonicalSolarScreenAdjustment).toBe(116);
-    expect(windowLine.amount).toBe(581);
+    expect(windowLine.components?.interiorWindows).toBe(210);
+    expect(windowLine.components?.canonicalSolarScreenAdjustment).toBe(113);
+    expect(windowLine.amount).toBe(563);
   });
 
   it("never applies the exterior solar-screen surcharge to standalone interior cleaning", () => {

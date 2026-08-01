@@ -62,8 +62,9 @@ export function decideResidentialQuoteAction(
 ): WorkflowAction {
   const captured = capturedIds(session);
 
-  // 1. Contact-first: name → phone → pricing intake. The next-question helper
-  //    enforces manifest priority and skips already-captured fields.
+  // 1. Confirm service intent, then capture a callback/mobile number before
+  //    pricing intake on voice/SMS. Web has no early contact wall. The
+  //    next-question helper enforces manifest priority and skips captured fields.
   // Phase 0 contract authority. The engine probe remains useful as a parity
   // signal, but service-specific readiness comes from quoteSession, which is
   // itself derived from the shared Sales Engine contract.
@@ -72,6 +73,7 @@ export function decideResidentialQuoteAction(
   const preQuote = nextResidentialQuestion({
     captured,
     engineMissing: engineMissingForIntake,
+    channel: session.channel === "chat" ? "web" : session.channel,
     // Intake parity with BluLadder Bid web: residential window cleaning must
     // capture window condition before pricing. The canonical engine treats
     // condition as an optional modifier (no `missing[]` token), so we inject
@@ -107,7 +109,8 @@ export function decideResidentialQuoteAction(
     const nextBook = nextResidentialQuestion({
       captured,
       engineMissing: [],
-      additionallyRequired: ["contact_email", "address"],
+      additionallyRequired: ["contact_name", "contact_email", "address"],
+      channel: session.channel === "chat" ? "web" : session.channel,
     });
     if (nextBook) return ask(nextBook.id);
     // Legacy fallback in case future required booking fields appear.

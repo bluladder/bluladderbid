@@ -116,6 +116,8 @@ export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
 
     // Totals — from the authoritative server line-item amounts only.
     additionalServicesTotal,
-    grandTotal: typeof quote.total === 'number' ? quote.total : windowCleaningTotal + additionalServicesTotal,
+    grandTotal: typeof quote.estimatedTotal === 'number'
+      ? quote.estimatedTotal
+      : typeof quote.total === 'number' ? quote.total : windowCleaningTotal + additionalServicesTotal,
   };
 }

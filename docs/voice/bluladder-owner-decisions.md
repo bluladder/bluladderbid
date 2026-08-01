@@ -1,6 +1,6 @@
 # BluLadder quote owner decisions
 
-Updated 2026-07-31. The confirmed rules below are approved contract requirements. Items in the decision table remain `pending_ben_review`; recommendations are not approvals.
+Updated 2026-07-31. Ben approved QD-01 through QD-16. This file records the resulting channel-neutral contract; it is no longer a pending-decision register for standard residential flows.
 
 ## Confirmed owner rules
 
@@ -14,25 +14,30 @@ Updated 2026-07-31. The confirmed rules below are approved contract requirements
 | Minor gutter/downspout repairs | One +30% adjustment against base gutter cleaning, including ordinary minor labor/materials | Implemented; major/uncertain repair portion routes to clarification |
 | House-wash patios | Simple: +10% front and +10% back; optional exact method at $0.25/sq ft; never stack methods | Implemented in canonical contract/engine; downstream UI not started |
 | House wash + windows | One stable $50 bundle discount, never below zero | Implemented in canonical contract/engine |
+| Whole-home windows | Outside only is $0.08/home sq ft; inside and outside is $0.15/home sq ft | Implemented as configurable canonical combined rate with legacy adapter |
+| Added/omitted window-sides | Added interiors +$10/side; explicit omissions -$8/side, minimum-bounded; half equivalents allowed | Implemented; omissions are never proactively offered |
+| Advanced windows | Hard water +$10/affected equivalent; French panes +50% of whole-home base only; unusual ladder access +$5/affected equivalent | Implemented in canonical engine |
+| Estimated sales tax | 8.25%; gutter cleaning and integrated drain/minor-repair lines exempt; discounts before tax | Implemented as a versioned policy and separate quote summary |
+| Duration | Work value divided by $120/$150/$175 hourly targets, +15 minutes setup once, rounded up to 15 minutes | Implemented as deterministic quote metadata |
 
-| ID | Service | Exact field/policy | Frontend now | Pricing engine now | Voice now | Risk | Options | Codex recommendation | Impact | Status |
-|---|---|---|---|---|---|---|---|---|---|---|
-| QD-01 | All | May a UI default count as confirmed? | Sends defaults | Calculates them | May omit question | Firm quote based on assumption | confirmed only / approved defaults / estimated until confirmed | Track `defaulted`; do not equate with verified | confidence, call length | pending_ben_review |
-| QD-02 | Windows | Must `whole_home` scope be explicit? | Implied | Not consumed | Scope classifier exists | Wrong pricing path | require / infer with confirmation | Require route confirmation before automated disposition | confidence | pending_ben_review |
-| QD-03 | Windows | Must sides be confirmed? | Defaults exterior | Phase 0 now returns missing instead of defaulting | Mixed legacy vocabularies | Interior omitted by an unconfirmed default | explicit / approved exterior default | Explicit canonical sides; never map missing | pricing | pending_ben_review |
-| QD-04 | Windows | Hard-water, French-pane, and ladder-work screening | Collapsed optional panel | Applies only when populated | Not complete | Underquote | ask all / one screen then branch / manual exception | One summary screen then conditional details | pricing, call length | pending_ben_review |
-| QD-05 | Roof | Are type and severity required for firm quote? | Default asphalt/light | Missing gets 0% modifier | No approved rule | Incorrect confidence | required / optional / manual if unknown | Require Ben to define disposition; contract blocks channel approval meanwhile | pricing, confidence | pending_ben_review |
-| QD-06 | Driveway | Measurement and surface confirmation | Defaults 400/concrete | Uses both | Session was incomplete | Wrong total | explicit / verified measurement / approved defaults | Explicit or verified provenance | pricing | pending_ben_review |
-| QD-07 | Flatwork | Per-area measurement and surface confirmation | Defaults by area | Uses enabled areas | Aggregate fields | Zero/wrong line | explicit / verified derivation / manual | Require one valid area and details | pricing | pending_ben_review |
-| QD-08 | Gutters | Should gutter guards be proactively offered, and when? | Offers guards with other add-ons | Applies only when populated | Not consistently asked | Missing scope or longer calls | universal / customer-led / configured campaigns | Keep drains and minor repairs as confirmed conditional offers; decide guard timing separately | pricing, call length | pending_ben_review |
-| QD-09 | Solar | Firm versus manual | Firm web price | Firm per-panel math | Policy says manual | Channel conflict | firm / manual / threshold | Keep owner-decision block until approved | confidence, booking | pending_ben_review |
-| QD-10 | Screen repair | Firm versus manual | Firm web price | Firm per-screen math | Policy says manual | Channel conflict | firm / manual / threshold | Keep owner-decision block until approved | confidence, booking | pending_ben_review |
-| QD-11 | Sq-ft services | Unknown square-footage fallback | Lookup helper | Returns missing | Can stall | Guessing or abandonment | verified lookup / text form / manual | lookup → secure form → review; never guess | call length, confidence | pending_ben_review |
-| QD-12 | Partial windows | Long-term pricing architecture | No ordinary web path | Separate versioned $10/side rule | Orchestrator uses rule | Split authority | integrate engine/config / keep versioned / manual | Move into versioned configured canonical engine later | pricing | pending_ben_review |
-| QD-13 | Promotion | Count and over-limit behavior | Sends configured max | Requires actual count; over max review | Delivery mapping incomplete | Misstated scope | ask actual / max assumption / standard fallback | Ask actual; explicit choice before standard fallback | pricing | pending_ben_review |
-| QD-14 | All | Booking duration authority | Local fixed estimates exist | Returns null | Readiness needs positive | Guessed slot length | duration engine / manual / provider rule | Build versioned deterministic duration engine separately | booking | pending_ben_review |
-| QD-15 | All | Pre-price contact order | Booking collects later | Not pricing | Current reducer name/phone first | Friction | before / after / verified reuse | Preserve current channel behavior pending funnel decision | call length | pending_ben_review |
-| QD-16 | All | Service-area sequence | Address during booking | Not pricing | City/address sequencing varies | Quote outside area | pre-price / post-price-pre-schedule | Check before availability, not as pricing input | booking, call length | pending_ben_review |
+| ID | Approved resolution | Status |
+|---|---|---|
+| QD-01 | Track canonical answer provenance. Approved business defaults may price, but every price-changing default/customer estimate must be confirmed in the final assumption summary. Explicit answers override defaults. | resolved_2026_07_31 |
+| QD-02 | Residential window cleaning is whole-home by approved default; do not routinely ask scope. Preserve legacy partial records as a compatibility/manual route. | resolved_2026_07_31 |
+| QD-03 | Always explicitly ask inside-and-outside versus outside-only. Missing sides never become exterior-only. | resolved_2026_07_31 |
+| QD-04 | Ask one advanced screen, then only applicable follow-ups. Hard water is $10/affected equivalent, French panes +50% of base, unusual ladder access $5/affected equivalent. | resolved_2026_07_31 |
+| QD-05 | Firm roof wash is asphalt shingle, one/two story, light/moderate staining, no damage/pitch/material/access flag. Exceptions route only roof to photo-assisted review. | resolved_2026_07_31 |
+| QD-06 | Driveway needs positive approximate area plus surface and provenance. The old 400-sq-ft default is not authoritative. Unknown specialty surfaces review only driveway. | resolved_2026_07_31 |
+| QD-07 | Every enabled flatwork area needs ID, positive area, and surface. Unknown specialty surfaces review only that area. House-wash patios retain the mutually exclusive 10%/20% or $0.25/sq-ft methods. | resolved_2026_07_31 |
+| QD-08 | Quote drains/minor repairs with base gutters; present gutter guards only after the base quote. An unanswered guard offer never blocks. | resolved_2026_07_31 |
+| QD-09 | Solar is firm for confirmed count plus ordinary one/two-story residential access and no safety/access flags; exceptions review only solar. | resolved_2026_07_31 |
+| QD-10 | Standard removable reusable-frame mesh replacement with confirmed count is firm; doors, frames, solar/specialty/unknown scopes review only screen repair. | resolved_2026_07_31 |
+| QD-11 | Address/property lookup, then customer estimate, then remote follow-up only for square-foot-dependent services. Never guess; customer estimates require final confirmation. | resolved_2026_07_31 |
+| QD-12 | Whole-home is primary. Added interior sides are $10; explicit omitted sides are -$8 and minimum-bounded; uncertain omission count remains bookable with onsite reduction disclosure. | resolved_2026_07_31 |
+| QD-13 | $99 covers the first ten exterior equivalents; each additional equivalent is $10 on a separate line. Half increments are valid. | resolved_2026_07_31 |
+| QD-14 | Canonical duration is deterministic, pre-discount/pre-tax, additive, setup-once, and 15-minute rounded. Manual-only work has no duration; independently firm portions retain one. | resolved_2026_07_31 |
+| QD-15 | Voice: intent, callback phone, pricing, price, then remaining booking info. Web: no early contact wall. Reuse verified facts. | resolved_2026_07_31 |
+| QD-16 | Service-area eligibility is required before availability/booking and is not a price modifier. Preserve outside-area requests for follow-up. | resolved_2026_07_31 |
 
 ## Documented future option — not active
 

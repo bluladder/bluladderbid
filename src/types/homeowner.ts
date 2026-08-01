@@ -29,26 +29,31 @@ export interface HomeDetails {
   screenedEnclosureSoftWash?: boolean;
   enclosureWindowCount?: number;
   enclosureWindowSides?: 'outside_only' | 'inside_and_outside';
+  advancedWindowConditions?: boolean;
+  hardWaterAffectedWindowEquivalents?: number;
+  ladderAffectedWindowEquivalents?: number;
+  addedInteriorWindowSides?: number;
+  omittedWindowSides?: number | 'unknown';
 }
 
 // Driveway Cleaning - separate service with sqft-based pricing
 export interface DrivewayCleaningOptions {
   enabled: boolean;
   sqft: number;
-  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
+  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile' | 'exposed_aggregate' | 'asphalt' | 'other' | 'unknown';
 }
 
 // Flatwork area with sqft input and individual surface type
 export interface FlatworkArea {
   enabled: boolean;
   sqft: number;
-  surfaceType?: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
+  surfaceType?: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile' | 'exposed_aggregate' | 'asphalt' | 'other' | 'unknown';
 }
 
 // Pressure Washing - for additional flatwork areas
 export interface PressureWashingOptions {
   enabled: boolean;
-  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
+  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile' | 'exposed_aggregate' | 'asphalt' | 'other' | 'unknown';
   frontPorch: FlatworkArea;
   backPatio: FlatworkArea;
   poolDeck: FlatworkArea;
@@ -109,11 +114,18 @@ export type RoofPitch = 'walkable' | 'moderate' | 'steep';
 export interface SolarPanelCleaningOptions {
   enabled: boolean;
   panelCount: number;
+  stories?: 1 | 2 | 3;
+  accessType?: 'standard_residential' | 'unusual_or_uncertain';
+  knownDamage?: boolean;
+  extremePitch?: boolean;
+  fragileMaterial?: boolean;
+  unusualAccess?: boolean;
 }
 
 export interface ScreenRepairOptions {
   enabled: boolean;
   screenCount: number;
+  scopeType?: 'standard_removable_reusable_frame' | 'screen_door' | 'new_frame' | 'damaged_frame' | 'solar_screen' | 'specialty_or_oversized' | 'unknown';
 }
 
 export interface AdditionalServices {
@@ -127,6 +139,7 @@ export interface AdditionalServices {
   roofCleaning: boolean;
   roofType: 'asphalt' | 'tile' | 'metal' | 'flat';
   roofSeverity: 'light' | 'moderate' | 'heavy';
+  roofRiskFlags?: { knownDamage: boolean; extremePitch: boolean; fragileMaterial: boolean; unusualAccess: boolean };
   roofPitch: RoofPitch;
   solarPanelCleaning: SolarPanelCleaningOptions;
   screenRepair: ScreenRepairOptions;

@@ -14,6 +14,7 @@ import { normalizeUsCaE164, resolvePhone } from "./contactIntegrity.ts";
 import {
   evaluateQuoteIntake,
   normalizeWindowCleaningSides,
+  type AnswerProvenance,
 } from "./salesEngine/quoteIntakeContract.ts";
 import { resolveAuthoritativeDuration } from "./salesEngine/durationContract.ts";
 
@@ -40,6 +41,7 @@ export interface QuoteSessionFields {
   condition?: string;
   roofType?: string;
   roofSeverity?: string;
+  roofRiskFlags?: { knownDamage: boolean; extremePitch: boolean; fragileMaterial: boolean; unusualAccess: boolean };
   drivewaySqft?: number;
   drivewaySurface?: string;
   pressureWashSqft?: number;
@@ -53,6 +55,14 @@ export interface QuoteSessionFields {
   screenProfile?: "standard_removable" | "no_screens" | "solar" | "mixed_standard_solar" | "fixed_nonremovable_or_unknown";
   /** Derived from fieldStatus.screenProfile; callers cannot assert this independently. */
   screenProfileProvenance?: FieldStatus;
+  advancedWindowConditions?: boolean;
+  hardWaterStains?: boolean;
+  hardWaterAffectedWindowEquivalents?: number;
+  frenchPanes?: boolean;
+  ladderWork?: boolean;
+  ladderAffectedWindowEquivalents?: number;
+  addedInteriorWindowSides?: number;
+  omittedWindowSides?: number | "unknown";
   solarScreenCoverage?: "all" | "some";
   solarScreenAffectedWindowCount?: number;
   solarScreenServiceRequested?: boolean;
@@ -98,7 +108,19 @@ export interface QuoteSessionFields {
     enabled: boolean; sqft?: number; surfaceType?: string;
   }>>;
   solarPanelCount?: number;
+  solarAccessProfile?: {
+    stories: 1 | 2 | 3;
+    accessType: "standard_residential" | "unusual_or_uncertain";
+    knownDamage: boolean;
+    extremePitch: boolean;
+    fragileMaterial: boolean;
+    unusualAccess: boolean;
+  };
   screenRepairCount?: number;
+  screenRepairScopeType?: "standard_removable_reusable_frame" | "screen_door" | "new_frame" | "damaged_frame" | "solar_screen" | "specialty_or_oversized" | "unknown";
+  serviceAreaStatus?: "eligible" | "ineligible" | "ambiguous" | "unavailable";
+  answerProvenance?: Record<string, AnswerProvenance>;
+  confirmationSummary?: { confirmed: boolean; confirmedFieldIds: string[]; confirmedAt?: string };
   humanPricingRequired?: boolean;
   bidRequestStatus?:
     | "commercial_bid_requested"
@@ -144,10 +166,17 @@ export interface QuoteSession {
 export function mergeFields(
   prev: QuoteSession,
   patch: Partial<QuoteSessionFields>,
-  opts: { markVerified?: (keyof QuoteSessionFields)[]; markDerived?: (keyof QuoteSessionFields)[]; markDefaulted?: (keyof QuoteSessionFields)[] } = {},
+  opts: {
+    markVerified?: (keyof QuoteSessionFields)[];
+    markDerived?: (keyof QuoteSessionFields)[];
+    markDefaulted?: (keyof QuoteSessionFields)[];
+    markCustomerEstimate?: (keyof QuoteSessionFields)[];
+    markConfirmedSummary?: (keyof QuoteSessionFields)[];
+  } = {},
 ): QuoteSession {
   const nextFields: QuoteSessionFields = { ...prev.fields };
   const nextStatus = { ...prev.fieldStatus };
+  const nextProvenance: Record<string, AnswerProvenance> = { ...(prev.fields.answerProvenance ?? {}) };
   const phoneIsConfirmed = prev.fieldStatus.phone === "verified"
     || prev.fields.callerIdConfirmationStatus === "confirmed"
     || prev.fields.callerIdConfirmationStatus === "contact_confirmed";
@@ -163,6 +192,7 @@ export function mergeFields(
       const previous = nextFields.windowCleaningSides;
       nextFields.windowCleaningSides = sides;
       nextStatus.windowCleaningSides = previous && previous !== sides ? "corrected" : "captured";
+      nextProvenance.windowCleaningSides = "explicitly_selected";
       continue;
     }
     const prevVal = (prev.fields as Record<string, unknown>)[key];
@@ -187,10 +217,14 @@ export function mergeFields(
     const wasCaptured = nextStatus[key] === "captured" || nextStatus[key] === "verified";
     const changed = prevVal !== undefined && JSON.stringify(prevVal) !== JSON.stringify(v);
     nextStatus[key] = wasCaptured && changed ? "corrected" : "captured";
+    if (key !== "answerProvenance" && key !== "confirmationSummary") nextProvenance[key] = "explicitly_selected";
   }
-  for (const k of opts.markVerified ?? []) nextStatus[k] = "verified";
-  for (const k of opts.markDerived ?? []) nextStatus[k] = "derived";
-  for (const k of opts.markDefaulted ?? []) nextStatus[k] = "defaulted";
+  for (const k of opts.markVerified ?? []) { nextStatus[k] = "verified"; nextProvenance[k] = "verified_lookup"; }
+  for (const k of opts.markDerived ?? []) { nextStatus[k] = "derived"; nextProvenance[k] = "verified_lookup"; }
+  for (const k of opts.markDefaulted ?? []) { nextStatus[k] = "defaulted"; nextProvenance[k] = "approved_business_default"; }
+  for (const k of opts.markCustomerEstimate ?? []) nextProvenance[k] = "customer_estimate";
+  for (const k of opts.markConfirmedSummary ?? []) nextProvenance[k] = "confirmed_summary";
+  nextFields.answerProvenance = nextProvenance;
   if (nextFields.screenProfile) nextFields.screenProfileProvenance = nextStatus.screenProfile ?? "unknown";
   return { ...prev, fields: nextFields, fieldStatus: nextStatus };
 }
@@ -267,11 +301,14 @@ export function isReadyToBook(session: QuoteSession): boolean {
   const f = session.fields;
   const intake = evaluateQuoteIntake(f as unknown as Record<string, unknown>);
   const duration = resolveAuthoritativeDuration(f.lastQuoteResult ?? null);
+  const mixedReviewBookable = session.quoteStatus === "manual_review" &&
+    Array.isArray(f.lastQuoteResult?.bookableServiceKeys) && f.lastQuoteResult.bookableServiceKeys.length > 0;
   return (
-    (session.quoteStatus === "firm" || session.quoteStatus === "estimated") &&
+    (session.quoteStatus === "firm" || session.quoteStatus === "estimated" || mixedReviewBookable) &&
     computeRequired(f).length === 0 &&
     intake.ownerDecisions.length === 0 &&
-    intake.manualReview.length === 0 &&
+    (intake.manualReview.length === 0 || mixedReviewBookable) &&
+    intake.bookingRequired.length === 0 &&
     duration.status === "available" &&
     !!f.address &&
     !!f.email
@@ -288,6 +325,11 @@ const QUESTION_PRIORITY: string[] = [
   "stories",
   "windowCleaningSides",
   "condition",
+  "advancedWindowConditions",
+  "hardWaterAffectedWindowEquivalents",
+  "ladderAffectedWindowEquivalents",
+  "addedInteriorWindowSides",
+  "omittedWindowSides",
   "screenProfile",
   "solarScreenCoverage",
   "solarScreenAffectedWindowCount",
@@ -308,7 +350,10 @@ const QUESTION_PRIORITY: string[] = [
   "pressureWashSqft",
   "pressureWashingAreas",
   "solarPanelCount",
+  "solarAccessProfile",
   "screenRepairCount",
+  "screenRepairScopeType",
+  "serviceAreaStatus",
   "city",
   "address",
   "name",
@@ -567,6 +612,14 @@ export function sessionInputsKey(fields: QuoteSessionFields): string {
       pressureWashingAreas: fields.pressureWashingAreas,
       screenProfile: fields.screenProfile,
       screenProfileProvenance: fields.screenProfileProvenance,
+      advancedWindowConditions: fields.advancedWindowConditions,
+      hardWaterStains: fields.hardWaterStains,
+      hardWaterAffectedWindowEquivalents: fields.hardWaterAffectedWindowEquivalents,
+      frenchPanes: fields.frenchPanes,
+      ladderWork: fields.ladderWork,
+      ladderAffectedWindowEquivalents: fields.ladderAffectedWindowEquivalents,
+      addedInteriorWindowSides: fields.addedInteriorWindowSides,
+      omittedWindowSides: fields.omittedWindowSides,
       solarScreenCoverage: fields.solarScreenCoverage,
       solarScreenAffectedWindowCount: fields.solarScreenAffectedWindowCount,
       solarScreenServiceRequested: fields.solarScreenServiceRequested,
@@ -576,6 +629,11 @@ export function sessionInputsKey(fields: QuoteSessionFields): string {
       enclosureWindowSides: fields.enclosureWindowSides,
       gutterAddons: fields.gutterAddons,
       houseWashPatios: fields.houseWashPatios,
+      roofRiskFlags: fields.roofRiskFlags,
+      solarAccessProfile: fields.solarAccessProfile,
+      screenRepairScopeType: fields.screenRepairScopeType,
+      answerProvenance: fields.answerProvenance,
+      confirmationSummary: fields.confirmationSummary,
     },
     discountCode: fields.discountCode ?? null,
     promotionId: fields.promotionId ?? null,

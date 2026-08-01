@@ -47,13 +47,20 @@ generated mirrors in `supabase/functions/_shared/salesEngine/`. Edit only the
 | --- | --- | --- |
 | Service-specific intake requirements | YES | `intake/quoteIntakeContract.ts` |
 | Question priority + customer-facing wording | YES | — |
-| Prices, modifiers, promotion rules | NO | `pricingEngine.ts` |
+| Prices, modifiers, promotion rules | NO | byte-identical canonical `pricingEngine.ts` mirrors |
+| Estimated tax and duration policy | NO | versioned policy sections consumed by the canonical pricing engine |
 | Persistence, DB access | NO | Edge functions / web |
 
 The pricing engine is the sole authority on whether enough information exists
 to price. This package translates that authority into the next question to ask.
-Owner-confirmed monetary rules and their deterministic calculation order live
+Owner-confirmed monetary, estimated-tax, and duration rules and their deterministic calculation order live
 in the byte-identical canonical pricing engines; display labels are never used
 as pricing keys. The configured `$99` promotion remains a mutually exclusive
-flat-price branch, so it intentionally bypasses ordinary quote ordering and
-does not stack unless its configured policy explicitly allows it.
+branch: the first ten exterior equivalents retain the configured flat price and
+each additional equivalent is a separate contract line. It does not stack
+unless its configured policy explicitly allows it.
+
+Final quote summaries preserve pre-tax service/Jobber lines and expose service
+subtotal, discounts/adjustments, taxable subtotal, estimated tax, and estimated
+total separately. Duration uses pre-discount/pre-tax work value, adds setup once,
+and rounds upward to the configured scheduling increment.

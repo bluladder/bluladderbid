@@ -231,6 +231,10 @@ export async function getBookingReadiness(
     : [];
   const manualReviewRequired =
     lastStatus === "manual_review_required" || manualReviewReasons.length > 0;
+  const bookableServiceKeys: string[] = Array.isArray(lastQuote?.bookableServiceKeys)
+    ? lastQuote.bookableServiceKeys.filter((key: unknown): key is string => typeof key === "string")
+    : [];
+  const hasBookablePortion = bookableServiceKeys.length > 0;
   const intakeEvaluation = evaluateQuoteIntake(fields as Record<string, unknown>);
   const productPolicyStatus: ProductPolicyStatus = intakeEvaluation.ownerDecisions.length > 0
     ? "owner_decision_required"
@@ -284,9 +288,11 @@ export async function getBookingReadiness(
   // totals (stale inputs, drifted rules, non-bookable status) must never leak
   // through to scheduling.
   const bookableStatus =
-    lastStatus === "firm" || lastStatus === "estimated";
-  const rawTotal: number | null =
-    typeof lastQuote?.total === "number" ? lastQuote.total : null;
+    lastStatus === "firm" || lastStatus === "estimated" ||
+    (lastStatus === "manual_review_required" && hasBookablePortion);
+  const rawTotal: number | null = typeof lastQuote?.estimatedTotal === "number"
+    ? lastQuote.estimatedTotal
+    : typeof lastQuote?.total === "number" ? lastQuote.total : null;
   const durationResult = resolveAuthoritativeDuration(lastQuote);
   const rawDuration: number | null = durationResult.status === "available"
     ? durationResult.minutes
@@ -389,7 +395,7 @@ export async function getBookingReadiness(
   }
 
   // 6. manual_review — pricing engine flagged human review.
-  if (status === "ready" && (manualReviewRequired || intakeEvaluation.manualReview.length > 0)) {
+  if (status === "ready" && (manualReviewRequired || intakeEvaluation.manualReview.length > 0) && !hasBookablePortion) {
     status = "manual_review";
     blockers.push({
       code: "manual_review_required",

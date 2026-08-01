@@ -105,8 +105,8 @@ describe("pricing engine — story & condition modifiers", () => {
       homeDetails: baseHome({ squareFootage: 3000, windowCleaningType: "both" }),
       additionalServices: { ...noServices(), windowCleaning: true },
     });
-    // ext 3000*0.08=240 ; int 3000*0.075=225 ; total 465
-    expect(r.total).toBe(465);
+    // Approved whole-home full-service rate: 3000 * $0.15 = $450.
+    expect(r.total).toBe(450);
   });
 });
 

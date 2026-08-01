@@ -20,7 +20,7 @@ function baseSession(over: Partial<QuoteSession> = {}): QuoteSession {
   };
 }
 
-/** Convenience: a session whose contact-first fields are already captured, so
+/** Convenience: a session whose early callback field is already captured, so
  *  pricing-intake assertions read cleanly. */
 function afterContact(over: Partial<QuoteSession> = {}): QuoteSession {
   return baseSession({
@@ -34,15 +34,15 @@ function afterContact(over: Partial<QuoteSession> = {}): QuoteSession {
   });
 }
 
-Deno.test("contact-first: asks for the customer's name before anything else", () => {
+Deno.test("intent-first: asks for services before contact details", () => {
   const s = baseSession();
   const a = decideResidentialQuoteAction(s);
   assertEquals(a.kind, "ask");
-  if (a.kind === "ask") assertEquals(a.field, "contact_name");
+  if (a.kind === "ask") assertEquals(a.field, "services");
 });
 
-Deno.test("contact-first: asks for mobile phone once name is captured", () => {
-  const s = baseSession({ fields: { name: "Alex" }, fieldStatus: { name: "captured" } });
+Deno.test("voice asks for mobile phone after service intent", () => {
+  const s = baseSession({ fields: { services: ["houseWash"] }, fieldStatus: { services: "captured" } });
   const a = decideResidentialQuoteAction(s);
   assertEquals(a.kind, "ask");
   if (a.kind === "ask") assertEquals(a.field, "contact_phone");
@@ -116,6 +116,7 @@ Deno.test("all pricing fields present → calculate_price (no city required)", (
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      advancedWindowConditions: false,
       screenProfile: "standard_removable",
       enclosedPatioProfile: "none",
     },
@@ -128,12 +129,12 @@ Deno.test("all pricing fields present → calculate_price (no city required)", (
   assertEquals(decideResidentialQuoteAction(s, []).kind, "calculate_price");
 });
 
-Deno.test("unresolved whole-home scope policy never appears approved", () => {
+Deno.test("approved whole-home default no longer causes owner-decision handoff", () => {
   const s = afterContact({
-    fields: { services:["windowCleaning"], squareFootage:2000, stories:2, windowCleaningSides:"outside_only", condition:"maintenance", screenProfile:"standard_removable", enclosedPatioProfile:"none" },
+    fields: { services:["windowCleaning"], squareFootage:2000, stories:2, windowCleaningSides:"outside_only", condition:"maintenance", advancedWindowConditions:false, screenProfile:"standard_removable", enclosedPatioProfile:"none" },
     fieldStatus: { services:"captured", squareFootage:"captured", stories:"captured", windowCleaningSides:"captured", condition:"captured" },
   });
-  assertEquals(decideResidentialQuoteAction(s, []), { kind:"handoff", reason:"owner_decision_required" });
+  assertEquals(decideResidentialQuoteAction(s, []), { kind:"calculate_price" });
 });
 
 Deno.test("pricing error surfaces as handoff, never as another intake question", () => {
@@ -145,6 +146,7 @@ Deno.test("pricing error surfaces as handoff, never as another intake question",
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      advancedWindowConditions: false,
       screenProfile: "standard_removable",
       enclosedPatioProfile: "none",
     },
@@ -168,6 +170,7 @@ Deno.test("priced → speak_price first, then collects booking fields", () => {
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      advancedWindowConditions: false,
       screenProfile: "standard_removable",
       enclosedPatioProfile: "none",
     },
@@ -189,6 +192,7 @@ Deno.test("post-quote: asks for email before booking (not before speaking the pr
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      advancedWindowConditions: false,
       screenProfile: "standard_removable",
       enclosedPatioProfile: "none",
     },

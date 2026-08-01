@@ -78,6 +78,7 @@ Deno.test("computeRequired: services first, then property inputs", () => {
     "stories",
     "windowCleaningSides",
     "condition",
+    "advancedWindowConditions",
     "screenProfile",
     "enclosedPatioProfile",
   ]);
@@ -91,6 +92,7 @@ Deno.test("isReadyToPrice: window cleaning ready with sqft + stories + type", ()
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      advancedWindowConditions: false,
       screenProfile: "standard_removable",
       enclosedPatioProfile: "none",
     }),
@@ -114,6 +116,7 @@ Deno.test("nextQuestion: ready to price when all inputs present, next asks for c
       stories: 2,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      advancedWindowConditions: false,
       screenProfile: "standard_removable",
       enclosedPatioProfile: "none",
     },
@@ -133,7 +136,13 @@ Deno.test("isReadyToBook: needs complete intake, address, email, and authoritati
   assertEquals(isReadyToBook(priced), false);
   const readied: QuoteSession = {
     ...priced,
-    fields: { ...priced.fields, address: "123 Main St", email: "a@b.co", lastQuoteResult: { status:"estimated", estimatedDurationMinutes:90 } },
+    fields: {
+      ...priced.fields,
+      address: "123 Main St",
+      email: "a@b.co",
+      serviceAreaStatus: "eligible",
+      lastQuoteResult: { status:"estimated", estimatedDurationMinutes:90 },
+    },
   };
   assertEquals(isReadyToBook(readied), true);
 });

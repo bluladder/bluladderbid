@@ -27,6 +27,7 @@ export interface PricingData {
   window_cleaning: {
     exteriorPerSqFt: number;
     interiorPerSqFt: number;
+    insideAndOutsidePerSqFt?: number;
     minimumPrice: number;
     modifiers: ServiceModifiers;
   };

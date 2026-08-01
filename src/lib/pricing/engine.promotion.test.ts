@@ -40,11 +40,12 @@ describe("$99 window promotion", () => {
     expect(r.total).toBe(99);
   });
 
-  it("does NOT silently remain $99 for more than 10 windows -> manual review", () => {
+  it("keeps the first 10 at $99 and prices additional window equivalents separately", () => {
     const r = calc({ promotion: { id: PROMO_ID, windowCount: 11 } });
-    expect(r.status).toBe("manual_review_required");
-    expect(r.total).not.toBe(99);
-    expect(r.promotion).toBeNull();
+    expect(r.status).toBe("firm");
+    expect(r.total).toBe(109);
+    expect(r.lineItems).toContainEqual(expect.objectContaining({ key: "window_promo_additional_windows", quantity: 1, amount: 10 }));
+    expect(r.promotion).toMatchObject({ windowCount: 11 });
   });
 
   it("rejects an unknown promotion identifier", () => {
