@@ -29,6 +29,7 @@ function makeFake(opts: {
       required_remaining: [],
       quote_status: "none",
       booking_ready: false,
+      organization_id: null,
       updated_at: "2026-08-01T12:00:00.000Z",
     } as Row,
     convo: {
@@ -36,6 +37,7 @@ function makeFake(opts: {
       quote_session_id: "qs_1",
       session_token: "tok",
       channel: "voice",
+      organization_id: null,
     } as Row,
     customerReads: 0,
   };
@@ -49,6 +51,10 @@ function makeFake(opts: {
           return this;
         },
         eq(k: string, v: unknown) {
+          this._filter[k] = v;
+          return this;
+        },
+        is(k: string, v: unknown) {
           this._filter[k] = v;
           return this;
         },
@@ -139,6 +145,10 @@ function makeFake(opts: {
           };
           const chain = {
             eq(key: string, value: unknown) {
+              filters[key] = value;
+              return this;
+            },
+            is(key: string, value: unknown) {
               filters[key] = value;
               return this;
             },
@@ -733,6 +743,41 @@ Deno.test("tenant-scoped record, appointment, and memo intents fail closed", asy
   }
 });
 
+Deno.test("resolved tenant authority does not prematurely enable deferred sensitive voice actions", async () => {
+  const sb = makeFake();
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  sb._state.session.organization_id = organizationId;
+  sb._state.convo.organization_id = organizationId;
+  sb._state.session.fields = {
+    phone: "+14697472877",
+    returningCustomerResolved: true,
+    voiceJourney: { intent: "cancel" },
+  };
+  sb._state.session.field_status = { phone: "captured" };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "cancel it",
+    history: [],
+    organizationAuthority: {
+      status: "resolved",
+      organizationId,
+      source: "resource",
+      evidence: ["resource:conversation"],
+      sensitiveActionsAllowed: true,
+    },
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action, {
+      kind: "handoff",
+      reason: "tenant_authority_required",
+    });
+    assertStringIncludes(turn.pre.spoken, "Nothing was disclosed or changed");
+  }
+});
+
 Deno.test("controller persistence rejects an interleaved stale-row update", async () => {
   const sb = makeFake();
   const turn = await runControllerTurn({
@@ -754,4 +799,35 @@ Deno.test("controller persistence rejects an interleaved stale-row update", asyn
   });
   const persistedFields = sb._state.session.fields as QuoteSessionFields;
   assertEquals(persistedFields.voiceJourney, undefined);
+});
+
+Deno.test("controller persistence predicates the organization as well as row version", async () => {
+  const sb = makeFake();
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  sb._state.session.organization_id = organizationId;
+  sb._state.convo.organization_id = organizationId;
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I need a quote",
+    history: [],
+    organizationAuthority: {
+      status: "resolved",
+      organizationId,
+      source: "resource",
+      evidence: ["resource:conversation"],
+      sensitiveActionsAllowed: true,
+    },
+  });
+  sb._state.session.organization_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const result = await persistControllerPatch(
+    sb,
+    turn.sessionId,
+    turn.sessionPatch,
+  );
+  assertEquals(result, {
+    status: "conflict",
+    reason: "quote_session_changed",
+  });
 });

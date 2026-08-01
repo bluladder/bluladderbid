@@ -9,7 +9,7 @@ import {
   assert,
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { runTool, resolveVoiceBookingLane } from "./aiTools.ts";
+import { resolveVoiceBookingLane, runTool } from "./aiTools.ts";
 import { getBookingReadiness } from "./bookingReadiness.ts";
 import { sessionInputsKey } from "./quoteSession.ts";
 
@@ -133,6 +133,7 @@ function stubSupabase(opts: { address?: string } = {}) {
     const b: any = {
       select: () => b,
       eq: () => b,
+      is: () => b,
       or: () => b,
       order: () => b,
       insert: (v: unknown) => {
@@ -178,10 +179,22 @@ const GEOCODE_OK = {
     geometry: { location: { lat: 33.2, lng: -96.6 } },
     address_components: [
       { long_name: "5612", short_name: "5612", types: ["street_number"] },
-      { long_name: "Binbranch Lane", short_name: "Binbranch Ln", types: ["route"] },
+      {
+        long_name: "Binbranch Lane",
+        short_name: "Binbranch Ln",
+        types: ["route"],
+      },
       { long_name: "McKinney", short_name: "McKinney", types: ["locality"] },
-      { long_name: "Collin County", short_name: "Collin County", types: ["administrative_area_level_2"] },
-      { long_name: "Texas", short_name: "TX", types: ["administrative_area_level_1"] },
+      {
+        long_name: "Collin County",
+        short_name: "Collin County",
+        types: ["administrative_area_level_2"],
+      },
+      {
+        long_name: "Texas",
+        short_name: "TX",
+        types: ["administrative_area_level_1"],
+      },
       { long_name: "75071", short_name: "75071", types: ["postal_code"] },
       { long_name: "United States", short_name: "US", types: ["country"] },
     ],
@@ -276,7 +289,10 @@ Deno.test("live voice booking: success routes through jobber-create-booking", as
     assertEquals(h.bookingCalls.length, 1);
     const body = h.bookingCalls[0].body;
     assertEquals(body.idempotencyKey, `voice|conv_live|${START}`);
-    assertEquals(body.customer.address, "5612 Binbranch Ln, McKinney, TX 75071");
+    assertEquals(
+      body.customer.address,
+      "5612 Binbranch Ln, McKinney, TX 75071",
+    );
     assertEquals(body.scheduledStart, START);
   } finally {
     h.restore();
@@ -375,12 +391,23 @@ Deno.test("live voice booking: replay of the same confirmation reuses one idempo
   );
   try {
     const args = { confirmed: true, slotId: "slot_live_1" };
-    const a = await runTool("create_bluladder_booking", voiceCtx(client), args) as { status: string };
-    const b = await runTool("create_bluladder_booking", voiceCtx(client), args) as { status: string };
+    const a = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client),
+      args,
+    ) as { status: string };
+    const b = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client),
+      args,
+    ) as { status: string };
     assertEquals(a.status, "confirmed");
     assertEquals(b.status, "confirmed");
     assertEquals(h.bookingCalls.length, 2);
-    assertEquals(h.bookingCalls[0].body.idempotencyKey, h.bookingCalls[1].body.idempotencyKey);
+    assertEquals(
+      h.bookingCalls[0].body.idempotencyKey,
+      h.bookingCalls[1].body.idempotencyKey,
+    );
   } finally {
     h.restore();
   }

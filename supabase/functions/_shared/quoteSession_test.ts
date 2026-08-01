@@ -1,18 +1,23 @@
 // Pure-unit tests for the canonical Quote Session helpers. No DB.
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
-  mergeFields,
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  addCommercialLocation,
+  changeWindowScope,
   computeRequired,
-  nextQuestion,
-  isReadyToPrice,
+  fieldsFromFacts,
+  findByConversation,
+  findOrCreateForConversation,
   isReadyToBook,
-  sessionInputsKey,
+  isReadyToPrice,
+  mergeFields,
+  nextQuestion,
   normalizeEmail,
   normalizePhone,
-  fieldsFromFacts,
-  changeWindowScope,
-  addCommercialLocation,
   type QuoteSession,
+  sessionInputsKey,
 } from "./quoteSession.ts";
 
 const empty = (): QuoteSession => ({
@@ -40,23 +45,35 @@ Deno.test("mergeFields: changing a captured value marks it corrected", () => {
 });
 
 Deno.test("field provenance keeps defaulted distinct from verified", () => {
-  const s = mergeFields(empty(), { stories: 1 }, { markDefaulted: ["stories"] });
+  const s = mergeFields(empty(), { stories: 1 }, {
+    markDefaulted: ["stories"],
+  });
   assertEquals(s.fieldStatus.stories, "defaulted");
   assert(s.fieldStatus.stories !== "verified");
 });
 
 Deno.test("screen profile provenance is derived and cannot be asserted independently", () => {
-  let s = mergeFields(empty(), { screenProfile: "no_screens" }, { markDefaulted: ["screenProfile"] });
+  let s = mergeFields(empty(), { screenProfile: "no_screens" }, {
+    markDefaulted: ["screenProfile"],
+  });
   assertEquals(s.fields.screenProfileProvenance, "defaulted");
   s = mergeFields(s, { screenProfileProvenance: "verified" });
   assertEquals(s.fields.screenProfileProvenance, "defaulted");
-  s = mergeFields(s, { screenProfile: "standard_removable" }, { markVerified: ["screenProfile"] });
+  s = mergeFields(s, { screenProfile: "standard_removable" }, {
+    markVerified: ["screenProfile"],
+  });
   assertEquals(s.fields.screenProfileProvenance, "verified");
 });
 
 Deno.test("screen-profile provenance participates in the canonical input hash", () => {
-  const base = { services:["windowCleaning"], screenProfile:"no_screens" as const };
-  assert(sessionInputsKey({ ...base, screenProfileProvenance:"captured" }) !== sessionInputsKey({ ...base, screenProfileProvenance:"defaulted" }));
+  const base = {
+    services: ["windowCleaning"],
+    screenProfile: "no_screens" as const,
+  };
+  assert(
+    sessionInputsKey({ ...base, screenProfileProvenance: "captured" }) !==
+      sessionInputsKey({ ...base, screenProfileProvenance: "defaulted" }),
+  );
 });
 
 Deno.test("unrelated contact capture does not invent legacy screen provenance or stale the quote", () => {
@@ -146,7 +163,10 @@ Deno.test("isReadyToPrice: window cleaning ready with sqft + stories + type", ()
 });
 
 Deno.test("nextQuestion: picks the highest-priority missing field", () => {
-  const s: QuoteSession = { ...empty(), fields: { services: ["windowCleaning"], stories: 2 } };
+  const s: QuoteSession = {
+    ...empty(),
+    fields: { services: ["windowCleaning"], stories: 2 },
+  };
   const plan = nextQuestion(s);
   assertEquals(plan.nextField, "squareFootage");
   assertEquals(plan.readyToPrice, false);
@@ -177,7 +197,12 @@ Deno.test("isReadyToBook: needs complete intake, address, email, and authoritati
   const priced: QuoteSession = {
     ...empty(),
     quoteStatus: "estimated",
-    fields: { services: ["houseWash"], squareFootage: 2000, stories: 1, enclosedPatioProfile: "none" },
+    fields: {
+      services: ["houseWash"],
+      squareFootage: 2000,
+      stories: 1,
+      enclosedPatioProfile: "none",
+    },
   };
   assertEquals(isReadyToBook(priced), false);
   const readied: QuoteSession = {
@@ -187,7 +212,7 @@ Deno.test("isReadyToBook: needs complete intake, address, email, and authoritati
       address: "123 Main St",
       email: "a@b.co",
       serviceAreaStatus: "eligible",
-      lastQuoteResult: { status:"estimated", estimatedDurationMinutes:90 },
+      lastQuoteResult: { status: "estimated", estimatedDurationMinutes: 90 },
     },
   };
   assertEquals(isReadyToBook(readied), true);
@@ -205,7 +230,11 @@ Deno.test("fieldsFromFacts: maps ConversationFacts to the canonical shape", () =
   const f = fieldsFromFacts({
     services: ["windowCleaning"],
     address: "1 Main",
-    property: { squareFootage: 2000, stories: 2, windowCleaningType: "exterior" },
+    property: {
+      squareFootage: 2000,
+      stories: 2,
+      windowCleaningType: "exterior",
+    },
     contact: { name: "Ada", email: "a@b.co" },
     roughQuote: { city: "McKinney" },
   } as any);
@@ -217,7 +246,11 @@ Deno.test("fieldsFromFacts: maps ConversationFacts to the canonical shape", () =
 });
 
 Deno.test("Regression: correcting one field does not clear unrelated fields", () => {
-  let s = mergeFields(empty(), { services: ["windowCleaning"], squareFootage: 2000, stories: 2 });
+  let s = mergeFields(empty(), {
+    services: ["windowCleaning"],
+    squareFootage: 2000,
+    stories: 2,
+  });
   s = mergeFields(s, { squareFootage: 2400 });
   assertEquals(s.fields.stories, 2);
   assertEquals(s.fields.services, ["windowCleaning"]);
@@ -269,11 +302,21 @@ Deno.test("computeRequired: unit and area services never inherit home fields", (
     }),
     [],
   );
-  assertEquals(computeRequired({ services: ["drivewayCleaning"] }), ["drivewaySqft", "drivewaySurface"]);
-  const multi = computeRequired({ services: ["drivewayCleaning", "screenRepair"] });
+  assertEquals(computeRequired({ services: ["drivewayCleaning"] }), [
+    "drivewaySqft",
+    "drivewaySurface",
+  ]);
+  const multi = computeRequired({
+    services: ["drivewayCleaning", "screenRepair"],
+  });
   assertEquals(
     multi.sort(),
-    ["drivewaySqft", "drivewaySurface", "screenRepairCount", "screenRepairScopeType"].sort(),
+    [
+      "drivewaySqft",
+      "drivewaySurface",
+      "screenRepairCount",
+      "screenRepairScopeType",
+    ].sort(),
   );
 });
 
@@ -327,11 +370,20 @@ Deno.test("changeWindowScope: partial → whole_home invalidates partial pricing
 
 Deno.test("addCommercialLocation: multiple locations persist distinctly", () => {
   let s = empty();
-  s = addCommercialLocation(s, { address: "100 Main St, McKinney", sides: "outside_only" });
-  s = addCommercialLocation(s, { address: "200 Oak Ave, Frisco", sides: "outside_only" });
+  s = addCommercialLocation(s, {
+    address: "100 Main St, McKinney",
+    sides: "outside_only",
+  });
+  s = addCommercialLocation(s, {
+    address: "200 Oak Ave, Frisco",
+    sides: "outside_only",
+  });
   assertEquals(s.fields.commercialLocations?.length, 2);
   // Repeat location merges rather than duplicating
-  s = addCommercialLocation(s, { address: "100 Main St, McKinney", stories: 2 });
+  s = addCommercialLocation(s, {
+    address: "100 Main St, McKinney",
+    stories: 2,
+  });
   assertEquals(s.fields.commercialLocations?.length, 2);
   assertEquals(s.fields.commercialLocations?.[0].stories, 2);
 });
@@ -367,4 +419,123 @@ Deno.test("nextQuestion: selected add-on requirements never dead-end question se
     },
   };
   assertEquals(nextQuestion(patio).nextField, "houseWashPatioPricingMethod");
+});
+
+Deno.test("tenant authority predicates both conversation and quote-session reads", async () => {
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const filters: Array<
+    { table: string; op: string; key: string; value: unknown }
+  > = [];
+  const rows: Record<string, Record<string, unknown>> = {
+    chat_conversations: {
+      quote_session_id: "session-a",
+      organization_id: organizationId,
+    },
+    quote_sessions: {
+      id: "session-a",
+      organization_id: organizationId,
+      channel: "voice",
+      conversation_ids: ["conversation-a"],
+      fields: {},
+      field_status: {},
+      required_remaining: [],
+      quote_status: "none",
+      booking_ready: false,
+    },
+  };
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select: () => chain,
+        eq(key: string, value: unknown) {
+          filters.push({ table, op: "eq", key, value });
+          return chain;
+        },
+        is(key: string, value: unknown) {
+          filters.push({ table, op: "is", key, value });
+          return chain;
+        },
+        maybeSingle: () =>
+          Promise.resolve({ data: rows[table] ?? null, error: null }),
+      };
+      return chain;
+    },
+  };
+
+  const session = await findByConversation(
+    supabase,
+    "conversation-a",
+    organizationId,
+  );
+  assertEquals(session?.organizationId, organizationId);
+  assertEquals(
+    filters.filter((filter) =>
+      filter.key === "organization_id" && filter.op === "eq"
+    ),
+    [
+      {
+        table: "chat_conversations",
+        op: "eq",
+        key: "organization_id",
+        value: organizationId,
+      },
+      {
+        table: "quote_sessions",
+        op: "eq",
+        key: "organization_id",
+        value: organizationId,
+      },
+    ],
+  );
+});
+
+Deno.test("new scoped sessions write one server-resolved organization", async () => {
+  const organizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const inserts: Record<string, unknown>[] = [];
+  const conversationUpdates: Record<string, unknown>[] = [];
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        is: () => chain,
+        maybeSingle: () => Promise.resolve({ data: null, error: null }),
+        insert(value: Record<string, unknown>) {
+          inserts.push(value);
+          return chain;
+        },
+        update(value: Record<string, unknown>) {
+          if (table === "chat_conversations") conversationUpdates.push(value);
+          return chain;
+        },
+        single: () =>
+          Promise.resolve({
+            data: table === "quote_sessions"
+              ? {
+                id: "session-new",
+                organization_id: organizationId,
+                channel: "voice",
+                conversation_ids: ["conversation-new"],
+                fields: {},
+                field_status: {},
+                required_remaining: [],
+                quote_status: "none",
+                booking_ready: false,
+              }
+              : null,
+            error: null,
+          }),
+      };
+      return chain;
+    },
+  };
+
+  const session = await findOrCreateForConversation(supabase, {
+    conversationId: "conversation-new",
+    channel: "voice",
+    resolvedOrganizationId: organizationId,
+  });
+  assertEquals(session.organizationId, organizationId);
+  assertEquals(inserts[0]?.organization_id, organizationId);
+  assertEquals(conversationUpdates[0]?.organization_id, organizationId);
 });
