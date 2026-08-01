@@ -19,13 +19,19 @@
     <!--
       Meta Pixel base loader. The pixel ID is injected at build time via
       the VITE_META_PIXEL_ID env variable. When missing, the pixel is not
-      initialized and every fireLead/fireSchedule call becomes a no-op.
-      Attribution capture still runs and dedupe still records event IDs.
+      initialized and browser Meta event calls remain retryable no-ops.
+      Attribution capture still runs unless consent is explicitly denied.
     -->
     <script>
       (function () {
         var pixelId = "%VITE_META_PIXEL_ID%";
         if (!pixelId || pixelId.indexOf("VITE_META_PIXEL_ID") !== -1) return;
+        try {
+          if (window.localStorage.getItem("bluladder_meta_tracking_consent") === "denied") return;
+        } catch (_) {
+          // Storage may be unavailable. Preserve the current unknown-consent
+          // policy; the internal consent UI dependency is documented separately.
+        }
         !(function (f, b, e, v, n, t, s) {
           if (f.fbq) return;
           n = f.fbq = function () {

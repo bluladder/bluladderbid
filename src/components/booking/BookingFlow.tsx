@@ -16,7 +16,7 @@ import { CompleteYourRefresh } from './CompleteYourRefresh';
 import { LiveQuoteBar } from './LiveQuoteBar';
 import { getStoredUtmParams } from '@/hooks/useUtmTracking';
 import { readAttribution } from '@/lib/attribution/attribution';
-import { fireSchedule, fireCompleteRegistration } from '@/lib/attribution/metaPixel';
+import { fireSchedule } from '@/lib/attribution/metaPixel';
 import {
   bridgeFireBookingCompleted,
   bridgeFireBookingFailed,
@@ -543,10 +543,8 @@ export function BookingFlow({
         bookedServices: servicesSelected,
       });
 
-      // Meta Pixel: Schedule + CompleteRegistration fire ONLY when Jobber
-      // returned a real visit id. Event IDs are derived from the booking id
-      // so page refreshes, idempotent replays, and reopening the confirmed
-      // booking never fire a duplicate.
+      // Meta Pixel Schedule fires only after the Edge function returned both
+      // the durable local booking id and the confirmed Jobber visit id.
       if (data.bookingId && data.jobberVisitId) {
         const bookingForPixel = {
           id: String(data.bookingId),
@@ -556,13 +554,11 @@ export function BookingFlow({
           services_selected: servicesSelected,
         };
         fireSchedule(bookingForPixel);
-        fireCompleteRegistration(bookingForPixel);
         // Mirror the successful-booking signal to the marketing overlay,
         // gated by the SAME successful-Jobber-visit condition as fireSchedule.
         // Sender-side dedup guarantees confirmation-page refreshes and
         // idempotent replays do not resend. This does NOT create a second
-        // Meta Schedule / CompleteRegistration event — Meta ownership stays
-        // with fireSchedule / fireCompleteRegistration.
+        // Meta Schedule event — Meta ownership stays with fireSchedule.
         bridgeFireBookingCompleted({
           id: String(data.bookingId),
           jobberVisitId: String(data.jobberVisitId),

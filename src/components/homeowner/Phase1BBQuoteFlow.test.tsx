@@ -11,6 +11,9 @@ import {
 } from '@/types/homeowner';
 
 let addonAdded = false;
+const { fireInitiateCheckoutMock } = vi.hoisted(() => ({
+  fireInitiateCheckoutMock: vi.fn(),
+}));
 
 vi.mock('@/hooks/useServerQuoteCalculation', () => ({
   useServerQuoteCalculation: () => {
@@ -67,7 +70,11 @@ vi.mock('@/lib/attribution/attribution', () => ({
   getOrCreateSourceSessionId: () => 'phase-1bb-session',
   readAttribution: () => ({}),
 }));
-vi.mock('@/lib/attribution/metaPixel', () => ({ deriveQuoteId: () => 'phase-1bb-quote', fireLead: vi.fn() }));
+vi.mock('@/lib/attribution/metaPixel', () => ({
+  deriveQuoteFingerprint: () => 'phase-1bb-quote',
+  fireInitiateCheckout: fireInitiateCheckoutMock,
+  fireLead: vi.fn(),
+}));
 vi.mock('@/lib/bridge/bluladderBidPostMessage', () => ({ bridgeFireQuoteSubmitted: vi.fn() }));
 vi.mock('@/integrations/supabase/client', () => ({ supabase: { functions: { invoke: vi.fn() } } }));
 vi.mock('@/components/booking/BookingFlow', () => ({
@@ -148,6 +155,7 @@ function QuoteFlowHarness() {
 describe('Phase 1B-B quote-to-scheduling flow', () => {
   beforeEach(() => {
     addonAdded = false;
+    fireInitiateCheckoutMock.mockReset();
   });
 
   it('uses the exact truthful one-time CTA without booking language or a separate price pill', () => {
@@ -200,11 +208,19 @@ describe('Phase 1B-B quote-to-scheduling flow', () => {
   it('moves directly into scheduling intake with no redundant review screen', () => {
     render(<ReviewHarness />);
     const cta = screen.getByRole('button', { name: 'Choose Appointment Time' });
+    expect(fireInitiateCheckoutMock).not.toHaveBeenCalled();
     expect(cta.tagName).toBe('BUTTON');
     cta.focus();
     expect(document.activeElement).toBe(cta);
     expect(cta.className).toContain('w-full');
     fireEvent.click(cta);
+    expect(fireInitiateCheckoutMock).toHaveBeenCalledWith({
+      id: 'phase-1bb-quote',
+      quoted_total: 400,
+      service_count: 1,
+      services_selected: ['houseWash'],
+      firm: true,
+    });
     const scheduling = screen.getByTestId('scheduling-flow');
     expect(scheduling).toHaveAttribute('data-initial-step', 'info');
     expect(screen.queryByText('Review Your Services')).toBeNull();

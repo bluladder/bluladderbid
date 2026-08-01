@@ -5,6 +5,10 @@ import {
   __resetAttributionForTests,
   getOrCreateSourceSessionId,
 } from './attribution';
+import {
+  __resetMetaTrackingConsentForTests,
+  setMetaTrackingConsent,
+} from './metaConsent';
 
 function url(params: Record<string, string>): URLSearchParams {
   return new URLSearchParams(params);
@@ -13,6 +17,9 @@ function url(params: Record<string, string>): URLSearchParams {
 describe('attribution', () => {
   beforeEach(() => {
     __resetAttributionForTests();
+    __resetMetaTrackingConsentForTests();
+    document.cookie = '_fbp=; Max-Age=0; path=/';
+    document.cookie = '_fbc=; Max-Age=0; path=/';
   });
 
   it('captures all whitelisted params and creates a stable session id', () => {
@@ -63,5 +70,25 @@ describe('attribution', () => {
     const long = 'x'.repeat(500);
     const s = captureAttribution(url({ utm_campaign: long }));
     expect((s.first_touch.utm_campaign ?? '').length).toBeLessThanOrEqual(200);
+  });
+
+  it('captures Meta _fbp and _fbc cookies when available', () => {
+    document.cookie = '_fbp=fb.1.1700000000000.123456789; path=/';
+    document.cookie = '_fbc=fb.1.1700000000000.ClickId123; path=/';
+    const state = captureAttribution(url({ utm_source: 'facebook', fbclid: 'ClickId123' }));
+    expect(state.fbp).toBe('fb.1.1700000000000.123456789');
+    expect(state.fbc).toBe('fb.1.1700000000000.ClickId123');
+    expect(state.first_touch.fbp).toBe(state.fbp);
+    expect(state.first_touch.fbc).toBe(state.fbc);
+    expect(readAttribution()).toMatchObject({ fbp: state.fbp, fbc: state.fbc });
+  });
+
+  it('does not read Meta cookies after explicit consent denial', () => {
+    document.cookie = '_fbp=fb.1.1700000000000.123456789; path=/';
+    document.cookie = '_fbc=fb.1.1700000000000.ClickId123; path=/';
+    setMetaTrackingConsent('denied');
+    const state = captureAttribution(url({ utm_source: 'facebook', fbclid: 'ClickId123' }));
+    expect(state.fbp).toBeUndefined();
+    expect(state.fbc).toBeUndefined();
   });
 });
