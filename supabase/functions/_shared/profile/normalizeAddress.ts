@@ -5,31 +5,54 @@
 // ============================================================================
 
 const STREET_SUFFIX: Record<string, string> = {
-  street: "st", str: "st", st: "st",
-  avenue: "ave", ave: "ave", av: "ave",
-  boulevard: "blvd", blvd: "blvd",
-  road: "rd", rd: "rd",
-  drive: "dr", dr: "dr",
-  lane: "ln", ln: "ln",
-  court: "ct", ct: "ct",
-  place: "pl", pl: "pl",
-  terrace: "ter", ter: "ter",
-  parkway: "pkwy", pkwy: "pkwy",
-  highway: "hwy", hwy: "hwy",
-  circle: "cir", cir: "cir",
-  trail: "trl", trl: "trl",
+  street: "st",
+  str: "st",
+  st: "st",
+  avenue: "ave",
+  ave: "ave",
+  av: "ave",
+  boulevard: "blvd",
+  blvd: "blvd",
+  road: "rd",
+  rd: "rd",
+  drive: "dr",
+  dr: "dr",
+  lane: "ln",
+  ln: "ln",
+  court: "ct",
+  ct: "ct",
+  place: "pl",
+  pl: "pl",
+  terrace: "ter",
+  ter: "ter",
+  parkway: "pkwy",
+  pkwy: "pkwy",
+  highway: "hwy",
+  hwy: "hwy",
+  circle: "cir",
+  cir: "cir",
+  trail: "trl",
+  trl: "trl",
   way: "way",
 };
 
 const DIRECTIONALS: Record<string, string> = {
-  north: "n", n: "n",
-  south: "s", s: "s",
-  east: "e", e: "e",
-  west: "w", w: "w",
-  northeast: "ne", ne: "ne",
-  northwest: "nw", nw: "nw",
-  southeast: "se", se: "se",
-  southwest: "sw", sw: "sw",
+  north: "n",
+  n: "n",
+  south: "s",
+  s: "s",
+  east: "e",
+  e: "e",
+  west: "w",
+  w: "w",
+  northeast: "ne",
+  ne: "ne",
+  northwest: "nw",
+  nw: "nw",
+  southeast: "se",
+  se: "se",
+  southwest: "sw",
+  sw: "sw",
 };
 
 export interface ParsedAddress {
@@ -40,10 +63,39 @@ export interface ParsedAddress {
   normalized: string;
 }
 
+/** Build the only display form accepted by the booking address validator. */
+export function formatServiceAddress(
+  row:
+    | {
+      street?: unknown;
+      city?: unknown;
+      state?: unknown;
+      postal_code?: unknown;
+    }
+    | null
+    | undefined,
+): string | null {
+  if (!row) return null;
+  const text = (value: unknown) =>
+    typeof value === "string" ? value.trim() : "";
+  const street = text(row.street);
+  const city = text(row.city);
+  const state = text(row.state).toUpperCase();
+  const postalCode = text(row.postal_code);
+  if (!street || !city || !state || !postalCode) return null;
+  return `${street}, ${city}, ${state} ${postalCode}`;
+}
+
 /** Parse a "street, city, ST 12345" style string into components. Any
  * unparseable input still yields a stable normalized key from the raw text. */
 export function parseAddress(raw: string | null | undefined): ParsedAddress {
-  const empty: ParsedAddress = { street: "", city: "", state: "", postalCode: "", normalized: "" };
+  const empty: ParsedAddress = {
+    street: "",
+    city: "",
+    state: "",
+    postalCode: "",
+    normalized: "",
+  };
   if (!raw) return empty;
   const cleaned = String(raw).replace(/\s+/g, " ").trim();
   if (!cleaned) return empty;
@@ -53,11 +105,18 @@ export function parseAddress(raw: string | null | undefined): ParsedAddress {
     street = parts[0];
     city = parts[1];
     const m = parts[2].match(/^([A-Za-z]{2})\s*(\d{5}(?:-\d{4})?)?/);
-    if (m) { state = m[1]; postalCode = m[2] ?? ""; }
+    if (m) {
+      state = m[1];
+      postalCode = m[2] ?? "";
+    }
   } else if (parts.length === 2) {
     street = parts[0];
     const m = parts[1].match(/^(.*?)\s+([A-Za-z]{2})\s+(\d{5})/);
-    if (m) { city = m[1]; state = m[2]; postalCode = m[3]; } else city = parts[1];
+    if (m) {
+      city = m[1];
+      state = m[2];
+      postalCode = m[3];
+    } else city = parts[1];
   } else {
     street = parts[0];
   }
@@ -67,7 +126,12 @@ export function parseAddress(raw: string | null | undefined): ParsedAddress {
 
 /** Canonical normalized key: lowercase, punctuation-free, common
  *  street-suffix and directional abbreviations, unit stripped. */
-export function normalizeKey(street: string, city = "", state = "", postal = ""): string {
+export function normalizeKey(
+  street: string,
+  city = "",
+  state = "",
+  postal = "",
+): string {
   const s = tokens(street).map(canonToken).filter(Boolean).join(" ");
   const c = tokens(city).join(" ");
   return [s, c, state.toLowerCase(), postal.replace(/\D/g, "").slice(0, 5)]
@@ -101,7 +165,9 @@ const DIRECTIONAL_TOKENS = new Set(Object.keys(DIRECTIONALS));
 
 /** Alternate address strings to retry when geocoding fails on a spaced
  *  compound street name. Returns [] when no plausible alternative exists. */
-export function deSpacedStreetCandidates(raw: string | null | undefined): string[] {
+export function deSpacedStreetCandidates(
+  raw: string | null | undefined,
+): string[] {
   const parsed = parseAddress(raw);
   if (!parsed.street) return [];
   const parts = parsed.street.replace(/\s+/g, " ").trim().split(" ");
@@ -113,12 +179,18 @@ export function deSpacedStreetCandidates(raw: string | null | undefined): string
 
   // Keep a trailing suffix ("Lane") and any leading directional ("North").
   let suffix = "";
-  if (body.length > 1 && SUFFIX_TOKENS.has(body[body.length - 1].toLowerCase().replace(/\./g, ""))) {
+  if (
+    body.length > 1 &&
+    SUFFIX_TOKENS.has(body[body.length - 1].toLowerCase().replace(/\./g, ""))
+  ) {
     suffix = body[body.length - 1];
     body = body.slice(0, -1);
   }
   let directional = "";
-  if (body.length > 1 && DIRECTIONAL_TOKENS.has(body[0].toLowerCase().replace(/\./g, ""))) {
+  if (
+    body.length > 1 &&
+    DIRECTIONAL_TOKENS.has(body[0].toLowerCase().replace(/\./g, ""))
+  ) {
     directional = body[0];
     body = body.slice(1);
   }
@@ -127,10 +199,15 @@ export function deSpacedStreetCandidates(raw: string | null | undefined): string
   const joined = body
     .map((w, i) => (i === 0 ? w : w.toLowerCase()))
     .join("");
-  const streetCandidate = [houseNumber, directional, joined, suffix].filter(Boolean).join(" ");
+  const streetCandidate = [houseNumber, directional, joined, suffix].filter(
+    Boolean,
+  ).join(" ");
   if (streetCandidate.toLowerCase() === parsed.street.toLowerCase()) return [];
 
-  const tail = [parsed.city, [parsed.state, parsed.postalCode].filter(Boolean).join(" ")]
+  const tail = [
+    parsed.city,
+    [parsed.state, parsed.postalCode].filter(Boolean).join(" "),
+  ]
     .filter(Boolean)
     .join(", ");
   const candidate = tail ? `${streetCandidate}, ${tail}` : streetCandidate;

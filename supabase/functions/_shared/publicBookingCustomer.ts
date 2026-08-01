@@ -40,6 +40,20 @@ export interface JobberPropertyCandidate {
   } | null;
 }
 
+export interface JobberClientCandidate {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  emails?: Array<{ address?: string | null }> | null;
+  phones?: Array<{ number?: string | null }> | null;
+}
+
+export type ExactJobberClientResolution =
+  | { status: "missing" }
+  | { status: "resolved"; clientId: string }
+  | { status: "ambiguous" }
+  | { status: "conflict" };
+
 function normalizeWords(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -89,7 +103,9 @@ export function validatePublicBookingCustomer(
 ): PublicBookingCustomerValidation {
   const firstName = normalizeWords(raw?.firstName ?? "");
   const lastName = normalizeWords(raw?.lastName ?? "");
-  if (!firstName || !lastName || firstName.length > 50 || lastName.length > 50) {
+  if (
+    !firstName || !lastName || firstName.length > 50 || lastName.length > 50
+  ) {
     return {
       ok: false,
       code: "INVALID_CUSTOMER_NAME",
@@ -123,7 +139,8 @@ export function validatePublicBookingCustomer(
     return {
       ok: false,
       code: "INCOMPLETE_SERVICE_ADDRESS",
-      message: "Please provide the full service street address, city, state, and ZIP code.",
+      message:
+        "Please provide the full service street address, city, state, and ZIP code.",
     };
   }
   return {
@@ -133,7 +150,8 @@ export function validatePublicBookingCustomer(
       lastName,
       email,
       phone,
-      address: `${address.street1}, ${address.city}, ${address.province} ${address.postalCode}`,
+      address:
+        `${address.street1}, ${address.city}, ${address.province} ${address.postalCode}`,
     },
     address,
   };
@@ -143,8 +161,15 @@ export function findMatchingJobberProperty(
   expected: ServiceAddress,
   candidates: JobberPropertyCandidate[],
 ): JobberPropertyCandidate | null {
+  return findMatchingJobberProperties(expected, candidates)[0] ?? null;
+}
+
+export function findMatchingJobberProperties(
+  expected: ServiceAddress,
+  candidates: JobberPropertyCandidate[],
+): JobberPropertyCandidate[] {
   const expectedPostal = expected.postalCode.slice(0, 5);
-  return candidates.find((candidate) => {
+  return candidates.filter((candidate) => {
     const address = candidate.address;
     if (!candidate.id || !address) return false;
     return (
@@ -153,5 +178,53 @@ export function findMatchingJobberProperty(
       comparable(address.province) === comparable(expected.province) &&
       comparable(address.postalCode).slice(0, 5) === expectedPostal
     );
-  }) ?? null;
+  });
+}
+
+export function resolveJobberClientByExactEmail(
+  expectedEmail: string,
+  candidates: JobberClientCandidate[],
+): ExactJobberClientResolution {
+  const expected = expectedEmail.trim().toLowerCase();
+  const exact = candidates.filter((candidate) =>
+    !!candidate.id &&
+    (candidate.emails ?? []).some((entry) =>
+      (entry.address ?? "").trim().toLowerCase() === expected
+    )
+  );
+  if (exact.length === 0) return { status: "missing" };
+  if (exact.length > 1) return { status: "ambiguous" };
+  return { status: "resolved", clientId: exact[0].id };
+}
+
+/**
+ * Resolve an existing Jobber client only when every verified contact fact
+ * agrees. Email search is discovery, never authority by itself.
+ */
+export function resolveJobberClientByVerifiedContact(
+  expectedCustomer: PublicBookingCustomer,
+  candidates: JobberClientCandidate[],
+): ExactJobberClientResolution {
+  const email = expectedCustomer.email.trim().toLowerCase();
+  const exactEmail = candidates.filter((candidate) =>
+    !!candidate.id &&
+    (candidate.emails ?? []).some((entry) =>
+      (entry.address ?? "").trim().toLowerCase() === email
+    )
+  );
+  if (exactEmail.length === 0) return { status: "missing" };
+
+  const expectedPhone = normalizeUsPhone(expectedCustomer.phone);
+  const exactContact = exactEmail.filter((candidate) =>
+    comparable(candidate.firstName) ===
+      comparable(expectedCustomer.firstName) &&
+    comparable(candidate.lastName) === comparable(expectedCustomer.lastName) &&
+    !!expectedPhone &&
+    (candidate.phones ?? []).some((entry) =>
+      normalizeUsPhone(entry.number ?? "") === expectedPhone
+    )
+  );
+  if (exactContact.length === 0) return { status: "conflict" };
+  if (exactContact.length > 1) return { status: "ambiguous" };
+  return { status: "resolved", clientId: exactContact[0].id };
 }

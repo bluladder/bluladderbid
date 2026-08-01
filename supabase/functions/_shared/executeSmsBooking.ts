@@ -104,6 +104,7 @@ export interface ExecuteBookingResult {
 export interface BookingCreatorInput {
   idempotencyKey: string;
   sessionId: string;
+  preReservedGroupId?: string;
   customer: { email: string; firstName: string; lastName: string; phone?: string; address?: string };
   scheduledStart: string;
   scheduledEnd: string;
@@ -698,6 +699,7 @@ export async function executeSmsBooking(
     // reserve_booking_slot returns idempotent replay on this key.
     idempotencyKey: bookingIdempotencyKey,
     sessionId: pres.id,
+    preReservedGroupId: pres.hold_group_id,
     customer: { email, firstName: nameParts.first, lastName: nameParts.last, phone: customer.phone ?? undefined, address },
     scheduledStart,
     scheduledEnd,

@@ -32,3 +32,14 @@ export function scheduledIntervalMinutes(
   }
   return Math.round((end - start) / 60_000);
 }
+
+/** Postgres may serialize the same timestamptz with a different offset/shape. */
+export function sameScheduledInstant(
+  leftIso: string | null | undefined,
+  rightIso: string | null | undefined,
+): boolean {
+  if (!leftIso || !rightIso) return false;
+  const left = Date.parse(leftIso);
+  const right = Date.parse(rightIso);
+  return Number.isFinite(left) && Number.isFinite(right) && left === right;
+}

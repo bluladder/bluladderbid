@@ -144,6 +144,153 @@ export interface JobberGraphQLResult<T> {
   data?: T;
   errors?: Array<{ message: string }>;
   throttled?: boolean;
+  /** A mutation may have reached Jobber, but no authoritative response exists. */
+  outcomeUncertain?: boolean;
+}
+
+export interface JobberMutationDependencies {
+  getAccessToken?: () => Promise<string | null>;
+  fetch?: typeof fetch;
+}
+
+export interface CanonicalJobberServiceLine {
+  name: string;
+  price: number;
+  description?: string;
+}
+
+export interface CanonicalJobberPriceAdjustment {
+  label: string;
+  kind: "discount" | "surcharge";
+  amount: number;
+}
+
+export interface JobberBookingLineItem {
+  name: string;
+  description: string;
+  unitPrice: number;
+  quantity: 1;
+  saveToProductsAndServices: false;
+}
+
+/**
+ * Build provider lines from the canonical pricing result without counting an
+ * embedded surcharge twice. Canonical service/jobber lines already include
+ * every surcharge; contract discounts remain separate negative lines.
+ */
+export function buildJobberBookingLineItems(input: {
+  services: CanonicalJobberServiceLine[];
+  priceAdjustments?: CanonicalJobberPriceAdjustment[];
+  discountAmount?: number;
+  discountCode?: string;
+}): JobberBookingLineItem[] {
+  const lines: JobberBookingLineItem[] = input.services.map((service) => ({
+    name: service.name,
+    description: service.description ?? "",
+    unitPrice: service.price,
+    quantity: 1,
+    saveToProductsAndServices: false,
+  }));
+  for (const adjustment of input.priceAdjustments ?? []) {
+    if (adjustment.kind !== "discount") continue;
+    lines.push({
+      name: adjustment.label,
+      description: "Canonical discount",
+      unitPrice: -adjustment.amount,
+      quantity: 1,
+      saveToProductsAndServices: false,
+    });
+  }
+  if ((input.discountAmount ?? 0) > 0) {
+    lines.push({
+      name: `Discount${input.discountCode ? ` (${input.discountCode})` : ""}`,
+      description: "Promotional discount",
+      unitPrice: -(input.discountAmount ?? 0),
+      quantity: 1,
+      saveToProductsAndServices: false,
+    });
+  }
+  return lines;
+}
+
+export function jobberBookingLineItemsTotal(
+  lineItems: JobberBookingLineItem[],
+): number {
+  return Math.round(
+    lineItems.reduce(
+      (total, item) => total + item.unitPrice * item.quantity,
+      0,
+    ) * 100,
+  ) / 100;
+}
+
+/**
+ * Execute a non-idempotent Jobber mutation exactly once. Retrying a transport
+ * failure can duplicate a client, property, job, or visit after Jobber accepted
+ * the first request but its response was lost. Callers must preserve their
+ * local idempotency reservation and reconcile any `outcomeUncertain` result.
+ */
+export async function jobberGraphQLMutation<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  dependencies: JobberMutationDependencies = {},
+): Promise<JobberGraphQLResult<T>> {
+  const accessToken = await (
+    dependencies.getAccessToken ?? getJobberAccessToken
+  )();
+  if (!accessToken) {
+    return { errors: [{ message: "No valid Jobber access token" }] };
+  }
+  const fetchMutation = dependencies.fetch ?? fetch;
+  try {
+    const response = await fetchMutation("https://api.getjobber.com/api/graphql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
+        "X-JOBBER-GRAPHQL-VERSION": "2025-04-16",
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    let result: JobberGraphQLResult<T>;
+    try {
+      result = await response.json();
+    } catch {
+      return {
+        errors: [{ message: `Malformed Jobber response: ${response.status}` }],
+        outcomeUncertain: response.ok || response.status >= 500,
+      };
+    }
+    if (response.status === 429) {
+      return {
+        ...result,
+        errors: result.errors?.length
+          ? result.errors
+          : [{ message: "Jobber mutation rate limited" }],
+        throttled: true,
+      };
+    }
+    if (!response.ok) {
+      return {
+        ...result,
+        errors: result.errors?.length
+          ? result.errors
+          : [{ message: `Jobber mutation API error: ${response.status}` }],
+        outcomeUncertain: response.status >= 500,
+      };
+    }
+    if (result.errors?.length) {
+      return { ...result, outcomeUncertain: true };
+    }
+    return result;
+  } catch (error) {
+    return {
+      errors: [{
+        message: error instanceof Error ? error.message : String(error),
+      }],
+      outcomeUncertain: true,
+    };
+  }
 }
 
 // Execute GraphQL query against Jobber API with retry and backoff
