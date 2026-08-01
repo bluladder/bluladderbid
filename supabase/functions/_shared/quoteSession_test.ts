@@ -211,10 +211,24 @@ Deno.test("computeRequired: unit and area services never inherit home fields", (
     }),
     [],
   );
-  assertEquals(computeRequired({ services: ["screenRepair"] }), ["screenRepairCount"]);
+  assertEquals(computeRequired({ services: ["screenRepair"] }), [
+    "screenRepairCount",
+    "screenRepairScopeType",
+  ]);
+  assertEquals(
+    computeRequired({
+      services: ["screenRepair"],
+      screenRepairCount: 4,
+      screenRepairScopeType: "standard_removable_reusable_frame",
+    }),
+    [],
+  );
   assertEquals(computeRequired({ services: ["drivewayCleaning"] }), ["drivewaySqft", "drivewaySurface"]);
   const multi = computeRequired({ services: ["drivewayCleaning", "screenRepair"] });
-  assertEquals(multi.sort(), ["drivewaySqft", "drivewaySurface", "screenRepairCount"].sort());
+  assertEquals(
+    multi.sort(),
+    ["drivewaySqft", "drivewaySurface", "screenRepairCount", "screenRepairScopeType"].sort(),
+  );
 });
 
 Deno.test("computeRequired: commercial custom bid asks for locations + contact method, not sqft", () => {
