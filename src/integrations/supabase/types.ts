@@ -1593,6 +1593,7 @@ export type Database = {
           manual_review_reason: string | null
           marketing_consent: boolean
           needs_attention: boolean
+          organization_id: string | null
           pending_draft_reply: string | null
           pricing_version: number | null
           property_id: string | null
@@ -1660,6 +1661,7 @@ export type Database = {
           manual_review_reason?: string | null
           marketing_consent?: boolean
           needs_attention?: boolean
+          organization_id?: string | null
           pending_draft_reply?: string | null
           pricing_version?: number | null
           property_id?: string | null
@@ -1727,6 +1729,7 @@ export type Database = {
           manual_review_reason?: string | null
           marketing_consent?: boolean
           needs_attention?: boolean
+          organization_id?: string | null
           pending_draft_reply?: string | null
           pricing_version?: number | null
           property_id?: string | null
@@ -1766,6 +1769,13 @@ export type Database = {
             columns: ["confirmed_email_sms_id"]
             isOneToOne: false
             referencedRelation: "sms_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_conversations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -4270,6 +4280,7 @@ export type Database = {
           human_pricing_required: boolean
           id: string
           last_step: string | null
+          organization_id: string | null
           phone_e164: string | null
           property_id: string | null
           quote_id: string | null
@@ -4292,6 +4303,7 @@ export type Database = {
           human_pricing_required?: boolean
           id?: string
           last_step?: string | null
+          organization_id?: string | null
           phone_e164?: string | null
           property_id?: string | null
           quote_id?: string | null
@@ -4314,6 +4326,7 @@ export type Database = {
           human_pricing_required?: boolean
           id?: string
           last_step?: string | null
+          organization_id?: string | null
           phone_e164?: string | null
           property_id?: string | null
           quote_id?: string | null
@@ -4323,6 +4336,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "quote_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "quote_sessions_property_id_fkey"
             columns: ["property_id"]
