@@ -16,6 +16,7 @@ import {
 } from "../_shared/voiceAdapter.ts";
 import { BUILD_FEATURES, BUILD_ID } from "../_shared/buildMarker.ts";
 import {
+  legacyVoiceExecutionAllowed,
   rolloutLogPayload,
   selectRoute,
 } from "../_shared/workflow/rolloutRoute.ts";
@@ -25,6 +26,10 @@ import {
 } from "../_shared/workflow/workflowController.ts";
 import { ensureVoiceConversation } from "../_shared/voiceAdapter.ts";
 import { normalizeVoiceMessages } from "../_shared/voice/voiceInputNormalizer.ts";
+import {
+  resolveVoiceOrganizationAuthority,
+  resolveVoiceProviderOrganizationAuthority,
+} from "../_shared/voice/voiceOrganizationAuthority.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -80,7 +85,15 @@ function checkBearer(req: Request, secret: string | undefined): boolean {
  * Emit one deterministic controller reply using the same OpenAI-compatible SSE
  * contract Vapi expects for stream=true requests.
  */
-function buildStreamingTextResponse(model: string, spoken: string): Response {
+function buildStreamingTextResponse(
+  model: string,
+  spoken: string,
+  metadata: {
+    action?: { kind: string; reasonCode?: string };
+    event?: string;
+    route?: string;
+  } = {},
+): Response {
   const encoder = new TextEncoder();
   const id = `chatcmpl-${crypto.randomUUID()}`;
   const created = Math.floor(Date.now() / 1000);
@@ -124,9 +137,10 @@ function buildStreamingTextResponse(model: string, spoken: string): Response {
         }],
         bluladder: {
           buildId: BUILD_ID,
-          action: { kind: "speak" },
+          action: metadata.action ?? { kind: "speak" },
           state: "workflow_controller",
-          route: "controller",
+          route: metadata.route ?? "controller",
+          ...(metadata.event ? { event: metadata.event } : {}),
         },
       });
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -141,6 +155,34 @@ function buildStreamingTextResponse(model: string, spoken: string): Response {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       "Connection": "keep-alive",
+    },
+  });
+}
+
+function buildAuthorityBlockedResponse(
+  model: string,
+  stream: boolean,
+  reasonCode: string,
+): Response {
+  const spoken =
+    "I can't safely access this account right now, so I haven't opened, changed, or booked anything. A team member can help verify the account setup.";
+  const action = { kind: "safe_failure" as const, reasonCode };
+  if (stream) {
+    return buildStreamingTextResponse(model, spoken, {
+      action,
+      event: "organization_authority_blocked",
+      route: "authority_gate",
+    });
+  }
+  return buildNonStreamingResponse(model, {
+    content: spoken,
+    action,
+    orchestrator: {
+      reply: spoken,
+      toolEvents: [],
+      events: ["organization_authority_blocked"],
+      state: "authority_blocked",
+      voice: { type: "safe_failure", reasonCode },
     },
   });
 }
@@ -215,10 +257,81 @@ Deno.serve(async (req) => {
     }));
   }
 
+  // ---- Tenant authority ingress gate ------------------------------------
+  // Provider mappings are resolved before any tenant-owned conversation is
+  // read or created. ANI, email, body metadata, and caller-provided tenant IDs
+  // are never authority. The created/loaded conversation is then reconciled as
+  // additional trusted evidence, and both rollout lanes receive the same
+  // resolved organization.
+  let identity: Awaited<ReturnType<typeof ensureVoiceConversation>>;
+  let organizationAuthority: Awaited<
+    ReturnType<typeof resolveVoiceOrganizationAuthority>
+  >;
+  let providerAuthorityResolved = false;
+  try {
+    const providerAuthority = await resolveVoiceProviderOrganizationAuthority(
+      supabase,
+      request.rawBody,
+    );
+    if (providerAuthority.status !== "resolved") {
+      console.warn(JSON.stringify({
+        at: "voice-llm-adapter",
+        buildId: BUILD_ID,
+        reason: "organization_authority_blocked",
+        authorityCode: providerAuthority.code,
+      }));
+      return buildAuthorityBlockedResponse(
+        model,
+        request.stream,
+        providerAuthority.code,
+      );
+    }
+    identity = await ensureVoiceConversation({
+      supabase,
+      request,
+      organizationId: providerAuthority.organizationId,
+    });
+    organizationAuthority = await resolveVoiceOrganizationAuthority(
+      supabase,
+      {
+        conversationId: identity.conversationId,
+        rawBody: request.rawBody,
+      },
+    );
+    if (
+      organizationAuthority.status !== "resolved" ||
+      organizationAuthority.organizationId !== providerAuthority.organizationId
+    ) {
+      const code = organizationAuthority.status === "blocked"
+        ? organizationAuthority.code
+        : "conflicting_authority";
+      console.warn(JSON.stringify({
+        at: "voice-llm-adapter",
+        buildId: BUILD_ID,
+        reason: "organization_authority_reconciliation_blocked",
+        authorityCode: code,
+      }));
+      return buildAuthorityBlockedResponse(model, request.stream, code);
+    }
+    providerAuthorityResolved = true;
+  } catch {
+    console.warn(JSON.stringify({
+      at: "voice-llm-adapter",
+      buildId: BUILD_ID,
+      reason: "organization_authority_lookup_unavailable",
+    }));
+    return buildAuthorityBlockedResponse(
+      model,
+      request.stream,
+      "lookup_unavailable",
+    );
+  }
+
   // ---- Rollout gate ------------------------------------------------------
   const decision = selectRoute({
     syntheticTestHeader: req.headers.get("x-bluladder-synthetic-test"),
     callerIdE164: request.callerIdE164,
+    trustedProviderAuthorityResolved: providerAuthorityResolved,
     env: {
       enabled: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ENABLED") ?? null,
       allowlist: Deno.env.get("VOICE_WORKFLOW_CONTROLLER_ALLOWLIST") ?? null,
@@ -238,7 +351,6 @@ Deno.serve(async (req) => {
     // and booking tool boundaries are invoked by the controller; unsupported
     // tenant-scoped record actions fail closed instead of falling through.
     try {
-      const identity = await ensureVoiceConversation({ supabase, request });
       // Reconstruct history + last utterance the same way the legacy adapter does.
       const nonSystem = request.messages.filter((m) =>
         m.role !== "system" && m.role !== "tool"
@@ -266,6 +378,7 @@ Deno.serve(async (req) => {
         utterance: userMessage,
         history,
         callerIdE164: request.callerIdE164,
+        organizationAuthority,
       });
       const persistence = await persistControllerPatch(
         supabase,
@@ -358,9 +471,29 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Non-streaming: preserve existing behavior for provider fallbacks/tests.
+  // All accepted Vapi traffic reaches this point with reconciled provider
+  // authority. It may use the deterministic controller or fail closed, but it
+  // must never execute the competing legacy quote/action workflow. The legacy
+  // adapter remains available only to explicitly non-mapped compatibility
+  // callers outside this authority-gated production ingress.
+  if (!legacyVoiceExecutionAllowed(decision, providerAuthorityResolved)) {
+    return buildAuthorityBlockedResponse(
+      model,
+      request.stream,
+      "deterministic_controller_required",
+    );
+  }
+
+  // Legacy compatibility branch. Reconciled mapped production traffic cannot
+  // reach it; it remains only for isolated non-mapped compatibility callers.
   if (!request.stream) {
-    const completion = await runVoiceAdapter({ supabase, request });
+    const completion = await runVoiceAdapter({
+      supabase,
+      request,
+      organizationId: organizationAuthority.organizationId,
+      conversationId: identity.conversationId,
+      sessionToken: identity.sessionToken,
+    });
     console.log(JSON.stringify({
       at: "voice-llm-adapter",
       buildId: BUILD_ID,
@@ -421,6 +554,9 @@ Deno.serve(async (req) => {
         const result = await runVoiceAdapterStream({
           supabase,
           request,
+          organizationId: organizationAuthority.organizationId,
+          conversationId: identity.conversationId,
+          sessionToken: identity.sessionToken,
           emit,
         });
         write({

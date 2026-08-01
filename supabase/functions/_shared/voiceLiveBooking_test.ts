@@ -9,11 +9,13 @@ import {
   assert,
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { runTool, resolveVoiceBookingLane } from "./aiTools.ts";
+import { resolveVoiceBookingLane, runTool } from "./aiTools.ts";
 import { getBookingReadiness } from "./bookingReadiness.ts";
-import { sessionInputsKey } from "./quoteSession.ts";
+import { sessionBookingInputsKey, sessionInputsKey } from "./quoteSession.ts";
+import { PUBLIC_BOOKING_ORGANIZATION_ID } from "./publicBookingServiceArea.ts";
 
 const CALLER = "+14692150144";
+const ORGANIZATION_ID = PUBLIC_BOOKING_ORGANIZATION_ID;
 const START = new Date(Date.now() + 86_400_000).toISOString();
 const END = new Date(Date.now() + 90_000_000).toISOString();
 
@@ -22,6 +24,10 @@ const QUOTE_FIELDS = {
   squareFootage: 2500,
   stories: 1,
   address: "5612 Binbranch Ln, McKinney, TX 75071",
+  serviceAreaStatus: "eligible" as const,
+  name: "Ben Test",
+  email: "owner@example.com",
+  phone: CALLER,
 };
 const QUOTE_INPUTS_KEY = sessionInputsKey(QUOTE_FIELDS);
 const QUOTE = {
@@ -35,6 +41,10 @@ const QUOTE = {
   taxPolicyVersion: null,
   inputsKey: QUOTE_INPUTS_KEY,
 };
+const BOOKING_INPUTS_KEY = sessionBookingInputsKey({
+  ...QUOTE_FIELDS,
+  lastQuoteResult: QUOTE,
+});
 
 const PRICING_ROWS = [
   "window_cleaning",
@@ -48,19 +58,26 @@ const PRICING_ROWS = [
   "screen_repair",
 ].map((config_key) => ({ config_key, config_value: {} }));
 
-function stubSupabase(opts: { address?: string } = {}) {
+function stubSupabase(
+  opts: { address?: string; organizationId?: string } = {},
+) {
   const updates: Record<string, unknown>[] = [];
+  const organizationId = opts.organizationId ?? ORGANIZATION_ID;
   const convo = {
+    id: "conv_live",
+    channel: "voice",
+    organization_id: organizationId,
     quote_result: QUOTE,
     prospect_name: "Ben Test",
     prospect_email: "owner@example.com",
     prospect_phone: CALLER,
     service_address: opts.address ?? "5612 Binbranch Ln, McKinney, TX 75071",
+    service_area_status: "eligible",
     property_id: "property-live",
     quote_session_id: "quote-session-live",
     customer_id: "customer-live",
-    confirmed_email_customer_id: null,
-    resolution_method: "phone_exact",
+    confirmed_email_customer_id: "customer-live",
+    resolution_method: "email_confirmed",
     resolution_confidence: "high",
     awaiting_email_disambiguation: false,
   };
@@ -78,6 +95,8 @@ function stubSupabase(opts: { address?: string } = {}) {
         durationVersion: "duration-v1",
         taxPolicyVersion: null,
       },
+      bookingInputsKey: BOOKING_INPUTS_KEY,
+      organizationId,
       offered: [{
         slotId: "slot_live_1",
         startTime: START,
@@ -93,6 +112,7 @@ function stubSupabase(opts: { address?: string } = {}) {
     chat_conversations: convo,
     quote_sessions: {
       id: "quote-session-live",
+      organization_id: organizationId,
       quote_id: "quote-live",
       channel: "voice",
       conversation_ids: ["conv_live"],
@@ -107,6 +127,11 @@ function stubSupabase(opts: { address?: string } = {}) {
       customer_id: "customer-live",
       property_id: "property-live",
       active: true,
+    },
+    properties: {
+      id: "property-live",
+      organization_id: organizationId,
+      formatted_address: "5612 Binbranch Ln, McKinney, TX 75071",
     },
     autosync_config: {
       last_full_sync_completed_at: new Date().toISOString(),
@@ -133,6 +158,7 @@ function stubSupabase(opts: { address?: string } = {}) {
     const b: any = {
       select: () => b,
       eq: () => b,
+      is: () => b,
       or: () => b,
       order: () => b,
       insert: (v: unknown) => {
@@ -178,10 +204,22 @@ const GEOCODE_OK = {
     geometry: { location: { lat: 33.2, lng: -96.6 } },
     address_components: [
       { long_name: "5612", short_name: "5612", types: ["street_number"] },
-      { long_name: "Binbranch Lane", short_name: "Binbranch Ln", types: ["route"] },
+      {
+        long_name: "Binbranch Lane",
+        short_name: "Binbranch Ln",
+        types: ["route"],
+      },
       { long_name: "McKinney", short_name: "McKinney", types: ["locality"] },
-      { long_name: "Collin County", short_name: "Collin County", types: ["administrative_area_level_2"] },
-      { long_name: "Texas", short_name: "TX", types: ["administrative_area_level_1"] },
+      {
+        long_name: "Collin County",
+        short_name: "Collin County",
+        types: ["administrative_area_level_2"],
+      },
+      {
+        long_name: "Texas",
+        short_name: "TX",
+        types: ["administrative_area_level_1"],
+      },
       { long_name: "75071", short_name: "75071", types: ["postal_code"] },
       { long_name: "United States", short_name: "US", types: ["country"] },
     ],
@@ -237,12 +275,17 @@ function withLiveEnv(
   };
 }
 
-function voiceCtx(client: any, conversationId = "conv_live") {
+function voiceCtx(
+  client: any,
+  conversationId = "conv_live",
+  organizationId = ORGANIZATION_ID,
+) {
   return {
     supabase: client,
     conversationId,
     sessionToken: "",
     channel: "voice" as const,
+    organizationId,
   };
 }
 
@@ -259,24 +302,58 @@ Deno.test("lane resolution requires flag AND allowlisted caller", () => {
   }
 });
 
+Deno.test("live voice booking: an organization without the explicit DFW connector never reaches Jobber", async () => {
+  const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const { client } = stubSupabase({ organizationId });
+  const h = withLiveEnv(() =>
+    new Response(
+      JSON.stringify({ jobberVisitId: "visit_x", bookingId: "booking_x" }),
+      { status: 200 },
+    )
+  );
+  try {
+    const result = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client, "conv_live", organizationId),
+      { confirmed: true, slotId: "slot_live_1" },
+    ) as { status: string };
+    assertEquals(result.status, "organization_capability_unavailable");
+    assertEquals(h.bookingCalls.length, 0);
+  } finally {
+    h.restore();
+  }
+});
+
 Deno.test("live voice booking: success routes through jobber-create-booking", async () => {
   const { client } = stubSupabase();
   const h = withLiveEnv(() =>
-    new Response(JSON.stringify({ jobberVisitId: "visit_1" }), { status: 200 })
+    new Response(
+      JSON.stringify({ jobberVisitId: "visit_1", bookingId: "booking_1" }),
+      { status: 200 },
+    )
   );
   try {
-    const readiness = await getBookingReadiness(client, "conv_live");
+    const readiness = await getBookingReadiness(
+      client,
+      "conv_live",
+      ORGANIZATION_ID,
+    );
     assertEquals(readiness.ready, true, JSON.stringify(readiness));
     const result = await runTool("create_bluladder_booking", voiceCtx(client), {
       confirmed: true,
       slotId: "slot_live_1",
-    }) as { status: string; confirmedTime?: string };
+      address: "999 Caller Supplied Rd, Other, TX 75000",
+    }) as { status: string; confirmedTime?: string; bookingId?: string };
     assertEquals(result.status, "confirmed", JSON.stringify(result));
     assertEquals(result.confirmedTime, "Friday at 9:00 AM");
+    assertEquals(result.bookingId, "booking_1");
     assertEquals(h.bookingCalls.length, 1);
     const body = h.bookingCalls[0].body;
     assertEquals(body.idempotencyKey, `voice|conv_live|${START}`);
-    assertEquals(body.customer.address, "5612 Binbranch Ln, McKinney, TX 75071");
+    assertEquals(
+      body.customer.address,
+      "5612 Binbranch Ln, McKinney, TX 75071",
+    );
     assertEquals(body.scheduledStart, START);
   } finally {
     h.restore();
@@ -286,7 +363,10 @@ Deno.test("live voice booking: success routes through jobber-create-booking", as
 Deno.test("live voice booking: missing explicit confirmation never writes", async () => {
   const { client } = stubSupabase();
   const h = withLiveEnv(() =>
-    new Response(JSON.stringify({ jobberVisitId: "visit_x" }), { status: 200 })
+    new Response(
+      JSON.stringify({ jobberVisitId: "visit_x", bookingId: "booking_x" }),
+      { status: 200 },
+    )
   );
   try {
     const result = await runTool("create_bluladder_booking", voiceCtx(client), {
@@ -299,7 +379,7 @@ Deno.test("live voice booking: missing explicit confirmation never writes", asyn
   }
 });
 
-Deno.test("live voice booking: unverifiable address blocks the write", async () => {
+Deno.test("live voice booking: conversation/property address drift blocks the write", async () => {
   const { client } = stubSupabase({ address: "5612 Binbranch Ln" });
   const h = withLiveEnv(
     () => new Response("{}", { status: 200 }),
@@ -310,7 +390,7 @@ Deno.test("live voice booking: unverifiable address blocks the write", async () 
       confirmed: true,
       slotId: "slot_live_1",
     }) as { status: string };
-    assertEquals(result.status, "address_unverified");
+    assertEquals(result.status, "address_changed");
     assertEquals(h.bookingCalls.length, 0);
   } finally {
     h.restore();
@@ -320,7 +400,10 @@ Deno.test("live voice booking: unverifiable address blocks the write", async () 
 Deno.test("live voice booking: slot outside the latest offer requires refresh", async () => {
   const { client } = stubSupabase();
   const h = withLiveEnv(() =>
-    new Response(JSON.stringify({ jobberVisitId: "visit_x" }), { status: 200 })
+    new Response(
+      JSON.stringify({ jobberVisitId: "visit_x", bookingId: "booking_x" }),
+      { status: 200 },
+    )
   );
   try {
     const result = await runTool("create_bluladder_booking", voiceCtx(client), {
@@ -351,7 +434,7 @@ Deno.test("live voice booking: real 409 conflict reports the slot as taken", asy
   }
 });
 
-Deno.test("live voice booking: Jobber failure is reported truthfully as unconfirmed", async () => {
+Deno.test("live voice booking: provider failure is non-retryable uncertainty", async () => {
   const { client } = stubSupabase();
   const h = withLiveEnv(() =>
     new Response(JSON.stringify({ error: "jobber_down" }), { status: 500 })
@@ -361,8 +444,39 @@ Deno.test("live voice booking: Jobber failure is reported truthfully as unconfir
       confirmed: true,
       slotId: "slot_live_1",
     }) as { status: string; message: string };
-    assertEquals(result.status, "error");
-    assert(result.message.includes("no appointment is confirmed"));
+    assertEquals(result.status, "uncertain");
+    assert(result.message.includes("not confirmed"));
+    assert(result.message.includes("do not try again"));
+    assertEquals(h.bookingCalls.length, 1);
+  } finally {
+    h.restore();
+  }
+});
+
+Deno.test("live voice booking: HTTP 202 pending manual confirmation is non-retryable uncertainty", async () => {
+  const { client } = stubSupabase();
+  const h = withLiveEnv(() =>
+    new Response(
+      JSON.stringify({
+        pendingManualConfirmation: true,
+        retryable: false,
+        code: "LOCAL_BOOKING_PERSISTENCE_FAILED",
+        jobberVisitId: "visit_accepted",
+        bookingId: "booking_pending",
+      }),
+      { status: 202 },
+    )
+  );
+  try {
+    const result = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client),
+      { confirmed: true, slotId: "slot_live_1" },
+    ) as { status: string; message: string };
+    assertEquals(result.status, "uncertain");
+    assert(result.message.includes("not confirmed"));
+    assert(result.message.includes("do not try again"));
+    assertEquals(h.bookingCalls.length, 1);
   } finally {
     h.restore();
   }
@@ -371,16 +485,30 @@ Deno.test("live voice booking: Jobber failure is reported truthfully as unconfir
 Deno.test("live voice booking: replay of the same confirmation reuses one idempotency key", async () => {
   const { client } = stubSupabase();
   const h = withLiveEnv(() =>
-    new Response(JSON.stringify({ jobberVisitId: "visit_1" }), { status: 200 })
+    new Response(
+      JSON.stringify({ jobberVisitId: "visit_1", bookingId: "booking_1" }),
+      { status: 200 },
+    )
   );
   try {
     const args = { confirmed: true, slotId: "slot_live_1" };
-    const a = await runTool("create_bluladder_booking", voiceCtx(client), args) as { status: string };
-    const b = await runTool("create_bluladder_booking", voiceCtx(client), args) as { status: string };
+    const a = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client),
+      args,
+    ) as { status: string };
+    const b = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client),
+      args,
+    ) as { status: string };
     assertEquals(a.status, "confirmed");
     assertEquals(b.status, "confirmed");
     assertEquals(h.bookingCalls.length, 2);
-    assertEquals(h.bookingCalls[0].body.idempotencyKey, h.bookingCalls[1].body.idempotencyKey);
+    assertEquals(
+      h.bookingCalls[0].body.idempotencyKey,
+      h.bookingCalls[1].body.idempotencyKey,
+    );
   } finally {
     h.restore();
   }

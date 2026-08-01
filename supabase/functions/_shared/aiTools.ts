@@ -9,12 +9,12 @@
 //     itself recalculates pricing and holds a DB reservation)
 // Every tool validates its own inputs and returns a compact JSON result.
 // ============================================================================
-import {
-  createClient,
-  type SupabaseClient,
-} from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateServiceArea } from "./serviceArea.ts";
-import { deSpacedStreetCandidates } from "./profile/normalizeAddress.ts";
+import {
+  deSpacedStreetCandidates,
+  sameAddress,
+} from "./profile/normalizeAddress.ts";
 import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
 import { checkSuppression } from "./suppression.ts";
 import { escalateToHuman } from "./escalation.ts";
@@ -32,11 +32,14 @@ import { windowSidesToPricingType } from "./salesEngine/quoteIntakeContract.ts";
 import { getAvailableSlots } from "./availabilityLookup.ts";
 import {
   findByConversation as findQuoteSessionByConversation,
+  type QuoteSessionFields,
+  sessionBookingInputsKey,
   sessionInputsKey,
 } from "./quoteSession.ts";
 import { getBookingReadiness } from "./bookingReadiness.ts";
 import { quoteIdentityMatches } from "./voice/voiceJourneyContract.ts";
 import { quoteSessionFieldsToQuoteInput } from "./quoteSessionPricingAdapter.ts";
+import { PUBLIC_BOOKING_ORGANIZATION_ID } from "./publicBookingServiceArea.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -96,11 +99,12 @@ async function recordSlotFailure(
     service_address?: string | null;
   } | null,
 ): Promise<number> {
-  const { data: row } = await ctx.supabase
+  let readQuery = ctx.supabase
     .from("chat_conversations")
     .select("slot_failure_count")
-    .eq("id", ctx.conversationId)
-    .maybeSingle();
+    .eq("id", ctx.conversationId);
+  readQuery = scopeConversationQuery(readQuery, ctx);
+  const { data: row } = await readQuery.maybeSingle();
   const count = (row?.slot_failure_count ?? 0) + 1;
 
   await ctx.supabase.from("chat_messages").insert({
@@ -109,11 +113,13 @@ async function recordSlotFailure(
     tool_name: "booking_attempt",
     tool_result: { outcome: "failed", code, technicalReason, attempt: count },
   });
-  await ctx.supabase.from("chat_conversations").update({
+  let updateQuery = ctx.supabase.from("chat_conversations").update({
     slot_failure_count: count,
     last_error: `slot_selection_failed:${code}`,
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
+  updateQuery = scopeConversationQuery(updateQuery, ctx);
+  await updateQuery;
 
   if (count >= MAX_SLOT_FAILURES_BEFORE_ESCALATION) {
     try {
@@ -159,12 +165,73 @@ export interface ToolContext {
   conversationId: string;
   sessionToken: string;
   channel: "web" | "voice" | "sms";
+  /** Server-derived tenant authority; never populate from model tool args. */
+  organizationId?: string | null;
 }
 
-function svc(): SupabaseClient {
-  return createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false },
-  });
+const ORGANIZATION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function validVoiceOrganizationId(ctx: ToolContext): string | null {
+  if (ctx.channel !== "voice") return null;
+  const value = typeof ctx.organizationId === "string"
+    ? ctx.organizationId.trim().toLowerCase()
+    : "";
+  return ORGANIZATION_ID_PATTERN.test(value) ? value : null;
+}
+
+function scopeConversationQuery(query: any, ctx: ToolContext): any {
+  const organizationId = validVoiceOrganizationId(ctx);
+  return organizationId ? query.eq("organization_id", organizationId) : query;
+}
+
+function tenantAuthorityRequired() {
+  return {
+    status: "tenant_authority_required",
+    message:
+      "I couldn't verify the BluLadder account for this request, so nothing was read, offered, or changed.",
+  };
+}
+
+function voiceOrganizationCapabilityUnavailable() {
+  return {
+    status: "organization_capability_unavailable",
+    message:
+      "This voice workflow is not configured for the resolved BluLadder organization, so nothing was read, offered, or changed.",
+  };
+}
+
+function propertyAddressFromRow(
+  row: Record<string, unknown> | null,
+): string | null {
+  if (!row) return null;
+  const formatted = typeof row.formatted_address === "string"
+    ? row.formatted_address.trim()
+    : "";
+  if (formatted) return formatted;
+  const composed = [row.street, row.city, row.state, row.postal_code]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => String(value).trim())
+    .join(", ");
+  return composed || null;
+}
+
+async function voiceConversationAuthorityMatches(
+  ctx: ToolContext,
+): Promise<boolean> {
+  const organizationId = validVoiceOrganizationId(ctx);
+  if (!organizationId) return false;
+  try {
+    const { data, error } = await ctx.supabase
+      .from("chat_conversations")
+      .select("organization_id")
+      .eq("id", ctx.conversationId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    return !error && data?.organization_id === organizationId;
+  } catch {
+    return false;
+  }
 }
 
 export async function callFunction(
@@ -210,25 +277,37 @@ export function buildQuoteRequest(a: Record<string, unknown>) {
     homeDetails: {
       squareFootage: num(a.squareFootage),
       stories: num(a.stories),
-      windowCleaningType: windowSidesToPricingType(a.windowCleaningSides ?? a.windowCleaningType) ?? undefined,
+      windowCleaningType: windowSidesToPricingType(
+        a.windowCleaningSides ?? a.windowCleaningType,
+      ) ?? undefined,
       condition: (a.condition as string) || undefined,
       showAdvanced: false,
       screenProfile: (a.screenProfile as string) || undefined,
-      screenProfileProvenance: (a.screenProfileProvenance as string) || undefined,
+      screenProfileProvenance: (a.screenProfileProvenance as string) ||
+        undefined,
       solarScreenCoverage: (a.solarScreenCoverage as string) || undefined,
-      solarScreenAffectedWindowCount: a.solarScreenAffectedWindowCount == null ? undefined : num(a.solarScreenAffectedWindowCount),
+      solarScreenAffectedWindowCount: a.solarScreenAffectedWindowCount == null
+        ? undefined
+        : num(a.solarScreenAffectedWindowCount),
       solarScreenServiceRequested: a.solarScreenServiceRequested === true,
       enclosedPatioProfile: (a.enclosedPatioProfile as string) || undefined,
       screenedEnclosureSoftWash: a.screenedEnclosureSoftWash === true,
-      enclosureWindowCount: a.enclosureWindowCount == null ? undefined : num(a.enclosureWindowCount),
+      enclosureWindowCount: a.enclosureWindowCount == null
+        ? undefined
+        : num(a.enclosureWindowCount),
       enclosureWindowSides: (a.enclosureWindowSides as string) || undefined,
     },
     additionalServices: {
       windowCleaning: has("window_cleaning"),
       houseWash: has("house_wash"),
       gutterCleaning: has("gutter_cleaning"),
-      gutterAddons: a.gutterAddons && typeof a.gutterAddons === "object" ? a.gutterAddons : undefined,
-      houseWashPatios: a.houseWashPatios && typeof a.houseWashPatios === "object" ? a.houseWashPatios : undefined,
+      gutterAddons: a.gutterAddons && typeof a.gutterAddons === "object"
+        ? a.gutterAddons
+        : undefined,
+      houseWashPatios:
+        a.houseWashPatios && typeof a.houseWashPatios === "object"
+          ? a.houseWashPatios
+          : undefined,
       roofCleaning: has("roof_cleaning"),
       roofType: (a.roofType as string) || undefined,
       roofSeverity: (a.roofSeverity as string) || undefined,
@@ -248,8 +327,14 @@ export function buildQuoteRequest(a: Record<string, unknown>) {
         poolDeck: { enabled: false, sqft: 0 },
         walkways: { enabled: false, sqft: 0 },
       },
-      solarPanelCleaning: { enabled: has("solar_panel_cleaning"), panelCount: num(a.solarPanelCount) },
-      screenRepair: { enabled: has("screen_repair"), screenCount: num(a.screenRepairCount) },
+      solarPanelCleaning: {
+        enabled: has("solar_panel_cleaning"),
+        panelCount: num(a.solarPanelCount),
+      },
+      screenRepair: {
+        enabled: has("screen_repair"),
+        screenCount: num(a.screenRepairCount),
+      },
     },
     discount: a.discountCode ? { code: String(a.discountCode) } : null,
     __services: services,
@@ -266,6 +351,17 @@ async function calculateQuoteTool(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ) {
+  if (
+    ctx.channel === "voice" &&
+    validVoiceOrganizationId(ctx) !== PUBLIC_BOOKING_ORGANIZATION_ID
+  ) {
+    return {
+      status: "pricing_configuration_unavailable",
+      firm: false,
+      customerExplanation:
+        "Pricing is not configured for this BluLadder organization, so I will not calculate or state a price.",
+    };
+  }
   const req = buildQuoteRequest(args);
   const services = req.__services;
 
@@ -309,7 +405,7 @@ async function calculateQuoteTool(
   }
 
   // Persist latest quote snapshot (with pricing version) onto the conversation.
-  await ctx.supabase
+  let quoteUpdate = ctx.supabase
     .from("chat_conversations")
     .update({
       quote_result: json,
@@ -319,6 +415,8 @@ async function calculateQuoteTool(
       last_activity_at: new Date().toISOString(),
     })
     .eq("id", ctx.conversationId);
+  quoteUpdate = scopeConversationQuery(quoteUpdate, ctx);
+  await quoteUpdate;
 
   const firm = json.status === "firm" && !manualHit;
 
@@ -381,6 +479,9 @@ async function canonicalVoiceAvailabilityTool(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ) {
+  const organizationId = validVoiceOrganizationId(ctx);
+  if (!organizationId) return tenantAuthorityRequired();
+
   const result = await getAvailableSlots(ctx.supabase, ctx.conversationId, {
     preferred_date: typeof args.startDate === "string" ? args.startDate : null,
     preferred_day: typeof args.preferredDay === "string"
@@ -392,18 +493,28 @@ async function canonicalVoiceAvailabilityTool(
       ? "afternoon"
       : null,
     max_options: 3,
+  }, {
+    expectedOrganizationId: organizationId,
   });
   if (result.status !== "ok") {
     const messages: Record<string, string> = {
-      no_slots: "I checked the current schedule and did not find an available appointment in that window.",
-      schedule_drifted: "The schedule needs to refresh before I can offer current times.",
-      provider_timeout: "The scheduling provider timed out, so I will not guess at appointment times.",
-      provider_rate_limited: "The scheduling provider is temporarily busy, so I cannot confirm times right now.",
-      provider_unavailable: "The scheduling provider is unavailable, so I cannot confirm times right now.",
-      preference_ambiguous: "I need a clearer date or day preference before I check times.",
-      not_ready: "The quote, address, identity, duration, or schedule is not ready for availability yet.",
+      no_slots:
+        "I checked the current schedule and did not find an available appointment in that window.",
+      schedule_drifted:
+        "The schedule needs to refresh before I can offer current times.",
+      provider_timeout:
+        "The scheduling provider timed out, so I will not guess at appointment times.",
+      provider_rate_limited:
+        "The scheduling provider is temporarily busy, so I cannot confirm times right now.",
+      provider_unavailable:
+        "The scheduling provider is unavailable, so I cannot confirm times right now.",
+      preference_ambiguous:
+        "I need a clearer date or day preference before I check times.",
+      not_ready:
+        "The quote, address, identity, duration, or schedule is not ready for availability yet.",
       gate_blocked: "Live scheduling is not authorized for this request.",
-      engine_error: "I could not confirm availability, so I will not offer a time.",
+      engine_error:
+        "I could not confirm availability, so I will not offer a time.",
     };
     return {
       status: result.status,
@@ -416,11 +527,13 @@ async function canonicalVoiceAvailabilityTool(
   const session = await findQuoteSessionByConversation(
     ctx.supabase,
     ctx.conversationId,
+    organizationId,
   );
   if (!session) {
     return {
       status: "not_ready",
-      message: "The canonical quote session is missing, so I cannot offer times.",
+      message:
+        "The canonical quote session is missing, so I cannot offer times.",
     };
   }
   const last = session.fields.lastQuoteResult;
@@ -428,7 +541,8 @@ async function canonicalVoiceAvailabilityTool(
   if (!last || last.inputsKey !== inputsKey) {
     return {
       status: "quote_changed",
-      message: "The quote changed before availability was offered, so I need to refresh the price first.",
+      message:
+        "The quote changed before availability was offered, so I need to refresh the price first.",
     };
   }
   const offerVersion = crypto.randomUUID();
@@ -457,7 +571,10 @@ async function canonicalVoiceAvailabilityTool(
     durationVersion: last.durationVersion ?? null,
     taxPolicyVersion: last.taxPolicyVersion ?? null,
   };
-  await ctx.supabase.from("chat_messages").insert({
+  const bookingInputsKey = sessionBookingInputsKey(session.fields);
+  const { error: offerPersistenceError } = await ctx.supabase.from(
+    "chat_messages",
+  ).insert({
     conversation_id: ctx.conversationId,
     role: "tool",
     tool_name: "get_bluladder_availability",
@@ -467,15 +584,27 @@ async function canonicalVoiceAvailabilityTool(
       expiresAt,
       quoteSignature: inputsKey,
       quoteIdentity,
+      bookingInputsKey,
+      organizationId,
     },
   });
+  if (offerPersistenceError) {
+    return {
+      status: "not_ready",
+      message:
+        "I couldn't safely save those appointment options, so I won't offer them as bookable times.",
+    };
+  }
   await ctx.supabase.from("chat_conversations")
     .update({ slot_failure_count: 0 })
-    .eq("id", ctx.conversationId);
+    .eq("id", ctx.conversationId)
+    .eq("organization_id", organizationId);
   return {
     status: "ok",
     offerExpiresAt: expiresAt,
-    slots: offered.map(({ slotId, startTime, endTime, displayTime, durationMinutes, timezone }) => ({
+    slots: offered.map((
+      { slotId, startTime, endTime, displayTime, durationMinutes, timezone },
+    ) => ({
       slotId,
       startTime,
       endTime,
@@ -630,6 +759,12 @@ async function createBookingTool(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ) {
+  const organizationId = ctx.channel === "voice"
+    ? validVoiceOrganizationId(ctx)
+    : null;
+  if (ctx.channel === "voice" && !organizationId) {
+    return tenantAuthorityRequired();
+  }
   if (args.confirmed !== true) {
     return {
       status: "not_confirmed",
@@ -644,13 +779,26 @@ async function createBookingTool(
     };
   }
 
-  const { data: convo } = await ctx.supabase
+  let conversationQuery = ctx.supabase
     .from("chat_conversations")
     .select(
-      "quote_result, prospect_name, prospect_email, prospect_phone, service_address",
+      "organization_id, quote_result, prospect_name, prospect_email, prospect_phone, service_address, property_id",
     )
-    .eq("id", ctx.conversationId)
+    .eq("id", ctx.conversationId);
+  if (organizationId) {
+    conversationQuery = conversationQuery.eq(
+      "organization_id",
+      organizationId,
+    );
+  }
+  const { data: convo, error: conversationError } = await conversationQuery
     .maybeSingle();
+  if (
+    ctx.channel === "voice" &&
+    (conversationError || !convo || convo.organization_id !== organizationId)
+  ) {
+    return tenantAuthorityRequired();
+  }
 
   // VOICE LANE GATE. Live voice booking requires BOTH the runtime flag and an
   // allowlisted caller. Anything else stays a truthful dry run that never
@@ -667,10 +815,20 @@ async function createBookingTool(
           "This voice test did not create an appointment. Please use the online booking flow or contact the office.",
       };
     }
+    if (organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
+      return {
+        status: "provider_connector_unavailable",
+        message:
+          "Live booking is not configured for this BluLadder organization, so no appointment was created.",
+      };
+    }
   }
 
   let quote = convo?.quote_result as any;
-  let canonicalBookingInput: ReturnType<typeof quoteSessionFieldsToQuoteInput> | null = null;
+  let canonicalBookingInput:
+    | ReturnType<typeof quoteSessionFieldsToQuoteInput>
+    | null = null;
+  let canonicalBookingFields: QuoteSessionFields | null = null;
   let canonicalQuoteIdentity: {
     quoteSessionId: string;
     quoteId: string | null;
@@ -684,6 +842,7 @@ async function createBookingTool(
     const readiness = await getBookingReadiness(
       ctx.supabase,
       ctx.conversationId,
+      organizationId,
     );
     if (!readiness.ready || readiness.next_action !== "show_availability") {
       return {
@@ -696,6 +855,7 @@ async function createBookingTool(
     const session = await findQuoteSessionByConversation(
       ctx.supabase,
       ctx.conversationId,
+      organizationId,
     );
     const last = session?.fields.lastQuoteResult;
     if (!session || !last) {
@@ -708,10 +868,12 @@ async function createBookingTool(
     if (last.inputsKey !== inputsKey) {
       return {
         status: "quote_changed",
-        message: "The quote changed, so I need to verify the current price before booking.",
+        message:
+          "The quote changed, so I need to verify the current price before booking.",
       };
     }
     quote = last;
+    canonicalBookingFields = session.fields;
     canonicalBookingInput = quoteSessionFieldsToQuoteInput(session.fields);
     canonicalQuoteIdentity = {
       quoteSessionId: session.id,
@@ -741,17 +903,48 @@ async function createBookingTool(
   // Voice callers never type an address, so the address that will be written to
   // Jobber must be re-validated against the live service area before any
   // mutation. Web/SMS already collect a validated address earlier in the flow.
-  const resolvedAddress = String(
+  let resolvedAddress = String(
     args.address || convo?.service_address || "",
   ).trim();
   if (ctx.channel === "voice") {
-    if (!resolvedAddress) {
+    const propertyId = typeof convo?.property_id === "string"
+      ? convo.property_id
+      : null;
+    const sessionAddress = canonicalBookingFields?.address?.trim() ?? "";
+    const conversationAddress = typeof convo?.service_address === "string"
+      ? convo.service_address.trim()
+      : "";
+    let propertyQuery = propertyId
+      ? ctx.supabase
+        .from("properties")
+        .select(
+          "organization_id, formatted_address, street, city, state, postal_code",
+        )
+        .eq("id", propertyId)
+      : null;
+    if (propertyQuery && organizationId) {
+      propertyQuery = propertyQuery.eq("organization_id", organizationId);
+    }
+    const { data: property, error: propertyError } = propertyQuery
+      ? await propertyQuery.maybeSingle()
+      : { data: null, error: null };
+    const propertyAddress = propertyAddressFromRow(
+      property as Record<string, unknown> | null,
+    );
+    if (
+      propertyError || !propertyAddress || !sessionAddress ||
+      !conversationAddress ||
+      canonicalBookingFields?.serviceAreaStatus !== "eligible" ||
+      !sameAddress(propertyAddress, sessionAddress) ||
+      !sameAddress(propertyAddress, conversationAddress)
+    ) {
       return {
-        status: "address_unverified",
+        status: "address_changed",
         message:
-          "I still need the full service address, including city and ZIP, before I can book.",
+          "The confirmed property, quote, and conversation address do not match, so no appointment was created. The address must be reverified first.",
       };
     }
+    resolvedAddress = propertyAddress;
     const area = await validateServiceArea(ctx.supabase, resolvedAddress);
     if (area.status !== "eligible") {
       return {
@@ -783,9 +976,39 @@ async function createBookingTool(
       expiresAt?: string;
       quoteSignature?: string;
       quoteIdentity?: Partial<NonNullable<typeof canonicalQuoteIdentity>>;
+      bookingInputsKey?: string;
+      organizationId?: string;
     }
     | undefined;
   const offered = latest?.offered;
+
+  if (
+    ctx.channel === "voice" &&
+    organizationId &&
+    (
+      latest?.organizationId !== organizationId ||
+      latest?.bookingInputsKey !==
+        sessionBookingInputsKey(
+          (await findQuoteSessionByConversation(
+            ctx.supabase,
+            ctx.conversationId,
+            organizationId,
+          ))?.fields ?? {},
+        )
+    )
+  ) {
+    await recordSlotFailure(
+      ctx,
+      "stale_booking_identity",
+      "availability offer organization or booking inputs do not match the current canonical session",
+      convo,
+    );
+    return {
+      status: "quote_changed",
+      message:
+        "The booking details changed after those times were offered. I need to refresh the current quote and availability before booking.",
+    };
+  }
 
   if (
     ctx.channel === "voice" &&
@@ -897,10 +1120,12 @@ async function createBookingTool(
     // write. Any other status (denied/expired/mismatch — e.g. a different
     // conversation, slot, identity or key) stays fully simulated.
     if (authStatus !== "authorized" && authStatus !== "already_consumed") {
-      await ctx.supabase.from("chat_conversations").update({
+      let simulatedUpdate = ctx.supabase.from("chat_conversations").update({
         booking_status: "confirmed",
         last_activity_at: new Date().toISOString(),
       }).eq("id", ctx.conversationId);
+      simulatedUpdate = scopeConversationQuery(simulatedUpdate, ctx);
+      await simulatedUpdate;
       return {
         status: "confirmed",
         confirmedTime: slot.displayTime,
@@ -961,6 +1186,33 @@ async function createBookingTool(
         "Online booking is currently paused, so this attempt was not processed. If you already submitted earlier, check your confirmation before trying again.",
     };
   }
+  const acceptedButLocallyUncertain = status === 202 ||
+    json?.pendingManualConfirmation === true ||
+    json?.code === "LOCAL_BOOKING_PERSISTENCE_FAILED" ||
+    json?.code === "QUOTE_CONVERSION_RECONCILIATION_REQUIRED";
+  if (acceptedButLocallyUncertain) {
+    let uncertainUpdate = ctx.supabase.from("chat_conversations").update({
+      booking_status: "needs_attention",
+      needs_attention: true,
+      last_error: `booking uncertain:${json?.code ?? `status_${status}`}`,
+      last_activity_at: new Date().toISOString(),
+    }).eq("id", ctx.conversationId);
+    uncertainUpdate = scopeConversationQuery(uncertainUpdate, ctx);
+    await uncertainUpdate;
+    await recordSlotFailure(
+      ctx,
+      "provider_accepted_local_outcome_uncertain",
+      `jobber-create-booking returned ${status} ${
+        json?.code ?? "without a final local result"
+      }`,
+      convo,
+    );
+    return {
+      status: "uncertain",
+      message:
+        "The scheduling provider may have accepted the appointment, but I couldn't verify the final BluLadder record. It is not confirmed here. Please do not try again; a team member must verify the result.",
+    };
+  }
   if (
     json?.code === "INTERVENTION_RECORD_FAILED" ||
     json?.retryable === false
@@ -991,13 +1243,18 @@ async function createBookingTool(
     };
   }
   const visitId = json?.jobberVisitId || json?.visitId;
+  const bookingId = typeof json?.bookingId === "string" && json.bookingId
+    ? json.bookingId
+    : null;
   if (json?.status === "needs_attention" || json?.needsAttention) {
-    await ctx.supabase.from("chat_conversations").update({
+    let attentionUpdate = ctx.supabase.from("chat_conversations").update({
       booking_status: "needs_attention",
       needs_attention: true,
       last_error: "booking needs_attention",
       last_activity_at: new Date().toISOString(),
     }).eq("id", ctx.conversationId);
+    attentionUpdate = scopeConversationQuery(attentionUpdate, ctx);
+    await attentionUpdate;
     // needs_attention itself is a first-class escalation path.
     try {
       const escalation = await escalateToHuman(ctx.supabase, {
@@ -1035,30 +1292,36 @@ async function createBookingTool(
         "Your appointment is not confirmed, and I couldn't verify a manual-review request. Please contact BluLadder directly.",
     };
   }
-  if (status !== 200 || !visitId) {
-    await ctx.supabase.from("chat_conversations").update({
+  if (status !== 200 || !visitId || !bookingId) {
+    let failedUpdate = ctx.supabase.from("chat_conversations").update({
       booking_status: "failed",
       needs_attention: true,
       last_error: json?.error || "booking failed",
     }).eq("id", ctx.conversationId);
+    failedUpdate = scopeConversationQuery(failedUpdate, ctx);
+    await failedUpdate;
     await recordSlotFailure(
       ctx,
-      "internal_booking_error",
-      `status ${status}, no visit id (${json?.error ?? "unknown"})`,
+      "provider_outcome_uncertain",
+      `status ${status}, visit=${
+        visitId ? "present" : "missing"
+      }, local_booking=${bookingId ? "present" : "missing"}`,
       convo,
     );
     return {
-      status: "error",
+      status: "uncertain",
       message:
-        "I couldn't finalize the booking, and no appointment is confirmed. Please try again or contact BluLadder directly.",
+        "I couldn't verify both the provider appointment and BluLadder booking record. It is not confirmed here. Please do not try again; a team member must verify the result.",
     };
   }
 
-  await ctx.supabase.from("chat_conversations").update({
+  let confirmedUpdate = ctx.supabase.from("chat_conversations").update({
     booking_status: "confirmed",
     slot_failure_count: 0,
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
+  confirmedUpdate = scopeConversationQuery(confirmedUpdate, ctx);
+  await confirmedUpdate;
 
   // Persist the original result against the (now-consumed) authorization so an
   // audit trail and any idempotent replay can reference it. No-op for normal
@@ -1069,6 +1332,7 @@ async function createBookingTool(
       p_result: {
         status: "confirmed",
         jobberVisitId: visitId,
+        bookingId,
         confirmedTime: slot.displayTime,
       },
     });
@@ -1077,7 +1341,7 @@ async function createBookingTool(
   return {
     status: "confirmed",
     confirmedTime: slot.displayTime,
-    bookingId: typeof json?.bookingId === "string" ? json.bookingId : null,
+    bookingId,
     bookingReference: typeof json?.referenceNumber === "string"
       ? json.referenceNumber
       : null,
@@ -1134,11 +1398,12 @@ async function validateServiceAreaTool(
   // We only guard the exact same address to avoid preserving a stale result if
   // the customer switched addresses.
   if (result.status === "validation_unavailable") {
-    const { data: prior } = await ctx.supabase
+    let priorQuery = ctx.supabase
       .from("chat_conversations")
       .select("service_area_status, service_address")
-      .eq("id", ctx.conversationId)
-      .maybeSingle();
+      .eq("id", ctx.conversationId);
+    priorQuery = scopeConversationQuery(priorQuery, ctx);
+    const { data: prior } = await priorQuery.maybeSingle();
     const sameAddress = typeof prior?.service_address === "string" &&
       prior.service_address.trim().toLowerCase().startsWith(
         address.trim().toLowerCase().slice(0, 8),
@@ -1166,7 +1431,7 @@ async function validateServiceAreaTool(
     }
     : result;
 
-  await ctx.supabase
+  let serviceAreaUpdate = ctx.supabase
     .from("chat_conversations")
     .update({
       service_address: result.formattedAddress || address,
@@ -1181,6 +1446,8 @@ async function validateServiceAreaTool(
       last_activity_at: new Date().toISOString(),
     })
     .eq("id", ctx.conversationId);
+  serviceAreaUpdate = scopeConversationQuery(serviceAreaUpdate, ctx);
+  await serviceAreaUpdate;
 
   return {
     status: result.status,
@@ -1206,7 +1473,7 @@ async function manualQuoteTool(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ) {
-  await ctx.supabase.from("chat_conversations").update({
+  let manualQuoteUpdate = ctx.supabase.from("chat_conversations").update({
     prospect_name: (args.name as string) || undefined,
     prospect_email: (args.email as string) || undefined,
     prospect_phone: (args.phone as string) || undefined,
@@ -1220,6 +1487,8 @@ async function manualQuoteTool(
     campaign_status: "manual_quote_requested",
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
+  manualQuoteUpdate = scopeConversationQuery(manualQuoteUpdate, ctx);
+  await manualQuoteUpdate;
 
   await emitCampaignEvent(ctx, "manual_quote_requested", {
     email: (args.email as string) || undefined,
@@ -1247,7 +1516,7 @@ async function humanCallbackTool(
   const email = (args.email as string) || undefined;
   const phone = (args.phone as string) || undefined;
   const method = (args.contactMethod as string) || "phone";
-  await ctx.supabase.from("chat_conversations").update({
+  let callbackUpdate = ctx.supabase.from("chat_conversations").update({
     prospect_name: (args.name as string) || undefined,
     prospect_phone: phone,
     prospect_email: email,
@@ -1260,6 +1529,8 @@ async function humanCallbackTool(
     campaign_status: "callback_requested",
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
+  callbackUpdate = scopeConversationQuery(callbackUpdate, ctx);
+  await callbackUpdate;
 
   // A callback grants ONLY the consent needed to fulfil the callback request
   // (requested_follow_up), on the channel the customer chose — never marketing.
@@ -1366,13 +1637,14 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
   const email = (args.email as string) || undefined;
 
   // Include the service address (from the conversation) in the internal alert.
-  const { data: convoRow } = await ctx.supabase
+  let conversationQuery = ctx.supabase
     .from("chat_conversations")
     .select("service_address")
-    .eq("id", ctx.conversationId)
-    .maybeSingle();
+    .eq("id", ctx.conversationId);
+  conversationQuery = scopeConversationQuery(conversationQuery, ctx);
+  const { data: convoRow } = await conversationQuery.maybeSingle();
 
-  await ctx.supabase.from("chat_conversations").update({
+  let escalationUpdate = ctx.supabase.from("chat_conversations").update({
     prospect_name: (args.name as string) || undefined,
     prospect_phone: phone,
     prospect_email: email,
@@ -1381,6 +1653,8 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
     summary: (args.summary as string) || undefined,
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
+  escalationUpdate = scopeConversationQuery(escalationUpdate, ctx);
+  await escalationUpdate;
 
   const result = await escalateToHuman(ctx.supabase, {
     conversationId: ctx.conversationId,
@@ -1527,10 +1801,12 @@ async function recordConsentTool(
   });
 
   if (consentType === "marketing") {
-    await ctx.supabase.from("chat_conversations").update({
+    let consentUpdate = ctx.supabase.from("chat_conversations").update({
       marketing_consent: granted,
       last_activity_at: new Date().toISOString(),
     }).eq("id", ctx.conversationId);
+    consentUpdate = scopeConversationQuery(consentUpdate, ctx);
+    await consentUpdate;
   }
   await emitCampaignEvent(
     ctx,
@@ -1562,6 +1838,22 @@ export async function runTool(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ) {
+  if (ctx.channel === "voice") {
+    const organizationId = validVoiceOrganizationId(ctx);
+    if (
+      !organizationId ||
+      !(await voiceConversationAuthorityMatches(ctx))
+    ) {
+      return tenantAuthorityRequired();
+    }
+    // Every currently wired voice tool below depends on bounded DFW pricing,
+    // service-area, campaign, escalation, consent, or provider capabilities.
+    // Tenant identity alone does not grant those capabilities. Future tenants
+    // must receive explicit organization-owned adapters before this gate moves.
+    if (organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
+      return voiceOrganizationCapabilityUnavailable();
+    }
+  }
   switch (name) {
     case "calculate_bluladder_quote":
       return await calculateQuoteTool(ctx, args);

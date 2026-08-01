@@ -26,9 +26,9 @@ import { calculateQuote } from "../pricingEngine.ts";
 import {
   computeRequired,
   mergeFields,
+  type QuoteSession,
   sessionBookingInputsKey,
   sessionInputsKey,
-  type QuoteSession,
 } from "../quoteSession.ts";
 import { quoteSessionFieldsToQuoteInput } from "../quoteSessionPricingAdapter.ts";
 import {
@@ -52,11 +52,13 @@ import {
 } from "../voice/voiceJourneyContract.ts";
 import { evaluateQuoteIntake } from "../salesEngine/quoteIntakeContract.ts";
 import {
-  resolveQuoteDisposition,
   type ProductPolicyStatus,
+  resolveQuoteDisposition,
 } from "../salesEngine/quoteDisposition.ts";
 import { parseSlotSelection } from "../slotSelectionParser.ts";
 import { runTool } from "../aiTools.ts";
+import type { OrganizationAuthorityResolution } from "../organizationAuthority.ts";
+import { PUBLIC_BOOKING_ORGANIZATION_ID } from "../publicBookingServiceArea.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -72,6 +74,21 @@ export interface ControllerInput {
   email?: string | null;
   /** Best-effort E.164 caller ID (from provider ANI). */
   callerIdE164?: string | null;
+  /** Server-derived only. Missing/blocked authority is never replaced by DFW. */
+  organizationAuthority?: OrganizationAuthorityResolution | null;
+}
+
+function requireControllerOrganization(input: ControllerInput): string | null {
+  const organizationId = input.organizationAuthority?.status === "resolved"
+    ? input.organizationAuthority.organizationId.trim()
+    : "";
+  if (organizationId) return organizationId;
+  if (input.channel === "voice") {
+    // This check deliberately precedes every session read, tool call, and
+    // persistence decision. A blocked authority result is not a nullable org.
+    throw new Error("voice_organization_authority_required");
+  }
+  return null;
 }
 
 /**
@@ -105,12 +122,14 @@ async function probePricingMissing(
  *  requiring the model. */
 export async function runTurn(input: ControllerInput): Promise<TurnResult> {
   const t0 = Date.now();
+  const organizationId = requireControllerOrganization(input);
   const session = await reloadSession(input.supabase, {
     sessionId: input.sessionId,
     conversationId: input.conversationId,
     channel: input.channel,
     phone: input.phone,
     email: input.email,
+    resolvedOrganizationId: organizationId,
   });
   const workflow = classifyWorkflow(input.utterance, session);
   let action: WorkflowAction;
@@ -118,7 +137,9 @@ export async function runTurn(input: ControllerInput): Promise<TurnResult> {
     case "new_quote":
     case "schedule_service": {
       // Canonical engine is the sole authority on pricing readiness.
-      const pricingMissing = await probePricingMissing(input.supabase, session);
+      const pricingMissing = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
+        ? await probePricingMissing(input.supabase, session)
+        : null;
       action = decideResidentialQuoteAction(session, pricingMissing);
       break;
     }
@@ -213,18 +234,21 @@ function speakForFsm(action: WorkflowAction): string {
 export async function runControllerTurn(
   input: ControllerInput,
 ): Promise<ControllerTurnResult> {
+  const organizationId = requireControllerOrganization(input);
   let session = await reloadSession(input.supabase, {
     sessionId: input.sessionId,
     conversationId: input.conversationId,
     channel: input.channel,
     phone: input.phone,
     email: input.email,
+    resolvedOrganizationId: organizationId,
   });
   // Controller-only metadata is stripped by persistControllerPatch. Keeping
   // the observed row version beside the patch makes every early return use the
   // same optimistic-concurrency boundary without writing it into JSONB.
   const sessionPatch: Record<string, unknown> = {
     __expected_updated_at: session.updatedAt ?? null,
+    __expected_organization_id: session.organizationId ?? null,
   };
   const capture = (next: QuoteSession, lastStep = next.lastStep ?? null) => {
     session = { ...next, lastStep };
@@ -260,49 +284,70 @@ export async function runControllerTurn(
         pre: { kind: "ask_intent", spoken: VOICE_OPENING },
       };
     }
-    capture(mergeFields(session, {
-      voiceJourney: { ...(session.fields.voiceJourney ?? {}), intent },
-    }), "intent_confirmed");
+    capture(
+      mergeFields(session, {
+        voiceJourney: { ...(session.fields.voiceJourney ?? {}), intent },
+      }),
+      "intent_confirmed",
+    );
   }
 
   let f = session.fields;
 
   // Step 1: caller-ID confirmation dance (only when we have an ANI and no
   // confirmed phone yet). Never speaks the full number.
-  const havePhone = !!f.phone && (session.fieldStatus.phone === "captured" || session.fieldStatus.phone === "verified");
+  const havePhone = !!f.phone &&
+    (session.fieldStatus.phone === "captured" ||
+      session.fieldStatus.phone === "verified");
   if (!havePhone && input.callerIdE164) {
     const status = f.callerIdConfirmationStatus;
     if (!status) {
       // First time: propose the caller ID for confirmation.
-      capture(mergeFields(session, {
-        callerIdConfirmationStatus: "pending",
-        callerIdProposedE164: input.callerIdE164,
-      }), "confirming_caller_id");
+      capture(
+        mergeFields(session, {
+          callerIdConfirmationStatus: "pending",
+          callerIdProposedE164: input.callerIdE164,
+        }),
+        "confirming_caller_id",
+      );
       const last4 = digits(input.callerIdE164).slice(-4);
       return {
         sessionId: session.id,
         sessionPatch,
-        pre: { kind: "ask_confirm_caller_id", last4, spoken: confirmationPrompt(input.callerIdE164) },
+        pre: {
+          kind: "ask_confirm_caller_id",
+          last4,
+          spoken: confirmationPrompt(input.callerIdE164),
+        },
       };
     }
     if (status === "pending") {
       const reply = interpretConfirmation(input.utterance);
       if (reply === "confirmed") {
         const proposed = f.callerIdProposedE164 || input.callerIdE164;
-        capture(mergeFields(session, {
-          phone: proposed,
-          callerIdConfirmationStatus: "contact_confirmed",
-        }), "contact_number_confirmed");
+        capture(
+          mergeFields(session, {
+            phone: proposed,
+            callerIdConfirmationStatus: "contact_confirmed",
+          }),
+          "contact_number_confirmed",
+        );
         // ANI is caller-controlled and therefore confirms only the preferred
         // contact number. It does not verify identity or authorize lookup of a
         // stored customer record.
         f = session.fields;
       } else if (reply === "declined") {
-        capture(mergeFields(session, { callerIdConfirmationStatus: "declined" }), "collecting_preferred_phone");
+        capture(
+          mergeFields(session, { callerIdConfirmationStatus: "declined" }),
+          "collecting_preferred_phone",
+        );
         return {
           sessionId: session.id,
           sessionPatch,
-          pre: { kind: "ask_preferred_phone", spoken: REPROMPT_PREFERRED_NUMBER },
+          pre: {
+            kind: "ask_preferred_phone",
+            spoken: REPROMPT_PREFERRED_NUMBER,
+          },
         };
       } else {
         const last4 = digits(input.callerIdE164).slice(-4);
@@ -312,7 +357,9 @@ export async function runControllerTurn(
           pre: {
             kind: "ask_confirm_caller_id",
             last4,
-            spoken: `Sorry, I didn't catch that. ${confirmationPrompt(input.callerIdE164)}`,
+            spoken: `Sorry, I didn't catch that. ${
+              confirmationPrompt(input.callerIdE164)
+            }`,
           },
         };
       }
@@ -320,13 +367,19 @@ export async function runControllerTurn(
     if (status === "declined") {
       const parsed = normalizeSpokenPhone(input.utterance);
       if (parsed) {
-        capture(mergeFields(session, { phone: parsed }), "contact_number_captured");
+        capture(
+          mergeFields(session, { phone: parsed }),
+          "contact_number_captured",
+        );
         f = session.fields;
       } else {
         return {
           sessionId: session.id,
           sessionPatch,
-          pre: { kind: "ask_preferred_phone", spoken: REPROMPT_PREFERRED_NUMBER },
+          pre: {
+            kind: "ask_preferred_phone",
+            spoken: REPROMPT_PREFERRED_NUMBER,
+          },
         };
       }
     }
@@ -354,6 +407,7 @@ export async function runControllerTurn(
     supabase: input.supabase,
     conversationId: input.conversationId,
     sessionToken: "",
+    organizationId,
     channel: input.channel === "voice"
       ? "voice" as const
       : input.channel === "sms"
@@ -363,13 +417,16 @@ export async function runControllerTurn(
   if (session.lastStep === "offered_scheduling") {
     const answer = classifyExplicitConfirmation(input.utterance);
     if (answer === "declined") {
-      capture(mergeFields(session, {
-        voiceJourney: {
-          ...(session.fields.voiceJourney ?? {}),
-          availability: { status: "not_requested" },
-          booking: { status: "not_started" },
-        },
-      }), "scheduling_declined");
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            availability: { status: "not_requested" },
+            booking: { status: "not_started" },
+          },
+        }),
+        "scheduling_declined",
+      );
       const action: WorkflowAction = {
         kind: "end",
         reason: "scheduling_declined",
@@ -416,17 +473,20 @@ export async function runControllerTurn(
       const message = typeof raw.message === "string" && raw.message.trim()
         ? raw.message
         : VOICE_RECOVERY_LANGUAGE.availability_unavailable;
-      capture(mergeFields(session, {
-        voiceJourney: {
-          ...(session.fields.voiceJourney ?? {}),
-          availability: {
-            status: raw.status === "no_slots"
-              ? "refresh_required"
-              : "provider_unavailable",
-            forBookingKey: sessionBookingInputsKey(session.fields),
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            availability: {
+              status: raw.status === "no_slots"
+                ? "refresh_required"
+                : "provider_unavailable",
+              forBookingKey: sessionBookingInputsKey(session.fields),
+            },
           },
-        },
-      }), "availability_blocked");
+        }),
+        "availability_blocked",
+      );
       const action: WorkflowAction = { kind: "fetch_availability" };
       return {
         sessionId: session.id,
@@ -443,28 +503,31 @@ export async function runControllerTurn(
         ? slot.timezone
         : "America/Chicago",
     }));
-    capture(mergeFields(session, {
-      voiceJourney: {
-        ...(session.fields.voiceJourney ?? {}),
-        quoteContext: session.fields.voiceJourney?.quoteContext
-          ? {
-            ...session.fields.voiceJourney.quoteContext,
-            acceptedAt: new Date().toISOString(),
-          }
-          : null,
-        availability: {
-          status: "offered",
-          forBookingKey: sessionBookingInputsKey(session.fields),
-          expiresAt: typeof raw.offerExpiresAt === "string"
-            ? raw.offerExpiresAt
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          quoteContext: session.fields.voiceJourney?.quoteContext
+            ? {
+              ...session.fields.voiceJourney.quoteContext,
+              acceptedAt: new Date().toISOString(),
+            }
             : null,
-          offeredSlotIds: offeredSlots.map((slot) => slot.slotId),
-          offeredSlots,
-          selectedSlotId: null,
+          availability: {
+            status: "offered",
+            forBookingKey: sessionBookingInputsKey(session.fields),
+            expiresAt: typeof raw.offerExpiresAt === "string"
+              ? raw.offerExpiresAt
+              : null,
+            offeredSlotIds: offeredSlots.map((slot) => slot.slotId),
+            offeredSlots,
+            selectedSlotId: null,
+          },
+          booking: { status: "not_started" },
         },
-        booking: { status: "not_started" },
-      },
-    }), "awaiting_slot_selection");
+      }),
+      "awaiting_slot_selection",
+    );
     const action: WorkflowAction = { kind: "offer_slots", slots: offeredSlots };
     return {
       sessionId: session.id,
@@ -472,9 +535,11 @@ export async function runControllerTurn(
       pre: {
         kind: "fsm",
         action,
-        spoken: `${offeredSlots.map((slot, index) =>
-          `Option ${index + 1}: ${slot.label}`
-        ).join(". ")}. Which option works best?`,
+        spoken: `${
+          offeredSlots.map((slot, index) =>
+            `Option ${index + 1}: ${slot.label}`
+          ).join(". ")
+        }. Which option works best?`,
       },
     };
   }
@@ -495,7 +560,10 @@ export async function runControllerTurn(
       })),
     });
     if (selection.status !== "selected" || !selection.selected_slot_id) {
-      const action: WorkflowAction = { kind: "offer_slots", slots: offeredSlots };
+      const action: WorkflowAction = {
+        kind: "offer_slots",
+        slots: offeredSlots,
+      };
       return {
         sessionId: session.id,
         sessionPatch,
@@ -522,13 +590,16 @@ export async function runControllerTurn(
         },
       };
     }
-    capture(mergeFields(session, {
-      voiceJourney: {
-        ...(session.fields.voiceJourney ?? {}),
-        availability: { ...availability!, selectedSlotId: selected.slotId },
-        booking: { status: "confirmation_required" },
-      },
-    }), "confirming_booking");
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          availability: { ...availability!, selectedSlotId: selected.slotId },
+          booking: { status: "confirmation_required" },
+        },
+      }),
+      "confirming_booking",
+    );
     const total = session.fields.voiceJourney?.quoteContext?.estimatedTotal ??
       session.fields.lastQuoteResult?.total;
     const totalLanguage = typeof total === "number"
@@ -562,15 +633,18 @@ export async function runControllerTurn(
       slot.slotId === selectedSlotId
     );
     if (answer === "declined") {
-      capture(mergeFields(session, {
-        voiceJourney: {
-          ...(session.fields.voiceJourney ?? {}),
-          availability: availability
-            ? { ...availability, selectedSlotId: null }
-            : null,
-          booking: { status: "not_started" },
-        },
-      }), "booking_declined");
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            availability: availability
+              ? { ...availability, selectedSlotId: null }
+              : null,
+            booking: { status: "not_started" },
+          },
+        }),
+        "booking_declined",
+      );
       const action: WorkflowAction = {
         kind: "end",
         reason: "booking_declined",
@@ -598,16 +672,21 @@ export async function runControllerTurn(
           kind: "fsm",
           action,
           spoken:
-            `No appointment has been created. Please explicitly confirm whether you want me to submit ${selected?.label ?? "that selected time"}.`,
+            `No appointment has been created. Please explicitly confirm whether you want me to submit ${
+              selected?.label ?? "that selected time"
+            }.`,
         },
       };
     }
-    capture(mergeFields(session, {
-      voiceJourney: {
-        ...(session.fields.voiceJourney ?? {}),
-        booking: { status: "submitting" },
-      },
-    }), "booking_submitting");
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          booking: { status: "submitting" },
+        },
+      }),
+      "booking_submitting",
+    );
     const raw = await runTool(
       "create_bluladder_booking",
       toolContext,
@@ -616,19 +695,22 @@ export async function runControllerTurn(
     const confirmed = raw.status === "confirmed" && raw.simulated !== true;
     const recovery = raw.status === "needs_attention" ||
       raw.status === "temporarily_unavailable" || raw.status === "uncertain";
-    capture(mergeFields(session, {
-      voiceJourney: {
-        ...(session.fields.voiceJourney ?? {}),
-        booking: {
-          status: confirmed
-            ? "confirmed"
-            : recovery
-            ? "recovery_pending"
-            : "failed",
-          bookingId: typeof raw.bookingId === "string" ? raw.bookingId : null,
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          booking: {
+            status: confirmed
+              ? "confirmed"
+              : recovery
+              ? "recovery_pending"
+              : "failed",
+            bookingId: typeof raw.bookingId === "string" ? raw.bookingId : null,
+          },
         },
-      },
-    }), confirmed ? "booking_confirmed" : "booking_not_confirmed");
+      }),
+      confirmed ? "booking_confirmed" : "booking_not_confirmed",
+    );
     const action: WorkflowAction = {
       kind: "confirm_result",
       success: confirmed,
@@ -657,7 +739,11 @@ export async function runControllerTurn(
     ? session.lastStep.slice("asked:".length)
     : null;
   if (askedField) {
-    const parsed = applyCanonicalVoiceAnswer(session, askedField, input.utterance);
+    const parsed = applyCanonicalVoiceAnswer(
+      session,
+      askedField,
+      input.utterance,
+    );
     if (!parsed.accepted) {
       const prompt = askedField === "priceChangingAssumptionConfirmation"
         ? buildCanonicalPrePriceRecap(session.fields)
@@ -700,7 +786,15 @@ export async function runControllerTurn(
       reason: "tenant_authority_required",
     };
     capture(session, "blocked:tenant_authority_required");
-    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: tenantAuthorityBlockedLanguage(workflow) } };
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken: tenantAuthorityBlockedLanguage(workflow),
+      },
+    };
   }
   if (workflow === "reschedule") {
     const action: WorkflowAction = {
@@ -708,7 +802,15 @@ export async function runControllerTurn(
       reason: "tenant_authority_required",
     };
     capture(session, "blocked:tenant_authority_required");
-    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: tenantAuthorityBlockedLanguage(workflow) } };
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken: tenantAuthorityBlockedLanguage(workflow),
+      },
+    };
   }
   if (workflow === "cancel") {
     const action: WorkflowAction = {
@@ -716,7 +818,15 @@ export async function runControllerTurn(
       reason: "tenant_authority_required",
     };
     capture(session, "blocked:tenant_authority_required");
-    return { sessionId: session.id, sessionPatch, pre: { kind: "fsm", action, spoken: tenantAuthorityBlockedLanguage(workflow) } };
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken: tenantAuthorityBlockedLanguage(workflow),
+      },
+    };
   }
   if (workflow === "question_or_memo" && isFieldMemoRequest(input.utterance)) {
     const action: WorkflowAction = {
@@ -735,19 +845,25 @@ export async function runControllerTurn(
     };
   }
   if (workflow === "question_or_memo" || workflow === "general_inquiry") {
-    const action: WorkflowAction = { kind: "answer_side_question", topic: input.utterance.slice(0, 120) };
+    const action: WorkflowAction = {
+      kind: "answer_side_question",
+      topic: input.utterance.slice(0, 120),
+    };
     return {
       sessionId: session.id,
       sessionPatch,
       pre: {
         kind: "fsm",
         action,
-        spoken: "What specific question can I help with? I won’t change your quote or appointment unless you explicitly ask me to.",
+        spoken:
+          "What specific question can I help with? I won’t change your quote or appointment unless you explicitly ask me to.",
       },
     };
   }
 
-  const pricingMissing = await probePricingMissing(input.supabase, session);
+  const pricingMissing = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
+    ? await probePricingMissing(input.supabase, session)
+    : null;
   let action = decideResidentialQuoteAction(session, pricingMissing);
   if (action.kind === "handoff" && action.reason === "unsupported_service") {
     const missing = computeRequired(session.fields);
@@ -772,13 +888,37 @@ export async function runControllerTurn(
     };
   }
   if (action.kind === "calculate_price") {
-    const loaded = await loadPricing(input.supabase);
-    if (!loaded.ok || !loaded.pricing) {
-      const failed: WorkflowAction = { kind: "handoff", reason: "pricing_error" };
+    if (organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
+      const blocked: WorkflowAction = {
+        kind: "handoff",
+        reason: "tenant_authority_required",
+      };
+      capture(session, "blocked:pricing_connector_unavailable");
       return {
         sessionId: session.id,
         sessionPatch,
-        pre: { kind: "fsm", action: failed, spoken: VOICE_RECOVERY_LANGUAGE.human_follow_up },
+        pre: {
+          kind: "fsm",
+          action: blocked,
+          spoken:
+            "Pricing is not configured for this BluLadder organization, so I will not calculate or state a price.",
+        },
+      };
+    }
+    const loaded = await loadPricing(input.supabase);
+    if (!loaded.ok || !loaded.pricing) {
+      const failed: WorkflowAction = {
+        kind: "handoff",
+        reason: "pricing_error",
+      };
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: failed,
+          spoken: VOICE_RECOVERY_LANGUAGE.human_follow_up,
+        },
       };
     }
     const result = calculateQuote(
@@ -819,15 +959,15 @@ export async function runControllerTurn(
     };
     const quoteStatus: QuoteSession["quoteStatus"] =
       disposition.finalQuoteDisposition === "firm"
-      ? "firm"
-      : disposition.finalQuoteDisposition === "estimated"
-      ? "estimated"
-      : disposition.finalQuoteDisposition === "manual_review" ||
-          disposition.finalQuoteDisposition === "owner_decision_required"
-      ? "manual_review"
-      : disposition.finalQuoteDisposition === "incomplete"
-      ? "none"
-      : "error";
+        ? "firm"
+        : disposition.finalQuoteDisposition === "estimated"
+        ? "estimated"
+        : disposition.finalQuoteDisposition === "manual_review" ||
+            disposition.finalQuoteDisposition === "owner_decision_required"
+        ? "manual_review"
+        : disposition.finalQuoteDisposition === "incomplete"
+        ? "none"
+        : "error";
     const canonicalCustomerTotal =
       typeof result.estimatedTotal === "number" && result.estimatedTotal > 0
         ? result.estimatedTotal
@@ -864,13 +1004,18 @@ export async function runControllerTurn(
     const spoken = disposition.finalQuoteDisposition === "firm" &&
         canonicalCustomerTotal > 0
       ? buildCanonicalPriceStatement(canonicalCustomerTotal)
-      : disposition.finalQuoteDisposition === "estimated" && canonicalCustomerTotal > 0
-      ? `The current estimate is ${formatCanonicalCurrency(canonicalCustomerTotal)}. It is not a firm price yet.`
+      : disposition.finalQuoteDisposition === "estimated" &&
+          canonicalCustomerTotal > 0
+      ? `The current estimate is ${
+        formatCanonicalCurrency(canonicalCustomerTotal)
+      }. It is not a firm price yet.`
       : (disposition.finalQuoteDisposition === "manual_review" ||
           disposition.finalQuoteDisposition === "owner_decision_required")
       ? `${VOICE_RECOVERY_LANGUAGE.manual_review}${
         canonicalCustomerTotal > 0
-          ? ` The independently priced portions currently total ${formatCanonicalCurrency(canonicalCustomerTotal)}.`
+          ? ` The independently priced portions currently total ${
+            formatCanonicalCurrency(canonicalCustomerTotal)
+          }.`
           : ""
       }`
       : VOICE_RECOVERY_LANGUAGE.quote_needs_clarification;
@@ -887,20 +1032,25 @@ export async function runControllerTurn(
     const spoken = disposition === "firm" && total > 0
       ? buildCanonicalPriceStatement(total)
       : disposition === "estimated" && total > 0
-      ? `The current estimate is ${formatCanonicalCurrency(total)}. It is not a firm price yet.`
+      ? `The current estimate is ${
+        formatCanonicalCurrency(total)
+      }. It is not a firm price yet.`
       : disposition === "manual_review" ||
           disposition === "owner_decision_required"
       ? VOICE_RECOVERY_LANGUAGE.manual_review
       : VOICE_RECOVERY_LANGUAGE.quote_needs_clarification;
     const currentQuoteContext = session.fields.voiceJourney?.quoteContext;
-    capture(mergeFields(session, {
-      voiceJourney: {
-        ...(session.fields.voiceJourney ?? {}),
-        quoteContext: currentQuoteContext
-          ? { ...currentQuoteContext, spokenAt: new Date().toISOString() }
-          : null,
-      },
-    }), "priced_spoken");
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          quoteContext: currentQuoteContext
+            ? { ...currentQuoteContext, spokenAt: new Date().toISOString() }
+            : null,
+        },
+      }),
+      "priced_spoken",
+    );
     return {
       sessionId: session.id,
       sessionPatch,
@@ -944,7 +1094,8 @@ export async function runControllerTurn(
     pre: {
       kind: "fsm",
       action: blocked,
-      spoken: "I can't safely complete that action in this call path yet. Nothing was changed.",
+      spoken:
+        "I can't safely complete that action in this call path yet. Nothing was changed.",
     },
   };
 }
@@ -964,9 +1115,18 @@ export async function persistControllerPatch(
   if (!sessionId || !patch) return { status: "noop" };
   const {
     __expected_updated_at: expectedUpdatedAt,
+    __expected_organization_id: expectedOrganizationId,
     ...databasePatch
   } = patch;
   if (Object.keys(databasePatch).length === 0) return { status: "noop" };
+  if (
+    typeof expectedOrganizationId !== "string" || !expectedOrganizationId
+  ) {
+    return {
+      status: "error",
+      reason: "organization_authority_required",
+    };
+  }
   try {
     let query = supabase.from("quote_sessions").update(databasePatch).eq(
       "id",
@@ -975,6 +1135,7 @@ export async function persistControllerPatch(
     if (typeof expectedUpdatedAt === "string" && expectedUpdatedAt) {
       query = query.eq("updated_at", expectedUpdatedAt);
     }
+    query = query.eq("organization_id", expectedOrganizationId);
     const { data, error } = await query.select("id").maybeSingle();
     if (error) {
       return { status: "error", reason: "quote_session_update_failed" };
