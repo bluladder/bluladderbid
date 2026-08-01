@@ -1,10 +1,14 @@
 # Tenant authority Stage 7B v2 hosted preflight
 
-Status: independently revalidated schema-preparation release at baseline
-`388d9849a9bfa187faa8122e82b37ef4965b2364`. All hosted queries were
-metadata-only or aggregate-only `SELECT` statements executed through the
-Lovable-managed database connection. No customer or operational row was
-selected, no write was executed, and no migration was applied.
+Status: schema preparation merged at
+`e8709faad8663bf9d9cd903b81985e7bedcb00bf`; post-merge production preflight
+and the single authorized stop-gate lineage investigation were re-run on
+2026-08-01 through the Lovable-managed database connection. All statements
+were `SELECT`. No write was executed and no migration was applied. The targeted
+investigation selected only UUIDs, organization lineage, lifecycle
+timestamps/statuses, and boolean provider-link indicators; it did not select
+names, addresses, phone numbers, email addresses, messages, notes, or raw
+provider identifiers.
 
 ## Target and migration ledger
 
@@ -58,13 +62,17 @@ does not invent a new public-technician policy. Product intent for that view is
 a separate owner/security decision.
 
 One first-wave quote row is live with two defect signals: null quote ownership
-and a quote/customer ownership mismatch. Customers, properties, and bookings
-had zero nulls and zero reported mismatches. The migration's aggregate stop
-predicate currently matches one row. This repository tranche prevents new
-parented quotes/bookings from remaining unscoped, but does not modify the
-hosted row. The repository migration includes an executable stop gate and will
-abort while either defect class remains. Hosted remediation remains a
-separately approved production-data action and a release gate.
+and a quote/customer ownership mismatch. The targeted review confirmed both
+signals are quote `9b55aaa5-1a98-462a-9d71-edc2ea128e03`, whose customer is
+`c867029e-2d5a-498f-9226-32533c5a1665` and whose property is null. The customer
+is scoped to the active, explicitly designated legacy organization
+`b1addf00-0000-4000-8000-000000000001`; the quote has no competing parent.
+Customers, properties, and bookings had zero nulls and zero reported
+mismatches. The migration's aggregate stop predicate currently matches that
+one row. The repository migration includes an executable stop gate and will
+abort until a separately approved production-data action resolves it. The
+exact PII-free evidence and review-only transaction are in
+`tenant-stage-7b-v2-remediation-plan.md`.
 
 ## Second-wave evidence
 
@@ -78,7 +86,7 @@ Aggregate-only lineage analysis produced:
 | Table | Rows | Exactly one parent organization | No parent authority | Conflicting parents |
 |---|---:|---:|---:|---:|
 | `quote_sessions` | 20 | 0 | 20 | 0 |
-| `chat_conversations` | 32 | 2 | 30 | 0 |
+| `chat_conversations` | 33 | 2 | 31 | 0 |
 
 The migration therefore backfills only rows with exactly one organization
 derived from existing customer, confirmed-email customer, property, quote, or
@@ -135,7 +143,9 @@ and provider synchronization are not part of this tranche.
 GitHub Actions contains no deployment job. Lovable documentation states that
 the default GitHub branch synchronizes automatically into the Lovable project,
 while the published site remains a manually updated snapshot. The project is
-currently published, but its recorded latest commit is still the baseline SHA.
+currently published and Lovable now records merged schema-only main SHA
+`e8709faad8663bf9d9cd903b81985e7bedcb00bf` as its latest project commit. No
+publish action was taken during the post-merge investigation.
 No documented atomic guarantee was found that orders GitHub-to-Lovable Edge
 Function publication after database migration application. PR #65 therefore
 contains no changed runtime consumer and enforces byte parity with the baseline
