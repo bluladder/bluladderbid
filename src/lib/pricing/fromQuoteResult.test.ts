@@ -10,7 +10,7 @@ function baseQuote(partial: Partial<QuoteResult>): QuoteResult {
     explanation: '', trace: [], jobberLineItems: [], promotion: null,
     durationSource: null,
     ...partial,
-  };
+  } as QuoteResult;
 }
 
 describe('fromQuoteResult adapter', () => {
