@@ -51,7 +51,13 @@ export interface ConversationFacts {
   services?: string[];
   address?: string;
   serviceArea?:
-    | { status?: string; formattedAddress?: string; reason?: string }
+    | {
+      status?: string;
+      formattedAddress?: string;
+      reason?: string;
+      geocodingConfidence?: "exact" | "partial" | "unavailable";
+      ambiguous?: boolean;
+    }
     | null;
   property?: {
     squareFootage?: number;
@@ -73,6 +79,10 @@ export interface ConversationFacts {
     status?: string; // firm | estimated | missing_information | manual_review_required | pricing_unavailable | error
     firm?: boolean;
     total?: number | null;
+    serviceSubtotal?: number | null;
+    estimatedTax?: number | null;
+    estimatedTotal?: number | null;
+    taxPolicyVersion?: string | null;
     lineItems?: unknown[];
     pricingVersion?: number | null;
     engineVersion?: string | null;
@@ -127,8 +137,18 @@ export interface ConversationFacts {
   addressCandidate?: {
     formattedAddress?: string;
     spokenAddress?: string;
-    status?: "pending" | "confirmed" | "house_number_mismatch";
+    status?: "pending" | "confirmed" | "house_number_mismatch" | "component_incomplete";
     confirmedAddress?: string | null;
+    components?: {
+      house_number?: string;
+      street?: string;
+      unit?: string;
+      city?: string;
+      state?: string;
+      postal_code?: string;
+    };
+    pendingComponent?: "house_number" | "street" | "unit" | "city" | "state" | "postal_code" | null;
+    componentAttempts?: Partial<Record<"house_number" | "street" | "unit" | "city" | "state" | "postal_code", number>>;
   } | null;
   // True once exactly one canonical human escalation/callback was recorded for
   // this conversation, so a repeated "can I talk to a person" reuses it.

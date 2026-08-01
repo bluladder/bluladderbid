@@ -84,6 +84,9 @@ export type AvailabilityStatus =
   | "gate_blocked"
   | "schedule_drifted"
   | "preference_ambiguous"
+  | "provider_timeout"
+  | "provider_rate_limited"
+  | "provider_unavailable"
   | "engine_error"
   | "no_slots";
 
@@ -321,15 +324,24 @@ export type AvailabilityFetcher = (body: Record<string, unknown>) => Promise<{ s
 async function defaultFetcher(body: Record<string, unknown>): Promise<{ status: number; json: any }> {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const resp = await fetch(`${SUPABASE_URL}/functions/v1/jobber-availability`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      apikey: SERVICE_KEY,
-    },
-    body: JSON.stringify(body),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${SUPABASE_URL}/functions/v1/jobber-availability`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        apikey: SERVICE_KEY,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8_000),
+    });
+  } catch (error) {
+    return {
+      status: 599,
+      json: { error: "provider_timeout", detail: String(error).slice(0, 120) },
+    };
+  }
   let json: any = null;
   try { json = await resp.json(); } catch { /* keep null */ }
   return { status: resp.status, json };
@@ -462,6 +474,30 @@ export async function getAvailableSlots(
   const fetcher = deps.fetcher ?? defaultFetcher;
   const { status, json } = await fetcher(body);
 
+  if (status === 599 && json?.error === "provider_timeout") {
+    return {
+      status: "provider_timeout",
+      slots: [],
+      readiness,
+      detail: "availability_provider_timeout",
+    };
+  }
+  if (status === 429) {
+    return {
+      status: "provider_rate_limited",
+      slots: [],
+      readiness,
+      detail: "availability_provider_rate_limited",
+    };
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return {
+      status: "provider_unavailable",
+      slots: [],
+      readiness,
+      detail: `availability_provider_status_${status}`,
+    };
+  }
   if (status !== 200 || !json) {
     return {
       status: "engine_error",

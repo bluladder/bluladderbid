@@ -451,9 +451,18 @@ serve(async (req) => {
     const immediateBody = renderTemplate(DEFAULT_TEMPLATES[eventType], vars);
     let transactionalSent = false;
     let transactionalError: string | undefined;
+    let transactionalDeliveryStatus:
+      | "accepted"
+      | "queued"
+      | "uncertain"
+      | "failed"
+      | "suppressed" = "failed";
+    let transactionalAttemptId: string | null = null;
+    let transactionalProviderMessageId: string | null = null;
 
     // ---- 1) Immediate transactional message ----
     if (smsSuppressed) {
+      transactionalDeliveryStatus = "suppressed";
       transactionalError = testSuppression.suppressed
         ? `Suppressed (${testSuppression.reason})`
         : optedOut
@@ -490,6 +499,16 @@ serve(async (req) => {
           callRail: config,
         });
         transactionalSent = result.sent;
+        transactionalAttemptId = result.smsMessageId;
+        transactionalProviderMessageId = result.providerMessageId;
+        transactionalDeliveryStatus = result.sent
+          ? "accepted"
+          : result.inProgress || result.outboxState === "pending_send" ||
+              result.outboxState === "sending"
+          ? "queued"
+          : result.outboxState === "delivery_unknown"
+          ? "uncertain"
+          : "failed";
         transactionalError = result.error ??
           (result.inProgress
             ? "delivery_in_progress"
@@ -504,17 +523,16 @@ serve(async (req) => {
     // owned exclusively by the canonical campaign-event function, reached via
     // emitCampaignEvent(). Callers that need follow-up automation must emit
     // an allowlisted campaign lifecycle event separately.
-    const deliveryStatus = transactionalSent
-      ? "accepted"
-      : smsSuppressed
-      ? "suppressed"
-      : "failed";
     return new Response(
       JSON.stringify({
         success: transactionalSent,
-        deliveryStatus,
+        deliveryStatus: transactionalDeliveryStatus,
         transactionalSent,
-        transactionalError: transactionalSent ? null : "message_not_accepted",
+        transactionalAttemptId,
+        providerMessageId: transactionalProviderMessageId,
+        transactionalError: transactionalSent
+          ? null
+          : transactionalError ?? "message_not_accepted",
         scheduledFollowUps: 0,
       }),
       {

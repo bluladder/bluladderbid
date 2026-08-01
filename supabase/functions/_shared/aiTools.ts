@@ -29,6 +29,14 @@ import {
 } from "./slotOffer.ts";
 import { parseAllowlist } from "./workflow/rolloutRoute.ts";
 import { windowSidesToPricingType } from "./salesEngine/quoteIntakeContract.ts";
+import { getAvailableSlots } from "./availabilityLookup.ts";
+import {
+  findByConversation as findQuoteSessionByConversation,
+  sessionInputsKey,
+} from "./quoteSession.ts";
+import { getBookingReadiness } from "./bookingReadiness.ts";
+import { quoteIdentityMatches } from "./voice/voiceJourneyContract.ts";
+import { quoteSessionFieldsToQuoteInput } from "./quoteSessionPricingAdapter.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -330,7 +338,7 @@ async function calculateQuoteTool(
         pricing_version: json.ruleVersion ?? null,
         engine_version: json.engineVersion ?? null,
         manual_review: !!manualHit,
-        total: firm ? json.total : null,
+        total: firm ? (json.estimatedTotal ?? json.total) : null,
       },
     });
   }
@@ -345,7 +353,13 @@ async function calculateQuoteTool(
     discount: json.discount ?? null,
     disclosures: json.disclosures ?? [],
     calculationOrder: json.calculationOrder ?? [],
-    total: firm ? json.total : null,
+    // Customer-facing total includes the canonical estimated-tax contract.
+    // Preserve the pre-tax total separately in the returned tax breakdown.
+    total: firm ? (json.estimatedTotal ?? json.total) : null,
+    serviceSubtotal: json.serviceSubtotal ?? json.subtotal ?? null,
+    estimatedTax: json.estimatedTax ?? null,
+    estimatedTotal: json.estimatedTotal ?? json.total ?? null,
+    taxPolicyVersion: json.taxPolicyVersion ?? null,
     estimatedDurationMinutes: json.estimatedDurationMinutes ?? null,
     missingQuestions: json.missing ?? [],
     manualReviewReasons: manualHit
@@ -363,10 +377,122 @@ async function calculateQuoteTool(
 // ---------------------------------------------------------------------------
 // TOOL: get_bluladder_availability — repaired availability, IDs stripped.
 // ---------------------------------------------------------------------------
+async function canonicalVoiceAvailabilityTool(
+  ctx: ToolContext,
+  args: Record<string, unknown>,
+) {
+  const result = await getAvailableSlots(ctx.supabase, ctx.conversationId, {
+    preferred_date: typeof args.startDate === "string" ? args.startDate : null,
+    preferred_day: typeof args.preferredDay === "string"
+      ? args.preferredDay
+      : null,
+    time_of_day: args.preference === "AM"
+      ? "morning"
+      : args.preference === "PM"
+      ? "afternoon"
+      : null,
+    max_options: 3,
+  });
+  if (result.status !== "ok") {
+    const messages: Record<string, string> = {
+      no_slots: "I checked the current schedule and did not find an available appointment in that window.",
+      schedule_drifted: "The schedule needs to refresh before I can offer current times.",
+      provider_timeout: "The scheduling provider timed out, so I will not guess at appointment times.",
+      provider_rate_limited: "The scheduling provider is temporarily busy, so I cannot confirm times right now.",
+      provider_unavailable: "The scheduling provider is unavailable, so I cannot confirm times right now.",
+      preference_ambiguous: "I need a clearer date or day preference before I check times.",
+      not_ready: "The quote, address, identity, duration, or schedule is not ready for availability yet.",
+      gate_blocked: "Live scheduling is not authorized for this request.",
+      engine_error: "I could not confirm availability, so I will not offer a time.",
+    };
+    return {
+      status: result.status,
+      message: messages[result.status] ??
+        "I could not confirm availability, so I will not offer a time.",
+      nextAction: result.next_action ?? null,
+    };
+  }
+
+  const session = await findQuoteSessionByConversation(
+    ctx.supabase,
+    ctx.conversationId,
+  );
+  if (!session) {
+    return {
+      status: "not_ready",
+      message: "The canonical quote session is missing, so I cannot offer times.",
+    };
+  }
+  const last = session.fields.lastQuoteResult;
+  const inputsKey = sessionInputsKey(session.fields);
+  if (!last || last.inputsKey !== inputsKey) {
+    return {
+      status: "quote_changed",
+      message: "The quote changed before availability was offered, so I need to refresh the price first.",
+    };
+  }
+  const offerVersion = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + OFFER_TTL_MS).toISOString();
+  const offered = result.slots.map((slot) => ({
+    slotId: slot.slot_id,
+    startTime: slot.start_at,
+    endTime: slot.end_at,
+    displayTime: slot.customer_label,
+    timezone: slot.timezone,
+    durationMinutes: result.readiness?.duration.minutes ?? null,
+    // Preserve the legacy booking resolver shape while sourcing it from the
+    // canonical availability result. These values remain server-only.
+    __technicianId: slot.crew_ids?.[0] ?? null,
+    __isTeamJob: (slot.crew_ids?.length ?? 0) > 1,
+    __teamTechnicianIds: (slot.crew_ids?.length ?? 0) > 1
+      ? slot.crew_ids
+      : null,
+  }));
+  const quoteIdentity = {
+    quoteSessionId: session.id,
+    quoteId: session.quoteId ?? null,
+    inputsKey,
+    pricingVersion: last.ruleVersion ?? null,
+    engineVersion: last.engineVersion ?? null,
+    durationVersion: last.durationVersion ?? null,
+    taxPolicyVersion: last.taxPolicyVersion ?? null,
+  };
+  await ctx.supabase.from("chat_messages").insert({
+    conversation_id: ctx.conversationId,
+    role: "tool",
+    tool_name: "get_bluladder_availability",
+    tool_result: {
+      offered,
+      offerVersion,
+      expiresAt,
+      quoteSignature: inputsKey,
+      quoteIdentity,
+    },
+  });
+  await ctx.supabase.from("chat_conversations")
+    .update({ slot_failure_count: 0 })
+    .eq("id", ctx.conversationId);
+  return {
+    status: "ok",
+    offerExpiresAt: expiresAt,
+    slots: offered.map(({ slotId, startTime, endTime, displayTime, durationMinutes, timezone }) => ({
+      slotId,
+      startTime,
+      endTime,
+      displayTime,
+      durationMinutes,
+      timezone,
+    })),
+  };
+}
+
 async function availabilityTool(
   ctx: ToolContext,
   args: Record<string, unknown>,
 ) {
+  if (ctx.channel === "voice") {
+    return await canonicalVoiceAvailabilityTool(ctx, args);
+  }
   // Require a prior firm/estimated quote so duration/price feed scheduling.
   const { data: convo } = await ctx.supabase
     .from("chat_conversations")
@@ -543,7 +669,60 @@ async function createBookingTool(
     }
   }
 
-  const quote = convo?.quote_result as any;
+  let quote = convo?.quote_result as any;
+  let canonicalBookingInput: ReturnType<typeof quoteSessionFieldsToQuoteInput> | null = null;
+  let canonicalQuoteIdentity: {
+    quoteSessionId: string;
+    quoteId: string | null;
+    inputsKey: string;
+    pricingVersion: number | string | null;
+    engineVersion: string | null;
+    durationVersion: string | null;
+    taxPolicyVersion: string | null;
+  } | null = null;
+  if (ctx.channel === "voice") {
+    const readiness = await getBookingReadiness(
+      ctx.supabase,
+      ctx.conversationId,
+    );
+    if (!readiness.ready || readiness.next_action !== "show_availability") {
+      return {
+        status: readiness.status,
+        message: readiness.status === "duration_unavailable"
+          ? "I do not have an authoritative duration, so no appointment was created."
+          : "The quote, identity, property, service area, duration, or schedule is not ready for booking, so no appointment was created.",
+      };
+    }
+    const session = await findQuoteSessionByConversation(
+      ctx.supabase,
+      ctx.conversationId,
+    );
+    const last = session?.fields.lastQuoteResult;
+    if (!session || !last) {
+      return {
+        status: "need_quote_first",
+        message: "A current canonical quote is required before booking.",
+      };
+    }
+    const inputsKey = sessionInputsKey(session.fields);
+    if (last.inputsKey !== inputsKey) {
+      return {
+        status: "quote_changed",
+        message: "The quote changed, so I need to verify the current price before booking.",
+      };
+    }
+    quote = last;
+    canonicalBookingInput = quoteSessionFieldsToQuoteInput(session.fields);
+    canonicalQuoteIdentity = {
+      quoteSessionId: session.id,
+      quoteId: session.quoteId ?? null,
+      inputsKey,
+      pricingVersion: (last.ruleVersion as number | string | null) ?? null,
+      engineVersion: (last.engineVersion as string | null) ?? null,
+      durationVersion: (last.durationVersion as string | null) ?? null,
+      taxPolicyVersion: (last.taxPolicyVersion as string | null) ?? null,
+    };
+  }
   if (!quote) {
     return {
       status: "need_quote_first",
@@ -603,9 +782,28 @@ async function createBookingTool(
       offerVersion?: string;
       expiresAt?: string;
       quoteSignature?: string;
+      quoteIdentity?: Partial<NonNullable<typeof canonicalQuoteIdentity>>;
     }
     | undefined;
   const offered = latest?.offered;
+
+  if (
+    ctx.channel === "voice" &&
+    canonicalQuoteIdentity &&
+    !quoteIdentityMatches(canonicalQuoteIdentity, latest?.quoteIdentity)
+  ) {
+    await recordSlotFailure(
+      ctx,
+      "stale_quote_identity",
+      "availability offer quote identity does not match the current canonical quote",
+      convo,
+    );
+    return {
+      status: "quote_changed",
+      message:
+        "The quote context changed after those times were offered. I need to refresh the quote and current availability before booking.",
+    };
+  }
 
   // Not in the latest offer → the id is stale (a prior offer) or absent. Refresh.
   const slot = offered?.find((s) => s.slotId === slotId);
@@ -637,7 +835,9 @@ async function createBookingTool(
     };
   }
   // Quote/service details changed since the offer.
-  const currentSignature = computeQuoteSignature(quote);
+  const currentSignature = ctx.channel === "voice" && canonicalQuoteIdentity
+    ? canonicalQuoteIdentity.inputsKey
+    : computeQuoteSignature(quote);
   if (latest?.quoteSignature && latest.quoteSignature !== currentSignature) {
     await recordSlotFailure(
       ctx,
@@ -726,9 +926,10 @@ async function createBookingTool(
     teamTechnicianIds: slot.__teamTechnicianIds,
     scheduledStart: slot.startTime,
     scheduledEnd: slot.endTime,
-    homeDetails: quote.__homeDetails ?? quote.homeDetails ?? {},
-    additionalServices: quote.__additionalServices ??
-      quote.additionalServices ?? undefined,
+    homeDetails: canonicalBookingInput?.homeDetails ??
+      quote.__homeDetails ?? quote.homeDetails ?? {},
+    additionalServices: canonicalBookingInput?.additionalServices ??
+      quote.__additionalServices ?? quote.additionalServices ?? undefined,
     idempotencyKey,
   });
 
@@ -876,6 +1077,12 @@ async function createBookingTool(
   return {
     status: "confirmed",
     confirmedTime: slot.displayTime,
+    bookingId: typeof json?.bookingId === "string" ? json.bookingId : null,
+    bookingReference: typeof json?.referenceNumber === "string"
+      ? json.referenceNumber
+      : null,
+    providerStatus: "accepted",
+    localStatus: "persisted",
     message: "Booking confirmed.",
     event: "booking_completed",
   };
@@ -980,6 +1187,9 @@ async function validateServiceAreaTool(
     city: result.city,
     county: result.county,
     state: result.state,
+    streetNumber: result.streetNumber,
+    route: result.route,
+    postalCode: result.postalCode,
     formattedAddress: result.formattedAddress,
     reason: result.reason,
     addressConfirmationNeeded,

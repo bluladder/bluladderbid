@@ -6,6 +6,7 @@ import {
   servicesFromFacts,
 } from "./quoteByTextDelivery.ts";
 import { quoteInputsKey } from "../conversationState.ts";
+import { type QuoteSessionFields, sessionInputsKey } from "../quoteSession.ts";
 
 const facts = {
   services: ["window_cleaning"],
@@ -28,6 +29,51 @@ const facts = {
 } as any;
 // A firm quote is only "current" while its inputs signature still matches.
 facts.quote.inputsKey = quoteInputsKey(facts);
+
+function firmCanonicalFields(
+  overrides: Partial<QuoteSessionFields> = {},
+): QuoteSessionFields {
+  const base: QuoteSessionFields = {
+    services: ["windowCleaning"],
+    squareFootage: 2500,
+    stories: 2,
+    windowCleaningSides: "inside_and_outside",
+    condition: "maintenance",
+    advancedWindowConditions: false,
+    screenProfile: "standard_removable",
+    enclosedPatioProfile: "none",
+    phone: "+14692150144",
+    address: "123 Main St, Frisco, TX 75034",
+    serviceAreaStatus: "eligible",
+    ...overrides,
+  };
+  const inputsKey = sessionInputsKey(base);
+  return {
+    ...base,
+    lastQuoteResult: {
+      status: "firm",
+      finalQuoteDisposition: "firm",
+      inputsKey,
+      serviceSubtotal: 389,
+      estimatedTax: 32.09,
+      estimatedTotal: 421.09,
+      engineVersion: "canonical-engine",
+      ruleVersion: 9,
+      lineItems: [{
+        key: "window_cleaning",
+        label: "Canonical Window Cleaning",
+        amount: 389,
+      }],
+    },
+    voiceJourney: {
+      quoteContext: {
+        inputsKey,
+        finalQuoteDisposition: "firm",
+        estimatedTotal: 421.09,
+      },
+    },
+  };
+}
 
 /** Minimal stub of the exact-id reads the delivery path performs. */
 function sb(opts: {
@@ -95,6 +141,54 @@ Deno.test("save-quote payload carries canonical line items and a stable scope", 
   assertEquals(body.ruleVersion, 7);
 });
 
+Deno.test("save-quote payload uses canonical session inputs, promotion, and tax-inclusive total", () => {
+  const body = buildVoiceSaveQuoteBody({
+    facts,
+    email: "a@b.com",
+    phoneE164: "+14692150144",
+    sourceSessionId: "sess-1",
+    sessionFields: {
+      services: ["windowCleaning"],
+      squareFootage: 2500,
+      stories: 2,
+      windowCleaningSides: "inside_and_outside",
+      condition: "maintenance",
+      advancedWindowConditions: true,
+      hardWaterStains: true,
+      hardWaterAffectedWindowEquivalents: 4,
+      screenProfile: "standard_removable",
+      enclosedPatioProfile: "none",
+      promotionId: "promo-99",
+      windowCount: 10,
+      lastQuoteResult: {
+        total: 389,
+        serviceSubtotal: 389,
+        estimatedTax: 32.09,
+        estimatedTotal: 421.09,
+        engineVersion: "canonical-engine",
+        ruleVersion: 9,
+        lineItems: [{
+          key: "window_cleaning",
+          label: "Canonical Window Cleaning",
+          amount: 389,
+        }],
+      },
+    },
+  });
+  const homeDetails = body.homeDetails as Record<string, unknown>;
+  assertEquals(body.total, 421.09);
+  assertEquals(body.subtotal, 389);
+  assertEquals(homeDetails.windowCleaningType, "both");
+  assertEquals(homeDetails.hardWaterAffectedWindowEquivalents, 4);
+  assertEquals(body.promotion, { id: "promo-99", windowCount: 10 });
+  assertEquals(body.services, [{
+    name: "Canonical Window Cleaning",
+    amount: 389,
+  }]);
+  assertEquals(body.engineVersion, "canonical-engine");
+  assertEquals(body.ruleVersion, 9);
+});
+
 Deno.test("line items fall back to service slugs only when absent", () => {
   assertEquals(servicesFromFacts({ ...facts, quote: { total: 1 } } as any), [
     { name: "window_cleaning" },
@@ -134,6 +228,137 @@ Deno.test("an unaccepted SMS is never reported as sent", async () => {
   });
   assertEquals(res.ok, false);
   assertEquals(res.reason, "sms_not_sent");
+});
+
+Deno.test("queued outbox evidence remains queued and is not called sent", async () => {
+  const res = await deliverVoiceQuoteByText({
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: (name) =>
+      Promise.resolve(
+        name === "save-quote" ? { status: 200, json: { quoteId: "q1" } } : {
+          status: 200,
+          json: {
+            transactionalSent: false,
+            deliveryStatus: "queued",
+            transactionalAttemptId: "sms-1",
+          },
+        },
+      ),
+  });
+  assertEquals(res.ok, false);
+  assertEquals(res.status, "queued");
+  assertEquals(res.attemptId, "sms-1");
+});
+
+Deno.test("transport exceptions after a possible write are reported uncertain", async () => {
+  const saveUncertain = await deliverVoiceQuoteByText({
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: () => Promise.reject(new Error("timeout")),
+  });
+  assertEquals(saveUncertain.status, "uncertain");
+  assertEquals(saveUncertain.detail, "save_quote_transport_uncertain");
+
+  const smsUncertain = await deliverVoiceQuoteByText({
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: (name) =>
+      name === "save-quote"
+        ? Promise.resolve({ status: 200, json: { quoteId: "q1" } })
+        : Promise.reject(new Error("timeout")),
+  });
+  assertEquals(smsUncertain.status, "uncertain");
+  assertEquals(smsUncertain.quoteId, "q1");
+  assertEquals(smsUncertain.detail, "send_sms_transport_uncertain");
+});
+
+Deno.test("malformed successful transport responses fail closed as uncertain", async () => {
+  const res = await deliverVoiceQuoteByText({
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: () => Promise.resolve({ status: 200, json: {} }),
+  });
+  assertEquals(res.status, "uncertain");
+  assertEquals(res.reason, "save_quote_failed");
+});
+
+Deno.test("explicit 5xx responses remain retry-pending, not terminal", async () => {
+  const saveRetry = await deliverVoiceQuoteByText({
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: () =>
+      Promise.resolve({ status: 503, json: { status: "unavailable" } }),
+  });
+  assertEquals(saveRetry.status, "retry_pending");
+
+  const smsRetry = await deliverVoiceQuoteByText({
+    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: (name) =>
+      Promise.resolve(
+        name === "save-quote"
+          ? { status: 200, json: { quoteId: "q1" } }
+          : { status: 503, json: {} },
+      ),
+  });
+  assertEquals(smsRetry.status, "retry_pending");
+});
+
+Deno.test("canonical session firmness overrides divergent legacy facts", async () => {
+  const canonical = firmCanonicalFields();
+  const legacyNonFirm = {
+    ...facts,
+    quote: { status: "estimated", firm: false, total: 1 },
+  } as typeof facts;
+  const result = await deliverVoiceQuoteByText({
+    supabase: sb({
+      session: { email_normalized: "known@x.com", fields: canonical },
+    }),
+    facts: legacyNonFirm,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: ok,
+  });
+  assertEquals(result.status, "provider_accepted");
+});
+
+Deno.test("legacy firmness cannot bypass canonical manual review", async () => {
+  const canonical = firmCanonicalFields();
+  canonical.lastQuoteResult = {
+    ...canonical.lastQuoteResult,
+    finalQuoteDisposition: "manual_review",
+  };
+  if (canonical.voiceJourney?.quoteContext) {
+    canonical.voiceJourney.quoteContext.finalQuoteDisposition = "manual_review";
+  }
+  const calls: string[] = [];
+  const result = await deliverVoiceQuoteByText({
+    supabase: sb({
+      session: { email_normalized: "known@x.com", fields: canonical },
+    }),
+    facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: (name) => {
+      calls.push(name);
+      return ok(name);
+    },
+  });
+  assertEquals(result.reason, "quote_not_firm");
+  assertEquals(calls, []);
 });
 
 Deno.test("no resolvable email means no send attempt at all", async () => {
