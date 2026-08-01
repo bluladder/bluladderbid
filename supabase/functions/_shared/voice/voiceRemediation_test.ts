@@ -366,6 +366,7 @@ Deno.test("whole-home priced session does not report partial-window fields as re
       stories: 1,
       windowCleaningSides: "outside_only",
       condition: "maintenance",
+      advancedWindowConditions: false,
       screenProfile: "standard_removable",
       enclosedPatioProfile: "none",
     }),

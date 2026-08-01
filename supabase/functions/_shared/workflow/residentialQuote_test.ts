@@ -80,7 +80,7 @@ Deno.test("canonical wording: square footage prompt names the exact field", () =
   if (a.kind === "ask") assertEquals(a.prompt, "How many square feet is your home?");
 });
 
-Deno.test("unresolved window scope is asked before square footage", () => {
+Deno.test("approved whole-home default asks square footage without a routine scope question", () => {
   const s = afterContact({
     fields: { services: ["windowCleaning"] },
     fieldStatus: { services: "captured" },
@@ -88,10 +88,10 @@ Deno.test("unresolved window scope is asked before square footage", () => {
   const a = decideResidentialQuoteAction(s, ["squareFootage"]);
   assertEquals(a.kind, "ask");
   if (a.kind === "ask") {
-    assertEquals(a.field, "windowCleaningScope");
+    assertEquals(a.field, "squareFootage");
     assertEquals(
       a.prompt,
-      "Got it. Is this every window on the home, or a specific count of windows?",
+      "How many square feet is your home?",
     );
   }
 });

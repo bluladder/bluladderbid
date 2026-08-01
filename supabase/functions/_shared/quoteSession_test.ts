@@ -192,7 +192,25 @@ Deno.test("computeRequired: partial-window request needs count + sides, never sq
 });
 
 Deno.test("computeRequired: unit and area services never inherit home fields", () => {
-  assertEquals(computeRequired({ services: ["solarPanelCleaning"] }), ["solarPanelCount"]);
+  assertEquals(computeRequired({ services: ["solarPanelCleaning"] }), [
+    "solarPanelCount",
+    "solarAccessProfile",
+  ]);
+  assertEquals(
+    computeRequired({
+      services: ["solarPanelCleaning"],
+      solarPanelCount: 20,
+      solarAccessProfile: {
+        stories: 2,
+        accessType: "standard_residential",
+        knownDamage: false,
+        extremePitch: false,
+        fragileMaterial: false,
+        unusualAccess: false,
+      },
+    }),
+    [],
+  );
   assertEquals(computeRequired({ services: ["screenRepair"] }), ["screenRepairCount"]);
   assertEquals(computeRequired({ services: ["drivewayCleaning"] }), ["drivewaySqft", "drivewaySurface"]);
   const multi = computeRequired({ services: ["drivewayCleaning", "screenRepair"] });
