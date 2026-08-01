@@ -122,32 +122,46 @@ function ReviewHarness({ onEdit = vi.fn() }: { onEdit?: () => void }) {
   );
 }
 
+function QuoteFlowHarness() {
+  const [showReview, setShowReview] = useState(false);
+
+  if (showReview) return <ReviewHarness />;
+
+  return (
+    <PlanUpsellCard
+      oneTimeTotal={400}
+      servicePrices={servicePrices}
+      additionalServices={{ ...DEFAULT_ADDITIONAL_SERVICES, houseWash: true }}
+      bundles={[]}
+      selectedTier={null}
+      onSelectTier={vi.fn()}
+      onBookOneTime={() => setShowReview(true)}
+      onUpgradeAndBook={vi.fn()}
+      homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2000 }}
+      homeSquareFootage={2000}
+      quotePhase="firm"
+      planPhase="unavailable"
+    />
+  );
+}
+
 describe('Phase 1B-B quote-to-scheduling flow', () => {
   beforeEach(() => {
     addonAdded = false;
   });
 
   it('uses the exact truthful one-time CTA without booking language or a separate price pill', () => {
-    render(
-      <PlanUpsellCard
-        oneTimeTotal={400}
-        servicePrices={servicePrices}
-        additionalServices={{ ...DEFAULT_ADDITIONAL_SERVICES, houseWash: true }}
-        bundles={[]}
-        selectedTier={null}
-        onSelectTier={vi.fn()}
-        onBookOneTime={vi.fn()}
-        onUpgradeAndBook={vi.fn()}
-        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2000 }}
-        homeSquareFootage={2000}
-        quotePhase="firm"
-        planPhase="unavailable"
-      />,
-    );
+    render(<QuoteFlowHarness />);
     const decision = screen.getByTestId('one-time-decision');
-    expect(within(decision).getByRole('button', { name: 'Continue with One-Time Service · $400' })).toBeInTheDocument();
+    const continueButton = within(decision).getByRole('button', { name: 'Continue with One-Time Service · $400' });
+    expect(continueButton).toBeInTheDocument();
     expect(within(decision).queryByText(/book|schedule/i)).toBeNull();
     expect(within(decision).queryByText('$400', { selector: '.rounded-lg' })).toBeNull();
+
+    fireEvent.click(continueButton);
+
+    expect(screen.getByRole('heading', { name: 'Review Services & Add-ons' })).toBeInTheDocument();
+    expect(screen.queryByTestId('one-time-decision')).toBeNull();
   });
 
   it('combines selected services, authoritative duration, optional add-ons, and the authoritative total', () => {
