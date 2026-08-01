@@ -11,6 +11,7 @@
     "sync:sales-engine-intake": "node scripts/sync-sales-engine-intake.mjs",
     "check:tenant-inventory": "node scripts/check-tenant-inventory.mjs",
     "check:tenant-foundation": "node scripts/check-tenant-foundation.mjs",
+    "check:tenant-authority-stage-7b-v2": "node scripts/check-tenant-authority-stage-7b-v2.mjs",
     "check:tenant-readiness": "node scripts/check-tenant-readiness.mjs",
     "check:stage-7d-migration-gate": "node scripts/check-stage-7d-migration-gate.mjs",
     "check:stage-7d-independent-audit": "node scripts/check-stage-7d-independent-audit.mjs",
