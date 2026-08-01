@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
+    "sync:sales-engine-intake": "node scripts/sync-sales-engine-intake.mjs",
     "check:tenant-inventory": "node scripts/check-tenant-inventory.mjs",
     "check:tenant-foundation": "node scripts/check-tenant-foundation.mjs",
     "check:tenant-readiness": "node scripts/check-tenant-readiness.mjs",

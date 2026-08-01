@@ -6,10 +6,12 @@
 // valid, or whether booking is authorized. Those decisions are computed here
 // from server-side structured facts — not from prompt history.
 //
-// This module has ZERO external imports so it is provider-independent and can
-// be unit-tested directly (Deno). Both website chat and a future voice channel
-// share it unchanged.
+// This module imports only the dependency-free contactIntegrity leaf helper so
+// it stays provider-independent and unit-testable directly (Deno). Both website
+// chat and the voice channel share it unchanged.
 // ============================================================================
+
+import { isFullE164, resolvePhone } from "./contactIntegrity.ts";
 
 export type ConversationState =
   | "new"
@@ -48,12 +50,16 @@ export type ToolName =
 export interface ConversationFacts {
   services?: string[];
   address?: string;
-  serviceArea?: { status?: string; formattedAddress?: string; reason?: string } | null;
+  serviceArea?:
+    | { status?: string; formattedAddress?: string; reason?: string }
+    | null;
   property?: {
     squareFootage?: number;
     stories?: number;
     windowCleaningType?: string;
     condition?: string;
+    screenProfile?: string;
+    screenProfileProvenance?: string;
     roofType?: string;
     roofSeverity?: string;
     drivewaySqft?: number;
@@ -72,7 +78,12 @@ export interface ConversationFacts {
     engineVersion?: string | null;
     inputsKey?: string; // signature of the inputs that produced this quote
   } | null;
-  contact?: { name?: string; email?: string; phone?: string };
+  contact?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    phoneConfirmed?: boolean;
+  };
   consent?: { marketing?: boolean };
   availability?: {
     offeredSlotIds?: string[];
@@ -90,8 +101,38 @@ export interface ConversationFacts {
   roughQuote?: {
     intent?: boolean;
     city?: string;
-    cityStatus?: "normal_service_city" | "unknown_or_outside" | "lookup_unavailable";
+    cityStatus?:
+      | "normal_service_city"
+      | "unknown_or_outside"
+      | "lookup_unavailable";
+    // Signature + total of the quote we have ALREADY spoken aloud. Used to
+    // stop re-pricing/re-speaking on every turn that merely mentions "price".
+    spokenInputsKey?: string;
+    spokenTotal?: number;
   };
+  // Narrowly scoped, persisted state for the truthful quote-by-text rail. When
+  // pending is true the caller asked for the quote in writing but a required
+  // field (name/phone/address/email) was missing, so the rail must resume
+  // automatically on the next turn without the caller repeating the request.
+  quoteByText?: {
+    pending?: boolean;
+    lastReason?: string | null;
+    // The single field the caller was last asked for, so the next turn can be
+    // parsed as the answer to THAT question (e.g. a spoken email address).
+    missingField?: "phone" | "name" | "address" | "email" | null;
+  };
+  // VOICE-only deterministic address confirmation gate. A geocoded candidate
+  // stays out of eligibility until the caller explicitly confirms the exact
+  // canonical address that was read back to them.
+  addressCandidate?: {
+    formattedAddress?: string;
+    spokenAddress?: string;
+    status?: "pending" | "confirmed" | "house_number_mismatch";
+    confirmedAddress?: string | null;
+  } | null;
+  // True once exactly one canonical human escalation/callback was recorded for
+  // this conversation, so a repeated "can I talk to a person" reuses it.
+  voiceEscalationRecorded?: boolean;
 }
 
 const MANUAL_REVIEW_STATES = ["manual_review_required"];
@@ -109,6 +150,8 @@ export function quoteInputsKey(f: ConversationFacts): string {
     stories: p.stories ?? null,
     windowType: p.windowCleaningType ?? null,
     condition: p.condition ?? null,
+    screenProfile: p.screenProfile ?? null,
+    screenProfileProvenance: p.screenProfileProvenance ?? null,
     roofType: p.roofType ?? null,
     roofSeverity: p.roofSeverity ?? null,
     drivewaySqft: p.drivewaySqft ?? null,
@@ -129,17 +172,21 @@ export function isQuoteCurrent(f: ConversationFacts): boolean {
 }
 
 export function isQuoteFirm(f: ConversationFacts): boolean {
-  return isQuoteCurrent(f) && f.quote?.firm === true && f.quote?.status === "firm";
+  return isQuoteCurrent(f) && f.quote?.firm === true &&
+    f.quote?.status === "firm";
 }
 
 export function isQuoteEstimatedOrFirm(f: ConversationFacts): boolean {
-  return isQuoteCurrent(f) && (f.quote?.status === "firm" || f.quote?.status === "estimated");
+  return isQuoteCurrent(f) &&
+    (f.quote?.status === "firm" || f.quote?.status === "estimated");
 }
 
 // Availability is fresh only when it was fetched for the CURRENT quote inputs.
 export function isAvailabilityCurrent(f: ConversationFacts): boolean {
   const a = f.availability;
-  if (!a || !Array.isArray(a.offeredSlotIds) || a.offeredSlotIds.length === 0) return false;
+  if (!a || !Array.isArray(a.offeredSlotIds) || a.offeredSlotIds.length === 0) {
+    return false;
+  }
   if (!isQuoteEstimatedOrFirm(f)) return false;
   return a.forQuoteKey === quoteInputsKey(f);
 }
@@ -153,7 +200,12 @@ export function isSelectedSlotValid(f: ConversationFacts): boolean {
 
 export function hasContact(f: ConversationFacts): boolean {
   const c = f.contact ?? {};
-  return !!(c.email && c.email.trim());
+  // P2.11: an availability lookup only needs a reachable customer. A caller
+  // whose full E.164 phone is confirmed (voice) is reachable, so we no longer
+  // stall scheduling on email. Email is still enforced at booking commit by
+  // create_bluladder_booking, which needs it for customer creation.
+  if (c.email && c.email.trim()) return true;
+  return !!(c.phoneConfirmed && isFullE164(c.phone));
 }
 
 export function isServiceAreaEligible(f: ConversationFacts): boolean {
@@ -172,11 +224,17 @@ export function isManualReview(f: ConversationFacts): boolean {
 // computeState — the single source of truth for "where are we".
 // Terminal / override states win first, then the linear journey.
 // ---------------------------------------------------------------------------
-export function computeState(f: ConversationFacts, channel?: "web" | "voice" | "sms"): ConversationState {
+export function computeState(
+  f: ConversationFacts,
+  channel?: "web" | "voice" | "sms",
+): ConversationState {
   if (f.staffTakeover) return "staff_takeover";
   if (f.resolved) return "resolved";
   if (f.bookingStatus === "confirmed") return "booked";
-  if (f.bookingStatus === "needs_attention" || f.bookingStatus === "failed" || f.needsAttention) {
+  if (
+    f.bookingStatus === "needs_attention" || f.bookingStatus === "failed" ||
+    f.needsAttention
+  ) {
     // needs_attention is surfaced but callback/manual review are more specific
     if (f.callbackRequested) return "callback_requested";
     if (isManualReview(f)) return "manual_review";
@@ -186,7 +244,9 @@ export function computeState(f: ConversationFacts, channel?: "web" | "voice" | "
   if (isManualReview(f)) return "manual_review";
 
   const hasServices = (f.services ?? []).length > 0;
-  if (!hasServices) return f.address || f.serviceArea ? "identifying_need" : "new";
+  if (!hasServices) {
+    return f.address || f.serviceArea ? "identifying_need" : "new";
+  }
 
   if (channel === "voice") {
     if (!isQuoteCurrent(f)) return "voice_rough_quote";
@@ -195,7 +255,13 @@ export function computeState(f: ConversationFacts, channel?: "web" | "voice" | "
 
   if (!f.address) return "collecting_address";
   if (!f.serviceArea) return "validating_service_area";
-  if (f.serviceArea.status === "validation_unavailable" || f.serviceArea.status === "address_incomplete") {
+  if (
+    f.serviceArea.status === "validation_unavailable" ||
+    f.serviceArea.status === "address_incomplete" ||
+    // Voice address gate: a geocoded but unconfirmed candidate is still being
+    // validated. It is NEVER manual review and never unlocks availability.
+    f.serviceArea.status === "pending_confirmation"
+  ) {
     return "validating_service_area";
   }
   if (!isServiceAreaEligible(f)) return "manual_review";
@@ -205,7 +271,9 @@ export function computeState(f: ConversationFacts, channel?: "web" | "voice" | "
     // If we have an out-of-date/absent quote, we need pricing.
     return "pricing";
   }
-  if (f.quote?.status === "missing_information") return "collecting_property_details";
+  if (f.quote?.status === "missing_information") {
+    return "collecting_property_details";
+  }
   if (!isQuoteEstimatedOrFirm(f)) return "pricing";
 
   // We have a current firm/estimated quote.
@@ -226,7 +294,11 @@ export function computeState(f: ConversationFacts, channel?: "web" | "voice" | "
 // may run. request_human_callback and record_consent are ALWAYS permitted
 // (a customer can ask for a person, or set consent, at any point).
 // ---------------------------------------------------------------------------
-const ALWAYS_ALLOWED: ToolName[] = ["request_human_callback", "escalate_to_human", "record_consent"];
+const ALWAYS_ALLOWED: ToolName[] = [
+  "request_human_callback",
+  "escalate_to_human",
+  "record_consent",
+];
 
 // Channel-scoped relaxations. The isolated voice beta allows a rough canonical
 // quote to be calculated BEFORE an address is collected, so a caller who only
@@ -252,27 +324,58 @@ export function allowedToolsForState(
     // Eligibility ordering is preserved: an ineligible address still routes to
     // manual_review on the next computeState, and validate_service_area remains
     // available so the area is confirmed first.
-    identifying_need: ["calculate_bluladder_quote", "validate_service_area", "request_manual_quote"],
+    identifying_need: [
+      "calculate_bluladder_quote",
+      "validate_service_area",
+      "request_manual_quote",
+    ],
     collecting_address: ["validate_service_area", "request_manual_quote"],
     validating_service_area: ["validate_service_area", "request_manual_quote"],
-    collecting_property_details: ["calculate_bluladder_quote", "validate_service_area", "request_manual_quote"],
-    pricing: ["calculate_bluladder_quote", "validate_service_area", "request_manual_quote"],
+    collecting_property_details: [
+      "calculate_bluladder_quote",
+      "validate_service_area",
+      "request_manual_quote",
+    ],
+    pricing: [
+      "calculate_bluladder_quote",
+      "validate_service_area",
+      "request_manual_quote",
+    ],
     missing_information: ["calculate_bluladder_quote", "request_manual_quote"],
     manual_review: ["request_manual_quote"],
-    quote_ready: ["calculate_bluladder_quote", "validate_service_area", "request_manual_quote"],
+    quote_ready: [
+      "calculate_bluladder_quote",
+      "validate_service_area",
+      "request_manual_quote",
+    ],
     collecting_contact: ["calculate_bluladder_quote", "request_manual_quote"],
-    checking_availability: ["get_bluladder_availability", "calculate_bluladder_quote"],
+    checking_availability: [
+      "get_bluladder_availability",
+      "calculate_bluladder_quote",
+    ],
     slot_selected: ["get_bluladder_availability", "calculate_bluladder_quote"],
-    awaiting_booking_confirmation: ["create_bluladder_booking", "get_bluladder_availability", "calculate_bluladder_quote"],
+    awaiting_booking_confirmation: [
+      "create_bluladder_booking",
+      "get_bluladder_availability",
+      "calculate_bluladder_quote",
+    ],
     booking_in_progress: ["create_bluladder_booking"],
     booked: [],
     callback_requested: ["request_manual_quote"],
     staff_takeover: [],
     resolved: [],
-    error_recovery: ["validate_service_area", "calculate_bluladder_quote", "get_bluladder_availability", "request_manual_quote"],
+    error_recovery: [
+      "validate_service_area",
+      "calculate_bluladder_quote",
+      "get_bluladder_availability",
+      "request_manual_quote",
+    ],
   };
   const set = new Set<ToolName>([...(base[state] ?? []), ...ALWAYS_ALLOWED]);
-  if (channel === "voice" && (state === "voice_rough_quote" || VOICE_EARLY_QUOTE_STATES.includes(state))) {
+  if (
+    channel === "voice" &&
+    (state === "voice_rough_quote" || VOICE_EARLY_QUOTE_STATES.includes(state))
+  ) {
     set.add("calculate_bluladder_quote");
   }
   return [...set];
@@ -290,13 +393,40 @@ export function isToolAllowed(
 // Fact merging + downstream invalidation. When a customer corrects an input we
 // must clear whatever it invalidates so a stale price/slot can never be used.
 // ---------------------------------------------------------------------------
-export function mergeFacts(prev: ConversationFacts, patch: Partial<ConversationFacts>): ConversationFacts {
+export function mergeFacts(
+  prev: ConversationFacts,
+  patch: Partial<ConversationFacts>,
+): ConversationFacts {
+  // Contact integrity first: never let a lower-provenance extraction replace a
+  // confirmed caller ID, and never store an invalid/partial phone value.
+  let contactPatch = patch.contact;
+  if (contactPatch && "phone" in contactPatch) {
+    const resolved = resolvePhone({
+      existing: prev.contact?.phone,
+      existingConfirmed: prev.contact?.phoneConfirmed === true,
+      candidate: contactPatch.phone,
+      candidateConfirmed: contactPatch.phoneConfirmed === true,
+    });
+    contactPatch = { ...contactPatch };
+    if (resolved) contactPatch.phone = resolved;
+    else delete contactPatch.phone;
+    // Confirmation is sticky: it can only be set, never silently cleared.
+    if (prev.contact?.phoneConfirmed && resolved === prev.contact.phone) {
+      contactPatch.phoneConfirmed = true;
+    }
+  }
   const next: ConversationFacts = {
     ...prev,
     ...patch,
-    property: patch.property ? { ...(prev.property ?? {}), ...patch.property } : prev.property,
-    contact: patch.contact ? { ...(prev.contact ?? {}), ...patch.contact } : prev.contact,
-    consent: patch.consent ? { ...(prev.consent ?? {}), ...patch.consent } : prev.consent,
+    property: patch.property
+      ? { ...(prev.property ?? {}), ...patch.property }
+      : prev.property,
+    contact: contactPatch
+      ? { ...(prev.contact ?? {}), ...contactPatch }
+      : prev.contact,
+    consent: patch.consent
+      ? { ...(prev.consent ?? {}), ...patch.consent }
+      : prev.consent,
   };
 
   // If the quote is no longer current for the new inputs, drop dependent state.
@@ -307,7 +437,10 @@ export function mergeFacts(prev: ConversationFacts, patch: Partial<ConversationF
     // Quote current but availability was fetched for different inputs.
     next.availability = null;
     next.selectedSlotId = null;
-  } else if (next.selectedSlotId && !(next.availability?.offeredSlotIds ?? []).includes(next.selectedSlotId)) {
+  } else if (
+    next.selectedSlotId &&
+    !(next.availability?.offeredSlotIds ?? []).includes(next.selectedSlotId)
+  ) {
     next.selectedSlotId = null;
   }
   return next;
@@ -327,7 +460,9 @@ export function stateDirective(
   ];
   switch (state) {
     case "new":
-      lines.push("Find out which service(s) the customer wants before anything else.");
+      lines.push(
+        "Find out which service(s) the customer wants before anything else.",
+      );
       break;
     case "identifying_need":
       lines.push(
@@ -345,7 +480,9 @@ export function stateDirective(
           "You may calculate a ROUGH quote first (voice beta): if you have the service(s) and the canonical inputs the pricing engine needs (approximate home square footage; for window cleaning also confirm exterior-only vs full-service; stories only if the engine asks), call calculate_bluladder_quote now — do NOT ask for a street address just to get a price. If the caller does not know their approximate square footage, briefly explain the pricing system needs it for a reliable estimate; do NOT invent a range and do NOT collect contact details for manual follow-up unless the caller asks. Collect the full service address ONLY when the caller wants to check availability, book, or get a definitive service-area/eligibility answer.",
         );
       } else {
-        lines.push("Collect the full service address (street, city, ZIP) so we can validate the service area.");
+        lines.push(
+          "Collect the full service address (street, city, ZIP) so we can validate the service area.",
+        );
       }
       break;
     case "validating_service_area":
@@ -354,30 +491,46 @@ export function stateDirective(
           "You may still calculate a ROUGH canonical quote via calculate_bluladder_quote (voice beta) if pricing inputs are present. Call validate_service_area before making any definitive eligibility statement, offering appointment times, or booking. Never decide eligibility yourself from the city name.",
         );
       } else {
-        lines.push("Call validate_service_area. Never decide eligibility yourself from the city name.");
+        lines.push(
+          "Call validate_service_area. Never decide eligibility yourself from the city name.",
+        );
       }
       break;
     case "collecting_property_details":
-      lines.push("Ask ONLY for the specific missing property details the quote tool reported, then re-price.");
+      lines.push(
+        "Ask ONLY for the specific missing property details the quote tool reported, then re-price.",
+      );
       break;
     case "pricing":
-      lines.push("Call calculate_bluladder_quote to get an authoritative price. Never state a price you did not get from the tool.");
+      lines.push(
+        "Call calculate_bluladder_quote to get an authoritative price. Never state a price you did not get from the tool.",
+      );
       break;
     case "manual_review":
-      lines.push("This needs manual review. Use request_manual_quote and collect details. Do NOT give a firm price.");
+      lines.push(
+        "This needs manual review. Use request_manual_quote and collect details. Do NOT give a firm price.",
+      );
       break;
     case "quote_ready":
       if (channel === "voice") {
-        lines.push("Present the quote from the tool, then ask whether the caller wants to check appointment availability. Do not collect name, email, or phone here. Collect the full street address only after they want availability or booking.");
+        lines.push(
+          "Present the quote from the tool, then ask whether the caller wants to check appointment availability. Do not collect name, email, or phone here. Collect the full street address only after they want availability or booking.",
+        );
       } else {
-        lines.push("Present the quote from the tool. To move toward booking, collect the customer's name and email.");
+        lines.push(
+          "Present the quote from the tool. To move toward booking, collect the customer's name and email.",
+        );
       }
       break;
     case "checking_availability":
-      lines.push("Call get_bluladder_availability. Only offer times the tool returns.");
+      lines.push(
+        "Call get_bluladder_availability. Only offer times the tool returns.",
+      );
       break;
     case "slot_selected":
-      lines.push("Confirm which offered time the customer wants. Only accept a slot from the current offer.");
+      lines.push(
+        "Confirm which offered time the customer wants. Only accept a slot from the current offer.",
+      );
       break;
     case "awaiting_booking_confirmation":
       lines.push(
@@ -385,16 +538,24 @@ export function stateDirective(
       );
       break;
     case "booked":
-      lines.push("The appointment is booked. Confirm warmly and share what to expect.");
+      lines.push(
+        "The appointment is booked. Confirm warmly and share what to expect.",
+      );
       break;
     case "callback_requested":
-      lines.push("A callback was requested. Reassure the customer the team will reach out.");
+      lines.push(
+        "A callback was requested. Reassure the customer the team will reach out.",
+      );
       break;
     case "staff_takeover":
-      lines.push("A team member has taken over this conversation. Do not take further automated actions.");
+      lines.push(
+        "A team member has taken over this conversation. Do not take further automated actions.",
+      );
       break;
     case "error_recovery":
-      lines.push("Something went wrong. Recover gracefully, retry the safe step, or offer a human callback. Never expose technical errors.");
+      lines.push(
+        "Something went wrong. Recover gracefully, retry the safe step, or offer a human callback. Never expose technical errors.",
+      );
       break;
     default:
       break;

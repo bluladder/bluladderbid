@@ -10,6 +10,11 @@ Make voice calls deterministic, brief, and truthful for four customer intents:
 
 This plan is derived from production call `019fb423-7a5b-7990-98fe-6e7db8062f50` and the prior silent-call incident.
 
+The canonical quote intake, pricing, readiness, tax, duration, provenance,
+default, question-sequencing, and service-area contracts merged through PR #62
+are authoritative. This plan may add voice normalization and orchestration
+safeguards, but it must not redefine or duplicate those contracts.
+
 ## Current architecture finding
 The rollout controller owns caller-ID confirmation and returning-customer lookup, then delegates pricing, quote delivery, availability, and booking back to the legacy orchestrator. That split is the main source of repeated questions, mutable facts, price drift, and promises that are not backed by durable tool results.
 
@@ -20,7 +25,7 @@ The rollout controller owns caller-ID confirmation and returning-customer lookup
 - `two`, `2`, and `two story` capture `stories = 2`.
 - Spoken digit sequences such as `two five zero zero` normalize to `2500` when answering the square-footage question.
 - Street numbers are never inferred as square footage.
-- Confirmed service scope is sticky. `exterior_only` cannot silently become `inside_and_outside`.
+- Explicitly captured window sides are sticky. `outside_only` cannot silently become `inside_and_outside`; residential scope remains whole-home by default and becomes partial only after an explicit customer request.
 - A quote is recalculated only after an explicit customer correction to a pricing input.
 - The assistant speaks one authoritative quote total per quote version.
 - Address validation errors name the missing or ambiguous component instead of asking for the entire address repeatedly.
@@ -36,12 +41,14 @@ Add a fixture based on call `019fb423-7a5b-7990-98fe-6e7db8062f50` covering:
 - quote-by-text request with truthful delivery outcome.
 
 ## Phase 2 — Deterministic customer/profile intake
-Before quote delivery or booking, collect and persist:
+Follow the canonical voice sequence: service intent, callback phone, pricing
+inputs, spoken price, then remaining contact/address facts before booking. At
+the applicable stage, collect and persist:
 - full name;
 - confirmed phone;
 - email;
 - complete service address;
-- selected service and scope;
+- selected service and canonical window sides; partial scope only when explicitly requested;
 - property facts required by the pricing engine.
 
 Ask one missing question at a time and never ask again when the field status is captured or verified.

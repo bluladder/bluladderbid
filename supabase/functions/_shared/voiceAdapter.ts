@@ -12,21 +12,28 @@
 // Vapi/CallRail/Twilio SDKs or hard-code provider-specific field names.
 // ============================================================================
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { runOrchestrator } from "./aiOrchestrator.ts";
+import { recordVoiceTurns } from "./voice/turnJournal.ts";
+import { suppressAcknowledgement } from "./voice/voiceExitIntents.ts";
 import {
-  runOrchestrator,
-  streamKnowledgeReply,
   buildVoiceSystemPrompt,
   type OrchestratorResult,
+  streamKnowledgeReply,
   type VoiceDisposition,
 } from "./aiOrchestrator.ts";
 import {
   classifyVoiceRoute,
+  FLUSH_TAG,
   slowBranchAcknowledgement,
   stripVoiceControlTags,
-  FLUSH_TAG,
   type VoiceRoute,
 } from "./voiceFastPath.ts";
-import { makeClock, sessionHash, voiceLatencyEnabled, type VoiceLatencyEvent } from "./voiceLatencyMetrics.ts";
+import {
+  makeClock,
+  sessionHash,
+  voiceLatencyEnabled,
+  type VoiceLatencyEvent,
+} from "./voiceLatencyMetrics.ts";
 import { BUILD_ID } from "./buildMarker.ts";
 
 /** Max accepted request body in bytes. Voice turns are short; anything
@@ -45,18 +52,32 @@ export type AdapterAction =
   | { kind: "uncertain_scheduling"; reason?: string }
   | { kind: "post_call_sms_handoff"; reason?: string };
 
-export function mapDispositionToAction(d: VoiceDisposition | null | undefined): AdapterAction {
+export function mapDispositionToAction(
+  d: VoiceDisposition | null | undefined,
+): AdapterAction {
   if (!d) return { kind: "safe_failure", reasonCode: "missing_disposition" };
   switch (d.type) {
-    case "speak": return { kind: "speak" };
-    case "tool_result_speak": return { kind: "tool_result_speak" };
-    case "transfer_human": return { kind: "request_transfer", reason: d.reason };
-    case "callback_confirmed": return { kind: "callback_captured", callbackRequestId: d.callbackRequestId };
-    case "graceful_end": return { kind: "end_call", reason: d.reason };
-    case "safe_failure": return { kind: "safe_failure", reasonCode: d.reasonCode };
-    case "uncertain_pricing": return { kind: "uncertain_pricing", reason: d.reason };
-    case "uncertain_scheduling": return { kind: "uncertain_scheduling", reason: d.reason };
-    case "post_call_sms_handoff": return { kind: "post_call_sms_handoff", reason: d.reason };
+    case "speak":
+      return { kind: "speak" };
+    case "tool_result_speak":
+      return { kind: "tool_result_speak" };
+    case "transfer_human":
+      return { kind: "request_transfer", reason: d.reason };
+    case "callback_confirmed":
+      return {
+        kind: "callback_captured",
+        callbackRequestId: d.callbackRequestId,
+      };
+    case "graceful_end":
+      return { kind: "end_call", reason: d.reason };
+    case "safe_failure":
+      return { kind: "safe_failure", reasonCode: d.reasonCode };
+    case "uncertain_pricing":
+      return { kind: "uncertain_pricing", reason: d.reason };
+    case "uncertain_scheduling":
+      return { kind: "uncertain_scheduling", reason: d.reason };
+    case "post_call_sms_handoff":
+      return { kind: "post_call_sms_handoff", reason: d.reason };
     default:
       // Exhaustiveness guard — fail closed on unknown disposition rather than
       // guessing "speak".
@@ -121,31 +142,51 @@ function isValidSessionIdentifier(value: string): boolean {
 
 export async function parseAdapterRequest(
   req: Request,
-): Promise<{ ok: true; value: ParsedAdapterRequest } | { ok: false; error: AdapterRequestError }> {
-  if (req.method !== "POST") return { ok: false, error: { kind: "unsupported_method" } };
+): Promise<
+  { ok: true; value: ParsedAdapterRequest } | {
+    ok: false;
+    error: AdapterRequestError;
+  }
+> {
+  if (req.method !== "POST") {
+    return { ok: false, error: { kind: "unsupported_method" } };
+  }
   const ct = (req.headers.get("content-type") || "").toLowerCase();
-  if (!ct.includes("application/json")) return { ok: false, error: { kind: "unsupported_content_type" } };
+  if (!ct.includes("application/json")) {
+    return { ok: false, error: { kind: "unsupported_content_type" } };
+  }
   const raw = await req.text();
-  if (raw.length > MAX_ADAPTER_REQUEST_BYTES) return { ok: false, error: { kind: "too_large" } };
+  if (raw.length > MAX_ADAPTER_REQUEST_BYTES) {
+    return { ok: false, error: { kind: "too_large" } };
+  }
   let body: any;
   try {
     body = JSON.parse(raw);
   } catch {
     return { ok: false, error: { kind: "malformed_json" } };
   }
-  if (!body || !Array.isArray(body.messages)) return { ok: false, error: { kind: "missing_messages" } };
+  if (!body || !Array.isArray(body.messages)) {
+    return { ok: false, error: { kind: "missing_messages" } };
+  }
   const messages: ChatMessage[] = [];
   for (const m of body.messages) {
     if (!m || typeof m !== "object") continue;
     const role = m.role;
     const content = typeof m.content === "string" ? m.content : "";
-    if (role !== "system" && role !== "user" && role !== "assistant" && role !== "tool") continue;
+    if (
+      role !== "system" && role !== "user" && role !== "assistant" &&
+      role !== "tool"
+    ) continue;
     messages.push({ role, content });
   }
-  const hasUser = messages.some((m) => m.role === "user" && m.content.trim().length > 0);
+  const hasUser = messages.some((m) =>
+    m.role === "user" && m.content.trim().length > 0
+  );
   if (!hasUser) return { ok: false, error: { kind: "empty_conversation" } };
 
-  const headerSession = normalizeSessionIdentifier(req.headers.get("x-bluladder-session-id"));
+  const headerSession = normalizeSessionIdentifier(
+    req.headers.get("x-bluladder-session-id"),
+  );
   const userField = normalizeSessionIdentifier(body.user);
   // Vapi custom-LLM requests embed the stable call id in the request body.
   // This is the primary correlator that binds every HTTP turn of one voice
@@ -165,7 +206,9 @@ export async function parseAdapterRequest(
     const conflicts = [headerSession, userField].filter(Boolean).some((value) =>
       value !== bodyCallId && value !== providerSession
     );
-    if (conflicts) return { ok: false, error: { kind: "conflicting_session_identifiers" } };
+    if (conflicts) {
+      return { ok: false, error: { kind: "conflicting_session_identifiers" } };
+    }
   } else if (headerSession && userField && headerSession !== userField) {
     return { ok: false, error: { kind: "conflicting_session_identifiers" } };
   }
@@ -186,7 +229,10 @@ export async function parseAdapterRequest(
   ];
   let callerIdE164: string | null = null;
   for (const c of callerCandidates) {
-    if (typeof c === "string" && c.trim().length > 0) { callerIdE164 = c.trim(); break; }
+    if (typeof c === "string" && c.trim().length > 0) {
+      callerIdE164 = c.trim();
+      break;
+    }
   }
 
   return {
@@ -222,7 +268,9 @@ export interface AdapterCompletion {
 export function chunkReply(reply: string, chunkSize = 80): string[] {
   const out: string[] = [];
   const s = reply || "";
-  for (let i = 0; i < s.length; i += chunkSize) out.push(s.slice(i, i + chunkSize));
+  for (let i = 0; i < s.length; i += chunkSize) {
+    out.push(s.slice(i, i + chunkSize));
+  }
   return out.length ? out : [""];
 }
 
@@ -266,15 +314,31 @@ export async function ensureVoiceConversation(args: {
       .eq("id", args.conversationId)
       .maybeSingle();
     if (existingError) throw new Error("voice_conversation_lookup_failed");
-    if (existing?.id) return { conversationId: existing.id, sessionToken: existing.session_token || sessionToken };
+    if (existing?.id) {
+      return {
+        conversationId: existing.id,
+        sessionToken: existing.session_token || sessionToken,
+      };
+    }
 
     const { data: inserted, error: insertError } = await supabase
       .from("chat_conversations")
-      .insert({ id: args.conversationId, session_token: sessionToken, channel: "voice" })
+      .insert({
+        id: args.conversationId,
+        session_token: sessionToken,
+        channel: "voice",
+      })
       .select("id, session_token")
       .single();
-    if (insertError || !inserted?.id) throw new Error("voice_conversation_insert_failed");
-    if (inserted?.id) return { conversationId: inserted.id, sessionToken: inserted.session_token || sessionToken };
+    if (insertError || !inserted?.id) {
+      throw new Error("voice_conversation_insert_failed");
+    }
+    if (inserted?.id) {
+      return {
+        conversationId: inserted.id,
+        sessionToken: inserted.session_token || sessionToken,
+      };
+    }
   }
 
   const { data: existing, error: existingError } = await supabase
@@ -286,15 +350,27 @@ export async function ensureVoiceConversation(args: {
     .limit(1)
     .maybeSingle();
   if (existingError) throw new Error("voice_conversation_lookup_failed");
-  if (existing?.id) return { conversationId: existing.id, sessionToken: existing.session_token || sessionToken };
+  if (existing?.id) {
+    return {
+      conversationId: existing.id,
+      sessionToken: existing.session_token || sessionToken,
+    };
+  }
 
   const { data: inserted, error: insertError } = await supabase
     .from("chat_conversations")
     .insert({ session_token: sessionToken, channel: "voice" })
     .select("id, session_token")
     .single();
-  if (insertError || !inserted?.id) throw new Error("voice_conversation_insert_failed");
-  if (inserted?.id) return { conversationId: inserted.id, sessionToken: inserted.session_token || sessionToken };
+  if (insertError || !inserted?.id) {
+    throw new Error("voice_conversation_insert_failed");
+  }
+  if (inserted?.id) {
+    return {
+      conversationId: inserted.id,
+      sessionToken: inserted.session_token || sessionToken,
+    };
+  }
   throw new Error("voice_conversation_insert_failed");
 }
 
@@ -322,14 +398,28 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
   const clock = makeClock();
   const t0 = clock.mark();
   const timings: VoiceLatencyEvent["t"] = { requestReceived: 0 };
-  const emitEv = async (ev: VoiceStreamEvent) => { try { await emit(ev); } catch { /* transport */ } };
+  const emitEv = async (ev: VoiceStreamEvent) => {
+    try {
+      await emit(ev);
+    } catch { /* transport */ }
+  };
 
   // Extract last user message + history exactly as the non-streaming path does.
-  const nonSystem = request.messages.filter((m) => m.role !== "system" && m.role !== "tool");
+  const nonSystem = request.messages.filter((m) =>
+    m.role !== "system" && m.role !== "tool"
+  );
   let lastUserIdx = -1;
-  for (let i = nonSystem.length - 1; i >= 0; i--) if (nonSystem[i].role === "user") { lastUserIdx = i; break; }
+  for (let i = nonSystem.length - 1; i >= 0; i--) {
+    if (nonSystem[i].role === "user") {
+      lastUserIdx = i;
+      break;
+    }
+  }
   const history = lastUserIdx >= 0
-    ? nonSystem.slice(0, lastUserIdx).map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+    ? nonSystem.slice(0, lastUserIdx).map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }))
     : [];
   const userMessage = lastUserIdx >= 0 ? nonSystem[lastUserIdx].content : "";
 
@@ -351,20 +441,33 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
       // prompt keeps it from inventing.
       const system = await buildVoiceSystemPrompt(supabase, "new", {} as any);
       timings.modelRequestStarted = clock.since(t0);
-      for await (const chunk of streamKnowledgeReply(system, userMessage, history)) {
+      for await (
+        const chunk of streamKnowledgeReply(system, userMessage, history)
+      ) {
         if (chunk.kind === "error") {
           // Fall through to full orchestrator on any error.
           break;
         }
-        if (timings.firstModelToken === undefined) timings.firstModelToken = clock.since(t0);
-        if (timings.firstContentDelta === undefined) timings.firstContentDelta = clock.since(t0);
+        if (timings.firstModelToken === undefined) {
+          timings.firstModelToken = clock.since(t0);
+        }
+        if (timings.firstContentDelta === undefined) {
+          timings.firstContentDelta = clock.since(t0);
+        }
         accumulated += chunk.text;
         await emitEv({ type: "text_delta", text: chunk.text });
       }
     } catch { /* fall through to full path */ }
     if (accumulated.trim().length === 0) {
       // Fast-path yielded nothing (auth/env/error). Fall to full orchestrator.
-      orchestrator = await runOrchestrator({ supabase, conversationId, sessionToken, channel: "voice", history, userMessage });
+      orchestrator = await runOrchestrator({
+        supabase,
+        conversationId,
+        sessionToken,
+        channel: "voice",
+        history,
+        userMessage,
+      });
       accumulated = orchestrator.reply;
       await emitEv({ type: "text_delta", text: accumulated });
     } else {
@@ -382,22 +485,38 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
   } else {
     // Slow lane: emit deterministic acknowledgement (with <flush /> so the
     // TTS provider speaks it immediately), then run full orchestrator.
-    const ack = slowBranchAcknowledgement(route.reason);
+    // Corrections, spelled answers, frustration, human requests and hangup
+    // intents get a deterministic reply — never a filler acknowledgement.
+    const ack = suppressAcknowledgement(userMessage)
+      ? null
+      : slowBranchAcknowledgement(route.reason);
     if (ack) {
       const delta = `${ack} ${FLUSH_TAG} `;
       ackEmitted = true;
       await emitEv({ type: "acknowledgement", text: ack });
       await emitEv({ type: "text_delta", text: delta });
-      if (timings.firstContentDelta === undefined) timings.firstContentDelta = clock.since(t0);
+      if (timings.firstContentDelta === undefined) {
+        timings.firstContentDelta = clock.since(t0);
+      }
     }
     timings.orchestratorInvoked = clock.since(t0);
-    orchestrator = await runOrchestrator({ supabase, conversationId, sessionToken, channel: "voice", history, userMessage });
+    orchestrator = await runOrchestrator({
+      supabase,
+      conversationId,
+      sessionToken,
+      channel: "voice",
+      history,
+      userMessage,
+    });
     timings.orchestratorCompleted = clock.since(t0);
     // The final reply follows the acknowledgement. If the ack accidentally
     // duplicates the opening of the orchestrator's reply, avoid saying it
     // twice.
     let finalReply = orchestrator.reply || "";
-    if (ack && finalReply.trim().toLowerCase().startsWith(ack.trim().toLowerCase())) {
+    if (
+      ack &&
+      finalReply.trim().toLowerCase().startsWith(ack.trim().toLowerCase())
+    ) {
       finalReply = finalReply.slice(ack.length).replace(/^[\s,.:;-]+/, "");
     }
     accumulated = ack ? `${ack} ${finalReply}` : finalReply;
@@ -418,8 +537,12 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
         at: "voice-latency",
         sessionHash: hash,
         channel: "voice",
-        route: route.type === "fast_knowledge" ? "fast_knowledge" : "full_orchestrator",
-        intentCategory: route.type === "fast_knowledge" ? route.category : route.reason,
+        route: route.type === "fast_knowledge"
+          ? "fast_knowledge"
+          : "full_orchestrator",
+        intentCategory: route.type === "fast_knowledge"
+          ? route.category
+          : route.reason,
         ackEmitted,
         toolInvoked: (orchestrator?.toolEvents?.length ?? 0) > 0,
         dispositionType: disposition?.type ?? null,
@@ -434,12 +557,41 @@ export async function runVoiceAdapterStream(args: VoiceStreamArgs): Promise<{
   // Persisted / analytics text MUST NOT contain SSE flush/break tags.
   const cleanContent = stripVoiceControlTags(accumulated);
   const cleanResult: OrchestratorResult = orchestrator
-    ? { ...orchestrator, reply: stripVoiceControlTags(orchestrator.reply || "") }
-    : { reply: cleanContent, toolEvents: [], events: [], state: "new", voice: null };
-  return { content: cleanContent, action, orchestrator: cleanResult, route, ackEmitted };
+    ? {
+      ...orchestrator,
+      reply: stripVoiceControlTags(orchestrator.reply || ""),
+    }
+    : {
+      reply: cleanContent,
+      toolEvents: [],
+      events: [],
+      state: "new",
+      voice: null,
+    };
+  // Minimal sanitized turn journal so future incidents are reconstructable
+  // from our own data. Best-effort; never blocks or fails the call.
+  await recordVoiceTurns(supabase, {
+    conversationId,
+    callId: request.sessionId,
+    state: cleanResult.state ?? null,
+    turns: [
+      { role: "user", content: userMessage },
+      { role: "assistant", content: cleanContent },
+    ],
+  });
+  return {
+    content: cleanContent,
+    action,
+    orchestrator: cleanResult,
+    route,
+    ackEmitted,
+  };
 }
 
-export function buildNonStreamingResponse(model: string, completion: AdapterCompletion): Response {
+export function buildNonStreamingResponse(
+  model: string,
+  completion: AdapterCompletion,
+): Response {
   const body = {
     id: `chatcmpl-${crypto.randomUUID()}`,
     object: "chat.completion",
@@ -464,30 +616,50 @@ export function buildNonStreamingResponse(model: string, completion: AdapterComp
   });
 }
 
-export function buildStreamingResponse(model: string, completion: AdapterCompletion): Response {
+export function buildStreamingResponse(
+  model: string,
+  completion: AdapterCompletion,
+): Response {
   const encoder = new TextEncoder();
   const id = `chatcmpl-${crypto.randomUUID()}`;
   const created = Math.floor(Date.now() / 1000);
   const chunks = chunkReply(completion.content);
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const write = (obj: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      const write = (obj: unknown) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       // Initial role chunk (OpenAI convention).
       write({
-        id, object: "chat.completion.chunk", created, model,
-        choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }],
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: { role: "assistant" },
+          finish_reason: null,
+        }],
       });
       for (const c of chunks) {
         write({
-          id, object: "chat.completion.chunk", created, model,
+          id,
+          object: "chat.completion.chunk",
+          created,
+          model,
           choices: [{ index: 0, delta: { content: c }, finish_reason: null }],
         });
       }
       // Final chunk with finish_reason + BluLadder disposition.
       write({
-        id, object: "chat.completion.chunk", created, model,
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model,
         choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-        bluladder: { action: completion.action, state: completion.orchestrator.state ?? null },
+        bluladder: {
+          action: completion.action,
+          state: completion.orchestrator.state ?? null,
+        },
       });
       // Required OpenAI SSE terminator.
       controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
@@ -525,13 +697,20 @@ export async function runVoiceAdapter(args: {
   const sessionToken = identity.sessionToken;
   // Build history from all but the final user message; pass the final user
   // message separately per the orchestrator contract.
-  const nonSystem = request.messages.filter((m) => m.role !== "system" && m.role !== "tool");
+  const nonSystem = request.messages.filter((m) =>
+    m.role !== "system" && m.role !== "tool"
+  );
   const lastUserIdx = (() => {
-    for (let i = nonSystem.length - 1; i >= 0; i--) if (nonSystem[i].role === "user") return i;
+    for (let i = nonSystem.length - 1; i >= 0; i--) {
+      if (nonSystem[i].role === "user") return i;
+    }
     return -1;
   })();
   const history = lastUserIdx >= 0
-    ? nonSystem.slice(0, lastUserIdx).map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+    ? nonSystem.slice(0, lastUserIdx).map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }))
     : [];
   const userMessage = lastUserIdx >= 0 ? nonSystem[lastUserIdx].content : "";
   try {
@@ -544,6 +723,15 @@ export async function runVoiceAdapter(args: {
       userMessage,
     });
     const action = mapDispositionToAction(orchestrator.voice);
+    await recordVoiceTurns(supabase, {
+      conversationId,
+      callId: request.sessionId,
+      state: orchestrator.state ?? null,
+      turns: [
+        { role: "user", content: userMessage },
+        { role: "assistant", content: orchestrator.reply || "" },
+      ],
+    });
     return { content: orchestrator.reply, action, orchestrator };
   } catch (_err) {
     // Fail closed. The transport layer will surface a safe_failure to the

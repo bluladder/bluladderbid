@@ -9,9 +9,9 @@
 //   - THIS manifest decides *which question to ask next* — priority order and
 //     the exact customer-facing wording that names the canonical field.
 //
-// Contact-first sequence for a NEW customer quote (owner directive, 2026-07):
-//   1. name  →  2. mobile phone  →  3. pricing inputs  →  4. speak price
-//   5. email (required before booking or unbooked proposal)  →  6. schedule
+// Approved channel sequence (2026-07-31): voice confirms service intent, then
+// callback/mobile early; web has no early contact wall. Email is never required
+// before speaking a price. Remaining contact/address fields are post-quote.
 // ============================================================================
 
 /** All intake field ids the residential quote workflow can ask about. */
@@ -24,6 +24,11 @@ export type ResidentialIntakeFieldId =
   | "windowCleaningSides"
   | "stories"
   | "windowCleaningCondition"
+  | "advancedWindowConditions"
+  | "screenProfile"
+  | "enclosedPatioProfile"
+  | "hardWaterAffectedWindowEquivalents"
+  | "ladderAffectedWindowEquivalents"
   | "contact_email"
   | "city"
   | "address";
@@ -59,6 +64,41 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
     engineMissingTokens: [],
     purpose:
       "Personalizes the call and links the quote to the customer record before pricing.",
+  },
+  {
+    id: "advancedWindowConditions",
+    prompt: "Do any windows have hard-water staining, small French panes, or unusual ladder-access requirements?",
+    label: "Advanced window screening",
+    engineMissingTokens: ["advancedWindowConditions"],
+    purpose: "Uses one concise screen before asking only applicable modifier details.",
+  },
+  {
+    id: "hardWaterAffectedWindowEquivalents",
+    prompt: "About how many window equivalents have hard-water staining?",
+    label: "Hard-water affected count",
+    engineMissingTokens: ["hardWaterAffectedWindowEquivalents"],
+    purpose: "Applies the approved $10 charge only to affected window equivalents.",
+  },
+  {
+    id: "ladderAffectedWindowEquivalents",
+    prompt: "About how many window equivalents require unusual dedicated ladder access?",
+    label: "Unusual ladder-access count",
+    engineMissingTokens: ["ladderAffectedWindowEquivalents"],
+    purpose: "Applies the approved $5 charge only to unusually accessed windows.",
+  },
+  {
+    id: "screenProfile",
+    prompt: "Which best describes the window screens: standard removable, none, solar, mixed, or fixed/uncertain?",
+    label: "Screen profile",
+    engineMissingTokens: ["screenProfile"],
+    purpose: "Routes existing screen discounts and service adjustments without guessing.",
+  },
+  {
+    id: "enclosedPatioProfile",
+    prompt: "Does the home have no enclosed patio, a screened enclosure, a window-enclosed patio, or a mixed/uncertain enclosure?",
+    label: "Enclosed patio profile",
+    engineMissingTokens: ["enclosedPatioProfile"],
+    purpose: "Routes only the applicable enclosure follow-up and price rule.",
   },
   {
     id: "contact_phone",
@@ -97,9 +137,9 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
   {
     id: "windowCleaningSides",
     prompt:
-      "Would you like exterior only, or full service inside and out?",
+      "Would you like all the windows cleaned both inside and outside, or outside only?",
     label: "Interior vs exterior",
-    engineMissingTokens: [],
+    engineMissingTokens: ["windowCleaningSides"],
     purpose: "Determines whether interior pricing applies in addition to exterior.",
   },
   {
@@ -119,7 +159,7 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
     // before quoting residential window cleaning. The residential FSM injects
     // this id via `additionallyRequired` when windowCleaning is selected so
     // voice matches web behavior without a voice-only required-field list.
-    engineMissingTokens: [],
+    engineMissingTokens: ["condition"],
     purpose:
       "Selects the canonical condition modifier (maintenance vs heavy) already used by the web booking flow and pricing engine.",
   },
@@ -161,7 +201,13 @@ export const RESIDENTIAL_INTAKE_BY_ID: Readonly<
 
 /** Priority order as an array of ids — convenience for callers that only need the sequence. */
 export const RESIDENTIAL_INTAKE_PRIORITY: readonly ResidentialIntakeFieldId[] =
-  RESIDENTIAL_INTAKE_MANIFEST.map((f) => f.id);
+  [
+    "services", "contact_phone", "windowCleaningScope", "squareFootage",
+    "windowCleaningSides", "stories", "windowCleaningCondition",
+    "advancedWindowConditions", "hardWaterAffectedWindowEquivalents",
+    "ladderAffectedWindowEquivalents", "screenProfile", "enclosedPatioProfile",
+    "contact_name", "contact_email", "city", "address",
+  ];
 
 /**
  * Translate the canonical pricing engine's `missing[]` tokens into intake
@@ -188,7 +234,7 @@ export function fieldsForEngineMissing(
  * (b) which fields the canonical pricing engine says are still required.
  *
  * Contract:
- *   - Contact-first fields (name, phone) are always asked before pricing.
+ *   - Voice/SMS confirm service intent, then callback phone; web has no early contact wall.
  *   - Then pricing fields the engine flagged (translated via
  *     fieldsForEngineMissing) in manifest priority order.
  *   - `additionallyRequired` lets the workflow inject booking-stage fields
@@ -200,15 +246,22 @@ export function nextResidentialQuestion(args: {
   captured: readonly ResidentialIntakeFieldId[];
   engineMissing: readonly string[];
   additionallyRequired?: readonly ResidentialIntakeFieldId[];
+  channel?: "voice" | "web" | "sms";
 }): IntakeFieldSpec | null {
   const capturedSet = new Set(args.captured);
   const required = new Set<ResidentialIntakeFieldId>([
-    "contact_name",
-    "contact_phone",
+    "services",
+    ...(args.channel === "web" ? [] : ["contact_phone" as const]),
     ...fieldsForEngineMissing(args.engineMissing),
     ...(args.additionallyRequired ?? []),
   ]);
-  for (const spec of RESIDENTIAL_INTAKE_MANIFEST) {
+  const preferredOrder: ResidentialIntakeFieldId[] = [
+    "services",
+    ...(args.channel === "web" ? [] : ["contact_phone" as const]),
+    ...RESIDENTIAL_INTAKE_PRIORITY.filter((id) => id !== "services" && id !== "contact_phone"),
+  ];
+  for (const id of preferredOrder) {
+    const spec = RESIDENTIAL_INTAKE_BY_ID[id];
     if (required.has(spec.id) && !capturedSet.has(spec.id)) return spec;
   }
   return null;

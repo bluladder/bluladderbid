@@ -7,28 +7,29 @@
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  type AdapterRequestError,
   buildNonStreamingResponse,
   parseAdapterRequest,
   runVoiceAdapter,
   runVoiceAdapterStream,
-  type AdapterRequestError,
   type VoiceStreamEvent,
 } from "../_shared/voiceAdapter.ts";
-import { normalizeVoiceAdapterRequest } from "../_shared/voiceInputNormalizer.ts";
-import { BUILD_ID, BUILD_FEATURES } from "../_shared/buildMarker.ts";
+import { BUILD_FEATURES, BUILD_ID } from "../_shared/buildMarker.ts";
 import {
-  selectRoute,
   rolloutLogPayload,
+  selectRoute,
 } from "../_shared/workflow/rolloutRoute.ts";
 import {
-  runControllerTurn,
   persistControllerPatch,
+  runControllerTurn,
 } from "../_shared/workflow/workflowController.ts";
 import { ensureVoiceConversation } from "../_shared/voiceAdapter.ts";
+import { normalizeVoiceMessages } from "../_shared/voice/voiceInputNormalizer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, x-bluladder-session-id",
+  "Access-Control-Allow-Headers":
+    "authorization, content-type, x-bluladder-session-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -175,14 +176,13 @@ Deno.serve(async (req) => {
   if (!checkBearer(req, secret)) return jsonError(401, "unauthorized");
 
   const parsed = await parseAdapterRequest(req);
-  if (!parsed.ok) return jsonError(errorStatus(parsed.error), parsed.error.kind);
+  if (!parsed.ok) {
+    return jsonError(errorStatus(parsed.error), parsed.error.kind);
+  }
 
-  // Deterministically convert context-dependent STT fragments such as "one"
-  // and "two five zero zero" into explicit canonical values before either the
-  // workflow controller or legacy orchestrator sees the turn. The normalizer
-  // only interprets a bare number when the preceding assistant prompt names the
-  // field, so an address like "5612 Binbranch Lane" remains an address.
-  const request = normalizeVoiceAdapterRequest(parsed.value);
+  // Keep one request object for both routing lanes. The canonical pre-routing
+  // normalizer below updates its message list before either lane consumes it.
+  const request = parsed.value;
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -191,6 +191,25 @@ Deno.serve(async (req) => {
   }
   const supabase = createClient(supabaseUrl, serviceKey);
   const model = request.model || "bluladder-voice-adapter";
+
+  // ---- Pre-routing normalization ----------------------------------------
+  // Context-aware story / spoken-square-footage / window-side normalization
+  // runs BEFORE the deterministic controller and the legacy orchestrator so
+  // both lanes see the same unambiguous utterance. Address-shaped replies are
+  // left untouched by the normalizer.
+  try {
+    const normalized = normalizeVoiceMessages(request.messages);
+    if (normalized.applied.length) {
+      request.messages = normalized.messages;
+      console.log(JSON.stringify({
+        at: "voice-llm-adapter",
+        buildId: BUILD_ID,
+        normalization: normalized.applied,
+      }));
+    }
+  } catch (e) {
+    console.warn("voice input normalization skipped:", (e as Error).message);
+  }
 
   // ---- Rollout gate ------------------------------------------------------
   const decision = selectRoute({

@@ -17,26 +17,43 @@ export interface HomeDetails {
   ladderWork: boolean;
   ladderWorkCount: '1-3' | '4-8' | '9+';
   sunroom: 'none' | 'small' | 'medium' | 'large';
+
+  // Canonical Phase 0 amendment fields. Optional until the downstream web UI
+  // adopts the shared question contract; absence never fabricates a modifier.
+  screenProfile?: 'standard_removable' | 'no_screens' | 'solar' | 'mixed_standard_solar' | 'fixed_nonremovable_or_unknown';
+  screenProfileProvenance?: 'captured' | 'verified' | 'corrected' | 'derived' | 'defaulted' | 'unanswered' | 'unknown';
+  solarScreenCoverage?: 'all' | 'some';
+  solarScreenAffectedWindowCount?: number;
+  solarScreenServiceRequested?: boolean;
+  enclosedPatioProfile?: 'none' | 'screened' | 'window_enclosed' | 'mixed_or_uncertain';
+  screenedEnclosureSoftWash?: boolean;
+  enclosureWindowCount?: number;
+  enclosureWindowSides?: 'outside_only' | 'inside_and_outside';
+  advancedWindowConditions?: boolean;
+  hardWaterAffectedWindowEquivalents?: number;
+  ladderAffectedWindowEquivalents?: number;
+  addedInteriorWindowSides?: number;
+  omittedWindowSides?: number | 'unknown';
 }
 
 // Driveway Cleaning - separate service with sqft-based pricing
 export interface DrivewayCleaningOptions {
   enabled: boolean;
   sqft: number;
-  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
+  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile' | 'exposed_aggregate' | 'asphalt' | 'other' | 'unknown';
 }
 
 // Flatwork area with sqft input and individual surface type
 export interface FlatworkArea {
   enabled: boolean;
   sqft: number;
-  surfaceType?: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
+  surfaceType?: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile' | 'exposed_aggregate' | 'asphalt' | 'other' | 'unknown';
 }
 
 // Pressure Washing - for additional flatwork areas
 export interface PressureWashingOptions {
   enabled: boolean;
-  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile';
+  surfaceType: 'concrete' | 'stamped' | 'pavers' | 'brick' | 'stone' | 'tile' | 'exposed_aggregate' | 'asphalt' | 'other' | 'unknown';
   frontPorch: FlatworkArea;
   backPatio: FlatworkArea;
   poolDeck: FlatworkArea;
@@ -53,7 +70,18 @@ export const FLATWORK_DEFAULT_SQFT = {
 } as const;
 
 // Underground Drain Cleaning options
+/** Legacy web control; the canonical contract for new channels uses an exact integer. */
 export type DrainCount = '1' | '2' | '3' | '4+';
+
+export type GutterRepairNeed =
+  | 'leaking_seams'
+  | 'loose_gutter_sections'
+  | 'detached_gutter_sections'
+  | 'loose_downspouts'
+  | 'detached_downspouts'
+  | 'none'
+  | 'unsure'
+  | 'another_repair_need';
 
 // Gutter Cleaning Add-ons
 export interface GutterCleaningAddons {
@@ -62,6 +90,8 @@ export interface GutterCleaningAddons {
     count: DrainCount;
   };
   minorRepairs: boolean;
+  repairNeeds?: GutterRepairNeed[];
+  repairNotes?: string;
   gutterGuards: {
     enabled: boolean;
     linearFeet: number;
@@ -84,11 +114,18 @@ export type RoofPitch = 'walkable' | 'moderate' | 'steep';
 export interface SolarPanelCleaningOptions {
   enabled: boolean;
   panelCount: number;
+  stories?: 1 | 2 | 3;
+  accessType?: 'standard_residential' | 'unusual_or_uncertain';
+  knownDamage?: boolean;
+  extremePitch?: boolean;
+  fragileMaterial?: boolean;
+  unusualAccess?: boolean;
 }
 
 export interface ScreenRepairOptions {
   enabled: boolean;
   screenCount: number;
+  scopeType?: 'standard_removable_reusable_frame' | 'screen_door' | 'new_frame' | 'damaged_frame' | 'solar_screen' | 'specialty_or_oversized' | 'unknown';
 }
 
 export interface AdditionalServices {
@@ -102,9 +139,17 @@ export interface AdditionalServices {
   roofCleaning: boolean;
   roofType: 'asphalt' | 'tile' | 'metal' | 'flat';
   roofSeverity: 'light' | 'moderate' | 'heavy';
+  roofRiskFlags?: { knownDamage: boolean; extremePitch: boolean; fragileMaterial: boolean; unusualAccess: boolean };
   roofPitch: RoofPitch;
   solarPanelCleaning: SolarPanelCleaningOptions;
   screenRepair: ScreenRepairOptions;
+  houseWashPatios?: {
+    pricingMethod?: 'simple_selection' | 'exact_square_footage';
+    frontSelected?: boolean;
+    backSelected?: boolean;
+    frontSqft?: number;
+    backSqft?: number;
+  };
 }
 
 // All calculated service prices - the single source of truth

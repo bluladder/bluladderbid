@@ -27,6 +27,7 @@ export interface PricingData {
   window_cleaning: {
     exteriorPerSqFt: number;
     interiorPerSqFt: number;
+    insideAndOutsidePerSqFt?: number;
     minimumPrice: number;
     modifiers: ServiceModifiers;
   };
@@ -35,8 +36,10 @@ export interface PricingData {
     minimumPrice: number;
     modifiers: ServiceModifiers;
     // Gutter add-ons pricing
-    undergroundDrainPricing: Record<string, number>; // '1', '2', '3', '4+'
-    minorRepairsPrice: number;
+    /** Legacy config retained for compatibility; canonical engine uses exact-count owner rule. */
+    undergroundDrainPricing?: Record<string, number>;
+    /** Legacy config retained for compatibility; canonical engine uses one 30% adjustment. */
+    minorRepairsPrice?: number;
     gutterGuardsPerLinearFoot: number;
   };
   roof_cleaning: {

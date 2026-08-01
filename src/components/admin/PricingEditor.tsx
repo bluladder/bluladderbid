@@ -29,6 +29,7 @@ const FIELD_CONFIGS: Record<string, Record<string, FieldConfig>> = {
   window_cleaning: {
     exteriorPerSqFt: { label: 'Exterior Rate', type: 'rate', description: 'Per sq ft for exterior windows' },
     interiorPerSqFt: { label: 'Interior Rate', type: 'rate', description: 'Per sq ft for interior windows' },
+    insideAndOutsidePerSqFt: { label: 'Inside & Outside Rate', type: 'rate', description: 'Canonical whole-home combined rate per sq ft' },
     minimumPrice: { label: 'Minimum Price', type: 'currency', description: 'Minimum charge regardless of house size' },
   },
   house_wash: {
@@ -363,44 +364,22 @@ function ServicePricingSection({
   const renderGutterAddons = () => {
     if (row.config_key !== 'gutter_cleaning') return null;
     
-    const drainPricing = values.undergroundDrainPricing as Record<string, number> | undefined;
-    const minorRepairs = values.minorRepairsPrice as number | undefined;
     const gutterGuards = values.gutterGuardsPerLinearFoot as number | undefined;
 
     return (
       <div className="space-y-4">
-        {/* Underground Drain Pricing */}
-        {drainPricing && (
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-blue-600" />
-              Underground Drain Cleaning
-              <Badge variant="outline" className="text-xs">Flat Fee Add-on</Badge>
-            </h4>
-            <div className="grid gap-2 pl-4 border-l-2 border-blue-600/20">
-              {Object.entries(drainPricing).map(([count, price]) => (
-                <div key={count} className="flex items-center gap-2">
-                  <Label className="min-w-[80px] text-sm text-muted-foreground">
-                    {count} drain{count !== '1' ? 's' : ''}
-                  </Label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      type="number"
-                      step="5"
-                      value={price}
-                      onChange={(e) => handleValueChange(['undergroundDrainPricing', count], parseFloat(e.target.value) || 0)}
-                      className="w-24 pl-7"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground pl-4">
-              Clears buried downspout lines to restore proper drainage
-            </p>
-          </div>
-        )}
+        {/* Owner-confirmed contract rules are intentionally not editable as
+            legacy pricing_config buckets. */}
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-blue-600" />
+            Underground Drain Clearing
+            <Badge variant="outline" className="text-xs">Contract rule</Badge>
+          </h4>
+          <p className="text-sm text-muted-foreground pl-4 border-l-2 border-blue-600/20">
+            $100 total for one or two exact drains, then $25 for each additional drain.
+          </p>
+        </div>
         
         {/* Minor Repairs */}
         <div className="space-y-2">
@@ -408,19 +387,9 @@ function ServicePricingSection({
             <DollarSign className="w-4 h-4 text-green-600" />
             Minor Gutter Repairs
           </h4>
-          <div className="flex items-center gap-2 pl-4 border-l-2 border-green-600/20">
-            <Label className="min-w-[80px] text-sm text-muted-foreground">Flat Fee</Label>
-            <div className="relative">
-              <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type="number"
-                step="5"
-                value={minorRepairs ?? 85}
-                onChange={(e) => handleValueChange(['minorRepairsPrice'], parseFloat(e.target.value) || 0)}
-                className="w-24 pl-7"
-              />
-            </div>
-          </div>
+          <p className="text-sm text-muted-foreground pl-4 border-l-2 border-green-600/20">
+            One 30% adjustment to the base gutter-cleaning subtotal for qualifying minor repairs.
+          </p>
         </div>
         
         {/* Gutter Guards */}

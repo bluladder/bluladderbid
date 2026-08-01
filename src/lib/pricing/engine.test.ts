@@ -105,8 +105,8 @@ describe("pricing engine — story & condition modifiers", () => {
       homeDetails: baseHome({ squareFootage: 3000, windowCleaningType: "both" }),
       additionalServices: { ...noServices(), windowCleaning: true },
     });
-    // ext 3000*0.08=240 ; int 3000*0.075=225 ; total 465
-    expect(r.total).toBe(465);
+    // Approved whole-home full-service rate: 3000 * $0.15 = $450.
+    expect(r.total).toBe(450);
   });
 });
 
@@ -132,8 +132,9 @@ describe("pricing engine — add-ons & surcharges", () => {
         },
       },
     });
-    // base min 200 + drains 125 + repairs 85 + guards 150*8=1200 = 1610
-    expect(r.total).toBe(1610);
+    // base min 200 + drains 100 + one 30% repair adjustment (60)
+    // + guards 150*8=1200 = 1560
+    expect(r.total).toBe(1560);
   });
 });
 
@@ -160,6 +161,21 @@ describe("pricing engine — discounts", () => {
 });
 
 describe("pricing engine — safe failure modes", () => {
+  it("missing window sides never silently becomes exterior-only", () => {
+    const r = calc({
+      homeDetails: baseHome({ windowCleaningType: undefined }),
+      additionalServices: { ...noServices(), windowCleaning: true },
+    });
+    expect(r.status).toBe("missing_information");
+    expect(r.missing).toContain("windowCleaningSides");
+  });
+  it("enabled pressure washing with no positive area is incomplete, not firm zero", () => {
+    const s = noServices();
+    s.pressureWashing = { ...s.pressureWashing, enabled: true };
+    const r = calc({ homeDetails: baseHome(), additionalServices: s });
+    expect(r.status).toBe("missing_information");
+    expect(r.missing).toContain("pressureWashingAreas");
+  });
   it("no services -> missing_information", () => {
     const r = calc({ homeDetails: baseHome(), additionalServices: noServices() });
     expect(r.status).toBe("missing_information");

@@ -44,12 +44,13 @@ function formatPrice(price: number) {
 }
 
 /**
- * Launch gate — the public "Text me this bid" delivery path is disabled.
- * All SMS infrastructure (edge functions, outbox, inbound SMS, campaigns) and
- * the client delivery code below are intentionally retained so the option can
- * be restored by flipping this single constant back to `true`.
+ * Launch gate — the canonical customer-requested "Text me this bid" action is
+ * LIVE: it persists through `save-quote` and dispatches through the
+ * capability-authorized `send-sms` path (suppression, opt-out and pause checks
+ * still apply). Flipping this single constant back to `false` withdraws the
+ * option from the public flow without removing any of that infrastructure.
  */
-const BID_BY_TEXT_ENABLED = false;
+const BID_BY_TEXT_ENABLED = true;
 
 // Local helpers — SMS destination normalization + PII masking for success UI.
 // Kept in-file to avoid growing the shared surface for a single delivery flow.

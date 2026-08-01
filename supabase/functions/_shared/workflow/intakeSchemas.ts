@@ -14,7 +14,7 @@
 // after the shared manifest's post-quote booking questions run.
 // ============================================================================
 
-import type { QuoteSessionFields } from "../quoteSession.ts";
+import { computeRequired, type QuoteSessionFields } from "../quoteSession.ts";
 import type { RequiredField } from "./types.ts";
 
 export const RESIDENTIAL_WINDOW_WHOLE_HOME_PRICING_FIELDS: RequiredField[] = [
@@ -45,16 +45,9 @@ export const RESIDENTIAL_QUESTION_PRIORITY: RequiredField[] = [
 ];
 
 export function missingResidentialPricingFields(f: QuoteSessionFields): RequiredField[] {
-  const missing: RequiredField[] = [];
-  const services = f.services ?? [];
-  if (services.length === 0) missing.push("services");
-  if (services.includes("windowCleaning") || services.includes("window_cleaning")) {
-    if (!f.windowCleaningScope && f.squareFootage == null) missing.push("windowCleaningScope");
-  }
-  if (f.squareFootage == null) missing.push("squareFootage");
-  if (!f.windowCleaningSides && !f.windowCleaningType) missing.push("windowCleaningSides");
-  if (f.stories == null) missing.push("stories");
-  return missing;
+  // Deprecated compatibility view. All requirement logic is delegated to the
+  // shared canonical contract through quoteSession.computeRequired.
+  return computeRequired(f) as RequiredField[];
 }
 
 export function missingResidentialBookingFields(f: QuoteSessionFields): RequiredField[] {
