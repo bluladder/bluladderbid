@@ -21,7 +21,7 @@ describe('landing release boundary', () => {
 
   it('keeps the closed chat bubble above the mobile sticky booking action', () => {
     expect(chatWidget).toContain(
-      'bottom-[calc(6rem+env(safe-area-inset-bottom))]',
+      'bottom-[calc(var(--quote-action-height,0rem)+1rem+env(safe-area-inset-bottom))]',
     );
     expect(chatWidget).toContain('sm:bottom-6');
     expect(chatWidget).toContain('z-40');

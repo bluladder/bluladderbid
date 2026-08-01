@@ -225,6 +225,7 @@ const Index = () => {
           });
         }}
         homeSquareFootage={homeDetails.squareFootage}
+        quotePhase={oneTimeQuote.phase}
         planPhase={bundleState.phase}
         onRetryPlan={bundleState.refetch}
       />

@@ -59,6 +59,57 @@ function makeBundle(tier: BundleTier['tier'], annual: number): BundleTier {
 }
 
 describe('PlanUpsellCard — fail-closed plan behavior', () => {
+  it('uses only the current canonical quote for the persistent action and suppresses stale phases', () => {
+    const props = {
+      servicePrices: emptyServicePrices,
+      additionalServices: services,
+      bundles: [makeBundle('better', 1000)],
+      selectedTier: 'better' as const,
+      onSelectTier: () => {},
+      onBookOneTime: () => {},
+      onUpgradeAndBook: () => {},
+      homeSquareFootage: 2500,
+      planPhase: 'ready' as const,
+    };
+    const { rerender } = render(
+      <PlanUpsellCard {...props} oneTimeTotal={250} quotePhase="firm" />,
+    );
+    expect(screen.getByRole('button', { name: 'Review one-time quote · $250' })).toBeInTheDocument();
+
+    rerender(<PlanUpsellCard {...props} oneTimeTotal={275} quotePhase="estimated" />);
+    expect(screen.getByRole('button', { name: 'Review one-time quote · $275' })).toBeInTheDocument();
+
+    rerender(<PlanUpsellCard {...props} oneTimeTotal={275} quotePhase="loading" />);
+    expect(screen.queryByTestId('persistent-quote-action')).toBeNull();
+
+    rerender(<PlanUpsellCard {...props} oneTimeTotal={275} quotePhase="unavailable" />);
+    expect(screen.queryByTestId('persistent-quote-action')).toBeNull();
+  });
+
+  it('keeps the canonical one-time quote above collapsed, subordinate plans', () => {
+    render(
+      <PlanUpsellCard
+        oneTimeTotal={250}
+        servicePrices={emptyServicePrices}
+        additionalServices={services}
+        bundles={[makeBundle('better', 1000)]}
+        selectedTier="better"
+        onSelectTier={() => {}}
+        onBookOneTime={() => {}}
+        onUpgradeAndBook={() => {}}
+        homeSquareFootage={2500}
+        quotePhase="firm"
+        planPhase="ready"
+      />,
+    );
+    const quoteHeading = screen.getByText('One-Time Service Price');
+    const plansToggle = screen.getByTestId('plans-toggle');
+    expect(screen.queryByTestId('plan-summary')).toBeNull();
+    expect(quoteHeading.compareDocumentPosition(plansToggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(plansToggle);
+    expect(screen.getByTestId('plan-summary')).toBeInTheDocument();
+  });
+
   it('never renders $0/year or $0/month when the server plan is unavailable', () => {
     render(
       <PlanUpsellCard
@@ -75,6 +126,8 @@ describe('PlanUpsellCard — fail-closed plan behavior', () => {
         onRetryPlan={() => {}}
       />,
     );
+    expect(screen.queryByTestId('plan-unavailable')).toBeNull();
+    fireEvent.click(screen.getByTestId('plans-toggle'));
     // The plan summary block must not render at all when no valid plan exists.
     expect(screen.queryByTestId('plan-summary')).toBeNull();
     // No zero-dollar prices anywhere in the DOM.
@@ -101,6 +154,7 @@ describe('PlanUpsellCard — fail-closed plan behavior', () => {
         planPhase="loading"
       />,
     );
+    fireEvent.click(screen.getByTestId('plans-toggle'));
     expect(screen.getByTestId('plan-loading')).toBeInTheDocument();
     expect(screen.queryByTestId('plan-summary')).toBeNull();
     expect(document.body.textContent).not.toMatch(/\$0\/(year|month|mo)/i);
@@ -124,6 +178,8 @@ describe('PlanUpsellCard — fail-closed plan behavior', () => {
         planPhase="ready"
       />,
     );
+    expect(screen.queryByTestId('plan-summary')).toBeNull();
+    fireEvent.click(screen.getByTestId('plans-toggle'));
     expect(screen.getByTestId('plan-summary')).toBeInTheDocument();
     const cta = screen.getByTestId('plan-upgrade-cta') as HTMLButtonElement;
     expect(cta.disabled).toBe(false);
@@ -146,6 +202,7 @@ describe('PlanUpsellCard — fail-closed plan behavior', () => {
         planPhase="ready"
       />,
     );
+    fireEvent.click(screen.getByTestId('plans-toggle'));
     const cta = screen.getByTestId('plan-upgrade-cta') as HTMLButtonElement;
     expect(cta.disabled).toBe(true);
     expect(screen.queryByTestId('plan-summary')).toBeNull();
