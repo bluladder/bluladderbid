@@ -16,6 +16,10 @@ import { DEFAULT_ADDITIONAL_SERVICES } from '@/types/homeowner';
 import type { ServicePrices, HomeDetails, AdditionalServices } from '@/types/homeowner';
 
 const invokeMock = vi.fn();
+const { fireLeadMock, fireInitiateCheckoutMock } = vi.hoisted(() => ({
+  fireLeadMock: vi.fn(),
+  fireInitiateCheckoutMock: vi.fn(),
+}));
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: { functions: { invoke: (...args: unknown[]) => invokeMock(...args) } },
@@ -31,8 +35,9 @@ vi.mock('@/lib/attribution/attribution', () => ({
 }));
 
 vi.mock('@/lib/attribution/metaPixel', () => ({
-  deriveQuoteId: () => 'quote-fingerprint',
-  fireLead: vi.fn(),
+  deriveQuoteFingerprint: () => 'quote-fingerprint',
+  fireInitiateCheckout: fireInitiateCheckoutMock,
+  fireLead: fireLeadMock,
 }));
 
 vi.mock('@/lib/bridge/bluladderBidPostMessage', () => ({
@@ -92,12 +97,55 @@ function renderSummary() {
 }
 
 describe('OneTimeSummary — email + bid-by-text delivery', () => {
-  beforeEach(() => { invokeMock.mockReset(); });
+  beforeEach(() => {
+    invokeMock.mockReset();
+    fireLeadMock.mockReset();
+    fireInitiateCheckoutMock.mockReset();
+  });
 
   it('uses the truthful scheduling CTA as the primary action', () => {
     renderSummary();
     const chooseTime = screen.getByRole('button', { name: 'Choose Appointment Time' });
     expect(chooseTime.className).toMatch(/btn-primary/);
+  });
+
+  it('fires Lead only after quote/contact persistence returns a durable quote id', async () => {
+    invokeMock.mockResolvedValueOnce({
+      data: { quoteId: 'persisted-quote-1', quoteUrl: 'https://x/resume' },
+      error: null,
+    });
+    renderSummary();
+    expect(fireLeadMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    fireEvent.change(await screen.findByLabelText(/^Email$/), {
+      target: { value: 'lead@example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /save my bid/i }));
+
+    await waitFor(() => expect(fireLeadMock).toHaveBeenCalledOnce());
+    expect(fireLeadMock).toHaveBeenCalledWith({
+      id: 'persisted-quote-1',
+      persisted: true,
+      quoted_total: 400,
+      service_count: 1,
+      services_selected: ['houseWash'],
+      firm: true,
+    });
+  });
+
+  it('fires InitiateCheckout from the scheduling CTA with the exact current quote total', () => {
+    renderSummary();
+    expect(fireInitiateCheckoutMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Appointment Time' }));
+    expect(fireInitiateCheckoutMock).toHaveBeenCalledOnce();
+    expect(fireInitiateCheckoutMock).toHaveBeenCalledWith({
+      id: 'quote-fingerprint',
+      quoted_total: 400,
+      service_count: 1,
+      services_selected: ['houseWash'],
+      firm: true,
+    });
   });
 
   it('email delivery reuses save-quote and shows masked destination as accepted (not delivered)', async () => {

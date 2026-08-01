@@ -12,6 +12,8 @@
  * server-side-only concern.
  */
 
+import { isMetaTrackingDenied } from './metaConsent';
+
 const WHITELIST = [
   'utm_source',
   'utm_medium',
@@ -22,6 +24,8 @@ const WHITELIST = [
   'landing_page_slug',
   'referrer',
   'source_session_id',
+  'fbp',
+  'fbc',
 ] as const;
 
 export type AttributionKey = (typeof WHITELIST)[number];
@@ -36,6 +40,8 @@ export interface AttributionState {
   last_touch: AttributionTouch;
   landing_page_slug?: string;
   fbclid?: string;
+  fbp?: string;
+  fbc?: string;
   referrer?: string;
   self_reported_source?: string;
   self_reported_source_detail?: string;
@@ -87,7 +93,9 @@ function pickWhitelisted(source: URLSearchParams | Record<string, unknown>): Att
   for (const key of WHITELIST) {
     const raw =
       source instanceof URLSearchParams
-        ? source.get(key)
+        ? key === 'fbp' || key === 'fbc'
+          ? null
+          : source.get(key)
         : ((source as Record<string, unknown>)[key] as string | undefined);
     const val = sanitize(raw);
     if (val) out[key] = val;
@@ -96,13 +104,48 @@ function pickWhitelisted(source: URLSearchParams | Record<string, unknown>): Att
 }
 
 function hasAnyMeaningful(touch: AttributionTouch): boolean {
-  return WHITELIST.some((k) => k !== 'source_session_id' && !!touch[k]);
+  return WHITELIST.some(
+    (k) => k !== 'source_session_id' && k !== 'fbp' && k !== 'fbc' && !!touch[k],
+  );
 }
 
 function isMetaTouch(touch: AttributionTouch): boolean {
   if (touch.fbclid) return true;
   const src = touch.utm_source?.toLowerCase();
   return !!src && META_SOURCES.has(src);
+}
+
+function readCookie(name: '_fbp' | '_fbc'): string | undefined {
+  if (typeof document === 'undefined' || isMetaTrackingDenied()) return undefined;
+  try {
+    const prefix = `${name}=`;
+    const raw = document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix))
+      ?.slice(prefix.length);
+    return sanitize(raw ? decodeURIComponent(raw) : undefined);
+  } catch {
+    return undefined;
+  }
+}
+
+function readMetaBrowserIds(): Pick<AttributionState, 'fbp' | 'fbc'> {
+  return {
+    fbp: readCookie('_fbp'),
+    fbc: readCookie('_fbc'),
+  };
+}
+
+function enrichTouchWithMetaIds(
+  touch: AttributionTouch,
+  ids: Pick<AttributionState, 'fbp' | 'fbc'>,
+): AttributionTouch {
+  return {
+    ...touch,
+    ...(ids.fbp ? { fbp: ids.fbp } : {}),
+    ...(ids.fbc ? { fbc: ids.fbc } : {}),
+  };
 }
 
 function readTouch(key: string): AttributionTouch | null {
@@ -141,6 +184,7 @@ export function setSelfReportedSource(source: string, detail?: string): void {
 
 export function captureAttribution(params: URLSearchParams): AttributionState {
   const incoming = pickWhitelisted(params);
+  const metaIds = readMetaBrowserIds();
   if (!incoming.referrer && typeof document !== 'undefined' && document.referrer) {
     try {
       const url = new URL(document.referrer);
@@ -167,14 +211,21 @@ export function captureAttribution(params: URLSearchParams): AttributionState {
     }
   }
 
+  if (newFirst) newFirst = enrichTouchWithMetaIds(newFirst, metaIds);
+
   if (newFirst && newFirst !== existingFirst) {
     safeSet(localS(), FIRST_TOUCH_KEY, JSON.stringify(newFirst));
   }
 
-  const lastTouch: AttributionTouch = incomingHasSignal
-    ? { ...incoming, captured_at: new Date().toISOString() }
-    : readTouch(LAST_TOUCH_KEY) ?? {};
-  if (incomingHasSignal) safeSet(sessionS(), LAST_TOUCH_KEY, JSON.stringify(lastTouch));
+  const lastTouch: AttributionTouch = enrichTouchWithMetaIds(
+    incomingHasSignal
+      ? { ...incoming, captured_at: new Date().toISOString() }
+      : readTouch(LAST_TOUCH_KEY) ?? {},
+    metaIds,
+  );
+  if (incomingHasSignal || metaIds.fbp || metaIds.fbc) {
+    safeSet(sessionS(), LAST_TOUCH_KEY, JSON.stringify(lastTouch));
+  }
 
   return {
     source_session_id: sessionId,
@@ -182,6 +233,8 @@ export function captureAttribution(params: URLSearchParams): AttributionState {
     last_touch: lastTouch,
     landing_page_slug: (newFirst ?? existingFirst)?.landing_page_slug ?? incoming.landing_page_slug,
     fbclid: (newFirst ?? existingFirst)?.fbclid ?? incoming.fbclid,
+    fbp: metaIds.fbp ?? (newFirst ?? existingFirst)?.fbp ?? lastTouch.fbp,
+    fbc: metaIds.fbc ?? (newFirst ?? existingFirst)?.fbc ?? lastTouch.fbc,
     referrer: (newFirst ?? existingFirst)?.referrer ?? incoming.referrer,
     self_reported_source: sanitize(safeGet(localS(), SELF_REPORTED_SOURCE_KEY)),
     self_reported_source_detail: sanitize(safeGet(localS(), SELF_REPORTED_DETAIL_KEY)),
@@ -190,14 +243,17 @@ export function captureAttribution(params: URLSearchParams): AttributionState {
 
 export function readAttribution(): AttributionState {
   const sessionId = getOrCreateSourceSessionId();
-  const first = readTouch(FIRST_TOUCH_KEY) ?? {};
-  const last = readTouch(LAST_TOUCH_KEY) ?? {};
+  const metaIds = readMetaBrowserIds();
+  const first = enrichTouchWithMetaIds(readTouch(FIRST_TOUCH_KEY) ?? {}, metaIds);
+  const last = enrichTouchWithMetaIds(readTouch(LAST_TOUCH_KEY) ?? {}, metaIds);
   return {
     source_session_id: sessionId,
     first_touch: first,
     last_touch: last,
     landing_page_slug: first.landing_page_slug ?? last.landing_page_slug,
     fbclid: first.fbclid ?? last.fbclid,
+    fbp: metaIds.fbp ?? first.fbp ?? last.fbp,
+    fbc: metaIds.fbc ?? first.fbc ?? last.fbc,
     referrer: first.referrer ?? last.referrer,
     self_reported_source: sanitize(safeGet(localS(), SELF_REPORTED_SOURCE_KEY)),
     self_reported_source_detail: sanitize(safeGet(localS(), SELF_REPORTED_DETAIL_KEY)),

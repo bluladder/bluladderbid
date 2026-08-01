@@ -2,14 +2,15 @@
  * Meta Pixel wrapper — thin, deduplicated, PII-scrubbed.
  *
  * Firing rules (enforced here so callers cannot bypass them):
- *  - Lead: only when a firm canonical server quote is present (quote id +
- *    numeric quoted_total).
+ *  - Lead: only after quote/contact persistence returns a durable quote id.
+ *  - InitiateCheckout: only from the explicit scheduling-intake CTA with a
+ *    current firm canonical quote.
  *  - Schedule: only when a Jobber booking succeeded AND a jobber_visit_id
  *    is present.
- *  - CompleteRegistration: only when Schedule's preconditions are met.
  *
  * Deduplication:
- *  - Every event carries a deterministic eventID.
+ *  - Every event carries a canonical deterministic eventID suitable for a
+ *    future browser/server Conversions API pair.
  *  - We record fired eventIDs in localStorage so refreshes, back/forward
  *    navigation, rerenders, and idempotent replay never fire the same event
  *    twice from the same browser. Meta itself dedupes across browser+server
@@ -20,6 +21,8 @@
  */
 
 import { readAttribution } from './attribution';
+import { isMetaTrackingDenied } from './metaConsent';
+import { buildMetaEventId } from './metaEventContract';
 
 const DEDUP_KEY = 'bluladder_meta_events_fired';
 const LEAD_SOURCE = 'fb_window_cleaning_offer_bid';
@@ -104,24 +107,24 @@ function fbqReady(): FbqFn | null {
 }
 
 function track(eventName: string, params: Record<string, unknown>, eventId: string): boolean {
+  if (isMetaTrackingDenied()) return false;
   if (hasFired(eventId)) return false;
   const fn = fbqReady();
+  if (!fn) return false;
   const scrubbed = scrubPii(params);
-  markFired(eventId);
-  if (!fn) return true; // still marked; the pixel snippet may not be loaded in dev
   try {
     fn('track', eventName, scrubbed, { eventID: eventId });
+    markFired(eventId);
+    return true;
   } catch {
-    /* swallow */
+    return false;
   }
-  return true;
 }
 
 /* ---------- Quote / Booking canonical shapes ---------- */
 
 export interface CanonicalQuoteForPixel {
-  /** A stable identifier for the firm quote. Any string works; the caller is
-   *  responsible for making it deterministic per quote. */
+  /** Durable quote id for Lead; canonical fingerprint for InitiateCheckout. */
   id: string;
   /** Server-authoritative total. Must be a number. */
   quoted_total: number;
@@ -131,6 +134,11 @@ export interface CanonicalQuoteForPixel {
   zip_code?: string;
   /** Must be true for the Lead event to fire. */
   firm: boolean;
+}
+
+export interface PersistedQuoteForPixel extends CanonicalQuoteForPixel {
+  /** Proves the caller received a durable quote id from save-quote. */
+  persisted: boolean;
 }
 
 export interface CanonicalBookingForPixel {
@@ -143,30 +151,53 @@ export interface CanonicalBookingForPixel {
   zip_code?: string;
 }
 
-export function fireLead(quote: CanonicalQuoteForPixel): boolean {
+function validCanonicalQuote(quote: CanonicalQuoteForPixel): boolean {
   if (!quote || !quote.firm) return false;
   if (!quote.id || typeof quote.quoted_total !== 'number' || !Number.isFinite(quote.quoted_total)) {
     return false;
   }
   if (quote.quoted_total <= 0) return false;
-  const eventId = `lead_${quote.id}`;
+  return true;
+}
+
+function quoteParams(quote: CanonicalQuoteForPixel): Record<string, unknown> {
   const attribution = readAttribution();
+  return {
+    value: quote.quoted_total,
+    currency: 'USD',
+    content_name: 'Instant Quote',
+    content_category: 'Home Services',
+    service_count: quote.service_count,
+    services_selected: quote.services_selected,
+    city: quote.city,
+    zip_code: quote.zip_code,
+    lead_source: LEAD_SOURCE,
+    landing_page_slug: attribution.landing_page_slug,
+    fbclid: attribution.fbclid,
+    utm_source: attribution.first_touch.utm_source,
+    utm_medium: attribution.first_touch.utm_medium,
+    utm_campaign: attribution.first_touch.utm_campaign,
+    utm_content: attribution.first_touch.utm_content,
+    utm_term: attribution.first_touch.utm_term,
+  };
+}
+
+export function fireLead(quote: PersistedQuoteForPixel): boolean {
+  if (!quote?.persisted || !validCanonicalQuote(quote)) return false;
+  const eventId = buildMetaEventId('Lead', quote.id);
+  if (!eventId) return false;
+  return track('Lead', quoteParams(quote), eventId);
+}
+
+export function fireInitiateCheckout(quote: CanonicalQuoteForPixel): boolean {
+  if (!validCanonicalQuote(quote)) return false;
+  const eventId = buildMetaEventId('InitiateCheckout', quote.id);
+  if (!eventId) return false;
   return track(
-    'Lead',
+    'InitiateCheckout',
     {
-      value: quote.quoted_total,
-      currency: 'USD',
-      content_name: 'Instant Quote',
-      content_category: 'Home Services',
-      service_count: quote.service_count,
-      services_selected: quote.services_selected,
-      city: quote.city,
-      zip_code: quote.zip_code,
-      lead_source: LEAD_SOURCE,
-      landing_page_slug: attribution.landing_page_slug,
-      utm_source: attribution.first_touch.utm_source,
-      utm_campaign: attribution.first_touch.utm_campaign,
-      utm_content: attribution.first_touch.utm_content,
+      ...quoteParams(quote),
+      content_name: 'One-Time Service Scheduling',
     },
     eventId,
   );
@@ -178,7 +209,9 @@ export function fireSchedule(booking: CanonicalBookingForPixel): boolean {
   if (typeof booking.booked_revenue !== 'number' || !Number.isFinite(booking.booked_revenue)) {
     return false;
   }
-  const eventId = `schedule_${booking.id}`;
+  if (booking.booked_revenue <= 0) return false;
+  const eventId = buildMetaEventId('Schedule', booking.id);
+  if (!eventId) return false;
   const attribution = readAttribution();
   return track(
     'Schedule',
@@ -196,23 +229,6 @@ export function fireSchedule(booking: CanonicalBookingForPixel): boolean {
   );
 }
 
-export function fireCompleteRegistration(booking: CanonicalBookingForPixel): boolean {
-  if (!booking || !booking.id) return false;
-  if (!booking.jobber_visit_id) return false;
-  const eventId = `complete_${booking.id}_completeregistration`;
-  return track(
-    'CompleteRegistration',
-    {
-      content_name: 'Booking Confirmed',
-      content_category: 'Home Services',
-      service_count: booking.service_count,
-      city: booking.city,
-      zip_code: booking.zip_code,
-    },
-    eventId,
-  );
-}
-
 /** Testing hook. */
 export function __resetPixelDedupForTests(): void {
   try {
@@ -223,7 +239,7 @@ export function __resetPixelDedupForTests(): void {
 }
 
 /** Deterministic quote id from the canonical firm-quote fields. */
-export function deriveQuoteId(input: {
+export function deriveQuoteFingerprint(input: {
   ruleVersion: number | null | undefined;
   engineVersion: string | null | undefined;
   total: number;
@@ -242,3 +258,6 @@ export function deriveQuoteId(input: {
   for (let i = 0; i < key.length; i++) h = (h * 33) ^ key.charCodeAt(i);
   return `q_${(h >>> 0).toString(36)}`;
 }
+
+/** Compatibility alias retained for existing non-Meta callers/tests. */
+export const deriveQuoteId = deriveQuoteFingerprint;

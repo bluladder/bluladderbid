@@ -18,6 +18,8 @@ const WHITELIST_TOUCH_KEYS = [
   "utm_content",
   "utm_term",
   "fbclid",
+  "fbp",
+  "fbc",
   "landing_page_slug",
   "referrer",
   "captured_at",
