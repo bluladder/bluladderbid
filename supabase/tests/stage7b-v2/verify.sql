@@ -221,10 +221,14 @@ END
 $$;
 ROLLBACK;
 
--- Exercise WITH CHECK independently from table grants. The temporary INSERT
--- grant is transaction-local and rolls back with the test.
+-- Exercise WITH CHECK independently from table grants. The trigger is an
+-- invoker and reads parent tables even when every parent id is null, so grant
+-- only the read permissions needed to reach RLS. Every temporary grant rolls
+-- back with the test.
 BEGIN;
 GRANT INSERT ON public.chat_conversations TO authenticated;
+GRANT SELECT ON public.customers, public.properties, public.quote_sessions
+  TO authenticated;
 SET LOCAL ROLE authenticated;
 SELECT set_config(
   'request.jwt.claim.sub',
