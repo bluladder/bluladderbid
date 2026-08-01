@@ -1,10 +1,7 @@
-import { Home, ChevronDown, ChevronUp } from 'lucide-react';
-import { useState } from 'react';
+import { Home } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import type { ServicePlanHomeDetails } from '@/types/servicePlanBuilder';
 
@@ -37,9 +34,7 @@ export function CompactHomeDetails({
                 <p className="font-medium text-foreground">
                   {homeDetails.squareFootage.toLocaleString()} sq ft • {homeDetails.stories} {homeDetails.stories === 1 ? 'story' : 'stories'}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {homeDetails.condition === 'maintenance' ? 'Regular maintenance' : 'Heavy cleaning needed'}
-                </p>
+                <p className="text-xs text-muted-foreground">Property details used for authoritative plan pricing</p>
               </div>
             </div>
             {onToggleExpand && (
@@ -118,47 +113,6 @@ export function CompactHomeDetails({
                   {n} {n === 1 ? 'Story' : 'Stories'}
                 </button>
               ))}
-            </div>
-          </div>
-
-          {/* Condition */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Current Condition</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => onChange({ condition: 'maintenance' })}
-                className={`
-                  p-3 rounded-lg text-left transition-colors border-2
-                  ${homeDetails.condition === 'maintenance'
-                    ? 'bg-primary/10 border-primary'
-                    : 'bg-muted/50 border-transparent hover:border-muted-foreground/30'
-                  }
-                `}
-              >
-                <p className={`font-medium text-sm ${homeDetails.condition === 'maintenance' ? 'text-primary' : 'text-foreground'}`}>
-                  Regular Maintenance
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Cleaned within the past year
-                </p>
-              </button>
-              <button
-                onClick={() => onChange({ condition: 'heavy' })}
-                className={`
-                  p-3 rounded-lg text-left transition-colors border-2
-                  ${homeDetails.condition === 'heavy'
-                    ? 'bg-primary/10 border-primary'
-                    : 'bg-muted/50 border-transparent hover:border-muted-foreground/30'
-                  }
-                `}
-              >
-                <p className={`font-medium text-sm ${homeDetails.condition === 'heavy' ? 'text-primary' : 'text-foreground'}`}>
-                  Heavy Cleaning
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Not cleaned in 2+ years
-                </p>
-              </button>
             </div>
           </div>
 

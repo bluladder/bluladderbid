@@ -4,6 +4,7 @@ import type {
   ServicePlanHomeDetails,
   ServicePlanService,
   ServicePlanPayment,
+  ServicePlanTierPrice,
   ServicePlanCustomer,
   PlanBuilderServiceId,
 } from '@/types/servicePlanBuilder';
@@ -22,6 +23,7 @@ import type {
   EngineHomeDetails,
   PlanScenario,
 } from '@/lib/pricing/engine';
+import { PLAN_MONTHLY_INSTALLMENTS } from '@/lib/pricing/engine';
 
 interface ServiceSelection {
   id: PlanBuilderServiceId;
@@ -33,21 +35,21 @@ interface ServiceSelection {
 // pricing. Every dollar is calculated server-side by calculate-plan-options.
 const TIER_PRESETS: Record<PlanTier, Array<{ id: PlanBuilderServiceId; frequency: 1 | 2 | 3 | 4 }>> = {
   good: [
-    { id: 'window-cleaning-exterior', frequency: 2 },
-    { id: 'gutter-cleaning', frequency: 1 },
+    { id: 'window-cleaning-exterior', frequency: 4 },
+    { id: 'window-cleaning-interior', frequency: 1 },
   ],
   better: [
-    { id: 'window-cleaning-exterior', frequency: 3 },
+    { id: 'window-cleaning-exterior', frequency: 4 },
     { id: 'window-cleaning-interior', frequency: 1 },
-    { id: 'gutter-cleaning', frequency: 2 },
+    { id: 'gutter-cleaning', frequency: 1 },
     { id: 'house-wash', frequency: 1 },
   ],
   best: [
     { id: 'window-cleaning-exterior', frequency: 4 },
     { id: 'window-cleaning-interior', frequency: 2 },
-    { id: 'gutter-cleaning', frequency: 2 },
+    { id: 'gutter-cleaning', frequency: 1 },
     { id: 'house-wash', frequency: 1 },
-    { id: 'roof-cleaning', frequency: 1 },
+    { id: 'driveway-cleaning', frequency: 1 },
   ],
 };
 
@@ -236,13 +238,28 @@ export function useServicePlanBuilder() {
     };
   }, [pricingReady, current]);
 
-  const tierPrices = useMemo(() => {
-    const forTier = (id: string) => {
+  const tierPrices = useMemo<Record<PlanTier, ServicePlanTierPrice>>(() => {
+    const forTier = (id: string): ServicePlanTierPrice => {
       const o = planQuotes.options[id];
       if (o && o.isFirm) {
-        return { monthly: o.recurringAmount ?? 0, annual: o.annualTotal ?? 0, savings: 0 };
+        return {
+          firstPayment: o.downPayment,
+          monthlyPayment: o.recurringAmount,
+          remainingPaymentCount:
+            o.billingCadence === 'monthly' && o.recurringAmount !== null ? PLAN_MONTHLY_INSTALLMENTS : null,
+          annualTotal: o.annualTotal,
+          // The current plan option contract does not return an authoritative
+          // comparison total or savings value. Fail closed until it does.
+          estimatedSavings: null,
+        };
       }
-      return { monthly: 0, annual: 0, savings: 0 };
+      return {
+        firstPayment: null,
+        monthlyPayment: null,
+        remainingPaymentCount: null,
+        annualTotal: null,
+        estimatedSavings: null,
+      };
     };
     return {
       good: forTier('tier-good'),

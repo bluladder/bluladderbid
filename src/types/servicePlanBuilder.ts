@@ -48,6 +48,14 @@ export interface ServicePlanPayment {
   totalPayments: number; // 12 (1 down + 11 monthly)
 }
 
+export interface ServicePlanTierPrice {
+  firstPayment: number | null;
+  monthlyPayment: number | null;
+  remainingPaymentCount: number | null;
+  annualTotal: number | null;
+  estimatedSavings: number | null;
+}
+
 export interface ServicePlanCustomer {
   firstName: string;
   lastName: string;
