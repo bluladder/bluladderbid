@@ -1,8 +1,8 @@
 # Voice Journey Completion Audit
 
-Status: implementation baseline audit  
-Audited revision: `4e1cafa78166a510b216cb063537fbe094c83f24`  
-Audit date: 2026-08-01  
+Status: implementation baseline audit
+Audited revision: `4e1cafa78166a510b216cb063537fbe094c83f24`
+Audit date: 2026-08-01
 Scope: customer-facing inbound voice journey only; no provider or production calls were made.
 
 ## Executive finding

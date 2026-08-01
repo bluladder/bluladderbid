@@ -1,6 +1,6 @@
 # Deterministic Voice Journey Architecture
 
-Status: branch implementation contract; rollout flags and production configuration are unchanged.  
+Status: branch implementation contract; rollout flags and production configuration are unchanged.
 Baseline: `4e1cafa78166a510b216cb063537fbe094c83f24`.
 
 ## Ownership map
@@ -84,4 +84,3 @@ The pre-routing transcript normalizer still runs before both routes. The control
 ## Rollback
 
 No schema rollback is necessary. The branch can be reverted as code and documentation. Existing JSONB readers ignore unknown `voiceJourney` keys. Rollout flags can keep the controller disabled without removing stored canonical quote data.
-

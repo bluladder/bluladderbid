@@ -50,4 +50,3 @@ Do not log full provider payloads, authorization headers, service-role keys, cal
 - delivery: outbox/claim state determines retry; voice does not add its own retry loop;
 - cancellation/reschedule: any uncertain destructive outcome requires reconciliation, not another call;
 - cross-customer, cross-organization, unresolved identity, stale quote, unavailable duration, or unverified area: immediate fail-closed outcome.
-
