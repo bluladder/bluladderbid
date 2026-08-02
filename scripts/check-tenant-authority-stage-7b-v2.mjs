@@ -154,6 +154,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/quoteSessionProjection.ts",
   "supabase/functions/_shared/voice/quoteSessionProjection_test.ts",
   "supabase/functions/_shared/voice/spokenEmail.ts",
+  "supabase/functions/_shared/salesEngine/residentialQuoteManifest.ts",
   "supabase/functions/_shared/voice/spokenQuantity.ts",
   "supabase/functions/_shared/voice/spokenQuantity_test.ts",
   "supabase/functions/_shared/voice/turnJournal.ts",
