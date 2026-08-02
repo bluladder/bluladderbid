@@ -69,6 +69,7 @@ Deno.test("manifest: explicit English Nova-3 primary and AssemblyAI fallback", (
   assertEquals(m.transcriber.language, "en");
   assertEquals(m.transcriber.smartFormat, true);
   assertEquals(m.transcriber.keyterm, [...VOICE_TRANSCRIBER_KEYTERMS]);
+  assertEquals(m.transcriber.fallbackPlan.autoFallback.enabled, true);
   assertEquals(m.transcriber.fallbackPlan.transcribers, [{
     provider: "assembly-ai",
     speechModel: "universal-streaming-english",
@@ -76,8 +77,17 @@ Deno.test("manifest: explicit English Nova-3 primary and AssemblyAI fallback", (
     keytermsPrompt: [...VOICE_TRANSCRIBER_KEYTERMS],
     vadAssistedEndpointingEnabled: true,
   }]);
-  assertEquals(m.startSpeakingPlan.smartEndpointingPlan.provider, "vapi");
+  assertEquals(m.startSpeakingPlan.smartEndpointingPlan.provider, "livekit");
+  assertEquals(
+    m.startSpeakingPlan.smartEndpointingPlan.waitFunction,
+    "2000 / (1 + exp(-10 * (x - 0.5)))",
+  );
   assert(m.startSpeakingPlan.transcriptionEndpointingPlan.onNumberSeconds >= 1);
+  assertEquals(m.stopSpeakingPlan, {
+    numWords: 0,
+    voiceSeconds: 0.2,
+    backoffSeconds: 1,
+  });
 });
 
 Deno.test("manifest: no tools, no phone number, no transfer, no CallRail", () => {
