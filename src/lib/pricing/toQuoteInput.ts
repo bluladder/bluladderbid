@@ -70,7 +70,9 @@ export function toQuoteInput(
       roofRiskFlags: additionalServices.roofRiskFlags,
       drivewayCleaning: additionalServices.drivewayCleaning,
       pressureWashing: additionalServices.pressureWashing,
-      solarPanelCleaning: additionalServices.solarPanelCleaning,
+      solarPanelCleaning: additionalServices.solarPanelCleaning.enabled
+        ? { ...additionalServices.solarPanelCleaning, stories: homeDetails.stories }
+        : additionalServices.solarPanelCleaning,
       screenRepair: additionalServices.screenRepair,
       houseWashPatios: additionalServices.houseWashPatios,
     },

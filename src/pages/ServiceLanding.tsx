@@ -13,6 +13,7 @@ import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { useServerBundleTiers } from '@/hooks/useServerBundleTiers';
 import { fromQuoteResult } from '@/lib/pricing/fromQuoteResult';
 import { toQuoteInput, hasAnyServiceSelected } from '@/lib/pricing/toQuoteInput';
+import { evaluateQuoteIntegrity } from '@/lib/pricing/quoteIntegrity';
 import { useWindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 import { usePlanCustomizations } from '@/hooks/usePlanCustomizations';
 import { useUtmTracking } from '@/hooks/useUtmTracking';
@@ -178,6 +179,12 @@ const ServiceLanding = () => {
     () => fromQuoteResult(oneTimeQuote.quote),
     [oneTimeQuote.quote],
   );
+  const quoteIntegrity = useMemo(() => evaluateQuoteIntegrity({
+    services: additionalServices,
+    prices: servicePrices,
+    phase: oneTimeQuote.phase,
+    quote: oneTimeQuote.quote,
+  }), [additionalServices, oneTimeQuote.phase, oneTimeQuote.quote, servicePrices]);
   const bundleState = useServerBundleTiers(
     hasServices ? { homeDetails, additionalServices, customizations } : null,
     { enabled: hasServices },
@@ -232,6 +239,18 @@ const ServiceLanding = () => {
   };
 
   const handleBookOneTime = () => {
+    if (!quoteIntegrity.actionable) {
+      const first = quoteIntegrity.firstIncompleteServiceId;
+      if (first) {
+        const domId = first === 'windowCleaning' ? 'window-cleaning' : first;
+        document.querySelector<HTMLElement>(`[data-service-id="${domId}"]`)?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }
+      toast.error('Complete the selected service details before continuing.');
+      return;
+    }
     setFlowState('one-time-booking');
   };
 
@@ -294,6 +313,7 @@ const ServiceLanding = () => {
         }}
         homeSquareFootage={homeDetails.squareFootage}
         quotePhase={oneTimeQuote.phase}
+        quoteIntegrity={quoteIntegrity}
         planPhase={bundleState.phase}
         onRetryPlan={bundleState.refetch}
       />
@@ -359,6 +379,7 @@ const ServiceLanding = () => {
                   featuredService={config.preSelectService}
                   windowPromo={windowPromo}
                   quotePhase={oneTimeQuote.phase}
+                  quoteIntegrity={quoteIntegrity}
                 />
               )}
               

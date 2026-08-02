@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { PlanUpsellCard } from './PlanUpsellCard';
 import { DEFAULT_ADDITIONAL_SERVICES } from '@/types/homeowner';
 import type { BundleTier, ServicePrices } from '@/types/homeowner';
+import type { QuoteIntegrity } from '@/lib/pricing/quoteIntegrity';
 
 const emptyServicePrices: ServicePrices = {
   exteriorWindows: 0,
@@ -32,6 +33,15 @@ const emptyServicePrices: ServicePrices = {
 };
 
 const services = { ...DEFAULT_ADDITIONAL_SERVICES, roofCleaning: true };
+
+const completeIntegrity: QuoteIntegrity = {
+  services: [{ id: 'roofCleaning', state: 'priced', price: 250, message: '' }],
+  selectedCount: 1,
+  pricedCount: 1,
+  representedCount: 1,
+  firstIncompleteServiceId: null,
+  actionable: true,
+};
 
 function makeBundle(tier: BundleTier['tier'], annual: number): BundleTier {
   return {
@@ -88,6 +98,60 @@ describe('PlanUpsellCard — fail-closed plan behavior', () => {
     expect(screen.queryByTestId('persistent-quote-action')).toBeNull();
     expect(screen.getByTestId('quote-unavailable')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('$275');
+  });
+
+  it('suppresses both quote actions when selected-service coverage is incomplete even during a firm phase', () => {
+    const incompleteIntegrity: QuoteIntegrity = {
+      services: [
+        { id: 'roofCleaning', state: 'priced', price: 250, message: '' },
+        { id: 'drivewayCleaning', state: 'missing', price: 0, message: 'Select a driveway size' },
+      ],
+      selectedCount: 2,
+      pricedCount: 1,
+      representedCount: 1,
+      firstIncompleteServiceId: 'drivewayCleaning',
+      actionable: false,
+    };
+    render(
+      <PlanUpsellCard
+        oneTimeTotal={250}
+        servicePrices={emptyServicePrices}
+        additionalServices={{
+          ...services,
+          drivewayCleaning: { enabled: true, sqft: 0, surfaceType: 'concrete' },
+        }}
+        bundles={[]}
+        selectedTier={null}
+        onSelectTier={() => {}}
+        onBookOneTime={() => {}}
+        onUpgradeAndBook={() => {}}
+        quotePhase="firm"
+        quoteIntegrity={incompleteIntegrity}
+      />,
+    );
+    expect(screen.queryByTestId('one-time-decision')).toBeNull();
+    expect(screen.queryByTestId('persistent-quote-action')).toBeNull();
+    expect(document.body.textContent).not.toContain('$250');
+  });
+
+  it('shows the same authoritative total and represented count in the quote card and persistent action', () => {
+    render(
+      <PlanUpsellCard
+        oneTimeTotal={250}
+        servicePrices={emptyServicePrices}
+        additionalServices={services}
+        bundles={[]}
+        selectedTier={null}
+        onSelectTier={() => {}}
+        onBookOneTime={() => {}}
+        onUpgradeAndBook={() => {}}
+        quotePhase="firm"
+        quoteIntegrity={completeIntegrity}
+      />,
+    );
+    expect(screen.getByTestId('one-time-decision')).toHaveTextContent('$250');
+    expect(screen.getByTestId('one-time-decision')).toHaveTextContent('1 service');
+    expect(screen.getAllByRole('button', { name: 'Continue with One-Time Service · $250' })).toHaveLength(2);
   });
 
   it('keeps the canonical one-time quote above collapsed, subordinate plans', () => {

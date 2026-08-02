@@ -13,6 +13,7 @@ import { PersistentActionBar } from '@/components/quote/PersistentActionBar';
 import { PriceDisplay } from '@/components/quote/PriceDisplay';
 import { formatQuotePrice } from '@/components/quote/priceFormat';
 import type { ServerQuotePhase } from '@/hooks/useServerQuoteCalculation';
+import type { QuoteIntegrity } from '@/lib/pricing/quoteIntegrity';
 
 interface PlanUpsellCardProps {
   oneTimeTotal: number;
@@ -37,6 +38,7 @@ interface PlanUpsellCardProps {
   planPhase?: 'idle' | 'loading' | 'ready' | 'missing_information' | 'manual_review_required' | 'unavailable';
   /** Canonical one-time quote freshness. Mobile action is derived only from this server state. */
   quotePhase?: ServerQuotePhase;
+  quoteIntegrity?: QuoteIntegrity;
   onRetryPlan?: () => void;
 }
 
@@ -74,6 +76,7 @@ export function PlanUpsellCard({
   homeSquareFootage,
   planPhase,
   quotePhase,
+  quoteIntegrity,
   onRetryPlan,
 }: PlanUpsellCardProps) {
   const [showAllPlans, setShowAllPlans] = useState(false);
@@ -89,10 +92,9 @@ export function PlanUpsellCard({
     additionalServices.solarPanelCleaning.enabled,
     additionalServices.screenRepair.enabled,
   ].some(Boolean);
-  const isCanonicalQuoteActionable =
-    hasServices && (
-      quotePhase === undefined || quotePhase === 'firm' || quotePhase === 'estimated'
-    );
+  const isCanonicalQuoteActionable = quoteIntegrity
+    ? quoteIntegrity.actionable
+    : hasServices && (quotePhase === undefined || quotePhase === 'firm' || quotePhase === 'estimated');
   // When square footage hasn't been entered yet, the price is just a starting
   // minimum, so we label it clearly to avoid it reading as a final quote.
   const isEstimate = !homeSquareFootage || homeSquareFootage <= 0;
@@ -122,7 +124,7 @@ export function PlanUpsellCard({
   const hasValidPlan = !!currentBundle && !!breakdown;
   
   // Count enabled services based on selection state
-  const enabledServices = [
+  const enabledServices = quoteIntegrity?.pricedCount ?? [
     additionalServices.windowCleaning,
     additionalServices.houseWash,
     additionalServices.gutterCleaning,
@@ -164,6 +166,7 @@ export function PlanUpsellCard({
   if (!isCanonicalQuoteActionable || !hasServices) {
     const isLoading = quotePhase === 'loading' || quotePhase === 'idle';
     const needsDetails = quotePhase === 'missing_information';
+    const needsManualReview = quotePhase === 'manual_review_required';
     return (
       <Card className="card-gradient">
         <CardContent className="p-6">
@@ -173,7 +176,11 @@ export function PlanUpsellCard({
               isLoading
                 ? 'Updating your one-time quote…'
                 : needsDetails
-                  ? 'Complete your home details to calculate this quote'
+                  ? quoteIntegrity?.firstIncompleteServiceId
+                    ? 'Complete the selected service details to finish this quote'
+                    : 'Complete your home details to calculate this quote'
+                  : needsManualReview
+                    ? 'One or more services require manual review'
                   : 'One-time quote unavailable right now'
             }
             testId={isLoading ? 'quote-loading' : 'quote-unavailable'}
@@ -181,6 +188,8 @@ export function PlanUpsellCard({
             {!isLoading && (
               needsDetails
                 ? 'Enter the requested property details above. No stale price will be used.'
+                : needsManualReview
+                  ? 'The firm-price services remain listed above, but no partial total can be continued while a selected service needs review.'
                 : 'No price is actionable until the authoritative quote service responds.'
             )}
           </AsyncStatePanel>

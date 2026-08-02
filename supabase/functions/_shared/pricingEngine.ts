@@ -656,9 +656,15 @@ export function calculateQuote(
     if (!isValidNumber(squareFootage) || squareFootage <= 0) {
       missing.push("squareFootage");
     } else if (squareFootage > MAX_SQFT) {
-      manualReviewReasons.push(
-        `Square footage ${squareFootage} exceeds automated range; manual review required`,
-      );
+      for (const serviceKey of [
+        svc.windowCleaning && "window_cleaning",
+        svc.interiorWindows && "interior_windows",
+        svc.houseWash && "house_wash",
+        svc.gutterCleaning && "gutter_cleaning",
+        svc.roofCleaning && "roof_cleaning",
+      ].filter((key): key is string => !!key)) {
+        markServiceReview(serviceKey, `Square footage ${squareFootage} exceeds automated range; manual review required`);
+      }
     }
   }
 
@@ -715,8 +721,12 @@ export function calculateQuote(
     const canonicalAccessProvided = solar.stories !== undefined || solar.accessType !== undefined ||
       solar.knownDamage !== undefined || solar.extremePitch !== undefined ||
       solar.fragileMaterial !== undefined || solar.unusualAccess !== undefined;
+    if (!canonicalAccessProvided) missing.push("solarAccessProfile");
     if (canonicalAccessProvided && solar.stories !== 1 && solar.stories !== 2 && solar.stories !== 3) missing.push("solarAccessStories");
     if (canonicalAccessProvided && !solar.accessType) missing.push("solarAccessType");
+    if (canonicalAccessProvided && [solar.knownDamage, solar.extremePitch, solar.fragileMaterial, solar.unusualAccess].some((flag) => typeof flag !== "boolean")) {
+      missing.push("solarAccessRiskFlags");
+    }
     if (solar.stories === 3 || solar.accessType === "unusual_or_uncertain" || solar.knownDamage ||
       solar.extremePitch || solar.fragileMaterial || solar.unusualAccess) {
       markServiceReview("solar_panel_cleaning", "Solar-panel cleaning access or safety scope requires photo-assisted remote review");
@@ -726,13 +736,17 @@ export function calculateQuote(
     missing.push("screenRepairCount");
   }
   if (svc.screenRepair?.enabled && svc.screenRepair.screenCount > 0) {
-    if (svc.screenRepair.scopeType && svc.screenRepair.scopeType !== "standard_removable_reusable_frame") {
+    if (!svc.screenRepair.scopeType) missing.push("screenRepairScopeType");
+    else if (svc.screenRepair.scopeType !== "standard_removable_reusable_frame") {
       markServiceReview("screen_repair", "Screen-repair scope is outside standard removable-screen mesh replacement");
     }
   }
   if (svc.roofCleaning) {
     if (!svc.roofType) missing.push("roofType");
     if (!svc.roofSeverity) missing.push("roofSeverity");
+    if (!svc.roofRiskFlags || Object.values(svc.roofRiskFlags).some((flag) => typeof flag !== "boolean")) {
+      missing.push("roofRiskFlags");
+    }
     const ordinaryAsphalt = svc.roofType === "asphalt" || svc.roofType === "asphalt_shingle";
     const ordinarySeverity = svc.roofSeverity === "light" || svc.roofSeverity === "moderate";
     const risk = svc.roofRiskFlags;
@@ -751,7 +765,8 @@ export function calculateQuote(
     }
   }
   if (home.enclosedPatioProfile === "mixed_or_uncertain") {
-    manualReviewReasons.push("Enclosed patio type needs clarification");
+    if (svc.houseWash) markServiceReview("house_wash", "Enclosed patio type needs clarification");
+    if (svc.windowCleaning) markServiceReview("window_cleaning", "Enclosed patio type needs clarification");
   }
   if (home.screenedEnclosureSoftWash && home.enclosedPatioProfile !== "screened") {
     manualReviewReasons.push("Screened-enclosure soft wash was selected without a confirmed screened enclosure");
@@ -777,31 +792,21 @@ export function calculateQuote(
     manualReviewReasons.push("Solar-screen service was selected without confirmed solar screens");
   }
 
-  // If we already know inputs are unusable, fail safely before doing math.
-  if (missing.length > 0) {
-    return finalize(
-      {
-        status: "missing_information",
-        lineItems: [],
-        subtotal: 0,
-        discount: null,
-        total: 0,
-        trace,
-        missing,
-        manualReviewReasons,
-        manualReviewServiceKeys: [...manualReviewServiceKeys],
-      },
-      ruleVersion,
-      pricing,
-    );
-  }
-
-  const sqft = squareFootage;
+  // Missing information is service-scoped. Continue far enough to price other
+  // independently complete services, while the aggregate status remains
+  // non-actionable until every selected service is resolved.
+  const hasMissing = (...fields: string[]) => fields.some((field) => missing.includes(field));
+  const sharedPropertyReady = !hasMissing("squareFootage", "stories") &&
+    isValidNumber(squareFootage) && squareFootage > 0 && squareFootage <= MAX_SQFT;
+  const sqft = sharedPropertyReady ? squareFootage : 0;
 
   // =========================================================================
   // WINDOW CLEANING
   // =========================================================================
-  if (svc.windowCleaning) {
+  if (svc.windowCleaning && sharedPropertyReady && !hasMissing(
+    "windowCleaningSides", "hardWaterAffectedWindowEquivalents", "ladderAffectedWindowEquivalents",
+    "addedInteriorWindowSides", "omittedWindowSides",
+  ) && !manualReviewServiceKeys.has("window_cleaning")) {
     const cfg = pricing.window_cleaning;
     if (!cfg) {
       manualReviewReasons.push("window_cleaning pricing not configured");
@@ -1006,7 +1011,7 @@ export function calculateQuote(
   // INTERIOR WINDOWS (standalone) — plan-builder rule promoted unchanged.
   // sqft × interiorPerSqFt with story+condition modifiers and a 0.6× minimum.
   // =========================================================================
-  if (svc.interiorWindows) {
+  if (svc.interiorWindows && sharedPropertyReady && !manualReviewServiceKeys.has("interior_windows")) {
     const cfg = pricing.window_cleaning;
     if (!cfg) {
       manualReviewReasons.push("window_cleaning pricing not configured");
@@ -1036,7 +1041,7 @@ export function calculateQuote(
   // =========================================================================
   // HOUSE WASH
   // =========================================================================
-  if (svc.houseWash) {
+  if (svc.houseWash && sharedPropertyReady && !manualReviewServiceKeys.has("house_wash")) {
     const cfg = pricing.house_wash;
     if (!cfg) {
       manualReviewReasons.push("house_wash pricing not configured");
@@ -1135,7 +1140,7 @@ export function calculateQuote(
   // =========================================================================
   // GUTTER CLEANING (+ add-ons)
   // =========================================================================
-  if (svc.gutterCleaning) {
+  if (svc.gutterCleaning && sharedPropertyReady && !manualReviewServiceKeys.has("gutter_cleaning")) {
     const cfg = pricing.gutter_cleaning;
     if (!cfg) {
       manualReviewReasons.push("gutter_cleaning pricing not configured");
@@ -1267,7 +1272,7 @@ export function calculateQuote(
   // =========================================================================
   // ROOF CLEANING
   // =========================================================================
-  if (svc.roofCleaning) {
+  if (svc.roofCleaning && sharedPropertyReady && !hasMissing("roofType", "roofSeverity", "roofRiskFlags")) {
     const cfg = pricing.roof_cleaning;
     if (!cfg) {
       markServiceReview("roof_cleaning", "roof_cleaning pricing not configured");
@@ -1300,7 +1305,7 @@ export function calculateQuote(
   // =========================================================================
   // DRIVEWAY CLEANING
   // =========================================================================
-  if (svc.drivewayCleaning?.enabled) {
+  if (svc.drivewayCleaning?.enabled && !hasMissing("drivewaySqft", "drivewaySurface")) {
     const cfg = pricing.driveway_cleaning;
     const { sqft: dSqft, surfaceType } = svc.drivewayCleaning;
     if (!cfg) {
@@ -1333,7 +1338,7 @@ export function calculateQuote(
   // =========================================================================
   // PRESSURE WASHING (flatwork areas)
   // =========================================================================
-  if (svc.pressureWashing?.enabled) {
+  if (svc.pressureWashing?.enabled && !hasMissing("pressureWashingSurface", "pressureWashingAreas")) {
     const cfg = pricing.pressure_washing;
     if (!cfg) {
       manualReviewReasons.push("pressure_washing pricing not configured");
@@ -1410,7 +1415,9 @@ export function calculateQuote(
   // =========================================================================
   // SOLAR PANEL CLEANING — flat per-panel price × quantity
   // =========================================================================
-  if (svc.solarPanelCleaning?.enabled) {
+  if (svc.solarPanelCleaning?.enabled && !hasMissing(
+    "solarPanelCount", "solarAccessProfile", "solarAccessStories", "solarAccessType", "solarAccessRiskFlags",
+  )) {
     const cfg = pricing.solar_panel_cleaning;
     if (!cfg) {
       markServiceReview("solar_panel_cleaning", "solar_panel_cleaning pricing not configured");
@@ -1457,7 +1464,7 @@ export function calculateQuote(
   // =========================================================================
   // SCREEN REPAIR — flat per-screen price × quantity
   // =========================================================================
-  if (svc.screenRepair?.enabled) {
+  if (svc.screenRepair?.enabled && !hasMissing("screenRepairCount", "screenRepairScopeType")) {
     const cfg = pricing.screen_repair;
     if (!cfg) {
       markServiceReview("screen_repair", "screen_repair pricing not configured");

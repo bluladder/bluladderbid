@@ -84,6 +84,8 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
     expect(screen.getByRole('button', { name: 'Edit Window Cleaning' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove Window Cleaning' })).toBeInTheDocument();
     expect(screen.getByTestId('service-editor-window-cleaning')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Collapse Window Cleaning' })).toBeInTheDocument();
     expect(screen.getByTestId('compact-service-catalog')).toBeInTheDocument();
     expect(screen.getByTestId('compact-service-houseWash')).toHaveAttribute('data-variant', 'compact');
     expect(screen.getByRole('button', { name: 'Add House Wash' })).toHaveTextContent(
@@ -116,6 +118,11 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
     expect(screen.getByRole('button', { name: 'Edit Window Cleaning' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit House Wash' })).toBeInTheDocument();
     expect(screen.queryByTestId('service-editor-window-cleaning')).toBeNull();
+    expect(screen.getByTestId('service-editor-houseWash')).toBeInTheDocument();
+    expect(screen.queryByTestId('service-editor-window-cleaning')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit House Wash' }));
+    expect(screen.queryByTestId('service-editor-houseWash')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit House Wash' }));
     expect(screen.getByTestId('service-editor-houseWash')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add Gutter Cleaning' })).toHaveAttribute(
       'data-variant',
@@ -196,10 +203,10 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
     );
 
     expect(screen.getByTestId('selected-service-summary')).toHaveTextContent(
-      'Select at least one area for pricing',
+      'Select at least one area',
     );
     expect(screen.getByTestId('pressure-washing-service-total')).toHaveTextContent(
-      'Select at least one area for pricing',
+      'Select at least one area',
     );
     expect(document.body.textContent).not.toContain('$125');
 
@@ -240,7 +247,7 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
     const summaries = screen.getAllByTestId('selected-service-summary');
     expect(summaries).toHaveLength(5);
     for (const summary of summaries) {
-      expect(summary).toHaveTextContent('Recalculating…');
+      expect(summary).toHaveTextContent('Recalculating');
       expect(summary.textContent).not.toMatch(/\$\d/);
     }
   });
@@ -303,8 +310,8 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
       />,
     );
 
-    expect(screen.getByTestId('gutter-base-price')).toHaveTextContent('Updating price…');
-    expect(screen.getByTestId('gutter-service-total')).toHaveTextContent('Updating price…');
+    expect(screen.getByTestId('gutter-base-price')).toHaveTextContent('Recalculating');
+    expect(screen.getByTestId('gutter-service-total')).toHaveTextContent('Recalculating');
     expect(document.body.textContent).not.toMatch(/\$100|\$225|\$325|Included/);
   });
 
@@ -372,6 +379,40 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
         undergroundDrains: { enabled: false, count: '2' },
         minorRepairs: false,
         gutterGuards: { enabled: false, linearFeet: 175 },
+      },
+    });
+  });
+
+  it('clears active pressure-washing areas when the parent service is removed', () => {
+    const onChange = vi.fn();
+    const pressureWashing = {
+      ...DEFAULT_ADDITIONAL_SERVICES.pressureWashing,
+      enabled: true,
+      frontPorch: { enabled: true, sqft: 80, surfaceType: 'concrete' as const },
+      backPatio: { enabled: true, sqft: 200, surfaceType: 'concrete' as const },
+    };
+    render(
+      <IntentFirstServiceSelector
+        services={{ ...DEFAULT_ADDITIONAL_SERVICES, pressureWashing }}
+        servicePrices={prices}
+        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+        onChange={onChange}
+        onHomeDetailsChange={() => {}}
+        featuredService="pressureWashing"
+        windowPromo={null}
+        quotePhase="firm"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Pressure Washing' }));
+    expect(onChange).toHaveBeenCalledWith({
+      pressureWashing: {
+        ...pressureWashing,
+        enabled: false,
+        frontPorch: { ...pressureWashing.frontPorch, enabled: false },
+        backPatio: { ...pressureWashing.backPatio, enabled: false },
+        poolDeck: { ...pressureWashing.poolDeck, enabled: false },
+        walkways: { ...pressureWashing.walkways, enabled: false },
       },
     });
   });
@@ -449,11 +490,11 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
   });
 
   it.each([
-    ['idle', 'Updating price…'],
-    ['loading', 'Updating price…'],
-    ['missing_information', 'Complete home details to calculate price'],
-    ['manual_review_required', 'Price requires review'],
-    ['unavailable', 'Price unavailable'],
+    ['idle', 'Recalculating'],
+    ['loading', 'Recalculating'],
+    ['missing_information', 'Complete required service details'],
+    ['manual_review_required', 'Manual review required'],
+    ['unavailable', 'Pricing temporarily unavailable'],
   ] satisfies Array<[QuotePhase, string]>) (
     'suppresses stale House Wash amounts during %s state',
     (quotePhase, expectedStatus) => {
