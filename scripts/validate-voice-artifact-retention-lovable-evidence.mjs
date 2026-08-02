@@ -428,6 +428,48 @@ function selfTestEvidence(manifest) {
   };
 }
 
+// Proof-B fixture: Lovable-native ledger/Git reconciliation, no CLI claim.
+function selfTestLovableProofEvidence(manifest) {
+  const evidence = selfTestEvidence(manifest);
+  const capture = "fixture reconciliation capture\n";
+  evidence.production_control_plane = "lovable_cloud";
+  evidence.preflight.capture_mode = "retained_pre_execution";
+  evidence.cli_safety = {
+    generated_migration_reconciled: true,
+    supabase_cli_available: false,
+    supabase_cli_executed: false,
+    dry_run_selected_migrations: 0,
+    canonical_source_selected: false,
+    include_all_used: false,
+    migration_repair_used: false,
+    historical_replay_used: false,
+    dry_run_output_sha256: "",
+  };
+  evidence.replay_safety = {
+    proof_mode: "lovable_native_ledger_git_reconciliation",
+    lovable_reconciliation: {
+      supabase_cli_claimed: false,
+      generated_version: evidence.generated_migration.version,
+      generated_path: evidence.generated_migration.path,
+      generated_sha256: evidence.generated_migration.sha256,
+      generated_bytes: evidence.generated_migration.bytes,
+      generated_commit_sha: evidence.generated_migration.commit_sha,
+      generated_git_blob: "6".repeat(40),
+      generated_commit_reachable_from_head: true,
+      generated_commit_author_is_lovable_bot: true,
+      ledger_rows: manifest.postflight.expected_ledger_count,
+      canonical_source_version_rows: 0,
+      exact_payload_rows: manifest.postflight.expected_exact_payload_rows,
+      duplicate_payload_rows: 0,
+      ambiguous_rows: 0,
+      matching_provenance_rows: 1,
+      reconciliation_capture: capture,
+      reconciliation_output_sha256: sha256Hex(capture),
+    },
+  };
+  return evidence;
+}
+
 async function main() {
   const manifest = JSON.parse(
     await readFile(
@@ -480,6 +522,66 @@ async function main() {
         rejected = true;
       }
       if (!rejected) fail("hostile self-test accepted invalid evidence");
+    }
+
+    const lovableValid = selfTestLovableProofEvidence(manifest);
+    validateVoiceRetentionLovableEvidence(lovableValid, manifest, {
+      allowFixture: true,
+    });
+    const lovableMutations = [
+      (e) => (e.replay_safety.proof_mode = "trust_me"),
+      (e) => (e.production_control_plane = "external_supabase"),
+      (e) => (e.cli_safety.supabase_cli_executed = true),
+      (e) => (e.cli_safety.dry_run_output_sha256 = "5".repeat(64)),
+      (e) => (e.replay_safety.lovable_reconciliation.supabase_cli_claimed = true),
+      (e) => (e.replay_safety.lovable_reconciliation.ledger_rows = 151),
+      (e) =>
+        (e.replay_safety.lovable_reconciliation.canonical_source_version_rows =
+          1),
+      (e) => (e.replay_safety.lovable_reconciliation.duplicate_payload_rows = 1),
+      (e) => (e.replay_safety.lovable_reconciliation.ambiguous_rows = 1),
+      (e) =>
+        (e.replay_safety.lovable_reconciliation.matching_provenance_rows = 0),
+      (e) =>
+        (e.replay_safety.lovable_reconciliation.generated_commit_sha =
+          "9".repeat(40)),
+      (e) => (e.replay_safety.lovable_reconciliation.generated_git_blob = "nope"),
+      (e) =>
+        (e.replay_safety.lovable_reconciliation
+          .generated_commit_reachable_from_head = false),
+      (e) =>
+        (e.replay_safety.lovable_reconciliation
+          .generated_commit_author_is_lovable_bot = false),
+      (e) =>
+        (e.replay_safety.lovable_reconciliation.generated_sha256 =
+          "0".repeat(64)),
+      (e) => (e.replay_safety.lovable_reconciliation.generated_version =
+        "20260802043233"),
+      (e) =>
+        (e.replay_safety.lovable_reconciliation.reconciliation_capture =
+          "tampered\n"),
+      (e) =>
+        (e.replay_safety.lovable_reconciliation.reconciliation_output_sha256 =
+          ""),
+      (e) => (e.cli_safety.include_all_used = true),
+      (e) => (e.cli_safety.migration_repair_used = true),
+      (e) => (e.cli_safety.historical_replay_used = true),
+      (e) => (e.preflight.capture_mode = "recreated_after_execution"),
+    ];
+    for (const mutate of lovableMutations) {
+      const invalid = structuredClone(lovableValid);
+      mutate(invalid);
+      let rejected = false;
+      try {
+        validateVoiceRetentionLovableEvidence(invalid, manifest, {
+          allowFixture: true,
+        });
+      } catch {
+        rejected = true;
+      }
+      if (!rejected) {
+        fail("hostile self-test accepted forged Lovable reconciliation");
+      }
     }
     process.stdout.write(
       "Voice retention Lovable evidence hostile self-test passed.\n",
