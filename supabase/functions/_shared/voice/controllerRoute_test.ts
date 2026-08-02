@@ -381,6 +381,6 @@ Deno.test("conflicting intake write asks the exact current question without gene
   assertEquals(result.event, "workflow_controller_persistence_blocked");
   assertEquals(
     result.spoken,
-    "How many window equivalents require unusual ladder access?",
+    "How many windows need unusual ladder access?",
   );
 });
