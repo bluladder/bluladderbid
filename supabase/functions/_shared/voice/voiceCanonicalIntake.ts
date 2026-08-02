@@ -41,9 +41,9 @@ const FIELD_PROMPTS: Readonly<Record<string, string>> = {
   advancedWindowConditionTypes:
     "Which applies: hard-water staining, small French panes, unusual ladder access, or more than one of those?",
   hardWaterAffectedWindowEquivalents:
-    "How many window equivalents have hard-water staining?",
+    "How many windows have hard-water staining?",
   ladderAffectedWindowEquivalents:
-    "How many window equivalents require unusual ladder access?",
+    "How many windows need unusual ladder access?",
   drivewaySqft: "What is the driveway’s approximate square footage?",
   drivewaySurface:
     "What surface is the driveway — concrete, pavers, exposed aggregate, stone, asphalt, or something else?",
