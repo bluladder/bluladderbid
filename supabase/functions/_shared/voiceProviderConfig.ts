@@ -50,7 +50,7 @@ export interface VoiceBetaManifest {
     smartFormat: true;
     keyterm: string[];
     fallbackPlan: {
-      autoFallback: { enabled: false };
+      autoFallback: { enabled: true };
       transcribers: Array<{
         provider: "assembly-ai";
         speechModel: "universal-streaming-english";
@@ -62,12 +62,20 @@ export interface VoiceBetaManifest {
   };
   startSpeakingPlan: {
     waitSeconds: number;
-    smartEndpointingPlan: { provider: "vapi" };
+    smartEndpointingPlan: {
+      provider: "livekit";
+      waitFunction: string;
+    };
     transcriptionEndpointingPlan: {
       onPunctuationSeconds: number;
       onNoPunctuationSeconds: number;
       onNumberSeconds: number;
     };
+  };
+  stopSpeakingPlan: {
+    numWords: 0;
+    voiceSeconds: number;
+    backoffSeconds: number;
   };
   // No phone number configuration in this manifest — the isolated test DID is
   // attached in the Vapi dashboard by the owner and never checked into the
@@ -163,7 +171,7 @@ export function buildVoiceBetaAssistantManifest(
       smartFormat: true,
       keyterm: [...VOICE_TRANSCRIBER_KEYTERMS],
       fallbackPlan: {
-        autoFallback: { enabled: false },
+        autoFallback: { enabled: true },
         transcribers: [{
           provider: "assembly-ai",
           speechModel: "universal-streaming-english",
@@ -173,17 +181,26 @@ export function buildVoiceBetaAssistantManifest(
         }],
       },
     },
-    // Vapi's documented transcription endpointing plan waits longer for
-    // unpunctuated/spoken-number answers than for complete sentences. The
-    // application still explicitly confirms names, email and address.
+    // English calls use Vapi's recommended LiveKit smart endpointing with an
+    // explicit short playback delay. The transcription thresholds remain as
+    // a conservative fallback; the application still confirms names, email,
+    // address, and all price-changing assumptions.
     startSpeakingPlan: {
       waitSeconds: 0.4,
-      smartEndpointingPlan: { provider: "vapi" },
+      smartEndpointingPlan: {
+        provider: "livekit",
+        waitFunction: "2000 / (1 + exp(-10 * (x - 0.5)))",
+      },
       transcriptionEndpointingPlan: {
         onPunctuationSeconds: 0.3,
         onNoPunctuationSeconds: 1.2,
         onNumberSeconds: 1.0,
       },
+    },
+    stopSpeakingPlan: {
+      numWords: 0,
+      voiceSeconds: 0.2,
+      backoffSeconds: 1.0,
     },
     phoneNumber: null,
     transferDestination: null,
