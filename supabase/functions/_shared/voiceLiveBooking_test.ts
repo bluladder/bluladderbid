@@ -16,8 +16,9 @@ import { PUBLIC_BOOKING_ORGANIZATION_ID } from "./publicBookingServiceArea.ts";
 
 const CALLER = "+14692150144";
 const ORGANIZATION_ID = PUBLIC_BOOKING_ORGANIZATION_ID;
-const START = new Date(Date.now() + 86_400_000).toISOString();
-const END = new Date(Date.now() + 90_000_000).toISOString();
+const TEST_NOW = Date.now();
+const START = new Date(TEST_NOW + 86_400_000).toISOString();
+const END = new Date(TEST_NOW + 90_000_000).toISOString();
 
 const QUOTE_FIELDS = {
   services: ["gutterCleaning"],
@@ -33,12 +34,30 @@ const QUOTE_INPUTS_KEY = sessionInputsKey(QUOTE_FIELDS);
 const QUOTE = {
   status: "firm",
   total: 200,
-  estimatedDurationMinutes: 120,
-  durationSource: "authoritative_quote",
+  subtotal: 200,
+  serviceSubtotal: 200,
+  discountsAndAdjustments: 0,
+  taxableSubtotal: 200,
+  estimatedTax: 17,
+  estimatedTotal: 217,
+  taxRate: 0.085,
+  taxLabel: "Estimated sales tax",
+  jobberLineItems: [{ name: "Gutter Cleaning", unitPrice: 200 }],
+  lineItems: [{
+    key: "gutter_cleaning",
+    label: "Gutter Cleaning",
+    amount: 200,
+  }],
+  priceAdjustments: [],
+  discount: null,
+  promotion: null,
+  bookableServiceKeys: ["gutter_cleaning"],
+  estimatedDurationMinutes: 60,
+  durationSource: "deterministic_duration_engine",
   durationVersion: "duration-v1",
   engineVersion: "1.0.0",
   ruleVersion: 1,
-  taxPolicyVersion: null,
+  taxPolicyVersion: "tax-v1",
   inputsKey: QUOTE_INPUTS_KEY,
 };
 const BOOKING_INPUTS_KEY = sessionBookingInputsKey({
@@ -59,7 +78,11 @@ const PRICING_ROWS = [
 ].map((config_key) => ({ config_key, config_value: {} }));
 
 function stubSupabase(
-  opts: { address?: string; organizationId?: string } = {},
+  opts: {
+    address?: string;
+    organizationId?: string;
+    confirmationPersistenceFails?: boolean;
+  } = {},
 ) {
   const updates: Record<string, unknown>[] = [];
   const organizationId = opts.organizationId ?? ORGANIZATION_ID;
@@ -67,6 +90,7 @@ function stubSupabase(
     id: "conv_live",
     channel: "voice",
     organization_id: organizationId,
+    session_token: "voice-session-live",
     quote_result: QUOTE,
     prospect_name: "Ben Test",
     prospect_email: "owner@example.com",
@@ -93,7 +117,7 @@ function stubSupabase(
         pricingVersion: 1,
         engineVersion: "1.0.0",
         durationVersion: "duration-v1",
-        taxPolicyVersion: null,
+        taxPolicyVersion: "tax-v1",
       },
       bookingInputsKey: BOOKING_INPUTS_KEY,
       organizationId,
@@ -102,7 +126,8 @@ function stubSupabase(
         startTime: START,
         endTime: END,
         displayTime: "Friday at 9:00 AM",
-        durationMinutes: 120,
+        durationMinutes: 60,
+        timezone: "America/Chicago",
         __technicianId: "tech-1",
         __isTeamJob: false,
       }],
@@ -114,6 +139,8 @@ function stubSupabase(
       id: "quote-session-live",
       organization_id: organizationId,
       quote_id: "quote-live",
+      customer_id: "customer-live",
+      property_id: "property-live",
       channel: "voice",
       conversation_ids: ["conv_live"],
       fields: { ...QUOTE_FIELDS, lastQuoteResult: QUOTE },
@@ -131,7 +158,19 @@ function stubSupabase(
     properties: {
       id: "property-live",
       organization_id: organizationId,
-      formatted_address: "5612 Binbranch Ln, McKinney, TX 75071",
+      active: true,
+      street: "5612 Binbranch Ln",
+      city: "McKinney",
+      state: "TX",
+      postal_code: "75071",
+    },
+    customers: {
+      id: "customer-live",
+      organization_id: organizationId,
+      first_name: "Ben",
+      last_name: "Test",
+      email: "owner@example.com",
+      phone: CALLER,
     },
     autosync_config: {
       last_full_sync_completed_at: new Date().toISOString(),
@@ -155,6 +194,7 @@ function stubSupabase(
   };
 
   function builder(table: string) {
+    let updatePayload: Record<string, unknown> | null = null;
     const b: any = {
       select: () => b,
       eq: () => b,
@@ -171,10 +211,28 @@ function stubSupabase(
       },
       update: (v: unknown) => {
         updates.push({ table, update: v });
+        updatePayload = v && typeof v === "object"
+          ? v as Record<string, unknown>
+          : null;
+        const failConfirmation = opts.confirmationPersistenceFails &&
+          table === "chat_conversations" &&
+          updatePayload?.booking_status === "confirmed";
+        if (!failConfirmation && rows[table] && updatePayload) {
+          Object.assign(rows[table] as object, v);
+        }
         return b;
       },
       limit: async () => ({ data: listRows[table] ?? [], error: null }),
-      maybeSingle: async () => ({ data: rows[table] ?? null, error: null }),
+      maybeSingle: async () => {
+        if (
+          opts.confirmationPersistenceFails &&
+          table === "chat_conversations" &&
+          updatePayload?.booking_status === "confirmed"
+        ) {
+          return { data: null, error: { message: "write failed" } };
+        }
+        return { data: rows[table] ?? null, error: null };
+      },
       single: async () => ({ data: rows[table] ?? null, error: null }),
       then: (res: (v: unknown) => unknown) =>
         Promise.resolve({
@@ -232,7 +290,7 @@ interface Harness {
 }
 
 function withLiveEnv(
-  jobberResponse: () => Response,
+  jobberResponse: (body: any) => Response | Promise<Response>,
   geocode: unknown = GEOCODE_OK,
 ): Harness {
   const prev = {
@@ -255,8 +313,9 @@ function withLiveEnv(
       return new Response(JSON.stringify(geocode), { status: 200 });
     }
     if (url.includes("jobber-create-booking")) {
-      bookingCalls.push({ body: JSON.parse(String(init?.body ?? "{}")) });
-      return jobberResponse();
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      bookingCalls.push({ body });
+      return jobberResponse(body);
     }
     return new Response("{}", { status: 200 });
   }) as typeof fetch;
@@ -275,6 +334,36 @@ function withLiveEnv(
   };
 }
 
+function successfulBookingResponse(body: any): Response {
+  const contract = body.voiceContract;
+  return new Response(
+    JSON.stringify({
+      success: true,
+      providerStatus: "accepted",
+      localStatus: "persisted",
+      jobberJobId: "job_1",
+      jobberVisitId: "visit_1",
+      bookingId: "booking_1",
+      organizationId: contract.organizationId,
+      customerId: contract.customerId,
+      propertyId: contract.propertyId,
+      quoteFingerprint: contract.quoteFingerprint,
+      bookingInputsKey: contract.bookingInputsKey,
+      offerVersion: contract.offerVersion,
+      slotId: contract.slotId,
+      scheduledStart: contract.scheduledStart,
+      scheduledEnd: contract.scheduledEnd,
+      durationMinutes: contract.durationMinutes,
+      idempotencyKey: contract.idempotencyKey,
+      commandHash: contract.commandHash,
+      subtotal: body.subtotal,
+      estimatedTax: body.estimatedTax,
+      total: body.total,
+    }),
+    { status: 200 },
+  );
+}
+
 function voiceCtx(
   client: any,
   conversationId = "conv_live",
@@ -283,7 +372,7 @@ function voiceCtx(
   return {
     supabase: client,
     conversationId,
-    sessionToken: "",
+    sessionToken: "voice-session-live",
     channel: "voice" as const,
     organizationId,
   };
@@ -326,12 +415,7 @@ Deno.test("live voice booking: an organization without the explicit DFW connecto
 
 Deno.test("live voice booking: success routes through jobber-create-booking", async () => {
   const { client } = stubSupabase();
-  const h = withLiveEnv(() =>
-    new Response(
-      JSON.stringify({ jobberVisitId: "visit_1", bookingId: "booking_1" }),
-      { status: 200 },
-    )
-  );
+  const h = withLiveEnv(successfulBookingResponse);
   try {
     const readiness = await getBookingReadiness(
       client,
@@ -349,12 +433,44 @@ Deno.test("live voice booking: success routes through jobber-create-booking", as
     assertEquals(result.bookingId, "booking_1");
     assertEquals(h.bookingCalls.length, 1);
     const body = h.bookingCalls[0].body;
-    assertEquals(body.idempotencyKey, `voice|conv_live|${START}`);
+    assert(body.idempotencyKey.startsWith("voice_appointment:book:"));
     assertEquals(
       body.customer.address,
       "5612 Binbranch Ln, McKinney, TX 75071",
     );
+    assertEquals(body.customer.firstName, "Ben");
+    assertEquals(body.customer.lastName, "Test");
+    assertEquals(body.customer.email, "owner@example.com");
+    assertEquals(body.customer.phone, CALLER);
     assertEquals(body.scheduledStart, START);
+    assertEquals(body.scheduledEnd, END);
+    assertEquals(body.durationMinutes, 60);
+    assertEquals(body.selectedServiceIds, ["gutterCleaning"]);
+    assertEquals(body.services, [{ name: "Gutter Cleaning", price: 200 }]);
+    assertEquals(body.subtotal, 200);
+    assertEquals(body.estimatedTax, 17);
+    assertEquals(body.total, 217);
+    assertEquals(body.voiceContract.organizationId, ORGANIZATION_ID);
+    assertEquals(body.voiceContract.customerId, "customer-live");
+    assertEquals(body.voiceContract.propertyId, "property-live");
+    assertEquals(body.voiceContract.slotId, "slot_live_1");
+  } finally {
+    h.restore();
+  }
+});
+
+Deno.test("live voice booking: provider and booking success without conversation persistence is not confirmed", async () => {
+  const { client } = stubSupabase({ confirmationPersistenceFails: true });
+  const h = withLiveEnv(successfulBookingResponse);
+  try {
+    const result = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client),
+      { confirmed: true, slotId: "slot_live_1" },
+    ) as { status: string; message: string };
+    assertEquals(result.status, "uncertain");
+    assert(result.message.includes("must reconcile"));
+    assertEquals(h.bookingCalls.length, 1);
   } finally {
     h.restore();
   }
@@ -453,6 +569,54 @@ Deno.test("live voice booking: provider failure is non-retryable uncertainty", a
   }
 });
 
+Deno.test("live voice booking: malformed success is never spoken as confirmed", async () => {
+  const { client } = stubSupabase();
+  const h = withLiveEnv(() =>
+    new Response(
+      JSON.stringify({
+        success: true,
+        providerStatus: "accepted",
+        localStatus: "persisted",
+        bookingId: "booking_1",
+        jobberVisitId: "visit_1",
+      }),
+      { status: 200 },
+    )
+  );
+  try {
+    const result = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client),
+      { confirmed: true, slotId: "slot_live_1" },
+    ) as { status: string; message: string };
+    assertEquals(result.status, "uncertain");
+    assert(result.message.includes("not confirmed"));
+    assertEquals(h.bookingCalls.length, 1);
+  } finally {
+    h.restore();
+  }
+});
+
+Deno.test("live voice booking: lost Edge response is non-retryable uncertainty", async () => {
+  const { client } = stubSupabase();
+  const h = withLiveEnv(() => {
+    throw new TypeError("connection reset after write");
+  });
+  try {
+    const result = await runTool(
+      "create_bluladder_booking",
+      voiceCtx(client),
+      { confirmed: true, slotId: "slot_live_1" },
+    ) as { status: string; message: string };
+    assertEquals(result.status, "uncertain");
+    assert(result.message.includes("not confirmed"));
+    assert(result.message.includes("do not try again"));
+    assertEquals(h.bookingCalls.length, 1);
+  } finally {
+    h.restore();
+  }
+});
+
 Deno.test("live voice booking: HTTP 202 pending manual confirmation is non-retryable uncertainty", async () => {
   const { client } = stubSupabase();
   const h = withLiveEnv(() =>
@@ -484,12 +648,7 @@ Deno.test("live voice booking: HTTP 202 pending manual confirmation is non-retry
 
 Deno.test("live voice booking: replay of the same confirmation reuses one idempotency key", async () => {
   const { client } = stubSupabase();
-  const h = withLiveEnv(() =>
-    new Response(
-      JSON.stringify({ jobberVisitId: "visit_1", bookingId: "booking_1" }),
-      { status: 200 },
-    )
-  );
+  const h = withLiveEnv(successfulBookingResponse);
   try {
     const args = { confirmed: true, slotId: "slot_live_1" };
     const a = await runTool(

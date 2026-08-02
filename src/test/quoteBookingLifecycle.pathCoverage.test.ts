@@ -50,8 +50,12 @@ describe("accepted quote booking lifecycle", () => {
 
   it("links the exact quote and converts only after local booking persistence", () => {
     expect(bookingFunction).toMatch(
-      /quote_id: resumedQuote\?\.quoteId \?\? null/,
+      /const canonicalQuoteId = voiceLineage\?\.ok/,
     );
+    expect(bookingFunction).toMatch(
+      /\? booking\.voiceContract\?\.quoteId \?\? null\s+: resumedQuote\?\.quoteId \?\? null/,
+    );
+    expect(bookingFunction).toMatch(/quote_id: canonicalQuoteId/);
 
     const localBookingInsert = bookingFunction.indexOf(
       "// Create booking record in Supabase",

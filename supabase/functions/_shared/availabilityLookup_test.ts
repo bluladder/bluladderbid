@@ -143,8 +143,27 @@ function readyReadiness(
       inputs_current: true,
       manual_review_required: false,
       manual_review_reasons: [],
+      product_policy_status: "approved",
+      final_disposition: "firm",
+      owner_decisions: [],
+      delivery_requirements_complete: true,
+      delivery_missing_fields: [],
+      booking_requirements_complete: true,
+      booking_missing_fields: [],
+      bookable_service_keys: ["gutter_cleaning"],
+      bookable_portion_present: true,
     },
-    duration: { resolved: true, minutes: 120, source: "pricing_engine" },
+    service_area: {
+      status: "eligible",
+      source: "conversation",
+      eligible: true,
+    },
+    duration: {
+      status: "available",
+      resolved: true,
+      minutes: 120,
+      source: "pricing_engine",
+    },
     schedule: {
       readable: true,
       fresh: true,
@@ -443,7 +462,6 @@ Deno.test("getAvailableSlots: canonically ready mixed quote exposes only its boo
       city: "Anywhere",
       state: "TX",
       postal_code: "75000",
-      formatted_address: "720 Parkland Dr, Anywhere, TX 75000",
     },
   });
 
@@ -531,6 +549,32 @@ Deno.test("getAvailableSlots: canonically ready mixed quote exposes only its boo
   assertEquals(log.invocations.length, 0);
 });
 
+Deno.test("getAvailableSlots: voice firm-only policy blocks a mixed quote before provider dispatch", async () => {
+  const { sb } = makeSpySupabase({
+    conversation: {
+      id: "c1",
+      prospect_phone: "+14690000000",
+      service_address: "720 Parkland Dr, Anywhere, TX 75000",
+      property_id: "prop-1",
+    },
+  });
+  const mixed = readyReadiness();
+  mixed.quote.manual_review_required = true;
+  mixed.quote.final_disposition = "manual_review";
+  let fetcherCalled = false;
+  const result = await getAvailableSlots(sb as any, "c1", {}, {
+    readinessOverride: mixed,
+    requireFullyFirmQuote: true,
+    gateOverride: ALLOW_GATE,
+    fetcher: async () => {
+      fetcherCalled = true;
+      return { status: 200, json: {} };
+    },
+  });
+  assertEquals(result.status, "not_ready");
+  assertEquals(fetcherCalled, false);
+});
+
 Deno.test("getAvailableSlots: property, quote, and validated address must agree before provider dispatch", async () => {
   const { sb } = makeSpySupabase({
     conversation: {
@@ -561,7 +605,10 @@ Deno.test("getAvailableSlots: property, quote, and validated address must agree 
       last_run_status: "success",
     },
     property: {
-      formatted_address: "800 Different St, Anywhere, TX 75000",
+      street: "800 Different St",
+      city: "Anywhere",
+      state: "TX",
+      postal_code: "75000",
     },
   });
   let fetcherCalled = false;
@@ -610,7 +657,12 @@ Deno.test("getAvailableSlots: provider intervals shorter than canonical duration
       lock_acquired_at: null,
       last_run_status: "success",
     },
-    property: { formatted_address: address },
+    property: {
+      street: "720 Parkland Dr",
+      city: "Anywhere",
+      state: "TX",
+      postal_code: "75000",
+    },
   });
   const result = await getAvailableSlots(sb as any, "c1", {}, {
     readinessOverride: readyReadiness({
@@ -642,12 +694,76 @@ Deno.test("getAvailableSlots: provider intervals shorter than canonical duration
   );
 });
 
+Deno.test("getAvailableSlots: wider provider blocks are trimmed to the canonical duration", async () => {
+  const address = "720 Parkland Dr, Anywhere, TX 75000";
+  const { sb } = makeSpySupabase({
+    conversation: {
+      id: "c1",
+      prospect_phone: "+14690000000",
+      service_address: address,
+      property_id: "prop-1",
+      quote_session_id: "qs-1",
+    },
+    session: {
+      id: "qs-1",
+      conversation_id: "c1",
+      fields: {
+        address,
+        services: ["gutterCleaning"],
+        lastQuoteResult: {
+          jobberLineItems: [{ name: "Gutter Cleaning", unitPrice: 260 }],
+        },
+      },
+      field_status: {},
+      required_remaining: [],
+      quote_status: "firm",
+    },
+    autosync: {
+      last_full_sync_completed_at: new Date().toISOString(),
+      lock_holder_id: null,
+      lock_acquired_at: null,
+      last_run_status: "success",
+    },
+    property: {
+      street: "720 Parkland Dr",
+      city: "Anywhere",
+      state: "TX",
+      postal_code: "75000",
+    },
+  });
+  const result = await getAvailableSlots(sb as any, "c1", {}, {
+    readinessOverride: readyReadiness({
+      duration: {
+        status: "available",
+        resolved: true,
+        minutes: 60,
+        source: "canonical",
+      },
+    }),
+    gateOverride: ALLOW_GATE,
+    fetcher: async () => ({
+      status: 200,
+      json: {
+        recommendations: [{
+          startTime: "2026-07-27T09:00:00-05:00",
+          endTime: "2026-07-27T11:00:00-05:00",
+          displayTime: "9:00 AM",
+        }],
+      },
+    }),
+  });
+
+  assertEquals(result.status, "ok");
+  assertEquals(result.slots[0]?.start_at, "2026-07-27T09:00:00-05:00");
+  assertEquals(result.slots[0]?.end_at, "2026-07-27T15:00:00.000Z");
+});
+
 Deno.test("getAvailableSlots: provider unavailable is explicit and performs no writes", async () => {
   const { sb, log } = makeSpySupabase({
     conversation: {
       id: "c1",
       prospect_phone: "+14690000000",
-      service_address: "x",
+      service_address: "720 Parkland Dr, Anywhere, TX 75000",
       property_id: "p1",
       quote_session_id: "qs-1",
     },
@@ -655,7 +771,7 @@ Deno.test("getAvailableSlots: provider unavailable is explicit and performs no w
       id: "qs-1",
       conversation_id: "c1",
       fields: {
-        address: "x",
+        address: "720 Parkland Dr, Anywhere, TX 75000",
         services: ["gutterCleaning"],
         squareFootage: 2400,
         stories: 2,
@@ -676,7 +792,12 @@ Deno.test("getAvailableSlots: provider unavailable is explicit and performs no w
       lock_acquired_at: null,
       last_run_status: "success",
     },
-    property: { formatted_address: "x" },
+    property: {
+      street: "720 Parkland Dr",
+      city: "Anywhere",
+      state: "TX",
+      postal_code: "75000",
+    },
   });
   const fetcher: AvailabilityFetcher = async () => ({
     status: 503,
@@ -733,7 +854,7 @@ for (
       conversation: {
         id: "c1",
         prospect_phone: "+14690000000",
-        service_address: "x",
+        service_address: "720 Parkland Dr, Anywhere, TX 75000",
         property_id: "p1",
         quote_session_id: "qs-1",
       },
@@ -741,7 +862,7 @@ for (
         id: "qs-1",
         conversation_id: "c1",
         fields: {
-          address: "x",
+          address: "720 Parkland Dr, Anywhere, TX 75000",
           services: ["gutterCleaning"],
           squareFootage: 2400,
           stories: 2,
@@ -762,7 +883,12 @@ for (
         lock_acquired_at: null,
         last_run_status: "success",
       },
-      property: { formatted_address: "x" },
+      property: {
+        street: "720 Parkland Dr",
+        city: "Anywhere",
+        state: "TX",
+        postal_code: "75000",
+      },
     });
     const fetcher: AvailabilityFetcher = async () => ({
       status: providerCase.status,

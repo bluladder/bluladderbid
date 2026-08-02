@@ -53,8 +53,9 @@ Deno.test("server verifies authoritative duration before provider work", () => {
   assert(durationGate >= 0);
   assert(firstJobberClientWrite > durationGate);
   assert(
-    bookingFunction.includes("authoritativeBookingDurationMinutes"),
+    bookingFunction.includes("resolveAuthoritativeDuration(engineResult)"),
   );
+  assert(bookingFunction.includes("const authoritativeDuration ="));
   assert(bookingFunction.includes("scheduledIntervalMinutes"));
 });
 

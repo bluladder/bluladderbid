@@ -300,6 +300,7 @@ export interface QuoteSession {
   channel: QuoteSessionChannel;
   conversationIds: string[];
   customerId?: string | null;
+  propertyId?: string | null;
   quoteId?: string | null;
   fields: QuoteSessionFields;
   fieldStatus: Partial<Record<keyof QuoteSessionFields, FieldStatus>>;
@@ -748,6 +749,7 @@ function rowToSession(row: Record<string, unknown>): QuoteSession {
     channel: row.channel as QuoteSessionChannel,
     conversationIds: (row.conversation_ids as string[]) ?? [],
     customerId: (row.customer_id as string | null) ?? null,
+    propertyId: (row.property_id as string | null) ?? null,
     quoteId: (row.quote_id as string | null) ?? null,
     fields: (row.fields as QuoteSessionFields) ?? {},
     fieldStatus: (row.field_status as QuoteSession["fieldStatus"]) ?? {},

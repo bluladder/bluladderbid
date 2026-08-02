@@ -1,6 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
-import { jobberGraphQL } from "../_shared/jobberClient.ts";
+import {
+  buildJobberBookingLineItems,
+  jobberGraphQL,
+  jobberGraphQLMutation,
+  jobberBookingLineItemsTotal,
+} from "../_shared/jobberClient.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { getBearer, isServiceRoleToken } from "../_shared/auth.ts";
 import { getMirrorFreshness } from "../_shared/scheduleFreshness.ts";
@@ -9,7 +14,8 @@ import { loadPricing } from "../_shared/loadPricing.ts";
 import { sendBookingConfirmationEmails } from "../_shared/bookingEmails.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
 import {
-  findMatchingJobberProperty,
+  findMatchingJobberProperties,
+  resolveJobberClientByVerifiedContact,
   validatePublicBookingCustomer,
   type JobberPropertyCandidate,
 } from "../_shared/publicBookingCustomer.ts";
@@ -25,6 +31,7 @@ import {
   PUBLIC_BOOKING_ORGANIZATION_ID,
 } from "../_shared/publicBookingServiceArea.ts";
 import {
+  decideBookingReservationExecution,
   fingerprintPublicRequest,
   publicReplayResult,
   requestFingerprintMatches,
@@ -32,9 +39,34 @@ import {
 import { resolvePublicBookingOrganization } from "../_shared/publicBookingOrganization.ts";
 import { recordServiceAreaIntervention } from "../_shared/serviceAreaIntervention.ts";
 import {
-  authoritativeBookingDurationMinutes,
+  sameScheduledInstant,
   scheduledIntervalMinutes,
 } from "../_shared/bookingDuration.ts";
+import {
+  protectReservationForExecution,
+  unprotectReservationAfterFailure,
+} from "../_shared/reservationProtection.ts";
+import { resolveAuthoritativeDuration } from "../_shared/salesEngine/durationContract.ts";
+import {
+  type CanonicalVoiceBookingContract,
+  type CanonicalVoiceBookingPayload,
+  fingerprintVoiceSessionToken,
+  validateCanonicalVoiceBookingPayload,
+} from "../_shared/voiceBookingAdapter.ts";
+import { readIdentityAnchor } from "../_shared/identityAnchor.ts";
+import {
+  sessionBookingInputsKey,
+  sessionInputsKey,
+  type QuoteSessionFields,
+} from "../_shared/quoteSession.ts";
+import {
+  type QuoteIdentity,
+  quoteIdentityMatches,
+} from "../_shared/voice/voiceJourneyContract.ts";
+import {
+  formatServiceAddress,
+  sameAddress,
+} from "../_shared/profile/normalizeAddress.ts";
 import {
   evaluatePublicBookingLaunchGate,
   publicBookingLaunchGateResponse,
@@ -95,6 +127,22 @@ interface BookingRequest {
   subtotal: number;
   discountAmount?: number;
   total: number;
+  /** Canonical estimated tax and final-total context (voice contract). */
+  estimatedTax?: number;
+  taxableSubtotal?: number;
+  preTaxTotal?: number;
+  taxRate?: number;
+  taxLabel?: string;
+  selectedServiceIds?: string[];
+  priceAdjustments?: Array<{
+    key: string;
+    label: string;
+    kind: "discount" | "surcharge";
+    amount: number;
+    appliesToLineItemKey?: string;
+  }>;
+  promotionContext?: Record<string, unknown> | null;
+  discountContext?: Record<string, unknown> | null;
   discountCode?: string;
   notes?: string;
   utmParams?: UtmParams;
@@ -119,6 +167,274 @@ interface BookingRequest {
   // Concurrency / retry safety
   idempotencyKey?: string;
   sessionId?: string;
+  /** Service-role orchestration may continue this exact protected hold. */
+  preReservedGroupId?: string;
+  /** Internal service-role-only handoff. Public organization overrides remain forbidden. */
+  voiceContract?: CanonicalVoiceBookingContract;
+}
+
+type VoiceLineageResult =
+  | {
+    ok: true;
+    organizationId: string;
+    customerId: string;
+    propertyId: string;
+    jobberPropertyId: string | null;
+    quoteFields: QuoteSessionFields;
+    lastQuote: Record<string, unknown>;
+  }
+  | { ok: false; code: string; error: string };
+
+function contactText(value: unknown): string {
+  return typeof value === "string"
+    ? value.trim().toLowerCase().replace(/\s+/g, " ")
+    : "";
+}
+
+function contactPhone(value: unknown): string {
+  return typeof value === "string" ? value.replace(/\D/g, "") : "";
+}
+
+function exactNumber(a: unknown, b: unknown): boolean {
+  return typeof a === "number" && Number.isFinite(a) &&
+    typeof b === "number" && Number.isFinite(b) &&
+    Math.abs(a - b) < 0.000_001;
+}
+
+function sameStringArray(a: unknown, b: unknown): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  return JSON.stringify([...a].map(String).sort()) ===
+    JSON.stringify([...b].map(String).sort());
+}
+
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonicalJson(child)]),
+    );
+  }
+  return value;
+}
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(canonicalJson(a)) === JSON.stringify(canonicalJson(b));
+}
+
+async function validateCanonicalVoiceLineage(
+  supabase: any,
+  booking: BookingRequest,
+): Promise<VoiceLineageResult> {
+  const contract = booking.voiceContract;
+  if (!contract) {
+    return { ok: false, code: "VOICE_CONTRACT_MISSING", error: "Voice booking contract is missing." };
+  }
+  if (
+    !(await validateCanonicalVoiceBookingPayload(
+      booking as unknown as CanonicalVoiceBookingPayload,
+    ))
+  ) {
+    return { ok: false, code: "VOICE_CONTRACT_INVALID", error: "Voice booking contract hash or payload does not match." };
+  }
+  if (
+    contract.organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID ||
+    !contract.offerExpiresAt ||
+    Date.now() >= new Date(contract.offerExpiresAt).getTime()
+  ) {
+    return { ok: false, code: "VOICE_OFFER_STALE", error: "The canonical voice offer is missing or expired." };
+  }
+
+  const { data: conversation, error: conversationError } = await supabase
+    .from("chat_conversations")
+    .select(
+      "id, organization_id, channel, customer_id, confirmed_email_customer_id, property_id, quote_session_id, service_address, service_area_status, session_token",
+    )
+    .eq("id", contract.conversationId)
+    .eq("organization_id", contract.organizationId)
+    .maybeSingle();
+  if (
+    conversationError || !conversation || conversation.channel !== "voice" ||
+    conversation.property_id !== contract.propertyId ||
+    conversation.quote_session_id !== contract.quoteSessionId ||
+    conversation.service_area_status !== "eligible" ||
+    await fingerprintVoiceSessionToken(conversation.session_token ?? "") !==
+      contract.voiceSessionFingerprint ||
+    !sameAddress(conversation.service_address, booking.customer.address ?? null)
+  ) {
+    return { ok: false, code: "VOICE_CONVERSATION_MISMATCH", error: "Conversation authority does not match the booking command." };
+  }
+
+  const identity = await readIdentityAnchor(
+    supabase,
+    contract.conversationId,
+    contract.organizationId,
+  );
+  if (
+    identity.identity_status !== "resolved" ||
+    identity.resolved_customer_id !== contract.customerId
+  ) {
+    return { ok: false, code: "VOICE_CUSTOMER_MISMATCH", error: "Resolved customer identity does not match the booking command." };
+  }
+
+  const { data: session, error: sessionError } = await supabase
+    .from("quote_sessions")
+    .select(
+      "id, organization_id, customer_id, property_id, quote_id, conversation_ids, fields",
+    )
+    .eq("id", contract.quoteSessionId)
+    .eq("organization_id", contract.organizationId)
+    .maybeSingle();
+  const quoteFields = (session?.fields ?? {}) as QuoteSessionFields;
+  const lastQuote = quoteFields.lastQuoteResult as Record<string, unknown> | undefined;
+  if (
+    sessionError || !session || session.customer_id !== contract.customerId ||
+    session.property_id !== contract.propertyId ||
+    session.quote_id !== contract.quoteId ||
+    !Array.isArray(session.conversation_ids) ||
+    !session.conversation_ids.includes(contract.conversationId) || !lastQuote
+  ) {
+    return { ok: false, code: "VOICE_QUOTE_LINEAGE_MISMATCH", error: "Quote-session lineage does not match the booking command." };
+  }
+  const currentQuoteFingerprint = sessionInputsKey(quoteFields);
+  const currentBookingInputsKey = sessionBookingInputsKey(quoteFields);
+  const currentQuoteIdentity = {
+    quoteSessionId: session.id,
+    quoteId: session.quote_id ?? null,
+    inputsKey: currentQuoteFingerprint,
+    pricingVersion: (lastQuote.ruleVersion as number | string | null) ?? null,
+    engineVersion: (lastQuote.engineVersion as string | null) ?? null,
+    durationVersion: (lastQuote.durationVersion as string | null) ?? null,
+    taxPolicyVersion: (lastQuote.taxPolicyVersion as string | null) ?? null,
+  };
+  if (
+    lastQuote.inputsKey !== currentQuoteFingerprint ||
+    contract.quoteFingerprint !== currentQuoteFingerprint ||
+    contract.bookingInputsKey !== currentBookingInputsKey ||
+    !quoteIdentityMatches(currentQuoteIdentity, {
+      quoteSessionId: contract.quoteSessionId,
+      quoteId: contract.quoteId,
+      inputsKey: contract.quoteFingerprint,
+      pricingVersion: contract.pricingVersion,
+      engineVersion: contract.engineVersion,
+      durationVersion: contract.durationVersion,
+      taxPolicyVersion: contract.taxPolicyVersion,
+    }) ||
+    !sameStringArray(quoteFields.services, booking.selectedServiceIds)
+  ) {
+    return { ok: false, code: "VOICE_QUOTE_STALE", error: "Current quote fingerprint or versions do not match the booking command." };
+  }
+  const duration = resolveAuthoritativeDuration(lastQuote);
+  if (
+    duration.status !== "available" ||
+    duration.minutes !== booking.durationMinutes ||
+    duration.minutes !== contract.durationMinutes ||
+    scheduledIntervalMinutes(booking.scheduledStart, booking.scheduledEnd) !==
+      duration.minutes
+  ) {
+    return { ok: false, code: "VOICE_DURATION_MISMATCH", error: "Canonical quote duration does not match the selected interval." };
+  }
+  if (
+    !exactNumber(lastQuote.serviceSubtotal, booking.subtotal) ||
+    !exactNumber(lastQuote.taxableSubtotal, booking.taxableSubtotal) ||
+    !exactNumber(lastQuote.estimatedTax, booking.estimatedTax) ||
+    !exactNumber(lastQuote.total, booking.preTaxTotal) ||
+    !exactNumber(lastQuote.estimatedTotal, booking.total) ||
+    !exactNumber(lastQuote.taxRate, booking.taxRate) ||
+    lastQuote.taxLabel !== booking.taxLabel ||
+    !sameJson(lastQuote.promotion ?? null, booking.promotionContext ?? null) ||
+    !sameJson(lastQuote.priceAdjustments ?? [], booking.priceAdjustments ?? []) ||
+    !sameJson(lastQuote.discount ?? null, booking.discountContext ?? null)
+  ) {
+    return { ok: false, code: "VOICE_PRICE_MISMATCH", error: "Canonical services, discount, tax, or total changed before booking." };
+  }
+
+  const { data: customer, error: customerError } = await supabase
+    .from("customers")
+    .select("id, organization_id, first_name, last_name, email, phone")
+    .eq("id", contract.customerId)
+    .eq("organization_id", contract.organizationId)
+    .maybeSingle();
+  const { data: property, error: propertyError } = await supabase
+    .from("properties")
+    .select(
+      "id, organization_id, active, street, city, state, postal_code, jobber_property_id",
+    )
+    .eq("id", contract.propertyId)
+    .eq("organization_id", contract.organizationId)
+    .maybeSingle();
+  const { data: customerProperty, error: customerPropertyError } = await supabase
+    .from("customer_properties")
+    .select("id")
+    .eq("customer_id", contract.customerId)
+    .eq("property_id", contract.propertyId)
+    .eq("active", true)
+    .maybeSingle();
+  const propertyAddress = formatServiceAddress(property);
+  if (
+    customerError || !customer || customer.organization_id !== contract.organizationId ||
+    propertyError || !property || property.organization_id !== contract.organizationId ||
+    property.active !== true || customerPropertyError || !customerProperty ||
+    !propertyAddress ||
+    !sameAddress(propertyAddress, booking.customer.address ?? null) ||
+    contactText(customer.first_name) !== contactText(booking.customer.firstName) ||
+    contactText(customer.last_name) !== contactText(booking.customer.lastName) ||
+    contactText(customer.email) !== contactText(booking.customer.email) ||
+    contactPhone(customer.phone) !== contactPhone(booking.customer.phone) ||
+    contactText(quoteFields.name) !==
+      contactText(`${customer.first_name} ${customer.last_name}`) ||
+    contactText(quoteFields.email) !== contactText(customer.email) ||
+    contactPhone(quoteFields.phone) !== contactPhone(customer.phone) ||
+    !sameAddress(quoteFields.address ?? null, propertyAddress)
+  ) {
+    return { ok: false, code: "VOICE_PROPERTY_OR_CONTACT_MISMATCH", error: "Verified contact or property authority does not match the booking command." };
+  }
+
+  const { data: offerRows, error: offerError } = await supabase
+    .from("chat_messages")
+    .select("tool_result")
+    .eq("conversation_id", contract.conversationId)
+    .eq("tool_name", "get_bluladder_availability")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const offerResult = offerRows?.[0]?.tool_result as Record<string, unknown> | undefined;
+  const offered = Array.isArray(offerResult?.offered)
+    ? offerResult.offered as Array<Record<string, unknown>>
+    : [];
+  const selected = offered.find((item) => item.slotId === contract.slotId);
+  if (
+    offerError || !offerResult || !selected ||
+    offerResult.organizationId !== contract.organizationId ||
+    offerResult.bookingInputsKey !== contract.bookingInputsKey ||
+    offerResult.quoteSignature !== contract.quoteFingerprint ||
+    offerResult.offerVersion !== contract.offerVersion ||
+    offerResult.expiresAt !== contract.offerExpiresAt ||
+    !quoteIdentityMatches(
+      currentQuoteIdentity,
+      offerResult.quoteIdentity as Partial<QuoteIdentity> | undefined,
+    ) ||
+    selected.startTime !== contract.scheduledStart ||
+    selected.endTime !== contract.scheduledEnd ||
+    selected.timezone !== contract.timezone ||
+    selected.durationMinutes !== contract.durationMinutes ||
+    selected.__technicianId !== booking.technicianId ||
+    selected.__isTeamJob !== booking.isTeamJob ||
+    !sameStringArray(selected.__teamTechnicianIds ?? [], booking.teamTechnicianIds ?? [])
+  ) {
+    return { ok: false, code: "VOICE_OFFER_MISMATCH", error: "Latest availability offer does not match the booking command." };
+  }
+  return {
+    ok: true,
+    organizationId: contract.organizationId,
+    customerId: contract.customerId,
+    propertyId: contract.propertyId,
+    jobberPropertyId: typeof property.jobber_property_id === "string"
+      ? property.jobber_property_id
+      : null,
+    quoteFields,
+    lastQuote,
+  };
 }
 
 // Busy block type from database
@@ -364,7 +680,8 @@ Deno.serve(async (req) => {
   // is expensive and notifies customers. Throttle per-IP to prevent automated
   // fraudulent/bulk booking creation. Internal service-role calls are exempt.
   const callerToken = getBearer(req);
-  if (!isServiceRoleToken(callerToken)) {
+  const serviceRoleCaller = isServiceRoleToken(callerToken);
+  if (!serviceRoleCaller) {
     const rl = rateLimit(req, { limit: 6, windowMs: 60_000 });
     if (!rl.allowed) {
       return new Response(
@@ -378,6 +695,20 @@ Deno.serve(async (req) => {
     console.log("=== Starting booking creation ===");
     
     const booking: BookingRequest = await req.json();
+    const isCanonicalVoiceBooking = booking.voiceContract != null;
+    if (isCanonicalVoiceBooking && !serviceRoleCaller) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: "VOICE_CONTRACT_FORBIDDEN",
+          error: "Canonical voice booking commands are internal only.",
+        }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
     if (
       hasAttemptedOrganizationOverride(
         booking as unknown as Record<string, unknown>,
@@ -427,6 +758,30 @@ Deno.serve(async (req) => {
     const validatedCustomer = customerValidation.customer;
     const submittedServiceAddress = customerValidation.address;
 
+    // Validate the immutable, self-hashed voice command before consulting a
+    // durable replay. Mutable quote/offer lineage is checked only for a new
+    // provider attempt so a lost successful response remains replayable after
+    // the original offer expires.
+    if (
+      isCanonicalVoiceBooking &&
+      !(await validateCanonicalVoiceBookingPayload(
+        booking as unknown as CanonicalVoiceBookingPayload,
+      ))
+    ) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: "VOICE_CONTRACT_INVALID",
+          retryable: false,
+          error: "Voice booking contract hash or payload does not match.",
+        }),
+        {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -448,6 +803,17 @@ Deno.serve(async (req) => {
       homeDetails: booking.homeDetails,
       additionalServices: booking.additionalServices ?? null,
       promotion: booking.promotion ?? null,
+      selectedServiceIds: booking.selectedServiceIds ?? null,
+      subtotal: booking.subtotal,
+      taxableSubtotal: booking.taxableSubtotal ?? null,
+      estimatedTax: booking.estimatedTax ?? null,
+      preTaxTotal: booking.preTaxTotal ?? null,
+      total: booking.total,
+      priceAdjustments: booking.priceAdjustments ?? null,
+      discountContext: booking.discountContext ?? null,
+      promotionContext: booking.promotionContext ?? null,
+      durationMinutes: booking.durationMinutes,
+      voiceContract: booking.voiceContract ?? null,
     });
     // A completed request-bound replay is authoritative even if the geocoder
     // or configuration is unavailable later. Never expose a result for a key
@@ -506,6 +872,24 @@ Deno.serve(async (req) => {
       });
     }
 
+    const voiceLineage = isCanonicalVoiceBooking
+      ? await validateCanonicalVoiceLineage(supabase, booking)
+      : null;
+    if (voiceLineage && !voiceLineage.ok) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: voiceLineage.code,
+          retryable: false,
+          error: voiceLineage.error,
+        }),
+        {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const launchGate = evaluatePublicBookingLaunchGate(
       Deno.env.get("PUBLIC_BOOKING_ENABLED"),
     );
@@ -539,6 +923,24 @@ Deno.serve(async (req) => {
         }),
         {
           status: 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (
+      voiceLineage?.ok &&
+      organizationResolution.organizationId !== voiceLineage.organizationId
+    ) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: "VOICE_ORGANIZATION_MISMATCH",
+          retryable: false,
+          error:
+            "Resolved booking organization does not match the canonical voice authority.",
+        }),
+        {
+          status: 409,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
@@ -755,9 +1157,39 @@ Deno.serve(async (req) => {
           pricingSnapshot = {
             engineVersion: engineResult.engineVersion,
             ruleVersion: engineResult.ruleVersion,
-            inputSnapshot: { homeDetails: booking.homeDetails, additionalServices: booking.additionalServices },
-            lineItemSnapshot: engineResult.lineItems,
-            discountSnapshot: engineResult.discount,
+            inputSnapshot: isCanonicalVoiceBooking
+              ? {
+                homeDetails: booking.homeDetails,
+                additionalServices: booking.additionalServices,
+                selectedServiceIds: booking.selectedServiceIds,
+                voiceContract: booking.voiceContract,
+                tax: {
+                  taxableSubtotal: booking.taxableSubtotal,
+                  estimatedTax: booking.estimatedTax,
+                  finalTotal: booking.total,
+                  rate: booking.taxRate,
+                  label: booking.taxLabel,
+                },
+              }
+              : {
+                homeDetails: booking.homeDetails,
+                additionalServices: booking.additionalServices,
+              },
+            lineItemSnapshot: isCanonicalVoiceBooking
+              ? {
+                lineItems: engineResult.lineItems,
+                jobberLineItems: engineResult.jobberLineItems,
+                priceAdjustments: engineResult.priceAdjustments,
+              }
+              : engineResult.lineItems,
+            discountSnapshot: isCanonicalVoiceBooking
+              ? {
+                discount: engineResult.discount,
+                promotion: engineResult.promotion,
+                discountsAndAdjustments:
+                  engineResult.discountsAndAdjustments,
+              }
+              : engineResult.discount,
             // Preserve promotion id/version/terms in the booking snapshot.
             promotionSnapshot: engineResult.promotion,
           };
@@ -769,17 +1201,33 @@ Deno.serve(async (req) => {
             }
             const serverTotal = engineResult.total;
             const clientTotal = Number(booking.total);
-            const authoritativeDuration =
-              authoritativeBookingDurationMinutes(
-                engineResult.lineItems.map((item) => item.key),
+            const durationResult = resolveAuthoritativeDuration(engineResult);
+            if (durationResult.status !== "available") {
+              return new Response(
+                JSON.stringify({
+                  error:
+                    "An authoritative duration is not available for these services.",
+                  code: "DURATION_UNAVAILABLE",
+                }),
+                {
+                  status: 409,
+                  headers: {
+                    ...corsHeaders,
+                    "Content-Type": "application/json",
+                  },
+                },
               );
+            }
+            const authoritativeDuration = durationResult.minutes;
             const scheduledDuration = scheduledIntervalMinutes(
               booking.scheduledStart,
               booking.scheduledEnd,
             );
             if (
               scheduledDuration === null ||
-              scheduledDuration < authoritativeDuration ||
+              (isCanonicalVoiceBooking
+                ? scheduledDuration !== authoritativeDuration
+                : scheduledDuration < authoritativeDuration) ||
               Number(booking.durationMinutes) !== authoritativeDuration
             ) {
               return new Response(
@@ -799,6 +1247,70 @@ Deno.serve(async (req) => {
               );
             }
             booking.durationMinutes = authoritativeDuration;
+            if (isCanonicalVoiceBooking) {
+              const canonicalServices = engineResult.jobberLineItems.map((item) => ({
+                name: item.name,
+                price: item.unitPrice,
+                ...(item.description ? { description: item.description } : {}),
+              }));
+              const canonicalProviderLines = buildJobberBookingLineItems({
+                services: canonicalServices,
+                priceAdjustments: engineResult.priceAdjustments,
+                discountAmount: engineResult.discount?.amount ?? 0,
+                discountCode: engineResult.discount?.code,
+              });
+              const canonicalMatches =
+                exactNumber(engineResult.serviceSubtotal, booking.subtotal) &&
+                exactNumber(engineResult.taxableSubtotal, booking.taxableSubtotal) &&
+                exactNumber(engineResult.estimatedTax, booking.estimatedTax) &&
+                exactNumber(engineResult.total, booking.preTaxTotal) &&
+                exactNumber(engineResult.estimatedTotal, booking.total) &&
+                exactNumber(engineResult.taxRate, booking.taxRate) &&
+                engineResult.taxLabel === booking.taxLabel &&
+                engineResult.taxPolicyVersion ===
+                  booking.voiceContract?.taxPolicyVersion &&
+                engineResult.engineVersion ===
+                  booking.voiceContract?.engineVersion &&
+                engineResult.ruleVersion ===
+                  booking.voiceContract?.pricingVersion &&
+                engineResult.durationVersion ===
+                  booking.voiceContract?.durationVersion &&
+                exactNumber(
+                  jobberBookingLineItemsTotal(canonicalProviderLines),
+                  booking.preTaxTotal,
+                ) &&
+                sameJson(canonicalServices, booking.services) &&
+                sameJson(
+                  engineResult.promotion ?? null,
+                  booking.promotionContext ?? null,
+                ) &&
+                sameJson(
+                  engineResult.priceAdjustments ?? [],
+                  booking.priceAdjustments ?? [],
+                ) &&
+                sameJson(
+                  engineResult.discount ?? null,
+                  booking.discountContext ?? null,
+                );
+              if (!canonicalMatches) {
+                return new Response(
+                  JSON.stringify({
+                    success: false,
+                    code: "VOICE_QUOTE_STALE",
+                    retryable: false,
+                    error:
+                      "Canonical pricing, tax, discount, promotion, line items, or duration changed before booking.",
+                  }),
+                  {
+                    status: 409,
+                    headers: {
+                      ...corsHeaders,
+                      "Content-Type": "application/json",
+                    },
+                  },
+                );
+              }
+            }
             // ---- Resumed-quote revalidation gate ----
             // If this booking is created from a stored quote link, refuse to
             // silently rewrite the price. Require an explicit reconfirmation
@@ -833,7 +1345,10 @@ Deno.serve(async (req) => {
             // server result, so always rebuild from the engine when a promotion is
             // applied (in addition to the normal tamper/stale guard).
             const promoApplied = !!engineResult.promotion;
-            if (promoApplied || Math.abs(serverTotal - clientTotal) > 1) {
+            if (
+              !isCanonicalVoiceBooking &&
+              (promoApplied || Math.abs(serverTotal - clientTotal) > 1)
+            ) {
               // Client total was tampered with or stale — trust the server.
               console.warn(
                 `Pricing mismatch: client total ${clientTotal} vs server ${serverTotal}. Using server values.`,
@@ -896,25 +1411,40 @@ Deno.serve(async (req) => {
     console.log("Looking up technician:", booking.technicianId);
     
     // For team bookings, get all team technician IDs
-    const technicianIdsToFetch = booking.isTeamJob && booking.teamTechnicianIds 
-      ? booking.teamTechnicianIds 
-      : [booking.technicianId];
+    const technicianIdsToFetch = [...new Set(
+      booking.isTeamJob && booking.teamTechnicianIds?.length
+        ? booking.teamTechnicianIds
+        : [booking.technicianId],
+    )].sort();
     
     const { data: technicians, error: techError } = await supabase
       .from("technicians")
-      .select("id, jobber_user_id, name")
+      .select("id, jobber_user_id, name, is_active")
       .in("id", technicianIdsToFetch);
 
-    if (techError || !technicians?.length) {
+    const returnedTechnicianIds = (technicians ?? [])
+      .map((technician) => technician.id)
+      .sort();
+    if (
+      techError || !technicians?.length ||
+      !sameStringArray(returnedTechnicianIds, technicianIdsToFetch) ||
+      technicians.some((technician) =>
+        technician.is_active !== true || !String(technician.jobber_user_id ?? "").trim()
+      )
+    ) {
       console.error("Technician lookup failed:", techError);
       return new Response(
-        JSON.stringify({ error: "Technician not found", details: techError?.message }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 }
+        JSON.stringify({
+          success: false,
+          code: "CREW_AUTHORITY_MISMATCH",
+          error: "The exact offered crew is no longer available for booking.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 409 }
       );
     }
-    
-    // Primary technician (first one for display)
-    const primaryTechnician = technicians[0];
+    technicians.sort((a, b) =>
+      technicianIdsToFetch.indexOf(a.id) - technicianIdsToFetch.indexOf(b.id)
+    );
     
     // All Jobber user IDs for assignment
     const allJobberUserIds = technicians.map(t => t.jobber_user_id);
@@ -931,16 +1461,6 @@ Deno.serve(async (req) => {
     const requestedEnd = new Date(booking.scheduledEnd);
 
     let reservationGroupId: string | null = null;
-    const releaseReservation = async () => {
-      if (!reservationGroupId) return;
-      try {
-        await supabase.rpc("release_booking_slot", { p_group_id: reservationGroupId });
-        console.log("Released slot reservation", reservationGroupId);
-      } catch (e) {
-        console.warn("Failed to release reservation:", e);
-      }
-    };
-
     const { data: reserveRes, error: reserveErr } = await supabase.rpc("reserve_booking_slot", {
       p_crew_ids: allJobberUserIds,
       p_start: requestedStart.toISOString(),
@@ -962,34 +1482,57 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Idempotent replay: a prior identical request already fully succeeded.
-    if (reserveRes?.idempotent && reserveRes?.result) {
+    const reservationDecision = decideBookingReservationExecution(
+      reserveRes,
+      requestFingerprint,
+      {
+        serviceRoleCaller,
+        preReservedGroupId: booking.preReservedGroupId ?? null,
+      },
+    );
+    if (reservationDecision.action === "replay") {
       console.log("Idempotent replay — returning original booking result");
-      if (!requestFingerprintMatches(reserveRes.result, requestFingerprint)) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            code: "IDEMPOTENCY_KEY_REUSED",
-            retryable: false,
-            error:
-              "This request key is already bound to a different or unverifiable booking attempt.",
-          }),
-          {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 409,
-          },
-        );
-      }
-      const replayResult = publicReplayResult(reserveRes.result);
+      const replayResult = reservationDecision.result;
       const replayStatus = bookingReplayHttpStatus(replayResult);
       return new Response(JSON.stringify(replayResult), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: replayStatus,
       });
     }
+    if (reservationDecision.action === "idempotency_key_reused") {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: "IDEMPOTENCY_KEY_REUSED",
+          retryable: false,
+          error:
+            "This request key is already bound to a different or unverifiable booking attempt.",
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 409,
+        },
+      );
+    }
+    if (reservationDecision.action === "in_progress_or_uncertain") {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          pendingManualConfirmation: true,
+          code: "BOOKING_ATTEMPT_IN_PROGRESS_OR_UNCERTAIN",
+          retryable: false,
+          error:
+            "A prior identical booking attempt has no authoritative final result. It will not be repeated until reconciled.",
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 202,
+        },
+      );
+    }
 
     // Slot already actively held/booked by someone else → conflict.
-    if (reserveRes?.ok === false) {
+    if (reservationDecision.action === "conflict") {
       return new Response(
         JSON.stringify({
           error: "Time slot conflict",
@@ -1001,7 +1544,46 @@ Deno.serve(async (req) => {
       );
     }
 
-    reservationGroupId = reserveRes?.group_id ?? null;
+    if (reservationDecision.action === "protection_unavailable") {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: "RESERVATION_PROTECTION_UNAVAILABLE",
+          retryable: false,
+          error:
+            "The booking attempt could not acquire an authoritative idempotency reservation.",
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 503,
+        },
+      );
+    }
+    reservationGroupId = reservationDecision.groupId;
+
+    const protection = await protectReservationForExecution(
+      supabase,
+      reservationGroupId,
+      new Date(Date.now() + 6 * 60_000),
+    );
+    if (!protection.ok) {
+      await supabase.rpc("release_booking_slot", {
+        p_group_id: reservationGroupId,
+      });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: "RESERVATION_PROTECTION_UNAVAILABLE",
+          retryable: false,
+          error:
+            "The booking reservation could not be protected for the provider handoff.",
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 503,
+        },
+      );
+    }
 
     // If a previous attempt (same key) already created a Jobber job, reuse it so
     // retries never create a duplicate job.
@@ -1021,13 +1603,59 @@ Deno.serve(async (req) => {
     // From here on the slot is held. Any failure/return must release the hold
     // (unless we deliberately keep it), so wrap the rest in try/finally.
     let reservationSettled = false;
+    let providerMutationAttempted = false;
     try {
+    const runProviderMutation = <T>(
+      query: string,
+      variables?: Record<string, unknown>,
+    ) => {
+      providerMutationAttempted = true;
+      return jobberGraphQLMutation<T>(query, variables);
+    };
+    const providerOutcomeUncertain = async (
+      stage: string,
+      providerIds: { jobId?: string | null; visitId?: string | null } = {},
+    ): Promise<Response> => {
+      const payload = {
+        success: false,
+        pendingManualConfirmation: true,
+        code: "PROVIDER_OUTCOME_UNCERTAIN",
+        stage,
+        retryable: false,
+        error:
+          "The provider may have accepted this request, but its result could not be verified. Do not repeat it until BluLadder reconciles the attempt.",
+      };
+      const { error: replayError } = await supabase.rpc(
+        "confirm_booking_slot",
+        {
+          p_group_id: reservationGroupId,
+          p_booking_id: null,
+          p_job_id: providerIds.jobId ?? null,
+          p_visit_id: providerIds.visitId ?? null,
+          p_result: {
+            ...payload,
+            _requestFingerprint: requestFingerprint,
+          },
+        },
+      );
+      if (replayError) {
+        console.error("Failed to persist uncertain provider outcome:", replayError);
+      } else {
+        reservationSettled = true;
+      }
+      return new Response(JSON.stringify(payload), {
+        status: 202,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    };
     // Find or create customer in Supabase
     console.log("Looking up customer by normalized identity");
     let customerLookup = supabase
       .from("customers")
-      .select("*")
-      .eq("email", booking.customer.email.toLowerCase());
+      .select("*");
+    customerLookup = voiceLineage?.ok
+      ? customerLookup.eq("id", voiceLineage.customerId)
+      : customerLookup.eq("email", booking.customer.email.toLowerCase());
     if (organizationResolution.tenantFoundationAvailable) {
       customerLookup = customerLookup.eq(
         "organization_id",
@@ -1036,6 +1664,20 @@ Deno.serve(async (req) => {
     }
     let { data: customer } = await customerLookup.maybeSingle();
 
+    if (!customer && voiceLineage?.ok) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          code: "VOICE_CUSTOMER_MISSING",
+          retryable: false,
+          error: "The verified customer record is no longer available.",
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 409,
+        },
+      );
+    }
     if (!customer) {
       console.log("Customer not found, creating new customer record");
       const { data: newCustomer, error: customerError } = await supabase
@@ -1073,11 +1715,16 @@ Deno.serve(async (req) => {
       console.log("Searching for existing Jobber client by email");
       const searchQuery = `
         query FindClient($email: String!) {
-          clients(searchTerm: $email, first: 1) {
+          clients(searchTerm: $email, first: 50) {
             nodes {
               id
+              firstName
+              lastName
               emails {
                 address
+              }
+              phones {
+                number
               }
             }
           }
@@ -1088,7 +1735,10 @@ Deno.serve(async (req) => {
         clients: {
           nodes: Array<{
             id: string;
+            firstName: string;
+            lastName: string;
             emails: Array<{ address: string }>;
+            phones: Array<{ number: string }>;
           }>;
         };
       }>(searchQuery, { email: booking.customer.email });
@@ -1098,10 +1748,49 @@ Deno.serve(async (req) => {
         errorCount: searchResult.errors?.length ?? 0,
       });
 
-      const existingClient = searchResult.data?.clients?.nodes?.[0];
+      const candidateClients = searchResult.data?.clients?.nodes;
+      if (searchResult.errors?.length || !Array.isArray(candidateClients)) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "JOBBER_CLIENT_LOOKUP_UNAVAILABLE",
+            error:
+              "The verified customer could not be safely matched in Jobber.",
+          }),
+          {
+            status: 503,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      const clientResolution = resolveJobberClientByVerifiedContact(
+        validatedCustomer,
+        candidateClients,
+      );
+      if (
+        clientResolution.status === "ambiguous" ||
+        clientResolution.status === "conflict"
+      ) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: clientResolution.status === "ambiguous"
+              ? "JOBBER_CLIENT_IDENTITY_AMBIGUOUS"
+              : "JOBBER_CLIENT_IDENTITY_CONFLICT",
+            error:
+              clientResolution.status === "ambiguous"
+                ? "More than one Jobber customer matches the verified contact information."
+                : "The Jobber customer contact does not match the verified BluLadder customer.",
+          }),
+          {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
 
-      if (existingClient) {
-        jobberClientId = existingClient.id;
+      if (clientResolution.status === "resolved") {
+        jobberClientId = clientResolution.clientId;
         console.log("Found existing Jobber client:", jobberClientId);
       } else {
         // Create new client in Jobber
@@ -1132,12 +1821,22 @@ Deno.serve(async (req) => {
           ...(phoneInput && { phones: phoneInput }),
         };
         
-        const createResult = await jobberGraphQL<{
+        const createResult = await runProviderMutation<{
           clientCreate: {
             client: { id: string } | null;
             userErrors: Array<{ message: string; path?: string[] }>;
           };
         }>(createClientMutation, { input: clientInput });
+
+        if (createResult.outcomeUncertain) {
+          return await providerOutcomeUncertain("client_create");
+        }
+        if (
+          createResult.data?.clientCreate?.client?.id &&
+          createResult.data.clientCreate.userErrors?.length
+        ) {
+          return await providerOutcomeUncertain("client_create_contradictory");
+        }
 
         console.log("Jobber client creation completed", {
           created: !!createResult.data?.clientCreate?.client?.id,
@@ -1156,23 +1855,114 @@ Deno.serve(async (req) => {
           );
         }
 
+        const clientCreatePayload = createResult.data?.clientCreate;
+        if (
+          !clientCreatePayload ||
+          !Array.isArray(clientCreatePayload.userErrors) ||
+          (clientCreatePayload.client !== null &&
+            !clientCreatePayload.client?.id)
+        ) {
+          return await providerOutcomeUncertain("client_create_malformed");
+        }
+
         if (createResult.data?.clientCreate?.userErrors?.length) {
           console.error("Jobber client creation rejected", {
             errorCount: createResult.data.clientCreate.userErrors.length,
           });
+          return new Response(
+            JSON.stringify({
+              success: false,
+              code: "JOBBER_CLIENT_REJECTED",
+              error: "Jobber rejected the verified customer record.",
+            }),
+            {
+              status: 422,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
         }
 
         jobberClientId = createResult.data?.clientCreate?.client?.id;
+        if (!jobberClientId) {
+          return await providerOutcomeUncertain("client_create_malformed");
+        }
         console.log("Created Jobber client:", jobberClientId);
       }
 
-      // Update customer with Jobber client ID
+      // Claim the local Jobber-client mapping once. A concurrent booking may
+      // win this compare-and-set; only the same provider id is acceptable.
       if (jobberClientId) {
         console.log("Updating customer with Jobber client ID");
-        await supabase
+        let customerLink = supabase
           .from("customers")
           .update({ jobber_client_id: jobberClientId })
-          .eq("id", customer.id);
+          .eq("id", customer.id)
+          .is("jobber_client_id", null);
+        if (organizationResolution.tenantFoundationAvailable) {
+          customerLink = customerLink.eq(
+            "organization_id",
+            organizationResolution.organizationId,
+          );
+        }
+        const { data: linkedCustomer, error: customerLinkError } =
+          await customerLink
+            .select("id, jobber_client_id")
+            .maybeSingle();
+        if (
+          customerLinkError || linkedCustomer?.id !== customer.id ||
+          linkedCustomer?.jobber_client_id !== jobberClientId
+        ) {
+          let winnerQuery = supabase
+            .from("customers")
+            .select("id, jobber_client_id")
+            .eq("id", customer.id);
+          if (organizationResolution.tenantFoundationAvailable) {
+            winnerQuery = winnerQuery.eq(
+              "organization_id",
+              organizationResolution.organizationId,
+            );
+          }
+          const { data: mappingWinner, error: mappingWinnerError } =
+            await winnerQuery.maybeSingle();
+          if (
+            !mappingWinnerError && mappingWinner?.id === customer.id &&
+            mappingWinner?.jobber_client_id === jobberClientId
+          ) {
+            // An exact concurrent winner established the same authority.
+          } else if (providerMutationAttempted) {
+            return await providerOutcomeUncertain(
+              mappingWinner?.jobber_client_id
+                ? "client_link_conflict"
+                : "client_link_persistence",
+            );
+          } else if (mappingWinner?.jobber_client_id) {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                code: "JOBBER_CLIENT_LINK_CONFLICT",
+                error:
+                  "The verified customer is already linked to a different Jobber customer.",
+              }),
+              {
+                status: 409,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              },
+            );
+          } else {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                code: "JOBBER_CLIENT_LINK_PERSISTENCE_FAILED",
+                error:
+                  "The verified Jobber customer mapping could not be recorded.",
+              }),
+              {
+                status: 503,
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+              },
+            );
+          }
+        }
       }
     }
 
@@ -1191,6 +1981,14 @@ Deno.serve(async (req) => {
       query GetClientProperty($clientId: EncodedId!) {
         client(id: $clientId) {
           id
+          firstName
+          lastName
+          emails {
+            address
+          }
+          phones {
+            number
+          }
           clientProperties(first: 50) {
             nodes {
               id
@@ -1209,6 +2007,10 @@ Deno.serve(async (req) => {
     const propertyResult = await jobberGraphQL<{
       client: {
         id: string;
+        firstName: string;
+        lastName: string;
+        emails: Array<{ address: string }>;
+        phones: Array<{ number: string }>;
         clientProperties: { nodes: JobberPropertyCandidate[] };
       };
     }>(getClientPropertyQuery, { clientId: jobberClientId });
@@ -1218,20 +2020,76 @@ Deno.serve(async (req) => {
         propertyResult.data?.client?.clientProperties?.nodes?.length ?? 0,
       errorCount: propertyResult.errors?.length ?? 0,
     });
-    if (propertyResult.errors?.length || !propertyResult.data?.client) {
+    const providerClientResolution = propertyResult.data?.client
+      ? resolveJobberClientByVerifiedContact(
+        validatedCustomer,
+        [propertyResult.data.client],
+      )
+      : { status: "missing" as const };
+    if (
+      propertyResult.errors?.length || !propertyResult.data?.client ||
+      propertyResult.data.client.id !== jobberClientId ||
+      providerClientResolution.status !== "resolved" ||
+      providerClientResolution.clientId !== jobberClientId
+    ) {
       return new Response(
         JSON.stringify({
-          error: "We couldn't verify the service property. Please try again shortly.",
-          code: "PROPERTY_LOOKUP_UNAVAILABLE",
+          error:
+            "We couldn't verify the exact Jobber customer and service property.",
+          code: "JOBBER_CUSTOMER_OR_PROPERTY_LOOKUP_UNAVAILABLE",
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 },
       );
     }
 
-    let propertyId = findMatchingJobberProperty(
+    const propertyCandidates =
+      propertyResult.data.client.clientProperties?.nodes ?? [];
+    const matchingProperties = findMatchingJobberProperties(
       submittedServiceAddress,
-      propertyResult.data.client.clientProperties?.nodes ?? [],
-    )?.id;
+      propertyCandidates,
+    );
+    let propertyId: string | null = null;
+    if (voiceLineage?.ok && voiceLineage.jobberPropertyId) {
+      const authoritativeProperty = propertyCandidates.find((candidate) =>
+        candidate.id === voiceLineage.jobberPropertyId
+      );
+      if (
+        !authoritativeProperty ||
+        !matchingProperties.some((candidate) =>
+          candidate.id === authoritativeProperty.id
+        )
+      ) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "JOBBER_PROPERTY_LINEAGE_MISMATCH",
+            error:
+              "The stored Jobber property does not match the authoritative service address.",
+          }),
+          {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      propertyId = authoritativeProperty.id;
+    } else {
+      if (matchingProperties.length > 1) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "JOBBER_PROPERTY_IDENTITY_AMBIGUOUS",
+            error:
+              "More than one Jobber property matches the authoritative service address.",
+          }),
+          {
+            status: 409,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      propertyId = matchingProperties[0]?.id ?? null;
+    }
 
     if (!propertyId) {
       // PropertyCreateInput requires a 'properties' array with PropertyInput objects
@@ -1264,12 +2122,47 @@ Deno.serve(async (req) => {
         ]
       };
       
-      const createPropertyResult = await jobberGraphQL<{
+      const createPropertyResult = await runProviderMutation<{
         propertyCreate: {
           properties: Array<{ id: string }>;
           userErrors: Array<{ message: string; path?: string[] }>;
         };
       }>(createPropertyMutation, { clientId: jobberClientId, input: propertyInput });
+
+      if (createPropertyResult.outcomeUncertain) {
+        return await providerOutcomeUncertain("property_create");
+      }
+      if (createPropertyResult.errors?.length) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "JOBBER_PROPERTY_REJECTED",
+            error: "Jobber rejected the authoritative service property.",
+          }),
+          {
+            status: 422,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      const propertyCreatePayload = createPropertyResult.data?.propertyCreate;
+      if (
+        !propertyCreatePayload ||
+        !Array.isArray(propertyCreatePayload.properties) ||
+        !Array.isArray(propertyCreatePayload.userErrors) ||
+        propertyCreatePayload.properties.length > 1 ||
+        propertyCreatePayload.properties.some((property) => !property?.id)
+      ) {
+        return await providerOutcomeUncertain("property_create_malformed");
+      }
+      if (
+        createPropertyResult.data?.propertyCreate?.properties?.[0]?.id &&
+        createPropertyResult.data.propertyCreate.userErrors?.length
+      ) {
+        return await providerOutcomeUncertain(
+          "property_create_contradictory",
+        );
+      }
 
       console.log("Jobber property creation completed", {
         created:
@@ -1285,45 +2178,98 @@ Deno.serve(async (req) => {
           errorCount:
             createPropertyResult.data.propertyCreate.userErrors.length,
         });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "JOBBER_PROPERTY_REJECTED",
+            error: "Jobber rejected the authoritative service property.",
+          }),
+          {
+            status: 422,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
-      propertyId = createPropertyResult.data?.propertyCreate?.properties?.[0]?.id;
+      propertyId =
+        createPropertyResult.data?.propertyCreate?.properties?.[0]?.id ?? null;
 
-      // If property creation failed and no property exists, try re-querying client
-      // Sometimes property might have been created asynchronously
+      // A valid mutation response without an id is ambiguous. A read-only
+      // re-query may recover a provider-created property without repeating the
+      // mutation.
       if (!propertyId) {
         console.log("Property creation returned empty, re-querying client");
         const retryResult = await jobberGraphQL<{
           client: {
             id: string;
-            properties: { id: string } | null;
+            emails: Array<{ address: string }>;
+            clientProperties: { nodes: JobberPropertyCandidate[] };
           };
         }>(getClientPropertyQuery, { clientId: jobberClientId });
         
         console.log("Jobber property retry completed", {
           propertyCount:
-            retryResult.data?.client?.properties
-              ? Array.isArray(retryResult.data.client.properties)
-                ? retryResult.data.client.properties.length
-                : 1
-              : 0,
+            retryResult.data?.client?.clientProperties?.nodes?.length ?? 0,
           errorCount: retryResult.errors?.length ?? 0,
         });
-        const retryProps = retryResult.data?.client?.properties;
-        if (retryProps) {
-          if (Array.isArray(retryProps)) {
-            propertyId = (retryProps as Array<{ id: string }>)[0]?.id;
-          } else {
-            propertyId = retryProps.id;
-          }
+        const recoveredMatches = findMatchingJobberProperties(
+          submittedServiceAddress,
+          retryResult.data?.client?.clientProperties?.nodes ?? [],
+        );
+        if (recoveredMatches.length > 1) {
+          return await providerOutcomeUncertain(
+            "property_create_requery_ambiguous",
+          );
         }
+        propertyId = recoveredMatches[0]?.id ?? null;
       }
 
       if (!propertyId) {
-        console.error("Failed to get or create property");
+        return await providerOutcomeUncertain("property_create_malformed");
+      }
+    }
+
+    if (
+      voiceLineage?.ok && propertyId && !voiceLineage.jobberPropertyId
+    ) {
+      const { data: linkedProperty, error: propertyLinkError } = await supabase
+        .from("properties")
+        .update({ jobber_property_id: propertyId })
+        .eq("id", voiceLineage.propertyId)
+        .eq("organization_id", voiceLineage.organizationId)
+        .is("jobber_property_id", null)
+        .select("id, jobber_property_id")
+        .maybeSingle();
+      let mappingConfirmed = !propertyLinkError &&
+        linkedProperty?.jobber_property_id === propertyId;
+      if (!mappingConfirmed) {
+        const { data: currentProperty, error: propertyReadError } =
+          await supabase
+            .from("properties")
+            .select("id, jobber_property_id")
+            .eq("id", voiceLineage.propertyId)
+            .eq("organization_id", voiceLineage.organizationId)
+            .maybeSingle();
+        mappingConfirmed = !propertyReadError &&
+          currentProperty?.jobber_property_id === propertyId;
+      }
+      if (!mappingConfirmed) {
+        if (providerMutationAttempted) {
+          return await providerOutcomeUncertain(
+            "property_link_persistence",
+          );
+        }
         return new Response(
-          JSON.stringify({ error: "Failed to get or create property in Jobber" }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+          JSON.stringify({
+            success: false,
+            code: "JOBBER_PROPERTY_LINK_PERSISTENCE_FAILED",
+            error:
+              "The Jobber property mapping could not be recorded safely.",
+          }),
+          {
+            status: 503,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
         );
       }
     }
@@ -1534,24 +2480,12 @@ Deno.serve(async (req) => {
       }
     `;
 
-    const lineItems = booking.services.map(svc => ({
-      name: svc.name,
-      description: svc.description || "",
-      unitPrice: svc.price,
-      quantity: 1,
-      saveToProductsAndServices: false,
-    }));
-
-    // Add discount as negative line item if applicable
-    if (booking.discountAmount && booking.discountAmount > 0) {
-      lineItems.push({
-        name: `Discount${booking.discountCode ? ` (${booking.discountCode})` : ""}`,
-        description: "Promotional discount",
-        unitPrice: -booking.discountAmount,
-        quantity: 1,
-        saveToProductsAndServices: false,
-      });
-    }
+    const lineItems = buildJobberBookingLineItems({
+      services: booking.services,
+      priceAdjustments: booking.priceAdjustments,
+      discountAmount: booking.discountAmount,
+      discountCode: booking.discountCode,
+    });
 
     // JobCreateAttributes requires propertyId, invoicing, and optional fields
     const jobInput = {
@@ -1583,12 +2517,25 @@ Deno.serve(async (req) => {
       // creation and go straight to (re)creating the visit.
       console.log("Skipping job creation — reusing job from prior attempt:", existingJobId);
     } else {
-      const jobResult = await jobberGraphQL<{
+      const jobResult = await runProviderMutation<{
         jobCreate: {
           job: { id: string; jobNumber: number } | null;
           userErrors: Array<{ message: string; path?: string[] }>;
         };
       }>(createJobMutation, { input: jobInput });
+
+      if (jobResult.outcomeUncertain) {
+        return await providerOutcomeUncertain("job_create");
+      }
+      if (
+        jobResult.data?.jobCreate?.job?.id &&
+        jobResult.data.jobCreate.userErrors?.length
+      ) {
+        return await providerOutcomeUncertain(
+          "job_create_contradictory",
+          { jobId: jobResult.data.jobCreate.job.id },
+        );
+      }
 
       console.log("Jobber job creation completed", {
         created: !!jobResult.data?.jobCreate?.job?.id,
@@ -1606,6 +2553,14 @@ Deno.serve(async (req) => {
         );
       }
 
+      const jobCreatePayload = jobResult.data?.jobCreate;
+      if (
+        !jobCreatePayload || !Array.isArray(jobCreatePayload.userErrors) ||
+        (jobCreatePayload.job !== null && !jobCreatePayload.job?.id)
+      ) {
+        return await providerOutcomeUncertain("job_create_malformed");
+      }
+
       if (jobResult.data?.jobCreate?.userErrors?.length) {
         console.error("Jobber job creation rejected", {
           errorCount: jobResult.data.jobCreate.userErrors.length,
@@ -1620,20 +2575,21 @@ Deno.serve(async (req) => {
       jobNumber = jobResult.data?.jobCreate?.job?.jobNumber ?? null;
 
       if (!jobberJobId) {
-        console.error("No job ID returned from Jobber");
-        return new Response(
-          JSON.stringify({ error: "Failed to get job ID from Jobber" }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-        );
+        return await providerOutcomeUncertain("job_create_malformed");
       }
 
       // Persist the job id against the reservation so a later retry reuses it
       // instead of creating a duplicate Jobber job.
       if (reservationGroupId) {
-        try {
-          await supabase.rpc("set_reservation_job", { p_group_id: reservationGroupId, p_job_id: jobberJobId });
-        } catch (e) {
-          console.warn("Failed to persist job id to reservation:", e);
+        const { error: reservationJobError } = await supabase.rpc(
+          "set_reservation_job",
+          { p_group_id: reservationGroupId, p_job_id: jobberJobId },
+        );
+        if (reservationJobError) {
+          return await providerOutcomeUncertain(
+            "job_id_persistence",
+            { jobId: jobberJobId },
+          );
         }
       }
 
@@ -1768,12 +2724,47 @@ Deno.serve(async (req) => {
       visitCount: visitInput.visits?.length ?? 0,
     });
 
-    const visitResult = await jobberGraphQL<{
+    const visitResult = await runProviderMutation<{
       visitCreate: {
         createdVisits: Array<{ id: string }> | null;
         userErrors: Array<{ message: string; path?: string[] }>;
       };
     }>(scheduleVisitMutation, { jobId: jobberJobId, input: visitInput });
+
+    if (visitResult.outcomeUncertain) {
+      return await providerOutcomeUncertain(
+        "visit_create",
+        { jobId: jobberJobId },
+      );
+    }
+    const visitCreatePayload = visitResult.data?.visitCreate;
+    if (
+      !visitResult.errors?.length &&
+      (!visitCreatePayload ||
+        !Array.isArray(visitCreatePayload.createdVisits) ||
+        !Array.isArray(visitCreatePayload.userErrors) ||
+        (visitCreatePayload.createdVisits.length === 0 &&
+          visitCreatePayload.userErrors.length === 0) ||
+        visitCreatePayload.createdVisits.length > 1 ||
+        visitCreatePayload.createdVisits.some((visit) => !visit?.id))
+    ) {
+      return await providerOutcomeUncertain(
+        "visit_create_malformed",
+        { jobId: jobberJobId },
+      );
+    }
+    if (
+      visitResult.data?.visitCreate?.createdVisits?.[0]?.id &&
+      visitResult.data.visitCreate.userErrors?.length
+    ) {
+      return await providerOutcomeUncertain(
+        "visit_create_contradictory",
+        {
+          jobId: jobberJobId,
+          visitId: visitResult.data.visitCreate.createdVisits[0].id,
+        },
+      );
+    }
 
     console.log("Jobber visit creation completed", {
       created: !!visitResult.data?.visitCreate?.createdVisits?.[0]?.id,
@@ -1793,6 +2784,18 @@ Deno.serve(async (req) => {
     const { data: refData } = await supabase.rpc("generate_booking_reference");
     const referenceNumber = refData || `BL-${Date.now()}`;
     console.log("Generated reference:", referenceNumber);
+    const canonicalDiscountTotal = voiceLineage?.ok
+      ? Math.max(
+        0,
+        -Number(voiceLineage.lastQuote.discountsAndAdjustments ?? 0),
+      )
+      : booking.discountAmount || 0;
+    const canonicalQuoteId = voiceLineage?.ok
+      ? booking.voiceContract?.quoteId ?? null
+      : resumedQuote?.quoteId ?? null;
+    const canonicalPropertyId = voiceLineage?.ok
+      ? voiceLineage.propertyId
+      : null;
 
     // ===== FAIL SAFE: never confirm a booking without a Jobber visit =====
     // If the job was created but the visit was NOT, the appointment does not
@@ -1806,7 +2809,8 @@ Deno.serve(async (req) => {
         .insert({
           ...organizationWriteFields,
           customer_id: customer.id,
-          quote_id: resumedQuote?.quoteId ?? null,
+          quote_id: canonicalQuoteId,
+          property_id: canonicalPropertyId,
           technician_id: booking.technicianId,
           jobber_job_id: jobberJobId,
           jobber_visit_id: null,
@@ -1818,7 +2822,7 @@ Deno.serve(async (req) => {
           services_json: booking.services,
           home_details_json: booking.homeDetails,
           subtotal: booking.subtotal,
-          discount_amount: booking.discountAmount || 0,
+          discount_amount: canonicalDiscountTotal,
           total: booking.total,
           discount_code: booking.discountCode,
           notes: booking.notes,
@@ -1922,7 +2926,8 @@ Deno.serve(async (req) => {
       .insert({
         ...organizationWriteFields,
         customer_id: customer.id,
-        quote_id: resumedQuote?.quoteId ?? null,
+        quote_id: canonicalQuoteId,
+        property_id: canonicalPropertyId,
         technician_id: booking.technicianId,
         jobber_job_id: jobberJobId,
         jobber_visit_id: jobberVisitId,
@@ -1934,7 +2939,7 @@ Deno.serve(async (req) => {
         services_json: booking.services,
         home_details_json: booking.homeDetails,
         subtotal: booking.subtotal,
-        discount_amount: booking.discountAmount || 0,
+        discount_amount: canonicalDiscountTotal,
         total: booking.total,
         discount_code: booking.discountCode,
         notes: booking.notes,
@@ -1953,7 +2958,7 @@ Deno.serve(async (req) => {
         source_session_id: booking.attribution?.source_session_id ?? booking.sourceSessionId ?? null,
         booked_revenue: booking.total,
         booked_subtotal: booking.subtotal,
-        booked_discount_amount: booking.discountAmount || 0,
+        booked_discount_amount: canonicalDiscountTotal,
         booked_service_count: Array.isArray(booking.services) ? booking.services.length : null,
         booked_services: booking.services?.map((s) => s.name) ?? null,
         booking_completed_at: new Date().toISOString(),
@@ -1961,8 +2966,48 @@ Deno.serve(async (req) => {
       .select()
       .single();
 
-    if (bookingError) {
-      console.error("Failed to create booking record:", bookingError);
+    const canonicalBookingRecordMismatch = voiceLineage?.ok &&
+      (!bookingRecord ||
+        bookingRecord.organization_id !== voiceLineage.organizationId ||
+        bookingRecord.customer_id !== voiceLineage.customerId ||
+        bookingRecord.property_id !== voiceLineage.propertyId ||
+        bookingRecord.quote_id !== canonicalQuoteId ||
+        bookingRecord.technician_id !== booking.technicianId ||
+        bookingRecord.jobber_job_id !== jobberJobId ||
+        bookingRecord.jobber_visit_id !== jobberVisitId ||
+        bookingRecord.reference_number !== referenceNumber ||
+        bookingRecord.status !== "scheduled" ||
+        !sameScheduledInstant(
+          bookingRecord.scheduled_start,
+          booking.scheduledStart,
+        ) ||
+        !sameScheduledInstant(
+          bookingRecord.scheduled_end,
+          booking.scheduledEnd,
+        ) ||
+        bookingRecord.duration_minutes !== booking.durationMinutes ||
+        !sameJson(bookingRecord.services_json, booking.services) ||
+        !sameJson(bookingRecord.home_details_json, booking.homeDetails) ||
+        !sameJson(bookingRecord.input_snapshot, pricingSnapshot.inputSnapshot) ||
+        !sameJson(
+          bookingRecord.line_item_snapshot,
+          pricingSnapshot.lineItemSnapshot,
+        ) ||
+        !sameJson(
+          bookingRecord.discount_snapshot,
+          pricingSnapshot.discountSnapshot,
+        ) ||
+        !exactNumber(
+          bookingRecord.discount_amount,
+          canonicalDiscountTotal,
+        ) ||
+        !exactNumber(bookingRecord.subtotal, booking.subtotal) ||
+        !exactNumber(bookingRecord.total, booking.total));
+    if (bookingError || canonicalBookingRecordMismatch) {
+      console.error(
+        "Failed to create or verify booking record:",
+        bookingError ?? "canonical booking record mismatch",
+      );
       // The Jobber job and visit exist, but BluLadder cannot truthfully claim a
       // confirmed booking until its authoritative local record is durable.
       // Persist a non-success replay result on the reservation so retries do
@@ -1979,19 +3024,24 @@ Deno.serve(async (req) => {
           "Your appointment was created with our scheduling provider, but we couldn't finish recording the confirmation. Our team must verify it before it is confirmed — please don't rebook.",
       };
       if (reservationGroupId) {
-        try {
-          await supabase.rpc("confirm_booking_slot", {
+        const { error: pendingReplayError } = await supabase.rpc(
+          "confirm_booking_slot",
+          {
             p_group_id: reservationGroupId,
-            p_booking_id: null,
+            p_booking_id: bookingRecord?.id ?? null,
             p_job_id: jobberJobId,
             p_visit_id: jobberVisitId,
             p_result: {
               ...pendingPersistencePayload,
               _requestFingerprint: requestFingerprint,
             },
-          });
-        } catch (e) {
-          console.warn("Failed to persist pending booking result:", e);
+          },
+        );
+        if (pendingReplayError) {
+          console.error(
+            "Failed to persist pending booking result:",
+            pendingReplayError,
+          );
         }
       }
       reservationSettled = true;
@@ -2152,7 +3202,20 @@ Deno.serve(async (req) => {
       scheduledEnd: booking.scheduledEnd,
       technicianName: technicianNames,
       bookingId: bookingRecord?.id,
+      providerStatus: "accepted",
+      localStatus: "persisted",
+      organizationId: booking.voiceContract?.organizationId,
+      customerId: booking.voiceContract?.customerId,
+      propertyId: booking.voiceContract?.propertyId,
+      quoteFingerprint: booking.voiceContract?.quoteFingerprint,
+      bookingInputsKey: booking.voiceContract?.bookingInputsKey,
+      offerVersion: booking.voiceContract?.offerVersion,
+      slotId: booking.voiceContract?.slotId,
+      durationMinutes: booking.durationMinutes,
+      idempotencyKey,
+      commandHash: booking.voiceContract?.commandHash,
       subtotal: booking.subtotal,
+      estimatedTax: booking.estimatedTax,
       total: booking.total,
       isTeamJob: booking.isTeamJob || false,
       crewSize: technicians.length,
@@ -2167,8 +3230,9 @@ Deno.serve(async (req) => {
     // Convert the temporary hold into a confirmed reservation and store the
     // result so any idempotent retry returns this exact outcome.
     if (reservationGroupId) {
-      try {
-        await supabase.rpc("confirm_booking_slot", {
+      const { error: reservationConfirmationError } = await supabase.rpc(
+        "confirm_booking_slot",
+        {
           p_group_id: reservationGroupId,
           p_booking_id: bookingRecord?.id ?? null,
           p_job_id: jobberJobId,
@@ -2177,9 +3241,46 @@ Deno.serve(async (req) => {
             ...successPayload,
             _requestFingerprint: requestFingerprint,
           },
-        });
-      } catch (e) {
-        console.warn("Failed to confirm reservation:", e);
+        },
+      );
+      const { data: confirmedReservation, error: reservationReadError } =
+        reservationConfirmationError
+          ? { data: null, error: reservationConfirmationError }
+          : await supabase
+            .from("slot_reservations")
+            .select("status, booking_id, jobber_job_id, jobber_visit_id, result_json")
+            .eq("group_id", reservationGroupId)
+            .limit(1)
+            .maybeSingle();
+      if (
+        reservationConfirmationError || reservationReadError ||
+        confirmedReservation?.status !== "confirmed" ||
+        confirmedReservation?.booking_id !== bookingRecord?.id ||
+        confirmedReservation?.jobber_job_id !== jobberJobId ||
+        confirmedReservation?.jobber_visit_id !== jobberVisitId ||
+        !requestFingerprintMatches(
+          confirmedReservation?.result_json,
+          requestFingerprint,
+        )
+      ) {
+        reservationSettled = true;
+        return new Response(
+          JSON.stringify({
+            success: false,
+            pendingManualConfirmation: true,
+            code: "BOOKING_REPLAY_PERSISTENCE_FAILED",
+            retryable: false,
+            bookingId: bookingRecord?.id,
+            jobberJobId,
+            jobberVisitId,
+            error:
+              "The provider and local booking exist, but the duplicate-prevention result could not be verified. Do not repeat this request.",
+          }),
+          {
+            status: 202,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
     }
     reservationSettled = true;
@@ -2217,7 +3318,7 @@ Deno.serve(async (req) => {
           serviceAddress: booking.customer.address || "",
           services: (booking.services || []).map((s) => ({ name: (s as any).name, price: (s as any).price })),
           subtotal: booking.subtotal,
-          discountAmount: booking.discountAmount || 0,
+          discountAmount: canonicalDiscountTotal,
           discountCode: booking.discountCode ?? null,
           total: booking.total,
           technicianName: technicianNames,
@@ -2315,9 +3416,28 @@ Deno.serve(async (req) => {
     );
 
     } finally {
-      // Release the hold on any failure path that didn't settle it.
+      // A provider mutation may have committed even when control exits through
+      // an unexpected error. Keep that reservation in non-expiring `executing`
+      // state until reconciliation; only pre-provider failures return capacity.
       if (!reservationSettled) {
-        await releaseReservation();
+        if (providerMutationAttempted) {
+          console.error(
+            "Leaving booking reservation protected after an unsettled provider mutation",
+            reservationGroupId,
+          );
+        } else {
+          const unprotected = await unprotectReservationAfterFailure(
+            supabase,
+            reservationGroupId!,
+            "released",
+          );
+          if (!unprotected.ok) {
+            console.error(
+              "Failed to release pre-provider booking reservation",
+              unprotected.reason,
+            );
+          }
+        }
       }
     }
 

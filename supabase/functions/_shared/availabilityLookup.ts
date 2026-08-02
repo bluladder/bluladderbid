@@ -47,7 +47,10 @@ import {
 } from "./autonomousSendGate.ts";
 import { getMirrorFreshness } from "./scheduleFreshness.ts";
 import { findByConversation } from "./quoteSession.ts";
-import { sameAddress } from "./profile/normalizeAddress.ts";
+import {
+  formatServiceAddress,
+  sameAddress,
+} from "./profile/normalizeAddress.ts";
 import { buildOfferSlotId } from "./slotOffer.ts";
 import { PUBLIC_BOOKING_ORGANIZATION_ID } from "./publicBookingServiceArea.ts";
 
@@ -398,18 +401,14 @@ async function fetchPropertyAddress(
   try {
     let query = supabase
       .from("properties")
-      .select("street, city, state, postal_code, formatted_address")
+      .select("street, city, state, postal_code")
       .eq("id", propertyId);
     query = organizationId
       ? query.eq("organization_id", organizationId)
       : query.is("organization_id", null);
     const { data } = await query.maybeSingle();
     if (!data) return null;
-    if (data.formatted_address) return String(data.formatted_address);
-    const parts = [data.street, data.city, data.state, data.postal_code].filter(
-      Boolean,
-    );
-    return parts.length ? parts.join(", ") : null;
+    return formatServiceAddress(data);
   } catch {
     return null;
   }
@@ -458,6 +457,8 @@ export interface GetAvailableSlotsDeps {
   readinessOverride?: BookingReadiness;
   /** Server-derived tenant authority. Voice callers must always provide it. */
   expectedOrganizationId?: string | null;
+  /** Voice live booking currently requires the entire quote to be firm. */
+  requireFullyFirmQuote?: boolean;
   /** Test-only injection. Production code MUST NOT set this. */
   gateOverride?: AutonomousGateDecision;
 }
@@ -551,6 +552,9 @@ export async function getAvailableSlots(
     !readiness.quote.inputs_current ||
     readiness.quote.canonical_total == null ||
     !readiness.quote.pricing_current ||
+    (deps.requireFullyFirmQuote === true &&
+      (readiness.quote.manual_review_required ||
+        readiness.quote.final_disposition !== "firm")) ||
     !readiness.duration.resolved ||
     !readiness.duration.minutes ||
     readiness.duration.minutes <= 0 ||
@@ -735,8 +739,9 @@ export async function getAvailableSlots(
     if (slots.length >= cap) break;
     if (!s?.startTime || !s?.endTime) continue;
     const startAt = String(s.startTime);
-    const endAt = String(s.endTime);
-    const intervalMinutes = (Date.parse(endAt) - Date.parse(startAt)) / 60_000;
+    const providerEndAt = String(s.endTime);
+    const startMs = Date.parse(startAt);
+    const intervalMinutes = (Date.parse(providerEndAt) - startMs) / 60_000;
     // The availability provider currently derives technician-specific
     // durations independently. It may offer a slot only when the actual
     // returned interval is at least the canonical quote duration. This keeps
@@ -748,6 +753,12 @@ export async function getAvailableSlots(
       durationRejected++;
       continue;
     }
+    // A provider may return a wider free block than the job actually needs.
+    // Offer only the canonical appointment interval so the spoken offer and
+    // downstream booking command agree on the exact end time.
+    const endAt = new Date(
+      startMs + canonicalDurationMinutes * 60_000,
+    ).toISOString();
     const date = ymdInBusinessTz(startAt);
     const key = `${date}|${startAt}`;
     if (seen.has(key)) continue;

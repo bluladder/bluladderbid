@@ -13,6 +13,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateServiceArea } from "./serviceArea.ts";
 import {
   deSpacedStreetCandidates,
+  formatServiceAddress,
   sameAddress,
 } from "./profile/normalizeAddress.ts";
 import { emitCampaignEvent as emitCampaignEventShared } from "./campaignEmitter.ts";
@@ -37,9 +38,15 @@ import {
   sessionInputsKey,
 } from "./quoteSession.ts";
 import { getBookingReadiness } from "./bookingReadiness.ts";
+import { readIdentityAnchor } from "./identityAnchor.ts";
 import { quoteIdentityMatches } from "./voice/voiceJourneyContract.ts";
 import { quoteSessionFieldsToQuoteInput } from "./quoteSessionPricingAdapter.ts";
 import { PUBLIC_BOOKING_ORGANIZATION_ID } from "./publicBookingServiceArea.ts";
+import {
+  buildCanonicalVoiceBookingPayload,
+  type CanonicalVoiceBookingContract,
+  canonicalVoiceBookingResultMatches,
+} from "./voiceBookingAdapter.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -204,16 +211,17 @@ function voiceOrganizationCapabilityUnavailable() {
 function propertyAddressFromRow(
   row: Record<string, unknown> | null,
 ): string | null {
-  if (!row) return null;
-  const formatted = typeof row.formatted_address === "string"
-    ? row.formatted_address.trim()
+  return formatServiceAddress(row);
+}
+
+function comparableContactText(value: unknown): string {
+  return typeof value === "string"
+    ? value.trim().toLowerCase().replace(/\s+/g, " ")
     : "";
-  if (formatted) return formatted;
-  const composed = [row.street, row.city, row.state, row.postal_code]
-    .filter((value) => typeof value === "string" && value.trim())
-    .map((value) => String(value).trim())
-    .join(", ");
-  return composed || null;
+}
+
+function comparablePhone(value: unknown): string {
+  return typeof value === "string" ? value.replace(/\D/g, "") : "";
 }
 
 async function voiceConversationAuthorityMatches(
@@ -238,16 +246,29 @@ export async function callFunction(
   name: string,
   body: unknown,
 ): Promise<{ status: number; json: any }> {
-  const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Internal service-to-service call. Never exposed to the browser.
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      apikey: SERVICE_KEY,
-    },
-    body: JSON.stringify(body),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Internal service-to-service call. Never exposed to the browser.
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        apikey: SERVICE_KEY,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return {
+      status: 0,
+      json: {
+        success: false,
+        pendingManualConfirmation: true,
+        retryable: false,
+        code: "BOOKING_EDGE_OUTCOME_UNCERTAIN",
+      },
+    };
+  }
   let json: any = null;
   try {
     json = await resp.json();
@@ -495,6 +516,7 @@ async function canonicalVoiceAvailabilityTool(
     max_options: 3,
   }, {
     expectedOrganizationId: organizationId,
+    requireFullyFirmQuote: true,
   });
   if (result.status !== "ok") {
     const messages: Record<string, string> = {
@@ -782,7 +804,7 @@ async function createBookingTool(
   let conversationQuery = ctx.supabase
     .from("chat_conversations")
     .select(
-      "organization_id, quote_result, prospect_name, prospect_email, prospect_phone, service_address, property_id",
+      "organization_id, quote_result, prospect_name, prospect_email, prospect_phone, service_address, property_id, customer_id, confirmed_email_customer_id, quote_session_id",
     )
     .eq("id", ctx.conversationId);
   if (organizationId) {
@@ -829,6 +851,8 @@ async function createBookingTool(
     | ReturnType<typeof quoteSessionFieldsToQuoteInput>
     | null = null;
   let canonicalBookingFields: QuoteSessionFields | null = null;
+  let canonicalSessionCustomerId: string | null = null;
+  let canonicalSessionPropertyId: string | null = null;
   let canonicalQuoteIdentity: {
     quoteSessionId: string;
     quoteId: string | null;
@@ -850,6 +874,16 @@ async function createBookingTool(
         message: readiness.status === "duration_unavailable"
           ? "I do not have an authoritative duration, so no appointment was created."
           : "The quote, identity, property, service area, duration, or schedule is not ready for booking, so no appointment was created.",
+      };
+    }
+    if (
+      readiness.quote.manual_review_required ||
+      readiness.quote.final_disposition !== "firm"
+    ) {
+      return {
+        status: "manual_review_required",
+        message:
+          "This quote includes work that requires team review, so no appointment was created from the automated voice flow.",
       };
     }
     const session = await findQuoteSessionByConversation(
@@ -875,6 +909,8 @@ async function createBookingTool(
     quote = last;
     canonicalBookingFields = session.fields;
     canonicalBookingInput = quoteSessionFieldsToQuoteInput(session.fields);
+    canonicalSessionCustomerId = session.customerId ?? null;
+    canonicalSessionPropertyId = session.propertyId ?? null;
     canonicalQuoteIdentity = {
       quoteSessionId: session.id,
       quoteId: session.quoteId ?? null,
@@ -892,7 +928,77 @@ async function createBookingTool(
     };
   }
 
-  const email = convo?.prospect_email;
+  const prospectParts = String(convo?.prospect_name ?? "").trim().split(/\s+/)
+    .filter(Boolean);
+  let bookingCustomer = {
+    customerId: null as string | null,
+    firstName: prospectParts.shift() ?? "",
+    lastName: prospectParts.join(" "),
+    email: String(convo?.prospect_email ?? "").trim().toLowerCase(),
+    phone: String(convo?.prospect_phone ?? "").trim(),
+  };
+  if (ctx.channel === "voice") {
+    const identity = await readIdentityAnchor(
+      ctx.supabase,
+      ctx.conversationId,
+      organizationId,
+    );
+    if (
+      identity.identity_status !== "resolved" || !identity.resolved_customer_id
+    ) {
+      return {
+        status: "identity_blocked",
+        message:
+          "I couldn't verify the exact customer record, so no appointment was created.",
+      };
+    }
+    const customerId = identity.resolved_customer_id;
+    const { data: customer, error: customerError } = await ctx.supabase
+      .from("customers")
+      .select("id, organization_id, first_name, last_name, email, phone")
+      .eq("id", customerId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    const expectedName = [customer?.first_name, customer?.last_name]
+      .filter((value) => typeof value === "string" && value.trim())
+      .join(" ");
+    const sessionName = canonicalBookingFields?.name ?? "";
+    const sessionEmail = canonicalBookingFields?.email ?? "";
+    const sessionPhone = canonicalBookingFields?.phone ?? "";
+    const propertyId = typeof convo?.property_id === "string"
+      ? convo.property_id
+      : null;
+    if (
+      customerError || !customer ||
+      customer.organization_id !== organizationId ||
+      !customer.first_name?.trim() || !customer.last_name?.trim() ||
+      !customer.email?.trim() || !customer.phone?.trim() ||
+      canonicalSessionCustomerId !== customerId ||
+      canonicalSessionPropertyId !== propertyId ||
+      (convo?.customer_id && convo.customer_id !== customerId) ||
+      (convo?.confirmed_email_customer_id &&
+        convo.confirmed_email_customer_id !== customerId) ||
+      comparableContactText(sessionName) !==
+        comparableContactText(expectedName) ||
+      comparableContactText(sessionEmail) !==
+        comparableContactText(customer.email) ||
+      comparablePhone(sessionPhone) !== comparablePhone(customer.phone)
+    ) {
+      return {
+        status: "identity_conflict",
+        message:
+          "The verified customer, quote, and property records do not agree, so no appointment was created.",
+      };
+    }
+    bookingCustomer = {
+      customerId,
+      firstName: customer.first_name.trim(),
+      lastName: customer.last_name.trim(),
+      email: customer.email.trim().toLowerCase(),
+      phone: customer.phone.trim(),
+    };
+  }
+  const email = bookingCustomer.email;
   if (!email) {
     return {
       status: "missing_contact",
@@ -918,7 +1024,7 @@ async function createBookingTool(
       ? ctx.supabase
         .from("properties")
         .select(
-          "organization_id, formatted_address, street, city, state, postal_code",
+          "organization_id, street, city, state, postal_code",
         )
         .eq("id", propertyId)
       : null;
@@ -1044,11 +1150,17 @@ async function createBookingTool(
     };
   }
   // Offer expired.
-  if (latest?.expiresAt && Date.now() > new Date(latest.expiresAt).getTime()) {
+  if (
+    !latest?.offerVersion || !latest.expiresAt ||
+    !Number.isFinite(new Date(latest.expiresAt).getTime()) ||
+    Date.now() >= new Date(latest.expiresAt).getTime()
+  ) {
     await recordSlotFailure(
       ctx,
       "offer_expired",
-      `offer ${latest.offerVersion} expired at ${latest.expiresAt}`,
+      `offer ${latest?.offerVersion ?? "missing"} expired at ${
+        latest?.expiresAt ?? "missing"
+      }`,
       convo,
     );
     return {
@@ -1075,18 +1187,112 @@ async function createBookingTool(
     };
   }
 
-  // Two related keys:
-  //  * authKey  — conversation + opaque slot. Predictable by an authorizing
-  //    admin (they never see internal start times) and used to scope the
-  //    one-time live-write authorization.
-  //  * idempotencyKey — conversation + actual start time. Robust booking key so
-  //    a genuine re-book of a DIFFERENT time (after an availability refetch)
-  //    correctly creates a new booking instead of replaying an old one, while
-  //    real retries of the SAME booking still de-duplicate.
   const keyPrefix = ctx.channel === "voice" ? "voice" : "chat";
   const authKey = `${keyPrefix}|${ctx.conversationId}|${slotId}`;
-  const idempotencyKey = `${keyPrefix}|${ctx.conversationId}|${slot.startTime}`;
-
+  let expectedVoiceContract: CanonicalVoiceBookingContract | null = null;
+  let bookingRequest: Record<string, unknown>;
+  if (ctx.channel === "voice") {
+    if (
+      !organizationId || !canonicalQuoteIdentity || !canonicalBookingFields ||
+      !canonicalBookingInput || !bookingCustomer.customerId
+    ) {
+      return {
+        status: "canonical_booking_context_incomplete",
+        message:
+          "The verified quote, customer, property, or booking context is incomplete, so no appointment was created.",
+      };
+    }
+    const built = await buildCanonicalVoiceBookingPayload({
+      voiceSessionToken: ctx.sessionToken,
+      organizationId,
+      conversationId: ctx.conversationId,
+      customerId: bookingCustomer.customerId,
+      propertyId: String(convo?.property_id ?? ""),
+      customer: bookingCustomer,
+      serviceAddress: resolvedAddress,
+      quoteIdentity: canonicalQuoteIdentity,
+      bookingInputsKey: sessionBookingInputsKey(canonicalBookingFields),
+      quote: quote as Record<string, unknown>,
+      selectedServiceIds: [...(canonicalBookingFields.services ?? [])],
+      homeDetails: canonicalBookingInput.homeDetails as unknown as Record<
+        string,
+        unknown
+      >,
+      additionalServices: canonicalBookingInput
+        .additionalServices as unknown as Record<
+          string,
+          unknown
+        >,
+      offer: {
+        offerVersion: latest.offerVersion,
+        offerExpiresAt: latest.expiresAt,
+        slotId,
+        scheduledStart: String(slot.startTime ?? ""),
+        scheduledEnd: String(slot.endTime ?? ""),
+        timezone: String(slot.timezone ?? ""),
+        durationMinutes: Number(slot.durationMinutes),
+        technicianId: String(slot.__technicianId ?? ""),
+        isTeamJob: slot.__isTeamJob === true,
+        teamTechnicianIds: Array.isArray(slot.__teamTechnicianIds)
+          ? slot.__teamTechnicianIds.map(String)
+          : [],
+      },
+    });
+    if (!built.ok) {
+      return {
+        status: built.code,
+        message:
+          "The verified quote and appointment offer do not form a complete booking request, so no appointment was created.",
+      };
+    }
+    expectedVoiceContract = built.payload.voiceContract;
+    bookingRequest = built.payload as unknown as Record<string, unknown>;
+  } else {
+    const result = quote as Record<string, unknown>;
+    const lineItems = Array.isArray(result.jobberLineItems)
+      ? result.jobberLineItems as Array<Record<string, unknown>>
+      : [];
+    const idempotencyKey =
+      `${keyPrefix}|${ctx.conversationId}|${slot.startTime}`;
+    bookingRequest = {
+      customer: {
+        firstName: bookingCustomer.firstName,
+        lastName: bookingCustomer.lastName,
+        email,
+        phone: bookingCustomer.phone,
+        address: resolvedAddress,
+      },
+      technicianId: slot.__technicianId,
+      isTeamJob: slot.__isTeamJob,
+      teamTechnicianIds: slot.__teamTechnicianIds,
+      scheduledStart: slot.startTime,
+      scheduledEnd: slot.endTime,
+      durationMinutes: result.estimatedDurationMinutes,
+      services: lineItems.map((item) => ({
+        name: item.name,
+        price: item.unitPrice,
+        description: item.description,
+      })),
+      homeDetails: canonicalBookingInput?.homeDetails ??
+        result.__homeDetails ?? result.homeDetails ?? {},
+      additionalServices: canonicalBookingInput?.additionalServices ??
+        result.__additionalServices ?? result.additionalServices ?? undefined,
+      promotion: result.promotion && typeof result.promotion === "object"
+        ? {
+          id: (result.promotion as Record<string, unknown>).id,
+          windowCount:
+            (result.promotion as Record<string, unknown>).windowCount,
+        }
+        : null,
+      subtotal: result.serviceSubtotal ?? result.subtotal,
+      estimatedTax: result.estimatedTax,
+      total: result.estimatedTotal ?? result.total,
+      discountAmount: (result.discount as Record<string, unknown> | null)
+        ?.amount ?? 0,
+      discountCode: (result.discount as Record<string, unknown> | null)?.code,
+      idempotencyKey,
+    };
+  }
   // CONTROLLED TEST GUARD at the final booking boundary. If the customer is an
   // approved test identity (or global test-suppression is on), we simulate a
   // confirmed booking and NEVER call Jobber — UNLESS an admin has issued a
@@ -1095,7 +1301,7 @@ async function createBookingTool(
   // alerts) stays fully active either way; it lives at the delivery layer.
   const suppression = await checkSuppression(ctx.supabase, {
     email,
-    phone: convo?.prospect_phone,
+    phone: bookingCustomer.phone,
   });
   if (suppression.suppressed) {
     let authStatus = "denied";
@@ -1121,17 +1327,17 @@ async function createBookingTool(
     // conversation, slot, identity or key) stays fully simulated.
     if (authStatus !== "authorized" && authStatus !== "already_consumed") {
       let simulatedUpdate = ctx.supabase.from("chat_conversations").update({
-        booking_status: "confirmed",
+        last_error: "live booking authorization absent; simulation only",
         last_activity_at: new Date().toISOString(),
       }).eq("id", ctx.conversationId);
       simulatedUpdate = scopeConversationQuery(simulatedUpdate, ctx);
       await simulatedUpdate;
       return {
-        status: "confirmed",
+        status: "voice_beta_dry_run",
         confirmedTime: slot.displayTime,
         simulated: true,
         message:
-          "Booking confirmed (test identity — no live Jobber record created).",
+          "The booking simulation passed, but no Jobber appointment was created.",
       };
     }
     // authorized / already_consumed → fall through to the real Jobber write.
@@ -1139,24 +1345,10 @@ async function createBookingTool(
     // replays the original booking without creating any duplicate records.
   }
 
-  const { status, json } = await callFunction("jobber-create-booking", {
-    customer: {
-      name: convo?.prospect_name || "BluLadder Customer",
-      email,
-      phone: convo?.prospect_phone || "",
-      address: resolvedAddress,
-    },
-    technicianId: slot.__technicianId,
-    isTeamJob: slot.__isTeamJob,
-    teamTechnicianIds: slot.__teamTechnicianIds,
-    scheduledStart: slot.startTime,
-    scheduledEnd: slot.endTime,
-    homeDetails: canonicalBookingInput?.homeDetails ??
-      quote.__homeDetails ?? quote.homeDetails ?? {},
-    additionalServices: canonicalBookingInput?.additionalServices ??
-      quote.__additionalServices ?? quote.additionalServices ?? undefined,
-    idempotencyKey,
-  });
+  const { status, json } = await callFunction(
+    "jobber-create-booking",
+    bookingRequest,
+  );
 
   if (status === 409 && json?.code === "CONFLICT") {
     // A GENUINE reservation conflict. This is the only path that may tell the
@@ -1246,6 +1438,23 @@ async function createBookingTool(
   const bookingId = typeof json?.bookingId === "string" && json.bookingId
     ? json.bookingId
     : null;
+  if (
+    ctx.channel === "voice" &&
+    (!expectedVoiceContract ||
+      !canonicalVoiceBookingResultMatches(expectedVoiceContract, json))
+  ) {
+    await recordSlotFailure(
+      ctx,
+      "malformed_or_mismatched_booking_result",
+      "jobber-create-booking did not return the exact persisted canonical booking identity",
+      convo,
+    );
+    return {
+      status: "uncertain",
+      message:
+        "I couldn't verify the exact provider and BluLadder booking records. It is not confirmed here. Please do not try again; a team member must verify the result.",
+    };
+  }
   if (json?.status === "needs_attention" || json?.needsAttention) {
     let attentionUpdate = ctx.supabase.from("chat_conversations").update({
       booking_status: "needs_attention",
@@ -1321,7 +1530,28 @@ async function createBookingTool(
     last_activity_at: new Date().toISOString(),
   }).eq("id", ctx.conversationId);
   confirmedUpdate = scopeConversationQuery(confirmedUpdate, ctx);
-  await confirmedUpdate;
+  const { data: confirmedConversation, error: confirmedConversationError } =
+    await confirmedUpdate
+      .select("id, organization_id, booking_status")
+      .maybeSingle();
+  if (
+    confirmedConversationError || !confirmedConversation ||
+    confirmedConversation.booking_status !== "confirmed" ||
+    (organizationId &&
+      confirmedConversation.organization_id !== organizationId)
+  ) {
+    await recordSlotFailure(
+      ctx,
+      "conversation_confirmation_persistence_failed",
+      "provider and local booking succeeded but the conversation confirmation could not be persisted",
+      convo,
+    );
+    return {
+      status: "uncertain",
+      message:
+        "The scheduling provider accepted the appointment, but I couldn't verify the final conversation record. Please do not repeat the request; our team must reconcile it.",
+    };
+  }
 
   // Persist the original result against the (now-consumed) authorization so an
   // audit trail and any idempotent replay can reference it. No-op for normal
@@ -1347,7 +1577,7 @@ async function createBookingTool(
       : null,
     providerStatus: "accepted",
     localStatus: "persisted",
-    message: "Booking confirmed.",
+    message: "Your appointment is confirmed.",
     event: "booking_completed",
   };
 }
