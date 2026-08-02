@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { deterministicUuid } from "../deterministicUuid.ts";
+import type { QuoteSession } from "../quoteSession.ts";
 import type { ConversationFacts } from "../conversationState.ts";
 import type { OrganizationAuthorityResolution } from "../organizationAuthority.ts";
 import {
@@ -40,6 +41,10 @@ import {
   deliverVoiceQuoteByText,
   type VoiceQuoteDeliveryResult,
 } from "./quoteByTextDelivery.ts";
+import {
+  buildCanonicalPrePriceRecap,
+  promptForCanonicalField,
+} from "./voiceCanonicalIntake.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -97,6 +102,43 @@ function now(): number {
 
 function elapsed(started: number): number {
   return Math.max(0, Math.round(now() - started));
+}
+
+function objectContains(expected: unknown, actual: unknown): boolean {
+  if (expected === null || typeof expected !== "object") {
+    return Object.is(expected, actual);
+  }
+  if (Array.isArray(expected)) {
+    return Array.isArray(actual) &&
+      expected.length === actual.length &&
+      expected.every((value, index) => objectContains(value, actual[index]));
+  }
+  if (actual === null || typeof actual !== "object" || Array.isArray(actual)) {
+    return false;
+  }
+  return Object.entries(expected as Record<string, unknown>).every(
+    ([key, value]) =>
+      Object.prototype.hasOwnProperty.call(actual, key) &&
+      objectContains(value, (actual as Record<string, unknown>)[key]),
+  );
+}
+
+function proposedFieldsAlreadyPresent(
+  turn: ControllerTurnResult,
+  latest: QuoteSession | null,
+): boolean {
+  const expected = turn.sessionPatch.fields;
+  return !!latest && !!expected && objectContains(expected, latest.fields);
+}
+
+function recoveryPrompt(latest: QuoteSession | null): string {
+  const field = latest?.lastStep?.startsWith("asked:")
+    ? latest.lastStep.slice("asked:".length)
+    : null;
+  if (!field) return "Please repeat your last answer.";
+  return field === "priceChangingAssumptionConfirmation"
+    ? buildCanonicalPrePriceRecap(latest!.fields)
+    : promptForCanonicalField(field);
 }
 
 function persistenceFailureSpoken(turn: ControllerTurnResult): string {
@@ -200,14 +242,27 @@ export async function executeControllerRoute(
   let identityPreparation: VoiceIdentityPreparationResult | null = null;
 
   const persistenceStarted = now();
-  const persistence = await persist(
+  let persistence = await persist(
     input.supabase,
     turn.sessionId,
     turn.sessionPatch,
   );
   timings.persistenceMs = elapsed(persistenceStarted);
+  let conflictPrompt: string | null = null;
+  if (persistence.status === "conflict") {
+    const latest = await readSession(
+      input.supabase,
+      turn.sessionId,
+      input.organizationId,
+    );
+    if (proposedFieldsAlreadyPresent(turn, latest)) {
+      persistence = { status: "noop" };
+    } else {
+      conflictPrompt = recoveryPrompt(latest);
+    }
+  }
   if (persistence.status === "conflict" || persistence.status === "error") {
-    spoken = persistenceFailureSpoken(turn);
+    spoken = conflictPrompt ?? persistenceFailureSpoken(turn);
     event = "workflow_controller_persistence_blocked";
   } else {
     stateCommitted = true;
