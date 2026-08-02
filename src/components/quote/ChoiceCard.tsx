@@ -11,6 +11,8 @@ interface ChoiceCardProps {
   badge?: string;
   meta?: ReactNode;
   onSelect: () => void;
+  variant?: 'default' | 'compact';
+  testId?: string;
 }
 
 export function ChoiceCard({
@@ -22,17 +24,24 @@ export function ChoiceCard({
   badge,
   meta,
   onSelect,
+  variant = 'default',
+  testId,
 }: ChoiceCardProps) {
+  const compact = variant === 'compact';
+
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
       aria-label={`${selected ? 'Selected' : 'Add'} ${title}`}
+      data-testid={testId}
+      data-variant={variant}
       className={cn(
-        'group relative flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left',
+        'group relative flex min-h-16 w-full items-center gap-3 rounded-xl border p-3 text-left',
         'transition-colors hover:border-primary/50 hover:bg-primary/[0.03]',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        compact ? 'border-border/70 bg-muted/35' : 'bg-card',
         selected && 'border-primary bg-primary/5',
         featured && 'border-primary/60 ring-1 ring-primary/20',
       )}
@@ -57,7 +66,7 @@ export function ChoiceCard({
         <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>
       </span>
       <span className="flex shrink-0 items-center gap-2">
-        {meta && <span className="hidden text-xs text-muted-foreground sm:inline">{meta}</span>}
+        {meta && <span className="text-right text-xs text-muted-foreground">{meta}</span>}
         <span
           className={cn(
             'flex h-7 w-7 items-center justify-center rounded-full',

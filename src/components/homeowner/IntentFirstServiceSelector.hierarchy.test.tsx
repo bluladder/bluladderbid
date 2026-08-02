@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { IntentFirstServiceSelector } from './IntentFirstServiceSelector';
 import {
   DEFAULT_ADDITIONAL_SERVICES,
@@ -77,15 +77,19 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
     }
   });
 
-  it('collapses inactive services after selection and exposes independent Edit and Remove controls', () => {
+  it('keeps unselected services visible as compact choices after selection', () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole('button', { name: 'Add Window Cleaning' }));
 
     expect(screen.getByRole('button', { name: 'Edit Window Cleaning' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove Window Cleaning' })).toBeInTheDocument();
     expect(screen.getByTestId('service-editor-window-cleaning')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add House Wash' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Add another service' })).toBeInTheDocument();
+    expect(screen.getByTestId('compact-service-catalog')).toBeInTheDocument();
+    expect(screen.getByTestId('compact-service-houseWash')).toHaveAttribute('data-variant', 'compact');
+    expect(screen.getByRole('button', { name: 'Add House Wash' })).toHaveTextContent(
+      'Select for pricing',
+    );
+    expect(screen.queryByRole('button', { name: 'Add another service' })).toBeNull();
 
     fireEvent.click(screen.getByText('Crystal clear windows, inside or out'));
     expect(screen.getByRole('button', { name: 'Remove Window Cleaning' })).toBeInTheDocument();
@@ -95,21 +99,150 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
     expect(screen.getByRole('button', { name: 'Add Window Cleaning' })).toBeInTheDocument();
   });
 
-  it('keeps native keyboard semantics and supports multi-service selection', () => {
+  it('keeps keyboard semantics, preserves prior selections, and focuses the newest service', async () => {
     render(<Harness />);
     const windowChoice = screen.getByRole('button', { name: 'Add Window Cleaning' });
     windowChoice.focus();
     expect(document.activeElement).toBe(windowChoice);
     fireEvent.click(windowChoice, { detail: 0 });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add another service' }));
     const houseChoice = screen.getByRole('button', { name: 'Add House Wash' });
     expect(houseChoice.tagName).toBe('BUTTON');
+    expect(houseChoice).toHaveAttribute('data-variant', 'compact');
+    houseChoice.focus();
+    expect(document.activeElement).toBe(houseChoice);
     fireEvent.click(houseChoice, { detail: 0 });
 
     expect(screen.getByRole('button', { name: 'Edit Window Cleaning' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit House Wash' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Add Gutter Cleaning' })).toBeNull();
+    expect(screen.queryByTestId('service-editor-window-cleaning')).toBeNull();
+    expect(screen.getByTestId('service-editor-houseWash')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add Gutter Cleaning' })).toHaveAttribute(
+      'data-variant',
+      'compact',
+    );
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit House Wash' }));
+    });
+  });
+
+  it('shows authoritative totals for every selected service summary', () => {
+    render(
+      <IntentFirstServiceSelector
+        services={{
+          ...DEFAULT_ADDITIONAL_SERVICES,
+          windowCleaning: true,
+          drivewayCleaning: {
+            ...DEFAULT_ADDITIONAL_SERVICES.drivewayCleaning,
+            enabled: true,
+          },
+          pressureWashing: {
+            ...DEFAULT_ADDITIONAL_SERVICES.pressureWashing,
+            enabled: true,
+            frontPorch: { enabled: true, sqft: 100, surfaceType: 'concrete' },
+          },
+          gutterCleaning: true,
+          houseWash: true,
+          roofCleaning: true,
+          solarPanelCleaning: {
+            ...DEFAULT_ADDITIONAL_SERVICES.solarPanelCleaning,
+            enabled: true,
+          },
+          screenRepair: {
+            ...DEFAULT_ADDITIONAL_SERVICES.screenRepair,
+            enabled: true,
+          },
+        }}
+        servicePrices={prices}
+        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+        onChange={() => {}}
+        onHomeDetailsChange={() => {}}
+        windowPromo={null}
+        quotePhase="firm"
+      />,
+    );
+
+    const expected = [
+      ['Window Cleaning', '$250'],
+      ['Driveway Cleaning', '$175'],
+      ['Pressure Washing', '$125'],
+      ['Gutter Cleaning', '$225'],
+      ['House Wash', '$300'],
+      ['Roof Cleaning', '$450'],
+      ['Solar Panel Cleaning', '$200'],
+      ['Screen Repair', '$70'],
+    ];
+    const summaries = screen.getAllByTestId('selected-service-summary');
+    expect(summaries).toHaveLength(expected.length);
+    for (const [title, total] of expected) {
+      const summary = summaries.find((candidate) => candidate.textContent?.includes(title));
+      expect(summary).toBeDefined();
+      expect(summary).toHaveTextContent(total);
+    }
+  });
+
+  it('requires a pressure-washing area before showing an authoritative amount', () => {
+    render(
+      <Harness
+        initial={{
+          ...DEFAULT_ADDITIONAL_SERVICES,
+          pressureWashing: {
+            ...DEFAULT_ADDITIONAL_SERVICES.pressureWashing,
+            enabled: true,
+          },
+        }}
+        featuredService="pressureWashing"
+      />,
+    );
+
+    expect(screen.getByTestId('selected-service-summary')).toHaveTextContent(
+      'Select at least one area for pricing',
+    );
+    expect(screen.getByTestId('pressure-washing-service-total')).toHaveTextContent(
+      'Select at least one area for pricing',
+    );
+    expect(document.body.textContent).not.toContain('$125');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Front Porch' }));
+    expect(screen.getByTestId('selected-service-summary')).toHaveTextContent('$125');
+    expect(screen.getByTestId('pressure-washing-service-total')).toHaveTextContent('$125');
+  });
+
+  it('suppresses stale selected-service totals while repricing', () => {
+    render(
+      <IntentFirstServiceSelector
+        services={{
+          ...DEFAULT_ADDITIONAL_SERVICES,
+          windowCleaning: true,
+          drivewayCleaning: {
+            ...DEFAULT_ADDITIONAL_SERVICES.drivewayCleaning,
+            enabled: true,
+          },
+          roofCleaning: true,
+          solarPanelCleaning: {
+            ...DEFAULT_ADDITIONAL_SERVICES.solarPanelCleaning,
+            enabled: true,
+          },
+          screenRepair: {
+            ...DEFAULT_ADDITIONAL_SERVICES.screenRepair,
+            enabled: true,
+          },
+        }}
+        servicePrices={prices}
+        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+        onChange={() => {}}
+        onHomeDetailsChange={() => {}}
+        windowPromo={null}
+        quotePhase="loading"
+      />,
+    );
+
+    const summaries = screen.getAllByTestId('selected-service-summary');
+    expect(summaries).toHaveLength(5);
+    for (const summary of summaries) {
+      expect(summary).toHaveTextContent('Recalculating…');
+      expect(summary.textContent).not.toMatch(/\$\d/);
+    }
   });
 
   it('puts a known intended service first, selected, active, and expanded', () => {
