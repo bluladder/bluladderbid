@@ -74,14 +74,14 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
   },
   {
     id: "hardWaterAffectedWindowEquivalents",
-    prompt: "How many windows have hard-water staining?",
+    prompt: "About how many window equivalents have hard-water staining?",
     label: "Hard-water affected count",
     engineMissingTokens: ["hardWaterAffectedWindowEquivalents"],
     purpose: "Applies the approved $10 charge only to affected window equivalents.",
   },
   {
     id: "ladderAffectedWindowEquivalents",
-    prompt: "How many windows need unusual ladder access?",
+    prompt: "About how many window equivalents require unusual dedicated ladder access?",
     label: "Unusual ladder-access count",
     engineMissingTokens: ["ladderAffectedWindowEquivalents"],
     purpose: "Applies the approved $5 charge only to unusually accessed windows.",
