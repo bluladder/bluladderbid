@@ -250,6 +250,30 @@ if (
   fail("hosted ledger stop gates changed");
 }
 
+if (
+  manifest.evidence.validator_version !==
+    "voice-artifact-retention-lovable-evidence-v2" ||
+  manifest.cli_safety.include_all_prohibited !== true ||
+  manifest.cli_safety.migration_repair_prohibited !== true ||
+  manifest.cli_safety.generated_migration_reconciliation_required !== true
+) {
+  fail("evidence validator version or CLI prohibition changed");
+}
+const replaySafety = manifest.replay_safety ?? {};
+if (
+  JSON.stringify(replaySafety.accepted_proof_modes) !==
+    JSON.stringify([
+      "supabase_cli_zero_selection_dry_run",
+      "lovable_native_ledger_git_reconciliation",
+    ]) ||
+  replaySafety.lovable_native_requires_control_plane !== "lovable_cloud" ||
+  replaySafety.expected_reconciled_ledger_count !==
+    manifest.postflight.expected_ledger_count ||
+  replaySafety.supabase_cli_claim_prohibited_for_lovable_native !== true
+) {
+  fail("replay-safety proof contract changed");
+}
+
 requireFragments(runbook, "runbook", [
   "Do not retry",
   "supabase db push --include-all",
@@ -258,6 +282,9 @@ requireFragments(runbook, "runbook", [
   manifest.environment.lovable_project_id,
   manifest.environment.project_ref,
   "Exact one-step production authorization",
+  "supabase_cli_zero_selection_dry_run",
+  "lovable_native_ledger_git_reconciliation",
+  "retained_pre_execution",
 ]);
 if (!/dry-run must select\s+nothing/i.test(runbook)) {
   fail("runbook does not require a zero-migration CLI dry-run");
