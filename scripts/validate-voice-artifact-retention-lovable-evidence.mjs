@@ -1,9 +1,14 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
+const GIT_BLOB = /^[0-9a-f]{40}$/;
 const VERSION = /^[0-9]{14}$/;
+const CLI_PROOF = "supabase_cli_zero_selection_dry_run";
+const LOVABLE_PROOF = "lovable_native_ledger_git_reconciliation";
+const sha256Hex = (value) => createHash("sha256").update(value).digest("hex");
 const fail = (message) => {
   throw new Error(`Voice retention Lovable evidence: ${message}`);
 };
@@ -192,18 +197,89 @@ export function validateVoiceRetentionLovableEvidence(
     fail("generated Lovable migration is not the exact execution receipt");
   }
 
+  // ------------------------------------------------------------------
+  // Replay-safety proof. Two truthful proofs are accepted and the
+  // never-replay / never-repair / never-include-all assertions apply to
+  // BOTH. Proof A is the linked Supabase CLI ordinary zero-selection dry
+  // run. Proof B is a Lovable-native ledger/Git reconciliation, valid only
+  // when the production control plane is Lovable Cloud (no caller-supplied
+  // migration version, no linked CLI credentials) and only when it never
+  // claims that the Supabase CLI ran.
+  // ------------------------------------------------------------------
   const cli = evidence.cli_safety ?? {};
   if (
     cli.generated_migration_reconciled !== true ||
-    cli.dry_run_selected_migrations !== 0 ||
-    cli.canonical_source_selected !== false ||
     cli.include_all_used !== false ||
     cli.migration_repair_used !== false ||
     cli.historical_replay_used !== false
   ) {
-    fail("future CLI replay guard not proven");
+    fail("future replay guard not proven");
   }
-  requireSha(cli.dry_run_output_sha256, "CLI dry-run output hash");
+  const replay = evidence.replay_safety ?? {};
+  const proofMode = replay.proof_mode ?? CLI_PROOF;
+  if (proofMode !== CLI_PROOF && proofMode !== LOVABLE_PROOF) {
+    fail("unsupported replay-safety proof mode");
+  }
+  if (proofMode === CLI_PROOF) {
+    if (
+      cli.dry_run_selected_migrations !== 0 ||
+      cli.canonical_source_selected !== false
+    ) {
+      fail("future CLI replay guard not proven");
+    }
+    requireSha(cli.dry_run_output_sha256, "CLI dry-run output hash");
+  } else {
+    if (
+      manifest.production_control_plane !== "lovable_cloud" ||
+      evidence.production_control_plane !== "lovable_cloud"
+    ) {
+      fail("Lovable-native replay proof requires the lovable_cloud control plane");
+    }
+    if (cli.supabase_cli_executed !== false || cli.dry_run_output_sha256 !== "") {
+      fail("Lovable-native replay proof must not claim a Supabase CLI run");
+    }
+    const rec = replay.lovable_reconciliation ?? {};
+    if (rec.supabase_cli_claimed !== false) {
+      fail("Lovable-native replay proof must not claim a Supabase CLI run");
+    }
+    if (
+      rec.generated_version !== postflight.lovable_execution_version ||
+      rec.generated_path !== generated.path ||
+      rec.generated_sha256 !== generated.sha256 ||
+      rec.generated_bytes !== generated.bytes ||
+      rec.generated_commit_sha !== generated.commit_sha
+    ) {
+      fail("Lovable reconciliation does not match the generated receipt");
+    }
+    if (!GIT_BLOB.test(rec.generated_git_blob ?? "")) {
+      fail("Lovable reconciliation git blob invalid");
+    }
+    if (
+      rec.generated_commit_reachable_from_head !== true ||
+      rec.generated_commit_author_is_lovable_bot !== true
+    ) {
+      fail("Lovable reconciliation Git receipt is not established");
+    }
+    if (
+      rec.ledger_rows !== manifest.postflight.expected_ledger_count ||
+      rec.canonical_source_version_rows !== 0 ||
+      rec.exact_payload_rows !== manifest.postflight.expected_exact_payload_rows ||
+      rec.duplicate_payload_rows !== 0 ||
+      rec.ambiguous_rows !== 0 ||
+      rec.matching_provenance_rows !== 1
+    ) {
+      fail("Lovable ledger reconciliation is not exact");
+    }
+    requireSha(
+      rec.reconciliation_output_sha256,
+      "Lovable reconciliation output hash",
+    );
+    if (typeof rec.reconciliation_capture === "string") {
+      if (sha256Hex(rec.reconciliation_capture) !== rec.reconciliation_output_sha256) {
+        fail("Lovable reconciliation capture hash does not match its bytes");
+      }
+    }
+  }
 
   if (
     evidence.failure?.incident_opened !== false ||
