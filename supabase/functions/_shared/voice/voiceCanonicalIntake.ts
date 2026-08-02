@@ -429,6 +429,10 @@ function patchForField(
       return isPositiveInteger(number)
         ? { solarScreenAffectedWindowCount: number }
         : null;
+    case "solarScreenServiceRequested": {
+      const answer = yesNo(text);
+      return answer === null ? null : { solarScreenServiceRequested: answer };
+    }
     case "enclosedPatioProfile":
       if (/\b(no|none|don'?t|without)\b/i.test(text)) {
         return { enclosedPatioProfile: "none" };
@@ -443,6 +447,10 @@ function patchForField(
         return { enclosedPatioProfile: "screened" };
       }
       return null;
+    case "screenedEnclosureSoftWash": {
+      const answer = yesNo(text);
+      return answer === null ? null : { screenedEnclosureSoftWash: answer };
+    }
     case "enclosureWindowCount":
       return isPositiveInteger(number)
         ? { enclosureWindowCount: number }
@@ -477,6 +485,14 @@ function patchForField(
       ].filter((method): method is "phone" | "text" | "email" => !!method);
       return methods.length ? { preferredContactMethods: methods } : null;
     }
+    case "houseWashStainType":
+      if (/\b(?:rust|irrigation|orange)\b/i.test(text)) {
+        return { houseWashStainType: "rust" };
+      }
+      if (/\b(?:organic|algae|mildew|mold|green|black)\b/i.test(text)) {
+        return { houseWashStainType: "organic" };
+      }
+      return null;
     case "roofType": {
       if (/asphalt|shingle/i.test(text)) return { roofType: "asphalt_shingle" };
       for (
@@ -629,6 +645,69 @@ function patchForField(
           },
         }
         : null;
+    case "gutterRepairNeeds": {
+      const repairNeeds: string[] = [];
+      const add = (value: string) => {
+        if (!repairNeeds.includes(value)) repairNeeds.push(value);
+      };
+      if (/\b(?:no|none|nothing)\b/i.test(text)) add("none");
+      if (/\b(?:unsure|not sure|unknown)\b/i.test(text)) add("unsure");
+      if (/\b(?:leak|leaking|seam)\b/i.test(text)) add("leaking_seams");
+      if (
+        /\b(?:loose|reattach).*(?:gutter|section)|(?:gutter|section).*(?:loose|reattach)\b/i
+          .test(text)
+      ) add("loose_gutter_sections");
+      if (
+        /\b(?:detached|fallen).*(?:gutter|section)|(?:gutter|section).*(?:detached|fallen)\b/i
+          .test(text)
+      ) add("detached_gutter_sections");
+      if (
+        /\b(?:loose|reattach).*downspout|downspout.*(?:loose|reattach)\b/i
+          .test(text)
+      ) add("loose_downspouts");
+      if (
+        /\b(?:detached|fallen).*downspout|downspout.*(?:detached|fallen)\b/i
+          .test(text)
+      ) add("detached_downspouts");
+      if (/\b(?:other|another|something else)\b/i.test(text)) {
+        add("another_repair_need");
+      }
+      if (!repairNeeds.length) return null;
+      return {
+        gutterAddons: {
+          ...(fields.gutterAddons ?? {}),
+          repairNeeds,
+          minorRepairs: !repairNeeds.every((value) =>
+            value === "none" || value === "unsure" ||
+            value === "another_repair_need"
+          ),
+        },
+      };
+    }
+    case "gutterRepairNotes": {
+      const note = text.trim().slice(0, 500);
+      return note.length >= 3
+        ? {
+          gutterAddons: {
+            ...(fields.gutterAddons ?? {}),
+            repairNotes: note,
+          },
+        }
+        : null;
+    }
+    case "houseWashPatioSelections": {
+      const frontSelected = /\bfront\b/i.test(text);
+      const backSelected = /\b(?:back|rear)\b/i.test(text);
+      const both = /\bboth\b/i.test(text);
+      if (!frontSelected && !backSelected && !both) return null;
+      return {
+        houseWashPatios: {
+          ...(fields.houseWashPatios ?? {}),
+          frontSelected: both || frontSelected,
+          backSelected: both || backSelected,
+        },
+      };
+    }
     case "houseWashPatioPricingMethod":
       if (/exact|square feet|square footage/i.test(text)) {
         return {
