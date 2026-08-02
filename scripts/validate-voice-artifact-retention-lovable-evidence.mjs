@@ -88,6 +88,16 @@ export function validateVoiceRetentionLovableEvidence(
   ) {
     fail("preflight identity, history, or stop gate mismatch");
   }
+  // The preflight snapshot is inherently a pre-execution state. After a
+  // committed execution it can only be a retained historical capture, so a
+  // truthful capture mode is recorded instead of demanding re-capture.
+  const captureMode = preflight.capture_mode ?? "fresh_pre_execution";
+  if (
+    captureMode !== "fresh_pre_execution" &&
+    captureMode !== "retained_pre_execution"
+  ) {
+    fail("preflight capture mode unsupported");
+  }
 
   const execution = evidence.execution ?? {};
   if (
@@ -292,6 +302,8 @@ export function validateVoiceRetentionLovableEvidence(
     ok: true,
     release_id: manifest.release_id,
     lovable_execution_version: postflight.lovable_execution_version,
+    replay_proof_mode: proofMode,
+    preflight_capture_mode: captureMode,
   };
 }
 
