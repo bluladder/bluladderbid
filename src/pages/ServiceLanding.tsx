@@ -358,6 +358,7 @@ const ServiceLanding = () => {
                   onHomeDetailsChange={handleHomeDetailsChange}
                   featuredService={config.preSelectService}
                   windowPromo={windowPromo}
+                  quotePhase={oneTimeQuote.phase}
                 />
               )}
               

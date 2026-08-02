@@ -1,12 +1,13 @@
-import { AlertCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import type { HouseWashDetails, SidingMaterial, StainType } from '@/types/homeowner';
+import { Checkbox } from '@/components/ui/checkbox';
+import type { HouseWashDetails, SidingMaterial } from '@/types/homeowner';
 
 interface HouseWashDetailsCardProps {
   details: HouseWashDetails;
   rustSurcharge: number;
+  showAuthoritativePrice: boolean;
+  priceStatus: string;
   onChange: (updates: Partial<HouseWashDetails>) => void;
 }
 
@@ -27,7 +28,15 @@ function formatPrice(price: number) {
   }).format(price);
 }
 
-export function HouseWashDetailsCard({ details, rustSurcharge, onChange }: HouseWashDetailsCardProps) {
+export function HouseWashDetailsCard({
+  details,
+  rustSurcharge,
+  showAuthoritativePrice,
+  priceStatus,
+  onChange,
+}: HouseWashDetailsCardProps) {
+  const rustSelected = details.stainType === 'rust';
+
   return (
     <div className="space-y-4">
       {/* Siding Material (informational only) */}
@@ -55,61 +64,43 @@ export function HouseWashDetailsCard({ details, rustSurcharge, onChange }: House
         </RadioGroup>
       </div>
       
-      {/* Stain Type */}
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">Primary Stain Type</Label>
-        <RadioGroup
-          value={details.stainType}
-          onValueChange={(v) => onChange({ stainType: v as StainType })}
-          className="grid gap-2 sm:grid-cols-2"
+      <div className="space-y-3">
+        <div className="rounded-lg border border-border bg-muted/30 p-3" data-testid="organic-cleaning-inclusion">
+          <div className="text-sm font-medium text-foreground">Organic Cleaning Included</div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Covers algae, mildew, cobwebs, dirt, and normal organic buildup.
+          </p>
+        </div>
+
+        <label
+          className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-all ${
+            rustSelected
+              ? 'border-primary bg-primary/10'
+              : 'border-border hover:border-primary/50'
+          }`}
+          data-testid="rust-treatment-option"
         >
-          <label
-            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-              details.stainType === 'organic'
-                ? 'border-primary bg-primary/10'
-                : 'border-border hover:border-primary/50'
-            }`}
-          >
-            <RadioGroupItem value="organic" className="mt-0.5" />
-            <div>
-              <div className="font-medium text-sm">Organic (Algae, Mildew, Dirt)</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                Most common staining — included in base price
-              </div>
+          <Checkbox
+            checked={rustSelected}
+            onCheckedChange={(checked) => onChange({ stainType: checked ? 'rust' : 'organic' })}
+            className="mt-0.5"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">Add Rust / Irrigation Stain Treatment</span>
+              {rustSelected && (
+                <span className="ml-auto text-xs font-semibold text-amber-700" data-testid="rust-surcharge-price">
+                  {showAuthoritativePrice && rustSurcharge > 0
+                    ? `+${formatPrice(rustSurcharge)}`
+                    : priceStatus}
+                </span>
+              )}
             </div>
-          </label>
-          <label
-            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-              details.stainType === 'rust'
-                ? 'border-primary bg-primary/10'
-                : 'border-border hover:border-primary/50'
-            }`}
-          >
-            <RadioGroupItem value="rust" className="mt-0.5" />
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">Rust / Irrigation Stains</span>
-                {details.stainType === 'rust' && rustSurcharge > 0 && (
-                  <span className="text-xs font-semibold text-amber-600">
-                    +{formatPrice(rustSurcharge)}
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                Requires specialized treatment
-              </div>
-            </div>
-          </label>
-        </RadioGroup>
-        
-        {details.stainType === 'rust' && (
-          <Alert className="bg-amber-50 border-amber-200">
-            <AlertCircle className="h-4 w-4 text-amber-600" />
-            <AlertDescription className="text-xs text-amber-800">
-              Rust and irrigation stains require specialized treatment products and additional time. A 15% surcharge applies.
-            </AlertDescription>
-          </Alert>
-        )}
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Specialized treatment for rust and sprinkler stains. Additional pricing applies.
+            </p>
+          </div>
+        </label>
       </div>
     </div>
   );

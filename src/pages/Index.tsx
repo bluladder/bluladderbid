@@ -303,6 +303,7 @@ const Index = () => {
                       onChange={handleAdditionalServicesChange}
                       onHomeDetailsChange={handleHomeDetailsChange}
                       windowPromo={windowPromo}
+                      quotePhase={oneTimeQuote.phase}
                     />
                   )}
                   
