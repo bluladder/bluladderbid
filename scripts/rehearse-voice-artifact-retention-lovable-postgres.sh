@@ -330,6 +330,11 @@ INSERT INTO supabase_migrations.schema_migrations (
   ],
   'synthetic_lovable_execution'
 );
+SELECT set_config(
+  'bluladder.fixture_fingerprint',
+  :'fixture_fingerprint',
+  false
+);
 DO $ledger_identity$
 BEGIN
   IF (SELECT count(*) FROM supabase_migrations.schema_migrations) <> 152
@@ -357,7 +362,8 @@ BEGIN
       ),
       'hex'
     ) FROM supabase_migrations.schema_migrations
-      WHERE version <= '20260801234014') <> :'fixture_fingerprint'
+      WHERE version <= '20260801234014') <>
+        current_setting('bluladder.fixture_fingerprint')
     OR (SELECT count(*) FROM supabase_migrations.schema_migrations
       WHERE version > '20260801234014') <> 1
     OR (SELECT count(*) FROM supabase_migrations.schema_migrations
