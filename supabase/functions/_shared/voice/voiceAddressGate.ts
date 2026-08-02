@@ -16,7 +16,11 @@ export interface VoiceAddressCandidate {
   /** Raw address string the caller gave us. */
   spokenAddress?: string;
   /** "pending" until the caller says yes; then "confirmed". */
-  status?: "pending" | "confirmed" | "house_number_mismatch" | "component_incomplete";
+  status?:
+    | "pending"
+    | "confirmed"
+    | "house_number_mismatch"
+    | "component_incomplete";
   /** The confirmed canonical address, once confirmed. */
   confirmedAddress?: string | null;
   components?: VoiceAddressComponents;
@@ -70,11 +74,15 @@ export function addressComponentsFromServiceAreaResult(
   result: Record<string, unknown> | null | undefined,
 ): VoiceAddressComponents {
   return {
-    house_number: typeof result?.streetNumber === "string" ? result.streetNumber : undefined,
+    house_number: typeof result?.streetNumber === "string"
+      ? result.streetNumber
+      : undefined,
     street: typeof result?.route === "string" ? result.route : undefined,
     city: typeof result?.city === "string" ? result.city : undefined,
     state: typeof result?.state === "string" ? result.state : undefined,
-    postal_code: typeof result?.postalCode === "string" ? result.postalCode : undefined,
+    postal_code: typeof result?.postalCode === "string"
+      ? result.postalCode
+      : undefined,
   };
 }
 
@@ -84,7 +92,9 @@ export function nextMissingAddressComponent(
   return COMPONENT_ORDER.find((key) => !components[key]?.trim()) ?? "street";
 }
 
-export function addressComponentQuestion(component: AddressComponentName): string {
+export function addressComponentQuestion(
+  component: AddressComponentName,
+): string {
   switch (component) {
     case "house_number":
       return buildHouseNumberQuestion();
@@ -119,6 +129,31 @@ export function normalizeAddressComponentAnswer(
     return /^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : null;
   }
   if (component === "unit") return raw.length <= 20 ? raw : null;
+  if (component === "street") {
+    const corrected = raw.match(
+      /\b([A-Za-z][A-Za-z'’-]{1,40})\s+(?:not|instead of)\s+[A-Za-z][A-Za-z'’-]{1,40}/i,
+    )?.[1];
+    const letters = [...raw.matchAll(
+      /\b([A-Za-z])\s+(?:as\s+in|for|like)\s+[A-Za-z][A-Za-z'’-]*/gi,
+    )].map((match) => match[1]);
+    const suffixMatches = [...raw.matchAll(
+      /\b(street|st|road|rd|drive|dr|lane|ln|court|ct|avenue|ave|boulevard|blvd|way|circle|cir|trail|trl|parkway|pkwy)\b/gi,
+    )];
+    // A spelling phrase may contain a suffix-shaped example ("R as in road").
+    // The actual suffix is the final suffix token supplied by the caller.
+    const suffix = suffixMatches.at(-1)?.[1];
+    if (letters.length >= 3) {
+      const spelled = letters.join("");
+      return [
+        spelled.charAt(0).toUpperCase() + spelled.slice(1).toLowerCase(),
+        suffix ? expandStreetSuffix(suffix) : "",
+      ].filter(Boolean).join(" ");
+    }
+    if (corrected) {
+      return [corrected, suffix ? expandStreetSuffix(suffix) : ""]
+        .filter(Boolean).join(" ");
+    }
+  }
   return raw.length <= 80 && !/@/.test(raw) ? raw : null;
 }
 

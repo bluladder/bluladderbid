@@ -59,6 +59,21 @@ import { parseSlotSelection } from "../slotSelectionParser.ts";
 import { runTool } from "../aiTools.ts";
 import type { OrganizationAuthorityResolution } from "../organizationAuthority.ts";
 import { PUBLIC_BOOKING_ORGANIZATION_ID } from "../publicBookingServiceArea.ts";
+import {
+  type AddressComponentName,
+  addressComponentQuestion,
+  addressComponentsFromServiceAreaResult,
+  buildAddressReadback,
+  classifyAddressConfirmation,
+  formatAddressComponents,
+  nextMissingAddressComponent,
+  normalizeAddressComponentAnswer,
+} from "../voice/voiceAddressGate.ts";
+import {
+  buildSpokenEmailReadback,
+  parseSpokenEmail,
+} from "../voice/spokenEmail.ts";
+import { parseSpokenName } from "../voice/quoteByText.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -76,6 +91,13 @@ export interface ControllerInput {
   callerIdE164?: string | null;
   /** Server-derived only. Missing/blocked authority is never replaced by DFW. */
   organizationAuthority?: OrganizationAuthorityResolution | null;
+  /** Test seam for canonical provider/tool boundaries. */
+  runTool?: typeof runTool;
+  /** Sanitized stage timing callback; receives no customer content or ids. */
+  onTiming?: (
+    stage: "pricing" | "address_service_area" | "availability" | "booking",
+    durationMs: number,
+  ) => void;
 }
 
 function requireControllerOrganization(input: ControllerInput): string | null {
@@ -188,6 +210,47 @@ function digits(s: string): string {
   return s.replace(/\D/g, "");
 }
 
+export function buildNameReadback(name: string): string {
+  const spelled = name.split(/\s+/).filter(Boolean).map((part) =>
+    `${part}, spelled ${
+      part.replace(/[^A-Za-z]/g, "").toUpperCase().split("").join("-")
+    }`
+  ).join("; ");
+  return `I have ${spelled}. Is that exactly right?`;
+}
+
+export function correctedName(
+  utterance: string,
+  current: string,
+): string | null {
+  const firstCorrection = utterance.match(
+    /\b([A-Za-z][A-Za-z'’-]{0,23})\s+(?:not|instead of)\s+[A-Za-z][A-Za-z'’-]{0,23}/i,
+  )?.[1];
+  const currentParts = current.trim().split(/\s+/).filter(Boolean);
+  if (firstCorrection && currentParts.length >= 2) {
+    const first = firstCorrection.charAt(0).toUpperCase() +
+      firstCorrection.slice(1).toLowerCase();
+    return [first, ...currentParts.slice(1)].join(" ");
+  }
+  const direct = parseSpokenName(utterance);
+  if (direct && direct.split(/\s+/).length >= 2) return direct;
+  return null;
+}
+
+function correctedAddressComponent(text: string): AddressComponentName | null {
+  if (/\b(house|street)\s+number\b|\bnumber\b/i.test(text)) {
+    return "house_number";
+  }
+  if (/\bzip|postal\b/i.test(text)) return "postal_code";
+  if (/\bcity\b/i.test(text)) return "city";
+  if (/\bstate\b/i.test(text)) return "state";
+  if (/\bunit|suite|apartment\b/i.test(text)) return "unit";
+  if (/\bstreet|road|drive|lane|avenue|boulevard\b|\bnot\b/i.test(text)) {
+    return "street";
+  }
+  return null;
+}
+
 function tenantAuthorityBlockedLanguage(
   intent: "existing_quote" | "reschedule" | "cancel" | "field_memo",
 ): string {
@@ -235,6 +298,19 @@ export async function runControllerTurn(
   input: ControllerInput,
 ): Promise<ControllerTurnResult> {
   const organizationId = requireControllerOrganization(input);
+  const measure = async <T>(
+    stage: "pricing" | "address_service_area" | "availability" | "booking",
+    operation: () => Promise<T> | T,
+  ): Promise<T> => {
+    const started = performance.now();
+    try {
+      return await operation();
+    } finally {
+      try {
+        input.onTiming?.(stage, Math.round(performance.now() - started));
+      } catch { /* telemetry must never change the call */ }
+    }
+  };
   let session = await reloadSession(input.supabase, {
     sessionId: input.sessionId,
     conversationId: input.conversationId,
@@ -368,10 +444,28 @@ export async function runControllerTurn(
       const parsed = normalizeSpokenPhone(input.utterance);
       if (parsed) {
         capture(
-          mergeFields(session, { phone: parsed }),
-          "contact_number_captured",
+          mergeFields(session, {
+            phone: parsed,
+            callerIdConfirmationStatus: "manual_pending",
+          }),
+          "confirming:contact_phone",
         );
-        f = session.fields;
+        const spoken = `I have the mobile number ending in ${
+          digits(parsed).slice(-4)
+        }. Is that right?`;
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: {
+              kind: "ask",
+              field: "contact_phone",
+              prompt: spoken,
+            } as unknown as WorkflowAction,
+            spoken,
+          },
+        };
       } else {
         return {
           sessionId: session.id,
@@ -414,6 +508,417 @@ export async function runControllerTurn(
       ? "sms" as const
       : "web" as const,
   };
+  const executeTool = input.runTool ?? runTool;
+
+  const askConfirmation = (
+    field: "contact_name" | "contact_email" | "contact_phone" | "address",
+    spoken: string,
+  ): ControllerTurnResult => {
+    capture(session, `confirming:${field}`);
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action: {
+          kind: "ask",
+          field,
+          prompt: spoken,
+        } as unknown as WorkflowAction,
+        spoken,
+      },
+    };
+  };
+
+  const validateVoiceAddress = async (
+    candidate: string,
+  ): Promise<ControllerTurnResult> => {
+    const raw = await measure(
+      "address_service_area",
+      () =>
+        executeTool(
+          "validate_service_area",
+          toolContext,
+          { address: candidate },
+        ),
+    ) as Record<string, unknown>;
+    const components = addressComponentsFromServiceAreaResult(raw);
+    const status = String(raw.status ?? "validation_unavailable");
+    const formatted = typeof raw.formattedAddress === "string"
+      ? raw.formattedAddress.trim()
+      : "";
+    if (
+      (status === "eligible" || status === "manual_review_required") &&
+      formatted
+    ) {
+      const next = mergeFields(session, {
+        address: formatted,
+        addressComponents: components,
+        serviceAreaStatus: "pending_confirmation",
+        serviceAreaResult: raw,
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          pendingAddressComponent: null,
+        },
+      });
+      capture(next, "confirming:address");
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "address",
+            prompt: buildAddressReadback(formatted),
+          } as unknown as WorkflowAction,
+          spoken: buildAddressReadback(formatted),
+        },
+      };
+    }
+    if (status === "address_incomplete") {
+      const missing = nextMissingAddressComponent(components);
+      capture(
+        mergeFields(session, {
+          addressComponents: components,
+          serviceAreaStatus: "unavailable",
+          serviceAreaResult: raw,
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            pendingAddressComponent: missing,
+          },
+        }),
+        `address_component:${missing}`,
+      );
+      const spoken = addressComponentQuestion(missing);
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "address",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    }
+    capture(
+      mergeFields(session, {
+        serviceAreaStatus: "unavailable",
+        serviceAreaResult: raw,
+      }, { markDerived: ["serviceAreaStatus", "serviceAreaResult"] }),
+      "service_area_unavailable",
+    );
+    const spoken =
+      typeof raw.customerMessage === "string" && raw.customerMessage.trim()
+        ? raw.customerMessage
+        : "I couldn't verify that address right now, so I have not checked appointment times.";
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action: { kind: "handoff", reason: "safety_or_access_flag" },
+        spoken,
+      },
+    };
+  };
+
+  if (session.lastStep?.startsWith("confirming:")) {
+    const field = session.lastStep.slice("confirming:".length);
+    const answer = field === "address"
+      ? classifyAddressConfirmation(input.utterance)
+      : classifyExplicitConfirmation(input.utterance);
+    if (answer === "yes" || answer === "confirmed") {
+      if (field === "contact_name" && session.fields.name) {
+        capture(
+          mergeFields(session, { name: session.fields.name }, {
+            markVerified: ["name"],
+          }),
+          "contact_name_confirmed",
+        );
+      } else if (field === "contact_email" && session.fields.email) {
+        capture(
+          mergeFields(session, { email: session.fields.email }, {
+            markVerified: ["email"],
+          }),
+          "contact_email_confirmed",
+        );
+      } else if (field === "contact_phone" && session.fields.phone) {
+        capture(
+          mergeFields(session, {
+            phone: session.fields.phone,
+            callerIdConfirmationStatus: "contact_confirmed",
+          }, { markVerified: ["phone"] }),
+          "contact_number_confirmed",
+        );
+      } else if (field === "address" && session.fields.address) {
+        const candidateStatus = String(
+          session.fields.serviceAreaResult?.status ?? "",
+        );
+        const confirmedStatus = candidateStatus === "eligible"
+          ? "eligible"
+          : candidateStatus === "manual_review_required"
+          ? "manual_review_required"
+          : "unavailable";
+        capture(
+          mergeFields(session, {
+            address: session.fields.address,
+            serviceAreaStatus: confirmedStatus,
+          }, { markVerified: ["address", "serviceAreaStatus"] }),
+          "address_confirmed",
+        );
+      }
+      f = session.fields;
+    } else if (field === "contact_name") {
+      const correction = correctedName(
+        input.utterance,
+        session.fields.name ?? "",
+      );
+      if (correction) {
+        capture(
+          mergeFields(session, { name: correction }),
+          "confirming:contact_name",
+        );
+        return askConfirmation("contact_name", buildNameReadback(correction));
+      }
+      capture(session, "asked:contact_name");
+      const spoken = promptForCanonicalField("contact_name");
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "contact_name",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    } else if (field === "contact_email") {
+      const correction = parseSpokenEmail(input.utterance);
+      if (correction) {
+        capture(
+          mergeFields(session, { email: correction }),
+          "confirming:contact_email",
+        );
+        return askConfirmation(
+          "contact_email",
+          buildSpokenEmailReadback(correction),
+        );
+      }
+      capture(session, "asked:contact_email");
+      const spoken = promptForCanonicalField("contact_email");
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "contact_email",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    } else if (field === "contact_phone") {
+      const correction = normalizeSpokenPhone(input.utterance);
+      if (correction) {
+        capture(
+          mergeFields(session, {
+            phone: correction,
+            callerIdConfirmationStatus: "manual_pending",
+          }),
+          "confirming:contact_phone",
+        );
+        const spoken = `I have the mobile number ending in ${
+          digits(correction).slice(-4)
+        }. Is that right?`;
+        return askConfirmation("contact_phone", spoken);
+      }
+      const spoken = REPROMPT_PREFERRED_NUMBER;
+      capture(session, "asked:contact_phone");
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "contact_phone",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    } else if (field === "address") {
+      const component = correctedAddressComponent(input.utterance);
+      if (component) {
+        const correction = normalizeAddressComponentAnswer(
+          component,
+          input.utterance,
+        );
+        if (correction) {
+          const components = {
+            ...(session.fields.addressComponents ?? {}),
+            [component]: correction,
+          };
+          const completed = formatAddressComponents(components);
+          capture(
+            mergeFields(session, {
+              addressComponents: components,
+              voiceJourney: {
+                ...(session.fields.voiceJourney ?? {}),
+                pendingAddressComponent: null,
+              },
+            }),
+            "address_correction_captured",
+          );
+          return await validateVoiceAddress(completed);
+        }
+      }
+      const spoken =
+        "Which part should I correct: the house number, street, city, state, or ZIP code?";
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            pendingAddressComponent: null,
+          },
+        }),
+        "address_component:choose",
+      );
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "address",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    } else {
+      return askConfirmation(
+        field as "contact_name",
+        "Please say yes if that is exactly right, or tell me the correction.",
+      );
+    }
+  }
+
+  if (session.lastStep?.startsWith("address_component:")) {
+    const token = session.lastStep.slice("address_component:".length);
+    const component = token === "choose"
+      ? correctedAddressComponent(input.utterance)
+      : token as AddressComponentName;
+    if (!component) {
+      const spoken =
+        "Which part should I correct: the house number, street, city, state, or ZIP code?";
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "address",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    }
+    if (token === "choose") {
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            pendingAddressComponent: component,
+          },
+        }),
+        `address_component:${component}`,
+      );
+      const spoken = addressComponentQuestion(component);
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "address",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    }
+    const value = normalizeAddressComponentAnswer(component, input.utterance);
+    if (!value) {
+      const spoken = addressComponentQuestion(component);
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "address",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    }
+    const components = {
+      ...(session.fields.addressComponents ?? {}),
+      [component]: value,
+    };
+    const missing = nextMissingAddressComponent(components);
+    if (
+      !components.house_number || !components.street || !components.city ||
+      !components.state || !components.postal_code
+    ) {
+      capture(
+        mergeFields(session, {
+          addressComponents: components,
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            pendingAddressComponent: missing,
+          },
+        }),
+        `address_component:${missing}`,
+      );
+      const spoken = addressComponentQuestion(missing);
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "address",
+            prompt: spoken,
+          } as unknown as WorkflowAction,
+          spoken,
+        },
+      };
+    }
+    capture(
+      mergeFields(session, { addressComponents: components }),
+      "address_components_complete",
+    );
+    return await validateVoiceAddress(formatAddressComponents(components));
+  }
   if (session.lastStep === "offered_scheduling") {
     const answer = classifyExplicitConfirmation(input.utterance);
     if (answer === "declined") {
@@ -455,10 +960,14 @@ export async function runControllerTurn(
         },
       };
     }
-    const raw = await runTool(
-      "get_bluladder_availability",
-      toolContext,
-      {},
+    const raw = await measure(
+      "availability",
+      () =>
+        executeTool(
+          "get_bluladder_availability",
+          toolContext,
+          {},
+        ),
     ) as Record<string, unknown>;
     const slots = Array.isArray(raw.slots)
       ? raw.slots.filter((slot): slot is Record<string, unknown> =>
@@ -470,18 +979,63 @@ export async function runControllerTurn(
       ).slice(0, 3)
       : [];
     if (raw.status !== "ok" || slots.length === 0) {
-      const message = typeof raw.message === "string" && raw.message.trim()
+      const blockers = Array.isArray(raw.blockers)
+        ? raw.blockers.filter((blocker): blocker is Record<string, unknown> =>
+          !!blocker && typeof blocker === "object"
+        ).map((blocker) => ({
+          code: String(blocker.code ?? "readiness_blocked").slice(0, 80),
+          category: typeof blocker.category === "string"
+            ? blocker.category.slice(0, 80)
+            : null,
+          detail: typeof blocker.staff_message === "string"
+            ? blocker.staff_message.slice(0, 240)
+            : null,
+        }))
+        : [];
+      const firstRecovery = Array.isArray(raw.blockers)
+        ? raw.blockers.find((blocker) =>
+          blocker && typeof blocker === "object" &&
+          typeof (blocker as Record<string, unknown>).customer_safe_message ===
+            "string"
+        ) as Record<string, unknown> | undefined
+        : undefined;
+      const message = typeof firstRecovery?.customer_safe_message === "string"
+        ? firstRecovery.customer_safe_message
+        : typeof raw.message === "string" && raw.message.trim()
         ? raw.message
         : VOICE_RECOVERY_LANGUAGE.availability_unavailable;
+      const rawStatus = String(raw.status ?? "engine_error");
+      const status = rawStatus === "no_slots"
+        ? "no_slots" as const
+        : rawStatus === "schedule_drifted" || rawStatus === "quote_changed"
+        ? "refresh_required" as const
+        : rawStatus.startsWith("provider_")
+        ? "provider_unavailable" as const
+        : rawStatus === "not_ready"
+        ? "readiness_blocked" as const
+        : rawStatus === "gate_blocked"
+        ? "policy_blocked" as const
+        : rawStatus === "preference_ambiguous"
+        ? "preference_required" as const
+        : "engine_error" as const;
       capture(
         mergeFields(session, {
           voiceJourney: {
             ...(session.fields.voiceJourney ?? {}),
             availability: {
-              status: raw.status === "no_slots"
-                ? "refresh_required"
-                : "provider_unavailable",
+              status,
               forBookingKey: sessionBookingInputsKey(session.fields),
+              readinessBlockers: blockers,
+              nextAction: typeof raw.nextAction === "string"
+                ? raw.nextAction.slice(0, 80)
+                : null,
+              failureCategory: typeof raw.failureCategory === "string"
+                ? raw.failureCategory.slice(0, 80)
+                : rawStatus.slice(0, 80),
+              safeDetail: typeof raw.safeDetail === "string"
+                ? raw.safeDetail.slice(0, 240)
+                : null,
+              providerContacted: raw.providerContacted === true,
             },
           },
         }),
@@ -515,6 +1069,11 @@ export async function runControllerTurn(
             : null,
           availability: {
             status: "offered",
+            providerContacted: raw.providerContacted === true,
+            readinessBlockers: [],
+            nextAction: "select_slot",
+            failureCategory: null,
+            safeDetail: null,
             forBookingKey: sessionBookingInputsKey(session.fields),
             expiresAt: typeof raw.offerExpiresAt === "string"
               ? raw.offerExpiresAt
@@ -687,10 +1246,14 @@ export async function runControllerTurn(
       }),
       "booking_submitting",
     );
-    const raw = await runTool(
-      "create_bluladder_booking",
-      toolContext,
-      { slotId: selectedSlotId, confirmed: true },
+    const raw = await measure(
+      "booking",
+      () =>
+        executeTool(
+          "create_bluladder_booking",
+          toolContext,
+          { slotId: selectedSlotId, confirmed: true },
+        ),
     ) as Record<string, unknown>;
     const confirmed = raw.status === "confirmed" && raw.simulated !== true;
     const recovery = raw.status === "needs_attention" ||
@@ -775,6 +1338,30 @@ export async function runControllerTurn(
     }
     capture(parsedSession, "answer_captured");
     f = session.fields;
+    if (askedField === "contact_name" && f.name) {
+      return askConfirmation("contact_name", buildNameReadback(f.name));
+    }
+    if (askedField === "contact_email" && f.email) {
+      return askConfirmation(
+        "contact_email",
+        buildSpokenEmailReadback(f.email),
+      );
+    }
+    if (askedField === "contact_phone" && f.phone) {
+      capture(
+        mergeFields(session, { callerIdConfirmationStatus: "manual_pending" }),
+        "confirming:contact_phone",
+      );
+      return askConfirmation(
+        "contact_phone",
+        `I have the mobile number ending in ${
+          digits(f.phone).slice(-4)
+        }. Is that right?`,
+      );
+    }
+    if (askedField === "address" && f.address) {
+      return await validateVoiceAddress(f.address);
+    }
   }
 
   // Step 3: dispatch by the sticky intent. Customer-scoped existing-record
@@ -905,7 +1492,7 @@ export async function runControllerTurn(
         },
       };
     }
-    const loaded = await loadPricing(input.supabase);
+    const loaded = await measure("pricing", () => loadPricing(input.supabase));
     if (!loaded.ok || !loaded.pricing) {
       const failed: WorkflowAction = {
         kind: "handoff",
@@ -921,11 +1508,13 @@ export async function runControllerTurn(
         },
       };
     }
-    const result = calculateQuote(
-      quoteSessionFieldsToQuoteInput(session.fields),
-      loaded.pricing,
-      loaded.ruleVersion,
-    );
+    const pricing = loaded.pricing;
+    const result = await measure("pricing", () =>
+      calculateQuote(
+        quoteSessionFieldsToQuoteInput(session.fields),
+        pricing,
+        loaded.ruleVersion,
+      ));
     const inputsKey = sessionInputsKey(session.fields);
     const intake = evaluateQuoteIntake(
       session.fields as unknown as Record<string, unknown>,

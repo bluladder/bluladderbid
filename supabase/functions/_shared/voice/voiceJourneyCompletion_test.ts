@@ -12,6 +12,11 @@ import {
   normalizeAddressComponentAnswer,
   recordAddressComponentAttempt,
 } from "./voiceAddressGate.ts";
+import { buildSpokenEmailReadback, parseSpokenEmail } from "./spokenEmail.ts";
+import {
+  buildNameReadback,
+  correctedName,
+} from "../workflow/workflowController.ts";
 import {
   canAttemptAppointmentMutation,
   resolveVoiceAppointmentOutcome,
@@ -253,6 +258,58 @@ Deno.test("component-specific address recovery covers street, unit, state and in
     }),
     "5612 Binbranch Lane, Suite 200, McKinney TX 75071",
   );
+});
+
+Deno.test("incident fixtures preserve Binbranch and Parkland address components", () => {
+  assertEquals(
+    formatAddressComponents({
+      house_number: "5612",
+      street: "Binbranch Lane",
+      city: "McKinney",
+      state: "TX",
+      postal_code: "75071",
+    }),
+    "5612 Binbranch Lane, McKinney TX 75071",
+  );
+  assertEquals(
+    formatAddressComponents({
+      house_number: "720",
+      street: "Parkland Drive",
+      city: "Aubrey",
+      state: "TX",
+      postal_code: "76227",
+    }),
+    "720 Parkland Drive, Aubrey TX 76227",
+  );
+  assertEquals(
+    normalizeAddressComponentAnswer(
+      "street",
+      "B as in boy I as in ice N as in north B as in boy R as in road A as in apple N as in north C as in cat H as in house Lane",
+    ),
+    "Binbranch Lane",
+  );
+  assertEquals(
+    normalizeAddressComponentAnswer("street", "Binbranch not Finbranch Lane"),
+    "Binbranch Lane",
+  );
+});
+
+Deno.test("name correction keeps the confirmed surname and rejects STT history", () => {
+  assertEquals(correctedName("Ben not Ten", "Ten Millen"), "Ben Millen");
+  assertStringIncludes(buildNameReadback("Ben Millen"), "B-E-N");
+  assertStringIncludes(buildNameReadback("Ben Millen"), "M-I-L-L-E-N");
+});
+
+Deno.test("spelled email capture is specialized, bounded and read back once", () => {
+  const email = parseSpokenEmail(
+    "s y n t h e t i c dot caller at example dot com",
+  );
+  assertEquals(email, "synthetic.caller@example.com");
+  assertEquals(
+    buildSpokenEmailReadback(email!),
+    "I have synthetic dot caller at example dot com. Is that exactly right?",
+  );
+  assertEquals(parseSpokenEmail("synthetic dot caller at"), null);
 });
 
 Deno.test("quote identity comparison rejects stale version or input key", () => {

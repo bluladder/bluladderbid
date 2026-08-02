@@ -2250,6 +2250,7 @@ export async function runOrchestrator(
           await deliverVoiceQuoteByText({
             supabase,
             facts,
+            organizationId,
             quoteSessionId,
             conversationId,
             callFunction: callEdgeFunction,

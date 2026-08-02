@@ -543,6 +543,10 @@ async function canonicalVoiceAvailabilityTool(
       message: messages[result.status] ??
         "I could not confirm availability, so I will not offer a time.",
       nextAction: result.next_action ?? null,
+      blockers: result.blockers ?? result.readiness?.blockers ?? [],
+      failureCategory: result.status,
+      safeDetail: result.detail ?? null,
+      providerContacted: result.provider_contacted === true,
     };
   }
 
@@ -554,6 +558,9 @@ async function canonicalVoiceAvailabilityTool(
   if (!session) {
     return {
       status: "not_ready",
+      failureCategory: "quote_session_missing",
+      safeDetail: "canonical_quote_session_missing",
+      providerContacted: result.provider_contacted === true,
       message:
         "The canonical quote session is missing, so I cannot offer times.",
     };
@@ -563,6 +570,9 @@ async function canonicalVoiceAvailabilityTool(
   if (!last || last.inputsKey !== inputsKey) {
     return {
       status: "quote_changed",
+      failureCategory: "stale_quote",
+      safeDetail: "canonical_quote_inputs_changed",
+      providerContacted: result.provider_contacted === true,
       message:
         "The quote changed before availability was offered, so I need to refresh the price first.",
     };
@@ -613,6 +623,9 @@ async function canonicalVoiceAvailabilityTool(
   if (offerPersistenceError) {
     return {
       status: "not_ready",
+      failureCategory: "offer_persistence_failed",
+      safeDetail: "availability_offer_not_persisted",
+      providerContacted: result.provider_contacted === true,
       message:
         "I couldn't safely save those appointment options, so I won't offer them as bookable times.",
     };
@@ -623,6 +636,7 @@ async function canonicalVoiceAvailabilityTool(
     .eq("organization_id", organizationId);
   return {
     status: "ok",
+    providerContacted: true,
     offerExpiresAt: expiresAt,
     slots: offered.map((
       { slotId, startTime, endTime, displayTime, durationMinutes, timezone },

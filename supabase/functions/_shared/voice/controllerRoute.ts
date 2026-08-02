@@ -1,0 +1,459 @@
+// ============================================================================
+// Transaction boundary for the rollout-gated deterministic voice controller.
+//
+// The Edge handler delegates here so direct tests cover the real ordering:
+// decide -> persist QuoteSession -> project conversation -> prepare local
+// identity/property -> re-project lineage -> journal the exact spoken turn.
+// ============================================================================
+
+import { deterministicUuid } from "../deterministicUuid.ts";
+import type { ConversationFacts } from "../conversationState.ts";
+import type { OrganizationAuthorityResolution } from "../organizationAuthority.ts";
+import {
+  type ControllerPreAction,
+  type ControllerTurnResult,
+  persistControllerPatch,
+  runControllerTurn,
+} from "../workflow/workflowController.ts";
+import type { ChatMessage } from "../voiceAdapter.ts";
+import {
+  buildQuoteSessionConversationProjection,
+  projectQuoteSessionToConversation,
+  type QuoteSessionProjectionResult,
+  readScopedQuoteSession,
+} from "./quoteSessionProjection.ts";
+import {
+  prepareVoiceBookingIdentity,
+  type VoiceIdentityPreparationResult,
+} from "./voiceBookingIdentityPreparation.ts";
+import {
+  recordVoiceTurns,
+  voiceTranscriptRetentionExpiresAt,
+  type VoiceTurnJournalResult,
+} from "./turnJournal.ts";
+import {
+  classifyQuoteByTextRequest,
+  planQuoteByTextResponse,
+} from "./quoteByText.ts";
+import {
+  type CallEdgeFunction,
+  deliverVoiceQuoteByText,
+  type VoiceQuoteDeliveryResult,
+} from "./quoteByTextDelivery.ts";
+
+// deno-lint-ignore no-explicit-any
+type SB = any;
+
+export interface ControllerRouteTimings {
+  controllerMs: number;
+  persistenceMs: number;
+  projectionMs: number;
+  identityPreparationMs: number;
+  journalMs: number;
+  pricingMs: number;
+  addressServiceAreaMs: number;
+  availabilityMs: number;
+  bookingMs: number;
+}
+
+export interface ExecuteControllerRouteInput {
+  supabase: SB;
+  conversationId: string;
+  organizationId: string;
+  organizationAuthority: OrganizationAuthorityResolution;
+  callId: string;
+  messages: ChatMessage[];
+  /** Original provider messages before parsing-only normalization. */
+  journalMessages?: ChatMessage[];
+  callerIdE164?: string | null;
+  callFunction?: CallEdgeFunction;
+}
+
+export interface ExecuteControllerRouteDeps {
+  runController?: typeof runControllerTurn;
+  persist?: typeof persistControllerPatch;
+  project?: typeof projectQuoteSessionToConversation;
+  readSession?: typeof readScopedQuoteSession;
+  prepareIdentity?: typeof prepareVoiceBookingIdentity;
+  journal?: typeof recordVoiceTurns;
+  deliverQuote?: typeof deliverVoiceQuoteByText;
+}
+
+export interface ExecuteControllerRouteResult {
+  spoken: string;
+  pre: ControllerPreAction;
+  sessionId: string;
+  stateCommitted: boolean;
+  projection: QuoteSessionProjectionResult | null;
+  identityPreparation: VoiceIdentityPreparationResult | null;
+  journal: VoiceTurnJournalResult;
+  timings: ControllerRouteTimings;
+  event: string;
+}
+
+function now(): number {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function elapsed(started: number): number {
+  return Math.max(0, Math.round(now() - started));
+}
+
+function persistenceFailureSpoken(turn: ControllerTurnResult): string {
+  const bookingAlreadyConfirmed = turn.pre.kind === "fsm" &&
+    turn.pre.action.kind === "confirm_result" &&
+    turn.pre.action.success === true;
+  const bookingWasAttempted = turn.pre.kind === "fsm" &&
+    turn.pre.action.kind === "confirm_result";
+  return bookingAlreadyConfirmed
+    ? `${turn.pre.spoken} I couldn't save the call's progress marker, so please don't repeat the booking request.`
+    : bookingWasAttempted
+    ? `${turn.pre.spoken} I also couldn't save the call's progress marker. I will not repeat the booking request automatically; a team member should verify the result.`
+    : "I couldn't safely save that answer because the call state changed. I have not advanced the request. Please try that answer once more, or a team member can help.";
+}
+
+function reconstruct(messages: ChatMessage[]): {
+  history: Array<{ role: "user" | "assistant"; content: string }>;
+  userMessage: string;
+  lastUserIndex: number;
+  nonSystemCount: number;
+} {
+  const nonSystem = messages.filter((message) =>
+    message.role !== "system" && message.role !== "tool"
+  );
+  let lastUserIndex = -1;
+  for (let index = nonSystem.length - 1; index >= 0; index--) {
+    if (nonSystem[index].role === "user") {
+      lastUserIndex = index;
+      break;
+    }
+  }
+  return {
+    history: lastUserIndex >= 0
+      ? nonSystem.slice(0, lastUserIndex).map((message) => ({
+        role: message.role as "user" | "assistant",
+        content: message.content,
+      }))
+      : [],
+    userMessage: lastUserIndex >= 0 ? nonSystem[lastUserIndex].content : "",
+    lastUserIndex,
+    nonSystemCount: nonSystem.length,
+  };
+}
+
+export async function executeControllerRoute(
+  input: ExecuteControllerRouteInput,
+  deps: ExecuteControllerRouteDeps = {},
+): Promise<ExecuteControllerRouteResult> {
+  const runController = deps.runController ?? runControllerTurn;
+  const persist = deps.persist ?? persistControllerPatch;
+  const project = deps.project ?? projectQuoteSessionToConversation;
+  const readSession = deps.readSession ?? readScopedQuoteSession;
+  const prepareIdentity = deps.prepareIdentity ?? prepareVoiceBookingIdentity;
+  const journalTurns = deps.journal ?? recordVoiceTurns;
+  const deliverQuote = deps.deliverQuote ?? deliverVoiceQuoteByText;
+  const reconstructed = reconstruct(input.messages);
+  const journalReconstructed = reconstruct(
+    input.journalMessages ?? input.messages,
+  );
+  const stageTimings = {
+    pricing: 0,
+    address_service_area: 0,
+    availability: 0,
+    booking: 0,
+  };
+  const timings: ControllerRouteTimings = {
+    controllerMs: 0,
+    persistenceMs: 0,
+    projectionMs: 0,
+    identityPreparationMs: 0,
+    journalMs: 0,
+    pricingMs: 0,
+    addressServiceAreaMs: 0,
+    availabilityMs: 0,
+    bookingMs: 0,
+  };
+
+  const controllerStarted = now();
+  const turn = await runController({
+    supabase: input.supabase,
+    conversationId: input.conversationId,
+    channel: "voice",
+    utterance: reconstructed.userMessage,
+    history: reconstructed.history,
+    callerIdE164: input.callerIdE164,
+    organizationAuthority: input.organizationAuthority,
+    onTiming(stage, durationMs) {
+      stageTimings[stage] += durationMs;
+    },
+  });
+  timings.controllerMs = elapsed(controllerStarted);
+  timings.pricingMs = stageTimings.pricing;
+  timings.addressServiceAreaMs = stageTimings.address_service_area;
+  timings.availabilityMs = stageTimings.availability;
+  timings.bookingMs = stageTimings.booking;
+
+  let spoken = turn.pre.spoken;
+  let event = "workflow_controller";
+  let stateCommitted = false;
+  let projection: QuoteSessionProjectionResult | null = null;
+  let identityPreparation: VoiceIdentityPreparationResult | null = null;
+
+  const persistenceStarted = now();
+  const persistence = await persist(
+    input.supabase,
+    turn.sessionId,
+    turn.sessionPatch,
+  );
+  timings.persistenceMs = elapsed(persistenceStarted);
+  if (persistence.status === "conflict" || persistence.status === "error") {
+    spoken = persistenceFailureSpoken(turn);
+    event = "workflow_controller_persistence_blocked";
+  } else {
+    stateCommitted = true;
+    const projectionStarted = now();
+    projection = await project(input.supabase, {
+      sessionId: turn.sessionId,
+      conversationId: input.conversationId,
+      organizationId: input.organizationId,
+    });
+    timings.projectionMs += elapsed(projectionStarted);
+    if (projection.status === "conflict" || projection.status === "error") {
+      spoken =
+        "I saved that answer in the quote form, but I couldn't safely synchronize the customer record. I have not checked availability or advanced the request. Please try once more, or a team member can help.";
+      event = "workflow_controller_projection_blocked";
+    } else {
+      const session = await readSession(
+        input.supabase,
+        turn.sessionId,
+        input.organizationId,
+      );
+      if (!session) {
+        spoken =
+          "I saved that answer, but I couldn't safely reload the quote form. I have not checked availability or advanced the request.";
+        event = "workflow_controller_projection_blocked";
+      } else {
+        const identityStarted = now();
+        identityPreparation = await prepareIdentity(input.supabase, {
+          session,
+          conversationId: input.conversationId,
+          organizationId: input.organizationId,
+        });
+        timings.identityPreparationMs = elapsed(identityStarted);
+        if (
+          identityPreparation.status === "blocked" ||
+          identityPreparation.status === "error"
+        ) {
+          spoken =
+            "I saved your confirmed answers, but I couldn't safely link the customer and property records. I have not checked availability or booked anything. A team member needs to verify the account.";
+          event = "workflow_controller_identity_blocked";
+        } else if (identityPreparation.status === "ready") {
+          const lineageProjectionStarted = now();
+          projection = await project(input.supabase, {
+            sessionId: turn.sessionId,
+            conversationId: input.conversationId,
+            organizationId: input.organizationId,
+          });
+          timings.projectionMs += elapsed(lineageProjectionStarted);
+          if (
+            projection.status === "conflict" || projection.status === "error"
+          ) {
+            spoken =
+              "I linked the local customer and property, but I couldn't safely synchronize the call record. I have not checked availability or advanced the request.";
+            event = "workflow_controller_projection_blocked";
+          }
+        }
+      }
+    }
+  }
+
+  // Explicit quote-in-writing request. The canonical save-quote/send-sms
+  // closure is invoked only after the form write and projection succeeded.
+  // A pending delivery marker is persisted before either nested Edge call.
+  if (
+    stateCommitted && event === "workflow_controller" &&
+    classifyQuoteByTextRequest(reconstructed.userMessage)
+  ) {
+    let deliverySession = await readSession(
+      input.supabase,
+      turn.sessionId,
+      input.organizationId,
+    );
+    if (deliverySession) {
+      const pendingFields = {
+        ...deliverySession.fields,
+        voiceJourney: {
+          ...(deliverySession.fields.voiceJourney ?? {}),
+          delivery: {
+            channel: "sms" as const,
+            mode: "actual_quote" as const,
+            status: "pending" as const,
+            requestedAt: new Date().toISOString(),
+          },
+        },
+      };
+      const pending = await persist(input.supabase, deliverySession.id, {
+        __expected_updated_at: deliverySession.updatedAt ?? null,
+        __expected_organization_id: input.organizationId,
+        fields: pendingFields,
+      });
+      if (pending.status === "persisted" || pending.status === "noop") {
+        deliverySession = await readSession(
+          input.supabase,
+          deliverySession.id,
+          input.organizationId,
+        );
+      } else {
+        deliverySession = null;
+      }
+    }
+    if (!deliverySession) {
+      spoken =
+        "I haven't sent that text because I couldn't safely record the delivery request. Your quote form is still saved.";
+      event = "voice_quote_by_text_persistence_blocked";
+    } else {
+      const projectionForFacts = buildQuoteSessionConversationProjection({
+        session: deliverySession,
+        conversation: {
+          id: input.conversationId,
+          organization_id: input.organizationId,
+        },
+      });
+      const facts = projectionForFacts.facts as ConversationFacts;
+      const last = deliverySession.fields.lastQuoteResult;
+      const total = Number(
+        last?.estimatedTotal ?? last?.total ??
+          deliverySession.fields.voiceJourney?.quoteContext?.estimatedTotal ??
+          0,
+      );
+      const deliveryState: { current: VoiceQuoteDeliveryResult | null } = {
+        current: null,
+      };
+      const plan = await planQuoteByTextResponse({
+        quoteIsFirm: last?.finalQuoteDisposition === "firm",
+        total,
+        name: deliverySession.fields.name ?? null,
+        phone: deliverySession.fields.phone ?? null,
+        phoneIsFullE164: !!deliverySession.fields.phone,
+        phoneConfirmed: deliverySession.fieldStatus.phone === "verified" ||
+          deliverySession.fields.callerIdConfirmationStatus ===
+            "contact_confirmed" ||
+          deliverySession.fields.callerIdConfirmationStatus === "confirmed",
+        address: deliverySession.fields.address ?? null,
+        addressEligible:
+          deliverySession.fields.serviceAreaStatus === "eligible",
+        deliver: input.callFunction
+          ? async () => {
+            deliveryState.current = await deliverQuote({
+              supabase: input.supabase,
+              facts,
+              organizationId: input.organizationId,
+              quoteSessionId: deliverySession!.id,
+              conversationId: input.conversationId,
+              callFunction: input.callFunction!,
+            });
+            return deliveryState.current;
+          }
+          : null,
+      });
+      spoken = plan.reply;
+      event = plan.event;
+      const latest = await readSession(
+        input.supabase,
+        deliverySession.id,
+        input.organizationId,
+      );
+      if (!latest) {
+        spoken = plan.sent
+          ? "The text provider accepted the quote message, but I couldn't save the final delivery record. Please don't retry it automatically; the team should verify the message first."
+          : "I haven't confirmed that any quote text was sent, and I couldn't reload the delivery record. A team member should verify before retrying.";
+        event = "voice_quote_by_text_status_persistence_blocked";
+      } else {
+        const deliveryResult = deliveryState.current;
+        const status = deliveryResult?.status ??
+          (plan.sent ? "provider_accepted" : "failed_terminal");
+        const deliveryFields = {
+          ...latest.fields,
+          voiceJourney: {
+            ...(latest.fields.voiceJourney ?? {}),
+            delivery: {
+              channel: "sms" as const,
+              mode: "actual_quote" as const,
+              status,
+              requestedAt: latest.fields.voiceJourney?.delivery?.requestedAt ??
+                new Date().toISOString(),
+              attemptId: deliveryResult?.attemptId ?? null,
+              providerMessageId: deliveryResult?.providerMessageId ?? null,
+            },
+          },
+        };
+        const deliveryWrite = await persist(input.supabase, latest.id, {
+          __expected_updated_at: latest.updatedAt ?? null,
+          __expected_organization_id: input.organizationId,
+          fields: deliveryFields,
+          quote_id: deliveryResult?.quoteId ?? latest.quoteId ?? null,
+        });
+        if (
+          deliveryWrite.status === "conflict" ||
+          deliveryWrite.status === "error"
+        ) {
+          spoken = plan.sent
+            ? `${plan.reply} I couldn't update the call's delivery marker, so the team should verify it before any retry.`
+            : "I haven't confirmed that any quote text was sent, and I couldn't save the delivery status. A team member should verify before retrying.";
+          event = "voice_quote_by_text_status_persistence_blocked";
+        } else {
+          const deliveryProjection = await project(input.supabase, {
+            sessionId: latest.id,
+            conversationId: input.conversationId,
+            organizationId: input.organizationId,
+          });
+          if (
+            deliveryProjection.status === "conflict" ||
+            deliveryProjection.status === "error"
+          ) {
+            projection = deliveryProjection;
+            spoken = plan.sent
+              ? `${plan.reply} I couldn't synchronize the call record, so the team should verify it before any retry.`
+              : "I haven't confirmed that any quote text was sent, and I couldn't synchronize the call record. A team member should verify before retrying.";
+            event = "voice_quote_by_text_projection_blocked";
+          }
+        }
+      }
+    }
+  }
+
+  const turnIdentity = await deterministicUuid(
+    "voice-controller-request",
+    input.callId,
+    String(journalReconstructed.nonSystemCount),
+    String(journalReconstructed.lastUserIndex),
+    journalReconstructed.userMessage,
+  );
+  const journalStarted = now();
+  const journal = await journalTurns(input.supabase, {
+    conversationId: input.conversationId,
+    organizationId: input.organizationId,
+    callId: input.callId,
+    turnIdentity,
+    state: turn.pre.kind === "fsm" ? turn.pre.action.kind : turn.pre.kind,
+    source: "controller",
+    retentionExpiresAt: voiceTranscriptRetentionExpiresAt(),
+    turns: [
+      { role: "user", content: journalReconstructed.userMessage },
+      { role: "assistant", content: spoken },
+    ],
+  });
+  timings.journalMs = elapsed(journalStarted);
+
+  return {
+    spoken,
+    pre: turn.pre,
+    sessionId: turn.sessionId,
+    stateCommitted,
+    projection,
+    identityPreparation,
+    journal,
+    timings,
+    event,
+  };
+}

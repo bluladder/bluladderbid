@@ -20,16 +20,13 @@ import {
   rolloutLogPayload,
   selectRoute,
 } from "../_shared/workflow/rolloutRoute.ts";
-import {
-  persistControllerPatch,
-  runControllerTurn,
-} from "../_shared/workflow/workflowController.ts";
 import { ensureVoiceConversation } from "../_shared/voiceAdapter.ts";
 import { normalizeVoiceMessages } from "../_shared/voice/voiceInputNormalizer.ts";
 import {
   resolveVoiceOrganizationAuthority,
   resolveVoiceProviderOrganizationAuthority,
 } from "../_shared/voice/voiceOrganizationAuthority.ts";
+import { executeControllerRoute } from "../_shared/voice/controllerRoute.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -60,6 +57,37 @@ function errorStatus(err: AdapterRequestError): number {
     case "conflicting_session_identifiers":
       return 400;
   }
+}
+
+async function callInternalQuoteFunction(
+  supabaseUrl: string,
+  serviceKey: string,
+  name: string,
+  body: unknown,
+) {
+  if (name !== "save-quote" && name !== "send-sms") {
+    return { status: 403, json: { status: "forbidden" } };
+  }
+  const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(12_000),
+  });
+  const raw = await response.text();
+  let json: unknown = null;
+  if (raw.length <= 64 * 1024) {
+    try {
+      json = raw ? JSON.parse(raw) : null;
+    } catch {
+      json = { status: "malformed_internal_response" };
+    }
+  }
+  return { status: response.status, json };
 }
 
 function isProduction(): boolean {
@@ -188,6 +216,7 @@ function buildAuthorityBlockedResponse(
 }
 
 Deno.serve(async (req) => {
+  const requestArrival = performance.now();
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -233,6 +262,11 @@ Deno.serve(async (req) => {
   }
   const supabase = createClient(supabaseUrl, serviceKey);
   const model = request.model || "bluladder-voice-adapter";
+  // Preserve the provider's exact bounded message strings for the canonical
+  // journal. Parsing-only normalization below must not rewrite the transcript.
+  const providerMessagesForJournal = request.messages.map((message) => ({
+    ...message,
+  }));
 
   // ---- Pre-routing normalization ----------------------------------------
   // Context-aware story / spoken-square-footage / window-side normalization
@@ -351,86 +385,26 @@ Deno.serve(async (req) => {
     // and booking tool boundaries are invoked by the controller; unsupported
     // tenant-scoped record actions fail closed instead of falling through.
     try {
-      // Reconstruct history + last utterance the same way the legacy adapter does.
-      const nonSystem = request.messages.filter((m) =>
-        m.role !== "system" && m.role !== "tool"
-      );
-      let lastUserIdx = -1;
-      for (let i = nonSystem.length - 1; i >= 0; i--) {
-        if (nonSystem[i].role === "user") {
-          lastUserIdx = i;
-          break;
-        }
-      }
-      const history = lastUserIdx >= 0
-        ? nonSystem.slice(0, lastUserIdx).map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        }))
-        : [];
-      const userMessage = lastUserIdx >= 0
-        ? nonSystem[lastUserIdx].content
-        : "";
-      const turn = await runControllerTurn({
+      const route = await executeControllerRoute({
         supabase,
         conversationId: identity.conversationId,
-        channel: "voice",
-        utterance: userMessage,
-        history,
-        callerIdE164: request.callerIdE164,
+        organizationId: organizationAuthority.organizationId,
         organizationAuthority,
+        callId: request.sessionId,
+        messages: request.messages,
+        journalMessages: providerMessagesForJournal,
+        callerIdE164: request.callerIdE164,
+        callFunction: (name, body) =>
+          callInternalQuoteFunction(supabaseUrl, serviceKey, name, body),
       });
-      const persistence = await persistControllerPatch(
-        supabase,
-        turn.sessionId,
-        turn.sessionPatch,
-      );
-      if (persistence.status === "conflict" || persistence.status === "error") {
-        // Never fall through to legacy after the deterministic controller has
-        // already decided or invoked a guarded tool. That could repeat a
-        // mutation against stale state. A confirmed booking remains truthful
-        // because create_bluladder_booking requires provider + local booking
-        // persistence before it returns success; only the journey cursor failed.
-        const bookingAlreadyConfirmed = turn.pre.kind === "fsm" &&
-          turn.pre.action.kind === "confirm_result" &&
-          turn.pre.action.success === true;
-        const bookingWasAttempted = turn.pre.kind === "fsm" &&
-          turn.pre.action.kind === "confirm_result";
-        const spoken = bookingAlreadyConfirmed
-          ? `${turn.pre.spoken} I couldn't save the call's progress marker, so please don't repeat the booking request.`
-          : bookingWasAttempted
-          ? `${turn.pre.spoken} I also couldn't save the call's progress marker. I will not repeat the booking request automatically; a team member should verify the result.`
-          : "I couldn't safely save that update because the call state changed. I have not repeated or advanced the request. Please try that answer once more, or a team member can help.";
-        console.warn(JSON.stringify({
-          at: "voice-llm-adapter",
-          buildId: BUILD_ID,
-          route: "controller",
-          persistence: persistence.status,
-          reason: persistence.reason,
-        }));
-        const completion = {
-          content: spoken,
-          action: { kind: "speak" as const },
-          orchestrator: {
-            reply: spoken,
-            toolEvents: [],
-            events: ["workflow_controller_persistence_blocked"],
-            state: "workflow_controller" as const,
-            voice: { type: "speak" as const },
-          },
-        };
-        return request.stream
-          ? buildStreamingTextResponse(model, spoken)
-          : buildNonStreamingResponse(model, completion);
-      }
-      const spoken = turn.pre.spoken;
+      const spoken = route.spoken;
       const completion = {
         content: spoken,
         action: { kind: "speak" as const },
         orchestrator: {
           reply: spoken,
           toolEvents: [],
-          events: ["workflow_controller"],
+          events: [route.event],
           state: "workflow_controller" as const,
           voice: { type: "speak" as const },
         },
@@ -439,9 +413,25 @@ Deno.serve(async (req) => {
         at: "voice-llm-adapter",
         buildId: BUILD_ID,
         route: "controller",
-        preKind: turn.pre.kind,
+        event: route.event,
+        preKind: route.pre.kind,
         replyLen: spoken.length,
         stream: request.stream,
+        projectionStatus: route.projection?.status ?? null,
+        identityPreparationStatus: route.identityPreparation?.status ?? null,
+        journal: {
+          written: route.journal.written,
+          duplicates: route.journal.duplicates,
+          failed: route.journal.failed,
+          reason: route.journal.reason ?? null,
+        },
+        timings: {
+          requestToResponseStreamStartMs: Math.max(
+            0,
+            Math.round(performance.now() - requestArrival),
+          ),
+          ...route.timings,
+        },
       }));
       return request.stream
         ? buildStreamingTextResponse(model, spoken)

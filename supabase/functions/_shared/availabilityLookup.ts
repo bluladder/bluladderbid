@@ -121,6 +121,8 @@ export interface AvailabilityLookupInput {
 export interface AvailabilityLookupResult {
   status: AvailabilityStatus;
   slots: AvailabilitySlot[];
+  /** True only after the canonical provider fetcher was actually invoked. */
+  provider_contacted?: boolean;
   readiness?: BookingReadiness;
   blockers?: BookingReadiness["blockers"];
   next_action?: BookingReadiness["next_action"];
@@ -683,6 +685,7 @@ export async function getAvailableSlots(
       slots: [],
       readiness,
       detail: "availability_provider_timeout",
+      provider_contacted: true,
     };
   }
   if (status === 429) {
@@ -691,6 +694,7 @@ export async function getAvailableSlots(
       slots: [],
       readiness,
       detail: "availability_provider_rate_limited",
+      provider_contacted: true,
     };
   }
   if (status === 502 || status === 503 || status === 504) {
@@ -699,6 +703,7 @@ export async function getAvailableSlots(
       slots: [],
       readiness,
       detail: `availability_provider_status_${status}`,
+      provider_contacted: true,
     };
   }
   if (status !== 200 || !json) {
@@ -707,6 +712,7 @@ export async function getAvailableSlots(
       slots: [],
       readiness,
       detail: `availability_engine_status_${status}`,
+      provider_contacted: true,
     };
   }
   if (
@@ -718,6 +724,7 @@ export async function getAvailableSlots(
       slots: [],
       readiness,
       next_action: "refresh_schedule",
+      provider_contacted: true,
       detail: json.reason || json.error || "engine_reported_unavailable",
     };
   }
@@ -796,6 +803,7 @@ export async function getAvailableSlots(
       status: "no_slots",
       slots: [],
       readiness,
+      provider_contacted: true,
       normalized_preference: {
         date: pref.startDate ?? null,
         range: pref.range,
@@ -811,6 +819,7 @@ export async function getAvailableSlots(
     status: "ok",
     slots,
     readiness,
+    provider_contacted: true,
     normalized_preference: {
       date: pref.startDate ?? null,
       range: pref.range,
