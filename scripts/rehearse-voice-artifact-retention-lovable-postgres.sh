@@ -73,6 +73,8 @@ BEGIN
   RAISE EXCEPTION 'release provenance is append-only';
 END
 $function$;
+REVOKE ALL ON FUNCTION tenant_security.reject_release_provenance_mutation()
+  FROM PUBLIC, anon, authenticated, service_role;
 CREATE TRIGGER release_provenance_append_only
   BEFORE UPDATE OR DELETE ON tenant_security.release_provenance
   FOR EACH ROW
