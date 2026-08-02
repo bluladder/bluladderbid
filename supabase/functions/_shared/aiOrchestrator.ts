@@ -85,7 +85,7 @@ import {
   resolveQuoteByTextContinuation,
 } from "./voice/quoteByText.ts";
 import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
-import { formatCanonicalCurrency } from "./voice/voiceCanonicalIntake.ts";
+import { formatCanonicalCurrency } from "./voice/voiceCanonicalIntake.ts";\nimport { spokenToNumber } from "./voice/spokenQuantity.ts";\nexport { spokenToNumber } from "./voice/spokenQuantity.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
@@ -879,97 +879,6 @@ export function looksLikeAddress(text: string): boolean {
   if (/\b[a-z]{2}\s+\d{5}\b/.test(t)) return true; // "TX 75002"
   if (/\b\d{1,6}\s+[a-z]/.test(t) && /\b\d{5}\b/.test(t)) return true;
   return false;
-}
-
-const ONES: Record<string, number> = {
-  zero: 0,
-  oh: 0,
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-};
-const TEENS_TENS: Record<string, number> = {
-  ten: 10,
-  eleven: 11,
-  twelve: 12,
-  thirteen: 13,
-  fourteen: 14,
-  fifteen: 15,
-  sixteen: 16,
-  seventeen: 17,
-  eighteen: 18,
-  nineteen: 19,
-  twenty: 20,
-  thirty: 30,
-  forty: 40,
-  fifty: 50,
-  sixty: 60,
-  seventy: 70,
-  eighty: 80,
-  ninety: 90,
-};
-
-/** Convert spoken quantities into a number. Handles the two shapes voice
- *  callers actually use for square footage:
- *   - grouped:  "two thousand five hundred", "twenty five hundred"
- *   - digit-by-digit: "two five zero zero", "two-five-oh-oh"
- *  Returns undefined when the phrase is not a clean quantity. */
-export function spokenToNumber(text: string): number | undefined {
-  const words = (text ?? "").toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(
-    /[\s-]+/,
-  ).filter(Boolean);
-  if (words.length === 0) return undefined;
-
-  // Digit-by-digit: every token is a single digit word or single digit.
-  const digitTokens = words.filter((w) => w in ONES || /^[0-9]$/.test(w));
-  if (
-    digitTokens.length === words.length && words.length >= 3 &&
-    words.length <= 5
-  ) {
-    const digits = words.map((w) => (/^[0-9]$/.test(w) ? Number(w) : ONES[w]))
-      .join("");
-    const n = Number(digits);
-    return Number.isFinite(n) && n > 0 ? n : undefined;
-  }
-
-  // Grouped quantity.
-  let total = 0;
-  let current = 0;
-  let sawAny = false;
-  for (const w of words) {
-    if (w in ONES) {
-      current += ONES[w];
-      sawAny = true;
-      continue;
-    }
-    if (w in TEENS_TENS) {
-      current += TEENS_TENS[w];
-      sawAny = true;
-      continue;
-    }
-    if (w === "hundred") {
-      current = (current || 1) * 100;
-      sawAny = true;
-      continue;
-    }
-    if (w === "thousand") {
-      total += (current || 1) * 1000;
-      current = 0;
-      sawAny = true;
-      continue;
-    }
-    if (w === "and") continue;
-    return undefined;
-  }
-  if (!sawAny) return undefined;
-  const n = total + current;
-  return n > 0 ? n : undefined;
 }
 
 /** Square footage. Explicit units are always accepted. Unitless numeric or
