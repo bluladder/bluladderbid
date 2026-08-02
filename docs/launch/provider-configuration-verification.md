@@ -328,8 +328,12 @@ The authoritative repository manifest is
 - URLs target the intended hosted project;
 - an isolated test DID is assigned only to this assistant;
 - provider tools are empty and transfer is disabled;
-- all recording, transcript, message, summary, structured-output, analysis,
-  packet-capture, and detailed-log artifacts are disabled;
+- raw recording, video, packet capture, summary, structured output, and
+  analysis are disabled;
+- sanitized operational logging, transcript delivery, full message history,
+  and end-of-call reporting match the reviewed repository manifest;
+- the BluLadder 30-day transcript deadline and approved expired-row purge are
+  verified;
 - events are exactly `assistant.started`, `status-update`, `hang`, and
   `end-of-call-report`;
 - no CallRail number or route is linked.
@@ -341,7 +345,10 @@ such as `live` fails closed, and the dry-run result carries
 ### Stop conditions
 
 - ZDR cannot be proven;
-- any artifact or retention setting is enabled;
+- raw recording, video, packet capture, summary, structured output, or
+  analysis is enabled;
+- transcript/full-message/end-of-call delivery differs from the reviewed
+  repository manifest, or the 30-day expiry process cannot be proven;
 - the assistant has a provider tool or transfer destination;
 - the DID, assistant, event URL, or custom-LLM URL targets another
   environment;

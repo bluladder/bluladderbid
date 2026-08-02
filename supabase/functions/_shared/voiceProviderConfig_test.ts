@@ -1,4 +1,8 @@
-import { assert, assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+  assertThrows,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildVoiceBetaAssistantManifest,
   VOICE_BETA_CUTOFF_MESSAGE,
@@ -6,39 +10,74 @@ import {
   VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS,
   VOICE_BETA_WARNING_780,
   VOICE_BETA_WARNING_870,
+  VOICE_TRANSCRIBER_KEYTERMS,
   VOICE_VAPI_ALLOWED_EVENTS,
 } from "./voiceProviderConfig.ts";
 
 const adapterUrl = "https://example.supabase.co/functions/v1/voice-llm-adapter";
-const serverEventsUrl = "https://example.supabase.co/functions/v1/voice-vapi-events";
+const serverEventsUrl =
+  "https://example.supabase.co/functions/v1/voice-vapi-events";
 
 Deno.test("manifest: exact duration and hook copy", () => {
   const m = buildVoiceBetaAssistantManifest({ adapterUrl, serverEventsUrl });
   assertEquals(m.duration.maxDurationSeconds, 900);
   assertEquals(VOICE_BETA_MAX_DURATION_SECONDS, 900);
-  assertEquals(VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS as unknown as number[], [780, 870]);
+  assertEquals(VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS as unknown as number[], [
+    780,
+    870,
+  ]);
   assertEquals(m.duration.timeElapsedHooks[0].seconds, 780);
   assertEquals(m.duration.timeElapsedHooks[1].seconds, 870);
   assertEquals(m.duration.timeElapsedHooks[0].say, VOICE_BETA_WARNING_780);
   assertEquals(m.duration.timeElapsedHooks[1].say, VOICE_BETA_WARNING_870);
   assertEquals(m.duration.hardCutoffMessage, VOICE_BETA_CUTOFF_MESSAGE);
-  assert(!/text will be sent|we'll text you|sending you a text/i.test(VOICE_BETA_WARNING_780));
-  assert(!/text will be sent|we'll text you|sending you a text/i.test(VOICE_BETA_WARNING_870));
-  assert(!/text will be sent|we'll text you|sending you a text/i.test(VOICE_BETA_CUTOFF_MESSAGE));
+  assert(
+    !/text will be sent|we'll text you|sending you a text/i.test(
+      VOICE_BETA_WARNING_780,
+    ),
+  );
+  assert(
+    !/text will be sent|we'll text you|sending you a text/i.test(
+      VOICE_BETA_WARNING_870,
+    ),
+  );
+  assert(
+    !/text will be sent|we'll text you|sending you a text/i.test(
+      VOICE_BETA_CUTOFF_MESSAGE,
+    ),
+  );
 });
 
-Deno.test("manifest: artifact suppression fully disabled", () => {
+Deno.test("manifest: transcript/message artifacts enabled while raw recording stays off", () => {
   const m = buildVoiceBetaAssistantManifest({ adapterUrl, serverEventsUrl });
-  const s = m.artifactSuppression;
+  const s = m.artifactPlan;
   assertEquals(s.recordingEnabled, false);
   assertEquals(s.videoRecordingEnabled, false);
   assertEquals(s.pcapEnabled, false);
-  assertEquals(s.loggingEnabled, false);
-  assertEquals(s.fullMessageHistoryEnabled, false);
-  assertEquals(s.transcriptArtifactEnabled, false);
-  assertEquals(s.summaryGenerationEnabled, false);
-  assertEquals(s.structuredOutputEnabled, false);
-  assertEquals(s.analysisEnabled, false);
+  assertEquals(s.loggingEnabled, true);
+  assertEquals(s.fullMessageHistoryEnabled, true);
+  assertEquals(s.transcriptPlan.enabled, true);
+  assertEquals(m.analysisPlan.summaryPlan.enabled, false);
+  assertEquals(m.analysisPlan.structuredDataPlan.enabled, false);
+  assertEquals(m.analysisPlan.successEvaluationPlan.enabled, false);
+});
+
+Deno.test("manifest: explicit English Nova-3 primary and AssemblyAI fallback", () => {
+  const m = buildVoiceBetaAssistantManifest({ adapterUrl, serverEventsUrl });
+  assertEquals(m.transcriber.provider, "deepgram");
+  assertEquals(m.transcriber.model, "nova-3");
+  assertEquals(m.transcriber.language, "en");
+  assertEquals(m.transcriber.smartFormat, true);
+  assertEquals(m.transcriber.keyterm, [...VOICE_TRANSCRIBER_KEYTERMS]);
+  assertEquals(m.transcriber.fallbackPlan.transcribers, [{
+    provider: "assembly-ai",
+    speechModel: "universal-streaming-english",
+    language: "en",
+    keytermsPrompt: [...VOICE_TRANSCRIBER_KEYTERMS],
+    vadAssistedEndpointingEnabled: true,
+  }]);
+  assertEquals(m.startSpeakingPlan.smartEndpointingPlan.provider, "vapi");
+  assert(m.startSpeakingPlan.transcriptionEndpointingPlan.onNumberSeconds >= 1);
 });
 
 Deno.test("manifest: no tools, no phone number, no transfer, no CallRail", () => {
@@ -76,12 +115,16 @@ Deno.test("manifest: no secret literals in the built object", () => {
 });
 
 Deno.test("manifest: rejects non-https urls", () => {
-  assertThrows(() => buildVoiceBetaAssistantManifest({
-    adapterUrl: "http://insecure/adapter",
-    serverEventsUrl,
-  }));
-  assertThrows(() => buildVoiceBetaAssistantManifest({
-    adapterUrl,
-    serverEventsUrl: "not a url",
-  }));
+  assertThrows(() =>
+    buildVoiceBetaAssistantManifest({
+      adapterUrl: "http://insecure/adapter",
+      serverEventsUrl,
+    })
+  );
+  assertThrows(() =>
+    buildVoiceBetaAssistantManifest({
+      adapterUrl,
+      serverEventsUrl: "not a url",
+    })
+  );
 });

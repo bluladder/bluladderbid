@@ -43,6 +43,32 @@ export interface VoiceBetaManifest {
   // No provider tools of any kind in this phase. The orchestrator owns every
   // business decision. Explicit empty list so future edits are deliberate.
   tools: [];
+  transcriber: {
+    provider: "deepgram";
+    model: "nova-3";
+    language: "en";
+    smartFormat: true;
+    keyterm: string[];
+    fallbackPlan: {
+      autoFallback: { enabled: false };
+      transcribers: Array<{
+        provider: "assembly-ai";
+        speechModel: "universal-streaming-english";
+        language: "en";
+        keytermsPrompt: string[];
+        vadAssistedEndpointingEnabled: true;
+      }>;
+    };
+  };
+  startSpeakingPlan: {
+    waitSeconds: number;
+    smartEndpointingPlan: { provider: "vapi" };
+    transcriptionEndpointingPlan: {
+      onPunctuationSeconds: number;
+      onNoPunctuationSeconds: number;
+      onNumberSeconds: number;
+    };
+  };
   // No phone number configuration in this manifest — the isolated test DID is
   // attached in the Vapi dashboard by the owner and never checked into the
   // repository.
@@ -54,16 +80,18 @@ export interface VoiceBetaManifest {
     hardCutoffMessage: string;
     timeElapsedHooks: Array<{ seconds: number; say: string }>;
   };
-  artifactSuppression: {
+  artifactPlan: {
     recordingEnabled: false;
     videoRecordingEnabled: false;
     pcapEnabled: false;
-    loggingEnabled: false;
-    fullMessageHistoryEnabled: false;
-    transcriptArtifactEnabled: false;
-    summaryGenerationEnabled: false;
-    structuredOutputEnabled: false;
-    analysisEnabled: false;
+    loggingEnabled: true;
+    fullMessageHistoryEnabled: true;
+    transcriptPlan: { enabled: true };
+  };
+  analysisPlan: {
+    summaryPlan: { enabled: false };
+    structuredDataPlan: { enabled: false };
+    successEvaluationPlan: { enabled: false };
   };
   serverEvents: {
     url: string;
@@ -85,10 +113,37 @@ export interface BuildManifestInput {
   serverEventsUrl: string;
 }
 
-export function buildVoiceBetaAssistantManifest(input: BuildManifestInput): VoiceBetaManifest {
+export const VOICE_TRANSCRIBER_KEYTERMS = [
+  "BluLadder",
+  "McKinney",
+  "Frisco",
+  "Prosper",
+  "Allen",
+  "Celina",
+  "Aubrey",
+  "Little Elm",
+  "Melissa",
+  "Anna",
+  "Plano",
+  "Binbranch",
+  "Parkland",
+  "window cleaning",
+  "gutter cleaning",
+  "house washing",
+  "pressure washing",
+  "solar screens",
+] as const;
+
+export function buildVoiceBetaAssistantManifest(
+  input: BuildManifestInput,
+): VoiceBetaManifest {
   const { adapterUrl, serverEventsUrl } = input;
-  if (!isHttpsUrl(adapterUrl)) throw new Error("adapterUrl must be an https URL");
-  if (!isHttpsUrl(serverEventsUrl)) throw new Error("serverEventsUrl must be an https URL");
+  if (!isHttpsUrl(adapterUrl)) {
+    throw new Error("adapterUrl must be an https URL");
+  }
+  if (!isHttpsUrl(serverEventsUrl)) {
+    throw new Error("serverEventsUrl must be an https URL");
+  }
   return {
     name: "BluLadder Voice Beta (isolated direct-DID test)",
     isolated: true,
@@ -101,6 +156,35 @@ export function buildVoiceBetaAssistantManifest(input: BuildManifestInput): Voic
       stream: true,
     },
     tools: [],
+    transcriber: {
+      provider: "deepgram",
+      model: "nova-3",
+      language: "en",
+      smartFormat: true,
+      keyterm: [...VOICE_TRANSCRIBER_KEYTERMS],
+      fallbackPlan: {
+        autoFallback: { enabled: false },
+        transcribers: [{
+          provider: "assembly-ai",
+          speechModel: "universal-streaming-english",
+          language: "en",
+          keytermsPrompt: [...VOICE_TRANSCRIBER_KEYTERMS],
+          vadAssistedEndpointingEnabled: true,
+        }],
+      },
+    },
+    // Vapi's documented transcription endpointing plan waits longer for
+    // unpunctuated/spoken-number answers than for complete sentences. The
+    // application still explicitly confirms names, email and address.
+    startSpeakingPlan: {
+      waitSeconds: 0.4,
+      smartEndpointingPlan: { provider: "vapi" },
+      transcriptionEndpointingPlan: {
+        onPunctuationSeconds: 0.3,
+        onNoPunctuationSeconds: 1.2,
+        onNumberSeconds: 1.0,
+      },
+    },
     phoneNumber: null,
     transferDestination: null,
     duration: {
@@ -111,21 +195,28 @@ export function buildVoiceBetaAssistantManifest(input: BuildManifestInput): Voic
         { seconds: 870, say: VOICE_BETA_WARNING_870 },
       ],
     },
-    artifactSuppression: {
+    artifactPlan: {
       recordingEnabled: false,
       videoRecordingEnabled: false,
       pcapEnabled: false,
-      loggingEnabled: false,
-      fullMessageHistoryEnabled: false,
-      transcriptArtifactEnabled: false,
-      summaryGenerationEnabled: false,
-      structuredOutputEnabled: false,
-      analysisEnabled: false,
+      loggingEnabled: true,
+      fullMessageHistoryEnabled: true,
+      transcriptPlan: { enabled: true },
+    },
+    analysisPlan: {
+      summaryPlan: { enabled: false },
+      structuredDataPlan: { enabled: false },
+      successEvaluationPlan: { enabled: false },
     },
     serverEvents: {
       url: serverEventsUrl,
       authenticationMode: "shared-header-credential",
-      events: ["assistant.started", "status-update", "hang", "end-of-call-report"],
+      events: [
+        "assistant.started",
+        "status-update",
+        "hang",
+        "end-of-call-report",
+      ],
     },
     callRail: null,
   };
