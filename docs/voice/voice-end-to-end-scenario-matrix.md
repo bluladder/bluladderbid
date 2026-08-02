@@ -45,9 +45,30 @@ The automated contract suite is `supabase/functions/_shared/voice/voiceEndToEndS
 | 39 | Mixed firm/manual portions | Preserve priced lines, label review portion, block unsupported booking portion. | disposition/readiness tests, matrix | Owner/provider flow review |
 | 40 | Cross-org/cross-customer attempt | Identity, ownership, and server-derived organization mismatch fail closed. | organization/existing-record/matrix tests | None |
 
+## Issue #72 emergency executable matrix
+
+These incident-specific rows are executable through direct production-route or
+contract tests; they do not invoke a provider.
+
+| Required proof | Executable evidence |
+|---|---|
+| Confirmed form answers survive the next turn | `workflowController_rollout_test.ts`, `quoteSessionProjection_test.ts` |
+| Confirmed email/address is not repeatedly requested | `workflowController_rollout_test.ts`, `voiceJourneyCompletion_test.ts` |
+| Controller-route user and exact spoken assistant turns persist | `controllerRoute_test.ts` |
+| Provider retries/end-of-call duplicates do not duplicate messages | `controllerRoute_test.ts`, `vapiArtifactJournal_test.ts` |
+| Conversation projection and quote session stay consistent | `quoteSessionProjection_test.ts`, `controllerRoute_test.ts` |
+| A new caller reaches local customer/property readiness | `voiceBookingIdentityPreparation_test.ts` |
+| Readiness blockers, next action, failure category, and provider-contact fact remain distinct | `availabilityLookup_test.ts`, `workflowController_rollout_test.ts` |
+| A firm canonical quote uses the signed quote delivery path | `quoteByTextDelivery_test.ts`, `hangupBidLinkFollowup_test.ts` |
+| Generic fallback is used only after a terminal non-deliverable actual-quote decision | `hangupBidLinkFollowup_test.ts` |
+| Test doubles make zero Vapi, CallRail, Jobber, SMS, or email calls | direct injected provider seams in the tests above; no network permission is requested by those tests |
+| Tenant isolation and deterministic replay remain intact | `voiceBookingIdentityPreparation_test.ts`, `quoteSessionProjection_test.ts`, `vapiArtifactJournal_test.ts` |
+| Canonical intake and pricing mirrors remain byte-identical | repository mirror/parity tests and contract checks in CI |
+
 ## Pass criteria
 
-- All forty executable matrix cases pass.
+- All forty original executable matrix cases and every Issue #72 evidence suite
+  pass.
 - Relevant dedicated suites remain green; the matrix does not replace their deeper assertions.
 - Frontend, Edge, type, lint, build, mirror, and diff checks pass with no branch-caused errors. Repository-wide Deno formatting/lint baseline debt is reported separately, and the GitHub Secret Scan workflow is the authoritative post-publication secret check when local scanner binaries are unavailable.
 - Provider rows above remain unexecuted until Ben grants the specific authorization described in the provider checklist.

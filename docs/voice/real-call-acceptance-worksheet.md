@@ -48,7 +48,8 @@ real-call execution.
 | Authorization explicitly permits the planned real calls | `[ ]` | `[ ]` |
 | Provider account, hosted project, assistant, and build identities match | `[ ]` | `[ ]` |
 | Vapi ZDR is enabled and HIPAA mode is disabled | `[ ]` | `[ ]` |
-| Recording, transcript, messages, summary, structured output, analysis, logs, video, and packet capture are disabled | `[ ]` | `[ ]` |
+| Raw recording, video, packet capture, summary, structured output, and analysis are disabled | `[ ]` | `[ ]` |
+| Transcript delivery, full message history, sanitized logs, tenant linkage, and the 30-day expiry process match the reviewed manifest | `[ ]` | `[ ]` |
 | Custom-LLM credential is attached; value was not viewed | `[ ]` | `[ ]` |
 | Server-event credential is attached; value was not viewed | `[ ]` | `[ ]` |
 | Provider tools are empty | `[ ]` | `[ ]` |
@@ -184,7 +185,8 @@ correlation where the schema supports it:
 | Email delivery attempts | `[ ]` | `[ ]` | `0` |
 | Campaign/follow-up events | `[ ]` | `[ ]` | `0` |
 | Transfer attempts | `[ ]` | `[ ]` | `0` |
-| Stored transcripts/recordings/artifacts | `[ ]` | `[ ]` | `0` |
+| Stored raw recordings/video/packet captures | `[ ]` | `[ ]` | `0` |
+| Bounded tenant transcript rows, duplicates, and expiry deadline | `[ ]` | `[ ]` | `[expected / 0 duplicates / <=30 days]` |
 
 Record the post-call observation window used to catch delayed effects. If a
 count cannot be obtained read-only, mark the scenario `BLOCKED`; do not infer
@@ -202,8 +204,9 @@ Stop the current scenario and all remaining real calls on:
 - DFW fallback for unknown traffic or Oregon activation;
 - duplicate effect or automatic retry after an uncertain result;
 - cross-customer disclosure or ANI-only identity trust;
-- recording, transcript, message, summary, analysis, detailed log, video, or
-  packet-capture retention;
+- raw recording, summary, analysis, video, or packet-capture retention;
+- missing, unbounded, cross-tenant, duplicate, unsanitized, or non-expiring
+  transcript/message retention;
 - missing operator outcome or unredacted PII/credential evidence;
 - configuration drift, unexpected provider tool, transfer destination, or
   CallRail routing involvement.
