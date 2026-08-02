@@ -15,6 +15,7 @@ import { parseSpokenName } from "./quoteByText.ts";
 import { normalizeSpokenPhone } from "../workflow/callerIdConfirmation.ts";
 import { PRICE_ASSURANCE } from "./voiceJourneyContract.ts";
 import { classifyExplicitConfirmation } from "./voiceJourneyContract.ts";
+import { parseSpokenQuantity } from "./spokenQuantity.ts";
 
 export interface VoiceAnswerResult {
   accepted: boolean;
@@ -39,6 +40,10 @@ const FIELD_PROMPTS: Readonly<Record<string, string>> = {
     "Is there any known roof damage, extreme pitch, fragile material, or unusual access?",
   advancedWindowConditionTypes:
     "Which applies: hard-water staining, small French panes, unusual ladder access, or more than one of those?",
+  hardWaterAffectedWindowEquivalents:
+    "How many window equivalents have hard-water staining?",
+  ladderAffectedWindowEquivalents:
+    "How many window equivalents require unusual ladder access?",
   drivewaySqft: "What is the driveway’s approximate square footage?",
   drivewaySurface:
     "What surface is the driveway — concrete, pavers, exposed aggregate, stone, asphalt, or something else?",
@@ -53,16 +58,24 @@ const FIELD_PROMPTS: Readonly<Record<string, string>> = {
     "Are these standard removable screens with reusable frames, or another type?",
   promotionId: "Which configured promotion are you calling about?",
   windowCount: "How many windows are included in that request?",
+  addedInteriorWindowSides:
+    "How many additional interior window-sides should be cleaned?",
+  omittedWindowSides: "How many window-sides should be omitted?",
   commercialLocations:
     "What is the first commercial property address or location you want included in the bid request?",
   preferredContactMethods:
     "Should the team follow up by phone, text, email, or more than one of those?",
   gutterUndergroundDrainCount:
     "How many underground drains or downspouts would you like us to clear?",
+  gutterRepairNotes: "Briefly describe the other gutter repair needed.",
   gutterGuardsLinearFeet:
     "About how many linear feet of gutter guards are included?",
   houseWashPatioPricingMethod:
     "For the selected patio, should I use the standard patio option or exact square footage?",
+  houseWashPatioSelections:
+    "Which patio should be cleaned — front, back, or both?",
+  houseWashStainType:
+    "Is the staining organic buildup or rust and irrigation staining?",
   houseWashFrontPatioSqft:
     "What is the front patio’s approximate square footage?",
   houseWashBackPatioSqft:
@@ -211,10 +224,24 @@ export function buildCanonicalPrePriceRecap(
   }. Is all of that correct?`;
 }
 
-function positiveNumber(text: string): number | null {
-  const match = text.replace(/,/g, "").match(/\b(\d+(?:\.5)?)\b/);
-  const value = match ? Number(match[1]) : Number.NaN;
-  return Number.isFinite(value) && value > 0 ? value : null;
+function quantity(text: string): number | null {
+  const value = parseSpokenQuantity(text, { min: 0, max: 100_000 });
+  return value === undefined ? null : value;
+}
+
+function isPositive(value: number | null): value is number {
+  return value !== null && value > 0;
+}
+
+function isPositiveInteger(
+  value: number | null,
+  max = Number.POSITIVE_INFINITY,
+): value is number {
+  return isPositive(value) && Number.isInteger(value) && value <= max;
+}
+
+function isPositiveHalfStep(value: number | null): value is number {
+  return isPositive(value) && Number.isInteger(value * 2);
 }
 
 function yesNo(text: string): boolean | null {
@@ -272,7 +299,7 @@ function patchForField(
   text: string,
   fields: QuoteSessionFields,
 ): Partial<QuoteSessionFields> | null {
-  const number = positiveNumber(text);
+  const number = quantity(text);
   switch (fieldId) {
     case "priceChangingAssumptionConfirmation": {
       if (classifyExplicitConfirmation(text) !== "confirmed") return null;
@@ -316,7 +343,9 @@ function patchForField(
       ) return { windowCleaningSides: "outside_only" };
       return null;
     case "squareFootage":
-      return number && number <= 100_000 ? { squareFootage: number } : null;
+      return isPositive(number) && number <= 100_000
+        ? { squareFootage: number }
+        : null;
     case "stories": {
       const story = /\b(one|single|1)\b/i.test(text)
         ? 1
@@ -351,9 +380,22 @@ function patchForField(
       };
     }
     case "hardWaterAffectedWindowEquivalents":
-      return number ? { hardWaterAffectedWindowEquivalents: number } : null;
+      return isPositiveHalfStep(number)
+        ? { hardWaterAffectedWindowEquivalents: number }
+        : null;
     case "ladderAffectedWindowEquivalents":
-      return number ? { ladderAffectedWindowEquivalents: number } : null;
+      return isPositiveHalfStep(number)
+        ? { ladderAffectedWindowEquivalents: number }
+        : null;
+    case "addedInteriorWindowSides":
+      return isPositiveHalfStep(number)
+        ? { addedInteriorWindowSides: number }
+        : null;
+    case "omittedWindowSides":
+      if (/\b(?:unknown|not sure|unsure)\b/i.test(text)) {
+        return { omittedWindowSides: "unknown" };
+      }
+      return isPositiveHalfStep(number) ? { omittedWindowSides: number } : null;
     case "advancedWindowConditionTypes": {
       const hardWaterStains = /hard.water/i.test(text);
       const frenchPanes = /french|divided|small panes/i.test(text);
@@ -384,7 +426,7 @@ function patchForField(
       }
       return null;
     case "solarScreenAffectedWindowCount":
-      return number && Number.isInteger(number)
+      return isPositiveInteger(number)
         ? { solarScreenAffectedWindowCount: number }
         : null;
     case "enclosedPatioProfile":
@@ -402,7 +444,7 @@ function patchForField(
       }
       return null;
     case "enclosureWindowCount":
-      return number && Number.isInteger(number)
+      return isPositiveInteger(number)
         ? { enclosureWindowCount: number }
         : null;
     case "enclosureWindowSides":
@@ -415,7 +457,7 @@ function patchForField(
         }
         : null;
     case "windowCount":
-      return number ? { windowCount: number } : null;
+      return isPositiveHalfStep(number) ? { windowCount: number } : null;
     case "commercialLocations": {
       const address = text.trim().slice(0, 200);
       if (address.length < 4) return null;
@@ -481,7 +523,9 @@ function patchForField(
       };
     }
     case "drivewaySqft":
-      return number && number <= 100_000 ? { drivewaySqft: number } : null;
+      return isPositive(number) && number <= 100_000
+        ? { drivewaySqft: number }
+        : null;
     case "drivewaySurface": {
       const value = surface(text);
       return value ? { drivewaySurface: value } : null;
@@ -491,7 +535,7 @@ function patchForField(
       return value ? { pressureWashSurface: value } : null;
     }
     case "pressureWashingAreas": {
-      if (!number) return null;
+      if (!isPositive(number) || number > 100_000) return null;
       const key = /front porch/i.test(text)
         ? "frontPorch"
         : /pool deck/i.test(text)
@@ -512,7 +556,7 @@ function patchForField(
       };
     }
     case "solarPanelCount":
-      return number && Number.isInteger(number)
+      return isPositiveInteger(number, 500)
         ? { solarPanelCount: number }
         : null;
     case "solarAccessProfile": {
@@ -541,7 +585,7 @@ function patchForField(
       };
     }
     case "screenRepairCount":
-      return number && Number.isInteger(number)
+      return isPositiveInteger(number, 500)
         ? { screenRepairCount: number }
         : null;
     case "screenRepairScopeType":
@@ -568,16 +612,16 @@ function patchForField(
       }
       return null;
     case "gutterUndergroundDrainCount":
-      return number != null && Number.isInteger(number)
+      return number !== null && Number.isInteger(number)
         ? {
           gutterAddons: {
             ...(fields.gutterAddons ?? {}),
-            undergroundDrains: { enabled: true, count: number },
+            undergroundDrains: { enabled: number > 0, count: number },
           },
         }
         : null;
     case "gutterGuardsLinearFeet":
-      return number
+      return isPositive(number)
         ? {
           gutterAddons: {
             ...(fields.gutterAddons ?? {}),
@@ -604,7 +648,7 @@ function patchForField(
       }
       return null;
     case "houseWashFrontPatioSqft":
-      return number
+      return isPositive(number) && number <= 100_000
         ? {
           houseWashPatios: {
             ...(fields.houseWashPatios ?? {}),
@@ -614,7 +658,7 @@ function patchForField(
         }
         : null;
     case "houseWashBackPatioSqft":
-      return number
+      return isPositive(number) && number <= 100_000
         ? {
           houseWashPatios: {
             ...(fields.houseWashPatios ?? {}),
