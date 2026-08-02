@@ -45,7 +45,7 @@ import {
   quoteIdentityMatches,
   VOICE_OPENING,
 } from "./voiceJourneyContract.ts";
-import type { QuoteSession } from "../quoteSession.ts";
+import { computeRequired, type QuoteSession } from "../quoteSession.ts";
 
 const empty = (): QuoteSession => ({
   id: "s1",
@@ -631,4 +631,31 @@ Deno.test("every reachable price-changing count has a direct question", () => {
     const prompt = promptForCanonicalField(field);
     assert(!prompt.includes("one more confirmed detail"), field);
   }
+});
+
+
+Deno.test("failed-call transcript reaches pricing readiness after a spoken ladder count", () => {
+  let session = empty();
+  const turns: Array<[string, string]> = [
+    ["services", "window cleaning"],
+    ["squareFootage", "twenty five hundred"],
+    ["windowCleaningSides", "both inside and outside"],
+    ["stories", "one story"],
+    ["windowCleaningCondition", "regular"],
+    ["advancedWindowConditions", "yes"],
+    ["advancedWindowConditionTypes", "ladder access"],
+    ["screenProfile", "standard removable"],
+    ["enclosedPatioProfile", "no"],
+    ["ladderAffectedWindowEquivalents", "two"],
+    ["priceChangingAssumptionConfirmation", "yes"],
+  ];
+
+  for (const [field, answer] of turns) {
+    const result = applyCanonicalVoiceAnswer(session, field, answer);
+    assert(result.accepted, `${field}: ${answer}`);
+    session = result.session;
+  }
+
+  assertEquals(session.fields.ladderAffectedWindowEquivalents, 2);
+  assertEquals(computeRequired(session.fields), []);
 });
