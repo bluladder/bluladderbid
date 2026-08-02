@@ -60,6 +60,7 @@ jobs:
           bun run check:provider-config-contract
           bun run check:protected-launch-evaluator
           bun run check:voice-booking-contract
+          bun run check:voice-artifact-retention-contract
 
       - name: Unit tests (vitest)
         run: bun run test
@@ -123,6 +124,7 @@ jobs:
           createdb --host localhost --username postgres stage7b_rehearsal
           createdb --host localhost --username postgres stage7b_lovable_rehearsal
           createdb --host localhost --username postgres stage7b_v2_rehearsal
+          createdb --host localhost --username postgres voice_retention_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -135,6 +137,10 @@ jobs:
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_v2_rehearsal
         run: bash scripts/rehearse-stage-7b-v2-postgres.sh
+      - name: Rehearse bounded voice artifact retention
+        env:
+          VOICE_RETENTION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_retention_rehearsal
+        run: bash scripts/rehearse-voice-artifact-retention-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard

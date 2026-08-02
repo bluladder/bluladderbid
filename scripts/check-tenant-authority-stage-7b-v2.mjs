@@ -94,6 +94,7 @@ if (migration !== migrationAtRuntimeBase) {
 const changedMigrationPaths = changedPaths(["supabase/migrations"]);
 const reviewedPostRuntimeMigrations = new Set([
   "supabase/migrations/20260801234014_12e7ed78-5a9d-4985-8cb7-c9ab044dc165.sql",
+  "supabase/migrations/20260802043233_voice_artifact_retention_purge.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
