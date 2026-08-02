@@ -97,6 +97,13 @@ const changedMigrationPaths = changedPaths(["supabase/migrations"]);
 const reviewedPostRuntimeMigrations = new Set([
   "supabase/migrations/20260801234014_12e7ed78-5a9d-4985-8cb7-c9ab044dc165.sql",
   "supabase/migrations/20260802043233_voice_artifact_retention_purge.sql",
+  // Lovable-generated execution twin of the reviewed canonical retention
+  // migration 20260802043233. Definitively committed in production as
+  // execution version 20260802143334 with payload SHA-256
+  // 7c55e5f1389c6003a81dc6951629f9db2fed5416afe4e18c1f2081eda8d92530 and
+  // matching production provenance (see
+  // docs/releases/voice-artifact-retention-lovable-v1/evidence.json).
+  "supabase/migrations/20260802143334_ece8e99d-b64a-4c85-ae68-869db62f2b8f.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
