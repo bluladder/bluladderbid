@@ -81,9 +81,13 @@ describe('PlanUpsellCard — fail-closed plan behavior', () => {
 
     rerender(<PlanUpsellCard {...props} oneTimeTotal={275} quotePhase="loading" />);
     expect(screen.queryByTestId('persistent-quote-action')).toBeNull();
+    expect(screen.getByTestId('quote-loading')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('$275');
 
     rerender(<PlanUpsellCard {...props} oneTimeTotal={275} quotePhase="unavailable" />);
     expect(screen.queryByTestId('persistent-quote-action')).toBeNull();
+    expect(screen.getByTestId('quote-unavailable')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('$275');
   });
 
   it('keeps the canonical one-time quote above collapsed, subordinate plans', () => {

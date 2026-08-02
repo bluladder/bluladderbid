@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { IntentFirstServiceSelector } from './IntentFirstServiceSelector';
 import {
@@ -53,6 +53,7 @@ function Harness({ initial = DEFAULT_ADDITIONAL_SERVICES, featuredService }: {
       onHomeDetailsChange={(updates) => setHomeDetails((current) => ({ ...current, ...updates }))}
       featuredService={featuredService}
       windowPromo={null}
+      quotePhase="firm"
     />
   );
 }
@@ -122,5 +123,122 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
     expect(summaries[0]).toHaveTextContent('Gutter Cleaning');
     expect(screen.getByTestId('service-editor-gutterCleaning')).toBeInTheDocument();
     expect(screen.queryByTestId('service-catalog')).toBeNull();
+  });
+
+  it('shows Basic Gutter Cleaning with the authoritative base and gutter total', () => {
+    render(
+      <Harness
+        initial={{ ...DEFAULT_ADDITIONAL_SERVICES, gutterCleaning: true }}
+        featuredService="gutterCleaning"
+      />,
+    );
+
+    const base = screen.getByTestId('gutter-base-selection');
+    expect(within(base).getByRole('checkbox', { name: 'Basic Gutter Cleaning' })).toBeChecked();
+    expect(base).toHaveTextContent('Complete gutter and downspout cleaning');
+    expect(screen.getByTestId('gutter-base-price')).toHaveTextContent('$225');
+    expect(screen.getByTestId('gutter-service-total')).toHaveTextContent('$225');
+    expect(screen.getByTestId('selected-service-summary')).toHaveTextContent('$225');
+    expect(document.body.textContent).not.toContain('Included');
+  });
+
+  it('hides stale gutter amounts and never labels an unavailable base as Included', () => {
+    render(
+      <IntentFirstServiceSelector
+        services={{
+          ...DEFAULT_ADDITIONAL_SERVICES,
+          gutterCleaning: true,
+          gutterAddons: {
+            ...DEFAULT_ADDITIONAL_SERVICES.gutterAddons,
+            undergroundDrains: { enabled: true, count: '1' },
+          },
+        }}
+        servicePrices={{
+          ...prices,
+          gutterCleaning: 225,
+          gutterDrainCleaning: 100,
+          gutterCleaningTotal: 325,
+          grandTotal: 325,
+        }}
+        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+        onChange={() => {}}
+        onHomeDetailsChange={() => {}}
+        featuredService="gutterCleaning"
+        windowPromo={null}
+        quotePhase="loading"
+      />,
+    );
+
+    expect(screen.getByTestId('gutter-base-price')).toHaveTextContent('Updating price…');
+    expect(screen.getByTestId('gutter-service-total')).toHaveTextContent('Updating price…');
+    expect(document.body.textContent).not.toMatch(/\$100|\$225|\$325|Included/);
+  });
+
+  it('shows an authoritative add-on increase in the gutter total and selected card', () => {
+    render(
+      <IntentFirstServiceSelector
+        services={{
+          ...DEFAULT_ADDITIONAL_SERVICES,
+          gutterCleaning: true,
+          gutterAddons: {
+            ...DEFAULT_ADDITIONAL_SERVICES.gutterAddons,
+            undergroundDrains: { enabled: true, count: '1' },
+          },
+        }}
+        servicePrices={{
+          ...prices,
+          gutterCleaning: 225,
+          gutterDrainCleaning: 100,
+          gutterCleaningTotal: 325,
+          additionalServicesTotal: 325,
+          grandTotal: 325,
+        }}
+        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+        onChange={() => {}}
+        onHomeDetailsChange={() => {}}
+        featuredService="gutterCleaning"
+        windowPromo={null}
+        quotePhase="firm"
+      />,
+    );
+
+    expect(screen.getByTestId('gutter-base-price')).toHaveTextContent('$225');
+    expect(screen.getByText('+$100')).toBeInTheDocument();
+    expect(screen.getByTestId('gutter-service-total')).toHaveTextContent('$325');
+    expect(screen.getByTestId('selected-service-summary')).toHaveTextContent('$325');
+  });
+
+  it('clears selected gutter add-ons when the parent service is removed', () => {
+    const onChange = vi.fn();
+    render(
+      <IntentFirstServiceSelector
+        services={{
+          ...DEFAULT_ADDITIONAL_SERVICES,
+          gutterCleaning: true,
+          gutterAddons: {
+            undergroundDrains: { enabled: true, count: '2' },
+            minorRepairs: true,
+            gutterGuards: { enabled: true, linearFeet: 175 },
+          },
+        }}
+        servicePrices={prices}
+        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+        onChange={onChange}
+        onHomeDetailsChange={() => {}}
+        featuredService="gutterCleaning"
+        windowPromo={null}
+        quotePhase="firm"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Gutter Cleaning' }));
+    expect(onChange).toHaveBeenCalledWith({
+      gutterCleaning: false,
+      gutterAddons: {
+        undergroundDrains: { enabled: false, count: '2' },
+        minorRepairs: false,
+        gutterGuards: { enabled: false, linearFeet: 175 },
+      },
+    });
   });
 });

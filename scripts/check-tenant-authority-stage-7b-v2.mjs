@@ -176,6 +176,8 @@ if (missingEdgePaths.length) {
 
 const reviewedPostRuntimeProtectedPaths = new Set([
   "src/lib/pricing/fromQuoteResult.test.ts",
+  "src/lib/pricing/gutterBasePricing.regression.test.ts",
+  "src/lib/pricing/toQuoteInput.selectedServices.test.ts",
 ]);
 const protectedContractPaths = changedPaths([
   "packages/sales-engine",

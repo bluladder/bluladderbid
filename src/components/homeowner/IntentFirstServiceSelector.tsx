@@ -20,6 +20,7 @@ import { RoofPitchSelector } from './RoofPitchSelector';
 import type { WindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 import { ChoiceCard } from '@/components/quote/ChoiceCard';
 import { SummaryRow } from '@/components/quote/SummaryRow';
+import type { ServerQuotePhase } from '@/hooks/useServerQuoteCalculation';
 
 interface IntentFirstServiceSelectorProps {
   services: AdditionalServices;
@@ -30,6 +31,8 @@ interface IntentFirstServiceSelectorProps {
   featuredService?: 'windowCleaning' | 'gutterCleaning' | 'houseWash' | 'roofCleaning' | 'drivewayCleaning' | 'pressureWashing' | 'solarPanelCleaning' | 'screenRepair';
   /** Active $99 window promo config from admin. When null, the promo option is hidden entirely. */
   windowPromo?: WindowPromoConfig | null;
+  /** Current canonical one-time quote state; prices are actionable only for firm/estimated quotes. */
+  quotePhase: ServerQuotePhase;
 }
 
 function formatPrice(price: number) {
@@ -178,7 +181,8 @@ export function IntentFirstServiceSelector({
   onChange,
   onHomeDetailsChange,
   featuredService,
-  windowPromo
+  windowPromo,
+  quotePhase,
 }: IntentFirstServiceSelectorProps) {
   const [editingService, setEditingService] = useState<string | null>(featuredService ?? null);
   const [showInactiveServices, setShowInactiveServices] = useState(false);
@@ -222,6 +226,40 @@ export function IntentFirstServiceSelector({
 
   const selectedServiceIds = orderedServices.filter(isServiceEnabled);
   const inactiveServiceIds = orderedServices.filter((serviceId) => !isServiceEnabled(serviceId));
+  const hasActionableQuote = quotePhase === 'firm' || quotePhase === 'estimated';
+  const hasAuthoritativeGutterPrice =
+    hasActionableQuote &&
+    servicePrices.gutterCleaning > 0 &&
+    servicePrices.gutterCleaningTotal >= servicePrices.gutterCleaning;
+
+  const gutterPriceStatus = (() => {
+    if (quotePhase === 'loading' || quotePhase === 'idle') return 'Updating price…';
+    if (quotePhase === 'missing_information') return 'Complete home details to calculate price';
+    if (quotePhase === 'manual_review_required') return 'Price requires review';
+    return 'Price unavailable';
+  })();
+
+  const toggleGutterCleaning = () => {
+    if (!services.gutterCleaning) {
+      onChange({ gutterCleaning: true });
+      return;
+    }
+    onChange({
+      gutterCleaning: false,
+      gutterAddons: {
+        ...services.gutterAddons,
+        undergroundDrains: {
+          ...services.gutterAddons.undergroundDrains,
+          enabled: false,
+        },
+        minorRepairs: false,
+        gutterGuards: {
+          ...services.gutterAddons.gutterGuards,
+          enabled: false,
+        },
+      },
+    });
+  };
 
   const serviceCardControls = (serviceId: string, isEnabled: boolean, toggle: () => void) => ({
     isEnabled,
@@ -711,30 +749,60 @@ export function IntentFirstServiceSelector({
       icon={Home}
       title="Gutter Cleaning"
       description="Full gutter and downspout cleaning"
-      price={servicePrices.gutterCleaningTotal}
-      {...serviceCardControls('gutterCleaning', services.gutterCleaning, () =>
-        onChange({ gutterCleaning: !services.gutterCleaning })
-      )}
+      price={hasAuthoritativeGutterPrice ? servicePrices.gutterCleaningTotal : 0}
+      {...serviceCardControls('gutterCleaning', services.gutterCleaning, toggleGutterCleaning)}
       isFeatured={isFeatured('gutterCleaning')}
       benefit="Prevent water damage and foundation issues"
-      anchorPrice={servicePrices.gutterCleaningTotal}
+      anchorPrice={hasAuthoritativeGutterPrice ? servicePrices.gutterCleaningTotal : 0}
     >
       <div className="space-y-4">
-        <p className="text-xs text-muted-foreground">
-          Base gutter cleaning: {servicePrices.gutterCleaning > 0 ? `$${servicePrices.gutterCleaning}` : 'Included'}
-        </p>
+        <div
+          className="rounded-lg border border-primary bg-primary/5 p-3"
+          data-testid="gutter-base-selection"
+        >
+          <div className="flex items-start gap-3">
+            <Checkbox id="basic-gutter-cleaning" checked disabled className="mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="basic-gutter-cleaning" className="font-medium text-foreground">
+                  Basic Gutter Cleaning
+                </Label>
+                <span
+                  className="ml-auto font-semibold text-primary"
+                  data-testid="gutter-base-price"
+                >
+                  {hasAuthoritativeGutterPrice
+                    ? formatPrice(servicePrices.gutterCleaning)
+                    : gutterPriceStatus}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Complete gutter and downspout cleaning
+              </p>
+            </div>
+          </div>
+        </div>
         
         <GutterAddonsCard
           addons={services.gutterAddons}
           prices={{
-            drainCleaning: servicePrices.gutterDrainCleaning,
-            minorRepairs: servicePrices.gutterMinorRepairs,
-            gutterGuards: servicePrices.gutterGuards,
+            drainCleaning: hasAuthoritativeGutterPrice ? servicePrices.gutterDrainCleaning : 0,
+            minorRepairs: hasAuthoritativeGutterPrice ? servicePrices.gutterMinorRepairs : 0,
+            gutterGuards: hasAuthoritativeGutterPrice ? servicePrices.gutterGuards : 0,
           }}
           onChange={(updates) => onChange({ 
             gutterAddons: { ...services.gutterAddons, ...updates } 
           })}
         />
+
+        <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
+          <span className="font-medium text-foreground">Gutter cleaning total</span>
+          <span className="font-semibold text-primary" data-testid="gutter-service-total">
+            {hasAuthoritativeGutterPrice
+              ? formatPrice(servicePrices.gutterCleaningTotal)
+              : gutterPriceStatus}
+          </span>
+        </div>
       </div>
     </ServiceCard>
   );
