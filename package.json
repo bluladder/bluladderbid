@@ -31,6 +31,7 @@
     "check:provider-config-contract": "node scripts/check-provider-config-contract.self-test.mjs",
     "check:protected-launch-evaluator": "node scripts/evaluate-protected-launch.mjs --self-test",
     "check:voice-booking-contract": "node scripts/check-voice-booking-contract.mjs",
+    "check:voice-artifact-retention-contract": "node scripts/check-voice-artifact-retention-contract.mjs",
     "launch:readiness": "node scripts/check-launch-readiness.mjs",
     "preview": "vite preview",
     "test": "vitest run",

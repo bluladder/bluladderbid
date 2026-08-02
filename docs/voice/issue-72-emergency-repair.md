@@ -120,6 +120,11 @@ purge job. Before enabling provider transcript delivery, the operator must
 approve and verify a tenant-safe process that deletes rows after that deadline.
 That operational retention activation is separate from this no-deploy PR.
 
+The follow-on repository mechanism is specified in
+`docs/voice/voice-artifact-retention-release.md` and migration
+`20260802043233_voice_artifact_retention_purge.sql`. Neither merging that code
+nor this document applies the migration or authorizes the scheduled purge.
+
 ## Vapi transcription decision
 
 The version-controlled manifest selects Deepgram Nova-3 English with smart
