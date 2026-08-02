@@ -22,27 +22,35 @@ export function useAttribution(): AttributionState {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const signature = JSON.stringify({
-      s: state.source_session_id,
-      f: state.first_touch,
-      l: state.last_touch,
-    });
-    if (sentRef.current === signature) return;
-    sentRef.current = signature;
-    void supabase.functions
-      .invoke('attribution-ingest', {
-        body: {
-          source_session_id: state.source_session_id,
-          first_touch: state.first_touch,
-          last_touch: state.last_touch,
-          landing_page_slug: state.landing_page_slug,
-          fbclid: state.fbclid,
-          referrer: state.referrer,
-        },
-      })
-      .catch(() => {
-        /* silently ignore */
+    const send = (snapshot: AttributionState) => {
+      const signature = JSON.stringify({
+        s: snapshot.source_session_id,
+        f: snapshot.first_touch,
+        l: snapshot.last_touch,
       });
+      if (sentRef.current === signature) return;
+      sentRef.current = signature;
+      void supabase.functions
+        .invoke('attribution-ingest', {
+          body: {
+            source_session_id: snapshot.source_session_id,
+            first_touch: snapshot.first_touch,
+            last_touch: snapshot.last_touch,
+            landing_page_slug: snapshot.landing_page_slug,
+            fbclid: snapshot.fbclid,
+            referrer: snapshot.referrer,
+          },
+        })
+        .catch(() => {
+          /* silently ignore */
+        });
+    };
+
+    send(state);
+    // Meta creates _fbp/_fbc asynchronously. Re-read once after the loader has
+    // had time to set them, then send only if the attribution signature changed.
+    const metaCookieTimer = window.setTimeout(() => send(readAttribution()), 1_500);
+    return () => window.clearTimeout(metaCookieTimer);
   }, [state]);
 
   return state;

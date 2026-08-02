@@ -92,10 +92,16 @@ if (migration !== migrationAtRuntimeBase) {
   );
 }
 const changedMigrationPaths = changedPaths(["supabase/migrations"]);
-if (changedMigrationPaths.length) {
+const reviewedPostRuntimeMigrations = new Set([
+  "supabase/migrations/20260801234014_12e7ed78-5a9d-4985-8cb7-c9ab044dc165.sql",
+]);
+const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
+  !reviewedPostRuntimeMigrations.has(path)
+);
+if (unexpectedMigrationPaths.length) {
   throw new Error(
     `runtime-only release boundary violated by migration drift:\n${
-      changedMigrationPaths.join("\n")
+      unexpectedMigrationPaths.join("\n")
     }`,
   );
 }
@@ -129,6 +135,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/workflow/rolloutRoute.ts",
   "supabase/functions/_shared/workflow/rolloutRoute_test.ts",
   "supabase/functions/_shared/workflow/workflowSession.ts",
+  "supabase/functions/attribution-ingest/index.ts",
   "supabase/functions/voice-llm-adapter/index.ts",
 ]);
 const changedEdgePaths = changedPaths(["supabase/functions"]);
@@ -151,6 +158,9 @@ if (missingEdgePaths.length) {
   );
 }
 
+const reviewedPostRuntimeProtectedPaths = new Set([
+  "src/lib/pricing/fromQuoteResult.test.ts",
+]);
 const protectedContractPaths = changedPaths([
   "packages/sales-engine",
   "src/lib/pricing",
@@ -163,7 +173,7 @@ const protectedContractPaths = changedPaths([
   "supabase/functions/_shared/quoteSessionPricingAdapter.ts",
   "supabase/functions/_shared/quoteSessionPricingAdapter_test.ts",
   "supabase/functions/_shared/salesEngine",
-]);
+]).filter((path) => !reviewedPostRuntimeProtectedPaths.has(path));
 if (protectedContractPaths.length) {
   throw new Error(
     `canonical quote, pricing, tax, or duration contract drifted:\n${

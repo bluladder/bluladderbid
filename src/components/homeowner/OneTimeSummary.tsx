@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowRight, Clock, Download, Check, Sparkles, Loader2, Info, HelpCircle, Bookmark, Mail, MessageSquare, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,11 @@ import { CompleteYourRefresh } from '@/components/booking/CompleteYourRefresh';
 import { useServerQuoteCalculation } from '@/hooks/useServerQuoteCalculation';
 import { toQuoteInput, hasAnyServiceSelected, selectedServiceSlugs } from '@/lib/pricing/toQuoteInput';
 import { useWindowPromoConfig } from '@/hooks/useWindowPromoConfig';
-import { deriveQuoteId, fireLead } from '@/lib/attribution/metaPixel';
+import {
+  deriveQuoteFingerprint,
+  fireInitiateCheckout,
+  fireLead,
+} from '@/lib/attribution/metaPixel';
 import { bridgeFireQuoteSubmitted } from '@/lib/bridge/bluladderBidPostMessage';
 import { getOrCreateSourceSessionId, readAttribution } from '@/lib/attribution/attribution';
 import type { ServicePrices, AdditionalServices, HomeDetails } from '@/types/homeowner';
@@ -207,6 +211,21 @@ export function OneTimeSummary({
       } | null;
       setSavedQuoteUrl(resp?.quoteUrl ?? null);
 
+      // A Meta Lead represents a durably persisted quote/contact record, not
+      // merely a price displayed in React. The durable quote id is the shared
+      // browser/future-server deduplication entity id.
+      if (resp?.quoteId) {
+        const persistedServices = selectedServiceSlugs(additionalServices);
+        fireLead({
+          id: resp.quoteId,
+          persisted: true,
+          quoted_total: total,
+          service_count: persistedServices.length,
+          services_selected: persistedServices,
+          firm: true,
+        });
+      }
+
       if (saveDialogAction === 'text' && resp?.quoteId && normalizedPhone) {
         const quoteCapability = resp.quoteUrl
           ? new URL(resp.quoteUrl, window.location.origin).searchParams.get('resume')
@@ -267,39 +286,44 @@ export function OneTimeSummary({
     }
   };
 
-  // Fire Meta Pixel "Lead" ONLY after the canonical server quote returns firm.
-  // The event id is deterministic per canonical fingerprint, so refreshes,
-  // rerenders, and repeated identical quotes all dedupe to a single Lead.
-  const leadFiredRef = useRef<string | null>(null);
+  // Preserve the non-Meta iframe bridge signal when a firm combined review is
+  // displayed. Meta Lead ownership now begins only after save-quote succeeds.
   useEffect(() => {
     if (!isFirm || typeof total !== 'number' || !quote) return;
     const services = selectedServiceSlugs(additionalServices);
-    const quoteId = deriveQuoteId({
+    const quoteFingerprint = deriveQuoteFingerprint({
       ruleVersion: quoteState.ruleVersion,
       engineVersion: quoteState.engineVersion,
       total,
       services,
       session: getOrCreateSourceSessionId(),
     });
-    if (leadFiredRef.current === quoteId) return;
-    leadFiredRef.current = quoteId;
-    fireLead({
-      id: quoteId,
+    bridgeFireQuoteSubmitted({
+      id: quoteFingerprint,
+      total,
+      serviceSlugs: services,
+    });
+  }, [isFirm, total, quote, additionalServices, quoteState.ruleVersion, quoteState.engineVersion]);
+
+  const handleEnterScheduling = () => {
+    if (!isFirm || typeof total !== 'number' || !quote) return;
+    const services = selectedServiceSlugs(additionalServices);
+    const quoteFingerprint = deriveQuoteFingerprint({
+      ruleVersion: quoteState.ruleVersion,
+      engineVersion: quoteState.engineVersion,
+      total,
+      services,
+      session: getOrCreateSourceSessionId(),
+    });
+    fireInitiateCheckout({
+      id: quoteFingerprint,
       quoted_total: total,
       service_count: services.length,
       services_selected: services,
       firm: true,
     });
-    // Mirror the firm-quote signal to the marketing overlay. This shares the
-    // same firm-quote gate as fireLead and is sender-side-deduped, so
-    // reopening the summary / React rerenders do not resend it. This does
-    // NOT create a second Meta Lead — Meta ownership stays with fireLead.
-    bridgeFireQuoteSubmitted({
-      id: quoteId,
-      total,
-      serviceSlugs: services,
-    });
-  }, [isFirm, total, quote, additionalServices, quoteState.ruleVersion, quoteState.engineVersion]);
+    setShowBookingFlow(true);
+  };
 
   // Show booking flow — only reachable with a current, firm server quote.
   if (showBookingFlow) {
@@ -536,7 +560,7 @@ export function OneTimeSummary({
           </p>
           <Button
             className="w-full btn-primary h-12 text-base"
-            onClick={() => setShowBookingFlow(true)}
+            onClick={handleEnterScheduling}
             disabled={!canBook}
           >
             Choose Appointment Time
