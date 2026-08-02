@@ -61,6 +61,7 @@ jobs:
           bun run check:protected-launch-evaluator
           bun run check:voice-booking-contract
           bun run check:voice-artifact-retention-contract
+          bun run check:voice-artifact-retention-lovable-release
 
       - name: Unit tests (vitest)
         run: bun run test
@@ -125,6 +126,8 @@ jobs:
           createdb --host localhost --username postgres stage7b_lovable_rehearsal
           createdb --host localhost --username postgres stage7b_v2_rehearsal
           createdb --host localhost --username postgres voice_retention_rehearsal
+          createdb --host localhost --username postgres voice_retention_lovable_rehearsal
+          createdb --host localhost --username postgres voice_retention_lovable_rebuild_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -141,6 +144,11 @@ jobs:
         env:
           VOICE_RETENTION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_retention_rehearsal
         run: bash scripts/rehearse-voice-artifact-retention-postgres.sh
+      - name: Rehearse Lovable voice retention release control
+        env:
+          VOICE_RETENTION_LOVABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_retention_lovable_rehearsal
+          VOICE_RETENTION_LOVABLE_REBUILD_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_retention_lovable_rebuild_rehearsal
+        run: bash scripts/rehearse-voice-artifact-retention-lovable-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
