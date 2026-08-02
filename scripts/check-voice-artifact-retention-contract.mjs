@@ -113,7 +113,7 @@ requireFragments(rehearsal, "PostgreSQL rehearsal", [
 requireFragments(runbook, "release runbook", [
   "VOICE_LIVE_BOOKING_ENABLED=false",
   "Fresh hosted preflight",
-  "Apply the migration",
+  "checksum-pinned Lovable control path",
   "Verify the bounded purge",
   "Deploy the two voice Edge bundles",
   "Reconcile the Vapi manifest",
@@ -167,7 +167,9 @@ if (!stage7bChecker.includes(migrationPath)) {
 }
 if (
   !ci.includes("check:voice-artifact-retention-contract") ||
+  !ci.includes("check:voice-artifact-retention-lovable-release") ||
   !ci.includes("rehearse-voice-artifact-retention-postgres.sh") ||
+  !ci.includes("rehearse-voice-artifact-retention-lovable-postgres.sh") ||
   !ci.includes("github.event.pull_request.head.sha || github.sha")
 ) {
   fail("exact-head CI omits retention contract or PostgreSQL rehearsal");

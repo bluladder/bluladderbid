@@ -1,8 +1,9 @@
 # Voice artifact retention release procedure
 
 Status: **review-only; not deployed or applied**\
-Baseline: `86502a65719b6f42141be986c0dfcb729d0a1941`\
-Migration: `20260802043233_voice_artifact_retention_purge.sql`
+Canonical source baseline: `27bad0cd0e5053cfb436752bee0976c5e1278fd8`\
+Migration: `20260802043233_voice_artifact_retention_purge.sql`\
+Production control package: `docs/releases/voice-artifact-retention-lovable-v1/`
 
 This runbook is the activation boundary for the 30-day transcript/message
 retention markers introduced by merged PR #75. Repository approval does not
@@ -12,6 +13,14 @@ any discrepancy.
 
 `VOICE_LIVE_BOOKING_ENABLED=false` throughout this release. Do not enable live
 booking as part of retention activation or the controlled call.
+
+Lovable Cloud does not expose a caller-supplied migration version. The database
+steps below therefore defer to the checksum-pinned Lovable-native operator
+runbook. Do not submit the canonical source file directly, use raw DDL, insert
+or repair migration-history rows, or substitute an execution-time version. The
+generated transaction artifact embeds the canonical 9,958 bytes exactly once and
+is the only approved candidate for a later, separately authorized production
+window.
 
 ## Audited storage and writers
 
@@ -102,17 +111,25 @@ apply the new migration.
 
 ### 2. Fresh hosted preflight
 
-Run a new read-only preflight against the expected Supabase project. Do not
-reuse PR evidence. Execute
-`supabase/verification/voice_artifact_retention_preflight.sql` unchanged and
-record counts only; do not export content or identifiers.
+Run a new read-only preflight against Lovable project
+`b6e0d823-59c4-4b5a-afbe-182485e5458b`, whose reviewed built-in backend is
+`gyndziiuizpgwhqwyrvn`. Do not use the unrelated direct Supabase connector and
+do not reuse PR evidence. Submit each query in
+`supabase/preflight/voice_artifact_retention_lovable_mcp.json` separately and in
+order. Record aggregate counts only; do not export content or identifiers.
 
 Confirm:
 
 - the hosted project reference is the approved project;
 - `VOICE_LIVE_BOOKING_ENABLED` is absent or `false` by presence/status check,
   without displaying secret values;
-- the migration ledger does not yet contain `20260802043233`;
+- the migration ledger has exactly 151 rows, tip `20260801234014`, and the
+  pinned full-ledger SHA-256 fingerprint from `release.json`;
+- the production-only history marker exists exactly once;
+- the migration ledger does not contain `20260802043233` or any later row;
+- `extensions.digest(bytea,text)` is available for SHA-256 verification;
+- the existing append-only release-provenance authority has the exact reviewed
+  schema, owner, trigger, and private ACLs;
 - `pg_cron` is installed and healthy;
 - no existing cron job uses the new exact job name;
 - `chat_messages.ai_metadata` and
@@ -132,23 +149,32 @@ Stop if tenant lineage conflicts, the expected columns differ, the migration is
 unexpectedly present, a duplicate scheduler exists, or the candidate count
 cannot be explained without reading transcript content.
 
-### 3. Apply the migration
+### 3. Apply through the checksum-pinned Lovable control path
 
-During an approved database change window, apply exactly
-`20260802043233_voice_artifact_retention_purge.sql` through the established
-Supabase migration process. Do not paste an edited SQL variant and do not run
-the repository rehearsal against production.
+Follow `docs/releases/voice-artifact-retention-lovable-v1/operator-runbook.md`
+exactly. During a separately approved database window, review and approve once
+only the complete generated artifact
+`supabase/release-candidates/20260802043233_voice_artifact_retention_purge_lovable.sql`.
+Its raw file SHA-256, canonicalized wrapper SHA-256, control-component SHA-256,
+and the two accepted ledger payload fingerprints are pinned in `release.json`.
 
-Stop and roll back the transaction if the index cannot acquire its lock, the
-private objects cannot be created, `cron.schedule` is unavailable, or any
-statement differs from the reviewed SHA. Applying the migration activates the
-scheduled purge; that activation requires explicit owner approval.
+The artifact supplies one explicit transaction, fail-closed production versus
+clean-rebuild preconditions, the canonical SQL byte-for-byte, and one atomic
+append-only provenance row. Do not submit the control template or canonical
+source independently. Do not retry an error, timeout, disconnect, or uncertain
+result. Resolve ambiguity with the read-only provenance, object, scheduler, and
+full-payload ledger postflight.
 
 ### 4. Verify the bounded purge
 
 Before any Edge or Vapi change:
 
-1. Confirm the migration ledger contains exactly `20260802043233` once.
+1. Submit each query in
+   `supabase/verification/voice_artifact_retention_lovable_postflight_mcp.json`
+   separately. Require a 152-row ledger, the unchanged 151-row baseline
+   fingerprint, exactly one later execution-time row, exactly one accepted
+   complete-payload SHA-256, zero rows at canonical source version
+   `20260802043233`, and one exact atomic provenance row.
 2. Query `cron.job` read-only and confirm exactly one active job has the exact
    name, schedule, database, owner, and function-only command from the
    migration. Do not update `cron.job` directly.
@@ -162,9 +188,19 @@ Before any Edge or Vapi change:
 6. Confirm no failed or repeatedly skipped-concurrent run and no unexpected
    `cron.job_run_details` error.
 
-Run `supabase/verification/voice_artifact_retention_postflight.sql` unchanged
-for the schema/job/privilege/metric assertions, then rerun the preflight file
-for the full bucket comparison.
+7. Wait for Lovable's generated migration commit. Require exactly one
+   `supabase/migrations/<observed-later-version>_*.sql` receipt and verify it is
+   byte-identical to the approved artifact, allowing only the proven removal of
+   one terminal LF. Run the release checker and evidence validator.
+8. Before any future Supabase CLI use, run an ordinary linked dry-run and
+   require it to select nothing. Never use `--include-all`, migration repair, or
+   historical replay; those options could select the intentionally older
+   canonical source.
+
+After one scheduled interval, run the original
+`supabase/verification/voice_artifact_retention_postflight.sql` for the
+schema/job/privilege/metric assertions, then rerun the aggregate preflight for
+the full bucket comparison.
 
 Stop before provider reconciliation if any count, tenant boundary, scheduler
 definition, or metric is inconsistent.

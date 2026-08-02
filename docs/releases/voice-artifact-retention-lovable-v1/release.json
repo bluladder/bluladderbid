@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "release_id": "voice-artifact-retention-lovable-v1",
+  "status": "CONTROL_PATH_PROVEN_NOT_AUTHORIZED",
+  "decision": "READY_FOR_SEPARATELY_AUTHORIZED_LOVABLE_EXECUTION",
+  "hosted_mutation_authorized": false,
+  "production_control_plane": "lovable_cloud",
+  "source_commit": "27bad0cd0e5053cfb436752bee0976c5e1278fd8",
+  "canonical_source": {
+    "version": "20260802043233",
+    "path": "supabase/migrations/20260802043233_voice_artifact_retention_purge.sql",
+    "sha256": "a1580013cf7f72e31b75e6fb75f67995936d8636748bc0a141f3c6ce5cf78102",
+    "bytes": 9958,
+    "git_blob": "1ea2469315b0608df263a16611c7863beaec5ec3",
+    "remains_active_for_clean_rebuild": true
+  },
+  "control_template": {
+    "path": "supabase/release-candidates/voice_artifact_retention_lovable_control.sql",
+    "sha256": "e019c2a1d50fbc1eb539906ed3c9c1754bf06af1d814419da6e6bccf51a9e9ac",
+    "bytes": 17592
+  },
+  "artifact": {
+    "path": "supabase/release-candidates/20260802043233_voice_artifact_retention_purge_lovable.sql",
+    "canonical_sha256": "65836de375d970baa6354ab648c74124d22b39dd1f8b8b93a7ad5800e019cc62",
+    "file_sha256": "ba5c00e1e5301834fbb5182edd4d5730d25cc1f1e95719a146645f378ad75fed",
+    "bytes": 27671,
+    "transaction_count": 1,
+    "canonical_source_inclusion_count": 1,
+    "canonicalization": "replace the embedded canonical_sha256 with __ARTIFACT_SHA256__ before SHA-256",
+    "accepted_ledger_payloads": [
+      {
+        "normalization": "none",
+        "sha256": "ba5c00e1e5301834fbb5182edd4d5730d25cc1f1e95719a146645f378ad75fed",
+        "bytes": 27671
+      },
+      {
+        "normalization": "remove exactly one terminal LF",
+        "sha256": "7c55e5f1389c6003a81dc6951629f9db2fed5416afe4e18c1f2081eda8d92530",
+        "bytes": 27670
+      }
+    ]
+  },
+  "environment": {
+    "lovable_project_id": "b6e0d823-59c4-4b5a-afbe-182485e5458b",
+    "project_ref": "gyndziiuizpgwhqwyrvn",
+    "name": "Live/production",
+    "postgres_version": "17.6",
+    "hosted_only_history_marker": "20260128005316",
+    "hosted_ledger_count": 151,
+    "hosted_ledger_tip": "20260801234014",
+    "hosted_ledger_fingerprint_sha256": "3366d93be81fb4d5056a93d91a2474df380b3707124568b2c6fc5f1a19f70d0d",
+    "target_version_rows": 0,
+    "target_provenance_rows": 0,
+    "target_objects_present": 0,
+    "target_jobs_present": 0
+  },
+  "provenance": {
+    "table": "tenant_security.release_provenance",
+    "release_commit": "27bad0cd0e5053cfb436752bee0976c5e1278fd8",
+    "source_sha256": "a1580013cf7f72e31b75e6fb75f67995936d8636748bc0a141f3c6ce5cf78102",
+    "control_sha256": "e019c2a1d50fbc1eb539906ed3c9c1754bf06af1d814419da6e6bccf51a9e9ac",
+    "artifact_sha256": "65836de375d970baa6354ab648c74124d22b39dd1f8b8b93a7ad5800e019cc62",
+    "column_signature_sha256": "481ec4ee951f8a34d208b6b272b3ba90668e203b5af54b0552a70643652a3bee",
+    "constraint_signature_sha256": "0555ec64c8ccc069cd3b92be1f3db590e205d57aff2a9edfc80597bb5a23d624",
+    "default_signature_sha256": "d05dbc654e817158e6b580193c126c5b5555a5202fa4bc9be6e40384bc011e0f",
+    "append_only": true,
+    "atomic_with_artifact": true
+  },
+  "tool_contract": {
+    "lovable_migration_input_fields": [
+      "description",
+      "query"
+    ],
+    "caller_supplied_version_supported": false,
+    "observed_version_behavior": "Lovable assigns an execution-time timestamp",
+    "observed_statement_behavior": "one statement with at most the single terminal LF removed"
+  },
+  "preflight": {
+    "mcp_path": "supabase/preflight/voice_artifact_retention_lovable_mcp.json",
+    "mcp_sha256": "abd0bae9d6f4fd38dab77a8323d0589ead4624e4cbadb0e6266a2414033c7c08",
+    "submission_contract": "one read-only SELECT statement per lovable query_database call"
+  },
+  "postflight": {
+    "path": "supabase/verification/voice_artifact_retention_lovable_postflight.sql",
+    "sha256": "2b8f990b06f2e773c5649c2b017c95380e6329f258ce33c55157df672c60d7dc",
+    "mcp_path": "supabase/verification/voice_artifact_retention_lovable_postflight_mcp.json",
+    "mcp_sha256": "07ca366a72020860cafb04e7e96befc3350dfd25954a37bb1adec96d89168742",
+    "expected_ledger_count": 152,
+    "expected_new_ledger_rows": 1,
+    "expected_exact_payload_rows": 1
+  },
+  "cli_safety": {
+    "ordinary_push_rule": "the Lovable execution version must be later than 20260802043233",
+    "include_all_prohibited": true,
+    "migration_repair_prohibited": true,
+    "generated_migration_reconciliation_required": true,
+    "dry_run_must_select_canonical_source": false
+  },
+  "evidence": {
+    "template": "docs/releases/voice-artifact-retention-lovable-v1/evidence-template.json",
+    "completed_path": "docs/releases/voice-artifact-retention-lovable-v1/evidence.json",
+    "validator": "scripts/validate-voice-artifact-retention-lovable-evidence.mjs",
+    "validator_version": "voice-artifact-retention-lovable-evidence-v1"
+  },
+  "runbook": "docs/releases/voice-artifact-retention-lovable-v1/operator-runbook.md",
+  "readme": "docs/releases/voice-artifact-retention-lovable-v1/README.md",
+  "control_plane_evidence": "docs/releases/voice-artifact-retention-lovable-v1/control-plane-evidence.md"
+}
