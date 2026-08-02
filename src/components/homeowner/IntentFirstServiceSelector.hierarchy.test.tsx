@@ -37,6 +37,7 @@ const prices: ServicePrices = {
 };
 
 type FeaturedService = NonNullable<React.ComponentProps<typeof IntentFirstServiceSelector>['featuredService']>;
+type QuotePhase = React.ComponentProps<typeof IntentFirstServiceSelector>['quotePhase'];
 
 function Harness({ initial = DEFAULT_ADDITIONAL_SERVICES, featuredService }: {
   initial?: AdditionalServices;
@@ -239,6 +240,152 @@ describe('IntentFirstServiceSelector quote hierarchy', () => {
         minorRepairs: false,
         gutterGuards: { enabled: false, linearFeet: 175 },
       },
+    });
+  });
+
+  it('shows the required Basic House Wash row and organic cleaning as a non-interactive inclusion', () => {
+    render(
+      <Harness
+        initial={{ ...DEFAULT_ADDITIONAL_SERVICES, houseWash: true }}
+        featuredService="houseWash"
+      />,
+    );
+
+    const base = screen.getByTestId('house-wash-base-selection');
+    expect(within(base).getByRole('checkbox', { name: 'Basic House Wash' })).toBeChecked();
+    expect(base).toHaveTextContent(
+      'Organic soft washing for algae, mildew, cobwebs, dirt, and normal buildup',
+    );
+    expect(screen.getByTestId('house-wash-base-price')).toHaveTextContent('$300');
+    expect(screen.getByTestId('house-wash-service-total')).toHaveTextContent('$300');
+    expect(screen.getByTestId('selected-service-summary')).toHaveTextContent('$300');
+    expect(screen.getByTestId('organic-cleaning-inclusion')).toHaveTextContent(
+      'Organic Cleaning Included',
+    );
+    expect(screen.queryByRole('radio', { name: /Organic/i })).toBeNull();
+    expect(screen.getByRole('checkbox', {
+      name: /Add Rust \/ Irrigation Stain Treatment/i,
+    })).not.toBeChecked();
+  });
+
+  it('models rust treatment as an optional additive surcharge from the authoritative quote', () => {
+    const onChange = vi.fn();
+    render(
+      <IntentFirstServiceSelector
+        services={{
+          ...DEFAULT_ADDITIONAL_SERVICES,
+          houseWash: true,
+          houseWashDetails: {
+            ...DEFAULT_ADDITIONAL_SERVICES.houseWashDetails,
+            stainType: 'rust',
+          },
+        }}
+        servicePrices={{
+          ...prices,
+          houseWash: 300,
+          houseWashRustSurcharge: 45,
+          houseWashTotal: 345,
+          additionalServicesTotal: 345,
+          grandTotal: 345,
+        }}
+        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+        onChange={onChange}
+        onHomeDetailsChange={() => {}}
+        featuredService="houseWash"
+        windowPromo={null}
+        quotePhase="firm"
+      />,
+    );
+
+    const rust = screen.getByRole('checkbox', {
+      name: /Add Rust \/ Irrigation Stain Treatment/i,
+    });
+    expect(rust).toBeChecked();
+    expect(screen.getByTestId('rust-surcharge-price')).toHaveTextContent('+$45');
+    expect(screen.getByTestId('house-wash-base-price')).toHaveTextContent('$300');
+    expect(screen.getByTestId('house-wash-service-total')).toHaveTextContent('$345');
+    expect(screen.getByTestId('selected-service-summary')).toHaveTextContent('$345');
+
+    fireEvent.click(rust);
+    expect(onChange).toHaveBeenCalledWith({
+      houseWashDetails: {
+        ...DEFAULT_ADDITIONAL_SERVICES.houseWashDetails,
+        stainType: 'organic',
+      },
+    });
+  });
+
+  it.each([
+    ['idle', 'Updating price…'],
+    ['loading', 'Updating price…'],
+    ['missing_information', 'Complete home details to calculate price'],
+    ['manual_review_required', 'Price requires review'],
+    ['unavailable', 'Price unavailable'],
+  ] satisfies Array<[QuotePhase, string]>) (
+    'suppresses stale House Wash amounts during %s state',
+    (quotePhase, expectedStatus) => {
+      render(
+        <IntentFirstServiceSelector
+          services={{
+            ...DEFAULT_ADDITIONAL_SERVICES,
+            houseWash: true,
+            houseWashDetails: {
+              ...DEFAULT_ADDITIONAL_SERVICES.houseWashDetails,
+              stainType: 'rust',
+            },
+          }}
+          servicePrices={{
+            ...prices,
+            houseWash: 300,
+            houseWashRustSurcharge: 45,
+            houseWashTotal: 345,
+            grandTotal: 345,
+          }}
+          homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+          onChange={() => {}}
+          onHomeDetailsChange={() => {}}
+          featuredService="houseWash"
+          windowPromo={null}
+          quotePhase={quotePhase}
+        />,
+      );
+
+      expect(screen.getByTestId('house-wash-base-price')).toHaveTextContent(expectedStatus);
+      expect(screen.getByTestId('house-wash-service-total')).toHaveTextContent(expectedStatus);
+      expect(screen.getByTestId('rust-surcharge-price')).toHaveTextContent(expectedStatus);
+      expect(document.body.textContent).not.toMatch(/\$300|\$345|\+\$45/);
+      expect(screen.getByTestId('house-wash-base-price')).not.toHaveTextContent('Included');
+    },
+  );
+
+  it('removing House Wash disables rust while preserving siding preparation detail', () => {
+    const onChange = vi.fn();
+    render(
+      <IntentFirstServiceSelector
+        services={{
+          ...DEFAULT_ADDITIONAL_SERVICES,
+          houseWash: true,
+          houseWashDetails: { sidingMaterial: 'brick', stainType: 'rust' },
+        }}
+        servicePrices={{
+          ...prices,
+          houseWash: 300,
+          houseWashRustSurcharge: 45,
+          houseWashTotal: 345,
+        }}
+        homeDetails={{ ...DEFAULT_HOME_DETAILS, squareFootage: 2500 }}
+        onChange={onChange}
+        onHomeDetailsChange={() => {}}
+        featuredService="houseWash"
+        windowPromo={null}
+        quotePhase="firm"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove House Wash' }));
+    expect(onChange).toHaveBeenCalledWith({
+      houseWash: false,
+      houseWashDetails: { sidingMaterial: 'brick', stainType: 'organic' },
     });
   });
 });

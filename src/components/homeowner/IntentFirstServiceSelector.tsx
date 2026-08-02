@@ -231,6 +231,12 @@ export function IntentFirstServiceSelector({
     hasActionableQuote &&
     servicePrices.gutterCleaning > 0 &&
     servicePrices.gutterCleaningTotal >= servicePrices.gutterCleaning;
+  const rustTreatmentSelected = services.houseWashDetails.stainType === 'rust';
+  const hasAuthoritativeHouseWashPrice =
+    hasActionableQuote &&
+    servicePrices.houseWash > 0 &&
+    servicePrices.houseWashTotal >= servicePrices.houseWash &&
+    (!rustTreatmentSelected || servicePrices.houseWashRustSurcharge > 0);
 
   const gutterPriceStatus = (() => {
     if (quotePhase === 'loading' || quotePhase === 'idle') return 'Updating price…';
@@ -238,6 +244,7 @@ export function IntentFirstServiceSelector({
     if (quotePhase === 'manual_review_required') return 'Price requires review';
     return 'Price unavailable';
   })();
+  const houseWashPriceStatus = gutterPriceStatus;
 
   const toggleGutterCleaning = () => {
     if (!services.gutterCleaning) {
@@ -257,6 +264,20 @@ export function IntentFirstServiceSelector({
           ...services.gutterAddons.gutterGuards,
           enabled: false,
         },
+      },
+    });
+  };
+
+  const toggleHouseWash = () => {
+    if (!services.houseWash) {
+      onChange({ houseWash: true });
+      return;
+    }
+    onChange({
+      houseWash: false,
+      houseWashDetails: {
+        ...services.houseWashDetails,
+        stainType: 'organic',
       },
     });
   };
@@ -814,21 +835,56 @@ export function IntentFirstServiceSelector({
       icon={Warehouse}
       title="House Wash"
       description="Gentle exterior soft washing"
-      price={servicePrices.houseWashTotal}
-      {...serviceCardControls('houseWash', services.houseWash, () =>
-        onChange({ houseWash: !services.houseWash })
-      )}
+      price={hasAuthoritativeHouseWashPrice ? servicePrices.houseWashTotal : 0}
+      {...serviceCardControls('houseWash', services.houseWash, toggleHouseWash)}
       isFeatured={isFeatured('houseWash')}
       benefit="Kills mold and algae — safe soft-wash system"
-      anchorPrice={servicePrices.houseWashTotal}
+      anchorPrice={hasAuthoritativeHouseWashPrice ? servicePrices.houseWashTotal : 0}
     >
-      <HouseWashDetailsCard
-        details={services.houseWashDetails}
-        rustSurcharge={servicePrices.houseWashRustSurcharge}
-        onChange={(updates) => onChange({ 
-          houseWashDetails: { ...services.houseWashDetails, ...updates } 
-        })}
-      />
+      <div className="space-y-4">
+        <div
+          className="rounded-lg border border-primary bg-primary/5 p-3"
+          data-testid="house-wash-base-selection"
+        >
+          <div className="flex items-start gap-3">
+            <Checkbox id="basic-house-wash" checked disabled className="mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="basic-house-wash" className="font-medium text-foreground">
+                  Basic House Wash
+                </Label>
+                <span className="ml-auto font-semibold text-primary" data-testid="house-wash-base-price">
+                  {hasAuthoritativeHouseWashPrice
+                    ? formatPrice(servicePrices.houseWash)
+                    : houseWashPriceStatus}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Organic soft washing for algae, mildew, cobwebs, dirt, and normal buildup
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <HouseWashDetailsCard
+          details={services.houseWashDetails}
+          rustSurcharge={hasAuthoritativeHouseWashPrice ? servicePrices.houseWashRustSurcharge : 0}
+          showAuthoritativePrice={hasAuthoritativeHouseWashPrice}
+          priceStatus={houseWashPriceStatus}
+          onChange={(updates) => onChange({
+            houseWashDetails: { ...services.houseWashDetails, ...updates }
+          })}
+        />
+
+        <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
+          <span className="font-medium text-foreground">House Wash total</span>
+          <span className="font-semibold text-primary" data-testid="house-wash-service-total">
+            {hasAuthoritativeHouseWashPrice
+              ? formatPrice(servicePrices.houseWashTotal)
+              : houseWashPriceStatus}
+          </span>
+        </div>
+      </div>
     </ServiceCard>
   );
 
