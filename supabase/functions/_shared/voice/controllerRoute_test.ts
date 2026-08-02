@@ -314,3 +314,73 @@ Deno.test("provider acceptance without a reloadable delivery record is not calle
   assertStringIncludes(result.spoken, "provider accepted");
   assertStringIncludes(result.spoken, "don't retry");
 });
+
+
+Deno.test("duplicate intake write continues when the proposed answer is already present", async () => {
+  const saved: QuoteSession = {
+    ...session,
+    fields: { services: ["windowCleaning"] },
+    lastStep: "asked:stories",
+  };
+  const result = await executeControllerRoute(input(), {
+    runController: async () => ({
+      sessionId: session.id,
+      sessionPatch: { fields: { services: ["windowCleaning"] } },
+      pre: {
+        kind: "fsm" as const,
+        action: {
+          kind: "ask" as const,
+          field: "stories" as const,
+          prompt: "How many stories is the home?",
+        },
+        spoken: "How many stories is the home?",
+      },
+    }),
+    persist: async () => ({ status: "conflict" as const, reason: "changed" }),
+    readSession: async () => saved,
+    project: async () => ({ status: "projected" as const, attempts: 1 }),
+    prepareIdentity: async () => ({
+      status: "not_ready" as const,
+      blocker: "name_unconfirmed" as const,
+    }),
+    journal: async () => ({ written: 2, duplicates: 0, failed: 0 }),
+  });
+  assertEquals(result.stateCommitted, true);
+  assertEquals(result.event, "workflow_controller");
+  assertEquals(result.spoken, "How many stories is the home?");
+});
+
+Deno.test("conflicting intake write asks the exact current question without generic failure text", async () => {
+  const latest: QuoteSession = {
+    ...session,
+    fields: {
+      services: ["windowCleaning"],
+      ladderWork: true,
+    },
+    lastStep: "asked:ladderAffectedWindowEquivalents",
+  };
+  const result = await executeControllerRoute(input(), {
+    runController: async () => ({
+      sessionId: session.id,
+      sessionPatch: { fields: { services: ["houseWash"] } },
+      pre: {
+        kind: "fsm" as const,
+        action: {
+          kind: "ask" as const,
+          field: "squareFootage" as const,
+          prompt: "How many square feet is the home?",
+        },
+        spoken: "How many square feet is the home?",
+      },
+    }),
+    persist: async () => ({ status: "conflict" as const, reason: "changed" }),
+    readSession: async () => latest,
+    journal: async () => ({ written: 2, duplicates: 0, failed: 0 }),
+  });
+  assertEquals(result.stateCommitted, false);
+  assertEquals(result.event, "workflow_controller_persistence_blocked");
+  assertEquals(
+    result.spoken,
+    "How many windows need unusual ladder access?",
+  );
+});

@@ -27,6 +27,7 @@ import {
   buildCanonicalPrePriceRecap,
   buildCanonicalPriceStatement,
   formatCanonicalCurrency,
+  promptForCanonicalField,
 } from "./voiceCanonicalIntake.ts";
 import {
   describeVoiceDelivery,
@@ -44,7 +45,7 @@ import {
   quoteIdentityMatches,
   VOICE_OPENING,
 } from "./voiceJourneyContract.ts";
-import type { QuoteSession } from "../quoteSession.ts";
+import { computeRequired, type QuoteSession } from "../quoteSession.ts";
 
 const empty = (): QuoteSession => ({
   id: "s1",
@@ -479,4 +480,182 @@ Deno.test("field-team memo is bounded and cannot alter quote state", () => {
     text: "Please use the side gate. The latch sticks.",
     source: "voice",
   });
+});
+
+
+Deno.test("canonical voice intake stores ordinary spoken quantities in the requested fields", () => {
+  const cases: Array<{
+    field: string;
+    answer: string;
+    read: (session: QuoteSession) => unknown;
+    expected: unknown;
+  }> = [
+    {
+      field: "squareFootage",
+      answer: "twenty five hundred",
+      read: (session) => session.fields.squareFootage,
+      expected: 2500,
+    },
+    {
+      field: "ladderAffectedWindowEquivalents",
+      answer: "two",
+      read: (session) => session.fields.ladderAffectedWindowEquivalents,
+      expected: 2,
+    },
+    {
+      field: "hardWaterAffectedWindowEquivalents",
+      answer: "two and a half",
+      read: (session) => session.fields.hardWaterAffectedWindowEquivalents,
+      expected: 2.5,
+    },
+    {
+      field: "solarScreenAffectedWindowCount",
+      answer: "there are twelve",
+      read: (session) => session.fields.solarScreenAffectedWindowCount,
+      expected: 12,
+    },
+    {
+      field: "enclosureWindowCount",
+      answer: "six",
+      read: (session) => session.fields.enclosureWindowCount,
+      expected: 6,
+    },
+    {
+      field: "windowCount",
+      answer: "ten and a half",
+      read: (session) => session.fields.windowCount,
+      expected: 10.5,
+    },
+    {
+      field: "solarPanelCount",
+      answer: "twenty",
+      read: (session) => session.fields.solarPanelCount,
+      expected: 20,
+    },
+    {
+      field: "screenRepairCount",
+      answer: "I have about fifteen screens",
+      read: (session) => session.fields.screenRepairCount,
+      expected: 15,
+    },
+    {
+      field: "gutterUndergroundDrainCount",
+      answer: "four",
+      read: (session) => session.fields.gutterAddons?.undergroundDrains?.count,
+      expected: 4,
+    },
+    {
+      field: "gutterGuardsLinearFeet",
+      answer: "one hundred twenty-five",
+      read: (session) => session.fields.gutterAddons?.gutterGuards?.linearFeet,
+      expected: 125,
+    },
+    {
+      field: "houseWashFrontPatioSqft",
+      answer: "three hundred",
+      read: (session) => session.fields.houseWashPatios?.frontSqft,
+      expected: 300,
+    },
+    {
+      field: "drivewaySqft",
+      answer: "one thousand",
+      read: (session) => session.fields.drivewaySqft,
+      expected: 1000,
+    },
+  ];
+
+  for (const testCase of cases) {
+    const result = applyCanonicalVoiceAnswer(
+      empty(),
+      testCase.field,
+      testCase.answer,
+    );
+    assert(result.accepted, testCase.field);
+    assertEquals(testCase.read(result.session), testCase.expected);
+  }
+});
+
+Deno.test("conditional voice answers land in their canonical storage paths", () => {
+  let session = applyCanonicalVoiceAnswer(
+    empty(),
+    "solarScreenServiceRequested",
+    "yes",
+  ).session;
+  assertEquals(session.fields.solarScreenServiceRequested, true);
+
+  session = applyCanonicalVoiceAnswer(
+    session,
+    "screenedEnclosureSoftWash",
+    "no",
+  ).session;
+  assertEquals(session.fields.screenedEnclosureSoftWash, false);
+
+  session = applyCanonicalVoiceAnswer(
+    session,
+    "houseWashStainType",
+    "rust from the irrigation",
+  ).session;
+  assertEquals(session.fields.houseWashStainType, "rust");
+
+  session = applyCanonicalVoiceAnswer(
+    session,
+    "houseWashPatioSelections",
+    "both",
+  ).session;
+  assertEquals(session.fields.houseWashPatios?.frontSelected, true);
+  assertEquals(session.fields.houseWashPatios?.backSelected, true);
+
+  session = applyCanonicalVoiceAnswer(
+    session,
+    "gutterRepairNeeds",
+    "a leaking seam and a loose downspout",
+  ).session;
+  assertEquals(session.fields.gutterAddons?.repairNeeds, [
+    "leaking_seams",
+    "loose_downspouts",
+  ]);
+});
+
+Deno.test("every reachable price-changing count has a direct question", () => {
+  for (
+    const field of [
+      "hardWaterAffectedWindowEquivalents",
+      "ladderAffectedWindowEquivalents",
+      "addedInteriorWindowSides",
+      "omittedWindowSides",
+      "houseWashPatioSelections",
+      "houseWashStainType",
+      "gutterRepairNotes",
+    ]
+  ) {
+    const prompt = promptForCanonicalField(field);
+    assert(!prompt.includes("one more confirmed detail"), field);
+  }
+});
+
+
+Deno.test("failed-call transcript reaches pricing readiness after a spoken ladder count", () => {
+  let session = empty();
+  const turns: Array<[string, string]> = [
+    ["services", "window cleaning"],
+    ["squareFootage", "twenty five hundred"],
+    ["windowCleaningSides", "both inside and outside"],
+    ["stories", "one story"],
+    ["windowCleaningCondition", "regular"],
+    ["advancedWindowConditions", "yes"],
+    ["advancedWindowConditionTypes", "ladder access"],
+    ["screenProfile", "standard removable"],
+    ["enclosedPatioProfile", "no"],
+    ["ladderAffectedWindowEquivalents", "two"],
+    ["priceChangingAssumptionConfirmation", "yes"],
+  ];
+
+  for (const [field, answer] of turns) {
+    const result = applyCanonicalVoiceAnswer(session, field, answer);
+    assert(result.accepted, `${field}: ${answer}`);
+    session = result.session;
+  }
+
+  assertEquals(session.fields.ladderAffectedWindowEquivalents, 2);
+  assertEquals(computeRequired(session.fields), []);
 });
