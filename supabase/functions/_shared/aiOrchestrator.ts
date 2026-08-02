@@ -85,7 +85,9 @@ import {
   resolveQuoteByTextContinuation,
 } from "./voice/quoteByText.ts";
 import { deliverVoiceQuoteByText } from "./voice/quoteByTextDelivery.ts";
-import { formatCanonicalCurrency } from "./voice/voiceCanonicalIntake.ts";\nimport { spokenToNumber } from "./voice/spokenQuantity.ts";\nexport { spokenToNumber } from "./voice/spokenQuantity.ts";
+import { formatCanonicalCurrency } from "./voice/voiceCanonicalIntake.ts";
+import { spokenToNumber } from "./voice/spokenQuantity.ts";
+export { spokenToNumber } from "./voice/spokenQuantity.ts";
 
 const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 // Canonical scheduling/orchestrator model. Configurable via env so we don't
