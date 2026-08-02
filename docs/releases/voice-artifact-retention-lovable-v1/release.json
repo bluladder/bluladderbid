@@ -96,11 +96,21 @@
     "generated_migration_reconciliation_required": true,
     "dry_run_must_select_canonical_source": false
   },
+  "replay_safety": {
+    "accepted_proof_modes": [
+      "supabase_cli_zero_selection_dry_run",
+      "lovable_native_ledger_git_reconciliation"
+    ],
+    "lovable_native_requires_control_plane": "lovable_cloud",
+    "expected_reconciled_ledger_count": 152,
+    "lovable_native_rationale": "Lovable Cloud exposes no linked Supabase CLI credentials and no caller-supplied migration version, so replay safety is proven by exact ledger/Git reconciliation of the Lovable-generated receipt instead of a CLI dry run.",
+    "supabase_cli_claim_prohibited_for_lovable_native": true
+  },
   "evidence": {
     "template": "docs/releases/voice-artifact-retention-lovable-v1/evidence-template.json",
     "completed_path": "docs/releases/voice-artifact-retention-lovable-v1/evidence.json",
     "validator": "scripts/validate-voice-artifact-retention-lovable-evidence.mjs",
-    "validator_version": "voice-artifact-retention-lovable-evidence-v1"
+    "validator_version": "voice-artifact-retention-lovable-evidence-v2"
   },
   "runbook": "docs/releases/voice-artifact-retention-lovable-v1/operator-runbook.md",
   "readme": "docs/releases/voice-artifact-retention-lovable-v1/README.md",

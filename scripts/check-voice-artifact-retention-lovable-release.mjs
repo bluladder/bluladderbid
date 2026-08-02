@@ -250,6 +250,30 @@ if (
   fail("hosted ledger stop gates changed");
 }
 
+if (
+  manifest.evidence.validator_version !==
+    "voice-artifact-retention-lovable-evidence-v2" ||
+  manifest.cli_safety.include_all_prohibited !== true ||
+  manifest.cli_safety.migration_repair_prohibited !== true ||
+  manifest.cli_safety.generated_migration_reconciliation_required !== true
+) {
+  fail("evidence validator version or CLI prohibition changed");
+}
+const replaySafety = manifest.replay_safety ?? {};
+if (
+  JSON.stringify(replaySafety.accepted_proof_modes) !==
+    JSON.stringify([
+      "supabase_cli_zero_selection_dry_run",
+      "lovable_native_ledger_git_reconciliation",
+    ]) ||
+  replaySafety.lovable_native_requires_control_plane !== "lovable_cloud" ||
+  replaySafety.expected_reconciled_ledger_count !==
+    manifest.postflight.expected_ledger_count ||
+  replaySafety.supabase_cli_claim_prohibited_for_lovable_native !== true
+) {
+  fail("replay-safety proof contract changed");
+}
+
 requireFragments(runbook, "runbook", [
   "Do not retry",
   "supabase db push --include-all",
@@ -258,6 +282,9 @@ requireFragments(runbook, "runbook", [
   manifest.environment.lovable_project_id,
   manifest.environment.project_ref,
   "Exact one-step production authorization",
+  "supabase_cli_zero_selection_dry_run",
+  "lovable_native_ledger_git_reconciliation",
+  "retained_pre_execution",
 ]);
 if (!/dry-run must select\s+nothing/i.test(runbook)) {
   fail("runbook does not require a zero-migration CLI dry-run");
@@ -351,6 +378,35 @@ if (generatedCandidates.length === 1) {
     generated.version !== version
   ) {
     fail("completed evidence points at a different generated migration");
+  }
+  const proofMode = completedEvidence.replay_safety?.proof_mode ??
+    "supabase_cli_zero_selection_dry_run";
+  if (!manifest.replay_safety.accepted_proof_modes.includes(proofMode)) {
+    fail("completed evidence uses an unsupported replay-safety proof mode");
+  }
+  if (proofMode === "lovable_native_ledger_git_reconciliation") {
+    const rec = completedEvidence.replay_safety.lovable_reconciliation;
+    let blob;
+    try {
+      blob = execFileSync("git", [
+        "hash-object",
+        resolve(migrationDirectory, file),
+      ], { cwd: root, encoding: "utf8" }).trim();
+    } catch {
+      fail("generated migration Git blob could not be recomputed");
+    }
+    if (rec.generated_git_blob !== blob) {
+      fail("Lovable reconciliation Git blob does not match the receipt file");
+    }
+    if (
+      rec.ledger_rows !== manifest.postflight.expected_ledger_count ||
+      rec.canonical_source_version_rows !== 0 ||
+      rec.duplicate_payload_rows !== 0 ||
+      rec.ambiguous_rows !== 0 ||
+      rec.supabase_cli_claimed !== false
+    ) {
+      fail("Lovable reconciliation is not an exact zero-ambiguity proof");
+    }
   }
 
   let author;

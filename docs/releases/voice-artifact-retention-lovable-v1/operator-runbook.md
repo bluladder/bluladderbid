@@ -195,7 +195,32 @@ Retain:
 - privacy-safe database log hash and bounded purge aggregate evidence;
 - the receipt commit and a CLI dry-run showing no pending retention migration.
 
-The CLI dry-run must be read-only and must happen only after the receipt commit
+## Replay-safety proof modes (v2)
+
+Completed evidence must carry exactly one of two truthful replay-safety proofs.
+
+**Proof A — `supabase_cli_zero_selection_dry_run`.** A linked Supabase CLI
+ordinary `db push --dry-run` selecting zero migrations. Requires linked CLI
+credentials.
+
+**Proof B — `lovable_native_ledger_git_reconciliation`.** Used when
+`production_control_plane` is exactly `lovable_cloud`, where no caller-supplied
+migration version and no linked CLI credentials exist. Proof B must record the
+exact later generated migration version, path, Git blob, payload hash and byte
+count, the established Lovable bot commit reachable from HEAD, the exact
+152-row ledger reconciliation with the canonical source version absent, the
+exact accepted payload and matching provenance row, zero duplicate and zero
+ambiguous rows, `include_all_used=false`, `migration_repair_used=false`,
+`historical_replay_used=false`, and a nonempty SHA-256 of the retained
+read-only reconciliation capture. Proof B must never claim that the Supabase
+CLI ran.
+
+Both proofs preserve every never-replay, never-repair, and never-`--include-all`
+assertion. The preflight snapshot may be the retained pre-execution capture
+(`capture_mode: retained_pre_execution`); a pre-execution state is never
+recreated after execution.
+
+The CLI dry-run (Proof A) must be read-only and must happen only after the receipt commit
 is merged. Under ordinary `db push` ordering, the later remote/receipt version
 causes the older missing canonical version to remain skipped. Any pending
 retention migration means reconciliation failed: the dry-run must select
