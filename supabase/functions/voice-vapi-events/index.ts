@@ -3,12 +3,13 @@
 //
 // Accepts an explicit allowlist of Vapi server events required for the
 // direct-DID test. Auth via a shared header credential (X-Vapi-Secret).
-// Off by default: no transcript, message, address, or full-phone data is
-// logged. Structural payload-shape diagnostics only run when
-// VOICE_PROVIDER_DEBUG is explicitly enabled in a non-production environment.
+// No transcript, message, address, or full-phone data is logged. Bounded,
+// sanitized user/assistant artifacts are persisted only through the tenant-
+// scoped canonical conversation journal. Structural payload-shape diagnostics
+// run only when VOICE_PROVIDER_DEBUG is explicitly enabled outside production.
 //
-// This function does NOT: implement transfers, book appointments, persist
-// transcripts, correlate with CallRail, or forward to any downstream system.
+// This function does NOT implement transfers, book appointments, correlate
+// with CallRail, or persist raw provider payloads/recordings.
 // ============================================================================
 import {
   VOICE_VAPI_ALLOWED_EVENTS,
@@ -24,6 +25,8 @@ import {
   runVoiceHangupBidLinkFollowup,
 } from "../_shared/voice/hangupBidLinkFollowup.ts";
 import { BUILD_ID } from "../_shared/buildMarker.ts";
+import { resolveVoiceProviderOrganizationAuthority } from "../_shared/voice/voiceOrganizationAuthority.ts";
+import { persistVapiEndOfCallArtifacts } from "../_shared/voice/vapiArtifactJournal.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -80,6 +83,39 @@ function extractEventType(body: unknown): string | null {
 export interface VapiEventDeps {
   /** Injected in tests so the receiver never touches a real backend. */
   runHangupFollowup?: typeof runVoiceHangupBidLinkFollowup;
+  persistArtifacts?: typeof persistVapiEndOfCallArtifacts;
+  organizationId?: string;
+}
+
+async function callInternalQuoteFunction(
+  supabaseUrl: string,
+  serviceKey: string,
+  name: string,
+  body: unknown,
+) {
+  if (name !== "save-quote" && name !== "send-sms") {
+    return { status: 403, json: { status: "forbidden" } };
+  }
+  const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(12_000),
+  });
+  const text = await response.text();
+  let json: unknown = null;
+  if (text.length <= 64 * 1024) {
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = { status: "malformed_internal_response" };
+    }
+  }
+  return { status: response.status, json };
 }
 
 export async function handleVapiEventRequest(
@@ -155,17 +191,53 @@ export async function handleVapiEventRequest(
       const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
       const run = deps.runHangupFollowup;
       if (run) {
-        followup = await run({ supabase: null, body, eventType });
+        followup = await run({
+          supabase: null,
+          body,
+          eventType,
+          organizationId: deps.organizationId ?? null,
+        });
       } else if (!url || !key) {
         followup = { status: "failed", detail: "backend_not_configured" };
       } else {
         const supabase = createClient(url, key, {
           auth: { persistSession: false, autoRefreshToken: false },
         });
+        const authority = deps.organizationId
+          ? {
+            status: "resolved" as const,
+            organizationId: deps.organizationId,
+          }
+          : await resolveVoiceProviderOrganizationAuthority(supabase, body);
+        if (authority.status !== "resolved") {
+          followup = {
+            status: "failed",
+            detail: `organization_authority_${authority.code}`,
+          };
+          throw new Error("organization_authority_blocked");
+        }
+        const persistArtifacts = deps.persistArtifacts ??
+          persistVapiEndOfCallArtifacts;
+        const artifactResult = await persistArtifacts(supabase, {
+          body,
+          organizationId: authority.organizationId,
+        });
+        console.log(JSON.stringify({
+          at: "voice-vapi-events",
+          buildId: BUILD_ID,
+          artifactJournal: artifactResult.status,
+          sourceMessages: artifactResult.sourceMessages,
+          written: artifactResult.written,
+          duplicates: artifactResult.duplicates,
+          failed: artifactResult.failed,
+        }));
         followup = await runVoiceHangupBidLinkFollowup({
           supabase,
           body,
           eventType,
+          organizationId: authority.organizationId,
+          callFunction: (name, payload) =>
+            callInternalQuoteFunction(url, key, name, payload),
         });
       }
     } catch (e) {
@@ -211,4 +283,6 @@ export async function handleVapiEventRequest(
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export type _AllowedEvent = VoiceVapiAllowedEvent;
 
-Deno.serve((req: Request) => handleVapiEventRequest(req));
+if (import.meta.main) {
+  Deno.serve((req: Request) => handleVapiEventRequest(req));
+}

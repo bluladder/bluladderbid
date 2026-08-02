@@ -67,7 +67,7 @@ const FIELD_PROMPTS: Readonly<Record<string, string>> = {
     "What is the front patio’s approximate square footage?",
   houseWashBackPatioSqft:
     "What is the back patio’s approximate square footage?",
-  contact_name: "May I get your first name for the quote?",
+  contact_name: "May I get your first and last name for the quote?",
   contact_email:
     "What email should we use for the quote and booking confirmation?",
   contact_phone:
@@ -624,8 +624,12 @@ function patchForField(
         }
         : null;
     case "contact_name": {
-      const name = parseSpokenName(text);
-      return name ? { name } : null;
+      const corrected = text.match(
+        /^\s*(?:it'?s\s+)?([A-Za-z][A-Za-z'’-]{0,23}(?:\s+[A-Za-z][A-Za-z'’-]{0,23}){0,2})\s+(?:not|instead of)\s+/i,
+      )?.[1];
+      const name = parseSpokenName(corrected ?? text);
+      // Local booking identity requires a confirmed first AND last name.
+      return name && name.trim().split(/\s+/).length >= 2 ? { name } : null;
     }
     case "contact_email": {
       const email = parseSpokenEmail(text);

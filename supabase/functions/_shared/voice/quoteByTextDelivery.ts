@@ -26,11 +26,13 @@ import { isQuoteFirm } from "../conversationState.ts";
 import { buildQuoteRequest } from "../aiTools.ts";
 import { quoteSessionFieldsToQuoteInput } from "../quoteSessionPricingAdapter.ts";
 import type { QuoteInput } from "../pricingEngine.ts";
+import { PUBLIC_BOOKING_ORGANIZATION_ID } from "../publicBookingServiceArea.ts";
 import {
+  type FieldStatus,
   normalizeEmail,
   normalizePhone,
-  sessionInputsKey,
   type QuoteSessionFields,
+  sessionInputsKey,
 } from "../quoteSession.ts";
 
 type SB = any;
@@ -71,6 +73,8 @@ export type CallEdgeFunction = (
 export interface VoiceQuoteDeliveryInput {
   supabase: SB;
   facts: ConversationFacts;
+  /** Server-derived tenant authority. Mandatory on the deterministic path. */
+  organizationId?: string | null;
   /** Canonical quote-session id — preferred save-quote idempotency scope. */
   quoteSessionId?: string | null;
   /** Conversation id — the idempotency scope fallback and linkage target. */
@@ -97,11 +101,13 @@ interface SessionContext {
   propertyId: string | null;
   quoteId: string | null;
   fields: QuoteSessionFields | null;
+  fieldStatus: Partial<Record<keyof QuoteSessionFields, FieldStatus>>;
 }
 
 async function readSessionContext(
   supabase: SB,
   quoteSessionId?: string | null,
+  organizationId?: string | null,
 ): Promise<SessionContext> {
   const empty: SessionContext = {
     readStatus: quoteSessionId ? "not_found" : "not_requested",
@@ -110,14 +116,19 @@ async function readSessionContext(
     propertyId: null,
     quoteId: null,
     fields: null,
+    fieldStatus: {},
   };
   if (!quoteSessionId) return empty;
   try {
-    const { data } = await supabase
+    let query = supabase
       .from("quote_sessions")
-      .select("email_normalized, customer_id, property_id, quote_id, fields")
-      .eq("id", quoteSessionId)
-      .maybeSingle();
+      .select(
+        "email_normalized, customer_id, property_id, quote_id, fields, field_status, organization_id",
+      )
+      .eq("id", quoteSessionId);
+    if (organizationId) query = query.eq("organization_id", organizationId);
+    const { data, error } = await query.maybeSingle();
+    if (error) return { ...empty, readStatus: "error" };
     if (!data) return empty;
     return {
       readStatus: "found",
@@ -126,6 +137,7 @@ async function readSessionContext(
       propertyId: (data.property_id as string | null) ?? null,
       quoteId: (data.quote_id as string | null) ?? null,
       fields: (data.fields as QuoteSessionFields | null) ?? null,
+      fieldStatus: (data.field_status as SessionContext["fieldStatus"]) ?? {},
     };
   } catch {
     return { ...empty, readStatus: "error" };
@@ -142,15 +154,14 @@ async function readSessionContext(
  *   2. `quote_sessions.email_normalized` for the canonical session,
  *   3. `chat_conversations.confirmed_email` then `prospect_email`,
  *   4. the exact linked customer row (`customers.id = customer_id`).
- *   5. exactly ONE distinct on-file email for the EXACT confirmed E.164 phone.
+ *   5. exactly ONE distinct on-file email for the EXACT confirmed E.164 phone
+ *      (legacy compatibility only; canonical delivery separately requires the
+ *      verified quote-session email to agree).
  *
- * There is deliberately NO phone-based search. Production contains multiple
- * customer rows sharing a phone number with DIFFERENT emails, and a fuzzy
- * `ilike '%digits%'` match could also hit an unrelated longer number — either
- * way a real quote and its resume link would be attached to the wrong person.
- * Step 5 is therefore an EXACT equality match on the confirmed E.164 value and
- * fails closed the moment two distinct emails share that number. When nothing
- * above resolves we return null and the rail asks the caller for an email.
+ * There is deliberately no fuzzy or partial phone search. Production contains
+ * customer rows sharing a phone number with different emails, and a fuzzy
+ * `ilike '%digits%'` match could hit an unrelated longer number. Step 5 is an
+ * exact equality lookup and fails closed when distinct emails share the number.
  */
 export async function resolveQuoteRecipientEmail(
   supabase: SB,
@@ -159,6 +170,7 @@ export async function resolveQuoteRecipientEmail(
     quoteSessionId?: string | null;
     conversationId?: string | null;
     session?: SessionContext;
+    organizationId?: string | null;
   },
 ): Promise<string | null> {
   const spoken = normalizeEmail(facts.contact?.email ?? null);
@@ -171,11 +183,14 @@ export async function resolveQuoteRecipientEmail(
   let customerId = session.customerId;
   try {
     if (ctx.conversationId) {
-      const { data } = await supabase
+      let query = supabase
         .from("chat_conversations")
         .select("confirmed_email, prospect_email, customer_id")
-        .eq("id", ctx.conversationId)
-        .maybeSingle();
+        .eq("id", ctx.conversationId);
+      if (ctx.organizationId) {
+        query = query.eq("organization_id", ctx.organizationId);
+      }
+      const { data } = await query.maybeSingle();
       const confirmed = normalizeEmail(data?.confirmed_email ?? null);
       if (confirmed) return confirmed;
       const prospect = normalizeEmail(data?.prospect_email ?? null);
@@ -186,11 +201,14 @@ export async function resolveQuoteRecipientEmail(
 
   if (customerId) {
     try {
-      const { data } = await supabase
+      let query = supabase
         .from("customers")
         .select("email")
-        .eq("id", customerId)
-        .maybeSingle();
+        .eq("id", customerId);
+      if (ctx.organizationId) {
+        query = query.eq("organization_id", ctx.organizationId);
+      }
+      const { data } = await query.maybeSingle();
       const linked = normalizeEmail(data?.email ?? null);
       if (linked) return linked;
     } catch { /* fall through to the exact-phone lookup */ }
@@ -204,11 +222,14 @@ export async function resolveQuoteRecipientEmail(
     : null;
   if (!phoneE164) return null;
   try {
-    const { data } = await supabase
+    let query = supabase
       .from("customers")
       .select("email")
-      .eq("phone", phoneE164)
-      .limit(25);
+      .eq("phone", phoneE164);
+    if (ctx.organizationId) {
+      query = query.eq("organization_id", ctx.organizationId);
+    }
+    const { data } = await query.limit(25);
     const distinct = new Set(
       (Array.isArray(data) ? data : [])
         .map((row: any) => normalizeEmail(row?.email ?? null))
@@ -318,41 +339,73 @@ export function buildVoiceSaveQuoteBody(args: {
   };
 }
 
-/** Best-effort linkage after a successful save. Never fails the delivery. */
+/** Required local lineage gate before provider delivery. No SMS request may
+ * begin until the saved quote is durably linked to its scoped session. */
 async function linkSavedQuote(
   input: VoiceQuoteDeliveryInput,
   quoteId: string,
   session: SessionContext,
-): Promise<void> {
+): Promise<boolean> {
   const { supabase } = input;
   try {
-    const { data: quote } = await supabase
+    if (
+      !input.organizationId || !input.quoteSessionId ||
+      !input.conversationId || !session.customerId || !session.propertyId
+    ) return false;
+    const quoteQuery = supabase
       .from("quotes")
-      .select("id, customer_id, property_id")
+      .select("id, organization_id, customer_id, property_id")
       .eq("id", quoteId)
-      .maybeSingle();
+      .eq("organization_id", input.organizationId);
+    const { data: quote } = await quoteQuery.maybeSingle();
+    if (!quote) return false;
     const customerId: string | null = quote?.customer_id ?? null;
-    if (input.quoteSessionId) {
-      const update: Record<string, unknown> = { quote_id: quoteId };
-      if (customerId && !session.customerId) update.customer_id = customerId;
-      await supabase.from("quote_sessions").update(update).eq(
-        "id",
-        input.quoteSessionId,
-      );
+    if (customerId !== session.customerId) return false;
+    if (quote.property_id && quote.property_id !== session.propertyId) {
+      return false;
     }
-    if (input.conversationId && customerId) {
-      await supabase.from("chat_conversations").update({
-        customer_id: customerId,
-      }).eq("id", input.conversationId);
-    }
+    if (session.quoteId && session.quoteId !== quoteId) return false;
+
+    const conversation = await supabase.from("chat_conversations")
+      .select("id, organization_id, quote_session_id, customer_id, property_id")
+      .eq("id", input.conversationId)
+      .eq("organization_id", input.organizationId)
+      .maybeSingle();
+    if (
+      conversation?.error || !conversation?.data ||
+      conversation.data.quote_session_id !== input.quoteSessionId ||
+      conversation.data.customer_id !== session.customerId ||
+      conversation.data.property_id !== session.propertyId
+    ) return false;
+
+    let sessionUpdate = supabase.from("quote_sessions").update({
+      quote_id: quoteId,
+    }).eq("id", input.quoteSessionId)
+      .eq("organization_id", input.organizationId)
+      .eq("customer_id", session.customerId)
+      .eq("property_id", session.propertyId);
+    sessionUpdate = session.quoteId
+      ? sessionUpdate.eq("quote_id", session.quoteId)
+      : sessionUpdate.is("quote_id", null);
+    const sessionWritten = await sessionUpdate.select("id").maybeSingle();
+    if (sessionWritten?.error || !sessionWritten?.data) return false;
+
     // Attach the EXACT property already resolved for this session. Never
     // create or infer a property here.
-    if (session.propertyId && !quote?.property_id) {
-      await supabase.from("quotes").update({
+    if (!quote?.property_id) {
+      const quoteUpdate = supabase.from("quotes").update({
         property_id: session.propertyId,
-      }).eq("id", quoteId);
+      }).eq("id", quoteId)
+        .eq("organization_id", input.organizationId)
+        .eq("customer_id", session.customerId)
+        .is("property_id", null);
+      const quoteWritten = await quoteUpdate.select("id").maybeSingle();
+      if (quoteWritten?.error || !quoteWritten?.data) return false;
     }
-  } catch { /* linkage is advisory; the quote and the text already exist */ }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -362,10 +415,29 @@ async function linkSavedQuote(
 export async function deliverVoiceQuoteByText(
   input: VoiceQuoteDeliveryInput,
 ): Promise<VoiceQuoteDeliveryResult> {
+  if (
+    !input.organizationId || !input.quoteSessionId || !input.conversationId
+  ) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "stale_quote_context",
+      detail: "canonical_lineage_required",
+    };
+  }
+  if (input.organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "stale_quote_context",
+      detail: "organization_pricing_capability_unavailable",
+    };
+  }
   const facts = input.facts;
   const session = await readSessionContext(
     input.supabase,
     input.quoteSessionId ?? null,
+    input.organizationId ?? null,
   );
   if (input.quoteSessionId && session.readStatus !== "found") {
     return {
@@ -373,6 +445,42 @@ export async function deliverVoiceQuoteByText(
       status: session.readStatus === "error" ? "uncertain" : "failed_terminal",
       reason: "stale_quote_context",
       detail: `quote_session_${session.readStatus}`,
+    };
+  }
+  if (
+    !session.fields || !session.customerId || !session.propertyId ||
+    (session.quoteId && typeof session.quoteId !== "string")
+  ) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "stale_quote_context",
+      detail: "canonical_identity_unresolved",
+    };
+  }
+  const confirmed = (status: FieldStatus | undefined) =>
+    status === "verified" || status === "corrected";
+  const canonicalEmail = normalizeEmail(session.fields.email ?? null);
+  if (
+    !confirmed(session.fieldStatus.email) || !canonicalEmail ||
+    (session.emailNormalized && session.emailNormalized !== canonicalEmail)
+  ) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "email_unavailable",
+      detail: "canonical_email_unconfirmed",
+    };
+  }
+  if (
+    !confirmed(session.fieldStatus.address) ||
+    !confirmed(session.fieldStatus.serviceAreaStatus)
+  ) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "missing_address",
+      detail: "canonical_address_unconfirmed",
     };
   }
   const factsPhone = normalizePhone(facts.contact?.phone ?? null);
@@ -385,9 +493,15 @@ export async function deliverVoiceQuoteByText(
     };
   }
   const phoneE164 = canonicalPhone ?? factsPhone;
-  if (!phoneE164) return { ok: false, status: "failed_terminal", reason: "missing_phone" };
+  if (!phoneE164) {
+    return { ok: false, status: "failed_terminal", reason: "missing_phone" };
+  }
   if (facts.contact?.phoneConfirmed !== true) {
-    return { ok: false, status: "failed_terminal", reason: "phone_not_confirmed" };
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "phone_not_confirmed",
+    };
   }
   // A promotion changes the authoritative price. It is deliverable only when
   // the canonical session carries both the configured id and actual count;
@@ -404,10 +518,12 @@ export async function deliverVoiceQuoteByText(
   }
   if (session.fields) {
     const currentInputsKey = sessionInputsKey(session.fields);
-    const quotedInputsKey = typeof session.fields.lastQuoteResult?.inputsKey === "string"
-      ? session.fields.lastQuoteResult.inputsKey
-      : null;
-    const journeyInputsKey = session.fields.voiceJourney?.quoteContext?.inputsKey ?? null;
+    const quotedInputsKey =
+      typeof session.fields.lastQuoteResult?.inputsKey === "string"
+        ? session.fields.lastQuoteResult.inputsKey
+        : null;
+    const journeyInputsKey =
+      session.fields.voiceJourney?.quoteContext?.inputsKey ?? null;
     if (
       !quotedInputsKey || quotedInputsKey !== currentInputsKey ||
       (journeyInputsKey != null && journeyInputsKey !== currentInputsKey)
@@ -462,7 +578,9 @@ export async function deliverVoiceQuoteByText(
         reason: "quote_not_firm",
       };
     }
-    const legacyTotal = Number(facts.quote?.estimatedTotal ?? facts.quote?.total ?? 0);
+    const legacyTotal = Number(
+      facts.quote?.estimatedTotal ?? facts.quote?.total ?? 0,
+    );
     if (!Number.isFinite(legacyTotal) || legacyTotal <= 0) {
       return {
         ok: false,
@@ -487,12 +605,26 @@ export async function deliverVoiceQuoteByText(
       quoteSessionId: input.quoteSessionId ?? null,
       conversationId: input.conversationId ?? null,
       session,
+      organizationId: input.organizationId ?? null,
     },
   );
-  if (!email) return { ok: false, status: "failed_terminal", reason: "email_unavailable" };
+  if (!email || email !== canonicalEmail) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "email_unavailable",
+      detail: email ? "canonical_email_conflict" : "email_unavailable",
+    };
+  }
 
   const sourceSessionId = input.quoteSessionId ?? input.conversationId ?? null;
-  if (!sourceSessionId) return { ok: false, status: "failed_terminal", reason: "save_quote_failed" };
+  if (!sourceSessionId) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "save_quote_failed",
+    };
+  }
 
   const saveBody = buildVoiceSaveQuoteBody({
     facts,
@@ -527,6 +659,18 @@ export async function deliverVoiceQuoteByText(
       reason: "save_quote_failed",
       quoteId,
       detail: String(saved.json?.status ?? saved.status),
+    };
+  }
+
+  // The saved quote must be durably linked to the exact tenant, session,
+  // customer, property and conversation before any provider delivery begins.
+  if (!(await linkSavedQuote(input, quoteId, session))) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "save_quote_failed",
+      quoteId,
+      detail: "saved_quote_lineage_unconfirmed",
     };
   }
 
@@ -580,7 +724,6 @@ export async function deliverVoiceQuoteByText(
       ),
     };
   }
-  await linkSavedQuote(input, quoteId, session);
   return {
     ok: true,
     status: "provider_accepted",

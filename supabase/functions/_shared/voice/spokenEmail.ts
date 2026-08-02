@@ -122,3 +122,17 @@ export function parseSpokenEmail(
   if (labels[labels.length - 1].length < 2) return null;
   return only;
 }
+
+/** Natural, single readback for explicit voice confirmation. */
+export function buildSpokenEmailReadback(email: string): string {
+  const safe = String(email ?? "").trim().toLowerCase();
+  const spoken = safe
+    .replaceAll("_", " underscore ")
+    .replaceAll("-", " dash ")
+    .replaceAll("+", " plus ")
+    .replace("@", " at ")
+    .replaceAll(".", " dot ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `I have ${spoken}. Is that exactly right?`;
+}

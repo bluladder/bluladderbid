@@ -1,4 +1,4 @@
-// deno-lint-ignore-file no-explicit-any
+// deno-lint-ignore-file no-explicit-any require-await
 import {
   assert,
   assertEquals,
@@ -51,6 +51,8 @@ function stubSupabase(opts: {
   /** Persisted internal caller turns for the resolved conversation. */
   journalUserRows?: Array<{ id: string; content: string }>;
   journalError?: boolean;
+  quoteSessionId?: string | null;
+  quoteSessionWriteError?: boolean;
 } = {}) {
   const touched: string[] = [];
   const journalQueries: Array<Record<string, unknown>> = [];
@@ -58,6 +60,8 @@ function stubSupabase(opts: {
     id: "conv-1",
     facts: opts.facts ?? {},
     booking_status: opts.bookingStatus ?? "none",
+    quote_session_id: opts.quoteSessionId ?? null,
+    organization_id: "00000000-0000-4000-8000-000000000072",
   };
   const builder = (table: string) => {
     touched.push(table);
@@ -103,6 +107,21 @@ function stubSupabase(opts: {
           data: { sms_paused: !!opts.smsPaused, email_paused: false },
           error: null,
         });
+      }
+      if (table === "quote_sessions" && opts.quoteSessionId) {
+        return Promise.resolve(
+          opts.quoteSessionWriteError
+            ? { data: null, error: { message: "write failed" } }
+            : {
+              data: {
+                id: opts.quoteSessionId,
+                organization_id: "00000000-0000-4000-8000-000000000072",
+                fields: {},
+                updated_at: "2026-08-01T00:00:00.000Z",
+              },
+              error: null,
+            },
+        );
       }
       return Promise.resolve({ data: null, error: null });
     };
@@ -191,6 +210,96 @@ Deno.test("active-call / non-final webhook does nothing", async () => {
   assertEquals(res.status, "not_final_event");
   assertEquals(deliver.calls.length, 0);
   assertEquals(sb.touched.length, 0);
+});
+
+Deno.test("deliverable firm session sends the actual quote and suppresses generic fallback", async () => {
+  const generic = recordingDeliver();
+  let actualCalls = 0;
+  const result = await runVoiceHangupBidLinkFollowup({
+    supabase: stubSupabase({
+      quoteSessionId: "00000000-0000-4000-8000-000000000073",
+      facts: {
+        services: ["window_cleaning"],
+        contact: {
+          name: "Synthetic Caller",
+          email: "synthetic@example.com",
+          phone: "+14692150144",
+          phoneConfirmed: true,
+        },
+        address: "5612 Binbranch Lane, McKinney, TX 75071",
+        serviceArea: { status: "eligible" },
+        quote: { status: "firm", firm: true, total: 216.5 },
+      },
+    }),
+    body: endOfCallBody(),
+    eventType: "end-of-call-report",
+    organizationId: "00000000-0000-4000-8000-000000000072",
+    callFunction: async () => ({ status: 500, json: {} }),
+    deliverActualQuote: async () => {
+      actualCalls += 1;
+      return {
+        ok: true,
+        status: "provider_accepted",
+        quoteId: "00000000-0000-4000-8000-000000000076",
+        attemptId: "attempt-synthetic",
+      };
+    },
+    deliver: generic.fn,
+  });
+  assertEquals(result.status, "actual_quote_sent");
+  assertEquals(actualCalls, 1);
+  assertEquals(generic.calls.length, 0);
+});
+
+Deno.test("uncertain actual quote outcome never falls through to generic SMS", async () => {
+  const generic = recordingDeliver();
+  const result = await runVoiceHangupBidLinkFollowup({
+    supabase: stubSupabase({
+      quoteSessionId: "00000000-0000-4000-8000-000000000073",
+      facts: {
+        contact: { phone: "+14692150144", phoneConfirmed: true },
+      },
+    }),
+    body: endOfCallBody(),
+    eventType: "end-of-call-report",
+    organizationId: "00000000-0000-4000-8000-000000000072",
+    callFunction: async () => ({ status: 500, json: {} }),
+    deliverActualQuote: async () => ({
+      ok: false,
+      status: "uncertain",
+      reason: "sms_not_sent",
+      detail: "provider_outcome_unknown",
+    }),
+    deliver: generic.fn,
+  });
+  assertEquals(result.status, "actual_quote_pending");
+  assertEquals(generic.calls.length, 0);
+});
+
+Deno.test("provider acceptance without a durable delivery-mode marker stays pending", async () => {
+  const generic = recordingDeliver();
+  const result = await runVoiceHangupBidLinkFollowup({
+    supabase: stubSupabase({
+      quoteSessionId: "00000000-0000-4000-8000-000000000073",
+      quoteSessionWriteError: true,
+      facts: {
+        contact: { phone: "+14695550172", phoneConfirmed: true },
+      },
+    }),
+    body: endOfCallBody({ number: "+14695550172" }),
+    eventType: "end-of-call-report",
+    organizationId: "00000000-0000-4000-8000-000000000072",
+    callFunction: async () => ({ status: 500, json: {} }),
+    deliverActualQuote: async () => ({
+      ok: true,
+      status: "provider_accepted",
+      quoteId: "00000000-0000-4000-8000-000000000076",
+    }),
+    deliver: generic.fn,
+  });
+  assertEquals(result.status, "actual_quote_pending");
+  assertEquals(result.detail, "provider_accepted_mode_record_unconfirmed");
+  assertEquals(generic.calls.length, 0);
 });
 
 Deno.test("eligible final hangup sends the exact canonical online-bid link", async () => {

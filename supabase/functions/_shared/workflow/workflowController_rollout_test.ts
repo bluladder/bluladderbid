@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-explicit-any
 // End-to-end sequencing tests for the rollout controller: caller-ID
 // handshake, tenant-safe returning-customer deferral, safe fallback, and
 // email-after-quote timing. Uses an in-memory fake supabase.
@@ -729,9 +730,35 @@ Deno.test("post-price contact answer advances without repeating the price", asyn
   if (turn.pre.kind === "fsm") {
     assertEquals(turn.pre.action.kind, "ask", JSON.stringify(turn.pre));
     if (turn.pre.action.kind === "ask") {
-      assertEquals(turn.pre.action.field, "address");
+      assertEquals(turn.pre.action.field, "contact_email");
     }
+    assertEquals(turn.pre.spoken.includes("alex at example dot com"), true);
     assertEquals(turn.pre.spoken.includes("216"), false);
+  }
+
+  // The production controller route persists this patch before accepting the
+  // next provider turn. Mirror that transaction boundary in the in-memory
+  // scenario so the confirmation applies to the captured email.
+  sb._state.session = { ...sb._state.session, ...turn.sessionPatch };
+
+  const confirmed = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes",
+    history: [],
+  });
+  assertEquals(confirmed.pre.kind, "fsm");
+  if (confirmed.pre.kind === "fsm") {
+    assertEquals(
+      confirmed.pre.action.kind,
+      "ask",
+      JSON.stringify(confirmed.pre),
+    );
+    if (confirmed.pre.action.kind === "ask") {
+      assertEquals(confirmed.pre.action.field, "address");
+    }
+    assertEquals(confirmed.pre.spoken.includes("216"), false);
   }
 });
 

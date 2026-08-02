@@ -1,12 +1,27 @@
+// deno-lint-ignore-file no-explicit-any
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildVoiceSaveQuoteBody,
-  deliverVoiceQuoteByText,
+  deliverVoiceQuoteByText as deliverVoiceQuoteByTextRaw,
   resolveQuoteRecipientEmail,
   servicesFromFacts,
 } from "./quoteByTextDelivery.ts";
 import { quoteInputsKey } from "../conversationState.ts";
 import { type QuoteSessionFields, sessionInputsKey } from "../quoteSession.ts";
+import { PUBLIC_BOOKING_ORGANIZATION_ID } from "../publicBookingServiceArea.ts";
+
+const ORGANIZATION_ID = PUBLIC_BOOKING_ORGANIZATION_ID;
+const DELIVERY_SCOPE = {
+  organizationId: ORGANIZATION_ID,
+  quoteSessionId: "sess-live",
+  conversationId: "conv-1",
+};
+
+function deliverVoiceQuoteByText(
+  input: Parameters<typeof deliverVoiceQuoteByTextRaw>[0],
+) {
+  return deliverVoiceQuoteByTextRaw({ ...DELIVERY_SCOPE, ...input });
+}
 
 const facts = {
   services: ["window_cleaning"],
@@ -43,6 +58,8 @@ function firmCanonicalFields(
     screenProfile: "standard_removable",
     enclosedPatioProfile: "none",
     phone: "+14692150144",
+    email: "known@x.com",
+    name: "Ben Millen",
     address: "123 Main St, Frisco, TX 75034",
     serviceAreaStatus: "eligible",
     ...overrides,
@@ -80,13 +97,45 @@ function sb(opts: {
   session?: Record<string, unknown> | null;
   conversation?: Record<string, unknown> | null;
   customer?: Record<string, unknown> | null;
+  quote?: Record<string, unknown> | null;
   phoneRows?: Array<Record<string, unknown>> | null;
   reads?: string[];
+  updateError?: boolean;
 } = {}) {
   const reads = opts.reads ?? [];
+  const defaultFields = firmCanonicalFields();
+  const defaultSession = {
+    id: "sess-live",
+    organization_id: ORGANIZATION_ID,
+    email_normalized: "known@x.com",
+    customer_id: "customer-1",
+    property_id: "property-1",
+    quote_id: null,
+    fields: defaultFields,
+    field_status: {
+      name: "verified",
+      email: "verified",
+      phone: "verified",
+      address: "verified",
+      serviceAreaStatus: "verified",
+    },
+  };
+  const sessionData = opts.session === null
+    ? null
+    : { ...defaultSession, ...(opts.session ?? {}) };
+  const conversationData = opts.conversation === null ? null : {
+    id: "conv-1",
+    organization_id: ORGANIZATION_ID,
+    quote_session_id: "sess-live",
+    customer_id: "customer-1",
+    property_id: "property-1",
+    ...(opts.conversation ?? {}),
+  };
   const table = (name: string) => ({
-    select: () => ({
-      eq: () => ({
+    select: () => {
+      const query: any = {
+        eq: () => query,
+        is: () => query,
         limit: () => {
           reads.push(`${name}:by_phone`);
           return Promise.resolve({ data: opts.phoneRows ?? [], error: null });
@@ -94,13 +143,10 @@ function sb(opts: {
         maybeSingle: () => {
           reads.push(name);
           if (name === "quote_sessions") {
-            return Promise.resolve({ data: opts.session ?? null, error: null });
+            return Promise.resolve({ data: sessionData, error: null });
           }
           if (name === "chat_conversations") {
-            return Promise.resolve({
-              data: opts.conversation ?? null,
-              error: null,
-            });
+            return Promise.resolve({ data: conversationData, error: null });
           }
           if (name === "customers") {
             return Promise.resolve({
@@ -108,11 +154,38 @@ function sb(opts: {
               error: null,
             });
           }
+          if (name === "quotes") {
+            return Promise.resolve({
+              data: opts.quote === undefined
+                ? {
+                  id: "q1",
+                  organization_id: ORGANIZATION_ID,
+                  customer_id: "customer-1",
+                  property_id: null,
+                }
+                : opts.quote,
+              error: null,
+            });
+          }
           return Promise.resolve({ data: null, error: null });
         },
-      }),
-    }),
-    update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+      };
+      return query;
+    },
+    update: () => {
+      const mutation: any = {
+        eq: () => mutation,
+        is: () => mutation,
+        select: () => mutation,
+        maybeSingle: () =>
+          Promise.resolve(
+            opts.updateError
+              ? { data: null, error: new Error("write failed") }
+              : { data: { id: "linked" }, error: null },
+          ),
+      };
+      return mutation;
+    },
   });
   return { from: (name: string) => table(name) } as any;
 }
@@ -136,6 +209,7 @@ Deno.test("save-quote payload carries canonical line items and a stable scope", 
   assertEquals(body.total, 389);
   assertEquals(body.additionalServices.windowCleaning, true);
   assertEquals(body.sourceSessionId, "sess-1");
+  assertEquals(body.organizationId, undefined);
   assertEquals(body.services, [{ name: "Window Cleaning", amount: 389 }]);
   assertEquals(body.engineVersion, "v3");
   assertEquals(body.ruleVersion, 7);
@@ -228,6 +302,62 @@ Deno.test("an unaccepted SMS is never reported as sent", async () => {
   });
   assertEquals(res.ok, false);
   assertEquals(res.reason, "sms_not_sent");
+});
+
+Deno.test("local linkage failure blocks SMS before provider delivery", async () => {
+  const calls: string[] = [];
+  const res = await deliverVoiceQuoteByText({
+    supabase: sb({
+      session: { email_normalized: "known@x.com" },
+      updateError: true,
+    }),
+    facts,
+    quoteSessionId: "sess-live",
+    conversationId: "conv-1",
+    callFunction: (name) => {
+      calls.push(name);
+      return ok(name);
+    },
+  });
+  assertEquals(res.ok, false);
+  assertEquals(res.status, "failed_terminal");
+  assertEquals(res.detail, "saved_quote_lineage_unconfirmed");
+  assertEquals(calls, ["save-quote"]);
+});
+
+Deno.test("saved quote customer mismatch blocks SMS before provider delivery", async () => {
+  const calls: string[] = [];
+  const res = await deliverVoiceQuoteByText({
+    supabase: sb({
+      quote: {
+        id: "q1",
+        organization_id: ORGANIZATION_ID,
+        customer_id: "customer-other",
+        property_id: null,
+      },
+    }),
+    facts,
+    callFunction: (name) => {
+      calls.push(name);
+      return ok(name);
+    },
+  });
+  assertEquals(res.detail, "saved_quote_lineage_unconfirmed");
+  assertEquals(calls, ["save-quote"]);
+});
+
+Deno.test("conversation property mismatch blocks SMS before provider delivery", async () => {
+  const calls: string[] = [];
+  const res = await deliverVoiceQuoteByText({
+    supabase: sb({ conversation: { property_id: "property-other" } }),
+    facts,
+    callFunction: (name) => {
+      calls.push(name);
+      return ok(name);
+    },
+  });
+  assertEquals(res.detail, "saved_quote_lineage_unconfirmed");
+  assertEquals(calls, ["save-quote"]);
 });
 
 Deno.test("queued outbox evidence remains queued and is not called sent", async () => {
@@ -363,8 +493,16 @@ Deno.test("legacy firmness cannot bypass canonical manual review", async () => {
 
 Deno.test("no resolvable email means no send attempt at all", async () => {
   const calls: string[] = [];
+  const withoutEmail = firmCanonicalFields();
+  delete withoutEmail.email;
   const res = await deliverVoiceQuoteByText({
-    supabase: sb({}),
+    supabase: sb({
+      session: {
+        email_normalized: null,
+        fields: withoutEmail,
+        field_status: { email: "unanswered" },
+      },
+    }),
     facts,
     conversationId: "conv-1",
     callFunction: (name) => {
@@ -377,8 +515,13 @@ Deno.test("no resolvable email means no send attempt at all", async () => {
 });
 
 Deno.test("a non-firm quote never reaches save-quote", async () => {
+  const nonFirm = firmCanonicalFields();
+  nonFirm.lastQuoteResult = {
+    ...nonFirm.lastQuoteResult,
+    finalQuoteDisposition: "manual_review",
+  };
   const res = await deliverVoiceQuoteByText({
-    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    supabase: sb({ session: { fields: nonFirm } }),
     facts: { ...facts, quote: { total: 300 } } as any,
     conversationId: "conv-1",
     callFunction: () => ok("save-quote"),
@@ -388,7 +531,15 @@ Deno.test("a non-firm quote never reaches save-quote", async () => {
 
 Deno.test("an unverified service address blocks persistence", async () => {
   const res = await deliverVoiceQuoteByText({
-    supabase: sb({ session: { email_normalized: "known@x.com" } }),
+    supabase: sb({
+      session: {
+        field_status: {
+          email: "verified",
+          address: "captured",
+          serviceAreaStatus: "verified",
+        },
+      },
+    }),
     facts: {
       ...facts,
       serviceArea: { status: "manual_review_required" },
@@ -429,7 +580,11 @@ Deno.test("a promotional price fails closed instead of persisting a wrong total"
 Deno.test("email resolution never searches by phone number", async () => {
   const reads: string[] = [];
   const res = await resolveQuoteRecipientEmail(
-    sb({ conversation: { prospect_email: "prospect@x.com" }, reads }),
+    sb({
+      session: null,
+      conversation: { prospect_email: "prospect@x.com" },
+      reads,
+    }),
     facts,
     { quoteSessionId: "sess-1", conversationId: "conv-1" },
   );
@@ -452,7 +607,7 @@ Deno.test("resolution order: session email beats conversation and customer", asy
 Deno.test("a linked customer row is the last resort", async () => {
   const res = await resolveQuoteRecipientEmail(
     sb({
-      session: { customer_id: "cust-1" },
+      session: { email_normalized: null, customer_id: "cust-1" },
       conversation: {},
       customer: { email: "OnFile@X.com" },
     }),
@@ -491,18 +646,19 @@ Deno.test("a repeated ask in one call reuses the same idempotency scope", async 
   assertEquals(scopes, ["sess-live", "sess-live"]);
 });
 
-Deno.test("without a quote session the conversation id is the stable scope", async () => {
+Deno.test("without a canonical quote session delivery fails before provider calls", async () => {
   const scopes: unknown[] = [];
   await deliverVoiceQuoteByText({
     supabase: sb({ conversation: { prospect_email: "known@x.com" } }),
     facts,
+    quoteSessionId: null,
     conversationId: "conv-1",
     callFunction: (name, body: any) => {
       if (name === "save-quote") scopes.push(body.sourceSessionId);
       return ok(name);
     },
   });
-  assertEquals(scopes, ["conv-1"]);
+  assertEquals(scopes, []);
 });
 
 Deno.test("live delivery stays behind the existing voice lane gate", async () => {
@@ -544,24 +700,17 @@ Deno.test("email resolves from exactly one on-file email for the confirmed phone
   assertEquals(reads.includes("customers:by_phone"), true);
 });
 
-Deno.test("ambiguous phone-to-email mapping resolves to null with zero upstream calls", async () => {
-  const calls: string[] = [];
-  const res = await deliverVoiceQuoteByText({
-    supabase: sb({
+Deno.test("ambiguous phone-to-email mapping resolves to null", async () => {
+  const res = await resolveQuoteRecipientEmail(
+    sb({
       phoneRows: [{ email: "ben@bluladder.com" }, {
         email: "someone@else.com",
       }],
     }),
-    facts,
-    conversationId: "c1",
-    callFunction: (name: string) => {
-      calls.push(name);
-      return ok(name);
-    },
-  });
-  assertEquals(res.ok, false);
-  assertEquals(res.reason, "email_unavailable");
-  assertEquals(calls, []);
+    { contact: { phone: "+14692150144", phoneConfirmed: true } } as any,
+    {},
+  );
+  assertEquals(res, null);
 });
 
 Deno.test("unconfirmed phone never triggers the on-file phone lookup", async () => {

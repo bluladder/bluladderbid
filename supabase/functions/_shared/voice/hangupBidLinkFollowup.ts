@@ -31,6 +31,11 @@ import { checkSuppression } from "../suppression.ts";
 import { checkPhoneOptOut, getCustomerPause } from "../sms.ts";
 import { sendOutboxSms } from "../smsOutbox.ts";
 import type { ConversationFacts } from "../conversationState.ts";
+import {
+  type CallEdgeFunction,
+  deliverVoiceQuoteByText,
+} from "./quoteByTextDelivery.ts";
+import type { QuoteSessionFields } from "../quoteSession.ts";
 
 type SB = any;
 
@@ -42,6 +47,8 @@ export const FINAL_CALL_ENDED_EVENT = "end-of-call-report";
 export type HangupFollowupStatus =
   | "not_final_event"
   | "sent"
+  | "actual_quote_sent"
+  | "actual_quote_pending"
   | "duplicate"
   | "suppressed"
   | "opted_out"
@@ -206,7 +213,10 @@ export function evaluateHangupFollowupEligibility(args: {
     return { eligible: false, status: "already_booked" };
   }
   const lastReason = facts.quoteByText?.lastReason ?? null;
-  if (lastReason === "sent") {
+  if (
+    lastReason === "sent" || lastReason === "provider_accepted" ||
+    lastReason === "delivered"
+  ) {
     return { eligible: false, status: "already_delivered" };
   }
   if (lastReason === "cancelled") {
@@ -221,6 +231,12 @@ export interface HangupFollowupInput {
   eventType: string | null;
   /** Injected in tests. Defaults to the durable outbox. */
   deliver?: typeof sendOutboxSms;
+  /** Server-derived organization authority for scoped reads/writes. */
+  organizationId?: string | null;
+  /** Canonical save-quote/send-sms nested Edge boundary. */
+  callFunction?: CallEdgeFunction;
+  /** Provider-stub seam for deterministic tests. */
+  deliverActualQuote?: typeof deliverVoiceQuoteByText;
 }
 
 /**
@@ -266,18 +282,27 @@ export async function runVoiceHangupBidLinkFollowup(
 
   let facts: ConversationFacts | null = null;
   let conversationId: string | null = null;
+  let quoteSessionId: string | null = null;
   if (ctx.callId) {
     try {
-      const { data } = await supabase
+      let conversationQuery = supabase
         .from("chat_conversations")
-        .select("id, facts, booking_status")
+        .select("id, facts, booking_status, quote_session_id, organization_id")
         .eq("session_token", `vapi_call:${ctx.callId}`)
         .eq("channel", "voice")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order("created_at", { ascending: false });
+      if (input.organizationId) {
+        conversationQuery = conversationQuery.eq(
+          "organization_id",
+          input.organizationId,
+        );
+      }
+      const { data } = await conversationQuery.limit(1).maybeSingle();
       if (data) {
         conversationId = typeof data.id === "string" ? data.id : null;
+        quoteSessionId = typeof data.quote_session_id === "string"
+          ? data.quote_session_id
+          : null;
         const stored = (data.facts && typeof data.facts === "object")
           ? data.facts as ConversationFacts
           : {} as ConversationFacts;
@@ -295,10 +320,9 @@ export async function runVoiceHangupBidLinkFollowup(
     }
   }
 
-  // The version-controlled Vapi manifest suppresses transcript/message
-  // artifacts, so the provider payload alone can under-report a real
-  // conversation. Our own adapter journals every caller turn to canonical
-  // `chat_messages`; consult exactly one row as a second proof source.
+  // Provider artifacts can be delayed, absent under ZDR, or incomplete. Our
+  // adapter journals every caller turn to canonical `chat_messages`; consult
+  // exactly one row as a second proof source.
   let hadCustomerUtterance = ctx.hadCustomerUtterance;
   if (!hadCustomerUtterance && conversationId) {
     const journal = await readJournalUserTurn(supabase, conversationId);
@@ -321,6 +345,66 @@ export async function runVoiceHangupBidLinkFollowup(
     return { status: eligibility.status, detail: eligibility.detail ?? null };
   }
   const phone = phoneE164 as string;
+
+  // Prefer the actual saved/resumable quote when the canonical session proves
+  // it is fresh, firm and tied to verified recipient/address facts. Any
+  // uncertain/queued provider outcome suppresses the generic fallback so a
+  // retry cannot send two different links.
+  if (
+    input.callFunction && input.organizationId && conversationId &&
+    quoteSessionId && facts
+  ) {
+    const actual = await (input.deliverActualQuote ?? deliverVoiceQuoteByText)({
+      supabase,
+      facts,
+      organizationId: input.organizationId,
+      quoteSessionId,
+      conversationId,
+      callFunction: input.callFunction,
+    });
+    if (actual.status === "provider_accepted") {
+      const modeRecorded = await recordHangupDeliveryMode(supabase, {
+        quoteSessionId,
+        organizationId: input.organizationId,
+        mode: "actual_quote",
+        status: "provider_accepted",
+        attemptId: actual.attemptId ?? null,
+        providerMessageId: actual.providerMessageId ?? null,
+      });
+      if (!modeRecorded) {
+        return {
+          status: "actual_quote_pending",
+          detail: "provider_accepted_mode_record_unconfirmed",
+        };
+      }
+      return {
+        status: "actual_quote_sent",
+        detail: "actual_quote_provider_accepted",
+      };
+    }
+    if (
+      actual.status === "queued" || actual.status === "retry_pending" ||
+      actual.status === "uncertain"
+    ) {
+      const modeRecorded = await recordHangupDeliveryMode(supabase, {
+        quoteSessionId,
+        organizationId: input.organizationId,
+        mode: "actual_quote",
+        status: actual.status,
+        attemptId: actual.attemptId ?? null,
+        providerMessageId: actual.providerMessageId ?? null,
+      });
+      return {
+        status: "actual_quote_pending",
+        detail: modeRecorded
+          ? actual.detail ?? actual.status
+          : `${actual.status}_mode_record_unconfirmed`,
+      };
+    }
+    // A terminal non-deliverable firm context may use the ordinary online bid
+    // fallback. No price is reconstructed and no second actual-quote attempt
+    // is made below.
+  }
 
   // Authoritative delivery-safety checks, immediately before enqueue.
   const suppression = await checkSuppression(supabase, { phone });
@@ -351,9 +435,25 @@ export async function runVoiceHangupBidLinkFollowup(
     messageKind: VOICE_HANGUP_BID_LINK_MESSAGE_KIND,
   });
   if (result.replay || result.inProgress) {
+    if (quoteSessionId && input.organizationId) {
+      await recordHangupDeliveryMode(supabase, {
+        quoteSessionId,
+        organizationId: input.organizationId,
+        mode: "generic_fallback",
+        status: result.inProgress ? "queued" : "provider_accepted",
+      });
+    }
     return { status: "duplicate", smsMessageId: result.smsMessageId ?? null };
   }
   if (result.sent) {
+    if (quoteSessionId && input.organizationId) {
+      await recordHangupDeliveryMode(supabase, {
+        quoteSessionId,
+        organizationId: input.organizationId,
+        mode: "generic_fallback",
+        status: "provider_accepted",
+      });
+    }
     return { status: "sent", smsMessageId: result.smsMessageId ?? null };
   }
   return {
@@ -361,4 +461,53 @@ export async function runVoiceHangupBidLinkFollowup(
     detail: result.error ?? result.outboxState ?? null,
     smsMessageId: result.smsMessageId ?? null,
   };
+}
+
+async function recordHangupDeliveryMode(
+  supabase: SB,
+  args: {
+    quoteSessionId: string;
+    organizationId: string;
+    mode: "actual_quote" | "generic_fallback";
+    status: NonNullable<
+      NonNullable<QuoteSessionFields["voiceJourney"]>["delivery"]
+    >["status"];
+    attemptId?: string | null;
+    providerMessageId?: string | null;
+  },
+): Promise<boolean> {
+  try {
+    const read = await supabase.from("quote_sessions")
+      .select("id, organization_id, fields, updated_at")
+      .eq("id", args.quoteSessionId)
+      .eq("organization_id", args.organizationId)
+      .maybeSingle();
+    if (read?.error || !read?.data) return false;
+    const fields = (read.data.fields as QuoteSessionFields | null) ?? {};
+    const next: QuoteSessionFields = {
+      ...fields,
+      voiceJourney: {
+        ...(fields.voiceJourney ?? {}),
+        delivery: {
+          channel: "sms",
+          mode: args.mode,
+          status: args.status,
+          requestedAt: fields.voiceJourney?.delivery?.requestedAt ??
+            new Date().toISOString(),
+          attemptId: args.attemptId ?? null,
+          providerMessageId: args.providerMessageId ?? null,
+        },
+      },
+    };
+    const written = await supabase.from("quote_sessions").update({
+      fields: next,
+    })
+      .eq("id", args.quoteSessionId)
+      .eq("organization_id", args.organizationId)
+      .eq("updated_at", read.data.updated_at)
+      .select("id").maybeSingle();
+    return !written?.error && !!written?.data;
+  } catch {
+    return false;
+  }
 }

@@ -20,7 +20,7 @@ variable stays configured for a later phase and is not used here.
 - Human-transfer destination (Phase 4C-γ, not used yet): `+14692150144`.
 - Retired ResponsiBid: `+14692426556` — must remain retired.
 
-## Zero Data Retention (mandatory)
+## Provider ZDR and BluLadder transcript retention (mandatory)
 
 Vapi ZDR is an owner-controlled organization setting, not a per-assistant
 field. Do not proceed to live calls until ZDR is confirmed.
@@ -29,17 +29,23 @@ field. Do not proceed to live calls until ZDR is confirmed.
 2. Open Organization Settings > Compliance.
 3. Enable Zero Data Retention.
 4. Confirm HIPAA mode is NOT simultaneously enabled.
-5. Place one short test call.
+5. During the separately authorized controlled-call window, place one short
+   test call.
 6. Open the completed call in the Vapi dashboard and confirm:
    - Operational metadata (call start/end, duration, status) is visible.
-   - Recording, transcript, messages, summary, structured output, and detailed
-     logs are empty or unavailable.
+   - Raw audio/video/packet recordings, summary, structured output, and
+     analysis are empty or unavailable.
+   - The configured end-of-call transcript/message event was delivered to the
+     BluLadder event URL even though Vapi does not retain the artifact.
 7. If ZDR cannot be enabled on the current plan, stop. Report the plan or
    account limitation before scheduling any live test. Do not silently accept
-   provider retention. The 30-day fallback is deferred to a later phase.
+   provider retention.
 
-BluLadder transcript storage stays disabled during Phase 4C-β. Owner approval
-for the 30-day BluLadder retention path is therefore not required yet.
+BluLadder stores bounded, sanitized user/assistant turns for 30 days in the
+tenant-scoped canonical conversation journal. Each new voice row carries an
+explicit `retention_expires_at` deadline. Provider transcript delivery must not
+be enabled until the owner has approved and verified the expired-row purge
+procedure described in `docs/voice/issue-72-emergency-repair.md`.
 
 ## Supabase secrets
 
@@ -81,6 +87,19 @@ authoritative source of truth — this list mirrors it for convenience.
 
 - Name: `BluLadder Voice Beta (isolated direct-DID test)`.
 - Language: English only.
+- Transcriber:
+  - Primary: Deepgram `nova-3`, language `en`, smart formatting enabled, and
+    the exact `keyterm` list in the manifest.
+  - Fallback: AssemblyAI `universal-streaming-english`, language `en`, the
+    exact `keytermsPrompt` list, and VAD-assisted endpointing enabled.
+  - Automatic implicit fallback is disabled; only the explicit reviewed
+    fallback is allowed.
+- Start-speaking/turn detection:
+  - `waitSeconds` = 0.4
+  - Vapi smart endpointing enabled
+  - punctuation wait = 0.3 seconds
+  - no-punctuation wait = 1.2 seconds
+  - spoken-number wait = 1.0 second
 - Model: Custom LLM.
   - URL: `https://<project-ref>.supabase.co/functions/v1/voice-llm-adapter`.
   - Attach the API-key credential above.
@@ -101,13 +120,13 @@ authoritative source of truth — this list mirrors it for convenience.
     "We've reached the time limit for this call. Thanks for calling
     BluLadder. We'll be able to continue through our normal contact options."
   - Warnings must NOT promise a follow-up SMS.
-- Artifact suppression (verify each toggle):
+- Artifact and analysis plan (verify each toggle):
   - `recordingEnabled` = false
   - `videoRecordingEnabled` = false
   - `pcapEnabled` = false
-  - `loggingEnabled` = false
-  - `fullMessageHistoryEnabled` = false
-  - Transcript artifact retention = disabled
+  - `loggingEnabled` = true
+  - `fullMessageHistoryEnabled` = true
+  - Transcript artifact delivery = enabled
   - Summary generation = disabled
   - Structured output = disabled
   - Analysis = disabled
@@ -125,7 +144,8 @@ authoritative source of truth — this list mirrors it for convenience.
 4. Confirm no transfer destination is configured.
 5. Confirm `maxDurationSeconds` reads 900 and both time-elapsed hooks are
    present with the exact copy above.
-6. Confirm all recording and artifact toggles are disabled.
+6. Confirm raw recording/video/packet capture is disabled and the reviewed
+   transcript/full-message/end-of-call artifact settings are enabled.
 
 ## Direct-DID test order
 
@@ -141,11 +161,12 @@ order and stop on the first failure:
   availability question, booking request blocked by the dry-run safeguard,
   human-transfer request produces a safe "transfer is not available in this
   test" response, graceful hang-up, provider-ended-call behavior, end-of-call
-  event delivered to `voice-vapi-events`, recording/transcript absent both in
-  Vapi (after ZDR) and in BluLadder.
+  event delivered to `voice-vapi-events`, raw recording absent, and the
+  bounded sanitized transcript present once in the tenant conversation.
 - Test C (duration controls — only after A and B pass): one controlled
   15-minute call verifying the 780s warning, the 870s warning, hard
-  termination at 900s, no unimplemented SMS promise, no artifact storage.
+  termination at 900s, no unimplemented SMS promise, no raw recording, and no
+  duplicate transcript rows.
 
 ## Owner completion signal
 

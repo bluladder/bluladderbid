@@ -27,12 +27,19 @@ export function extractVoiceOrganizationSelectors(
     rawBody?.assistant?.id,
     rawBody?.assistantId,
     rawBody?.call?.assistantId,
+    rawBody?.message?.assistant?.id,
+    rawBody?.message?.assistantId,
+    rawBody?.message?.call?.assistantId,
   );
   const phoneNumberIds = stringValues(
     rawBody?.phoneNumber?.id,
     rawBody?.phoneNumberId,
     rawBody?.call?.phoneNumber?.id,
     rawBody?.call?.phoneNumberId,
+    rawBody?.message?.phoneNumber?.id,
+    rawBody?.message?.phoneNumberId,
+    rawBody?.message?.call?.phoneNumber?.id,
+    rawBody?.message?.call?.phoneNumberId,
   );
   const selectors: OrganizationMappedSelector[] = [];
   for (const assistantId of assistantIds) {

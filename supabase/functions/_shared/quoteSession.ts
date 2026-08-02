@@ -155,7 +155,25 @@ export interface QuoteSessionFields {
     | "solar_screen"
     | "specialty_or_oversized"
     | "unknown";
-  serviceAreaStatus?: "eligible" | "ineligible" | "ambiguous" | "unavailable";
+  serviceAreaStatus?:
+    | "eligible"
+    | "pending_confirmation"
+    | "manual_review_required"
+    | "ineligible"
+    | "ambiguous"
+    | "unavailable";
+  /** Canonical geocoder result. Voice may persist an eligible candidate only
+   * as pending_confirmation until the caller approves the final readback. */
+  serviceAreaResult?: Record<string, unknown> | null;
+  /** Independently retained address components for bounded correction. */
+  addressComponents?: {
+    house_number?: string;
+    street?: string;
+    unit?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+  } | null;
   answerProvenance?: Record<string, AnswerProvenance>;
   confirmationSummary?: {
     confirmed: boolean;
@@ -172,6 +190,7 @@ export interface QuoteSessionFields {
   // Persisted opaquely on quote_sessions.fields. Never exposed to the caller.
   callerIdConfirmationStatus?:
     | "pending"
+    | "manual_pending"
     | "confirmed"
     | "contact_confirmed"
     | "declined";
@@ -233,6 +252,7 @@ export interface QuoteSessionFields {
     } | null;
     delivery?: {
       channel: "sms" | "email";
+      mode?: "actual_quote" | "generic_fallback";
       status:
         | "not_requested"
         | "pending"
@@ -251,6 +271,11 @@ export interface QuoteSessionFields {
         | "not_requested"
         | "refresh_required"
         | "provider_unavailable"
+        | "readiness_blocked"
+        | "policy_blocked"
+        | "preference_required"
+        | "engine_error"
+        | "no_slots"
         | "offered";
       forBookingKey?: string | null;
       offerVersion?: string | null;
@@ -264,6 +289,17 @@ export interface QuoteSessionFields {
         label: string;
         timezone?: string;
       }>;
+      /** Truthful readiness/provider result preserved from the canonical
+       * availability boundary. Never collapsed to provider_unavailable. */
+      readinessBlockers?: Array<{
+        code: string;
+        category?: string | null;
+        detail?: string | null;
+      }>;
+      nextAction?: string | null;
+      failureCategory?: string | null;
+      safeDetail?: string | null;
+      providerContacted?: boolean;
     } | null;
     booking?: {
       status:
