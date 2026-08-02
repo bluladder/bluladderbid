@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "fixture": false,
+  "production_control_plane": "",
   "release": {
     "release_id": "voice-artifact-retention-lovable-v1",
     "source_commit": "27bad0cd0e5053cfb436752bee0976c5e1278fd8",
@@ -12,6 +13,7 @@
   },
   "preflight": {
     "status": "PENDING",
+    "capture_mode": "",
     "captured_at": "",
     "output_sha256": "",
     "lovable_project_id": "b6e0d823-59c4-4b5a-afbe-182485e5458b",
@@ -97,12 +99,36 @@
   },
   "cli_safety": {
     "generated_migration_reconciled": false,
+    "supabase_cli_available": false,
+    "supabase_cli_executed": false,
     "dry_run_selected_migrations": 0,
     "canonical_source_selected": false,
     "include_all_used": false,
     "migration_repair_used": false,
     "historical_replay_used": false,
     "dry_run_output_sha256": ""
+  },
+  "replay_safety": {
+    "proof_mode": "",
+    "lovable_reconciliation": {
+      "supabase_cli_claimed": false,
+      "generated_version": "",
+      "generated_path": "",
+      "generated_sha256": "",
+      "generated_bytes": 0,
+      "generated_commit_sha": "",
+      "generated_git_blob": "",
+      "generated_commit_reachable_from_head": false,
+      "generated_commit_author_is_lovable_bot": false,
+      "ledger_rows": 0,
+      "canonical_source_version_rows": 0,
+      "exact_payload_rows": 0,
+      "duplicate_payload_rows": 0,
+      "ambiguous_rows": 0,
+      "matching_provenance_rows": 0,
+      "reconciliation_capture": "",
+      "reconciliation_output_sha256": ""
+    }
   },
   "failure": {
     "incident_opened": false,
