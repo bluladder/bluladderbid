@@ -15,7 +15,7 @@ function calculate(
   services = { ...DEFAULT_ADDITIONAL_SERVICES, houseWash: true },
 ) {
   const input = toQuoteInput(
-    { ...DEFAULT_HOME_DETAILS, squareFootage: 2500, stories: 1 },
+    { ...DEFAULT_HOME_DETAILS, squareFootage: 2500, stories: 1, enclosedPatioProfile: 'none' },
     services,
   );
   return calculateQuote(input as QuoteInput, LIVE_CONFIG, 2);
@@ -194,6 +194,7 @@ describe('House Wash canonical pricing regression', () => {
         ...DEFAULT_HOME_DETAILS,
         squareFootage: 2500,
         stories: 1,
+        enclosedPatioProfile: 'none',
         advancedWindowConditions: false,
       },
       {

@@ -21,6 +21,7 @@ import type { WindowPromoConfig } from '@/hooks/useWindowPromoConfig';
 import { ChoiceCard } from '@/components/quote/ChoiceCard';
 import { SummaryRow } from '@/components/quote/SummaryRow';
 import type { ServerQuotePhase } from '@/hooks/useServerQuoteCalculation';
+import type { QuoteIntegrity, QuoteServiceId } from '@/lib/pricing/quoteIntegrity';
 
 interface IntentFirstServiceSelectorProps {
   services: AdditionalServices;
@@ -33,6 +34,7 @@ interface IntentFirstServiceSelectorProps {
   windowPromo?: WindowPromoConfig | null;
   /** Current canonical one-time quote state; prices are actionable only for firm/estimated quotes. */
   quotePhase: ServerQuotePhase;
+  quoteIntegrity?: QuoteIntegrity;
 }
 
 function formatPrice(price: number) {
@@ -176,8 +178,15 @@ function ServiceCard({
               <h3 className="font-semibold text-foreground">Customize {title}</h3>
               <p className="text-xs text-muted-foreground">Your service stays selected while you edit these details.</p>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={onEdit}>
-              Done
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={onEdit}
+              aria-label={`Collapse ${title}`}
+            >
+              <ChevronUp className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
           <div>
@@ -246,6 +255,7 @@ export function IntentFirstServiceSelector({
   featuredService,
   windowPromo,
   quotePhase,
+  quoteIntegrity,
 }: IntentFirstServiceSelectorProps) {
   const [editingService, setEditingService] = useState<string | null>(featuredService ?? null);
 
@@ -277,15 +287,19 @@ export function IntentFirstServiceSelector({
 
   const selectedServiceIds = orderedServices.filter(isServiceEnabled);
   const inactiveServiceIds = orderedServices.filter((serviceId) => !isServiceEnabled(serviceId));
-  const hasActionableQuote = quotePhase === 'firm' || quotePhase === 'estimated';
-  const selectedPriceStatus = (() => {
-    if (quotePhase === 'loading' || quotePhase === 'idle') return 'Recalculating…';
-    if (quotePhase === 'missing_information') return 'Complete the required details';
-    if (quotePhase === 'manual_review_required') return 'Price requires review';
-    return 'Price unavailable';
-  })();
-  const authoritativePrice = (price: number) =>
-    hasActionableQuote && price > 0 ? price : 0;
+  const readinessFor = (serviceId: QuoteServiceId) =>
+    quoteIntegrity?.services.find((service) => service.id === serviceId);
+  const priceStatusFor = (serviceId: QuoteServiceId) => {
+    const readiness = readinessFor(serviceId);
+    if (readiness) return readiness.message;
+    if (quotePhase === 'loading' || quotePhase === 'idle') return 'Recalculating';
+    if (quotePhase === 'missing_information') return 'Complete required service details';
+    if (quotePhase === 'manual_review_required') return 'Manual review required';
+    return 'Pricing temporarily unavailable';
+  };
+  const authoritativePrice = (price: number, serviceId: QuoteServiceId) =>
+    (readinessFor(serviceId)?.state === 'priced' ||
+      (!quoteIntegrity && (quotePhase === 'firm' || quotePhase === 'estimated'))) && price > 0 ? price : 0;
   const pressureWashingHasArea = [
     services.pressureWashing.frontPorch,
     services.pressureWashing.backPatio,
@@ -293,28 +307,25 @@ export function IntentFirstServiceSelector({
     services.pressureWashing.walkways,
   ].some((area) => area.enabled);
   const hasAuthoritativePressureWashingPrice =
-    pressureWashingHasArea && authoritativePrice(servicePrices.pressureWashing) > 0;
+    pressureWashingHasArea && authoritativePrice(servicePrices.pressureWashing, 'pressureWashing') > 0;
   const pressureWashingPriceStatus = pressureWashingHasArea
-    ? selectedPriceStatus
-    : 'Select at least one area for pricing';
+    ? priceStatusFor('pressureWashing')
+    : 'Select at least one area';
   const hasAuthoritativeGutterPrice =
-    hasActionableQuote &&
+    (readinessFor('gutterCleaning')?.state === 'priced' ||
+      (!quoteIntegrity && (quotePhase === 'firm' || quotePhase === 'estimated'))) &&
     servicePrices.gutterCleaning > 0 &&
     servicePrices.gutterCleaningTotal >= servicePrices.gutterCleaning;
   const rustTreatmentSelected = services.houseWashDetails.stainType === 'rust';
   const hasAuthoritativeHouseWashPrice =
-    hasActionableQuote &&
+    (readinessFor('houseWash')?.state === 'priced' ||
+      (!quoteIntegrity && (quotePhase === 'firm' || quotePhase === 'estimated'))) &&
     servicePrices.houseWash > 0 &&
     servicePrices.houseWashTotal >= servicePrices.houseWash &&
     (!rustTreatmentSelected || servicePrices.houseWashRustSurcharge > 0);
 
-  const gutterPriceStatus = (() => {
-    if (quotePhase === 'loading' || quotePhase === 'idle') return 'Updating price…';
-    if (quotePhase === 'missing_information') return 'Complete home details to calculate price';
-    if (quotePhase === 'manual_review_required') return 'Price requires review';
-    return 'Price unavailable';
-  })();
-  const houseWashPriceStatus = gutterPriceStatus;
+  const gutterPriceStatus = priceStatusFor('gutterCleaning');
+  const houseWashPriceStatus = priceStatusFor('houseWash');
 
   const toggleGutterCleaning = () => {
     if (!services.gutterCleaning) {
@@ -350,6 +361,54 @@ export function IntentFirstServiceSelector({
         stainType: 'organic',
       },
     });
+  };
+
+  const removeService = (serviceId: ServiceId) => {
+    switch (serviceId) {
+      case 'windowCleaning':
+        onChange({ windowCleaning: false });
+        break;
+      case 'drivewayCleaning':
+        onChange({ drivewayCleaning: { ...services.drivewayCleaning, enabled: false } });
+        break;
+      case 'pressureWashing':
+        onChange({
+          pressureWashing: {
+            ...services.pressureWashing,
+            enabled: false,
+            frontPorch: { ...services.pressureWashing.frontPorch, enabled: false },
+            backPatio: { ...services.pressureWashing.backPatio, enabled: false },
+            poolDeck: { ...services.pressureWashing.poolDeck, enabled: false },
+            walkways: { ...services.pressureWashing.walkways, enabled: false },
+          },
+        });
+        break;
+      case 'gutterCleaning':
+        toggleGutterCleaning();
+        break;
+      case 'houseWash':
+        toggleHouseWash();
+        break;
+      case 'roofCleaning':
+        onChange({ roofCleaning: false, roofRiskFlags: undefined });
+        break;
+      case 'solarPanelCleaning':
+        onChange({
+          solarPanelCleaning: {
+            ...services.solarPanelCleaning,
+            enabled: false,
+            accessType: undefined,
+            knownDamage: undefined,
+            extremePitch: undefined,
+            fragileMaterial: undefined,
+            unusualAccess: undefined,
+          },
+        });
+        break;
+      case 'screenRepair':
+        onChange({ screenRepair: { ...services.screenRepair, enabled: false, scopeType: undefined } });
+        break;
+    }
   };
 
   const focusSelectedService = (serviceId: string) => {
@@ -412,8 +471,8 @@ export function IntentFirstServiceSelector({
     },
     onEdit: () => setEditingService((current) => current === serviceId ? null : serviceId),
     onRemove: () => {
-      if (isEnabled) toggle();
-      setEditingService(null);
+      if (isEnabled) removeService(serviceId as ServiceId);
+      setEditingService((current) => current === serviceId ? null : current);
     },
   });
 
@@ -425,14 +484,14 @@ export function IntentFirstServiceSelector({
       icon={Sparkles}
       title="Window Cleaning"
       description="Crystal clear windows, inside or out"
-      price={authoritativePrice(servicePrices.windowCleaningTotal)}
-      priceStatus={selectedPriceStatus}
+      price={authoritativePrice(servicePrices.windowCleaningTotal, 'windowCleaning')}
+      priceStatus={priceStatusFor('windowCleaning')}
       {...serviceCardControls('windowCleaning', services.windowCleaning, () =>
         onChange({ windowCleaning: !services.windowCleaning })
       )}
       isFeatured={isFeatured('windowCleaning')}
       benefit="Streak-free interior + exterior clean, screens included"
-      anchorPrice={authoritativePrice(servicePrices.windowCleaningTotal)}
+      anchorPrice={authoritativePrice(servicePrices.windowCleaningTotal, 'windowCleaning')}
     >
           {/* Window Options - shown when enabled */}
           <div className="space-y-4">
@@ -763,14 +822,14 @@ export function IntentFirstServiceSelector({
       icon={Car}
       title="Driveway Cleaning"
       description="Power wash your driveway to remove stains and buildup"
-      price={authoritativePrice(servicePrices.drivewayCleaning)}
-      priceStatus={selectedPriceStatus}
+      price={authoritativePrice(servicePrices.drivewayCleaning, 'drivewayCleaning')}
+      priceStatus={priceStatusFor('drivewayCleaning')}
       {...serviceCardControls('drivewayCleaning', services.drivewayCleaning.enabled, () => onChange({
         drivewayCleaning: { ...services.drivewayCleaning, enabled: !services.drivewayCleaning.enabled } 
       }))}
       isFeatured={isFeatured('drivewayCleaning')}
       benefit="Lift oil stains, mildew and buildup — instant curb appeal"
-      anchorPrice={authoritativePrice(servicePrices.drivewayCleaning)}
+      anchorPrice={authoritativePrice(servicePrices.drivewayCleaning, 'drivewayCleaning')}
     >
       <div className="space-y-4">
         {/* Driveway preset selector */}
@@ -1038,14 +1097,14 @@ export function IntentFirstServiceSelector({
       icon={Cloud}
       title="Roof Cleaning"
       description="Safe, low-pressure roof treatment"
-      price={authoritativePrice(servicePrices.roofCleaning)}
-      priceStatus={selectedPriceStatus}
+      price={authoritativePrice(servicePrices.roofCleaning, 'roofCleaning')}
+      priceStatus={priceStatusFor('roofCleaning')}
       {...serviceCardControls('roofCleaning', services.roofCleaning, () =>
         onChange({ roofCleaning: !services.roofCleaning })
       )}
       isFeatured={isFeatured('roofCleaning')}
       benefit="Extend roof life — remove black streaks and moss"
-      anchorPrice={authoritativePrice(servicePrices.roofCleaning)}
+      anchorPrice={authoritativePrice(servicePrices.roofCleaning, 'roofCleaning')}
     >
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -1093,6 +1152,29 @@ export function IntentFirstServiceSelector({
           pitch={services.roofPitch}
           onChange={(pitch) => onChange({ roofPitch: pitch })}
         />
+
+        <div className="space-y-2">
+          <Label className="text-sm">Roof condition and access</Label>
+          <Select
+            value={services.roofRiskFlags
+              ? (Object.values(services.roofRiskFlags).some(Boolean) ? 'review' : 'standard')
+              : undefined}
+            onValueChange={(value) => onChange({
+              roofRiskFlags: value === 'standard'
+                ? { knownDamage: false, extremePitch: false, fragileMaterial: false, unusualAccess: false }
+                : { knownDamage: false, extremePitch: false, fragileMaterial: false, unusualAccess: true },
+            })}
+          >
+            <SelectTrigger aria-label="Roof condition and access">
+              <SelectValue placeholder="Confirm roof conditions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="standard">No known damage, fragile material, extreme pitch, or unusual access</SelectItem>
+              <SelectItem value="review">One or more of these conditions applies or I am not sure</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">Roof pitch above helps us plan the visit; it does not change the automated price by itself.</p>
+        </div>
       </div>
     </ServiceCard>
   );
@@ -1104,14 +1186,14 @@ export function IntentFirstServiceSelector({
       icon={Sun}
       title="Solar Panel Cleaning"
       description="Restore panel efficiency — dust, pollen and bird droppings block output"
-      price={authoritativePrice(servicePrices.solarPanelCleaning)}
-      priceStatus={selectedPriceStatus}
+      price={authoritativePrice(servicePrices.solarPanelCleaning, 'solarPanelCleaning')}
+      priceStatus={priceStatusFor('solarPanelCleaning')}
       {...serviceCardControls('solarPanelCleaning', services.solarPanelCleaning.enabled, () => onChange({
         solarPanelCleaning: { ...services.solarPanelCleaning, enabled: !services.solarPanelCleaning.enabled }
       }))}
       isFeatured={isFeatured('solarPanelCleaning')}
       benefit="Restore output by removing dust, pollen, and debris"
-      anchorPrice={authoritativePrice(servicePrices.solarPanelCleaning)}
+      anchorPrice={authoritativePrice(servicePrices.solarPanelCleaning, 'solarPanelCleaning')}
     >
       <div className="space-y-3">
         <div className="space-y-2">
@@ -1134,6 +1216,47 @@ export function IntentFirstServiceSelector({
             <span className="text-sm text-muted-foreground">panels</span>
           </div>
         </div>
+        <div className="space-y-2">
+          <Label className="text-sm">Panel access</Label>
+          <Select
+            value={services.solarPanelCleaning.accessType
+              ? (services.solarPanelCleaning.accessType === 'standard_residential' &&
+                  !services.solarPanelCleaning.knownDamage &&
+                  !services.solarPanelCleaning.extremePitch &&
+                  !services.solarPanelCleaning.fragileMaterial &&
+                  !services.solarPanelCleaning.unusualAccess ? 'standard' : 'review')
+              : undefined}
+            onValueChange={(value) => onChange({
+              solarPanelCleaning: value === 'standard'
+                ? {
+                    ...services.solarPanelCleaning,
+                    stories: homeDetails.stories,
+                    accessType: 'standard_residential',
+                    knownDamage: false,
+                    extremePitch: false,
+                    fragileMaterial: false,
+                    unusualAccess: false,
+                  }
+                : {
+                    ...services.solarPanelCleaning,
+                    stories: homeDetails.stories,
+                    accessType: 'unusual_or_uncertain',
+                    knownDamage: false,
+                    extremePitch: false,
+                    fragileMaterial: false,
+                    unusualAccess: true,
+                  },
+            })}
+          >
+            <SelectTrigger aria-label="Solar panel access">
+              <SelectValue placeholder="Confirm panel access" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="standard">Standard residential access; no known damage or unusual conditions</SelectItem>
+              <SelectItem value="review">Unusual access, damage, fragile material, steep pitch, or not sure</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <p className="text-xs text-muted-foreground">
           We use pure-water fed-pole systems — no soaps, no residue, no roof damage.
         </p>
@@ -1148,14 +1271,14 @@ export function IntentFirstServiceSelector({
       icon={Wrench}
       title="Screen Repair"
       description="We re-screen torn or damaged window screens on the same visit"
-      price={authoritativePrice(servicePrices.screenRepair)}
-      priceStatus={selectedPriceStatus}
+      price={authoritativePrice(servicePrices.screenRepair, 'screenRepair')}
+      priceStatus={priceStatusFor('screenRepair')}
       {...serviceCardControls('screenRepair', services.screenRepair.enabled, () => onChange({
         screenRepair: { ...services.screenRepair, enabled: !services.screenRepair.enabled }
       }))}
       isFeatured={isFeatured('screenRepair')}
       benefit="Fresh standard screen mesh installed on-site"
-      anchorPrice={authoritativePrice(servicePrices.screenRepair)}
+      anchorPrice={authoritativePrice(servicePrices.screenRepair, 'screenRepair')}
     >
       <div className="space-y-3">
         <div className="space-y-2">
@@ -1177,6 +1300,31 @@ export function IntentFirstServiceSelector({
             />
             <span className="text-sm text-muted-foreground">screens</span>
           </div>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-sm">Screen repair type</Label>
+          <Select
+            value={services.screenRepair.scopeType}
+            onValueChange={(value) => onChange({
+              screenRepair: {
+                ...services.screenRepair,
+                scopeType: value as NonNullable<AdditionalServices['screenRepair']['scopeType']>,
+              },
+            })}
+          >
+            <SelectTrigger aria-label="Screen repair type">
+              <SelectValue placeholder="Select screen type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="standard_removable_reusable_frame">Standard removable window screen; reuse existing frame</SelectItem>
+              <SelectItem value="screen_door">Screen door</SelectItem>
+              <SelectItem value="new_frame">New frame needed</SelectItem>
+              <SelectItem value="damaged_frame">Damaged frame</SelectItem>
+              <SelectItem value="solar_screen">Solar screen</SelectItem>
+              <SelectItem value="specialty_or_oversized">Specialty or oversized screen</SelectItem>
+              <SelectItem value="unknown">Not sure</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <p className="text-xs text-muted-foreground">
           Standard fiberglass mesh in charcoal or grey. Pet-resistant mesh available on request.

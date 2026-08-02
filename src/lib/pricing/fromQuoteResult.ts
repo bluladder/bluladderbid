@@ -34,8 +34,9 @@ function comp(li: QuoteLineItem | undefined, name: string): number {
 
 /**
  * Build the legacy `ServicePrices` view from an authoritative server quote.
- * Pass `null` (no firm/estimated quote) to get the neutral all-zero shape so
- * the UI shows no stale dollar values while loading / unavailable.
+ * A missing/manual-review result may contain independently priced service
+ * lines; those remain displayable, but its aggregate total is never actionable.
+ * Pass `null` while loading/unavailable to clear stale values immediately.
  */
 export function fromQuoteResult(quote: QuoteResult | null): ServicePrices {
   if (!quote) return { ...DEFAULT_SERVICE_PRICES };

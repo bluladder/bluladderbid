@@ -150,6 +150,7 @@ export function noServices(): EngineAdditionalServices {
     houseWash: false,
     gutterCleaning: false,
     roofCleaning: false,
+    roofRiskFlags: { knownDamage: false, extremePitch: false, fragileMaterial: false, unusualAccess: false },
     drivewayCleaning: { enabled: false, sqft: 0, surfaceType: "concrete" },
     pressureWashing: {
       enabled: false,

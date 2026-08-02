@@ -7,7 +7,9 @@ const migration = fs.readFileSync(migrationPath, "utf8");
 // PR #66 is the runtime activation tranche built directly on the verified
 // post-remediation main head. This pin makes the release boundary reviewable:
 // the migration and canonical quote/pricing contracts must not drift, while
-// only the enumerated Edge runtime and regression-test files may change.
+// only the enumerated Edge runtime and reviewed post-activation pricing files
+// may change. The multi-service readiness repair deliberately updates both
+// mirrored engines without changing migration history or pricing formulas.
 const runtimeBase = "77d0ad1eda042a403838c407b2318b7274bde8a3";
 const ciWorkflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
 const secretScanWorkflow = fs.readFileSync(
@@ -131,6 +133,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/publicBookingRelease_contract_test.ts",
   "supabase/functions/_shared/publicRequestReplay.ts",
   "supabase/functions/_shared/publicRequestReplay_test.ts",
+  "supabase/functions/_shared/pricingEngine.ts",
   "supabase/functions/_shared/quoteSession.ts",
   "supabase/functions/_shared/quoteSession_test.ts",
   "supabase/functions/_shared/supabaseOrganizationAuthority.ts",
@@ -196,10 +199,17 @@ if (missingEdgePaths.length) {
 }
 
 const reviewedPostRuntimeProtectedPaths = new Set([
+  "src/lib/pricing/__fixtures__/liveConfig.ts",
+  "src/lib/pricing/engine.ts",
+  "src/lib/pricing/fromQuoteResult.ts",
   "src/lib/pricing/fromQuoteResult.test.ts",
   "src/lib/pricing/gutterBasePricing.regression.test.ts",
   "src/lib/pricing/houseWashPricing.regression.test.ts",
+  "src/lib/pricing/multiserviceQuoteReadiness.regression.test.ts",
+  "src/lib/pricing/quoteIntegrity.ts",
+  "src/lib/pricing/toQuoteInput.ts",
   "src/lib/pricing/toQuoteInput.selectedServices.test.ts",
+  "supabase/functions/_shared/pricingEngine.ts",
 ]);
 const protectedContractPaths = changedPaths([
   "packages/sales-engine",
@@ -397,6 +407,6 @@ for (
 
 console.log(
   "Stage 7B v2 runtime-activation check passed: applied migration and " +
-    "canonical quote/pricing contracts unchanged; exact Edge allowlist, " +
+    "reviewed pricing/readiness changes allowlisted; exact Edge allowlist, " +
     "hashed provider authority, ingress ordering, and fail-closed gates intact.",
 );

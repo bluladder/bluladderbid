@@ -102,6 +102,31 @@ describe('useServerQuoteCalculation', () => {
     expect(result.current.manualReviewReasons.length).toBeGreaterThan(0);
   });
 
+  it('5b. preserves independently authoritative lines without exposing a partial total', async () => {
+    invoke.mockResolvedValue({
+      data: {
+        status: 'missing_information',
+        firm: false,
+        total: 275,
+        subtotal: 275,
+        lineItems: [{ key: 'house_wash', label: 'House Wash', amount: 275 }],
+        missing: ['drivewaySqft'],
+        manualReviewReasons: [],
+        manualReviewServiceKeys: [],
+        ruleVersion: 1,
+        engineVersion: '1.0.0',
+      },
+      error: null,
+    });
+    const { result } = renderHook(() => useServerQuoteCalculation(baseInput(), { debounceMs: 1 }));
+    await waitFor(() => expect(result.current.isMissingInfo).toBe(true));
+    expect(result.current.quote?.lineItems).toEqual([
+      expect.objectContaining({ key: 'house_wash', amount: 275 }),
+    ]);
+    expect(result.current.total).toBeNull();
+    expect(result.current.missing).toContain('drivewaySqft');
+  });
+
   it('6. loading does not display an old price', async () => {
     invoke.mockResolvedValueOnce(firm(220));
     const { result, rerender } = renderHook(

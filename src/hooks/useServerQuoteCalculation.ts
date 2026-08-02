@@ -33,7 +33,7 @@ export type ServerQuotePhase =
 
 export interface ServerQuoteState {
   phase: ServerQuotePhase;
-  /** The full authoritative server result, or null when not firm/estimated. */
+  /** The full authoritative server result for every recognized quote status. */
   quote: QuoteResult | null;
   /** The authoritative total. ONLY present for firm/estimated quotes. */
   total: number | null;
@@ -166,7 +166,10 @@ export function useServerQuoteCalculation(
         setState({
           ...IDLE,
           phase,
-          quote: firmOrEstimate ? (result as QuoteResult) : null,
+          // Missing/manual-review results may still contain independently
+          // authoritative service lines. Preserve them for truthful per-service
+          // summaries, while `total` and the booking gate remain non-actionable.
+          quote: Array.isArray(result.lineItems) ? result as QuoteResult : null,
           total: firmOrEstimate && typeof result.total === 'number' ? result.total : null,
           error: null,
           missing: result.missing ?? [],
