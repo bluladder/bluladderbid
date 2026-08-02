@@ -79,8 +79,20 @@ export function PlanUpsellCard({
   const [showAllPlans, setShowAllPlans] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const hasServices = oneTimeTotal > 0;
+  const hasSelectedServices = [
+    additionalServices.windowCleaning,
+    additionalServices.houseWash,
+    additionalServices.gutterCleaning,
+    additionalServices.roofCleaning,
+    additionalServices.drivewayCleaning.enabled,
+    additionalServices.pressureWashing.enabled,
+    additionalServices.solarPanelCleaning.enabled,
+    additionalServices.screenRepair.enabled,
+  ].some(Boolean);
   const isCanonicalQuoteActionable =
-    hasServices && (quotePhase === 'firm' || quotePhase === 'estimated');
+    hasServices && (
+      quotePhase === undefined || quotePhase === 'firm' || quotePhase === 'estimated'
+    );
   // When square footage hasn't been entered yet, the price is just a starting
   // minimum, so we label it clearly to avoid it reading as a final quote.
   const isEstimate = !homeSquareFootage || homeSquareFootage <= 0;
@@ -131,7 +143,7 @@ export function PlanUpsellCard({
   const finalPayment = breakdown?.finalPayment ?? monthlyPayment;
   const hasFinalAdjustment = breakdown?.hasFinalAdjustment ?? false;
   
-  if (!hasServices) {
+  if (!hasSelectedServices) {
     return (
       <Card className="card-gradient">
         <CardContent className="p-6 text-center">
@@ -144,6 +156,34 @@ export function PlanUpsellCard({
           <p className="text-sm text-muted-foreground">
             Select services above to see your instant pricing.
           </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!isCanonicalQuoteActionable || !hasServices) {
+    const isLoading = quotePhase === 'loading' || quotePhase === 'idle';
+    const needsDetails = quotePhase === 'missing_information';
+    return (
+      <Card className="card-gradient">
+        <CardContent className="p-6">
+          <AsyncStatePanel
+            state={isLoading ? 'loading' : 'unavailable'}
+            title={
+              isLoading
+                ? 'Updating your one-time quote…'
+                : needsDetails
+                  ? 'Complete your home details to calculate this quote'
+                  : 'One-time quote unavailable right now'
+            }
+            testId={isLoading ? 'quote-loading' : 'quote-unavailable'}
+          >
+            {!isLoading && (
+              needsDetails
+                ? 'Enter the requested property details above. No stale price will be used.'
+                : 'No price is actionable until the authoritative quote service responds.'
+            )}
+          </AsyncStatePanel>
         </CardContent>
       </Card>
     );

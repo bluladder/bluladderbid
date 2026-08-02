@@ -42,4 +42,47 @@ describe('fromQuoteResult adapter', () => {
     expect(sp.pressureWashingBreakdown.backPatio).toBe(100);
     expect(sp.grandTotal).toBe(500); // from server total, not summed locally
   });
+
+  it('maps the authoritative gutter base, add-ons, service total, and global subtotal', () => {
+    const quote = baseQuote({
+      subtotal: 325,
+      total: 325,
+      lineItems: [
+        {
+          key: 'gutter_cleaning',
+          label: 'Gutter Cleaning',
+          quantity: 2500,
+          unit: 'sqft',
+          baseAmount: 225,
+          adjustments: [],
+          minimumApplied: false,
+          amount: 225,
+          components: {
+            gutterCleaning: 225,
+            gutterDrainCleaning: 100,
+            gutterMinorRepairs: 0,
+            gutterGuards: 0,
+            gutterCleaningTotal: 325,
+          },
+        },
+        {
+          key: 'underground_drain_clearing',
+          label: 'Drain Cleaning',
+          quantity: 1,
+          unit: 'each',
+          baseAmount: 100,
+          adjustments: [],
+          minimumApplied: false,
+          amount: 100,
+        },
+      ],
+    });
+
+    const sp = fromQuoteResult(quote);
+    expect(sp.gutterCleaning).toBe(225);
+    expect(sp.gutterDrainCleaning).toBe(100);
+    expect(sp.gutterCleaningTotal).toBe(325);
+    expect(sp.additionalServicesTotal).toBe(325);
+    expect(sp.grandTotal).toBe(325);
+  });
 });
