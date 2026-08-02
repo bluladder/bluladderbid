@@ -23,7 +23,11 @@ export function SummaryRow({ icon: Icon, title, description, price, onEdit, onRe
             <Check className="h-4 w-4 text-success" aria-hidden="true" />
             <span className="font-semibold text-foreground">{title}</span>
             <span className="sr-only">selected</span>
-            {price && <span className="ml-auto font-semibold text-primary">{price}</span>}
+            {price && (
+              <span className="ml-auto text-right font-semibold text-primary" data-testid="selected-service-price">
+                {price}
+              </span>
+            )}
           </div>
           {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
           <div className="mt-2 flex flex-wrap gap-2">
