@@ -57,6 +57,7 @@ function tokensFor(text: string): string[] {
     .replaceAll(",", "")
     .replace(/[^a-z0-9.\s-]/g, " ")
     .split(/[\s-]+/)
+    .map((token) => token.replace(/^\.+|\.+$/g, ""))
     .filter(Boolean);
 }
 

@@ -214,6 +214,7 @@ export interface QuoteSessionFields {
     /** Declarative conversational policy version used for this session. */
     policyVersion?: string;
     retryCounts?: Record<string, number>;
+    conditionalModifierQuestionAsked?: string;
     volunteeredNotes?: string[];
     requestedNextStep?: "text_quote" | "schedule" | "none";
     coupon?: {
@@ -538,6 +539,7 @@ export function mergeFields(
     if (nextFields.voiceJourney) {
       nextFields.voiceJourney = {
         ...nextFields.voiceJourney,
+        requestedNextStep: "none",
         quoteContext: null,
         delivery: null,
         availability: null,
@@ -1151,11 +1153,18 @@ function stableValue(value: unknown): unknown {
  * arithmetic inputs.
  */
 export function sessionInputsKey(fields: QuoteSessionFields): string {
-  const source = fields as unknown as Record<string, unknown>;
+  const source = {
+    ...(fields as unknown as Record<string, unknown>),
+    services: evaluateQuoteIntake(fields as unknown as Record<string, unknown>)
+      .services.slice().sort(),
+  };
   const contractValues: Record<string, unknown> = {};
   const includedFieldIds = new Set<string>();
   const selectedServices = evaluateQuoteIntake(source).services;
+  const storyNeutralWindowOnly = selectedServices.length === 1 &&
+    selectedServices[0] === "window_cleaning";
   for (const spec of CANONICAL_INTAKE_FIELDS) {
+    if (storyNeutralWindowOnly && spec.fieldId === "stories") continue;
     if (
       spec.appliesToServices.some((service) =>
         selectedServices.includes(service)

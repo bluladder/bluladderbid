@@ -77,10 +77,118 @@ import { parseSpokenName } from "../voice/quoteByText.ts";
 import {
   applyApprovedWindowDefaults,
   applyVolunteeredVoiceFacts,
+  classifyContextualVoiceQuoteByTextRejection,
+  classifyContextualVoiceQuoteByTextRequest,
+  isOperationalInstructionClause,
+  splitVoiceClauses,
 } from "../voice/voicePolicy.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
+
+const SCHEDULE_TOPIC =
+  /\b(?:schedule|scheduling|book|booking|appointment|availability|appointment times?|time slots?)\b/i;
+
+function isGenericPostPriceRejection(text: string): boolean {
+  return splitVoiceClauses(text).some((clause) => {
+    const normalized = clause.toLowerCase().replaceAll("’", "'").trim();
+    if (/^no problem\b/.test(normalized)) return false;
+    return /^(?:no(?:pe|,?\s+thanks?|\s+need)?|not (?:right )?now|not today|not at this time|maybe later|never mind|forget it|stop|cancel that|i changed my mind|i(?:'d| would) rather not|i(?:'m| am) not ready|(?:please\s+)?(?:i\s+)?(?:do not|don't|dont)\s+(?:(?:want|need)\s+to\s+)?(?:continue|proceed|go ahead|do (?:that|it)))\b/
+      .test(
+        normalized,
+      );
+  });
+}
+
+export function classifyContextualVoiceScheduleRejection(
+  text: string,
+): boolean {
+  return splitVoiceClauses(text).some((clause) => {
+    if (
+      isOperationalInstructionClause(clause) && !SCHEDULE_TOPIC.test(clause)
+    ) {
+      return false;
+    }
+    const normalized = clause.toLowerCase().replaceAll("’", "'");
+    return /\b(?:do not|don't|dont|never|not ready to|not going to|rather not|no longer want to|let(?:'s| us) not|skip|stop|cancel)\b[^.;!?]{0,48}\b(?:schedule|scheduling|book|booking|check (?:current )?availability|continue (?:toward|to|with) scheduling)\b/
+      .test(
+        normalized,
+      ) ||
+      /\b(?:do not|don't|dont|never|not ready for|rather not have|do not want|don't want|no)\b[^.;!?]{0,36}\b(?:an? )?appointment\b/
+        .test(
+          normalized,
+        ) ||
+      /\b(?:schedule|scheduling|book|booking|appointment)\b[^.;!?]{0,32}\b(?:not now|later|never mind)\b/
+        .test(
+          normalized,
+        ) ||
+      /\b(?:not now|maybe later|never mind)\b[^.;!?]{0,32}\b(?:schedule|scheduling|book|booking|appointment|availability)\b/
+        .test(
+          normalized,
+        ) ||
+      /\bno\s+(?:scheduling|booking|appointment)(?:\s+(?:now|yet|today))?\b/
+        .test(
+          normalized,
+        );
+  });
+}
+
+export function classifyContextualVoiceScheduleRequest(text: string): boolean {
+  return splitVoiceClauses(text).some((clause) => {
+    if (!SCHEDULE_TOPIC.test(clause)) return false;
+    if (classifyContextualVoiceScheduleRejection(clause)) return false;
+    if (
+      isOperationalInstructionClause(clause) && !SCHEDULE_TOPIC.test(clause)
+    ) {
+      return false;
+    }
+    return /\bcontinue\s+(?:on\s+)?(?:toward|to|with)\s+scheduling\b/i.test(
+      clause,
+    ) ||
+      /\b(?:schedule|book)\s+(?:it|this|that|me|an? appointment|the appointment)\b/i
+        .test(
+          clause,
+        ) ||
+      /\b(?:let(?:'s| us)|please|can we|could we|i(?:'d| would)? like to|i want to|i am ready to|i'm ready to|go ahead(?: and)?|yes,?|sure,?|okay,?)\b[^.;!?]{0,48}\b(?:schedule|scheduling|book|booking|check (?:current )?availability|see (?:current )?appointment times?)\b/i
+        .test(
+          clause,
+        ) ||
+      /\b(?:check|show|see)\s+(?:me\s+)?(?:current\s+)?(?:availability|appointment times?|time slots?)\b/i
+        .test(
+          clause,
+        ) ||
+      /\bwhen can (?:you|they|the crew)\b/i.test(clause);
+  });
+}
+
+function isExplicitPriceCorrectionAttempt(text: string): boolean {
+  const normalized = String(text ?? "").toLowerCase();
+  if (
+    !/\b(?:actually|correction|correct that|change that|make that)\b/.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+  return /\b\d[\d,]*\s*(?:square\s*(?:feet|foot)|sq\.?\s*ft\.?|sf)\b/.test(
+    normalized,
+  ) ||
+    /\b(?:inside\s+(?:and|&)\s+outside|outside(?:\s+only)?|exterior(?:\s+only)?)\b/
+      .test(
+        normalized,
+      ) ||
+    /\b(?:unusual\s+(?:ladder\s+)?access|ladder\s+(?:work|access)|hard[ -]?water|french panes?|solar screens?|screened patio|sunroom)\b/
+      .test(
+        normalized,
+      );
+}
+
+function isExplicitPriceRepeatRequest(text: string): boolean {
+  return splitVoiceClauses(text).some((clause) =>
+    /\b(?:what (?:was|is) (?:the|my) (?:price|quote|estimate|total)(?: again)?|(?:say|tell me|repeat|remind me(?: of)?) (?:the|my) (?:price|quote|estimate|total)(?: again)?|how much was (?:it|the quote|the estimate)(?: again)?)\b/i
+      .test(clause)
+  );
+}
 
 export interface ControllerInput {
   supabase: SB;
@@ -309,6 +417,22 @@ function expressPriceStatement(session: QuoteSession, total: number): string {
   } Would you like the quote texted, or would you like to continue toward scheduling?`;
 }
 
+function postPriceChoicePrompt(): string {
+  return "Would you like the quote texted, or would you like to continue toward scheduling?";
+}
+
+function scheduleContinuationIsAuthorized(session: QuoteSession): boolean {
+  return session.quoteStatus === "firm" &&
+    session.fields.voiceJourney?.requestedNextStep === "schedule";
+}
+
+function isControllerOwnedManualReviewTerminal(
+  lastStep: string | null | undefined,
+): boolean {
+  return lastStep?.startsWith("manual_review:retry_exhausted:") === true ||
+    lastStep?.startsWith("manual_review:conditional_modifier_budget:") === true;
+}
+
 export async function runControllerTurn(
   input: ControllerInput,
 ): Promise<ControllerTurnResult> {
@@ -334,6 +458,17 @@ export async function runControllerTurn(
     email: input.email,
     resolvedOrganizationId: organizationId,
   });
+  const persistedScheduleContinuationAuthorized =
+    scheduleContinuationIsAuthorized(session);
+  const persistedPostPriceBranch = session.quoteStatus === "firm"
+    ? session.fields.voiceJourney?.requestedNextStep ?? "none"
+    : "none";
+  const persistedFirmInputsKey = session.quoteStatus === "firm"
+    ? sessionInputsKey(session.fields)
+    : null;
+  const explicitPriceCorrectionAttempt = isExplicitPriceCorrectionAttempt(
+    input.utterance,
+  );
   // Controller-only metadata is stripped by persistControllerPatch. Keeping
   // the observed row version beside the patch makes every early return use the
   // same optimistic-concurrency boundary without writing it into JSONB.
@@ -350,6 +485,23 @@ export async function runControllerTurn(
     sessionPatch.booking_ready = session.bookingReady;
     sessionPatch.last_step = lastStep;
   };
+
+  if (isControllerOwnedManualReviewTerminal(session.lastStep)) {
+    const action = {
+      kind: "handoff" as const,
+      reason: "safety_or_access_flag" as const,
+    } as unknown as WorkflowAction;
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken:
+          "This quote is already flagged for manual review, so I won't ask more pricing questions or guess. A team member can finish it.",
+      },
+    };
+  }
 
   // The reason for the call is always established before callback, account,
   // quote, or appointment questions. It becomes sticky canonical journey
@@ -393,15 +545,109 @@ export async function runControllerTurn(
     ? applyApprovedWindowDefaults(volunteered)
     : volunteered;
   if (JSON.stringify(enriched.fields) !== JSON.stringify(session.fields)) {
-    capture(enriched, session.lastStep ?? "voice_policy_applied");
+    // mergeFields deliberately nulls lastStep when a canonical price input
+    // changes. Never reattach the stale scheduling/delivery step here.
+    const correctionInvalidatedFirmQuote = persistedFirmInputsKey !== null &&
+      enriched.quoteStatus === "none";
+    capture(
+      enriched,
+      correctionInvalidatedFirmQuote
+        ? enriched.lastStep ?? "voice_policy_applied"
+        : session.lastStep ?? "voice_policy_applied",
+    );
   }
 
-  if (session.quoteStatus !== "none") {
-    const requestedNextStep = /\b(text|send|message)\b/i.test(input.utterance)
-      ? "text_quote" as const
-      : /\b(schedule|book|appointment|time)\b/i.test(input.utterance)
-      ? "schedule" as const
-      : null;
+  const hasScopedConfirmationPending =
+    session.fields.callerIdConfirmationStatus === "pending" ||
+    session.fields.callerIdConfirmationStatus === "manual_pending" ||
+    session.lastStep?.startsWith("confirming:") === true ||
+    session.lastStep?.startsWith("asked:contact_") === true;
+  const genericPostPriceRejection = !hasScopedConfirmationPending &&
+    isGenericPostPriceRejection(input.utterance);
+  const currentBranchRejected = session.quoteStatus === "firm" &&
+    ((persistedPostPriceBranch === "text_quote" &&
+      (classifyContextualVoiceQuoteByTextRejection(input.utterance) ||
+        genericPostPriceRejection)) ||
+      (persistedPostPriceBranch === "schedule" &&
+        (classifyContextualVoiceScheduleRejection(input.utterance) ||
+          genericPostPriceRejection)));
+  if (currentBranchRejected) {
+    const rejectedBranch = persistedPostPriceBranch;
+    const bookingStatus = session.fields.voiceJourney?.booking?.status;
+    const schedulingOutcomeMayExist = bookingStatus === "submitting" ||
+      bookingStatus === "confirmed" || bookingStatus === "recovery_pending";
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          requestedNextStep: "none",
+        },
+      }),
+      rejectedBranch === "schedule"
+        ? "scheduling_declined"
+        : "quote_text_declined",
+    );
+    const action: WorkflowAction = rejectedBranch === "schedule"
+      ? { kind: "end", reason: "scheduling_declined" }
+      : { kind: "answer_side_question", topic: "post_price_choice" };
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken: rejectedBranch === "schedule"
+          ? schedulingOutcomeMayExist
+            ? "I won't take another scheduling action. The existing appointment status has not been changed."
+            : "No appointment was created. Your quote remains available if you would like to schedule later."
+          : `I won't send another quote text. ${postPriceChoicePrompt()}`,
+      },
+    };
+  }
+
+  if (
+    session.quoteStatus === "firm" &&
+    isExplicitPriceRepeatRequest(input.utterance)
+  ) {
+    const last = session.fields.lastQuoteResult;
+    const total = Number(last?.estimatedTotal ?? last?.total ?? 0);
+    if (last?.finalQuoteDisposition === "firm" && total > 0) {
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: { kind: "speak_price" },
+          spoken: `Your authoritative tax-inclusive total is ${
+            formatCanonicalCurrency(total)
+          }. ${postPriceChoicePrompt()}`,
+        },
+      };
+    }
+  }
+
+  if (
+    session.quoteStatus === "firm" && explicitPriceCorrectionAttempt &&
+    persistedFirmInputsKey === sessionInputsKey(session.fields)
+  ) {
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action: { kind: "answer_side_question", topic: "post_price_choice" },
+        spoken: `That matches the current quote. ${postPriceChoicePrompt()}`,
+      },
+    };
+  }
+
+  if (session.quoteStatus === "firm") {
+    const requestedNextStep =
+      classifyContextualVoiceQuoteByTextRequest(input.utterance)
+        ? "text_quote" as const
+        : classifyContextualVoiceScheduleRequest(input.utterance)
+        ? "schedule" as const
+        : null;
     if (requestedNextStep) {
       capture(
         mergeFields(session, {
@@ -415,6 +661,27 @@ export async function runControllerTurn(
     }
   }
 
+  if (
+    session.quoteStatus === "firm" &&
+    session.fields.voiceJourney?.intent === "new_quote" &&
+    session.fields.voiceJourney?.requestedNextStep !== "text_quote" &&
+    session.fields.voiceJourney?.requestedNextStep !== "schedule"
+  ) {
+    const action: WorkflowAction = {
+      kind: "answer_side_question",
+      topic: "post_price_choice",
+    };
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken: postPriceChoicePrompt(),
+      },
+    };
+  }
+
   let f = session.fields;
 
   // Step 1: caller-ID confirmation dance (only when we have an ANI and no
@@ -422,7 +689,7 @@ export async function runControllerTurn(
   const havePhone = !!f.phone &&
     (session.fieldStatus.phone === "captured" ||
       session.fieldStatus.phone === "verified");
-  if (!havePhone && input.callerIdE164 && session.quoteStatus !== "none") {
+  if (!havePhone && input.callerIdE164 && session.quoteStatus === "firm") {
     const status = f.callerIdConfirmationStatus;
     if (!status) {
       // First time: propose the caller ID for confirmation.
@@ -1007,6 +1274,17 @@ export async function runControllerTurn(
         },
       };
     }
+    if (!persistedScheduleContinuationAuthorized) {
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: { kind: "answer_side_question", topic: "post_price_choice" },
+          spoken: postPriceChoicePrompt(),
+        },
+      };
+    }
     const raw = await measure(
       "availability",
       () =>
@@ -1284,6 +1562,17 @@ export async function runControllerTurn(
         },
       };
     }
+    if (!persistedScheduleContinuationAuthorized) {
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: { kind: "answer_side_question", topic: "post_price_choice" },
+          spoken: postPriceChoicePrompt(),
+        },
+      };
+    }
     capture(
       mergeFields(session, {
         voiceJourney: {
@@ -1355,6 +1644,47 @@ export async function runControllerTurn(
       input.utterance,
     );
     if (!parsed.accepted) {
+      const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+      const currentRetries = Number(retryCounts[askedField] ?? 0);
+      if (currentRetries >= 1) {
+        const terminal = mergeFields(session, {
+          lastQuoteResult: undefined,
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            retryCounts,
+            requestedNextStep: "none",
+            quoteContext: null,
+            delivery: null,
+            availability: null,
+            booking: { status: "not_started" as const },
+          },
+        });
+        delete terminal.fields.lastQuoteResult;
+        terminal.quoteStatus = "manual_review";
+        terminal.bookingReady = false;
+        capture(terminal, `manual_review:retry_exhausted:${askedField}`);
+        const action = {
+          kind: "handoff" as const,
+          reason: "safety_or_access_flag" as const,
+        } as unknown as WorkflowAction;
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action,
+            spoken:
+              "I still couldn't capture that detail safely, so I've flagged the quote for manual review. A team member can finish it without me guessing.",
+          },
+        };
+      }
+      const retried = mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          retryCounts: { ...retryCounts, [askedField]: currentRetries + 1 },
+        },
+      });
+      capture(retried, `asked:${askedField}`);
       const prompt = askedField === "priceChangingAssumptionConfirmation"
         ? buildCanonicalPrePriceRecap(session.fields)
         : promptForCanonicalField(askedField);
@@ -1500,16 +1830,75 @@ export async function runControllerTurn(
     : null;
   let action = decideResidentialQuoteAction(session, pricingMissing);
   if (action.kind === "handoff" && action.reason === "unsupported_service") {
+    const allowedUnsupportedClarificationFields = [
+      // Stories are deliberately neutral for window-only pricing, but remain
+      // a canonical input for a separately volunteered house-wash service.
+      "stories",
+      "ladderAffectedWindowEquivalents",
+      "hardWaterAffectedWindowEquivalents",
+    ];
     const missing = computeRequired(session.fields);
-    if (missing.length > 0) {
+    const allowedField = allowedUnsupportedClarificationFields.find((field) =>
+      missing.includes(field)
+    );
+    if (allowedField) {
       action = {
         kind: "ask",
-        field: missing[0],
-        prompt: promptForCanonicalField(missing[0]),
+        field: allowedField,
+        prompt: promptForCanonicalField(allowedField),
       } as unknown as WorkflowAction;
     }
   }
   if (action.kind === "ask") {
+    const conditionalQuantityFields = new Set([
+      "ladderAffectedWindowEquivalents",
+      "hardWaterAffectedWindowEquivalents",
+    ]);
+    if (conditionalQuantityFields.has(action.field)) {
+      const alreadyAsked = session.fields.voiceJourney
+        ?.conditionalModifierQuestionAsked;
+      if (alreadyAsked && alreadyAsked !== action.field) {
+        const terminal = mergeFields(session, {
+          lastQuoteResult: undefined,
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            requestedNextStep: "none",
+            quoteContext: null,
+            delivery: null,
+            availability: null,
+            booking: { status: "not_started" as const },
+          },
+        });
+        delete terminal.fields.lastQuoteResult;
+        terminal.quoteStatus = "manual_review";
+        terminal.bookingReady = false;
+        capture(
+          terminal,
+          `manual_review:conditional_modifier_budget:${action.field}`,
+        );
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: { kind: "handoff", reason: "safety_or_access_flag" },
+            spoken:
+              "This quote needs a quick manual review because there are multiple specialty window details. A team member can finish it without me guessing.",
+          },
+        };
+      }
+      if (!alreadyAsked) {
+        capture(
+          mergeFields(session, {
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              conditionalModifierQuestionAsked: action.field,
+            },
+          }),
+          session.lastStep,
+        );
+      }
+    }
     const prompt = action.field === "priceChangingAssumptionConfirmation"
       ? buildCanonicalPrePriceRecap(session.fields)
       : action.prompt;

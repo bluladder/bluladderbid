@@ -32,10 +32,7 @@ import {
   voiceTranscriptRetentionExpiresAt,
   type VoiceTurnJournalResult,
 } from "./turnJournal.ts";
-import {
-  classifyQuoteByTextRequest,
-  planQuoteByTextResponse,
-} from "./quoteByText.ts";
+import { planQuoteByTextResponse } from "./quoteByText.ts";
 import {
   type CallEdgeFunction,
   deliverVoiceQuoteByText,
@@ -45,6 +42,7 @@ import {
   buildCanonicalPrePriceRecap,
   promptForCanonicalField,
 } from "./voiceCanonicalIntake.ts";
+import { classifyContextualVoiceQuoteByTextRequest } from "./voicePolicy.ts";
 import type { runTool } from "../aiTools.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -291,34 +289,42 @@ export async function executeControllerRoute(
           "I saved that answer, but I couldn't safely reload the quote form. I have not checked availability or advanced the request.";
         event = "workflow_controller_projection_blocked";
       } else {
-        const identityStarted = now();
-        identityPreparation = await prepareIdentity(input.supabase, {
-          session,
-          conversationId: input.conversationId,
-          organizationId: input.organizationId,
-        });
-        timings.identityPreparationMs = elapsed(identityStarted);
-        if (
-          identityPreparation.status === "blocked" ||
-          identityPreparation.status === "error"
-        ) {
-          spoken =
-            "I saved your confirmed answers, but I couldn't safely link the customer and property records. I have not checked availability or booked anything. A team member needs to verify the account.";
-          event = "workflow_controller_identity_blocked";
-        } else if (identityPreparation.status === "ready") {
-          const lineageProjectionStarted = now();
-          projection = await project(input.supabase, {
-            sessionId: turn.sessionId,
+        const mayPrepareIdentity = session.quoteStatus === "firm" &&
+          session.fields.voiceJourney?.requestedNextStep != null &&
+          session.fields.voiceJourney.requestedNextStep !== "none" &&
+          turn.pre.kind === "fsm" &&
+          (turn.pre.action.kind === "ask" ||
+            turn.pre.action.kind === "offer_scheduling");
+        if (mayPrepareIdentity) {
+          const identityStarted = now();
+          identityPreparation = await prepareIdentity(input.supabase, {
+            session,
             conversationId: input.conversationId,
             organizationId: input.organizationId,
           });
-          timings.projectionMs += elapsed(lineageProjectionStarted);
+          timings.identityPreparationMs = elapsed(identityStarted);
           if (
-            projection.status === "conflict" || projection.status === "error"
+            identityPreparation.status === "blocked" ||
+            identityPreparation.status === "error"
           ) {
             spoken =
-              "I linked the local customer and property, but I couldn't safely synchronize the call record. I have not checked availability or advanced the request.";
-            event = "workflow_controller_projection_blocked";
+              "I saved your confirmed answers, but I couldn't safely link the customer and property records. I have not checked availability or booked anything. A team member needs to verify the account.";
+            event = "workflow_controller_identity_blocked";
+          } else if (identityPreparation.status === "ready") {
+            const lineageProjectionStarted = now();
+            projection = await project(input.supabase, {
+              sessionId: turn.sessionId,
+              conversationId: input.conversationId,
+              organizationId: input.organizationId,
+            });
+            timings.projectionMs += elapsed(lineageProjectionStarted);
+            if (
+              projection.status === "conflict" || projection.status === "error"
+            ) {
+              spoken =
+                "I linked the local customer and property, but I couldn't safely synchronize the call record. I have not checked availability or advanced the request.";
+              event = "workflow_controller_projection_blocked";
+            }
           }
         }
       }
@@ -330,14 +336,17 @@ export async function executeControllerRoute(
   // A pending delivery marker is persisted before either nested Edge call.
   if (
     stateCommitted && event === "workflow_controller" &&
-    classifyQuoteByTextRequest(reconstructed.userMessage)
+    classifyContextualVoiceQuoteByTextRequest(reconstructed.userMessage)
   ) {
     let deliverySession = await readSession(
       input.supabase,
       turn.sessionId,
       input.organizationId,
     );
-    if (deliverySession) {
+    const deliveryAllowed = !!deliverySession &&
+      deliverySession.quoteStatus === "firm" &&
+      deliverySession.fields.voiceJourney?.requestedNextStep === "text_quote";
+    if (deliveryAllowed && deliverySession) {
       const pendingFields = {
         ...deliverySession.fields,
         voiceJourney: {
@@ -361,11 +370,20 @@ export async function executeControllerRoute(
           deliverySession.id,
           input.organizationId,
         );
+        const pendingStillAuthoritative = !!deliverySession &&
+          deliverySession.quoteStatus === "firm" &&
+          deliverySession.fields.voiceJourney?.requestedNextStep ===
+            "text_quote" &&
+          deliverySession.fields.voiceJourney.delivery?.status === "pending";
+        if (!pendingStillAuthoritative) deliverySession = null;
       } else {
         deliverySession = null;
       }
     }
-    if (!deliverySession) {
+    if (!deliveryAllowed) {
+      // The utterance was not an authoritative persisted quote-by-text
+      // continuation. Preserve the controller's ordinary speech and event.
+    } else if (!deliverySession) {
       spoken =
         "I haven't sent that text because I couldn't safely record the delivery request. Your quote form is still saved.";
       event = "voice_quote_by_text_persistence_blocked";
