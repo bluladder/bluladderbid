@@ -27,6 +27,11 @@ const reconstructedMessages = [
   { role: "user" as const, content: "I need window cleaning." },
 ];
 
+type ExternalActionTestResult = {
+  status: string;
+  retryable?: boolean;
+};
+
 function request(messages = reconstructedMessages): ParsedAdapterRequest {
   return {
     messages,
@@ -280,30 +285,36 @@ Deno.test(
         });
       },
     };
-    const result = await runClaimedExternalAction(supabase, {
-      organizationId: "o",
-      callId: "c",
-      turnId: "t",
-      actionKey: "sms",
-      run: async () => {
-        providerCalls += 1;
-        return { status: "accepted" };
+    const result = await runClaimedExternalAction<ExternalActionTestResult>(
+      supabase,
+      {
+        organizationId: "o",
+        callId: "c",
+        turnId: "t",
+        actionKey: "sms",
+        run: async () => {
+          providerCalls += 1;
+          return { status: "accepted" };
+        },
+        uncertain: () => ({ status: "uncertain", retryable: false }),
       },
-      uncertain: () => ({ status: "uncertain", retryable: false }),
-    });
+    );
     assertEquals(providerCalls, 1);
     assertEquals(result, { status: "uncertain", retryable: false });
-    const retry = await runClaimedExternalAction(supabase, {
-      organizationId: "o",
-      callId: "c",
-      turnId: "t",
-      actionKey: "sms",
-      run: async () => {
-        providerCalls += 1;
-        return { status: "accepted" };
+    const retry = await runClaimedExternalAction<ExternalActionTestResult>(
+      supabase,
+      {
+        organizationId: "o",
+        callId: "c",
+        turnId: "t",
+        actionKey: "sms",
+        run: async () => {
+          providerCalls += 1;
+          return { status: "accepted" };
+        },
+        uncertain: () => ({ status: "uncertain", retryable: false }),
       },
-      uncertain: () => ({ status: "uncertain", retryable: false }),
-    });
+    );
     assertEquals(providerCalls, 1);
     assertEquals(retry, { status: "uncertain", retryable: false });
   },
