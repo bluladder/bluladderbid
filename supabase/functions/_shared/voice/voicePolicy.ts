@@ -7,6 +7,7 @@ import {
   type QuoteSession,
   type QuoteSessionFields,
 } from "../quoteSession.ts";
+import { parseSpokenQuantity } from "./spokenQuantity.ts";
 
 export const VOICE_QUOTE_POLICY = Object.freeze({
   version: "voice-express-v1",
@@ -25,6 +26,9 @@ export const VOICE_QUOTE_POLICY = Object.freeze({
   approvedWindowAssumptions: {
     customerType: "residential",
     windowCleaningScope: "whole_home",
+    // The canonical engine historically requires stories. One story is the
+    // neutral voice default; the window price no longer applies story modifiers.
+    stories: 1,
     condition: "maintenance",
     screenProfile: "standard_removable",
     advancedWindowConditions: false,
@@ -61,8 +65,7 @@ export const VOICE_QUOTE_POLICY = Object.freeze({
 export function isProviderRecordingNotice(value: string): boolean {
   const text = String(value ?? "").trim().toLowerCase();
   return /^(?:this|the) call (?:is|will be|may be) recorded(?: for .+)?[.!]?$/
-    .test(text) ||
-    /^this call will be recorded[.!]?$/.test(text);
+    .test(text);
 }
 
 function requestedServices(text: string): string[] {
@@ -76,25 +79,19 @@ function requestedServices(text: string): string[] {
   return [...new Set(services)];
 }
 
-function spokenCount(text: string): number | null {
-  const digit = text.match(/\b(\d+(?:\.5)?)\b/)?.[1];
-  if (digit) return Number(digit);
-  const words: Record<string, number> = {
-    one: 1,
-    two: 2,
-    three: 3,
-    four: 4,
-    five: 5,
-    six: 6,
-    seven: 7,
-    eight: 8,
-    nine: 9,
-    ten: 10,
-  };
-  const match = text.toLowerCase().match(
-    /\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/,
-  );
-  return match ? words[match[1]] : null;
+/** Parse only the clause attached to the named modifier. This prevents a home
+ * measurement such as "2,000 square feet" from becoming 2,000 ladder windows. */
+function modifierCount(
+  text: string,
+  keyword: RegExp,
+): number | undefined {
+  const clauses = text.split(/[,;]|\b(?:and then|also)\b/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const matching = clauses.filter((clause) => keyword.test(clause));
+  keyword.lastIndex = 0;
+  if (matching.length !== 1) return undefined;
+  return parseSpokenQuantity(matching[0], { min: 0.5, max: 500, step: 0.5 });
 }
 
 function boundedNote(text: string): string | null {
@@ -112,24 +109,28 @@ export function applyVolunteeredVoiceFacts(
 ): QuoteSession {
   let session = initial;
   const patch: Partial<QuoteSessionFields> = {};
-  const services = requestedServices(utterance);
-  if (services.length > 0) patch.services = services;
+  const requested = requestedServices(utterance);
+  if (requested.length > 0) {
+    patch.services = [...new Set([...(initial.fields.services ?? []), ...requested])];
+  }
   if (/\b(outside|exterior)(?:\s+only)?\b/i.test(utterance)) {
     patch.windowCleaningSides = "outside_only";
   } else if (/\binside\s+(?:and|&)\s+outside\b/i.test(utterance)) {
     patch.windowCleaningSides = "inside_and_outside";
   }
-  const sqft = utterance.match(/\b([1-9]\d{2,4})\s*(?:square\s*(?:feet|foot)|sq\.?\s*ft\.?|sf)\b/i)?.[1];
+  const sqft = utterance.match(
+    /\b([1-9]\d{2,4}(?:,\d{3})?)\s*(?:square\s*(?:feet|foot)|sq\.?\s*ft\.?|sf)\b/i,
+  )?.[1];
   if (sqft) patch.squareFootage = Number(sqft.replaceAll(",", ""));
   if (/\b(?:ladder|unusual access)\b/i.test(utterance)) {
     patch.ladderWork = true;
-    const count = spokenCount(utterance);
-    if (count) patch.ladderAffectedWindowEquivalents = count;
+    const count = modifierCount(utterance, /\b(?:ladder|unusual access)\b/i);
+    if (count !== undefined) patch.ladderAffectedWindowEquivalents = count;
   }
   if (/\bhard[ -]?water\b/i.test(utterance)) {
     patch.hardWaterStains = true;
-    const count = spokenCount(utterance);
-    if (count) patch.hardWaterAffectedWindowEquivalents = count;
+    const count = modifierCount(utterance, /\bhard[ -]?water\b/i);
+    if (count !== undefined) patch.hardWaterAffectedWindowEquivalents = count;
   }
   if (/\bsolar screens?\b/i.test(utterance)) {
     patch.screenProfile = "solar";
