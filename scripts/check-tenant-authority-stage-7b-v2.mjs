@@ -163,7 +163,10 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/voiceBookingIdentityPreparation.ts",
   "supabase/functions/_shared/voice/voiceBookingIdentityPreparation_test.ts",
   "supabase/functions/_shared/voice/voiceCanonicalIntake.ts",
+  "supabase/functions/_shared/voice/voiceJourneyContract.ts",
   "supabase/functions/_shared/voice/voiceJourneyCompletion_test.ts",
+  "supabase/functions/_shared/voice/voicePolicy.ts",
+  "supabase/functions/_shared/voice/voicePolicy_test.ts",
   "supabase/functions/_shared/voice/voiceOrganizationAuthority.ts",
   "supabase/functions/_shared/voice/voiceOrganizationAuthority_test.ts",
   "supabase/functions/_shared/voice/voiceRemediation68_test.ts",
@@ -181,6 +184,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/workflow/rolloutRoute.ts",
   "supabase/functions/_shared/workflow/rolloutRoute_test.ts",
   "supabase/functions/_shared/workflow/workflowSession.ts",
+  "supabase/functions/_shared/workflow/workflows/residentialQuote.ts",
   "supabase/functions/attribution-ingest/index.ts",
   "supabase/functions/jobber-create-booking/index.ts",
   "supabase/functions/jobber-create-booking/launch_safety_test.ts",
@@ -188,8 +192,27 @@ const allowedEdgePaths = new Set([
   "supabase/functions/voice-vapi-events/index.ts",
 ]);
 const changedEdgePaths = changedPaths(["supabase/functions"]);
+// Main already carried this Lovable-generated MCP bundle before PR #80. Keep
+// that inherited drift separate from the voice-policy review and pin its exact
+// blob so this exception cannot silently authorize a later MCP regeneration.
+const inheritedEdgeBlobs = new Map([
+  [
+    "supabase/functions/mcp/index.ts",
+    "030bf54cb69a4ae8324c54bf4a9cf1f3e640747d",
+  ],
+]);
+for (const [path, expectedBlob] of inheritedEdgeBlobs) {
+  const actualBlob = execFileSync("git", ["rev-parse", `HEAD:${path}`], {
+    encoding: "utf8",
+  }).trim();
+  if (actualBlob !== expectedBlob) {
+    throw new Error(
+      `inherited Edge path changed outside its reviewed blob pin: ${path}`,
+    );
+  }
+}
 const unexpectedEdgePaths = changedEdgePaths.filter((path) =>
-  !allowedEdgePaths.has(path)
+  !allowedEdgePaths.has(path) && !inheritedEdgeBlobs.has(path)
 );
 if (unexpectedEdgePaths.length) {
   throw new Error(

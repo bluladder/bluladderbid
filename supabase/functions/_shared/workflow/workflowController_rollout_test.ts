@@ -360,6 +360,11 @@ const PRICING_ROWS: Row[] = [
 
 Deno.test("caller-ID confirmation: captures contact phone without verifying identity", async () => {
   const sb = makeFake();
+  // Contact confirmation belongs after pricing in the express journey.
+  sb._state.session.quote_status = "firm";
+  sb._state.session.fields = {
+    voiceJourney: { intent: "new_quote" },
+  };
   const turn1 = await runControllerTurn({
     supabase: sb,
     conversationId: "c1",
@@ -432,9 +437,11 @@ Deno.test("spoofed ANI cannot disclose or link a returning customer", async () =
 Deno.test("caller-ID declined: asks for preferred mobile number without repeating full number", async () => {
   const sb = makeFake();
   // Pre-set pending state.
+  sb._state.session.quote_status = "firm";
   sb._state.session.fields = {
     callerIdConfirmationStatus: "pending",
     callerIdProposedE164: "+14697472877",
+    voiceJourney: { intent: "new_quote" },
   };
   const turn = await runControllerTurn({
     supabase: sb,

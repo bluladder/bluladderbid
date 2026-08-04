@@ -9,58 +9,63 @@ import {
 } from "../quoteSession.ts";
 import { parseSpokenQuantity } from "./spokenQuantity.ts";
 
-export const VOICE_QUOTE_POLICY = Object.freeze({
-  version: "voice-express-v1",
-  opening:
-    "Thanks for calling BluLadder. Are you calling for a quote, about an existing appointment, or do you have a question or request?",
-  servicePrompt: "Which service or services would you like priced?",
-  routes: ["new_quote", "existing_appointment", "question_or_request"],
-  directIntent: true,
-  oneQuestionPerTurn: true,
-  retryLimitPerField: 1,
-  ordinaryWindowFieldOrder: [
-    "services",
-    "squareFootage",
-    "windowCleaningSides",
-  ],
-  approvedWindowAssumptions: {
-    customerType: "residential",
-    windowCleaningScope: "whole_home",
-    // The canonical intake still carries stories for cross-channel parity. One
-    // story is the neutral voice default; window pricing ignores story modifiers.
-    stories: 1,
-    condition: "maintenance",
-    screenProfile: "standard_removable",
-    advancedWindowConditions: false,
-    hardWaterStains: false,
-    frenchPanes: false,
-    ladderWork: false,
-    enclosedPatioProfile: "none",
-  },
-  defaultProvenance: "approved_business_default",
-  volunteeredModifiers: [
-    "stories",
-    "hardWaterStains",
-    "hardWaterAffectedWindowEquivalents",
-    "ladderWork",
-    "ladderAffectedWindowEquivalents",
-    "screenProfile",
-    "solarScreenCoverage",
-  ],
-  noteLimitCharacters: 240,
-  coupon: { proactiveQuestion: false, retryLimit: 1 },
-  delivery: { priceFirst: true, requireAuthoritativeProviderAcceptance: true },
-  address: { conciseConfirmation: true, clarificationLimit: 1 },
-  budgets: {
-    ordinaryWindowQuestionsBeforePrice: 3,
-    singleServicePriceSeconds: [60, 90],
-    multiServicePriceSeconds: 120,
-  },
-  safeFallbacks: {
-    uncertainExternalAction: "do_not_retry_automatically",
-    uncertainAddress: "preserve_candidate_for_review",
-  },
-} as const);
+export const VOICE_QUOTE_POLICY = Object.freeze(
+  {
+    version: "voice-express-v1",
+    opening:
+      "Hi, thank you for calling BluLadder. Are you calling to get a quote, schedule an appointment, or do you have a specific question?",
+    servicePrompt: "Which service or services would you like priced?",
+    routes: ["new_quote", "existing_appointment", "question_or_request"],
+    directIntent: true,
+    oneQuestionPerTurn: true,
+    retryLimitPerField: 1,
+    ordinaryWindowFieldOrder: [
+      "services",
+      "squareFootage",
+      "windowCleaningSides",
+    ],
+    approvedWindowAssumptions: {
+      customerType: "residential",
+      windowCleaningScope: "whole_home",
+      // The canonical intake still carries stories for cross-channel parity. One
+      // story is the neutral voice default; window pricing ignores story modifiers.
+      stories: 1,
+      condition: "maintenance",
+      screenProfile: "standard_removable",
+      advancedWindowConditions: false,
+      hardWaterStains: false,
+      frenchPanes: false,
+      ladderWork: false,
+      enclosedPatioProfile: "none",
+    },
+    defaultProvenance: "approved_business_default",
+    volunteeredModifiers: [
+      "stories",
+      "hardWaterStains",
+      "hardWaterAffectedWindowEquivalents",
+      "ladderWork",
+      "ladderAffectedWindowEquivalents",
+      "screenProfile",
+      "solarScreenCoverage",
+    ],
+    noteLimitCharacters: 240,
+    coupon: { proactiveQuestion: false, retryLimit: 1 },
+    delivery: {
+      priceFirst: true,
+      requireAuthoritativeProviderAcceptance: true,
+    },
+    address: { conciseConfirmation: true, clarificationLimit: 1 },
+    budgets: {
+      ordinaryWindowQuestionsBeforePrice: 3,
+      singleServicePriceSeconds: [60, 90],
+      multiServicePriceSeconds: 120,
+    },
+    safeFallbacks: {
+      uncertainExternalAction: "do_not_retry_automatically",
+      uncertainAddress: "preserve_candidate_for_review",
+    },
+  } as const,
+);
 
 export function isProviderRecordingNotice(value: string): boolean {
   const text = String(value ?? "").trim().toLowerCase();
@@ -72,10 +77,14 @@ function requestedServices(text: string): string[] {
   const services: string[] = [];
   if (/\b(window|windows)\b/i.test(text)) services.push("window_cleaning");
   if (/\bhouse (?:wash|washing)\b/i.test(text)) services.push("house_wash");
-  if (/\bgutter(?:s)?(?: cleaning)?\b/i.test(text)) services.push("gutter_cleaning");
+  if (/\bgutter(?:s)?(?: cleaning)?\b/i.test(text)) {
+    services.push("gutter_cleaning");
+  }
   if (/\broof (?:cleaning|wash)\b/i.test(text)) services.push("roof_cleaning");
   if (/\bdriveway\b/i.test(text)) services.push("driveway_cleaning");
-  if (/\bpressure wash(?:ing)?\b/i.test(text)) services.push("pressure_washing");
+  if (/\bpressure wash(?:ing)?\b/i.test(text)) {
+    services.push("pressure_washing");
+  }
   return [...new Set(services)];
 }
 
@@ -95,7 +104,10 @@ function modifierCount(
 }
 
 function boundedNote(text: string): string | null {
-  if (!/\b(dog|gate|fragile|parking|arrival|text before|access instruction)\b/i.test(text)) {
+  if (
+    !/\b(dog|gate|fragile|parking|arrival|text before|access instruction)\b/i
+      .test(text)
+  ) {
     return null;
   }
   return text.trim().slice(0, VOICE_QUOTE_POLICY.noteLimitCharacters);
@@ -111,7 +123,9 @@ export function applyVolunteeredVoiceFacts(
   const patch: Partial<QuoteSessionFields> = {};
   const requested = requestedServices(utterance);
   if (requested.length > 0) {
-    patch.services = [...new Set([...(initial.fields.services ?? []), ...requested])];
+    patch.services = [
+      ...new Set([...(initial.fields.services ?? []), ...requested]),
+    ];
   }
   if (/\binside\s+(?:and|&)\s+outside\b/i.test(utterance)) {
     patch.windowCleaningSides = "inside_and_outside";
@@ -136,9 +150,12 @@ export function applyVolunteeredVoiceFacts(
     patch.screenProfile = "solar";
     if (/\b(all|every)\b/i.test(utterance)) patch.solarScreenCoverage = "all";
   }
-  const stories = utterance.match(/\b([123]|one|two|three)[ -]stor(?:y|ies)\b/i)?.[1];
+  const stories = utterance.match(/\b([123]|one|two|three)[ -]stor(?:y|ies)\b/i)
+    ?.[1];
   if (stories) {
-    patch.stories = ({ one: 1, two: 2, three: 3 } as Record<string, number>)[stories.toLowerCase()] ?? Number(stories);
+    patch.stories = ({ one: 1, two: 2, three: 3 } as Record<string, number>)[
+      stories.toLowerCase()
+    ] ?? Number(stories);
   }
   if (Object.keys(patch).length > 0) session = mergeFields(session, patch);
   const note = boundedNote(utterance);
@@ -154,10 +171,14 @@ export function applyVolunteeredVoiceFacts(
   return session;
 }
 
-export function applyApprovedWindowDefaults(session: QuoteSession): QuoteSession {
-  if (!(session.fields.services ?? []).some((service) =>
-    service === "window_cleaning" || service === "windowCleaning"
-  )) return session;
+export function applyApprovedWindowDefaults(
+  session: QuoteSession,
+): QuoteSession {
+  if (
+    !(session.fields.services ?? []).some((service) =>
+      service === "window_cleaning" || service === "windowCleaning"
+    )
+  ) return session;
   const defaults = VOICE_QUOTE_POLICY.approvedWindowAssumptions;
   const patch: Partial<QuoteSessionFields> = {};
   const defaulted: (keyof QuoteSessionFields)[] = [];
@@ -177,21 +198,30 @@ export function applyApprovedWindowDefaults(session: QuoteSession): QuoteSession
 export function nextExpressPrePriceField(session: QuoteSession): string | null {
   const services = session.fields.services ?? [];
   if (services.length === 0) return "services";
-  if (!services.some((service) =>
-    service === "window_cleaning" || service === "windowCleaning"
-  )) return null;
+  if (
+    !services.some((service) =>
+      service === "window_cleaning" || service === "windowCleaning"
+    )
+  ) return null;
   if (!session.fields.squareFootage) return "squareFootage";
   if (!session.fields.windowCleaningSides) return "windowCleaningSides";
-  if (session.fields.ladderWork && !session.fields.ladderAffectedWindowEquivalents) {
+  if (
+    session.fields.ladderWork && !session.fields.ladderAffectedWindowEquivalents
+  ) {
     return "ladderAffectedWindowEquivalents";
   }
-  if (session.fields.hardWaterStains && !session.fields.hardWaterAffectedWindowEquivalents) {
+  if (
+    session.fields.hardWaterStains &&
+    !session.fields.hardWaterAffectedWindowEquivalents
+  ) {
     return "hardWaterAffectedWindowEquivalents";
   }
   return null;
 }
 
 export function normalizeVolunteeredDiscountCode(text: string): string | null {
-  const match = text.match(/\b(?:coupon|discount|promo)\s+(?:code\s+)?(?:is\s+)?([a-z0-9][a-z0-9_-]{2,19})\b/i);
+  const match = text.match(
+    /\b(?:coupon|discount|promo)\s+(?:code\s+)?(?:is\s+)?([a-z0-9][a-z0-9_-]{2,19})\b/i,
+  );
   return match ? match[1].toUpperCase() : null;
 }

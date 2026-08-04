@@ -3,7 +3,7 @@
 // confirmation, or whether provider success may be claimed.
 
 export const VOICE_OPENING =
-  "Thanks for calling BluLadder. Are you calling for a quote, about an existing appointment, or do you have a question or request?";
+  "Hi, thank you for calling BluLadder. Are you calling to get a quote, schedule an appointment, or do you have a specific question?";
 
 export const PRICE_ASSURANCE =
   "This estimate assumes standard conditions. If we find anything unusual that would affect the price, we’ll discuss it with you before starting. Otherwise, we’ll honor the quoted price.";

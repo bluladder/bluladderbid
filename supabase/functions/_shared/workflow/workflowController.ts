@@ -304,7 +304,9 @@ function expressPriceStatement(session: QuoteSession, total: number): string {
     : session.fields.windowCleaningSides === "outside_only"
     ? "For all exterior windows, "
     : "";
-  return `${scope}${buildCanonicalPriceStatement(total)} Would you like the quote texted, or would you like to continue toward scheduling?`;
+  return `${scope}${
+    buildCanonicalPriceStatement(total)
+  } Would you like the quote texted, or would you like to continue toward scheduling?`;
 }
 
 export async function runControllerTurn(
@@ -383,9 +385,13 @@ export async function runControllerTurn(
 
   // Policy-owned capture handles direct quote details, approved assumptions,
   // volunteered modifiers, and inert notes before selecting one question.
-  const enriched = applyApprovedWindowDefaults(
-    applyVolunteeredVoiceFacts(session, input.utterance),
-  );
+  const volunteered = applyVolunteeredVoiceFacts(session, input.utterance);
+  // Defaults establish a priceable express quote; they must not be injected
+  // during post-price contact collection because that would invalidate the
+  // already-authoritative quote on an unrelated email or address answer.
+  const enriched = volunteered.quoteStatus === "none"
+    ? applyApprovedWindowDefaults(volunteered)
+    : volunteered;
   if (JSON.stringify(enriched.fields) !== JSON.stringify(session.fields)) {
     capture(enriched, session.lastStep ?? "voice_policy_applied");
   }
