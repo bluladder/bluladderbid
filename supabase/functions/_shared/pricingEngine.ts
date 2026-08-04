@@ -669,7 +669,11 @@ export function calculateQuote(
   }
 
   const stories = home.stories;
-  const needsStories = needsSqft;
+  // Stories are scheduling/property context for residential window cleaning,
+  // not a pricing input. Other story-sensitive services retain their existing
+  // requirements and modifiers.
+  const needsStories =
+    !!svc.houseWash || !!svc.gutterCleaning || !!svc.roofCleaning;
   if (needsStories && !VALID_STORIES.includes(stories)) {
     missing.push("stories");
   }
@@ -796,14 +800,16 @@ export function calculateQuote(
   // independently complete services, while the aggregate status remains
   // non-actionable until every selected service is resolved.
   const hasMissing = (...fields: string[]) => fields.some((field) => missing.includes(field));
-  const sharedPropertyReady = !hasMissing("squareFootage", "stories") &&
+  const squareFootageReady = !hasMissing("squareFootage") &&
     isValidNumber(squareFootage) && squareFootage > 0 && squareFootage <= MAX_SQFT;
-  const sqft = sharedPropertyReady ? squareFootage : 0;
+  const storyPropertyReady = squareFootageReady && !hasMissing("stories") &&
+    VALID_STORIES.includes(stories);
+  const sqft = squareFootageReady ? squareFootage : 0;
 
   // =========================================================================
   // WINDOW CLEANING
   // =========================================================================
-  if (svc.windowCleaning && sharedPropertyReady && !hasMissing(
+  if (svc.windowCleaning && squareFootageReady && !hasMissing(
     "windowCleaningSides", "hardWaterAffectedWindowEquivalents", "ladderAffectedWindowEquivalents",
     "addedInteriorWindowSides", "omittedWindowSides",
   ) && !manualReviewServiceKeys.has("window_cleaning")) {
@@ -819,11 +825,10 @@ export function calculateQuote(
         ? sqft * Math.max(0, combinedRate - cfg.exteriorPerSqFt)
         : 0;
 
-      const storyMod = mods.stories[stories.toString()] ?? 0;
       const conditionMod = mods.condition?.[home.condition ?? ""] ?? 0;
 
       const exteriorWindows = roundDollars(
-        baseExterior * (1 + storyMod / 100 + conditionMod / 100),
+        baseExterior * (1 + conditionMod / 100),
       );
       const interiorWindows = roundDollars(baseInterior * (1 + conditionMod / 100));
       const adjustedWindowBase = exteriorWindows + interiorWindows;
@@ -901,7 +906,6 @@ export function calculateQuote(
       }
       const amount = windowServiceBeforeCanonicalSolar + canonicalSolarScreenAdjustment;
 
-      if (storyMod) adjustments.push({ label: `${stories}-story`, amount: 0 });
       if (hardWaterAddon) adjustments.push({ key: QUOTE_RULE_IDS.hardWaterRemoval, label: "Hard-water stain removal", amount: hardWaterAddon });
       if (frenchPanesAddon) adjustments.push({ key: QUOTE_RULE_IDS.frenchPaneAdjustment, label: "Small French panes (+50% of base window service)", amount: frenchPanesAddon });
       if (solarScreensAddon) adjustments.push({ label: "Solar screens", amount: solarScreensAddon });
@@ -949,7 +953,7 @@ export function calculateQuote(
           : undefined,
       });
       trace.push(
-        `window: ext=${exteriorWindows} int=${interiorWindows} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`,
+        `window: ext=${exteriorWindows} int=${interiorWindows} storyNeutral=true condMod=${conditionMod}% -> ${amount} (min ${minimum})`,
       );
 
       if (isValidWindowEquivalentCount(home.addedInteriorWindowSides)) {
@@ -1011,16 +1015,15 @@ export function calculateQuote(
   // INTERIOR WINDOWS (standalone) — plan-builder rule promoted unchanged.
   // sqft × interiorPerSqFt with story+condition modifiers and a 0.6× minimum.
   // =========================================================================
-  if (svc.interiorWindows && sharedPropertyReady && !manualReviewServiceKeys.has("interior_windows")) {
+  if (svc.interiorWindows && squareFootageReady && !manualReviewServiceKeys.has("interior_windows")) {
     const cfg = pricing.window_cleaning;
     if (!cfg) {
       manualReviewReasons.push("window_cleaning pricing not configured");
     } else {
       const mods = cfg.modifiers;
       const base = sqft * cfg.interiorPerSqFt;
-      const storyMod = mods.stories[stories.toString()] ?? 0;
       const conditionMod = mods.condition?.[home.condition ?? ""] ?? 0;
-      const calculated = applyModifiers(base, [storyMod, conditionMod]);
+      const calculated = applyModifiers(base, [conditionMod]);
       const minimum = roundDollars((cfg.minimumPrice ?? 0) * 0.6);
       const amount = Math.max(calculated, minimum);
       lineItems.push({
@@ -1034,14 +1037,14 @@ export function calculateQuote(
         amount,
         jobberLineItem: { name: "Interior Window Cleaning", unitPrice: amount },
       });
-      trace.push(`interior_windows: base=${roundDollars(base)} storyMod=${storyMod}% condMod=${conditionMod}% -> ${amount} (min ${minimum})`);
+      trace.push(`interior_windows: base=${roundDollars(base)} storyNeutral=true condMod=${conditionMod}% -> ${amount} (min ${minimum})`);
     }
   }
 
   // =========================================================================
   // HOUSE WASH
   // =========================================================================
-  if (svc.houseWash && sharedPropertyReady && !manualReviewServiceKeys.has("house_wash")) {
+  if (svc.houseWash && storyPropertyReady && !manualReviewServiceKeys.has("house_wash")) {
     const cfg = pricing.house_wash;
     if (!cfg) {
       manualReviewReasons.push("house_wash pricing not configured");
@@ -1140,7 +1143,7 @@ export function calculateQuote(
   // =========================================================================
   // GUTTER CLEANING (+ add-ons)
   // =========================================================================
-  if (svc.gutterCleaning && sharedPropertyReady && !manualReviewServiceKeys.has("gutter_cleaning")) {
+  if (svc.gutterCleaning && storyPropertyReady && !manualReviewServiceKeys.has("gutter_cleaning")) {
     const cfg = pricing.gutter_cleaning;
     if (!cfg) {
       manualReviewReasons.push("gutter_cleaning pricing not configured");
@@ -1272,7 +1275,7 @@ export function calculateQuote(
   // =========================================================================
   // ROOF CLEANING
   // =========================================================================
-  if (svc.roofCleaning && sharedPropertyReady && !hasMissing("roofType", "roofSeverity", "roofRiskFlags")) {
+  if (svc.roofCleaning && storyPropertyReady && !hasMissing("roofType", "roofSeverity", "roofRiskFlags")) {
     const cfg = pricing.roof_cleaning;
     if (!cfg) {
       markServiceReview("roof_cleaning", "roof_cleaning pricing not configured");
@@ -2273,10 +2276,9 @@ function computeBundleServiceBases(
     const baseExterior = sqft * cfg.exteriorPerSqFt;
     const baseInterior =
       home.windowCleaningType === "both" ? sqft * cfg.interiorPerSqFt : 0;
-    const storyMod = cfg.modifiers.stories[stories.toString()] ?? 0;
     const conditionMod = cfg.modifiers.condition?.[home.condition ?? ""] ?? 0;
     exteriorWindows = roundDollars(
-      baseExterior * (1 + storyMod / 100 + conditionMod / 100),
+      baseExterior * (1 + conditionMod / 100),
     );
     interiorWindows = roundDollars(baseInterior * (1 + conditionMod / 100));
   }
@@ -2410,7 +2412,10 @@ export function computeBundleTiers(
         `Square footage ${home.squareFootage} exceeds automated range; manual review required`,
       );
     }
-    if (!VALID_STORIES.includes(home.stories)) missing.push("stories");
+    if (
+      (!!svc.houseWash || !!svc.gutterCleaning || !!svc.roofCleaning) &&
+      !VALID_STORIES.includes(home.stories)
+    ) missing.push("stories");
   }
   if (!pricing.bundle_config) {
     manualReviewReasons.push("bundle_config not configured");

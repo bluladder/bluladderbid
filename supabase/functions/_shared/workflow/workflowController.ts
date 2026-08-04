@@ -74,6 +74,10 @@ import {
   parseSpokenEmail,
 } from "../voice/spokenEmail.ts";
 import { parseSpokenName } from "../voice/quoteByText.ts";
+import {
+  applyApprovedWindowDefaults,
+  applyVolunteeredVoiceFacts,
+} from "../voice/voicePolicy.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -294,6 +298,15 @@ function speakForFsm(action: WorkflowAction): string {
   }
 }
 
+function expressPriceStatement(session: QuoteSession, total: number): string {
+  const scope = session.fields.windowCleaningSides === "inside_and_outside"
+    ? "For inside and outside window cleaning, "
+    : session.fields.windowCleaningSides === "outside_only"
+    ? "For all exterior windows, "
+    : "";
+  return `${scope}${buildCanonicalPriceStatement(total)} Would you like the quote texted, or would you like to continue toward scheduling?`;
+}
+
 export async function runControllerTurn(
   input: ControllerInput,
 ): Promise<ControllerTurnResult> {
@@ -368,6 +381,34 @@ export async function runControllerTurn(
     );
   }
 
+  // Policy-owned capture handles direct quote details, approved assumptions,
+  // volunteered modifiers, and inert notes before selecting one question.
+  const enriched = applyApprovedWindowDefaults(
+    applyVolunteeredVoiceFacts(session, input.utterance),
+  );
+  if (JSON.stringify(enriched.fields) !== JSON.stringify(session.fields)) {
+    capture(enriched, session.lastStep ?? "voice_policy_applied");
+  }
+
+  if (session.quoteStatus !== "none") {
+    const requestedNextStep = /\b(text|send|message)\b/i.test(input.utterance)
+      ? "text_quote" as const
+      : /\b(schedule|book|appointment|time)\b/i.test(input.utterance)
+      ? "schedule" as const
+      : null;
+    if (requestedNextStep) {
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            requestedNextStep,
+          },
+        }),
+        "post_price_choice_captured",
+      );
+    }
+  }
+
   let f = session.fields;
 
   // Step 1: caller-ID confirmation dance (only when we have an ANI and no
@@ -375,7 +416,7 @@ export async function runControllerTurn(
   const havePhone = !!f.phone &&
     (session.fieldStatus.phone === "captured" ||
       session.fieldStatus.phone === "verified");
-  if (!havePhone && input.callerIdE164) {
+  if (!havePhone && input.callerIdE164 && session.quoteStatus !== "none") {
     const status = f.callerIdConfirmationStatus;
     if (!status) {
       // First time: propose the caller ID for confirmation.
@@ -1589,10 +1630,13 @@ export async function runControllerTurn(
         booking: { status: "not_started" as const },
       },
     };
-    capture({ ...session, fields: nextFields, quoteStatus }, "priced_spoken");
+    capture(
+      { ...session, fields: nextFields, quoteStatus },
+      "offered_post_price_choice",
+    );
     const spoken = disposition.finalQuoteDisposition === "firm" &&
         canonicalCustomerTotal > 0
-      ? buildCanonicalPriceStatement(canonicalCustomerTotal)
+      ? expressPriceStatement(session, canonicalCustomerTotal)
       : disposition.finalQuoteDisposition === "estimated" &&
           canonicalCustomerTotal > 0
       ? `The current estimate is ${
@@ -1619,7 +1663,7 @@ export async function runControllerTurn(
     const total = Number(last?.estimatedTotal ?? last?.total ?? 0);
     const disposition = String(last?.finalQuoteDisposition ?? "");
     const spoken = disposition === "firm" && total > 0
-      ? buildCanonicalPriceStatement(total)
+      ? expressPriceStatement(session, total)
       : disposition === "estimated" && total > 0
       ? `The current estimate is ${
         formatCanonicalCurrency(total)
@@ -1638,7 +1682,7 @@ export async function runControllerTurn(
             : null,
         },
       }),
-      "priced_spoken",
+      "offered_post_price_choice",
     );
     return {
       sessionId: session.id,

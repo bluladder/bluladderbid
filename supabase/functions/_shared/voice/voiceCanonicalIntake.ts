@@ -130,7 +130,9 @@ const SERVICE_LABELS: Readonly<Record<string, string>> = {
 
 function customerSafeValue(fieldId: string, value: unknown): string {
   if (fieldId === "promotionId") return "the configured promotion";
-  if (fieldId === "houseWashWindowBundle") return "included";
+  if (fieldId === "houseWashWindowBundle") {
+    return value === true ? "included" : "";
+  }
   if (fieldId === "services" && Array.isArray(value)) {
     return value.map((service) => String(service).replaceAll("_", " ")).join(
       " and ",
@@ -187,6 +189,13 @@ export function canonicalPrePriceRecapFieldIds(
       valueAtPath(fields, spec.storagePath) !== undefined &&
       valueAtPath(fields, spec.storagePath) !== null
     )
+    .filter((spec) => {
+      const value = valueAtPath(fields, spec.storagePath);
+      if (typeof value === "boolean" && value === false) return false;
+      if (spec.fieldId !== "houseWashWindowBundle") return true;
+      return services.includes("window_cleaning") &&
+        services.includes("house_wash");
+    })
     .map((spec) => spec.fieldId)
     .filter((fieldId, index, all) => all.indexOf(fieldId) === index);
 }
@@ -212,11 +221,13 @@ export function buildCanonicalPrePriceRecap(
     );
     if (!spec) continue;
     const value = valueAtPath(fields, spec.storagePath);
-    if (value === undefined || value === null || value === "") continue;
+    if (
+      value === undefined || value === null || value === "" || value === false
+    ) continue;
+    const safeValue = customerSafeValue(fieldId, value);
+    if (!safeValue) continue;
     parts.push(
-      `${customerSafeFieldLabel(fieldId)}: ${
-        customerSafeValue(fieldId, value)
-      }`,
+      `${customerSafeFieldLabel(fieldId)}: ${safeValue}`,
     );
   }
   return `Before I calculate the price, I have ${

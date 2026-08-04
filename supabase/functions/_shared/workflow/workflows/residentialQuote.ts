@@ -36,6 +36,7 @@ import {
   type ResidentialIntakeFieldId,
 } from "../../salesEngine/residentialQuoteManifest.ts";
 import { evaluateQuoteIntake } from "../../salesEngine/quoteIntakeContract.ts";
+import { nextExpressPrePriceField } from "../../voice/voicePolicy.ts";
 
 function ask(field: ResidentialIntakeFieldId): WorkflowAction {
   const spec = RESIDENTIAL_INTAKE_BY_ID[field];
@@ -74,22 +75,26 @@ export function decideResidentialQuoteAction(
   // itself derived from the shared Sales Engine contract.
   const engineMissingForIntake = computeRequired(session.fields);
 
-  const preQuote = nextResidentialQuestion({
-    captured,
-    engineMissing: engineMissingForIntake,
-    channel: session.channel === "chat" ? "web" : session.channel,
-    // Intake parity with BluLadder Bid web: residential window cleaning must
-    // capture window condition before pricing. The canonical engine treats
-    // condition as an optional modifier (no `missing[]` token), so we inject
-    // it here via `additionallyRequired` instead of creating a voice-only
-    // required-field list.
-    additionallyRequired: wantsResidentialWindow(session)
-      ? ["windowCleaningCondition"]
-      : [],
-  });
-  if (preQuote) return ask(preQuote.id);
-  if (engineMissingForIntake.length > 0) {
-    return { kind: "handoff", reason: "unsupported_service" };
+  if (session.fields.voiceJourney?.policyVersion === "voice-express-v1") {
+    const expressField = nextExpressPrePriceField(session);
+    if (expressField) return ask(expressField as ResidentialIntakeFieldId);
+    if (engineMissingForIntake.length > 0) {
+      return { kind: "handoff", reason: "unsupported_service" };
+    }
+  } else {
+
+    const preQuote = nextResidentialQuestion({
+      captured,
+      engineMissing: engineMissingForIntake,
+      channel: session.channel === "chat" ? "web" : session.channel,
+      additionallyRequired: wantsResidentialWindow(session)
+        ? ["windowCleaningCondition"]
+        : [],
+    });
+    if (preQuote) return ask(preQuote.id);
+    if (engineMissingForIntake.length > 0) {
+      return { kind: "handoff", reason: "unsupported_service" };
+    }
   }
   const intake = evaluateQuoteIntake(session.fields as unknown as Record<string, unknown>);
 

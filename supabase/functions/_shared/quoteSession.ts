@@ -211,6 +211,16 @@ export interface QuoteSessionFields {
    * migration or parallel voice-only record is required.
    */
   voiceJourney?: {
+    /** Declarative conversational policy version used for this session. */
+    policyVersion?: string;
+    retryCounts?: Record<string, number>;
+    volunteeredNotes?: string[];
+    requestedNextStep?: "text_quote" | "schedule" | "none";
+    coupon?: {
+      code: string;
+      status: "captured" | "valid" | "invalid" | "unclear";
+      reason?: string | null;
+    } | null;
     intent?:
       | "new_quote"
       | "schedule"
