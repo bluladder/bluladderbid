@@ -38,9 +38,8 @@ export function legacyServiceBases(
     const baseExterior = squareFootage * windowConfig.exteriorPerSqFt;
     const baseInterior =
       home.windowCleaningType === "both" ? squareFootage * windowConfig.interiorPerSqFt : 0;
-    const storyMod = windowModifiers.stories[stories.toString()] ?? 0;
     const conditionMod = windowModifiers.condition?.[home.condition ?? ""] ?? 0;
-    exteriorWindows = Math.round(baseExterior * (1 + storyMod / 100 + conditionMod / 100));
+    exteriorWindows = Math.round(baseExterior * (1 + conditionMod / 100));
     interiorWindows = Math.round(baseInterior * (1 + conditionMod / 100));
   }
 

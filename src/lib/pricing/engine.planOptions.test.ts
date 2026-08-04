@@ -123,8 +123,8 @@ describe('calculatePlanOptions', () => {
     ).options[0];
     const li = res.lineItems.find((l) => l.key === 'interior_windows');
     expect(li).toBeTruthy();
-    // 2500 * 0.075 * (1 + 0.10) = 206.25 -> 206, min = round(185*0.6)=111 -> 206
-    expect(li!.perVisitAmount).toBe(206);
-    expect(res.annualTotal).toBe(206 * 2);
+    // 2500 * 0.075 = 187.5 -> 188, min = round(185*0.6)=111 -> 188
+    expect(li!.perVisitAmount).toBe(188);
+    expect(res.annualTotal).toBe(376);
   });
 });

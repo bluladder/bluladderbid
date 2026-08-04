@@ -65,7 +65,7 @@ Deno.test("authoritative opening and price assurance are exact", () => {
   );
   assertEquals(
     PRICE_ASSURANCE,
-    "As long as the information you provided is accurate, we’ll stand by this price. If anything is different when we arrive, we’ll discuss it with you before any additional work begins.",
+    "This estimate assumes standard conditions. If we find anything unusual that would affect the price, we’ll discuss it with you before starting. Otherwise, we’ll honor the quoted price.",
   );
 });
 

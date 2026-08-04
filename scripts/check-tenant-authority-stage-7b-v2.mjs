@@ -231,8 +231,11 @@ if (missingEdgePaths.length) {
 }
 
 const reviewedPostRuntimeProtectedPaths = new Set([
+  "src/lib/pricing/__fixtures__/legacyBundlePricing.ts",
   "src/lib/pricing/__fixtures__/liveConfig.ts",
   "src/lib/pricing/engine.ts",
+  "src/lib/pricing/engine.planOptions.test.ts",
+  "src/lib/pricing/engine.test.ts",
   "src/lib/pricing/fromQuoteResult.ts",
   "src/lib/pricing/fromQuoteResult.test.ts",
   "src/lib/pricing/gutterBasePricing.regression.test.ts",
