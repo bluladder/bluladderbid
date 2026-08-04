@@ -27,6 +27,17 @@ import {
   resolveVoiceProviderOrganizationAuthority,
 } from "../_shared/voice/voiceOrganizationAuthority.ts";
 import { executeControllerRoute } from "../_shared/voice/controllerRoute.ts";
+import { runTool } from "../_shared/aiTools.ts";
+import {
+  claimVoiceTurn,
+  buildSilentVoiceResponse as buildSilentResponse,
+  completeVoiceTurn,
+  prepareVoiceIngress,
+  isAuthoritativeVoiceTurn,
+  markVoiceTurnUncertain,
+  runClaimedExternalAction,
+  type VoiceTurnDescriptor,
+} from "../_shared/voice/voiceTurnCoordinator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,6 +52,9 @@ function jsonError(status: number, code: string): Response {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
+
+const buildSilentVoiceResponse = (model: string, stream: boolean) =>
+  buildSilentResponse(model, stream, BUILD_ID);
 
 function errorStatus(err: AdapterRequestError): number {
   switch (err.kind) {
@@ -255,6 +269,15 @@ Deno.serve(async (req) => {
   // normalizer below updates its message list before either lane consumes it.
   const request = parsed.value;
 
+  // Remove only the narrow provider boilerplate before normalization,
+  // reconstruction, classification, journaling, or any tenant-owned write.
+  const earlyModel = request.model || "bluladder-voice-adapter";
+  const ingress = await prepareVoiceIngress(request);
+  if (ingress.status === "ignored") {
+    return buildSilentVoiceResponse(earlyModel, request.stream);
+  }
+  const turn: VoiceTurnDescriptor = ingress.turn;
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) {
@@ -302,6 +325,8 @@ Deno.serve(async (req) => {
     ReturnType<typeof resolveVoiceOrganizationAuthority>
   >;
   let providerAuthorityResolved = false;
+  let turnClaimed = false;
+  let claimedOrganizationId: string | null = null;
   try {
     const providerAuthority = await resolveVoiceProviderOrganizationAuthority(
       supabase,
@@ -320,6 +345,15 @@ Deno.serve(async (req) => {
         providerAuthority.code,
       );
     }
+    const claim = await claimVoiceTurn(supabase, {
+      ...turn,
+      organizationId: providerAuthority.organizationId,
+    });
+    if (claim !== "acquired") {
+      return buildSilentVoiceResponse(model, request.stream);
+    }
+    turnClaimed = true;
+    claimedOrganizationId = providerAuthority.organizationId;
     identity = await ensureVoiceConversation({
       supabase,
       request,
@@ -345,7 +379,12 @@ Deno.serve(async (req) => {
         reason: "organization_authority_reconciliation_blocked",
         authorityCode: code,
       }));
-      return buildAuthorityBlockedResponse(model, request.stream, code);
+      await markVoiceTurnUncertain(supabase, {
+        organizationId: providerAuthority.organizationId,
+        callId: turn.callId,
+        turnId: turn.turnId,
+      });
+      return buildSilentVoiceResponse(model, request.stream);
     }
     providerAuthorityResolved = true;
   } catch {
@@ -354,6 +393,14 @@ Deno.serve(async (req) => {
       buildId: BUILD_ID,
       reason: "organization_authority_lookup_unavailable",
     }));
+    if (turnClaimed && claimedOrganizationId) {
+      await markVoiceTurnUncertain(supabase, {
+        organizationId: claimedOrganizationId,
+        callId: turn.callId,
+        turnId: turn.turnId,
+      });
+      return buildSilentVoiceResponse(model, request.stream);
+    }
     return buildAuthorityBlockedResponse(
       model,
       request.stream,
@@ -394,8 +441,32 @@ Deno.serve(async (req) => {
         messages: request.messages,
         journalMessages: providerMessagesForJournal,
         callerIdE164: request.callerIdE164,
+        runTool: (name, context, body) =>
+          runClaimedExternalAction(supabase, {
+            organizationId: organizationAuthority.organizationId,
+            callId: turn.callId,
+            turnId: turn.turnId,
+            actionKey: `tool:${name}`,
+            run: () => runTool(name, context, body),
+            uncertain: () => ({
+              status: "uncertain",
+              message:
+                "The provider outcome could not be confirmed and will not be retried automatically.",
+            }),
+          }),
         callFunction: (name, body) =>
-          callInternalQuoteFunction(supabaseUrl, serviceKey, name, body),
+          runClaimedExternalAction(supabase, {
+            organizationId: organizationAuthority.organizationId,
+            callId: turn.callId,
+            turnId: turn.turnId,
+            actionKey: `edge:${name}`,
+            run: () =>
+              callInternalQuoteFunction(supabaseUrl, serviceKey, name, body),
+            uncertain: () => ({
+              status: 503,
+              json: { status: "uncertain", retryable: false },
+            }),
+          }),
       });
       const spoken = route.spoken;
       const completion = {
@@ -433,6 +504,20 @@ Deno.serve(async (req) => {
           ...route.timings,
         },
       }));
+      await completeVoiceTurn(supabase, {
+        organizationId: organizationAuthority.organizationId,
+        callId: turn.callId,
+        turnId: turn.turnId,
+      });
+      // Re-read immediately before response construction. A newer committed
+      // turn revokes this turn's authority before any response bytes exist.
+      if (
+        !await isAuthoritativeVoiceTurn(supabase, {
+          organizationId: organizationAuthority.organizationId,
+          callId: turn.callId,
+          turnId: turn.turnId,
+        })
+      ) return buildSilentVoiceResponse(model, request.stream);
       return request.stream
         ? buildStreamingTextResponse(model, spoken)
         : buildNonStreamingResponse(model, completion);
@@ -443,21 +528,14 @@ Deno.serve(async (req) => {
         route: "controller",
         reason: "workflow_controller_failed_closed",
       }));
-      const spoken =
-        "I couldn't safely confirm the result of that request. I will not repeat any booking or other external action automatically. A team member can verify the result.";
-      return request.stream
-        ? buildStreamingTextResponse(model, spoken)
-        : buildNonStreamingResponse(model, {
-          content: spoken,
-          action: { kind: "speak" as const },
-          orchestrator: {
-            reply: spoken,
-            toolEvents: [],
-            events: ["workflow_controller_failed_closed"],
-            state: "workflow_controller" as const,
-            voice: { type: "speak" as const },
-          },
-        });
+      // The claim is terminal after an unknown execution outcome. An external
+      // action may have crossed its provider boundary, so emit and retry none.
+      await markVoiceTurnUncertain(supabase, {
+        organizationId: organizationAuthority.organizationId,
+        callId: turn.callId,
+        turnId: turn.turnId,
+      });
+      return buildSilentVoiceResponse(model, request.stream);
     }
   }
 
@@ -466,6 +544,15 @@ Deno.serve(async (req) => {
   // must never execute the competing legacy quote/action workflow. The legacy
   // adapter remains available only to explicitly non-mapped compatibility
   // callers outside this authority-gated production ingress.
+  // The compatibility path has no durable claim-aware tool boundary.
+  if (turnClaimed) {
+    await markVoiceTurnUncertain(supabase, {
+      organizationId: organizationAuthority.organizationId,
+      callId: turn.callId,
+      turnId: turn.turnId,
+    });
+    return buildSilentVoiceResponse(model, request.stream);
+  }
   if (!legacyVoiceExecutionAllowed(decision, providerAuthorityResolved)) {
     return buildAuthorityBlockedResponse(
       model,

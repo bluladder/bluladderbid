@@ -45,6 +45,7 @@ import {
   buildCanonicalPrePriceRecap,
   promptForCanonicalField,
 } from "./voiceCanonicalIntake.ts";
+import type { runTool } from "../aiTools.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -72,6 +73,7 @@ export interface ExecuteControllerRouteInput {
   journalMessages?: ChatMessage[];
   callerIdE164?: string | null;
   callFunction?: CallEdgeFunction;
+  runTool?: typeof runTool;
 }
 
 export interface ExecuteControllerRouteDeps {
@@ -225,6 +227,7 @@ export async function executeControllerRoute(
     history: reconstructed.history,
     callerIdE164: input.callerIdE164,
     organizationAuthority: input.organizationAuthority,
+    runTool: input.runTool,
     onTiming(stage, durationMs) {
       stageTimings[stage] += durationMs;
     },
