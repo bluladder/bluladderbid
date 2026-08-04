@@ -26,8 +26,8 @@ export const VOICE_QUOTE_POLICY = Object.freeze({
   approvedWindowAssumptions: {
     customerType: "residential",
     windowCleaningScope: "whole_home",
-    // The canonical engine historically requires stories. One story is the
-    // neutral voice default; the window price no longer applies story modifiers.
+    // The canonical intake still carries stories for cross-channel parity. One
+    // story is the neutral voice default; window pricing ignores story modifiers.
     stories: 1,
     condition: "maintenance",
     screenProfile: "standard_removable",
@@ -113,13 +113,13 @@ export function applyVolunteeredVoiceFacts(
   if (requested.length > 0) {
     patch.services = [...new Set([...(initial.fields.services ?? []), ...requested])];
   }
-  if (/\b(outside|exterior)(?:\s+only)?\b/i.test(utterance)) {
-    patch.windowCleaningSides = "outside_only";
-  } else if (/\binside\s+(?:and|&)\s+outside\b/i.test(utterance)) {
+  if (/\binside\s+(?:and|&)\s+outside\b/i.test(utterance)) {
     patch.windowCleaningSides = "inside_and_outside";
+  } else if (/\b(outside|exterior)(?:\s+only)?\b/i.test(utterance)) {
+    patch.windowCleaningSides = "outside_only";
   }
   const sqft = utterance.match(
-    /\b([1-9]\d{2,4}(?:,\d{3})?)\s*(?:square\s*(?:feet|foot)|sq\.?\s*ft\.?|sf)\b/i,
+    /\b((?:[1-9]\d{0,2}(?:,\d{3})+)|(?:[1-9]\d{2,5}))\s*(?:square\s*(?:feet|foot)|sq\.?\s*ft\.?|sf)\b/i,
   )?.[1];
   if (sqft) patch.squareFootage = Number(sqft.replaceAll(",", ""));
   if (/\b(?:ladder|unusual access)\b/i.test(utterance)) {
