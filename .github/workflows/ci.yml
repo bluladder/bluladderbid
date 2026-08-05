@@ -190,7 +190,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "05068c82e91676b15c4e48cd1e7e58ac10d0cefc"
+          test "$(git rev-parse HEAD^)" = "aeb814a3f240152f98c45aa04ba82a228f5838e5"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/ci.yml"
           test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
           test -z "$(git status --porcelain)"
@@ -293,6 +293,16 @@ jobs:
           PY
           python3 -m py_compile /tmp/pr80_phase5_transform.py
           python3 /tmp/pr80_phase5_transform.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/functions/_shared/workflow/workflowController_rollout_test.ts')
+          text = path.read_text()
+          old = 'const [label, discountRows, expected] of ['
+          new = 'const [_label, discountRows, expected] of ['
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected one inherited unused label occurrence, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
           actual="$(git diff --name-only | sort)"
           expected="$(printf '%s\n' \
             supabase/functions/_shared/voice/voiceAddressGate.ts \
