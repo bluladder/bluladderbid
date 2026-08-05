@@ -151,6 +151,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/controllerRoute_test.ts",
   "supabase/functions/_shared/voice/hangupBidLinkFollowup.ts",
   "supabase/functions/_shared/voice/hangupBidLinkFollowup_test.ts",
+  "supabase/functions/_shared/voice/postCallOperationalNote.ts",
+  "supabase/functions/_shared/voice/postCallOperationalNote_test.ts",
   "supabase/functions/_shared/voice/quoteByTextDelivery.ts",
   "supabase/functions/_shared/voice/quoteByTextDelivery_test.ts",
   "supabase/functions/_shared/voice/quoteByText.ts",
@@ -206,6 +208,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/validate-discount-code/index.ts",
   "supabase/functions/validate-discount-code/shared_validator_contract_test.ts",
   "supabase/functions/voice-vapi-events/index.ts",
+  "supabase/functions/voice-vapi-events/index_test.ts",
 ]);
 const changedEdgePaths = changedPaths(["supabase/functions"]);
 // Main already carried this Lovable-generated MCP bundle before PR #80. Keep

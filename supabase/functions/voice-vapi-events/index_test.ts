@@ -155,6 +155,35 @@ Deno.test("event receiver: final call-ended event runs the bid-link follow-up on
   assertEquals(body.followup.status, "sent");
 });
 
+Deno.test("event receiver: final event runs one local post-call note path without a provider memo", async () => {
+  setEnv("VAPI_SERVER_SECRET", SECRET);
+  let notes = 0;
+  const res = await handleVapiEventRequest(
+    post({ message: { type: "end-of-call-report", call: { id: "call_1" } } }, {
+      "x-vapi-secret": SECRET,
+    }),
+    {
+      organizationId: "00000000-0000-4000-8000-000000000072",
+      persistPostCallNote: () => {
+        notes++;
+        return Promise.resolve({
+          status: "persisted",
+          conversationId: "conversation-1",
+          quoteSessionId: null,
+          noteId: "note-1",
+          providerMemoStatus: "disabled",
+        });
+      },
+      runHangupFollowup: () => Promise.resolve({ status: "sent" }),
+    },
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(notes, 1);
+  assertEquals(body.postCallNote.status, "persisted");
+  assertEquals(body.postCallNote.providerMemoStatus, "disabled");
+});
+
 Deno.test("event receiver: non-final events never run the follow-up", async () => {
   setEnv("VAPI_SERVER_SECRET", SECRET);
   let calls = 0;

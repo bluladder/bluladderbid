@@ -27,6 +27,10 @@ import {
 import { BUILD_ID } from "../_shared/buildMarker.ts";
 import { resolveVoiceProviderOrganizationAuthority } from "../_shared/voice/voiceOrganizationAuthority.ts";
 import { persistVapiEndOfCallArtifacts } from "../_shared/voice/vapiArtifactJournal.ts";
+import {
+  persistPostCallOperationalNote,
+  type PostCallOperationalNoteResult,
+} from "../_shared/voice/postCallOperationalNote.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -84,6 +88,7 @@ export interface VapiEventDeps {
   /** Injected in tests so the receiver never touches a real backend. */
   runHangupFollowup?: typeof runVoiceHangupBidLinkFollowup;
   persistArtifacts?: typeof persistVapiEndOfCallArtifacts;
+  persistPostCallNote?: typeof persistPostCallOperationalNote;
   organizationId?: string;
 }
 
@@ -186,11 +191,25 @@ export async function handleVapiEventRequest(
       status: "failed",
       detail: "not_attempted",
     };
+    let postCallNote: PostCallOperationalNoteResult = {
+      status: "ignored",
+      conversationId: null,
+      quoteSessionId: null,
+      noteId: null,
+      providerMemoStatus: "disabled",
+      reason: "missing_call_identity",
+    };
     try {
       const url = Deno.env.get("SUPABASE_URL");
       const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
       const run = deps.runHangupFollowup;
       if (run) {
+        if (deps.persistPostCallNote) {
+          postCallNote = await deps.persistPostCallNote(null, {
+            body,
+            organizationId: deps.organizationId ?? "test-authority",
+          });
+        }
         followup = await run({
           supabase: null,
           body,
@@ -231,6 +250,29 @@ export async function handleVapiEventRequest(
           duplicates: artifactResult.duplicates,
           failed: artifactResult.failed,
         }));
+        try {
+          const persistNote = deps.persistPostCallNote ??
+            persistPostCallOperationalNote;
+          postCallNote = await persistNote(supabase, {
+            body,
+            organizationId: authority.organizationId,
+          });
+        } catch {
+          postCallNote = {
+            status: "error",
+            conversationId: null,
+            quoteSessionId: null,
+            noteId: null,
+            providerMemoStatus: "disabled",
+            reason: "note_write_failed",
+          };
+        }
+        console.log(JSON.stringify({
+          at: "voice-vapi-events",
+          buildId: BUILD_ID,
+          postCallNote: postCallNote.status,
+          providerMemo: postCallNote.providerMemoStatus,
+        }));
         followup = await runVoiceHangupBidLinkFollowup({
           supabase,
           body,
@@ -256,6 +298,10 @@ export async function handleVapiEventRequest(
         ignored: false,
         eventType,
         followup: { kind: "voice_call_bid_link", status: followup.status },
+        postCallNote: {
+          status: postCallNote.status,
+          providerMemoStatus: postCallNote.providerMemoStatus,
+        },
       }),
       {
         status: 200,
