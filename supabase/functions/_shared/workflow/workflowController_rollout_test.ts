@@ -41,7 +41,7 @@ function makeFake(opts: {
   customers?: Row[];
   customersThrow?: boolean;
   pricingRows?: Row[];
-  discountRows?: Row[];
+  discountRows?: readonly Row[];
   discountError?: unknown;
 } = {}) {
   let writeVersion = 0;
