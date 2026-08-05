@@ -117,18 +117,22 @@ test_start = test_source.find(
 )
 if test_start < 0:
     raise SystemExit("Unable to find Phase 5 address uncertainty test")
-needle = "      row = await persistAndReload(sb, second);"
+needle = "row = await persistAndReload(sb, second);"
 needle_index = test_source.find(needle, test_start)
 if needle_index < 0:
     raise SystemExit("Unable to find Phase 5 second-turn persistence boundary")
+line_start = test_source.rfind("\n", 0, needle_index) + 1
+indent = test_source[line_start:needle_index]
+if indent.strip():
+    raise SystemExit("Unexpected text before Phase 5 persistence boundary")
 insertion = (
-    '      assertEquals(second.sessionPatch.last_step, '
+    f'{indent}assertEquals(second.sessionPatch.last_step, '
     '"manual_review:address_uncertain");\n'
-    '      assertEquals(second.sessionPatch.quote_status, "firm");\n'
+    f'{indent}assertEquals(second.sessionPatch.quote_status, "firm");\n'
 )
 test_source = (
-    test_source[:needle_index]
+    test_source[:line_start]
     + insertion
-    + test_source[needle_index:]
+    + test_source[line_start:]
 )
 test_file.write_text(test_source)
