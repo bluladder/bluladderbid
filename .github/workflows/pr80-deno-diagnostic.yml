@@ -1,0 +1,54 @@
+name: PR80 Deno diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr80-deno-diagnostic
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.ref == 'codex/voice-express-quote-repair'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Capture complete shared-suite output
+        id: deno
+        shell: bash
+        run: |
+          set +e
+          deno test --allow-all supabase/functions/_shared > /tmp/pr80-deno.log 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -ne 0 ]; then
+            echo "=== FAILURE MARKERS ==="
+            grep -nE 'FAILED|failures:|AssertionError|error:|panicked at|ERR_' /tmp/pr80-deno.log | tail -120 || true
+            echo "=== FINAL 350 LINES ==="
+            tail -350 /tmp/pr80-deno.log
+          else
+            tail -40 /tmp/pr80-deno.log
+          fi
+          exit 0
+
+      - name: Upload complete Deno log
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr80-deno-diagnostic
+          path: /tmp/pr80-deno.log
+          retention-days: 1
+
+      - name: Preserve diagnostic result
+        shell: bash
+        run: exit "${{ steps.deno.outputs.status }}"
