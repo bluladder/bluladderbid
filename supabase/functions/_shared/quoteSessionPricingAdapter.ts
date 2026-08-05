@@ -157,7 +157,16 @@ export function quoteSessionFieldsToQuoteInput(
       enclosureWindowSides: fields.enclosureWindowSides,
     },
     additionalServices,
-    discount: null,
+    discount: fields.discountCode && fields.voiceJourney?.coupon?.status === "valid" &&
+        (fields.voiceJourney.coupon.discountType === "percentage" ||
+          fields.voiceJourney.coupon.discountType === "fixed") &&
+        typeof fields.voiceJourney.coupon.discountValue === "number"
+      ? {
+        code: fields.discountCode,
+        type: fields.voiceJourney.coupon.discountType,
+        value: fields.voiceJourney.coupon.discountValue,
+      }
+      : null,
     promotion: fields.promotionId && fields.windowCount != null
       ? { id: fields.promotionId, windowCount: fields.windowCount }
       : null,

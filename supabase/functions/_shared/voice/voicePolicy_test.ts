@@ -8,6 +8,7 @@ import {
   applyVolunteeredVoiceFacts,
   classifyContextualVoiceQuoteByTextRejection,
   classifyContextualVoiceQuoteByTextRequest,
+  hasVolunteeredDiscountCodeCue,
   isOperationalInstructionClause,
   isProviderRecordingNotice,
   nextExpressPrePriceField,
@@ -916,4 +917,31 @@ Deno.test("phase3 firm quote accepts only changed high-confidence pricing facts"
       utterance,
     );
   }
+});
+
+Deno.test("phase4 volunteered discount codes normalize without promotion conversion", () => {
+  assertEquals(normalizeVolunteeredDiscountCode("My coupon code is save10"), "SAVE10");
+  assertEquals(normalizeVolunteeredDiscountCode("discount code blue50"), "BLUE50");
+  assertEquals(normalizeVolunteeredDiscountCode("I saw your $99 window special"), null);
+  assertEquals(normalizeVolunteeredDiscountCode("I do not have a coupon"), null);
+});
+
+Deno.test("phase4 malformed discount cue is detected for one clarification", () => {
+  assertEquals(hasVolunteeredDiscountCodeCue("my coupon code is ??"), true);
+  assertEquals(hasVolunteeredDiscountCodeCue("outside window cleaning"), false);
+});
+
+
+Deno.test("phase4 malformed discount separators cue clarification without normalization", () => {
+  for (const utterance of [
+    "coupon code is SAVE-10",
+    "coupon code is SAVE_10",
+    "coupon code is SAVE 10",
+    "coupon code is SAVE.10",
+  ]) {
+    assertEquals(normalizeVolunteeredDiscountCode(utterance), null, utterance);
+    assertEquals(hasVolunteeredDiscountCodeCue(utterance), true, utterance);
+  }
+  assertEquals(normalizeVolunteeredDiscountCode("coupon code is save10"), "SAVE10");
+  assertEquals(hasVolunteeredDiscountCodeCue("I saw your $99 window special"), false);
 });

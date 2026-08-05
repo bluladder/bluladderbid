@@ -221,6 +221,9 @@ export interface QuoteSessionFields {
       code: string;
       status: "captured" | "valid" | "invalid" | "unclear";
       reason?: string | null;
+      discountType?: "percentage" | "fixed" | null;
+      discountValue?: number | null;
+      authoritativeAmount?: number | null;
     } | null;
     intent?:
       | "new_quote"

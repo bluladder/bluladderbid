@@ -1932,15 +1932,30 @@ function calculatePromotion(
   }
   const subtotal = roundCents(lineItems.reduce((sum, item) => sum + item.amount, 0));
   trace.push(`promo: ${promo.promoId} v${promo.version} count=${count}/${maxWindows} -> $${subtotal}`);
+  let discount: QuoteResult["discount"] = null;
+  if (promo.stackingPolicy === "allow_discount_codes" && input.discount && subtotal > 0) {
+    const d = input.discount;
+    let discountAmount = 0;
+    if (d.type === "percentage" && isValidNumber(d.value) && d.value > 0) {
+      discountAmount = roundCents(subtotal * (d.value / 100));
+    } else if (d.type === "fixed" && isValidNumber(d.value) && d.value > 0) {
+      discountAmount = Math.min(roundCents(d.value), subtotal);
+    }
+    if (discountAmount > 0) {
+      discount = { code: d.code, type: d.type, value: d.value, amount: discountAmount };
+      trace.push(`promo discount: ${d.code ?? "code"} -> -$${discountAmount}`);
+    }
+  }
 
   return finalize(
     {
       status: "firm",
       lineItems,
       subtotal,
-      // Stacking is disabled by default; the promotion is a flat, all-in price.
-      discount: null,
-      total: subtotal,
+      // Stacking is disabled by default; allow_discount_codes follows the
+      // administrator-controlled promotion configuration.
+      discount,
+      total: Math.max(0, roundCents(subtotal - (discount?.amount ?? 0))),
       trace,
       missing: [],
       manualReviewReasons: [],

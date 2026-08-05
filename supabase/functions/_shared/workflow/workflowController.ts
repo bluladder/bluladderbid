@@ -32,6 +32,11 @@ import {
 } from "../quoteSession.ts";
 import { quoteSessionFieldsToQuoteInput } from "../quoteSessionPricingAdapter.ts";
 import {
+  type DiscountValidationReason,
+  normalizeAuthoritativeDiscountCode,
+  validateDiscountCodeAuthoritatively,
+} from "../discountCodeValidation.ts";
+import {
   confirmationPrompt,
   interpretConfirmation,
   normalizeSpokenPhone,
@@ -79,12 +84,46 @@ import {
   applyVolunteeredVoiceFacts,
   classifyContextualVoiceQuoteByTextRejection,
   classifyContextualVoiceQuoteByTextRequest,
+  hasVolunteeredDiscountCodeCue,
   isOperationalInstructionClause,
+  normalizeVolunteeredDiscountCode,
   splitVoiceClauses,
+  VOICE_QUOTE_POLICY,
 } from "../voice/voicePolicy.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
+
+function parseSpelledDiscountCodeAnswer(utterance: string): string | null {
+  const text = String(utterance ?? "").toUpperCase().trim();
+  const direct = normalizeAuthoritativeDiscountCode(text);
+  if (direct) return direct;
+  if (!/^[A-Z0-9](?:[\s,.-]+[A-Z0-9]){2,19}[\s.!?]*$/.test(text)) {
+    return null;
+  }
+  return normalizeAuthoritativeDiscountCode(text.replace(/[^A-Z0-9]/g, ""));
+}
+
+function discountInvalidSpeech(
+  reason: DiscountValidationReason | "malformed" | "non_dfw",
+): string {
+  switch (reason) {
+    case "inactive":
+      return "That code is not active, so I cannot apply it.";
+    case "expired":
+      return "That code has expired, so I cannot apply it.";
+    case "exhausted":
+      return "That code has already reached its usage limit, so I cannot apply it.";
+    case "uncertain":
+      return "I cannot verify that code safely right now, so I will not apply it.";
+    case "non_dfw":
+      return "I cannot apply discount codes for this market yet.";
+    case "malformed":
+      return "I could not capture a valid discount code, so I will not apply it.";
+    default:
+      return "I could not find that discount code, so I cannot apply it.";
+  }
+}
 
 const SCHEDULE_TOPIC =
   /\b(?:schedule|scheduling|book|booking|appointment|availability|appointment times?|time slots?)\b/i;
@@ -533,6 +572,163 @@ export async function runControllerTurn(
       }),
       "intent_confirmed",
     );
+  }
+
+  let validDiscountAppliedToFirmQuote = false;
+  let discountSpeechPrefix = "";
+  const volunteeredDiscountCode = normalizeVolunteeredDiscountCode(input.utterance);
+  if (volunteeredDiscountCode) {
+    if (organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
+      // Oregon limitation: the current hosted discount_codes table is global
+      // DFW configuration, so voice fails closed for any non-DFW organization
+      // before the global lookup can run.
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            coupon: {
+              code: volunteeredDiscountCode,
+              status: "invalid",
+              reason: "non_dfw",
+            },
+          },
+        }),
+        "discount_code_rejected:non_dfw",
+      );
+      discountSpeechPrefix = `${discountInvalidSpeech("non_dfw")} `;
+      if (session.quoteStatus === "firm") {
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: { kind: "answer_side_question", topic: "discount_code" },
+            spoken: `${discountSpeechPrefix}${postPriceChoicePrompt()}`,
+          },
+        };
+      }
+    } else {
+      const validation = await validateDiscountCodeAuthoritatively(
+        input.supabase,
+        volunteeredDiscountCode,
+      );
+      if (validation.status === "valid") {
+        const existingCoupon = session.fields.voiceJourney?.coupon;
+        const identicalAlreadyApplied = session.quoteStatus === "firm" &&
+          session.fields.discountCode === validation.code &&
+          existingCoupon?.status === "valid" &&
+          existingCoupon.discountType === validation.discountType &&
+          existingCoupon.discountValue === validation.discountValue;
+        if (identicalAlreadyApplied) {
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: { kind: "answer_side_question", topic: "discount_code" },
+              spoken: `That code is already applied. ${postPriceChoicePrompt()}`,
+            },
+          };
+        }
+        validDiscountAppliedToFirmQuote = session.quoteStatus === "firm";
+        discountSpeechPrefix = "I have that discount code. ";
+        capture(
+          mergeFields(session, {
+            discountCode: validation.code,
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              coupon: {
+                code: validation.code,
+                status: "valid",
+                reason: null,
+                discountType: validation.discountType,
+                discountValue: validation.discountValue,
+                authoritativeAmount: null,
+              },
+            },
+          }, { markVerified: ["discountCode"] }),
+          "discount_code_validated",
+        );
+      } else {
+        capture(
+          mergeFields(session, {
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              coupon: {
+                code: validation.code,
+                status: "invalid",
+                reason: validation.reason,
+              },
+            },
+          }),
+          `discount_code_rejected:${validation.reason}`,
+        );
+        discountSpeechPrefix = `${discountInvalidSpeech(validation.reason)} `;
+        if (session.quoteStatus === "firm") {
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: { kind: "answer_side_question", topic: "discount_code" },
+              spoken: `${discountSpeechPrefix}${postPriceChoicePrompt()}`,
+            },
+          };
+        }
+      }
+    }
+  } else if (hasVolunteeredDiscountCodeCue(input.utterance)) {
+    const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+    const currentRetries = Number(retryCounts.discountCode ?? 0);
+    if (currentRetries < VOICE_QUOTE_POLICY.coupon.retryLimit) {
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            retryCounts: { ...retryCounts, discountCode: currentRetries + 1 },
+            coupon: { code: "", status: "unclear", reason: "malformed" },
+          },
+        }),
+        "asked:discountCode",
+      );
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "discountCode",
+            prompt:
+              "Please spell the discount code once, one letter or number at a time.",
+          } as unknown as WorkflowAction,
+          spoken:
+            "Please spell the discount code once, one letter or number at a time.",
+        },
+      };
+    }
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          retryCounts,
+          coupon: { code: "", status: "invalid", reason: "malformed" },
+        },
+      }),
+      "discount_code_rejected:malformed",
+    );
+    discountSpeechPrefix = `${discountInvalidSpeech("malformed")} `;
+    if (session.quoteStatus === "firm") {
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: { kind: "answer_side_question", topic: "discount_code" },
+          spoken: `${discountSpeechPrefix}${postPriceChoicePrompt()}`,
+        },
+      };
+    }
   }
 
   // Policy-owned capture handles direct quote details, approved assumptions,
@@ -1637,7 +1833,105 @@ export async function runControllerTurn(
   const askedField = session.lastStep?.startsWith("asked:")
     ? session.lastStep.slice("asked:".length)
     : null;
-  if (askedField) {
+  if (askedField === "discountCode") {
+    const spelledCode = parseSpelledDiscountCodeAnswer(input.utterance);
+    if (spelledCode) {
+      if (organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
+        capture(
+          mergeFields(session, {
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              coupon: { code: spelledCode, status: "invalid", reason: "non_dfw" },
+            },
+          }),
+          "discount_code_rejected:non_dfw",
+        );
+        if (session.quoteStatus === "firm") {
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: { kind: "answer_side_question", topic: "discount_code" },
+              spoken: `${discountInvalidSpeech("non_dfw")} ${postPriceChoicePrompt()}`,
+            },
+          };
+        }
+      } else {
+        const validation = await validateDiscountCodeAuthoritatively(
+          input.supabase,
+          spelledCode,
+        );
+        if (validation.status === "valid") {
+          validDiscountAppliedToFirmQuote = session.quoteStatus === "firm";
+          capture(
+            mergeFields(session, {
+              discountCode: validation.code,
+              voiceJourney: {
+                ...(session.fields.voiceJourney ?? {}),
+                coupon: {
+                  code: validation.code,
+                  status: "valid",
+                  reason: null,
+                  discountType: validation.discountType,
+                  discountValue: validation.discountValue,
+                  authoritativeAmount: null,
+                },
+              },
+            }, { markVerified: ["discountCode"] }),
+            "discount_code_validated",
+          );
+        } else {
+          capture(
+            mergeFields(session, {
+              voiceJourney: {
+                ...(session.fields.voiceJourney ?? {}),
+                coupon: {
+                  code: validation.code,
+                  status: "invalid",
+                  reason: validation.reason,
+                },
+              },
+            }),
+            `discount_code_rejected:${validation.reason}`,
+          );
+          if (session.quoteStatus === "firm") {
+            return {
+              sessionId: session.id,
+              sessionPatch,
+              pre: {
+                kind: "fsm",
+                action: { kind: "answer_side_question", topic: "discount_code" },
+                spoken: `${discountInvalidSpeech(validation.reason)} ${postPriceChoicePrompt()}`,
+              },
+            };
+          }
+        }
+      }
+    } else {
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            coupon: { code: "", status: "invalid", reason: "malformed" },
+          },
+        }),
+        "discount_code_rejected:malformed",
+      );
+      if (session.quoteStatus === "firm") {
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: { kind: "answer_side_question", topic: "discount_code" },
+            spoken: `${discountInvalidSpeech("malformed")} ${postPriceChoicePrompt()}`,
+          },
+        };
+      }
+    }
+  }
+  if (askedField && askedField !== "discountCode") {
     const parsed = applyCanonicalVoiceAnswer(
       session,
       askedField,
@@ -1907,7 +2201,7 @@ export async function runControllerTurn(
     return {
       sessionId: session.id,
       sessionPatch,
-      pre: { kind: "fsm", action, spoken: prompt },
+      pre: { kind: "fsm", action, spoken: `${discountSpeechPrefix}${prompt}` },
     };
   }
   if (action.kind === "calculate_price") {
@@ -2002,6 +2296,12 @@ export async function runControllerTurn(
       lastQuoteResult: stamped,
       voiceJourney: {
         ...(session.fields.voiceJourney ?? {}),
+        coupon: session.fields.voiceJourney?.coupon
+          ? {
+            ...session.fields.voiceJourney.coupon,
+            authoritativeAmount: result.discount?.amount ?? null,
+          }
+          : null,
         quoteContext: {
           inputsKey,
           quoteId: session.quoteId ?? null,
@@ -2029,8 +2329,20 @@ export async function runControllerTurn(
       { ...session, fields: nextFields, quoteStatus },
       "offered_post_price_choice",
     );
-    const spoken = disposition.finalQuoteDisposition === "firm" &&
-        canonicalCustomerTotal > 0
+    const validDiscountCouldNotStack = validDiscountAppliedToFirmQuote &&
+      disposition.finalQuoteDisposition === "firm" && canonicalCustomerTotal > 0 &&
+      session.fields.promotionId && !result.discount;
+    const spoken = validDiscountCouldNotStack
+      ? `That code is valid, but it cannot be combined with this promotion. Your total remains ${
+        formatCanonicalCurrency(canonicalCustomerTotal)
+      }, including tax.`
+      : validDiscountAppliedToFirmQuote &&
+          disposition.finalQuoteDisposition === "firm" && canonicalCustomerTotal > 0
+      ? `That code is valid. Your updated total is ${
+        formatCanonicalCurrency(canonicalCustomerTotal)
+      }, including tax.`
+      : disposition.finalQuoteDisposition === "firm" &&
+          canonicalCustomerTotal > 0
       ? expressPriceStatement(session, canonicalCustomerTotal)
       : disposition.finalQuoteDisposition === "estimated" &&
           canonicalCustomerTotal > 0

@@ -126,6 +126,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/bookingReadiness.ts",
   "supabase/functions/_shared/bookingReadiness_test.ts",
   "supabase/functions/_shared/deterministicUuid.ts",
+  "supabase/functions/_shared/discountCodeValidation.ts",
+  "supabase/functions/_shared/discountCodeValidation_test.ts",
   "supabase/functions/_shared/executeSmsBooking.ts",
   "supabase/functions/_shared/identityAnchor.ts",
   "supabase/functions/_shared/identityAnchor_test.ts",
@@ -177,6 +179,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voiceAdapter_test.ts",
   "supabase/functions/_shared/voiceBookingAdapter.ts",
   "supabase/functions/_shared/voiceBookingAdapter_test.ts",
+  "supabase/functions/_shared/quoteSessionPricingAdapter.ts",
   "supabase/functions/_shared/voiceBookingDryRun_test.ts",
   "supabase/functions/_shared/voiceLiveBooking_test.ts",
   "supabase/functions/_shared/voiceProviderConfig.ts",
@@ -191,6 +194,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/jobber-create-booking/index.ts",
   "supabase/functions/jobber-create-booking/launch_safety_test.ts",
   "supabase/functions/voice-llm-adapter/index.ts",
+  "supabase/functions/validate-discount-code/index.ts",
+  "supabase/functions/validate-discount-code/shared_validator_contract_test.ts",
   "supabase/functions/voice-vapi-events/index.ts",
 ]);
 const changedEdgePaths = changedPaths(["supabase/functions"]);
@@ -247,6 +252,7 @@ const reviewedPostRuntimeProtectedPaths = new Set([
   "src/lib/pricing/toQuoteInput.ts",
   "src/lib/pricing/toQuoteInput.selectedServices.test.ts",
   "supabase/functions/_shared/pricingEngine.ts",
+  "supabase/functions/_shared/quoteSessionPricingAdapter.ts",
 ]);
 const protectedContractPaths = changedPaths([
   "packages/sales-engine",

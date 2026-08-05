@@ -7,6 +7,7 @@ import {
   type QuoteSession,
   type QuoteSessionFields,
 } from "../quoteSession.ts";
+import { normalizeAuthoritativeDiscountCode } from "../discountCodeValidation.ts";
 import { normalizeServiceId } from "../salesEngine/quoteIntakeContract.ts";
 import { parseSpokenQuantity } from "./spokenQuantity.ts";
 
@@ -644,9 +645,21 @@ export function nextExpressPrePriceField(session: QuoteSession): string | null {
   return null;
 }
 
+export function hasVolunteeredDiscountCodeCue(text: string): boolean {
+  return /\b(?:coupon|discount|promo)\s+(?:code\b|is\b|:)/i.test(text) ||
+    /\b(?:code)\s+(?:is\s+)?[a-z0-9_-]/i.test(text);
+}
+
 export function normalizeVolunteeredDiscountCode(text: string): string | null {
-  const match = text.match(
-    /\b(?:coupon|discount|promo)\s+(?:code\s+)?(?:is\s+)?([a-z0-9][a-z0-9_-]{2,19})\b/i,
+  const normalized = String(text ?? "").replaceAll("’", "'");
+  if (/\b(?:no|not|without|do\s+not|don't|dont)\b[^.;!?]{0,32}\b(?:coupon|discount|promo)\b/i.test(normalized)) {
+    return null;
+  }
+  const match = normalized.match(
+    /\b(?:coupon|discount|promo)\s+(?:code\s+)?(?:is\s+|:)?([a-z0-9]{3,20})(?![-_\s.][a-z0-9])\b/i,
+  ) ?? normalized.match(
+    /\bcode\s+(?:is\s+|:)?([a-z0-9]{3,20})(?![-_\s.][a-z0-9])\b/i,
   );
-  return match ? match[1].toUpperCase() : null;
+  if (!match) return null;
+  return normalizeAuthoritativeDiscountCode(match[1]);
 }
