@@ -70,3 +70,17 @@ if source.count(old) != 1:
     raise SystemExit("Unable to install indentation-tolerant replace_once")
 patched = source.replace(old, new, 1)
 exec(compile(patched, str(MAIN), "exec"), {"__name__": "__main__"})
+
+# Generic disagreement such as “No, that is not right” must consume the one
+# clarification prompt; it must not be misclassified as a street correction.
+controller = Path("supabase/functions/_shared/workflow/workflowController.ts")
+controller_source = controller.read_text()
+old_classifier = '''  if (/\\bstreet|road|drive|lane|avenue|boulevard\\b|\\bnot\\b/i.test(text)) {
+    return "street";
+  }'''
+new_classifier = '''  if (/\\b(?:street|road|drive|lane|avenue|boulevard)\\b/i.test(text)) {
+    return "street";
+  }'''
+if controller_source.count(old_classifier) != 1:
+    raise SystemExit("Unable to narrow generic address disagreement classification")
+controller.write_text(controller_source.replace(old_classifier, new_classifier, 1))
