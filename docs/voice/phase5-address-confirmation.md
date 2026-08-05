@@ -20,4 +20,6 @@ The focused controller suite passed 54 tests, including the three Phase 5 accept
 2. One bounded clarification before manual review.
 3. One direct correction followed by revalidation without a second readback.
 
+The compatibility pass also completed the full shared Deno suite after reconciling two superseded regression expectations with the approved Phase 5 wording and canonical street readback. The source/test repair is commit `308ba78fb7f9e0b2b1a5cfc5aad9f49f2c8eaa46`.
+
 The Phase 2 single-flight SQL release candidate remains review-only and unapplied.
