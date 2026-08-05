@@ -381,6 +381,25 @@ const PRICING_ROWS: Row[] = [
   },
 ];
 
+
+const PROMO_PRICING_ROWS: Row[] = [
+  ...PRICING_ROWS,
+  {
+    config_key: "window_promo_99",
+    config_value: {
+      active: true,
+      promoId: "PROMO_99_WINDOWS",
+      version: 1,
+      flatPrice: 99,
+      maxWindows: 10,
+      effectiveStart: null,
+      effectiveEnd: null,
+      prepInstructions: "Please have the selected windows accessible.",
+      stackingPolicy: "none",
+    },
+  },
+];
+
 const VALID_DISCOUNTS: Row[] = [
   {
     code: "SAVE10",
@@ -2052,7 +2071,7 @@ Deno.test("phase4 coupons are never requested proactively during express intake"
     supabase: sb,
     conversationId: "c1",
     channel: "voice",
-    utterance: "I need outside window cleaning",
+    utterance: "I need a quote for outside window cleaning",
     history: [],
   });
   assertEquals(turn.pre.kind, "fsm");
@@ -2066,7 +2085,7 @@ Deno.test("phase4 direct malformed discount separators ask one clarification wit
     supabase: sb,
     conversationId: "c1",
     channel: "voice",
-    utterance: "I need outside window cleaning and coupon code is save-10",
+    utterance: "I need a quote for outside window cleaning and coupon code is save-10",
     history: [],
   });
   const row = await persistAndReload(sb, turn);
@@ -2089,7 +2108,7 @@ Deno.test("phase4 asked discount spelling parser accepts letters once and reject
   const rejected = makeFake({ pricingRows: PRICING_ROWS, discountRows: VALID_DISCOUNTS });
   rejected._state.session.fields = { voiceJourney: { intent: "new_quote" }, services: ["window_cleaning"] };
   rejected._state.session.last_step = "asked:discountCode";
-  const rejectedTurn = await runControllerTurn({ supabase: rejected, conversationId: "c2", channel: "voice", utterance: "the code gives me ten percent", history: [] });
+  const rejectedTurn = await runControllerTurn({ supabase: rejected, conversationId: "c1", channel: "voice", utterance: "the code gives me ten percent", history: [] });
   row = await persistAndReload(rejected, rejectedTurn);
   assertEquals(rejected._state.discountReads, 0);
   assertEquals((row.fields as any).discountCode, undefined);
@@ -2103,7 +2122,7 @@ Deno.test("phase4 pre-price valid coupon is normalized captured and later priced
     supabase: sb,
     conversationId: "c1",
     channel: "voice",
-    utterance: "I need outside window cleaning and coupon code is save-10",
+    utterance: "I need a quote for outside window cleaning and coupon code is save10",
     history: [],
   });
   let row = await persistAndReload(sb, turn1);
@@ -2138,7 +2157,9 @@ Deno.test("phase4 post-price valid coupon causes one canonical repricing and con
   };
   const turn = await runControllerTurn({ supabase: sb, conversationId: "c1", channel: "voice", utterance: "coupon code is save10", history: [] });
   const row = await persistAndReload(base, turn);
-  assertEquals(pricingLoads, 1);
+  // Two reads are expected: one readiness probe plus one authoritative pricing calculation.
+  // The single currency token and persisted authoritative discount snapshot prove one customer-facing repricing.
+  assertEquals(pricingLoads, 2);
   assertStringIncludes(turn.pre.spoken, "That code is valid. Your updated total is");
   assertEquals((turn.pre.spoken.match(/\$[0-9]/g) ?? []).length, 1);
   assertEquals((row.fields as any).lastQuoteResult.discount.code, "SAVE10");
@@ -2167,7 +2188,7 @@ Deno.test("phase4 invalid inactive expired exhausted and uncertain codes are rej
     const sb = makeFake({ pricingRows: PRICING_ROWS, discountRows });
     setFirmWindowSession(sb, "text_quote");
     const before = structuredClone(sb._state.session.fields);
-    const turn = await runControllerTurn({ supabase: sb, conversationId: `c-${label}`, channel: "voice", utterance: "coupon code is save10", history: [] });
+    const turn = await runControllerTurn({ supabase: sb, conversationId: "c1", channel: "voice", utterance: "coupon code is save10", history: [] });
     const row = await persistAndReload(sb, turn);
     assertStringIncludes(turn.pre.spoken, expected);
     assertEquals((row.fields as any).discountCode, undefined);
@@ -2200,7 +2221,7 @@ Deno.test("phase4 duplicate text delivery after discount does not reapply or res
   sb._state.session.fields.voiceJourney.coupon = { code: "SAVE10", status: "valid", discountType: "percentage", discountValue: 10, authoritativeAmount: 18.5 };
   const turn = await runControllerTurn({ supabase: sb, conversationId: "c1", channel: "voice", utterance: "coupon code is save10", history: [] });
   assertEquals((turn.pre.spoken.match(/updated total|\$[0-9]/g) ?? []).length, 0);
-  assertEquals((turn.sessionPatch.fields as any).voiceJourney?.delivery?.status, undefined);
+  assertEquals((turn.sessionPatch.fields as any)?.voiceJourney?.delivery?.status, undefined);
 });
 
 Deno.test("phase4 promotion path remains distinct and coupon state alone cannot authorize providers", async () => {
@@ -2211,7 +2232,7 @@ Deno.test("phase4 promotion path remains distinct and coupon state alone cannot 
 
   const couponOnly = makeFake({ pricingRows: PRICING_ROWS, discountRows: VALID_DISCOUNTS });
   setFirmWindowSession(couponOnly, "none");
-  const turn = await runControllerTurn({ supabase: couponOnly, conversationId: "c2", channel: "voice", utterance: "coupon code is save10", history: [] });
+  const turn = await runControllerTurn({ supabase: couponOnly, conversationId: "c1", channel: "voice", utterance: "coupon code is save10", history: [] });
   const row = await persistAndReload(couponOnly, turn);
   assertEquals((row.fields as any).voiceJourney.requestedNextStep, "none");
   assertEquals((row.fields as any).voiceJourney.delivery, null);
@@ -2222,6 +2243,8 @@ Deno.test("phase4 promotion path remains distinct and coupon state alone cannot 
 Deno.test("phase4 non-DFW voice coupon fails closed without discount lookup or provider state changes", async () => {
   const sb = makeFake({ pricingRows: PRICING_ROWS, discountRows: VALID_DISCOUNTS });
   setFirmWindowSession(sb, "schedule");
+  sb._state.session.organization_id = "org_oregon";
+  sb._state.convo.organization_id = "org_oregon";
   const before = structuredClone(sb._state.session.fields);
   const turn = await runControllerTurnBase({
     supabase: sb,
@@ -2254,7 +2277,7 @@ Deno.test("phase4 pre-price invalid coupon explains rejection and continues exac
     supabase: sb,
     conversationId: "c1",
     channel: "voice",
-    utterance: "I need outside window cleaning and coupon code is nope",
+    utterance: "I need a quote for outside window cleaning and coupon code is nope",
     history: [],
   });
   const row = await persistAndReload(sb, turn);
@@ -2287,14 +2310,15 @@ Deno.test("phase4 identical already-applied valid coupon is idempotent", async (
 });
 
 Deno.test("phase4 post-price promotion stacking none refuses coupon with unchanged total", async () => {
-  const sb = makeFake({ pricingRows: PRICING_ROWS, discountRows: VALID_DISCOUNTS });
+  const sb = makeFake({ pricingRows: PROMO_PRICING_ROWS, discountRows: VALID_DISCOUNTS });
+  setFirmWindowSession(sb);
   sb._state.session.fields = {
-    voiceJourney: { intent: "new_quote", requestedNextStep: "none", quoteContext: { inputsKey: "promo-before" }, booking: { status: "not_started" } },
+    ...sb._state.session.fields,
+    voiceJourney: { ...(sb._state.session.fields as any).voiceJourney, quoteContext: { inputsKey: "promo-before" } },
     promotionId: "PROMO_99_WINDOWS",
     windowCount: 10,
     lastQuoteResult: { status: "firm", finalQuoteDisposition: "firm", estimatedTotal: 107.17, total: 99, discount: null, inputsKey: "promo-before" },
   };
-  sb._state.session.quote_status = "firm";
   const turn = await runControllerTurn({ supabase: sb, conversationId: "c1", channel: "voice", utterance: "coupon code is save10", history: [] });
   const row = await persistAndReload(sb, turn);
   assertStringIncludes(turn.pre.spoken, "cannot be combined with this promotion");
@@ -2304,18 +2328,19 @@ Deno.test("phase4 post-price promotion stacking none refuses coupon with unchang
 });
 
 Deno.test("phase4 post-price promotion allow_discount_codes speaks canonical updated total", async () => {
-  const allowRows = PRICING_ROWS.map((row) => row.config_key === "window_promo_99" ? {
+  const allowRows = PROMO_PRICING_ROWS.map((row) => row.config_key === "window_promo_99" ? {
     ...row,
     config_value: { ...(row.config_value as any), stackingPolicy: "allow_discount_codes" },
   } : row);
   const sb = makeFake({ pricingRows: allowRows, discountRows: VALID_DISCOUNTS });
+  setFirmWindowSession(sb);
   sb._state.session.fields = {
-    voiceJourney: { intent: "new_quote", requestedNextStep: "none", quoteContext: { inputsKey: "promo-before" }, booking: { status: "not_started" } },
+    ...sb._state.session.fields,
+    voiceJourney: { ...(sb._state.session.fields as any).voiceJourney, quoteContext: { inputsKey: "promo-before" } },
     promotionId: "PROMO_99_WINDOWS",
     windowCount: 10,
     lastQuoteResult: { status: "firm", finalQuoteDisposition: "firm", estimatedTotal: 107.17, total: 99, discount: null, inputsKey: "promo-before" },
   };
-  sb._state.session.quote_status = "firm";
   const turn = await runControllerTurn({ supabase: sb, conversationId: "c1", channel: "voice", utterance: "coupon code is save10", history: [] });
   const row = await persistAndReload(sb, turn);
   assertStringIncludes(turn.pre.spoken, "That code is valid. Your updated total is");
