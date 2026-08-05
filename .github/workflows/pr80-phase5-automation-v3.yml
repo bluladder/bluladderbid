@@ -1,0 +1,261 @@
+name: PR80 Phase 5 automation v3
+
+on:
+  push:
+    branches:
+      - codex/voice-express-quote-repair
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+
+concurrency:
+  group: pr80-phase5-automation-v3
+  cancel-in-progress: false
+
+jobs:
+  apply-phase5:
+    if: "${{ github.event.head_commit.message == 'chore(automation): finalize PR 80 Phase 5' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact PR branch head
+        uses: actions/checkout@v4
+        with:
+          ref: codex/voice-express-quote-repair
+          fetch-depth: 0
+
+      - name: Verify guarded starting point
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor b0c19b228e6fafb434dbdf18bdda7ca36be2f1a8 HEAD
+          actual="$(git diff --name-only b0c19b228e6fafb434dbdf18bdda7ca36be2f1a8 HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/pr80-phase5-automation-v3.yml \
+            .github/workflows/pr80-phase5-automation-v2.yml \
+            .github/workflows/pr80-phase5-automation.yml | sort)"
+          test "$actual" = "$expected"
+          test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
+
+      - name: Apply Phase 5 transformations from the reviewed v2 recipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(".github/workflows/pr80-phase5-automation-v2.yml").read_text()
+          start_token = "          python3 - <<'PY'\n"
+          end_token = "\n          PY\n\n      - name: Setup Deno"
+          start = workflow.find(start_token)
+          end = workflow.find(end_token, start + len(start_token))
+          if start < 0 or end < 0:
+              raise SystemExit("Unable to extract reviewed Phase 5 transformation recipe")
+          source = textwrap.dedent(workflow[start + len(start_token):end])
+          exec(compile(source, "pr80-phase5-v2-extracted.py", "exec"), {"__name__": "__main__"})
+          PY
+
+      - name: Harden post-correction continuation and test state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one follow-up replacement, found {count}")
+              file.write_text(text.replace(old, new, 1))
+
+          controller = "supabase/functions/_shared/workflow/workflowController.ts"
+          replace_once(
+              controller,
+              '''          capture(corrected, "offered_scheduling");
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: { kind: "offer_scheduling" },
+              spoken:
+                "Thanks, I corrected the address. Would you like me to check current appointment times?",
+            },
+          };''',
+              '''          const nextAction = decideResidentialQuoteAction(corrected, []);
+          if (nextAction.kind === "ask") {
+            capture(corrected, `asked:${nextAction.field}`);
+            return {
+              sessionId: session.id,
+              sessionPatch,
+              pre: {
+                kind: "fsm",
+                action: nextAction,
+                spoken: nextAction.prompt,
+              },
+            };
+          }
+          if (nextAction.kind === "offer_scheduling") {
+            capture(corrected, "offered_scheduling");
+            return {
+              sessionId: session.id,
+              sessionPatch,
+              pre: {
+                kind: "fsm",
+                action: nextAction,
+                spoken:
+                  "Thanks, I corrected the address. Would you like me to check current appointment times?",
+              },
+            };
+          }
+          return addressManualReview(
+            "I corrected the address, but I couldn't safely continue toward scheduling. I kept your quote for a team member to review.",
+          );''',
+          )
+
+          tests = "supabase/functions/_shared/workflow/workflowController_rollout_test.ts"
+          old_helper = '''function setPhase5AddressSession(sb: any) {
+            setFirmWindowSession(sb, "schedule");
+            sb._state.session.fields = {
+              ...sb._state.session.fields,
+              name: "Casey Caller",
+              email: "casey.phase5@example.invalid",
+              phone: "+14695550155",
+              callerIdConfirmationStatus: "contact_confirmed",
+              voiceJourney: {
+                ...(sb._state.session.fields as any).voiceJourney,
+                requestedNextStep: "schedule",
+                availability: null,
+                booking: { status: "not_started" },
+              },
+            };
+            sb._state.session.field_status = {
+              name: "verified",
+              email: "verified",
+              phone: "verified",
+            };
+            sb._state.session.last_step = "asked:address";
+          }'''
+          new_helper = '''function setPhase5AddressSession(sb: any) {
+            setFirmWindowSession(sb, "schedule");
+            const base = {
+              ...sb._state.session.fields,
+              name: "Casey Caller",
+              email: "casey.phase5@example.invalid",
+              phone: "+14695550155",
+              callerIdConfirmationStatus: "contact_confirmed",
+            } as QuoteSessionFields;
+            const inputsKey = sessionInputsKey(base);
+            sb._state.session.fields = {
+              ...base,
+              lastQuoteResult: {
+                ...(base.lastQuoteResult ?? {}),
+                status: "firm",
+                finalQuoteDisposition: "firm",
+                inputsKey,
+                estimatedTotal: 200.26,
+                total: 185,
+              },
+              voiceJourney: {
+                ...(base.voiceJourney ?? {}),
+                requestedNextStep: "schedule",
+                quoteContext: {
+                  inputsKey,
+                  finalQuoteDisposition: "firm",
+                  estimatedTotal: 200.26,
+                  spokenAt: "2026-08-05T00:00:00.000Z",
+                },
+                availability: null,
+                booking: { status: "not_started" },
+              },
+            };
+            sb._state.session.field_status = {
+              name: "verified",
+              email: "verified",
+              phone: "verified",
+            };
+            sb._state.session.last_step = "asked:address";
+          }'''
+          replace_once(tests, old_helper, new_helper)
+          PY
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Format and validate Phase 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          deno fmt \
+            supabase/functions/_shared/voice/voiceAddressGate.ts \
+            supabase/functions/_shared/workflow/workflowController.ts \
+            supabase/functions/_shared/workflow/workflowController_rollout_test.ts
+          deno fmt --check \
+            supabase/functions/_shared/voice/voiceAddressGate.ts \
+            supabase/functions/_shared/workflow/workflowController.ts \
+            supabase/functions/_shared/workflow/workflowController_rollout_test.ts
+          deno lint \
+            supabase/functions/_shared/voice/voiceAddressGate.ts \
+            supabase/functions/_shared/workflow/workflowController.ts \
+            supabase/functions/_shared/workflow/workflowController_rollout_test.ts
+          deno test --allow-all \
+            supabase/functions/_shared/workflow/workflowController_rollout_test.ts
+          deno test --allow-all supabase/functions/_shared
+
+      - name: Commit Phase 5 and remove all temporary automation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
+          git rm \
+            .github/workflows/pr80-phase5-automation.yml \
+            .github/workflows/pr80-phase5-automation-v2.yml \
+            .github/workflows/pr80-phase5-automation-v3.yml
+          git diff --check
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/pr80-phase5-automation-v3.yml \
+            .github/workflows/pr80-phase5-automation-v2.yml \
+            .github/workflows/pr80-phase5-automation.yml \
+            supabase/functions/_shared/voice/voiceAddressGate.ts \
+            supabase/functions/_shared/workflow/workflowController.ts \
+            supabase/functions/_shared/workflow/workflowController_rollout_test.ts | sort)"
+          test "$actual" = "$expected"
+          git config user.name "bluladder-pr80-automation"
+          git config user.email "304095287+bluladder@users.noreply.github.com"
+          git add \
+            supabase/functions/_shared/voice/voiceAddressGate.ts \
+            supabase/functions/_shared/workflow/workflowController.ts \
+            supabase/functions/_shared/workflow/workflowController_rollout_test.ts
+          git commit -m "feat(voice): bound address confirmation before scheduling"
+          git push origin HEAD:codex/voice-express-quote-repair
+
+      - name: Dispatch and verify exact-head validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          gh workflow run ci.yml --ref codex/voice-express-quote-repair
+          gh workflow run secret-scan.yml --ref codex/voice-express-quote-repair
+          ci_id=""
+          secret_id=""
+          for _ in $(seq 1 15); do
+            ci_id="$(gh run list --workflow ci.yml --branch codex/voice-express-quote-repair --event workflow_dispatch --limit 10 --json databaseId,headSha --jq ".[] | select(.headSha == \"$head_sha\") | .databaseId" | head -1)"
+            secret_id="$(gh run list --workflow secret-scan.yml --branch codex/voice-express-quote-repair --event workflow_dispatch --limit 10 --json databaseId,headSha --jq ".[] | select(.headSha == \"$head_sha\") | .databaseId" | head -1)"
+            if [ -n "$ci_id" ] && [ -n "$secret_id" ]; then break; fi
+            sleep 5
+          done
+          test -n "$ci_id"
+          test -n "$secret_id"
+          gh run watch "$ci_id" --exit-status
+          gh run watch "$secret_id" --exit-status
+          gh pr comment 80 --body "Phase 5 repository validation passed at \`$head_sha\`. CI run: https://github.com/bluladder/bluladderbid/actions/runs/$ci_id. Secret Scan run: https://github.com/bluladder/bluladderbid/actions/runs/$secret_id. The temporary automation files were removed from the final tree; no deployment or migration was performed."
