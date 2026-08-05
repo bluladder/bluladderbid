@@ -111,6 +111,7 @@ function sb(opts: {
     customer_id: "customer-1",
     property_id: "property-1",
     quote_id: null,
+    updated_at: "2026-08-05T00:00:00.000Z",
     fields: defaultFields,
     field_status: {
       name: "verified",
@@ -120,9 +121,16 @@ function sb(opts: {
       serviceAreaStatus: "verified",
     },
   };
-  const sessionData = opts.session === null
+  let sessionData: Record<string, unknown> | null = opts.session === null
     ? null
-    : { ...defaultSession, ...(opts.session ?? {}) };
+    : {
+      ...defaultSession,
+      ...(opts.session ?? {}),
+      field_status: {
+        ...defaultSession.field_status,
+        ...((opts.session?.field_status as Record<string, unknown>) ?? {}),
+      },
+    };
   const conversationData = opts.conversation === null ? null : {
     id: "conv-1",
     organization_id: ORGANIZATION_ID,
@@ -172,22 +180,40 @@ function sb(opts: {
       };
       return query;
     },
-    update: () => {
+    update: (payload: Record<string, unknown>) => {
       const mutation: any = {
         eq: () => mutation,
         is: () => mutation,
         select: () => mutation,
-        maybeSingle: () =>
-          Promise.resolve(
-            opts.updateError
-              ? { data: null, error: new Error("write failed") }
-              : { data: { id: "linked" }, error: null },
-          ),
+        maybeSingle: () => {
+          if (opts.updateError) {
+            return Promise.resolve({
+              data: null,
+              error: new Error("write failed"),
+            });
+          }
+          if (name === "quote_sessions" && sessionData) {
+            sessionData = {
+              ...sessionData,
+              ...payload,
+              updated_at: String(
+                Number(String(sessionData.updated_at).replace(/\D/g, "")) + 1,
+              ),
+            };
+          }
+          return Promise.resolve({ data: { id: "linked" }, error: null });
+        },
       };
       return mutation;
     },
   });
-  return { from: (name: string) => table(name) } as any;
+  return {
+    from: (name: string) => table(name),
+    _session: () => sessionData,
+    _replaceSession: (next: Record<string, unknown>) => {
+      sessionData = next;
+    },
+  } as any;
 }
 
 const ok = (name: string) =>
@@ -286,6 +312,138 @@ Deno.test("delivers via save-quote then send-sms and reports sent", async () => 
   assertEquals(calls, ["save-quote", "send-sms"]);
 });
 
+Deno.test("phase6 duplicate generated quote requests cause one provider delivery attempt", async () => {
+  const database = sb();
+  let saveCalls = 0;
+  let smsCalls = 0;
+  let deliveryKey: string | null = null;
+  const callFunction = (name: string, body: any) => {
+    if (name === "save-quote") {
+      saveCalls += 1;
+      return Promise.resolve({ status: 200, json: { quoteId: "q1" } });
+    }
+    smsCalls += 1;
+    deliveryKey = body.voiceDeliveryKey;
+    return Promise.resolve({
+      status: 200,
+      json: {
+        transactionalSent: true,
+        deliveryStatus: "accepted",
+        transactionalAttemptId: "sms-1",
+        providerMessageId: "provider-1",
+      },
+    });
+  };
+  const first = await deliverVoiceQuoteByText({
+    supabase: database,
+    facts,
+    callFunction,
+  });
+  const replay = await deliverVoiceQuoteByText({
+    supabase: database,
+    facts,
+    callFunction,
+  });
+  assertEquals(first.status, "provider_accepted");
+  assertEquals(replay.status, "provider_accepted");
+  assertEquals(replay.detail, "durable_delivery_replay");
+  assertEquals(saveCalls, 1);
+  assertEquals(smsCalls, 1);
+  assertEquals(first.deliveryIdentityKey, deliveryKey);
+  assertEquals(replay.deliveryIdentityKey, first.deliveryIdentityKey);
+});
+
+Deno.test("phase6 changed canonical quote fingerprint gets new delivery authority", async () => {
+  const database = sb();
+  const keys: string[] = [];
+  const callFunction = (name: string, body: any) =>
+    Promise.resolve(
+      name === "save-quote"
+        ? { status: 200, json: { quoteId: "q1" } }
+        : (keys.push(body.voiceDeliveryKey), {
+          status: 200,
+          json: {
+            transactionalSent: true,
+            deliveryStatus: "accepted",
+            transactionalAttemptId: `sms-${keys.length}`,
+            providerMessageId: `provider-${keys.length}`,
+          },
+        }),
+    );
+  const first = await deliverVoiceQuoteByText({
+    supabase: database,
+    facts,
+    callFunction,
+  });
+  const stored = database._session();
+  const fields = stored.fields as QuoteSessionFields;
+  database._replaceSession({
+    ...stored,
+    updated_at: "2026-08-05T01:00:00.000Z",
+    fields: {
+      ...fields,
+      lastQuoteResult: {
+        ...(fields.lastQuoteResult ?? {}),
+        estimatedTotal: 432.17,
+        ruleVersion: 10,
+      },
+      voiceJourney: {
+        ...(fields.voiceJourney ?? {}),
+        quoteContext: {
+          ...(fields.voiceJourney?.quoteContext ?? {
+            inputsKey: sessionInputsKey(fields),
+          }),
+          estimatedTotal: 432.17,
+          pricingVersion: 10,
+        },
+      },
+    },
+  });
+  const changed = await deliverVoiceQuoteByText({
+    supabase: database,
+    facts,
+    callFunction,
+  });
+  assertEquals(first.status, "provider_accepted");
+  assertEquals(changed.status, "provider_accepted");
+  assertEquals(keys.length, 2);
+  assertEquals(keys[0] === keys[1], false);
+  assertEquals(first.quoteFingerprint === changed.quoteFingerprint, false);
+});
+
+Deno.test("phase6 uncertain provider evidence is terminal to automatic replay", async () => {
+  const database = sb();
+  let smsCalls = 0;
+  const callFunction = (name: string) => {
+    if (name === "save-quote") {
+      return Promise.resolve({ status: 200, json: { quoteId: "q1" } });
+    }
+    smsCalls += 1;
+    return Promise.resolve({
+      status: 200,
+      json: {
+        transactionalSent: false,
+        deliveryStatus: "uncertain",
+        transactionalAttemptId: "sms-uncertain",
+      },
+    });
+  };
+  const first = await deliverVoiceQuoteByText({
+    supabase: database,
+    facts,
+    callFunction,
+  });
+  const replay = await deliverVoiceQuoteByText({
+    supabase: database,
+    facts,
+    callFunction,
+  });
+  assertEquals(first.status, "uncertain");
+  assertEquals(replay.status, "uncertain");
+  assertEquals(replay.detail, "durable_delivery_replay");
+  assertEquals(smsCalls, 1);
+});
+
 Deno.test("an unaccepted SMS is never reported as sent", async () => {
   const res = await deliverVoiceQuoteByText({
     supabase: sb({ session: { email_normalized: "known@x.com" } }),
@@ -301,10 +459,10 @@ Deno.test("an unaccepted SMS is never reported as sent", async () => {
       ),
   });
   assertEquals(res.ok, false);
-  assertEquals(res.reason, "sms_not_sent");
+  assertEquals(res.reason, "delivery_suppressed");
 });
 
-Deno.test("local linkage failure blocks SMS before provider delivery", async () => {
+Deno.test("delivery claim persistence failure blocks every provider call", async () => {
   const calls: string[] = [];
   const res = await deliverVoiceQuoteByText({
     supabase: sb({
@@ -320,9 +478,9 @@ Deno.test("local linkage failure blocks SMS before provider delivery", async () 
     },
   });
   assertEquals(res.ok, false);
-  assertEquals(res.status, "failed_terminal");
-  assertEquals(res.detail, "saved_quote_lineage_unconfirmed");
-  assertEquals(calls, ["save-quote"]);
+  assertEquals(res.status, "uncertain");
+  assertEquals(res.detail, "delivery_claim_conflict");
+  assertEquals(calls, []);
 });
 
 Deno.test("saved quote customer mismatch blocks SMS before provider delivery", async () => {

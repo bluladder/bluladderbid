@@ -256,10 +256,10 @@ Deno.test("quote delivery reports a post-send projection failure without retryin
   });
   assertEquals(deliveries, 1);
   assertEquals(result.event, "voice_quote_by_text_projection_blocked");
-  assertStringIncludes(result.spoken, "should verify it before any retry");
+  assertStringIncludes(result.spoken, "verify it before any manual resend");
 });
 
-Deno.test("provider acceptance without a reloadable delivery record is not called sent", async () => {
+Deno.test("provider acceptance relies on the delivery operation's durable evidence", async () => {
   const firmSession: QuoteSession = {
     ...session,
     fields: {
@@ -287,7 +287,6 @@ Deno.test("provider acceptance without a reloadable delivery record is not calle
     },
     quoteStatus: "firm",
   };
-  let reads = 0;
   let durableSession = firmSession;
   const result = await executeControllerRoute({
     ...input(),
@@ -309,10 +308,7 @@ Deno.test("provider acceptance without a reloadable delivery record is not calle
       return { status: "persisted" as const };
     },
     project: async () => ({ status: "projected" as const, attempts: 1 }),
-    readSession: async () => {
-      reads += 1;
-      return reads === 4 ? null : durableSession;
-    },
+    readSession: async () => durableSession,
     prepareIdentity: async () => ({
       status: "not_ready" as const,
       blocker: "address_unconfirmed" as const,
@@ -323,9 +319,65 @@ Deno.test("provider acceptance without a reloadable delivery record is not calle
     }),
     journal: async () => ({ written: 2, duplicates: 0, failed: 0 }),
   });
-  assertEquals(result.event, "voice_quote_by_text_status_persistence_blocked");
-  assertStringIncludes(result.spoken, "provider accepted");
-  assertStringIncludes(result.spoken, "don't retry");
+  assertEquals(result.event, "voice_quote_by_text_provider_accepted");
+  assertStringIncludes(result.spoken, "accepted for delivery");
+});
+
+Deno.test("phase6 pending generated quote resumes after a contact confirmation answer", async () => {
+  const readySession: QuoteSession = {
+    ...session,
+    fields: {
+      services: ["windowCleaning"],
+      name: "Synthetic Caller",
+      email: "synthetic.phase6@example.invalid",
+      phone: "+14695550172",
+      callerIdConfirmationStatus: "contact_confirmed",
+      address: "5612 Binbranch Lane, McKinney, TX 75071",
+      serviceAreaStatus: "eligible",
+      lastQuoteResult: {
+        status: "firm",
+        finalQuoteDisposition: "firm",
+        total: 216.5,
+        estimatedTotal: 216.5,
+      },
+      voiceJourney: { requestedNextStep: "text_quote" },
+    },
+    fieldStatus: {
+      name: "verified",
+      email: "verified",
+      phone: "verified",
+      address: "verified",
+      serviceAreaStatus: "verified",
+    },
+    quoteStatus: "firm",
+  };
+  let deliveries = 0;
+  const result = await executeControllerRoute({
+    ...input(),
+    messages: [{ role: "user" as const, content: "Yes, that is correct" }],
+    callFunction: () => Promise.resolve({ status: 200, json: {} }),
+  }, {
+    runController: async () => ({
+      sessionId: readySession.id,
+      sessionPatch: {},
+      pre: { kind: "ask_intent" as const, spoken: "Thank you." },
+    }),
+    persist: async () => ({ status: "persisted" as const }),
+    project: async () => ({ status: "projected" as const, attempts: 1 }),
+    readSession: async () => readySession,
+    deliverQuote: async () => {
+      deliveries += 1;
+      return {
+        ok: true,
+        status: "provider_accepted" as const,
+        attemptId: "attempt-phase6",
+      };
+    },
+    journal: async () => ({ written: 2, duplicates: 0, failed: 0 }),
+  });
+  assertEquals(deliveries, 1);
+  assertEquals(result.event, "voice_quote_by_text_provider_accepted");
+  assertStringIncludes(result.spoken, "accepted for delivery");
 });
 
 Deno.test("duplicate intake write continues when the proposed answer is already present", async () => {
@@ -774,9 +826,9 @@ Deno.test("phase3 route firm operational note does not trigger identity or deliv
   assertEquals(JSON.stringify(firmWithNote.fields), beforeSerialized);
 });
 
-Deno.test("phase3 route revalidates pending text delivery before provider execution", async () => {
-  let readCount = 0;
+Deno.test("phase6 controller reports revoked delivery authority without a success claim", async () => {
   let providerCalls = 0;
+  let deliveryCalls = 0;
   const firmSession: QuoteSession = {
     ...session,
     fields: {
@@ -794,15 +846,13 @@ Deno.test("phase3 route revalidates pending text delivery before provider execut
         estimatedTotal: 216.5,
       },
     },
-    fieldStatus: { phone: "verified" },
-    quoteStatus: "firm",
-  };
-  const staleAfterPending: QuoteSession = {
-    ...firmSession,
-    fields: {
-      ...firmSession.fields,
-      voiceJourney: { requestedNextStep: "none" },
+    fieldStatus: {
+      name: "verified",
+      phone: "verified",
+      address: "verified",
+      serviceAreaStatus: "verified",
     },
+    quoteStatus: "firm",
   };
   const result = await executeControllerRoute({
     ...input(),
@@ -827,21 +877,25 @@ Deno.test("phase3 route revalidates pending text delivery before provider execut
     }),
     persist: async () => ({ status: "persisted" as const }),
     project: async () => ({ status: "projected" as const, attempts: 1 }),
-    readSession: async () => {
-      readCount += 1;
-      return readCount <= 2 ? firmSession : staleAfterPending;
-    },
+    readSession: async () => firmSession,
     prepareIdentity: async () => ({
       status: "not_ready" as const,
       blocker: "name_unconfirmed" as const,
     }),
     deliverQuote: async () => {
-      providerCalls += 1;
-      return { ok: true, status: "provider_accepted" as const };
+      deliveryCalls += 1;
+      return {
+        ok: false,
+        status: "failed_terminal" as const,
+        reason: "stale_quote_context" as const,
+      };
     },
     journal: async () => ({ written: 2, duplicates: 0, failed: 0 }),
   });
-  assertEquals(result.event, "voice_quote_by_text_persistence_blocked");
+  assertEquals(result.event, "voice_quote_by_text_failed");
+  assertStringIncludes(result.spoken, "didn't go through");
+  assertEquals(/accepted|delivered/i.test(result.spoken), false);
+  assertEquals(deliveryCalls, 1);
   assertEquals(providerCalls, 0);
 });
 

@@ -77,6 +77,25 @@ Deno.test("provider acceptance is named as acceptance, never device delivery", a
   assert(/\$421\.09/.test(plan.reply));
 });
 
+Deno.test("phase6 queued uncertain suppressed and manual outcomes use exact truthful wording", async () => {
+  for (
+    const [status, expected, forbidden] of [
+      ["queued", /queued/i, /confirmed.*delivered/i],
+      ["uncertain", /outcome is uncertain/i, /confirmed.*sent/i],
+      ["suppressed", /was not sent/i, /accepted for delivery/i],
+      ["manual_follow_up", /not sent automatically/i, /confirmed.*delivered/i],
+    ] as const
+  ) {
+    const plan = await planQuoteByTextResponse({
+      ...base,
+      deliver: () => Promise.resolve({ status }),
+    });
+    assertEquals(plan.sent, false);
+    assert(expected.test(plan.reply));
+    assertEquals(forbidden.test(plan.reply), false);
+  }
+});
+
 Deno.test("cancellation is detected and never confused with a new request", () => {
   assert(classifyQuoteByTextCancellation("never mind"));
   assert(classifyQuoteByTextCancellation("don't text it, thanks"));

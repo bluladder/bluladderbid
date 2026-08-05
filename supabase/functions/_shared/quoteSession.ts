@@ -275,10 +275,16 @@ export interface QuoteSessionFields {
         | "delivered"
         | "retry_pending"
         | "uncertain"
+        | "suppressed"
+        | "manual_follow_up"
         | "failed_terminal";
       attemptId?: string | null;
       providerMessageId?: string | null;
       requestedAt?: string | null;
+      deliveryIdentityKey?: string | null;
+      quoteFingerprint?: string | null;
+      recipientHash?: string | null;
+      purpose?: "voice_generated_quote" | "generic_bid_link";
     } | null;
     availability?: {
       status:

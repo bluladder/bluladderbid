@@ -51,6 +51,8 @@ export interface QuoteDeliveryOperationResult {
     | "provider_accepted"
     | "retry_pending"
     | "uncertain"
+    | "suppressed"
+    | "manual_follow_up"
     | "failed_terminal";
   reason?: string | null;
   attemptId?: string | null;
@@ -104,6 +106,8 @@ export async function planQuoteByTextResponse(args: {
   quoteIsFirm: boolean;
   total?: number | null;
   name?: string | null;
+  /** Canonical name confirmation; false keeps delivery behind the gate. */
+  nameConfirmed?: boolean;
   phone?: string | null;
   phoneIsFullE164: boolean;
   /**
@@ -152,7 +156,9 @@ export async function planQuoteByTextResponse(args: {
         `I haven't sent that text yet — I want to be sure I have the right number first. Is it the one ending in ${last4}?`,
     };
   }
-  if (!args.name || !args.name.trim()) {
+  if (
+    !args.name || !args.name.trim() || args.nameConfirmed === false
+  ) {
     return {
       sent: false,
       outcome: "not_sent_missing_name",
@@ -235,6 +241,24 @@ export async function planQuoteByTextResponse(args: {
         sent: false,
         outcome: "delivery_uncertain",
         event: "voice_quote_by_text_uncertain",
+        missingField: null,
+        reply: delivery.spoken,
+      };
+    }
+    if (
+      deliveryStatus === "suppressed" ||
+      deliveryStatus === "manual_follow_up"
+    ) {
+      const delivery = describeVoiceDelivery({
+        channel: "sms",
+        status: deliveryStatus,
+        attemptId: result?.attemptId ?? null,
+        providerMessageId: result?.providerMessageId ?? null,
+      });
+      return {
+        sent: false,
+        outcome: "not_sent_delivery_failed",
+        event: delivery.event,
         missingField: null,
         reply: delivery.spoken,
       };

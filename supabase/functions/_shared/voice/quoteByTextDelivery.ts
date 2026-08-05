@@ -11,7 +11,9 @@
 //                      action:"save" so NO email is ever sent from a voice call.
 //   2. `send-sms`    — eventType:"quote_created" with customerInitiated:true.
 //                      That path mints a fresh opaque resume URL and dispatches
-//                      through the SMS outbox (`quote_delivery:sms:{quote}:{digits}`)
+//                      through an exact, privacy-safe delivery identity binding
+//                      tenant, conversation, quote session/fingerprint,
+//                      recipient, channel, and purpose
 //                      with opt-out, per-lead pause, and test-identity
 //                      suppression enforced immediately before delivery.
 //
@@ -34,6 +36,11 @@ import {
   type QuoteSessionFields,
   sessionInputsKey,
 } from "../quoteSession.ts";
+import {
+  buildVoiceGeneratedQuoteDeliveryIdentity,
+  buildVoiceGeneratedQuoteFingerprint,
+  VOICE_GENERATED_QUOTE_PURPOSE,
+} from "./quoteDeliveryIdentity.ts";
 
 type SB = any;
 
@@ -42,12 +49,14 @@ export type VoiceQuoteDeliveryReason =
   | "phone_not_confirmed"
   | "quote_not_firm"
   | "missing_quote_total"
+  | "missing_name"
   | "missing_address"
   | "stale_quote_context"
   | "promotion_unmappable"
   | "email_unavailable"
   | "save_quote_failed"
-  | "sms_not_sent";
+  | "sms_not_sent"
+  | "delivery_suppressed";
 
 export interface VoiceQuoteDeliveryResult {
   ok: boolean;
@@ -56,11 +65,15 @@ export interface VoiceQuoteDeliveryResult {
     | "provider_accepted"
     | "retry_pending"
     | "uncertain"
+    | "suppressed"
+    | "manual_follow_up"
     | "failed_terminal";
   reason?: VoiceQuoteDeliveryReason;
   quoteId?: string | null;
   attemptId?: string | null;
   providerMessageId?: string | null;
+  deliveryIdentityKey?: string | null;
+  quoteFingerprint?: string | null;
   /** Raw upstream status, for journaling/diagnostics only. */
   detail?: string | null;
 }
@@ -100,6 +113,7 @@ interface SessionContext {
   customerId: string | null;
   propertyId: string | null;
   quoteId: string | null;
+  updatedAt: string | null;
   fields: QuoteSessionFields | null;
   fieldStatus: Partial<Record<keyof QuoteSessionFields, FieldStatus>>;
 }
@@ -115,6 +129,7 @@ async function readSessionContext(
     customerId: null,
     propertyId: null,
     quoteId: null,
+    updatedAt: null,
     fields: null,
     fieldStatus: {},
   };
@@ -123,7 +138,7 @@ async function readSessionContext(
     let query = supabase
       .from("quote_sessions")
       .select(
-        "email_normalized, customer_id, property_id, quote_id, fields, field_status, organization_id",
+        "email_normalized, customer_id, property_id, quote_id, fields, field_status, organization_id, updated_at",
       )
       .eq("id", quoteSessionId);
     if (organizationId) query = query.eq("organization_id", organizationId);
@@ -136,11 +151,290 @@ async function readSessionContext(
       customerId: (data.customer_id as string | null) ?? null,
       propertyId: (data.property_id as string | null) ?? null,
       quoteId: (data.quote_id as string | null) ?? null,
+      updatedAt: (data.updated_at as string | null) ?? null,
       fields: (data.fields as QuoteSessionFields | null) ?? null,
       fieldStatus: (data.field_status as SessionContext["fieldStatus"]) ?? {},
     };
   } catch {
     return { ...empty, readStatus: "error" };
+  }
+}
+
+interface GeneratedDeliveryAuthority {
+  key: string;
+  quoteFingerprint: string;
+  recipientHash: string;
+}
+
+async function buildGeneratedDeliveryAuthority(
+  input: VoiceQuoteDeliveryInput,
+  session: SessionContext,
+  recipientE164: string,
+): Promise<GeneratedDeliveryAuthority | null> {
+  const fields = session.fields;
+  const last = fields?.lastQuoteResult;
+  if (
+    !fields || !last || !input.organizationId || !input.conversationId ||
+    !input.quoteSessionId
+  ) return null;
+  const inputsKey = sessionInputsKey(fields);
+  const quotedInputsKey = typeof last.inputsKey === "string"
+    ? last.inputsKey
+    : null;
+  if (!quotedInputsKey || quotedInputsKey !== inputsKey) return null;
+  const total = Number(
+    last.estimatedTotal ?? fields.voiceJourney?.quoteContext?.estimatedTotal ??
+      last.total ?? 0,
+  );
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const quoteFingerprint = await buildVoiceGeneratedQuoteFingerprint({
+    inputsKey,
+    engineVersion: typeof last.engineVersion === "string"
+      ? last.engineVersion
+      : fields.voiceJourney?.quoteContext?.engineVersion,
+    pricingVersion: typeof last.ruleVersion === "string" ||
+        typeof last.ruleVersion === "number"
+      ? last.ruleVersion
+      : fields.voiceJourney?.quoteContext?.pricingVersion,
+    taxPolicyVersion: typeof last.taxPolicyVersion === "string"
+      ? last.taxPolicyVersion
+      : fields.voiceJourney?.quoteContext?.taxPolicyVersion,
+    durationVersion: typeof last.durationVersion === "string"
+      ? last.durationVersion
+      : fields.voiceJourney?.quoteContext?.durationVersion,
+    total,
+    serviceSubtotal: typeof last.serviceSubtotal === "number"
+      ? last.serviceSubtotal
+      : fields.voiceJourney?.quoteContext?.serviceSubtotal,
+    estimatedTax: typeof last.estimatedTax === "number"
+      ? last.estimatedTax
+      : fields.voiceJourney?.quoteContext?.estimatedTax,
+    estimatedDurationMinutes: typeof last.estimatedDurationMinutes === "number"
+      ? last.estimatedDurationMinutes
+      : null,
+    promotionId: fields.promotionId ?? null,
+    discountCode: fields.discountCode?.trim().toUpperCase() ?? null,
+    lineItems: Array.isArray(last.lineItems) ? last.lineItems : [],
+  });
+  const identity = await buildVoiceGeneratedQuoteDeliveryIdentity({
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    quoteSessionId: input.quoteSessionId,
+    quoteFingerprint,
+    recipientE164,
+  });
+  return {
+    key: identity.key,
+    quoteFingerprint,
+    recipientHash: identity.recipientHash,
+  };
+}
+
+type DeliveryClaim =
+  | { proceed: true }
+  | { proceed: false; result: VoiceQuoteDeliveryResult };
+
+/**
+ * Reserve the exact delivery identity in the canonical quote-session JSONB
+ * before save-quote or send-sms is invoked. A duplicate sees durable evidence
+ * and never becomes a second provider winner.
+ */
+async function claimGeneratedDelivery(
+  input: VoiceQuoteDeliveryInput,
+  session: SessionContext,
+  authority: GeneratedDeliveryAuthority,
+): Promise<DeliveryClaim> {
+  const prior = session.fields?.voiceJourney?.delivery;
+  if (prior?.deliveryIdentityKey === authority.key) {
+    const replayBase = {
+      attemptId: prior.attemptId ?? null,
+      providerMessageId: prior.providerMessageId ?? null,
+      quoteId: session.quoteId,
+      deliveryIdentityKey: authority.key,
+      quoteFingerprint: authority.quoteFingerprint,
+    };
+    if (prior.status === "provider_accepted" || prior.status === "delivered") {
+      return {
+        proceed: false,
+        result: {
+          ok: true,
+          status: "provider_accepted",
+          ...replayBase,
+          detail: "durable_delivery_replay",
+        },
+      };
+    }
+    if (prior.status === "pending") {
+      return {
+        proceed: false,
+        result: {
+          ok: false,
+          status: "queued",
+          ...replayBase,
+          detail: "delivery_claim_in_progress",
+        },
+      };
+    }
+    if (
+      prior.status === "queued" || prior.status === "retry_pending" ||
+      prior.status === "uncertain" || prior.status === "suppressed" ||
+      prior.status === "manual_follow_up" ||
+      prior.status === "failed_terminal"
+    ) {
+      return {
+        proceed: false,
+        result: {
+          ok: false,
+          status: prior.status,
+          ...replayBase,
+          detail: "durable_delivery_replay",
+        },
+      };
+    }
+  }
+  if (!session.fields || !session.updatedAt) {
+    return {
+      proceed: false,
+      result: {
+        ok: false,
+        status: "uncertain",
+        reason: "stale_quote_context",
+        deliveryIdentityKey: authority.key,
+        quoteFingerprint: authority.quoteFingerprint,
+        detail: "delivery_claim_version_unavailable",
+      },
+    };
+  }
+  const fields: QuoteSessionFields = {
+    ...session.fields,
+    voiceJourney: {
+      ...(session.fields.voiceJourney ?? {}),
+      delivery: {
+        channel: "sms",
+        mode: "actual_quote",
+        status: "pending",
+        requestedAt: prior?.requestedAt ?? new Date().toISOString(),
+        attemptId: null,
+        providerMessageId: null,
+        deliveryIdentityKey: authority.key,
+        quoteFingerprint: authority.quoteFingerprint,
+        recipientHash: authority.recipientHash,
+        purpose: VOICE_GENERATED_QUOTE_PURPOSE,
+      },
+    },
+  };
+  try {
+    const written = await input.supabase.from("quote_sessions").update({
+      fields,
+    })
+      .eq("id", input.quoteSessionId)
+      .eq("organization_id", input.organizationId)
+      .eq("updated_at", session.updatedAt)
+      .select("id").maybeSingle();
+    if (written?.error || !written?.data) {
+      return {
+        proceed: false,
+        result: {
+          ok: false,
+          status: "uncertain",
+          reason: "stale_quote_context",
+          deliveryIdentityKey: authority.key,
+          quoteFingerprint: authority.quoteFingerprint,
+          detail: "delivery_claim_conflict",
+        },
+      };
+    }
+    return { proceed: true };
+  } catch {
+    return {
+      proceed: false,
+      result: {
+        ok: false,
+        status: "uncertain",
+        reason: "stale_quote_context",
+        deliveryIdentityKey: authority.key,
+        quoteFingerprint: authority.quoteFingerprint,
+        detail: "delivery_claim_unavailable",
+      },
+    };
+  }
+}
+
+async function deliveryClaimStillAuthoritative(
+  input: VoiceQuoteDeliveryInput,
+  quoteId: string,
+  authority: GeneratedDeliveryAuthority,
+  recipientE164: string,
+): Promise<boolean> {
+  const latest = await readSessionContext(
+    input.supabase,
+    input.quoteSessionId,
+    input.organizationId,
+  );
+  if (
+    latest.readStatus !== "found" || latest.quoteId !== quoteId ||
+    !latest.customerId || !latest.propertyId ||
+    latest.fields?.voiceJourney?.delivery?.deliveryIdentityKey !==
+      authority.key ||
+    latest.fields.voiceJourney.delivery.quoteFingerprint !==
+      authority.quoteFingerprint ||
+    latest.fields.voiceJourney.delivery.status !== "pending"
+  ) return false;
+  const current = await buildGeneratedDeliveryAuthority(
+    input,
+    latest,
+    recipientE164,
+  );
+  return current?.key === authority.key &&
+    current.quoteFingerprint === authority.quoteFingerprint;
+}
+
+async function finalizeGeneratedDelivery(
+  input: VoiceQuoteDeliveryInput,
+  authority: GeneratedDeliveryAuthority,
+  result: VoiceQuoteDeliveryResult,
+): Promise<boolean> {
+  const latest = await readSessionContext(
+    input.supabase,
+    input.quoteSessionId,
+    input.organizationId,
+  );
+  if (
+    latest.readStatus !== "found" || !latest.fields || !latest.updatedAt ||
+    latest.fields.voiceJourney?.delivery?.deliveryIdentityKey !== authority.key
+  ) return false;
+  const fields: QuoteSessionFields = {
+    ...latest.fields,
+    voiceJourney: {
+      ...(latest.fields.voiceJourney ?? {}),
+      delivery: {
+        ...(latest.fields.voiceJourney?.delivery ?? {
+          channel: "sms",
+          mode: "actual_quote",
+          requestedAt: new Date().toISOString(),
+        }),
+        status: result.status,
+        attemptId: result.attemptId ?? null,
+        providerMessageId: result.providerMessageId ?? null,
+        deliveryIdentityKey: authority.key,
+        quoteFingerprint: authority.quoteFingerprint,
+        recipientHash: authority.recipientHash,
+        purpose: VOICE_GENERATED_QUOTE_PURPOSE,
+      },
+    },
+  };
+  try {
+    const written = await input.supabase.from("quote_sessions").update({
+      fields,
+      ...(result.quoteId ? { quote_id: result.quoteId } : {}),
+    })
+      .eq("id", input.quoteSessionId)
+      .eq("organization_id", input.organizationId)
+      .eq("updated_at", latest.updatedAt)
+      .select("id").maybeSingle();
+    return !written?.error && !!written?.data;
+  } catch {
+    return false;
   }
 }
 
@@ -460,6 +754,14 @@ export async function deliverVoiceQuoteByText(
   }
   const confirmed = (status: FieldStatus | undefined) =>
     status === "verified" || status === "corrected";
+  if (!confirmed(session.fieldStatus.name) || !session.fields.name?.trim()) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "missing_name",
+      detail: "canonical_name_unconfirmed",
+    };
+  }
   const canonicalEmail = normalizeEmail(session.fields.email ?? null);
   if (
     !confirmed(session.fieldStatus.email) || !canonicalEmail ||
@@ -626,6 +928,41 @@ export async function deliverVoiceQuoteByText(
     };
   }
 
+  const authority = await buildGeneratedDeliveryAuthority(
+    input,
+    session,
+    phoneE164,
+  );
+  if (!authority) {
+    return {
+      ok: false,
+      status: "failed_terminal",
+      reason: "stale_quote_context",
+      detail: "delivery_identity_unavailable",
+    };
+  }
+  const claim = await claimGeneratedDelivery(input, session, authority);
+  if (!claim.proceed) return claim.result;
+
+  const finish = async (
+    result: VoiceQuoteDeliveryResult,
+  ): Promise<VoiceQuoteDeliveryResult> => {
+    const complete: VoiceQuoteDeliveryResult = {
+      ...result,
+      deliveryIdentityKey: authority.key,
+      quoteFingerprint: authority.quoteFingerprint,
+    };
+    if (await finalizeGeneratedDelivery(input, authority, complete)) {
+      return complete;
+    }
+    return {
+      ...complete,
+      ok: false,
+      status: "uncertain",
+      detail: "delivery_status_persistence_uncertain",
+    };
+  };
+
   const saveBody = buildVoiceSaveQuoteBody({
     facts,
     email,
@@ -640,16 +977,16 @@ export async function deliverVoiceQuoteByText(
     // The request may have reached save-quote before the transport failed.
     // Its stable sourceSessionId makes a later manual retry idempotent, but we
     // cannot claim failure or automatically advance to SMS from this outcome.
-    return {
+    return await finish({
       ok: false,
       status: "uncertain",
       reason: "save_quote_failed",
       detail: "save_quote_transport_uncertain",
-    };
+    });
   }
   const quoteId: string | null = saved.json?.quoteId ?? null;
   if (saved.status !== 200 || !quoteId) {
-    return {
+    return await finish({
       ok: false,
       status: saved.status >= 500
         ? "retry_pending"
@@ -659,19 +996,39 @@ export async function deliverVoiceQuoteByText(
       reason: "save_quote_failed",
       quoteId,
       detail: String(saved.json?.status ?? saved.status),
-    };
+    });
   }
 
   // The saved quote must be durably linked to the exact tenant, session,
   // customer, property and conversation before any provider delivery begins.
   if (!(await linkSavedQuote(input, quoteId, session))) {
-    return {
+    return await finish({
       ok: false,
       status: "failed_terminal",
       reason: "save_quote_failed",
       quoteId,
       detail: "saved_quote_lineage_unconfirmed",
-    };
+    });
+  }
+
+  // Re-read the canonical session after quote linkage and immediately before
+  // the provider boundary. A changed quote fingerprint or lineage revokes this
+  // delivery identity instead of reusing stale authority.
+  if (
+    !await deliveryClaimStillAuthoritative(
+      input,
+      quoteId,
+      authority,
+      phoneE164,
+    )
+  ) {
+    return await finish({
+      ok: false,
+      status: "failed_terminal",
+      reason: "stale_quote_context",
+      quoteId,
+      detail: "delivery_authority_revoked_before_dispatch",
+    });
   }
 
   let sent: { status: number; json: any };
@@ -680,37 +1037,45 @@ export async function deliverVoiceQuoteByText(
       eventType: "quote_created",
       quoteId,
       customerInitiated: true,
+      voiceDeliveryKey: authority.key,
     });
   } catch {
-    return {
+    return await finish({
       ok: false,
       status: "uncertain",
       reason: "sms_not_sent",
       quoteId,
       detail: "send_sms_transport_uncertain",
-    };
+    });
   }
   const delivered = sent.status === 200 &&
     sent.json?.transactionalSent === true &&
     sent.json?.deliveryStatus === "accepted";
   if (!delivered) {
     const upstreamStatus = String(sent.json?.deliveryStatus ?? "");
-    const deliveryStatus = upstreamStatus === "delivery_unknown" ||
+    const deliveryStatus: VoiceQuoteDeliveryResult["status"] =
+      upstreamStatus === "delivery_unknown" ||
         upstreamStatus === "uncertain"
-      ? "uncertain"
-      : upstreamStatus === "queued"
-      ? "queued"
-      : upstreamStatus === "retry_pending"
-      ? "retry_pending"
-      : sent.status >= 500
-      ? "retry_pending"
-      : sent.status >= 200 && sent.status < 300 && !upstreamStatus
-      ? "uncertain"
-      : "failed_terminal";
-    return {
+        ? "uncertain"
+        : upstreamStatus === "queued"
+        ? "queued"
+        : upstreamStatus === "retry_pending"
+        ? "retry_pending"
+        : upstreamStatus === "suppressed"
+        ? "suppressed"
+        : upstreamStatus === "manual_follow_up"
+        ? "manual_follow_up"
+        : sent.status >= 500
+        ? "retry_pending"
+        : sent.status >= 200 && sent.status < 300 && !upstreamStatus
+        ? "uncertain"
+        : "failed_terminal";
+    return await finish({
       ok: false,
       status: deliveryStatus,
-      reason: "sms_not_sent",
+      reason: deliveryStatus === "suppressed"
+        ? "delivery_suppressed"
+        : "sms_not_sent",
       quoteId,
       attemptId: typeof sent.json?.transactionalAttemptId === "string"
         ? sent.json.transactionalAttemptId
@@ -722,9 +1087,9 @@ export async function deliverVoiceQuoteByText(
         sent.json?.transactionalError ?? sent.json?.deliveryStatus ??
           sent.status,
       ),
-    };
+    });
   }
-  return {
+  return await finish({
     ok: true,
     status: "provider_accepted",
     quoteId,
@@ -734,5 +1099,5 @@ export async function deliverVoiceQuoteByText(
     providerMessageId: typeof sent.json?.providerMessageId === "string"
       ? sent.json.providerMessageId
       : null,
-  };
+  });
 }

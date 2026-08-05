@@ -241,6 +241,7 @@ export async function executeControllerRoute(
   let stateCommitted = false;
   let projection: QuoteSessionProjectionResult | null = null;
   let identityPreparation: VoiceIdentityPreparationResult | null = null;
+  let committedSession: QuoteSession | null = null;
 
   const persistenceStarted = now();
   let persistence = await persist(
@@ -284,6 +285,7 @@ export async function executeControllerRoute(
         turn.sessionId,
         input.organizationId,
       );
+      committedSession = session;
       if (!session) {
         spoken =
           "I saved that answer, but I couldn't safely reload the quote form. I have not checked availability or advanced the request.";
@@ -331,63 +333,26 @@ export async function executeControllerRoute(
     }
   }
 
-  // Explicit quote-in-writing request. The canonical save-quote/send-sms
-  // closure is invoked only after the form write and projection succeeded.
-  // A pending delivery marker is persisted before either nested Edge call.
-  if (
-    stateCommitted && event === "workflow_controller" &&
-    classifyContextualVoiceQuoteByTextRequest(reconstructed.userMessage)
-  ) {
-    let deliverySession = await readSession(
-      input.supabase,
-      turn.sessionId,
-      input.organizationId,
+  // The generated-quote rail is sticky across the bounded post-price intake:
+  // the caller asks once, then the rail resumes after each required answer.
+  // Once any durable delivery outcome exists, ordinary later turns do not
+  // re-enter the operation unless a new quote fingerprint creates new
+  // authority.
+  if (stateCommitted && event === "workflow_controller") {
+    const deliverySession = committedSession;
+    const explicitRequest = classifyContextualVoiceQuoteByTextRequest(
+      reconstructed.userMessage,
     );
+    const delivery = deliverySession?.fields.voiceJourney?.delivery;
+    const stickyOpenRequest = !!deliverySession &&
+      deliverySession.fields.voiceJourney?.requestedNextStep === "text_quote" &&
+      !delivery;
     const deliveryAllowed = !!deliverySession &&
       deliverySession.quoteStatus === "firm" &&
-      deliverySession.fields.voiceJourney?.requestedNextStep === "text_quote";
+      deliverySession.fields.voiceJourney?.requestedNextStep === "text_quote" &&
+      (explicitRequest || stickyOpenRequest);
+
     if (deliveryAllowed && deliverySession) {
-      const pendingFields = {
-        ...deliverySession.fields,
-        voiceJourney: {
-          ...(deliverySession.fields.voiceJourney ?? {}),
-          delivery: {
-            channel: "sms" as const,
-            mode: "actual_quote" as const,
-            status: "pending" as const,
-            requestedAt: new Date().toISOString(),
-          },
-        },
-      };
-      const pending = await persist(input.supabase, deliverySession.id, {
-        __expected_updated_at: deliverySession.updatedAt ?? null,
-        __expected_organization_id: input.organizationId,
-        fields: pendingFields,
-      });
-      if (pending.status === "persisted" || pending.status === "noop") {
-        deliverySession = await readSession(
-          input.supabase,
-          deliverySession.id,
-          input.organizationId,
-        );
-        const pendingStillAuthoritative = !!deliverySession &&
-          deliverySession.quoteStatus === "firm" &&
-          deliverySession.fields.voiceJourney?.requestedNextStep ===
-            "text_quote" &&
-          deliverySession.fields.voiceJourney.delivery?.status === "pending";
-        if (!pendingStillAuthoritative) deliverySession = null;
-      } else {
-        deliverySession = null;
-      }
-    }
-    if (!deliveryAllowed) {
-      // The utterance was not an authoritative persisted quote-by-text
-      // continuation. Preserve the controller's ordinary speech and event.
-    } else if (!deliverySession) {
-      spoken =
-        "I haven't sent that text because I couldn't safely record the delivery request. Your quote form is still saved.";
-      event = "voice_quote_by_text_persistence_blocked";
-    } else {
       const projectionForFacts = buildQuoteSessionConversationProjection({
         session: deliverySession,
         conversation: {
@@ -409,22 +374,27 @@ export async function executeControllerRoute(
         quoteIsFirm: last?.finalQuoteDisposition === "firm",
         total,
         name: deliverySession.fields.name ?? null,
+        nameConfirmed: deliverySession.fieldStatus.name === "verified" ||
+          deliverySession.fieldStatus.name === "corrected",
         phone: deliverySession.fields.phone ?? null,
         phoneIsFullE164: !!deliverySession.fields.phone,
         phoneConfirmed: deliverySession.fieldStatus.phone === "verified" ||
+          deliverySession.fieldStatus.phone === "corrected" ||
           deliverySession.fields.callerIdConfirmationStatus ===
             "contact_confirmed" ||
           deliverySession.fields.callerIdConfirmationStatus === "confirmed",
         address: deliverySession.fields.address ?? null,
         addressEligible:
-          deliverySession.fields.serviceAreaStatus === "eligible",
+          deliverySession.fields.serviceAreaStatus === "eligible" &&
+          (deliverySession.fieldStatus.address === "verified" ||
+            deliverySession.fieldStatus.address === "corrected"),
         deliver: input.callFunction
           ? async () => {
             deliveryState.current = await deliverQuote({
               supabase: input.supabase,
               facts,
               organizationId: input.organizationId,
-              quoteSessionId: deliverySession!.id,
+              quoteSessionId: deliverySession.id,
               conversationId: input.conversationId,
               callFunction: input.callFunction!,
             });
@@ -434,65 +404,25 @@ export async function executeControllerRoute(
       });
       spoken = plan.reply;
       event = plan.event;
-      const latest = await readSession(
-        input.supabase,
-        deliverySession.id,
-        input.organizationId,
-      );
-      if (!latest) {
-        spoken = plan.sent
-          ? "The text provider accepted the quote message, but I couldn't save the final delivery record. Please don't retry it automatically; the team should verify the message first."
-          : "I haven't confirmed that any quote text was sent, and I couldn't reload the delivery record. A team member should verify before retrying.";
-        event = "voice_quote_by_text_status_persistence_blocked";
-      } else {
-        const deliveryResult = deliveryState.current;
-        const status = deliveryResult?.status ??
-          (plan.sent ? "provider_accepted" : "failed_terminal");
-        const deliveryFields = {
-          ...latest.fields,
-          voiceJourney: {
-            ...(latest.fields.voiceJourney ?? {}),
-            delivery: {
-              channel: "sms" as const,
-              mode: "actual_quote" as const,
-              status,
-              requestedAt: latest.fields.voiceJourney?.delivery?.requestedAt ??
-                new Date().toISOString(),
-              attemptId: deliveryResult?.attemptId ?? null,
-              providerMessageId: deliveryResult?.providerMessageId ?? null,
-            },
-          },
-        };
-        const deliveryWrite = await persist(input.supabase, latest.id, {
-          __expected_updated_at: latest.updatedAt ?? null,
-          __expected_organization_id: input.organizationId,
-          fields: deliveryFields,
-          quote_id: deliveryResult?.quoteId ?? latest.quoteId ?? null,
+
+      // deliverVoiceQuoteByText owns the durable claim and final evidence.
+      // This projection only makes the exact outcome visible to the post-call
+      // selector; projection failure never changes provider truth.
+      if (deliveryState.current) {
+        const deliveryProjection = await project(input.supabase, {
+          sessionId: deliverySession.id,
+          conversationId: input.conversationId,
+          organizationId: input.organizationId,
         });
         if (
-          deliveryWrite.status === "conflict" ||
-          deliveryWrite.status === "error"
+          deliveryProjection.status === "conflict" ||
+          deliveryProjection.status === "error"
         ) {
-          spoken = plan.sent
-            ? `${plan.reply} I couldn't update the call's delivery marker, so the team should verify it before any retry.`
-            : "I haven't confirmed that any quote text was sent, and I couldn't save the delivery status. A team member should verify before retrying.";
-          event = "voice_quote_by_text_status_persistence_blocked";
-        } else {
-          const deliveryProjection = await project(input.supabase, {
-            sessionId: latest.id,
-            conversationId: input.conversationId,
-            organizationId: input.organizationId,
-          });
-          if (
-            deliveryProjection.status === "conflict" ||
-            deliveryProjection.status === "error"
-          ) {
-            projection = deliveryProjection;
-            spoken = plan.sent
-              ? `${plan.reply} I couldn't synchronize the call record, so the team should verify it before any retry.`
-              : "I haven't confirmed that any quote text was sent, and I couldn't synchronize the call record. A team member should verify before retrying.";
-            event = "voice_quote_by_text_projection_blocked";
-          }
+          projection = deliveryProjection;
+          spoken = deliveryState.current.status === "provider_accepted"
+            ? `${plan.reply} The call record did not synchronize, so the team should verify it before any manual resend.`
+            : `${plan.reply} The call record did not synchronize, so the team should verify the delivery state.`;
+          event = "voice_quote_by_text_projection_blocked";
         }
       }
     }

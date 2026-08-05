@@ -16,6 +16,7 @@ import { getAppUrl } from "../_shared/appUrl.ts";
 import { verifyResumeToken } from "../_shared/quoteResumeTokens.ts";
 import { authorizeSmsEventRequest } from "../_shared/sendSmsAuthorization.ts";
 import { sendOutboxSms } from "../_shared/smsOutbox.ts";
+import { isVoiceGeneratedQuoteDeliveryKey } from "../_shared/voice/quoteDeliveryIdentity.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,6 +46,8 @@ interface SendSmsRequest {
   quoteId?: string;
   resumeToken?: string;
   customerInitiated?: boolean;
+  /** Service-only, privacy-safe identity for an authoritative voice quote. */
+  voiceDeliveryKey?: string;
   // ...or a direct/manual send.
   to?: string;
   body?: string;
@@ -279,6 +282,19 @@ serve(async (req) => {
     // (quote_created) requires the opaque capability minted for that exact
     // quote by save-quote; a raw UUID never authorizes a send.
     const serviceCaller = isServiceRoleToken(getBearer(req));
+    if (
+      body.voiceDeliveryKey != null &&
+      (!serviceCaller || eventType !== "quote_created" ||
+        !isVoiceGeneratedQuoteDeliveryKey(body.voiceDeliveryKey))
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Invalid voice quote delivery identity" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
     if (!serviceCaller) {
       const rl = rateLimit(req, { limit: 5, windowMs: 60_000 });
       if (!rl.allowed) {
@@ -486,7 +502,8 @@ serve(async (req) => {
         transactionalError = "No valid phone number on record";
       } else {
         const outboundKey = quoteId
-          ? `quote_delivery:sms:${quoteId}:${toNorm.replace(/\D/g, "")}`
+          ? body.voiceDeliveryKey ??
+            `quote_delivery:sms:${quoteId}:${toNorm.replace(/\D/g, "")}`
           : `booking_event:${eventType}:${bookingId}:${
             toNorm.replace(/\D/g, "")
           }`;
