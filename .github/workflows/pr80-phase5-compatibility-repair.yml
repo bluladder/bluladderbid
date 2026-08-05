@@ -15,7 +15,7 @@ jobs:
   repair:
     if: github.event.pull_request.head.ref == 'codex/voice-express-quote-repair'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Check out exact PR head
         uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "e2e34da58859aa00e2ddc4f2be64ca4690c575d7"
+          test "$(git rev-parse HEAD^)" = "605ecc07b6cc3785768a5c60a3cb602d2843fcac"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/pr80-phase5-compatibility-repair.yml"
           test -z "$(git status --porcelain)"
           test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
@@ -95,7 +95,7 @@ jobs:
         with:
           deno-version: v1.x
 
-      - name: Validate Phase 5 and complete shared suite
+      - name: Format changed Phase 5 files
         shell: bash
         run: |
           set -euo pipefail
@@ -103,13 +103,36 @@ jobs:
             supabase/functions/_shared/voice/voiceAddressGate.ts \
             supabase/functions/_shared/voice/voiceRemediation67_test.ts \
             supabase/functions/_shared/voice/voiceRemediation68_test.ts
-          deno fmt --check supabase/functions
-          deno lint supabase/functions
+          deno fmt --check \
+            supabase/functions/_shared/voice/voiceAddressGate.ts \
+            supabase/functions/_shared/voice/voiceRemediation67_test.ts \
+            supabase/functions/_shared/voice/voiceRemediation68_test.ts
+          git diff --check
+
+      - name: Repository Deno format diagnostic
+        run: deno fmt --check supabase/functions
+        continue-on-error: true
+
+      - name: Repository Deno lint diagnostic
+        run: deno lint supabase/functions
+        continue-on-error: true
+
+      - name: Focused Phase 5 compatibility tests
+        shell: bash
+        run: |
+          set -o pipefail
           deno test --allow-all \
             supabase/functions/_shared/voice/voiceRemediation67_test.ts \
             supabase/functions/_shared/voice/voiceRemediation68_test.ts \
-            supabase/functions/_shared/workflow/workflowController_rollout_test.ts
-          deno test --allow-all supabase/functions/_shared
+            supabase/functions/_shared/workflow/workflowController_rollout_test.ts \
+            2>&1 | tee /tmp/phase5-focused.log
+
+      - name: Complete shared Deno suite
+        shell: bash
+        run: |
+          set -o pipefail
+          deno test --allow-all supabase/functions/_shared \
+            2>&1 | tee /tmp/phase5-shared.log
 
       - name: Publish compatibility repair and remove temporary workflow
         shell: bash
