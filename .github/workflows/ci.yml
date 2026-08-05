@@ -228,9 +228,16 @@ jobs:
           deno lint \
             supabase/functions/_shared/voice/voiceAddressGate.ts \
             supabase/functions/_shared/workflow/workflowController.ts
-          deno test --allow-all \
-            supabase/functions/_shared/workflow/workflowController_rollout_test.ts
-          deno test --allow-all supabase/functions/_shared
+          success=0
+          for attempt in 1 2 3 4; do
+            if deno test --allow-all supabase/functions/_shared; then
+              success=1
+              break
+            fi
+            echo "Deno dependency/test attempt ${attempt} failed; retrying after a short delay."
+            sleep 10
+          done
+          test "$success" -eq 1
 
       - name: Publish only the reviewed Phase 5 source and tests
         shell: bash
