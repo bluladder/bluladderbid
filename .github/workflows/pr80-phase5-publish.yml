@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "30f87dffcc03cabd24df57a5f64f4ec8dadbc9e6"
+          test "$(git rev-parse HEAD^)" = "bef6438e8ea553734921ff5081e45172d33fe0a3"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/pr80-phase5-publish.yml"
           test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
           test -z "$(git status --porcelain)"
@@ -199,7 +199,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git checkout -- deno.lock
+          rm -f deno.lock
           git checkout 6027322d2db5f4ad9bf63e92d78ff5cf153ca526 -- .github/workflows/ci.yml
           rm .github/workflows/pr80-phase5-publish.yml
           git config user.name "github-actions[bot]"
