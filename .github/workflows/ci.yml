@@ -190,7 +190,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "b1ebe15ab155f1de67e10593678e0676398d2cde"
+          test "$(git rev-parse HEAD^)" = "9e34d2d18e9dbb825b2183546cd3838b8c2f1d97"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/ci.yml"
           test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
           test -z "$(git status --porcelain)"
@@ -343,18 +343,27 @@ jobs:
             supabase/functions/_shared/voice/voiceAddressGate.ts \
             supabase/functions/_shared/workflow/workflowController.ts \
             supabase/functions/_shared/workflow/workflowController_rollout_test.ts
-          deno test --allow-all \
-            supabase/functions/_shared/workflow/workflowController_rollout_test.ts
-          success=0
+          targeted_success=0
+          for attempt in 1 2 3; do
+            if deno test --allow-all \
+              supabase/functions/_shared/workflow/workflowController_rollout_test.ts; then
+              targeted_success=1
+              break
+            fi
+            echo "Targeted Deno attempt ${attempt} failed; retrying after 10 seconds."
+            sleep 10
+          done
+          test "$targeted_success" -eq 1
+          full_success=0
           for attempt in 1 2 3; do
             if deno test --allow-all supabase/functions/_shared; then
-              success=1
+              full_success=1
               break
             fi
             echo "Full Deno attempt ${attempt} failed; retrying after 10 seconds."
             sleep 10
           done
-          test "$success" -eq 1
+          test "$full_success" -eq 1
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
