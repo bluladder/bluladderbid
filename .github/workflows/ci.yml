@@ -197,7 +197,8 @@ jobs:
             .github/workflows/pr80-phase5-automation-v3.yml \
             .github/workflows/pr80-phase5-automation-v2.yml \
             .github/workflows/pr80-phase5-automation.yml \
-            scripts/pr80_phase5_transform.py | sort)"
+            scripts/pr80_phase5_transform.py \
+            scripts/pr80_phase5_transform_runner.py | sort)"
           test "$actual" = "$expected"
           test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
 
@@ -205,7 +206,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/pr80_phase5_transform.py
+          python3 scripts/pr80_phase5_transform_runner.py
 
       - name: Setup Deno
         uses: denoland/setup-deno@v1
@@ -242,7 +243,8 @@ jobs:
             .github/workflows/pr80-phase5-automation.yml \
             .github/workflows/pr80-phase5-automation-v2.yml \
             .github/workflows/pr80-phase5-automation-v3.yml \
-            scripts/pr80_phase5_transform.py
+            scripts/pr80_phase5_transform.py \
+            scripts/pr80_phase5_transform_runner.py
           git diff --check
           actual="$(git diff --name-only | sort)"
           expected="$(printf '%s\n' \
@@ -251,6 +253,7 @@ jobs:
             .github/workflows/pr80-phase5-automation-v2.yml \
             .github/workflows/pr80-phase5-automation.yml \
             scripts/pr80_phase5_transform.py \
+            scripts/pr80_phase5_transform_runner.py \
             supabase/functions/_shared/voice/voiceAddressGate.ts \
             supabase/functions/_shared/workflow/workflowController.ts \
             supabase/functions/_shared/workflow/workflowController_rollout_test.ts | sort)"
