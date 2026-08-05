@@ -1,53 +1,139 @@
 // ============================================================================
-// customerResolver.ts — returning-customer lookup by verified phone/email.
+// Tenant-scoped phone candidate lookup for deterministic voice intake.
 //
-// Read-only: never creates or mutates customer rows. Ambiguous matches return
-// a signal so the caller can ask for a non-sensitive disambiguator without
-// revealing any stored PII. Lookup failures return `not_found` so the caller
-// falls back safely to normal new-customer intake.
+// A provider-supplied phone number is never tenant or customer authority. The
+// caller must first confirm the number, then this read-only resolver may return
+// one opaque same-tenant candidate. Candidate names are reduced to a
+// deterministic verification token and are never returned for speech.
 // ============================================================================
+
+import { deterministicUuid } from "../deterministicUuid.ts";
+import { normalizePhone } from "../quoteSession.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
 
-export interface ResolvedCustomer {
+export interface ResolvedCustomerCandidate {
   customerId: string;
-  firstName: string | null;
+  /** Opaque comparison token; never spoken or persisted. */
+  nameVerificationToken: string;
 }
 
 export type ResolveResult =
-  | { kind: "resolved"; customer: ResolvedCustomer }
-  | { kind: "ambiguous"; count: number }
-  | { kind: "not_found" };
+  | { kind: "resolved"; customer: ResolvedCustomerCandidate }
+  | { kind: "ambiguous" }
+  | { kind: "unverifiable" }
+  | { kind: "not_found" }
+  | { kind: "unavailable" };
 
-function digits(s: string): string {
-  return s.replace(/\D/g, "");
+function normalizedName(value: string): string {
+  return value.trim().toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-/** Returning-customer lookup by verified phone (E.164). Matches variants
- *  stored as +1XXXXXXXXXX, 1XXXXXXXXXX, or XXXXXXXXXX. */
+async function nameVerificationToken(input: {
+  organizationId: string;
+  customerId: string;
+  phoneE164: string;
+  name: string;
+}): Promise<string> {
+  return await deterministicUuid(
+    "voice-phone-candidate-name-v1",
+    input.organizationId,
+    input.customerId,
+    input.phoneE164,
+    normalizedName(input.name),
+  );
+}
+
+/** Compare caller-supplied, already-confirmed name without exposing the stored
+ * candidate name outside this module. */
+export async function verifiedNameMatchesCustomerCandidate(input: {
+  organizationId: string;
+  phoneE164: string;
+  suppliedName: string;
+  customer: ResolvedCustomerCandidate;
+}): Promise<boolean> {
+  const phone = normalizePhone(input.phoneE164);
+  const name = normalizedName(input.suppliedName);
+  if (!phone || !name) return false;
+  const supplied = await nameVerificationToken({
+    organizationId: input.organizationId,
+    customerId: input.customer.customerId,
+    phoneE164: phone,
+    name,
+  });
+  return supplied === input.customer.nameVerificationToken;
+}
+
+/**
+ * Resolve exactly one normalized phone candidate inside the already-resolved
+ * authoritative organization. Query failures remain distinct from zero
+ * matches so callers cannot mistake uncertainty for a verified customer.
+ */
 export async function resolveCustomerByPhone(
   supabase: SB,
-  phoneE164: string,
+  organizationId: string,
+  phoneCandidate: string,
 ): Promise<ResolveResult> {
-  const d = digits(phoneE164);
-  if (d.length < 10) return { kind: "not_found" };
-  const variants = new Set<string>([phoneE164, d, d.slice(-10), `+${d}`, `1${d.slice(-10)}`, `+1${d.slice(-10)}`]);
+  const phoneE164 = normalizePhone(phoneCandidate);
+  if (!organizationId.trim() || !phoneE164) return { kind: "unavailable" };
+  const national = phoneE164.slice(-10);
+  const variants = [
+    ...new Set([
+      phoneE164,
+      phoneE164.slice(1),
+      national,
+      `1${national}`,
+      `+1${national}`,
+    ]),
+  ];
   try {
     const { data, error } = await supabase
       .from("customers")
-      .select("id, first_name, phone")
-      .in("phone", Array.from(variants))
+      .select("id, organization_id, first_name, last_name, phone")
+      .eq("organization_id", organizationId)
+      .in("phone", variants)
       .limit(5);
-    if (error || !Array.isArray(data)) return { kind: "not_found" };
-    // De-duplicate by id.
-    const unique = new Map<string, { id: string; first_name: string | null }>();
-    for (const row of data) unique.set(row.id, row);
+    if (error || !Array.isArray(data)) return { kind: "unavailable" };
+
+    // Defense in depth: do not rely only on the query builder stub or RLS.
+    // Every returned row must independently prove exact tenant and normalized
+    // phone equality before it can participate in candidate selection.
+    const unique = new Map<string, Record<string, unknown>>();
+    for (const row of data) {
+      if (
+        !row || typeof row !== "object" ||
+        row.organization_id !== organizationId ||
+        normalizePhone(String(row.phone ?? "")) !== phoneE164 ||
+        typeof row.id !== "string" || !row.id
+      ) continue;
+      unique.set(row.id, row as Record<string, unknown>);
+    }
     if (unique.size === 0) return { kind: "not_found" };
-    if (unique.size > 1) return { kind: "ambiguous", count: unique.size };
-    const only = Array.from(unique.values())[0];
-    return { kind: "resolved", customer: { customerId: only.id, firstName: only.first_name } };
+    if (unique.size !== 1) return { kind: "ambiguous" };
+    const only = [...unique.values()][0];
+    const fullName = [only.first_name, only.last_name]
+      .filter((part): part is string =>
+        typeof part === "string" && part.trim().length > 0
+      )
+      .join(" ");
+    if (!fullName || fullName.split(/\s+/).length < 2) {
+      return { kind: "unverifiable" };
+    }
+    return {
+      kind: "resolved",
+      customer: {
+        customerId: String(only.id),
+        nameVerificationToken: await nameVerificationToken({
+          organizationId,
+          customerId: String(only.id),
+          phoneE164,
+          name: fullName,
+        }),
+      },
+    };
   } catch {
-    return { kind: "not_found" };
+    return { kind: "unavailable" };
   }
 }

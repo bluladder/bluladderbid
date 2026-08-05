@@ -551,7 +551,7 @@ Deno.test("caller-ID confirmation: captures contact phone without verifying iden
     supabase: sb,
     conversationId: "c1",
     channel: "voice",
-    utterance: "yes that's right",
+    utterance: "yes",
     history: [],
     callerIdE164: "+14697472877",
   });
@@ -616,6 +616,154 @@ Deno.test("caller-ID declined: asks for preferred mobile number without repeatin
   assertEquals(turn.pre.kind, "ask_preferred_phone");
   if (turn.pre.kind === "ask_preferred_phone") {
     assertEquals(turn.pre.spoken.includes("2877"), false);
+  }
+});
+
+function setPhase7ConfirmedPhone(sb: any) {
+  setFirmWindowSession(sb, "schedule");
+  sb._state.session.fields = {
+    ...sb._state.session.fields,
+    phone: "+14695551212",
+    callerIdConfirmationStatus: "contact_confirmed",
+  };
+  sb._state.session.field_status = { phone: "verified" };
+}
+
+Deno.test("phase7 one exact same-tenant candidate is reused only after neutral name verification", async () => {
+  const sb = makeFake({
+    customers: [{
+      id: "cust_phase7",
+      organization_id: TEST_ORGANIZATION_ID,
+      first_name: "Alex",
+      last_name: "Rivera",
+      phone: "+14695551212",
+      email: "private@example.invalid",
+      address: "Private stored address",
+    }],
+  });
+  setPhase7ConfirmedPhone(sb);
+  const candidate = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  assertEquals(candidate.pre.kind, "fsm");
+  assertEquals(
+    candidate.pre.spoken,
+    "What full name should I use for this quote?",
+  );
+  assertEquals(candidate.pre.spoken.includes("Alex"), false);
+  assertEquals(candidate.pre.spoken.includes("Rivera"), false);
+  assertEquals(candidate.pre.spoken.includes("Private"), false);
+  assertEquals(
+    (candidate.sessionPatch.fields as QuoteSessionFields).returningCustomerId,
+    undefined,
+  );
+  assertEquals(
+    (candidate.sessionPatch.fields as QuoteSessionFields)
+      .returningCustomerCandidateId,
+    "cust_phase7",
+  );
+  await persistControllerPatch(sb, "qs_1", candidate.sessionPatch);
+
+  const suppliedName = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "Alex Rivera",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  assertEquals(suppliedName.pre.kind, "fsm");
+  assertStringIncludes(suppliedName.pre.spoken, "A-L-E-X");
+  assertEquals(
+    (suppliedName.sessionPatch.fields as QuoteSessionFields)
+      .returningCustomerResolved,
+    false,
+  );
+  await persistControllerPatch(sb, "qs_1", suppliedName.sessionPatch);
+
+  const verified = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  const verifiedFields = verified.sessionPatch.fields as QuoteSessionFields;
+  assertEquals(verifiedFields.returningCustomerId, "cust_phase7");
+  assertEquals(verifiedFields.returningCustomerResolved, true);
+  assertEquals(verifiedFields.returningCustomerCandidateId, undefined);
+  assertEquals(verifiedFields.awaitingDisambiguator, false);
+  assertEquals(verifiedFields.returningCustomerLookupStatus, "verified");
+});
+
+Deno.test("phase7 shared phone ambiguity selects nobody and discloses nothing", async () => {
+  const sb = makeFake({
+    customers: [{
+      id: "household_a",
+      organization_id: TEST_ORGANIZATION_ID,
+      first_name: "Alex",
+      last_name: "Rivera",
+      phone: "+14695551212",
+    }, {
+      id: "household_b",
+      organization_id: TEST_ORGANIZATION_ID,
+      first_name: "Bailey",
+      last_name: "Rivera",
+      phone: "+14695551212",
+    }],
+  });
+  setPhase7ConfirmedPhone(sb);
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "continue",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  const fields = turn.sessionPatch.fields as QuoteSessionFields;
+  assertEquals(fields.returningCustomerLookupStatus, "ambiguous");
+  assertEquals(fields.returningCustomerCandidateId, undefined);
+  assertEquals(fields.returningCustomerId, undefined);
+  assertEquals(turn.pre.spoken.includes("Alex"), false);
+  assertEquals(turn.pre.spoken.includes("Bailey"), false);
+});
+
+Deno.test("phase7 cross-tenant candidate is invisible and zero matches preserve the firm quote", async () => {
+  for (
+    const customers of [
+      [{
+        id: "oregon_only",
+        organization_id: "00000000-0000-4000-8000-000000000099",
+        first_name: "Private",
+        last_name: "Customer",
+        phone: "+14695551212",
+      }],
+      [],
+    ]
+  ) {
+    const sb = makeFake({ customers });
+    setPhase7ConfirmedPhone(sb);
+    const turn = await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance: "continue",
+      history: [],
+      callerIdE164: "+14695551212",
+    });
+    const fields = turn.sessionPatch.fields as QuoteSessionFields;
+    assertEquals(fields.returningCustomerLookupStatus, "not_found");
+    assertEquals(fields.returningCustomerCandidateId, undefined);
+    assertEquals(fields.returningCustomerId, undefined);
+    assertEquals(turn.sessionPatch.quote_status, "firm");
+    assertEquals(turn.pre.spoken.includes("Private"), false);
   }
 });
 
@@ -1047,7 +1195,9 @@ Deno.test("tenant-scoped record, appointment, and memo intents fail closed", asy
     const sb = makeFake();
     sb._state.session.fields = {
       phone: "+14697472877",
+      returningCustomerId: "phone_candidate_only",
       returningCustomerResolved: true,
+      returningCustomerLookupStatus: "verified",
       voiceJourney: { intent },
     };
     sb._state.session.field_status = { phone: "captured" };

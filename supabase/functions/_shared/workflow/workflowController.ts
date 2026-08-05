@@ -11,9 +11,9 @@
 //   7. LLM produces natural wording ONLY for the resolved Action
 //
 // The rollout-gated controller owns quote sequencing and invokes the hardened
-// pricing/availability/booking boundaries directly. Tenant-scoped existing
-// record and destructive appointment paths remain explicitly blocked until
-// server-derived organization authority is available.
+// pricing/availability/booking boundaries directly. Phone-first reuse is an
+// opaque, tenant-scoped contact candidate only; existing-record and destructive
+// appointment paths remain explicitly blocked.
 // ============================================================================
 
 import type { QuoteSessionChannel } from "../quoteSession.ts";
@@ -90,6 +90,10 @@ import {
   splitVoiceClauses,
   VOICE_QUOTE_POLICY,
 } from "../voice/voicePolicy.ts";
+import {
+  resolveCustomerByPhone,
+  verifiedNameMatchesCustomerCandidate,
+} from "./customerResolver.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -341,8 +345,8 @@ export async function runTurn(input: ControllerInput): Promise<TurnResult> {
 
 // ---------------------------------------------------------------------------
 // Rollout-gated wrapper: caller-ID contact confirmation, canonical quote
-// intake, pricing, availability, and booking continuation. Tenant-scoped
-// returning-customer lookup remains deferred.
+// intake, pricing, availability, booking continuation, and tenant-scoped
+// phone candidate reuse after the contact number is explicitly confirmed.
 // ---------------------------------------------------------------------------
 
 export type ControllerPreAction =
@@ -1067,19 +1071,141 @@ export async function runControllerTurn(
     }
   }
 
-  // Step 2: tenant-scoped returning-customer resolution is intentionally not
-  // wired until server-derived organization authority exists. The former
-  // phone-only service-role lookup was cross-organization and could reveal a
-  // stored first name. Remove any controller-era unscoped marker and continue
-  // as ordinary intake without reading or disclosing customer records.
-  if (f.returningCustomerId || f.awaitingDisambiguator) {
+  // Step 2: a confirmed phone may seed one opaque same-tenant candidate. It
+  // remains non-authoritative until the caller independently supplies and
+  // confirms the full name. No stored name, email, address, quote, booking, or
+  // history is projected or spoken during this comparison.
+  const clearPhoneReuse = (
+    status: NonNullable<
+      QuoteSession["fields"]["returningCustomerLookupStatus"]
+    >,
+  ): QuoteSession => {
     const {
-      returningCustomerId: _discardedCustomerId,
-      awaitingDisambiguator: _discardedDisambiguation,
+      returningCustomerCandidateId: _candidate,
+      returningCustomerId: _customer,
+      returningCustomerResolved: _resolved,
+      awaitingDisambiguator: _awaiting,
       ...safeFields
     } = session.fields;
-    capture({ ...session, fields: safeFields }, "tenant_identity_deferred");
+    return {
+      ...session,
+      fields: { ...safeFields, returningCustomerLookupStatus: status },
+    };
+  };
+  const setVerifiedPhoneReuse = (customerId: string): QuoteSession => {
+    const next = clearPhoneReuse("verified");
+    return {
+      ...next,
+      fields: {
+        ...next.fields,
+        returningCustomerId: customerId,
+        returningCustomerResolved: true,
+        awaitingDisambiguator: false,
+      },
+    };
+  };
+  if (
+    (f.returningCustomerId && f.returningCustomerResolved !== true) ||
+    (f.awaitingDisambiguator && !f.returningCustomerCandidateId)
+  ) {
+    capture(clearPhoneReuse("unavailable"), "tenant_identity_legacy_cleared");
     f = session.fields;
+  }
+  const phoneConfirmedForReuse = !!f.phone &&
+    (session.fieldStatus.phone === "verified" ||
+      session.fieldStatus.phone === "corrected" ||
+      f.callerIdConfirmationStatus === "contact_confirmed" ||
+      f.callerIdConfirmationStatus === "confirmed");
+  const phoneReuseScopeEligible = input.channel === "voice" &&
+    !!organizationId && session.quoteStatus === "firm" &&
+    f.voiceJourney?.intent === "new_quote" &&
+    (f.voiceJourney?.requestedNextStep === "text_quote" ||
+      f.voiceJourney?.requestedNextStep === "schedule") &&
+    phoneConfirmedForReuse;
+
+  const verifyPendingPhoneCandidate = async (): Promise<void> => {
+    const candidateId = session.fields.returningCustomerCandidateId;
+    const phone = session.fields.phone;
+    const name = session.fields.name;
+    const nameConfirmed = session.fieldStatus.name === "verified" ||
+      session.fieldStatus.name === "corrected";
+    if (
+      !phoneReuseScopeEligible || !candidateId || !phone || !name ||
+      !nameConfirmed || !organizationId
+    ) return;
+    const current = await resolveCustomerByPhone(
+      input.supabase,
+      organizationId,
+      phone,
+    );
+    if (
+      current.kind === "resolved" &&
+      current.customer.customerId === candidateId &&
+      await verifiedNameMatchesCustomerCandidate({
+        organizationId,
+        phoneE164: phone,
+        suppliedName: name,
+        customer: current.customer,
+      })
+    ) {
+      capture(setVerifiedPhoneReuse(candidateId), session.lastStep);
+      f = session.fields;
+      return;
+    }
+    const status = current.kind === "resolved"
+      ? "name_conflict" as const
+      : current.kind;
+    capture(clearPhoneReuse(status), session.lastStep);
+    f = session.fields;
+  };
+
+  if (
+    phoneReuseScopeEligible && !f.returningCustomerResolved &&
+    !f.returningCustomerCandidateId && !f.returningCustomerLookupStatus &&
+    organizationId && f.phone
+  ) {
+    const result = await resolveCustomerByPhone(
+      input.supabase,
+      organizationId,
+      f.phone,
+    );
+    if (result.kind === "resolved") {
+      capture({
+        ...session,
+        fields: {
+          ...session.fields,
+          returningCustomerCandidateId: result.customer.customerId,
+          returningCustomerResolved: false,
+          awaitingDisambiguator: true,
+          returningCustomerLookupStatus: "candidate",
+        },
+      }, session.lastStep);
+      f = session.fields;
+      const nameConfirmed = (session.fieldStatus.name === "verified" ||
+        session.fieldStatus.name === "corrected") && !!f.name;
+      if (nameConfirmed) {
+        await verifyPendingPhoneCandidate();
+      } else {
+        const spoken = "What full name should I use for this quote?";
+        capture(session, "asked:contact_name");
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: {
+              kind: "ask",
+              field: "contact_name",
+              prompt: spoken,
+            } as unknown as WorkflowAction,
+            spoken,
+          },
+        };
+      }
+    } else {
+      capture(clearPhoneReuse(result.kind), session.lastStep);
+      f = session.fields;
+    }
   }
 
   // Deterministic scheduling continuation. Availability and booking still run
@@ -1297,6 +1423,7 @@ export async function runControllerTurn(
           }),
           "contact_name_confirmed",
         );
+        await verifyPendingPhoneCandidate();
       } else if (field === "contact_email" && session.fields.email) {
         capture(
           mergeFields(session, { email: session.fields.email }, {

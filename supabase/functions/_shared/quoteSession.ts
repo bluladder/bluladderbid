@@ -195,9 +195,19 @@ export interface QuoteSessionFields {
     | "contact_confirmed"
     | "declined";
   callerIdProposedE164?: string;
+  /** Opaque same-tenant candidate only; never customer authority by itself. */
+  returningCustomerCandidateId?: string;
   returningCustomerId?: string;
   returningCustomerResolved?: boolean;
   awaitingDisambiguator?: boolean;
+  returningCustomerLookupStatus?:
+    | "candidate"
+    | "verified"
+    | "ambiguous"
+    | "not_found"
+    | "unavailable"
+    | "unverifiable"
+    | "name_conflict";
   lastQuoteResult?: {
     status?: string;
     estimatedDurationMinutes?: number | null;
@@ -450,6 +460,13 @@ export function mergeFields(
       if (!resolved || resolved === prev.fields.phone) continue;
       nextFields.phone = resolved;
       nextStatus.phone = prev.fields.phone ? "corrected" : "captured";
+      // A changed contact number invalidates every phone-derived customer
+      // candidate and verification result. Nothing may carry across numbers.
+      delete nextFields.returningCustomerCandidateId;
+      delete nextFields.returningCustomerId;
+      delete nextFields.returningCustomerResolved;
+      delete nextFields.awaitingDisambiguator;
+      delete nextFields.returningCustomerLookupStatus;
       continue;
     }
     (nextFields as Record<string, unknown>)[key] = v;
@@ -458,6 +475,13 @@ export function mergeFields(
     const changed = prevVal !== undefined &&
       JSON.stringify(prevVal) !== JSON.stringify(v);
     nextStatus[key] = wasCaptured && changed ? "corrected" : "captured";
+    if (key === "name" && changed) {
+      delete nextFields.returningCustomerCandidateId;
+      delete nextFields.returningCustomerId;
+      delete nextFields.returningCustomerResolved;
+      delete nextFields.awaitingDisambiguator;
+      delete nextFields.returningCustomerLookupStatus;
+    }
     if (key !== "answerProvenance" && key !== "confirmationSummary") {
       nextProvenance[key] = "explicitly_selected";
     }
