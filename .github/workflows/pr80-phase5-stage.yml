@@ -14,22 +14,26 @@ concurrency:
 
 jobs:
   apply-verify-publish:
-    if: "${{ github.event.head_commit.message == 'chore(staging): run PR 80 Phase 5' }}"
+    if: "${{ github.event.head_commit.message == 'chore(staging): execute PR 80 Phase 5' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Check out exact staging head
+      - name: Check out exact staging event head
         uses: actions/checkout@v4
         with:
-          ref: tmp-do-not-use-test
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Verify guarded staging boundary
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "6027322d2db5f4ad9bf63e92d78ff5cf153ca526"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/pr80-phase5-stage.yml"
+          git merge-base --is-ancestor 6027322d2db5f4ad9bf63e92d78ff5cf153ca526 HEAD
+          actual="$(git diff --name-only 6027322d2db5f4ad9bf63e92d78ff5cf153ca526 HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/pr80-phase5-trigger \
+            .github/workflows/pr80-phase5-stage.yml | sort)"
+          test "$actual" = "$expected"
           test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
           test -z "$(git status --porcelain)"
 
@@ -102,12 +106,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/pr80-phase5-stage.yml
+          rm .github/pr80-phase5-trigger .github/workflows/pr80-phase5-stage.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           actual="$(git diff --cached --name-status | sort)"
           expected="$(printf '%s\n' \
+            'D\t.github/pr80-phase5-trigger' \
             'D\t.github/workflows/pr80-phase5-stage.yml' \
             'M\tsupabase/functions/_shared/voice/voiceAddressGate.ts' \
             'M\tsupabase/functions/_shared/workflow/workflowController.ts' \
