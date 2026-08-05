@@ -396,7 +396,7 @@ function correctedAddressComponent(text: string): AddressComponentName | null {
   if (/\bcity\b/i.test(text)) return "city";
   if (/\bstate\b/i.test(text)) return "state";
   if (/\bunit|suite|apartment\b/i.test(text)) return "unit";
-  if (/\bstreet|road|drive|lane|avenue|boulevard\b|\bnot\b/i.test(text)) {
+  if (/\bstreet|road|drive|lane|avenue|boulevard\b/i.test(text)) {
     return "street";
   }
   return null;
@@ -469,7 +469,9 @@ function isControllerOwnedManualReviewTerminal(
   lastStep: string | null | undefined,
 ): boolean {
   return lastStep?.startsWith("manual_review:retry_exhausted:") === true ||
-    lastStep?.startsWith("manual_review:conditional_modifier_budget:") === true;
+    lastStep?.startsWith("manual_review:conditional_modifier_budget:") ===
+      true ||
+    lastStep === "manual_review:address_uncertain";
 }
 
 export async function runControllerTurn(
@@ -524,6 +526,79 @@ export async function runControllerTurn(
     sessionPatch.booking_ready = session.bookingReady;
     sessionPatch.last_step = lastStep;
   };
+  const addressClarificationAttempts = (): number =>
+    Math.max(
+      0,
+      Number(session.fields.voiceJourney?.retryCounts?.address ?? 0) || 0,
+    );
+
+  const addressManualReview = (
+    spoken =
+      "I couldn't confirm the service address safely, so I kept your quote but stopped scheduling. A team member can verify the address with you.",
+  ): ControllerTurnResult => {
+    const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+    const next = mergeFields(
+      session,
+      {
+        serviceAreaStatus: "manual_review_required",
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          retryCounts,
+          pendingAddressComponent: null,
+          requestedNextStep: "none",
+          availability: null,
+          booking: { status: "not_started" as const },
+        },
+      },
+      { markDerived: ["serviceAreaStatus"] },
+    );
+    capture(
+      { ...next, quoteStatus: session.quoteStatus, bookingReady: false },
+      "manual_review:address_uncertain",
+    );
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action: { kind: "handoff", reason: "safety_or_access_flag" },
+        spoken,
+      },
+    };
+  };
+
+  const beginAddressClarification = (
+    lastStep: string,
+    spoken: string,
+  ): ControllerTurnResult => {
+    const attempts = addressClarificationAttempts();
+    if (attempts >= VOICE_QUOTE_POLICY.address.clarificationLimit) {
+      return addressManualReview();
+    }
+    const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          retryCounts: { ...retryCounts, address: attempts + 1 },
+        },
+      }),
+      lastStep,
+    );
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action: {
+          kind: "ask",
+          field: "address",
+          prompt: spoken,
+        } as unknown as WorkflowAction,
+        spoken,
+      },
+    };
+  };
 
   if (isControllerOwnedManualReviewTerminal(session.lastStep)) {
     const action = {
@@ -576,7 +651,9 @@ export async function runControllerTurn(
 
   let validDiscountAppliedToFirmQuote = false;
   let discountSpeechPrefix = "";
-  const volunteeredDiscountCode = normalizeVolunteeredDiscountCode(input.utterance);
+  const volunteeredDiscountCode = normalizeVolunteeredDiscountCode(
+    input.utterance,
+  );
   if (volunteeredDiscountCode) {
     if (organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
       // Oregon limitation: the current hosted discount_codes table is global
@@ -626,7 +703,8 @@ export async function runControllerTurn(
             pre: {
               kind: "fsm",
               action: { kind: "answer_side_question", topic: "discount_code" },
-              spoken: `That code is already applied. ${postPriceChoicePrompt()}`,
+              spoken:
+                `That code is already applied. ${postPriceChoicePrompt()}`,
             },
           };
         }
@@ -1042,6 +1120,7 @@ export async function runControllerTurn(
 
   const validateVoiceAddress = async (
     candidate: string,
+    requireConfirmation = true,
   ): Promise<ControllerTurnResult> => {
     const raw = await measure(
       "address_service_area",
@@ -1061,6 +1140,59 @@ export async function runControllerTurn(
       (status === "eligible" || status === "manual_review_required") &&
       formatted
     ) {
+      const confirmedStatus = status === "eligible"
+        ? "eligible" as const
+        : "manual_review_required" as const;
+      if (!requireConfirmation) {
+        if (confirmedStatus !== "eligible") {
+          return addressManualReview(
+            "I corrected the address, but it still needs a team member to verify the service area. I kept your quote and stopped scheduling.",
+          );
+        }
+        const corrected = mergeFields(
+          session,
+          {
+            address: formatted,
+            addressComponents: components,
+            serviceAreaStatus: confirmedStatus,
+            serviceAreaResult: raw,
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              pendingAddressComponent: null,
+            },
+          },
+          { markVerified: ["address", "serviceAreaStatus"] },
+        );
+        const nextAction = decideResidentialQuoteAction(corrected, []);
+        if (nextAction.kind === "ask") {
+          capture(corrected, `asked:${nextAction.field}`);
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: nextAction,
+              spoken: nextAction.prompt,
+            },
+          };
+        }
+        if (nextAction.kind === "offer_scheduling") {
+          capture(corrected, "offered_scheduling");
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: nextAction,
+              spoken:
+                "Thanks, I corrected the address. Would you like me to check current appointment times?",
+            },
+          };
+        }
+        return addressManualReview(
+          "I corrected the address, but I couldn't safely continue toward scheduling. I kept your quote for a team member to review.",
+        );
+      }
       const next = mergeFields(session, {
         address: formatted,
         addressComponents: components,
@@ -1072,6 +1204,7 @@ export async function runControllerTurn(
         },
       });
       capture(next, "confirming:address");
+      const spoken = buildAddressReadback(formatted);
       return {
         sessionId: session.id,
         sessionPatch,
@@ -1080,9 +1213,9 @@ export async function runControllerTurn(
           action: {
             kind: "ask",
             field: "address",
-            prompt: buildAddressReadback(formatted),
+            prompt: spoken,
           } as unknown as WorkflowAction,
-          spoken: buildAddressReadback(formatted),
+          spoken,
         },
       };
     }
@@ -1100,18 +1233,42 @@ export async function runControllerTurn(
         }),
         `address_component:${missing}`,
       );
-      const spoken = addressComponentQuestion(missing);
+      return beginAddressClarification(
+        `address_component:${missing}`,
+        `${
+          addressComponentQuestion(missing)
+        } This is the one address clarification I need before scheduling.`,
+      );
+    }
+    const customerMessage =
+      typeof raw.customerMessage === "string" && raw.customerMessage.trim()
+        ? raw.customerMessage
+        : "I couldn't verify that address right now.";
+    if (status === "ineligible") {
+      capture(
+        mergeFields(
+          session,
+          {
+            serviceAreaStatus: "ineligible",
+            serviceAreaResult: raw,
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              requestedNextStep: "none",
+              availability: null,
+              booking: { status: "not_started" as const },
+            },
+          },
+          { markDerived: ["serviceAreaStatus", "serviceAreaResult"] },
+        ),
+        "service_area_ineligible",
+      );
       return {
         sessionId: session.id,
         sessionPatch,
         pre: {
           kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
+          action: { kind: "handoff", reason: "safety_or_access_flag" },
+          spoken: customerMessage,
         },
       };
     }
@@ -1122,19 +1279,9 @@ export async function runControllerTurn(
       }, { markDerived: ["serviceAreaStatus", "serviceAreaResult"] }),
       "service_area_unavailable",
     );
-    const spoken =
-      typeof raw.customerMessage === "string" && raw.customerMessage.trim()
-        ? raw.customerMessage
-        : "I couldn't verify that address right now, so I have not checked appointment times.";
-    return {
-      sessionId: session.id,
-      sessionPatch,
-      pre: {
-        kind: "fsm",
-        action: { kind: "handoff", reason: "safety_or_access_flag" },
-        spoken,
-      },
-    };
+    return addressManualReview(
+      `${customerMessage} I kept your quote but stopped scheduling so a team member can verify the address.`,
+    );
   };
 
   if (session.lastStep?.startsWith("confirming:")) {
@@ -1170,10 +1317,10 @@ export async function runControllerTurn(
           session.fields.serviceAreaResult?.status ?? "",
         );
         const confirmedStatus = candidateStatus === "eligible"
-          ? "eligible"
+          ? "eligible" as const
           : candidateStatus === "manual_review_required"
-          ? "manual_review_required"
-          : "unavailable";
+          ? "manual_review_required" as const
+          : "unavailable" as const;
         capture(
           mergeFields(session, {
             address: session.fields.address,
@@ -1181,6 +1328,11 @@ export async function runControllerTurn(
           }, { markVerified: ["address", "serviceAreaStatus"] }),
           "address_confirmed",
         );
+        if (confirmedStatus !== "eligible") {
+          return addressManualReview(
+            "I confirmed the address, but the service area still needs a team member to verify it. I kept your quote and stopped scheduling.",
+          );
+        }
       }
       f = session.fields;
     } else if (field === "contact_name") {
@@ -1269,54 +1421,37 @@ export async function runControllerTurn(
       };
     } else if (field === "address") {
       const component = correctedAddressComponent(input.utterance);
-      if (component) {
-        const correction = normalizeAddressComponentAnswer(
-          component,
-          input.utterance,
-        );
-        if (correction) {
-          const components = {
-            ...(session.fields.addressComponents ?? {}),
-            [component]: correction,
-          };
-          const completed = formatAddressComponents(components);
-          capture(
-            mergeFields(session, {
-              addressComponents: components,
-              voiceJourney: {
-                ...(session.fields.voiceJourney ?? {}),
-                pendingAddressComponent: null,
-              },
-            }),
-            "address_correction_captured",
-          );
-          return await validateVoiceAddress(completed);
+      const correction = component
+        ? normalizeAddressComponentAnswer(component, input.utterance)
+        : null;
+      if (component && correction) {
+        const attempts = addressClarificationAttempts();
+        if (attempts >= VOICE_QUOTE_POLICY.address.clarificationLimit) {
+          return addressManualReview();
         }
+        const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+        const components = {
+          ...(session.fields.addressComponents ?? {}),
+          [component]: correction,
+        };
+        const completed = formatAddressComponents(components);
+        capture(
+          mergeFields(session, {
+            addressComponents: components,
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              retryCounts: { ...retryCounts, address: attempts + 1 },
+              pendingAddressComponent: null,
+            },
+          }),
+          "address_correction_captured",
+        );
+        return await validateVoiceAddress(completed, false);
       }
-      const spoken =
-        "Which part should I correct: the house number, street, city, state, or ZIP code?";
-      capture(
-        mergeFields(session, {
-          voiceJourney: {
-            ...(session.fields.voiceJourney ?? {}),
-            pendingAddressComponent: null,
-          },
-        }),
+      return beginAddressClarification(
         "address_component:choose",
+        "Which part should I correct: the house number, street, city, state, or ZIP code?",
       );
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
     } else {
       return askConfirmation(
         field as "contact_name",
@@ -1330,70 +1465,13 @@ export async function runControllerTurn(
     const component = token === "choose"
       ? correctedAddressComponent(input.utterance)
       : token as AddressComponentName;
-    if (!component) {
-      const spoken =
-        "Which part should I correct: the house number, street, city, state, or ZIP code?";
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
-    }
-    if (token === "choose") {
-      capture(
-        mergeFields(session, {
-          voiceJourney: {
-            ...(session.fields.voiceJourney ?? {}),
-            pendingAddressComponent: component,
-          },
-        }),
-        `address_component:${component}`,
-      );
-      const spoken = addressComponentQuestion(component);
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
-    }
+    if (!component) return addressManualReview();
     const value = normalizeAddressComponentAnswer(component, input.utterance);
-    if (!value) {
-      const spoken = addressComponentQuestion(component);
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
-    }
+    if (!value) return addressManualReview();
     const components = {
       ...(session.fields.addressComponents ?? {}),
       [component]: value,
     };
-    const missing = nextMissingAddressComponent(components);
     if (
       !components.house_number || !components.street || !components.city ||
       !components.state || !components.postal_code
@@ -1403,31 +1481,27 @@ export async function runControllerTurn(
           addressComponents: components,
           voiceJourney: {
             ...(session.fields.voiceJourney ?? {}),
-            pendingAddressComponent: missing,
+            pendingAddressComponent: nextMissingAddressComponent(components),
           },
         }),
-        `address_component:${missing}`,
+        "address_correction_incomplete",
       );
-      const spoken = addressComponentQuestion(missing);
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
+      return addressManualReview();
     }
     capture(
-      mergeFields(session, { addressComponents: components }),
+      mergeFields(session, {
+        addressComponents: components,
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          pendingAddressComponent: null,
+        },
+      }),
       "address_components_complete",
     );
-    return await validateVoiceAddress(formatAddressComponents(components));
+    return await validateVoiceAddress(
+      formatAddressComponents(components),
+      false,
+    );
   }
   if (session.lastStep === "offered_scheduling") {
     const answer = classifyExplicitConfirmation(input.utterance);
@@ -1841,7 +1915,11 @@ export async function runControllerTurn(
           mergeFields(session, {
             voiceJourney: {
               ...(session.fields.voiceJourney ?? {}),
-              coupon: { code: spelledCode, status: "invalid", reason: "non_dfw" },
+              coupon: {
+                code: spelledCode,
+                status: "invalid",
+                reason: "non_dfw",
+              },
             },
           }),
           "discount_code_rejected:non_dfw",
@@ -1853,7 +1931,9 @@ export async function runControllerTurn(
             pre: {
               kind: "fsm",
               action: { kind: "answer_side_question", topic: "discount_code" },
-              spoken: `${discountInvalidSpeech("non_dfw")} ${postPriceChoicePrompt()}`,
+              spoken: `${
+                discountInvalidSpeech("non_dfw")
+              } ${postPriceChoicePrompt()}`,
             },
           };
         }
@@ -1901,8 +1981,13 @@ export async function runControllerTurn(
               sessionPatch,
               pre: {
                 kind: "fsm",
-                action: { kind: "answer_side_question", topic: "discount_code" },
-                spoken: `${discountInvalidSpeech(validation.reason)} ${postPriceChoicePrompt()}`,
+                action: {
+                  kind: "answer_side_question",
+                  topic: "discount_code",
+                },
+                spoken: `${
+                  discountInvalidSpeech(validation.reason)
+                } ${postPriceChoicePrompt()}`,
               },
             };
           }
@@ -1925,7 +2010,9 @@ export async function runControllerTurn(
           pre: {
             kind: "fsm",
             action: { kind: "answer_side_question", topic: "discount_code" },
-            spoken: `${discountInvalidSpeech("malformed")} ${postPriceChoicePrompt()}`,
+            spoken: `${
+              discountInvalidSpeech("malformed")
+            } ${postPriceChoicePrompt()}`,
           },
         };
       }
@@ -2330,14 +2417,16 @@ export async function runControllerTurn(
       "offered_post_price_choice",
     );
     const validDiscountCouldNotStack = validDiscountAppliedToFirmQuote &&
-      disposition.finalQuoteDisposition === "firm" && canonicalCustomerTotal > 0 &&
+      disposition.finalQuoteDisposition === "firm" &&
+      canonicalCustomerTotal > 0 &&
       session.fields.promotionId && !result.discount;
     const spoken = validDiscountCouldNotStack
       ? `That code is valid, but it cannot be combined with this promotion. Your total remains ${
         formatCanonicalCurrency(canonicalCustomerTotal)
       }, including tax.`
       : validDiscountAppliedToFirmQuote &&
-          disposition.finalQuoteDisposition === "firm" && canonicalCustomerTotal > 0
+          disposition.finalQuoteDisposition === "firm" &&
+          canonicalCustomerTotal > 0
       ? `That code is valid. Your updated total is ${
         formatCanonicalCurrency(canonicalCustomerTotal)
       }, including tax.`
