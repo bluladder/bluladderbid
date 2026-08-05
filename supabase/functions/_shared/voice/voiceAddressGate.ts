@@ -3,8 +3,8 @@
 //
 // A geocoded candidate never becomes booking / availability / text-delivery
 // eligible until the caller explicitly confirms the complete canonical
-// address. The readback spells the street and reads the house number digit by
-// digit, because ASR routinely mangles both (incident 019fb423: "5610" was
+// address. The readback preserves the canonical street wording and reads the
+// house number digit by digit, because ASR routinely mangles both (incident 019fb423: "5610" was
 // persisted when the caller said "5612").
 //
 // Pure module — no I/O. Web and SMS behavior is unaffected.

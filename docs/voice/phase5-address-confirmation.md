@@ -5,7 +5,7 @@ Phase 5 adds a deterministic voice-only address gate after firm pricing and befo
 ## Behavior
 
 - A geocoded address remains pending until the caller explicitly confirms the canonical address.
-- The readback is concise, spells the street context safely, and reads the house number digit by digit.
+- The readback is concise, preserves the canonical street wording, expands suffixes for speech, and reads the house number digit by digit.
 - A house-number mismatch asks for the number one digit at a time.
 - Missing or uncertain components receive a bounded clarification attempt.
 - One direct correction is revalidated without starting an unbounded readback loop.

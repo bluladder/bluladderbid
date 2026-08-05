@@ -409,7 +409,7 @@ Deno.test("a fresh pending address is read back even for an ordinary no-tool rep
     },
     events,
   });
-  assertStringIncludes(spoken, "Is that exactly right?");
+  assertStringIncludes(spoken, "Is that correct?");
   assert(events.includes("voice_address_confirmation_required"));
 });
 
@@ -466,7 +466,7 @@ Deno.test("5610-vs-5612 mismatch recovers on the next turn", () => {
   assertEquals(turn2.kind, "ask_confirmation");
   assertEquals(turn2.serviceAreaStatus, "pending_confirmation");
   assertStringIncludes(turn2.reply, "five-six-one-two");
-  assertStringIncludes(turn2.reply, "B-I-N-B-R-A-N-C-H");
+  assertStringIncludes(turn2.reply, "Binbranch Lane");
 });
 
 Deno.test("digit house numbers are also accepted", () => {
