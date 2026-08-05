@@ -29,15 +29,23 @@ import {
 import { executeControllerRoute } from "../_shared/voice/controllerRoute.ts";
 import { runTool } from "../_shared/aiTools.ts";
 import {
-  claimVoiceTurn,
   buildSilentVoiceResponse as buildSilentResponse,
+  claimVoiceTurn,
   completeVoiceTurn,
-  prepareVoiceIngress,
   isAuthoritativeVoiceTurn,
   markVoiceTurnUncertain,
+  prepareVoiceIngress,
   runClaimedExternalAction,
   type VoiceTurnDescriptor,
 } from "../_shared/voice/voiceTurnCoordinator.ts";
+import {
+  buildVoiceTurnCorrelationId,
+  emitVoiceTurnLatency,
+  extractProviderFinalUserTurnAtMs,
+  type VoiceTurnLatencyOutcome,
+  VoiceTurnLatencyRecorder,
+  type VoiceTurnLatencyRoute,
+} from "../_shared/voice/voiceTurnLatency.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -135,6 +143,10 @@ function buildStreamingTextResponse(
     event?: string;
     route?: string;
   } = {},
+  lifecycle: {
+    onFirstChunk?: () => void;
+    onComplete?: () => void;
+  } = {},
 ): Response {
   const encoder = new TextEncoder();
   const id = `chatcmpl-${crypto.randomUUID()}`;
@@ -142,8 +154,16 @@ function buildStreamingTextResponse(
 
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      const write = (obj: unknown) =>
+      let firstChunk = true;
+      const write = (obj: unknown) => {
+        if (firstChunk) {
+          firstChunk = false;
+          try {
+            lifecycle.onFirstChunk?.();
+          } catch { /* telemetry must never change streaming */ }
+        }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      };
 
       write({
         id,
@@ -187,6 +207,9 @@ function buildStreamingTextResponse(
       });
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
+      try {
+        lifecycle.onComplete?.();
+      } catch { /* telemetry must never change streaming */ }
     },
   });
 
@@ -231,6 +254,7 @@ function buildAuthorityBlockedResponse(
 
 Deno.serve(async (req) => {
   const requestArrival = performance.now();
+  const requestWallClock = Date.now();
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -264,6 +288,7 @@ Deno.serve(async (req) => {
   if (!parsed.ok) {
     return jsonError(errorStatus(parsed.error), parsed.error.kind);
   }
+  const finalUserTurnReceivedAt = performance.now();
 
   // Keep one request object for both routing lanes. The canonical pre-routing
   // normalizer below updates its message list before either lane consumes it.
@@ -277,11 +302,36 @@ Deno.serve(async (req) => {
     return buildSilentVoiceResponse(earlyModel, request.stream);
   }
   const turn: VoiceTurnDescriptor = ingress.turn;
+  const correlationId = await buildVoiceTurnCorrelationId(turn.turnId);
+  const latency = new VoiceTurnLatencyRecorder({
+    correlationId,
+    stream: request.stream,
+    originMs: requestArrival,
+    receivedWallClockMs: requestWallClock,
+    providerFinalUserTurnAtMs: extractProviderFinalUserTurnAtMs(
+      request.rawBody,
+    ),
+  });
+  latency.mark("finalUserTurnReceivedMs", finalUserTurnReceivedAt);
+  const finishImmediate = (
+    response: Response,
+    route: VoiceTurnLatencyRoute,
+    outcome: VoiceTurnLatencyOutcome,
+  ): Response => {
+    latency.mark("firstResponseChunkMs");
+    latency.mark("responseCompletedMs");
+    emitVoiceTurnLatency(latency.finish({ route, outcome }));
+    return response;
+  };
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) {
-    return jsonError(500, "supabase_env_missing");
+    return finishImmediate(
+      jsonError(500, "supabase_env_missing"),
+      "unknown",
+      "failed_closed",
+    );
   }
   const supabase = createClient(supabaseUrl, serviceKey);
   const model = request.model || "bluladder-voice-adapter";
@@ -328,9 +378,14 @@ Deno.serve(async (req) => {
   let turnClaimed = false;
   let claimedOrganizationId: string | null = null;
   try {
+    const providerAuthorityStarted = performance.now();
     const providerAuthority = await resolveVoiceProviderOrganizationAuthority(
       supabase,
       request.rawBody,
+    );
+    latency.add(
+      "databaseMs",
+      performance.now() - providerAuthorityStarted,
     );
     if (providerAuthority.status !== "resolved") {
       console.warn(JSON.stringify({
@@ -339,21 +394,42 @@ Deno.serve(async (req) => {
         reason: "organization_authority_blocked",
         authorityCode: providerAuthority.code,
       }));
-      return buildAuthorityBlockedResponse(
-        model,
-        request.stream,
-        providerAuthority.code,
+      return finishImmediate(
+        buildAuthorityBlockedResponse(
+          model,
+          request.stream,
+          providerAuthority.code,
+        ),
+        "authority_gate",
+        "failed_closed",
       );
     }
+    const claimStarted = performance.now();
     const claim = await claimVoiceTurn(supabase, {
       ...turn,
       organizationId: providerAuthority.organizationId,
     });
+    const claimMs = performance.now() - claimStarted;
+    latency.add("singleFlightMs", claimMs);
+    latency.add("databaseMs", claimMs);
     if (claim !== "acquired") {
-      return buildSilentVoiceResponse(model, request.stream);
+      const outcome: VoiceTurnLatencyOutcome = claim === "duplicate"
+        ? "duplicate_suppressed"
+        : claim === "stale"
+        ? "stale_suppressed"
+        : claim === "wait"
+        ? "wait_suppressed"
+        : "uncertain_suppressed";
+      return finishImmediate(
+        buildSilentVoiceResponse(model, request.stream),
+        "single_flight",
+        outcome,
+      );
     }
+    latency.mark("singleFlightClaimedMs");
     turnClaimed = true;
     claimedOrganizationId = providerAuthority.organizationId;
+    const conversationLoadStarted = performance.now();
     identity = await ensureVoiceConversation({
       supabase,
       request,
@@ -366,6 +442,10 @@ Deno.serve(async (req) => {
         rawBody: request.rawBody,
       },
     );
+    const conversationLoadMs = performance.now() - conversationLoadStarted;
+    latency.add("conversationSessionLoadMs", conversationLoadMs);
+    latency.add("databaseMs", conversationLoadMs);
+    latency.mark("conversationSessionLoadedMs");
     if (
       organizationAuthority.status !== "resolved" ||
       organizationAuthority.organizationId !== providerAuthority.organizationId
@@ -384,7 +464,11 @@ Deno.serve(async (req) => {
         callId: turn.callId,
         turnId: turn.turnId,
       });
-      return buildSilentVoiceResponse(model, request.stream);
+      return finishImmediate(
+        buildSilentVoiceResponse(model, request.stream),
+        "authority_gate",
+        "failed_closed",
+      );
     }
     providerAuthorityResolved = true;
   } catch {
@@ -399,12 +483,20 @@ Deno.serve(async (req) => {
         callId: turn.callId,
         turnId: turn.turnId,
       });
-      return buildSilentVoiceResponse(model, request.stream);
+      return finishImmediate(
+        buildSilentVoiceResponse(model, request.stream),
+        "authority_gate",
+        "uncertain_suppressed",
+      );
     }
-    return buildAuthorityBlockedResponse(
-      model,
-      request.stream,
-      "lookup_unavailable",
+    return finishImmediate(
+      buildAuthorityBlockedResponse(
+        model,
+        request.stream,
+        "lookup_unavailable",
+      ),
+      "authority_gate",
+      "failed_closed",
     );
   }
 
@@ -468,6 +560,27 @@ Deno.serve(async (req) => {
             }),
           }),
       });
+      latency.mark("controllerCompletedMs");
+      latency.mark("persistenceCompletedMs");
+      latency.add(
+        "deterministicControllerMs",
+        route.timings.controllerMs,
+      );
+      latency.add("conversationSessionLoadMs", route.timings.sessionLoadMs);
+      latency.add("pricingMs", route.timings.pricingMs);
+      latency.add(
+        "addressIdentityMs",
+        route.timings.addressServiceAreaMs +
+          route.timings.identityPreparationMs,
+      );
+      latency.add("externalToolMs", route.timings.externalToolMs);
+      const persistenceMs = route.timings.persistenceMs +
+        route.timings.projectionMs + route.timings.journalMs;
+      latency.add("persistenceMs", persistenceMs);
+      latency.add(
+        "databaseMs",
+        route.timings.sessionLoadMs + persistenceMs,
+      );
       const spoken = route.spoken;
       const completion = {
         content: spoken,
@@ -483,6 +596,7 @@ Deno.serve(async (req) => {
       console.log(JSON.stringify({
         at: "voice-llm-adapter",
         buildId: BUILD_ID,
+        correlationId,
         route: "controller",
         event: route.event,
         preKind: route.pre.kind,
@@ -504,6 +618,7 @@ Deno.serve(async (req) => {
           ...route.timings,
         },
       }));
+      const completionStarted = performance.now();
       await completeVoiceTurn(supabase, {
         organizationId: organizationAuthority.organizationId,
         callId: turn.callId,
@@ -511,16 +626,34 @@ Deno.serve(async (req) => {
       });
       // Re-read immediately before response construction. A newer committed
       // turn revokes this turn's authority before any response bytes exist.
-      if (
-        !await isAuthoritativeVoiceTurn(supabase, {
-          organizationId: organizationAuthority.organizationId,
-          callId: turn.callId,
-          turnId: turn.turnId,
-        })
-      ) return buildSilentVoiceResponse(model, request.stream);
-      return request.stream
-        ? buildStreamingTextResponse(model, spoken)
-        : buildNonStreamingResponse(model, completion);
+      const authoritative = await isAuthoritativeVoiceTurn(supabase, {
+        organizationId: organizationAuthority.organizationId,
+        callId: turn.callId,
+        turnId: turn.turnId,
+      });
+      latency.add("databaseMs", performance.now() - completionStarted);
+      if (!authoritative) {
+        return finishImmediate(
+          buildSilentVoiceResponse(model, request.stream),
+          "single_flight",
+          "stale_suppressed",
+        );
+      }
+      if (!request.stream) {
+        return finishImmediate(
+          buildNonStreamingResponse(model, completion),
+          "controller",
+          "responded",
+        );
+      }
+      return buildStreamingTextResponse(model, spoken, {}, {
+        onFirstChunk: () => latency.mark("firstResponseChunkMs"),
+        onComplete: () =>
+          emitVoiceTurnLatency(latency.finish({
+            route: "controller",
+            outcome: "responded",
+          })),
+      });
     } catch {
       console.warn(JSON.stringify({
         at: "voice-llm-adapter",
@@ -535,7 +668,11 @@ Deno.serve(async (req) => {
         callId: turn.callId,
         turnId: turn.turnId,
       });
-      return buildSilentVoiceResponse(model, request.stream);
+      return finishImmediate(
+        buildSilentVoiceResponse(model, request.stream),
+        "controller",
+        "uncertain_suppressed",
+      );
     }
   }
 
@@ -551,13 +688,21 @@ Deno.serve(async (req) => {
       callId: turn.callId,
       turnId: turn.turnId,
     });
-    return buildSilentVoiceResponse(model, request.stream);
+    return finishImmediate(
+      buildSilentVoiceResponse(model, request.stream),
+      "single_flight",
+      "uncertain_suppressed",
+    );
   }
   if (!legacyVoiceExecutionAllowed(decision, providerAuthorityResolved)) {
-    return buildAuthorityBlockedResponse(
-      model,
-      request.stream,
-      "deterministic_controller_required",
+    return finishImmediate(
+      buildAuthorityBlockedResponse(
+        model,
+        request.stream,
+        "deterministic_controller_required",
+      ),
+      "authority_gate",
+      "failed_closed",
     );
   }
 

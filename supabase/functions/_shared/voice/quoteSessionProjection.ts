@@ -319,7 +319,12 @@ export function buildQuoteSessionConversationProjection(args: {
 }
 
 export type QuoteSessionProjectionResult =
-  | { status: "projected" | "noop"; attempts: number }
+  | {
+    status: "projected" | "noop";
+    attempts: number;
+    /** Exact tenant-scoped session snapshot already read for projection. */
+    session?: QuoteSession;
+  }
   | { status: "conflict" | "error"; reason: string; attempts: number };
 
 export function quoteSessionFromPersistenceRow(
@@ -427,7 +432,9 @@ export async function projectQuoteSessionToConversation(
           attempts: attempt,
         };
       }
-      if (written?.data) return { status: "projected", attempts: attempt };
+      if (written?.data) {
+        return { status: "projected", attempts: attempt, session };
+      }
     }
     return { status: "conflict", reason: "conversation_changed", attempts: 2 };
   } catch {

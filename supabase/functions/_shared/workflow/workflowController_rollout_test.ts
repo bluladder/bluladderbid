@@ -2334,7 +2334,7 @@ Deno.test("phase4 pre-price valid coupon is normalized captured and later priced
   assertEquals((turn2.pre.spoken.match(/\$[0-9]/g) ?? []).length, 1);
 });
 
-Deno.test("phase4 post-price valid coupon causes one canonical repricing and concise updated total", async () => {
+Deno.test("phase9 post-price coupon reuses one canonical pricing snapshot", async () => {
   let pricingLoads = 0;
   const base = makeFake({
     pricingRows: PRICING_ROWS,
@@ -2356,9 +2356,9 @@ Deno.test("phase4 post-price valid coupon causes one canonical repricing and con
     history: [],
   });
   const row = await persistAndReload(base, turn);
-  // Two reads are expected: one readiness probe plus one authoritative pricing calculation.
-  // The single currency token and persisted authoritative discount snapshot prove one customer-facing repricing.
-  assertEquals(pricingLoads, 2);
+  // Readiness and the customer-facing total share one immutable canonical
+  // pricing snapshot; there is no second database read or recalculation.
+  assertEquals(pricingLoads, 1);
   assertStringIncludes(
     turn.pre.spoken,
     "That code is valid. Your updated total is",

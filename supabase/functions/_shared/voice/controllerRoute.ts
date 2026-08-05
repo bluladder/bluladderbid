@@ -42,7 +42,6 @@ import {
   buildCanonicalPrePriceRecap,
   promptForCanonicalField,
 } from "./voiceCanonicalIntake.ts";
-import { classifyContextualVoiceQuoteByTextRequest } from "./voicePolicy.ts";
 import type { runTool } from "../aiTools.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -54,10 +53,13 @@ export interface ControllerRouteTimings {
   projectionMs: number;
   identityPreparationMs: number;
   journalMs: number;
+  sessionLoadMs: number;
   pricingMs: number;
   addressServiceAreaMs: number;
   availabilityMs: number;
   bookingMs: number;
+  quoteDeliveryMs: number;
+  externalToolMs: number;
 }
 
 export interface ExecuteControllerRouteInput {
@@ -199,6 +201,7 @@ export async function executeControllerRoute(
     input.journalMessages ?? input.messages,
   );
   const stageTimings = {
+    session_load: 0,
     pricing: 0,
     address_service_area: 0,
     availability: 0,
@@ -210,10 +213,13 @@ export async function executeControllerRoute(
     projectionMs: 0,
     identityPreparationMs: 0,
     journalMs: 0,
+    sessionLoadMs: 0,
     pricingMs: 0,
     addressServiceAreaMs: 0,
     availabilityMs: 0,
     bookingMs: 0,
+    quoteDeliveryMs: 0,
+    externalToolMs: 0,
   };
 
   const controllerStarted = now();
@@ -231,6 +237,7 @@ export async function executeControllerRoute(
     },
   });
   timings.controllerMs = elapsed(controllerStarted);
+  timings.sessionLoadMs = stageTimings.session_load;
   timings.pricingMs = stageTimings.pricing;
   timings.addressServiceAreaMs = stageTimings.address_service_area;
   timings.availabilityMs = stageTimings.availability;
@@ -252,11 +259,13 @@ export async function executeControllerRoute(
   timings.persistenceMs = elapsed(persistenceStarted);
   let conflictPrompt: string | null = null;
   if (persistence.status === "conflict") {
+    const conflictReadStarted = now();
     const latest = await readSession(
       input.supabase,
       turn.sessionId,
       input.organizationId,
     );
+    timings.sessionLoadMs += elapsed(conflictReadStarted);
     if (proposedFieldsAlreadyPresent(turn, latest)) {
       persistence = { status: "noop" };
     } else {
@@ -280,11 +289,21 @@ export async function executeControllerRoute(
         "I saved that answer in the quote form, but I couldn't safely synchronize the customer record. I have not checked availability or advanced the request. Please try once more, or a team member can help.";
       event = "workflow_controller_projection_blocked";
     } else {
-      const session = await readSession(
-        input.supabase,
-        turn.sessionId,
-        input.organizationId,
-      );
+      const projectedSession = "session" in projection
+        ? projection.session
+        : undefined;
+      const session = projectedSession ?? await (async () => {
+        const sessionReadStarted = now();
+        try {
+          return await readSession(
+            input.supabase,
+            turn.sessionId,
+            input.organizationId,
+          );
+        } finally {
+          timings.sessionLoadMs += elapsed(sessionReadStarted);
+        }
+      })();
       committedSession = session;
       if (!session) {
         spoken =
@@ -340,9 +359,6 @@ export async function executeControllerRoute(
   // authority.
   if (stateCommitted && event === "workflow_controller") {
     const deliverySession = committedSession;
-    const explicitRequest = classifyContextualVoiceQuoteByTextRequest(
-      reconstructed.userMessage,
-    );
     const delivery = deliverySession?.fields.voiceJourney?.delivery;
     const stickyOpenRequest = !!deliverySession &&
       deliverySession.fields.voiceJourney?.requestedNextStep === "text_quote" &&
@@ -350,7 +366,7 @@ export async function executeControllerRoute(
     const deliveryAllowed = !!deliverySession &&
       deliverySession.quoteStatus === "firm" &&
       deliverySession.fields.voiceJourney?.requestedNextStep === "text_quote" &&
-      (explicitRequest || stickyOpenRequest);
+      stickyOpenRequest;
 
     if (deliveryAllowed && deliverySession) {
       const projectionForFacts = buildQuoteSessionConversationProjection({
@@ -390,15 +406,20 @@ export async function executeControllerRoute(
             deliverySession.fieldStatus.address === "corrected"),
         deliver: input.callFunction
           ? async () => {
-            deliveryState.current = await deliverQuote({
-              supabase: input.supabase,
-              facts,
-              organizationId: input.organizationId,
-              quoteSessionId: deliverySession.id,
-              conversationId: input.conversationId,
-              callFunction: input.callFunction!,
-            });
-            return deliveryState.current;
+            const deliveryStarted = now();
+            try {
+              deliveryState.current = await deliverQuote({
+                supabase: input.supabase,
+                facts,
+                organizationId: input.organizationId,
+                quoteSessionId: deliverySession.id,
+                conversationId: input.conversationId,
+                callFunction: input.callFunction!,
+              });
+              return deliveryState.current;
+            } finally {
+              timings.quoteDeliveryMs += elapsed(deliveryStarted);
+            }
           }
           : null,
       });
@@ -450,6 +471,8 @@ export async function executeControllerRoute(
     ],
   });
   timings.journalMs = elapsed(journalStarted);
+  timings.externalToolMs = timings.addressServiceAreaMs +
+    timings.availabilityMs + timings.bookingMs + timings.quoteDeliveryMs;
 
   return {
     spoken,

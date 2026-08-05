@@ -250,7 +250,12 @@ export interface ControllerInput {
   runTool?: typeof runTool;
   /** Sanitized stage timing callback; receives no customer content or ids. */
   onTiming?: (
-    stage: "pricing" | "address_service_area" | "availability" | "booking",
+    stage:
+      | "session_load"
+      | "pricing"
+      | "address_service_area"
+      | "availability"
+      | "booking",
     durationMs: number,
   ) => void;
 }
@@ -276,10 +281,16 @@ function requireControllerOrganization(input: ControllerInput): string | null {
  */
 /** Probe the canonical pricing engine for `missing[]`. Returns null if pricing
  *  config cannot be loaded (the FSM will fall back to its manifest tokens). */
-async function probePricingMissing(
+async function probeCanonicalPricing(
   supabase: SB,
   session: QuoteSession,
-): Promise<string[] | null> {
+): Promise<
+  {
+    missing: string[];
+    loaded: Awaited<ReturnType<typeof loadPricing>>;
+    result: ReturnType<typeof calculateQuote>;
+  } | null
+> {
   try {
     const loaded = await loadPricing(supabase);
     if (!loaded.ok || !loaded.pricing) return null;
@@ -288,7 +299,7 @@ async function probePricingMissing(
       loaded.pricing,
       loaded.ruleVersion,
     );
-    return result.missing ?? [];
+    return { missing: result.missing ?? [], loaded, result };
   } catch {
     return null;
   }
@@ -315,7 +326,8 @@ export async function runTurn(input: ControllerInput): Promise<TurnResult> {
     case "schedule_service": {
       // Canonical engine is the sole authority on pricing readiness.
       const pricingMissing = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
-        ? await probePricingMissing(input.supabase, session)
+        ? (await probeCanonicalPricing(input.supabase, session))?.missing ??
+          null
         : null;
       action = decideResidentialQuoteAction(session, pricingMissing);
       break;
@@ -483,7 +495,12 @@ export async function runControllerTurn(
 ): Promise<ControllerTurnResult> {
   const organizationId = requireControllerOrganization(input);
   const measure = async <T>(
-    stage: "pricing" | "address_service_area" | "availability" | "booking",
+    stage:
+      | "session_load"
+      | "pricing"
+      | "address_service_area"
+      | "availability"
+      | "booking",
     operation: () => Promise<T> | T,
   ): Promise<T> => {
     const started = performance.now();
@@ -495,14 +512,18 @@ export async function runControllerTurn(
       } catch { /* telemetry must never change the call */ }
     }
   };
-  let session = await reloadSession(input.supabase, {
-    sessionId: input.sessionId,
-    conversationId: input.conversationId,
-    channel: input.channel,
-    phone: input.phone,
-    email: input.email,
-    resolvedOrganizationId: organizationId,
-  });
+  let session = await measure(
+    "session_load",
+    () =>
+      reloadSession(input.supabase, {
+        sessionId: input.sessionId,
+        conversationId: input.conversationId,
+        channel: input.channel,
+        phone: input.phone,
+        email: input.email,
+        resolvedOrganizationId: organizationId,
+      }),
+  );
   const persistedScheduleContinuationAuthorized =
     scheduleContinuationIsAuthorized(session);
   const persistedPostPriceBranch = session.quoteStatus === "firm"
@@ -2333,9 +2354,17 @@ export async function runControllerTurn(
     };
   }
 
-  const pricingMissing = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
-    ? await probePricingMissing(input.supabase, session)
+  // The readiness decision and customer-facing calculation consume the same
+  // canonical pricing snapshot. Reusing it within this immutable section
+  // removes one database read and one complete calculation without relaxing
+  // freshness, tenant, coupon, promotion, tax, or duration authority.
+  const pricingProbe = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
+    ? await measure(
+      "pricing",
+      () => probeCanonicalPricing(input.supabase, session),
+    )
     : null;
+  const pricingMissing = pricingProbe?.missing ?? null;
   let action = decideResidentialQuoteAction(session, pricingMissing);
   if (action.kind === "handoff" && action.reason === "unsupported_service") {
     const allowedUnsupportedClarificationFields = [
@@ -2436,7 +2465,8 @@ export async function runControllerTurn(
         },
       };
     }
-    const loaded = await measure("pricing", () => loadPricing(input.supabase));
+    const loaded = pricingProbe?.loaded ??
+      await measure("pricing", () => loadPricing(input.supabase));
     if (!loaded.ok || !loaded.pricing) {
       const failed: WorkflowAction = {
         kind: "handoff",
@@ -2453,12 +2483,13 @@ export async function runControllerTurn(
       };
     }
     const pricing = loaded.pricing;
-    const result = await measure("pricing", () =>
-      calculateQuote(
-        quoteSessionFieldsToQuoteInput(session.fields),
-        pricing,
-        loaded.ruleVersion,
-      ));
+    const result = pricingProbe?.result ??
+      await measure("pricing", () =>
+        calculateQuote(
+          quoteSessionFieldsToQuoteInput(session.fields),
+          pricing,
+          loaded.ruleVersion,
+        ));
     const inputsKey = sessionInputsKey(session.fields);
     const intake = evaluateQuoteIntake(
       session.fields as unknown as Record<string, unknown>,

@@ -93,6 +93,31 @@ Deno.test("controller route journals the exact persisted/projection-backed turn"
   assertEquals(typeof journalArgs.retentionExpiresAt, "string");
 });
 
+Deno.test("phase9 projection reuses its exact scoped session without a duplicate read", async () => {
+  let reads = 0;
+  const result = await executeControllerRoute(input(), {
+    runController: async () => ({
+      sessionId: session.id,
+      sessionPatch: { fields: { services: ["windowCleaning"] } },
+      pre: { kind: "ask_intent" as const, spoken: "How can I help?" },
+    }),
+    persist: async () => ({ status: "persisted" as const }),
+    project: async () => ({
+      status: "projected" as const,
+      attempts: 1,
+      session,
+    }),
+    readSession: async () => {
+      reads += 1;
+      return session;
+    },
+    journal: async () => ({ written: 2, duplicates: 0, failed: 0 }),
+  });
+  assertEquals(reads, 0);
+  assertEquals(result.stateCommitted, true);
+  assertEquals(result.sessionId, session.id);
+});
+
 Deno.test("controller route speaks recoverable truth after projection failure", async () => {
   const result = await executeControllerRoute(input(), {
     runController: async () => ({
