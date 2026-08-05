@@ -2112,8 +2112,10 @@ Deno.test("phase4 asked discount spelling parser accepts letters once and reject
   row = await persistAndReload(rejected, rejectedTurn);
   assertEquals(rejected._state.discountReads, 0);
   assertEquals((row.fields as any).discountCode, undefined);
-  assertEquals((row.fields as any).voiceJourney.coupon.status, "invalid");
+  assertEquals((row.fields as any).voiceJourney.coupon.status, "unclear");
   assertEquals((row.fields as any).voiceJourney.coupon.reason, "malformed");
+  assertStringIncludes(rejectedTurn.pre.spoken, "Please spell the discount code once");
+  assertEquals((row.fields as any).voiceJourney.retryCounts.discountCode, 1);
 });
 
 Deno.test("phase4 pre-price valid coupon is normalized captured and later priced authoritatively", async () => {
@@ -2127,7 +2129,7 @@ Deno.test("phase4 pre-price valid coupon is normalized captured and later priced
   });
   let row = await persistAndReload(sb, turn1);
   assertStringIncludes(turn1.pre.spoken, "I have that discount code");
-  assertStringIncludes(turn1.pre.spoken, "square footage");
+  assertStringIncludes(turn1.pre.spoken, "How many square feet is your home?");
   assertEquals((row.fields as any).discountCode, "SAVE10");
   assertEquals((row.fields as any).voiceJourney.coupon.discountValue, 10);
   const turn2 = await runControllerTurn({
@@ -2180,7 +2182,7 @@ Deno.test("phase4 generated quote snapshot retains authoritative discount", asyn
 Deno.test("phase4 invalid inactive expired exhausted and uncertain codes are rejected without changing firm quote", async () => {
   for (const [label, discountRows, expected] of [
     ["unknown", [], "could not find"],
-    ["inactive", [{ ...VALID_DISCOUNTS[0], is_active: false }], "no longer active"],
+    ["inactive", [{ ...VALID_DISCOUNTS[0], is_active: false }], "not active"],
     ["expired", [{ ...VALID_DISCOUNTS[0], expires_at: "2020-01-01T00:00:00.000Z" }], "expired"],
     ["exhausted", [{ ...VALID_DISCOUNTS[0], usage_count: 1, max_uses: 1 }], "maximum uses"],
     ["uncertain", [{ ...VALID_DISCOUNTS[0], discount_value: 101 }], "couldn't safely validate"],
@@ -2225,10 +2227,19 @@ Deno.test("phase4 duplicate text delivery after discount does not reapply or res
 });
 
 Deno.test("phase4 promotion path remains distinct and coupon state alone cannot authorize providers", async () => {
-  const promo = makeFake({ pricingRows: PRICING_ROWS, discountRows: VALID_DISCOUNTS });
-  const promoTurn = await runControllerTurn({ supabase: promo, conversationId: "c1", channel: "voice", utterance: "I saw your $99 window special", history: [] });
-  assertEquals((promoTurn.sessionPatch.fields as any).promotionId, "PROMO_99_WINDOWS");
-  assertEquals((promoTurn.sessionPatch.fields as any).discountCode, undefined);
+  const promo = makeFake({ pricingRows: PROMO_PRICING_ROWS, discountRows: VALID_DISCOUNTS });
+  promo._state.session.fields = { voiceJourney: { intent: "new_quote" } };
+  promo._state.session.last_step = "asked:services";
+  const promoTurn = await runControllerTurn({
+    supabase: promo,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I want the $99 window special",
+    history: [],
+  });
+  const promoRow = await persistAndReload(promo, promoTurn);
+  assertEquals((promoRow.fields as any).promotionId, "PROMO_99_WINDOWS");
+  assertEquals((promoRow.fields as any).discountCode, undefined);
 
   const couponOnly = makeFake({ pricingRows: PRICING_ROWS, discountRows: VALID_DISCOUNTS });
   setFirmWindowSession(couponOnly, "none");
@@ -2282,7 +2293,7 @@ Deno.test("phase4 pre-price invalid coupon explains rejection and continues exac
   });
   const row = await persistAndReload(sb, turn);
   assertStringIncludes(turn.pre.spoken, "I could not find that discount code");
-  assertStringIncludes(turn.pre.spoken, "square footage");
+  assertStringIncludes(turn.pre.spoken, "How many square feet is your home?");
   assertEquals((row.fields as any).discountCode, undefined);
   assertEquals((row.fields as any).voiceJourney.coupon.status, "invalid");
 });
