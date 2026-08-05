@@ -171,6 +171,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/voicePolicy_test.ts",
   "supabase/functions/_shared/voice/voiceOrganizationAuthority.ts",
   "supabase/functions/_shared/voice/voiceOrganizationAuthority_test.ts",
+  "supabase/functions/_shared/voice/voiceRemediation67_test.ts",
   "supabase/functions/_shared/voice/voiceRemediation68_test.ts",
   "supabase/functions/_shared/voice/voiceTurnCoordinator.ts",
   "supabase/functions/_shared/voice/voiceTurnCoordinator_test.ts",
