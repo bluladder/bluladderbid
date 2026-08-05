@@ -190,7 +190,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "4e28c489a38a18c88dd3aa924ac80fcc28c436ec"
+          test "$(git rev-parse HEAD^)" = "05068c82e91676b15c4e48cd1e7e58ac10d0cefc"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/ci.yml"
           test "$(git hash-object supabase/release-candidates/voice_turn_single_flight.sql)" = "d78b7142c649cfa623ec66a0805e986758a0ca91"
           test -z "$(git status --porcelain)"
@@ -203,6 +203,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
+          import textwrap
 
           path = Path('/tmp/pr80_phase5_transform.py')
           text = path.read_text()
