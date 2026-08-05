@@ -2185,7 +2185,7 @@ Deno.test("phase4 invalid inactive expired exhausted and uncertain codes are rej
     ["inactive", [{ ...VALID_DISCOUNTS[0], is_active: false }], "not active"],
     ["expired", [{ ...VALID_DISCOUNTS[0], expires_at: "2020-01-01T00:00:00.000Z" }], "expired"],
     ["exhausted", [{ ...VALID_DISCOUNTS[0], usage_count: 1, max_uses: 1 }], "usage limit"],
-    ["uncertain", [{ ...VALID_DISCOUNTS[0], discount_value: 101 }], "couldn't safely validate"],
+    ["uncertain", [{ ...VALID_DISCOUNTS[0], discount_value: 101 }], "cannot verify that code safely"],
   ] as const) {
     const sb = makeFake({ pricingRows: PRICING_ROWS, discountRows });
     setFirmWindowSession(sb, "text_quote");
