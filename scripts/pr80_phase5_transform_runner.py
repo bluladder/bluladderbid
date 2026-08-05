@@ -83,4 +83,52 @@ new_classifier = '''  if (/\\b(?:street|road|drive|lane|avenue|boulevard)\\b/i.t
   }'''
 if controller_source.count(old_classifier) != 1:
     raise SystemExit("Unable to narrow generic address disagreement classification")
-controller.write_text(controller_source.replace(old_classifier, new_classifier, 1))
+controller_source = controller_source.replace(old_classifier, new_classifier, 1)
+
+# The address-manual-review terminal must be durable even if a future helper
+# changes how lastStep is carried through mergeFields. Pin the persisted patch
+# explicitly after capture rather than relying on an implicit object property.
+old_terminal = '''    capture(
+      { ...next, quoteStatus: session.quoteStatus, bookingReady: false },
+      "manual_review:address_uncertain",
+    );
+    return {'''
+new_terminal = '''    capture(
+      { ...next, quoteStatus: session.quoteStatus, bookingReady: false },
+      "manual_review:address_uncertain",
+    );
+    sessionPatch.last_step = "manual_review:address_uncertain";
+    sessionPatch.quote_status = session.quoteStatus;
+    sessionPatch.booking_ready = false;
+    return {'''
+if controller_source.count(old_terminal) != 1:
+    raise SystemExit("Unable to pin durable address manual-review terminal")
+controller.write_text(controller_source.replace(old_terminal, new_terminal, 1))
+
+# Prove the returned patch itself is terminal before the in-memory persistence
+# seam runs. This prevents a fake-database quirk from hiding a controller-state
+# regression and makes the intended write boundary explicit.
+test_file = Path(
+    "supabase/functions/_shared/workflow/workflowController_rollout_test.ts"
+)
+test_source = test_file.read_text()
+test_start = test_source.find(
+    'Deno.test("phase5 address uncertainty allows one clarification then preserves quote for manual review"'
+)
+if test_start < 0:
+    raise SystemExit("Unable to find Phase 5 address uncertainty test")
+needle = "      row = await persistAndReload(sb, second);"
+needle_index = test_source.find(needle, test_start)
+if needle_index < 0:
+    raise SystemExit("Unable to find Phase 5 second-turn persistence boundary")
+insertion = (
+    '      assertEquals(second.sessionPatch.last_step, '
+    '"manual_review:address_uncertain");\n'
+    '      assertEquals(second.sessionPatch.quote_status, "firm");\n'
+)
+test_source = (
+    test_source[:needle_index]
+    + insertion
+    + test_source[needle_index:]
+)
+test_file.write_text(test_source)
