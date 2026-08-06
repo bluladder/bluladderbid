@@ -231,9 +231,9 @@ isolated assistant to `buildVoiceBetaAssistantManifest()` in
 - Start speaking wait: 0.4 seconds; Vapi smart endpointing enabled; punctuation
   wait 0.3 seconds; no-punctuation wait 1.2 seconds; spoken-number wait 1.0
   second.
-- Logging: enabled.
-- Full message history: enabled.
-- Transcript artifact: enabled.
+- Logging: disabled.
+- Full message history: disabled.
+- Transcript artifact: disabled.
 - End-of-call artifact event: `end-of-call-report` enabled. Allowed events
   remain only `assistant.started`, `status-update`, `hang`, and
   `end-of-call-report`.
@@ -247,8 +247,10 @@ isolated assistant to `buildVoiceBetaAssistantManifest()` in
 - Maximum duration and warning/cutoff copy: unchanged from the manifest.
 
 Verify dashboard values without copying secrets, contact data, or transcripts
-into release evidence. Stop if Vapi cannot match the reviewed manifest or its
-Zero Data Retention requirement.
+into release evidence. The owner declined the paid ZDR add-on; do not represent
+this configuration as ZDR. Stop if Vapi cannot match the reviewed manifest,
+adds an unreviewed transcriber path, or removes required VAD-assisted
+endpointing from the explicit fallback.
 
 ### 7. Authorize and run one controlled paid call
 

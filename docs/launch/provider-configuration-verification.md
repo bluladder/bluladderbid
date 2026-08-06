@@ -322,7 +322,8 @@ The authoritative repository manifest is
 ### Read-only evidence
 
 - expected Vapi organization and plan;
-- Zero Data Retention enabled and HIPAA mode disabled;
+- owner-approved lower-cost privacy mode: ZDR and HIPAA disabled, with no
+  billing change;
 - isolated inbound English assistant matches the manifest;
 - custom-LLM and server-event credentials are attached, presence only;
 - URLs target the intended hosted project;
@@ -330,8 +331,8 @@ The authoritative repository manifest is
 - provider tools are empty and transfer is disabled;
 - raw recording, video, packet capture, summary, structured output, and
   analysis are disabled;
-- sanitized operational logging, transcript delivery, full message history,
-  and end-of-call reporting match the reviewed repository manifest;
+- Vapi logging, transcript retention, and full message history disabled;
+  end-of-call reporting still matches the reviewed repository manifest;
 - the BluLadder 30-day transcript deadline and approved expired-row purge are
   verified;
 - events are exactly `assistant.started`, `status-update`, `hang`, and
@@ -344,11 +345,13 @@ such as `live` fails closed, and the dry-run result carries
 
 ### Stop conditions
 
-- ZDR cannot be proven;
+- any Vapi content-retention surface is enabled or the provider configuration
+  is described as equivalent to ZDR;
 - raw recording, video, packet capture, summary, structured output, or
   analysis is enabled;
-- transcript/full-message/end-of-call delivery differs from the reviewed
-  repository manifest, or the 30-day expiry process cannot be proven;
+- logging/transcript/full-message retention or end-of-call delivery differs
+  from the reviewed repository manifest, or the 30-day expiry process cannot
+  be proven;
 - the assistant has a provider tool or transfer destination;
 - the DID, assistant, event URL, or custom-LLM URL targets another
   environment;

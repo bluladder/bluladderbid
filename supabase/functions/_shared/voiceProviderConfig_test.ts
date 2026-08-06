@@ -48,15 +48,15 @@ Deno.test("manifest: exact duration and hook copy", () => {
   );
 });
 
-Deno.test("manifest: transcript/message artifacts enabled while raw recording stays off", () => {
+Deno.test("manifest: every configurable retained call-content surface is off", () => {
   const m = buildVoiceBetaAssistantManifest({ adapterUrl, serverEventsUrl });
   const s = m.artifactPlan;
   assertEquals(s.recordingEnabled, false);
   assertEquals(s.videoRecordingEnabled, false);
   assertEquals(s.pcapEnabled, false);
-  assertEquals(s.loggingEnabled, true);
-  assertEquals(s.fullMessageHistoryEnabled, true);
-  assertEquals(s.transcriptPlan.enabled, true);
+  assertEquals(s.loggingEnabled, false);
+  assertEquals(s.fullMessageHistoryEnabled, false);
+  assertEquals(s.transcriptPlan.enabled, false);
   assertEquals(m.analysisPlan.summaryPlan.enabled, false);
   assertEquals(m.analysisPlan.structuredDataPlan.enabled, false);
   assertEquals(m.analysisPlan.successEvaluationPlan.enabled, false);
@@ -69,7 +69,7 @@ Deno.test("manifest: explicit English Nova-3 primary and AssemblyAI fallback", (
   assertEquals(m.transcriber.language, "en");
   assertEquals(m.transcriber.smartFormat, true);
   assertEquals(m.transcriber.keyterm, [...VOICE_TRANSCRIBER_KEYTERMS]);
-  assertEquals(m.transcriber.fallbackPlan.autoFallback.enabled, true);
+  assertEquals(m.transcriber.fallbackPlan.autoFallback.enabled, false);
   assertEquals(m.transcriber.fallbackPlan.transcribers, [{
     provider: "assembly-ai",
     speechModel: "universal-streaming-english",
@@ -77,6 +77,16 @@ Deno.test("manifest: explicit English Nova-3 primary and AssemblyAI fallback", (
     keytermsPrompt: [...VOICE_TRANSCRIBER_KEYTERMS],
     vadAssistedEndpointingEnabled: true,
   }]);
+  assertEquals(
+    Object.keys(m.transcriber.fallbackPlan.transcribers[0]).sort(),
+    [
+      "keytermsPrompt",
+      "language",
+      "provider",
+      "speechModel",
+      "vadAssistedEndpointingEnabled",
+    ],
+  );
   assertEquals(m.startSpeakingPlan.smartEndpointingPlan.provider, "livekit");
   assertEquals(
     m.startSpeakingPlan.smartEndpointingPlan.waitFunction,

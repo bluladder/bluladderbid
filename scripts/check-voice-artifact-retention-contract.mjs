@@ -10,6 +10,9 @@ const postflightPath =
   "supabase/verification/voice_artifact_retention_postflight.sql";
 const stage7bCheckerPath = "scripts/check-tenant-authority-stage-7b-v2.mjs";
 const ciPath = ".github/workflows/ci.yml";
+const manifestPath =
+  "supabase/functions/_shared/voiceProviderConfig.ts";
+const provisioningPath = "docs/voice-beta-vapi-provisioning.md";
 
 const migration = fs.readFileSync(migrationPath, "utf8");
 const rehearsal = fs.readFileSync(rehearsalPath, "utf8");
@@ -18,6 +21,8 @@ const preflight = fs.readFileSync(preflightPath, "utf8");
 const postflight = fs.readFileSync(postflightPath, "utf8");
 const stage7bChecker = fs.readFileSync(stage7bCheckerPath, "utf8");
 const ci = fs.readFileSync(ciPath, "utf8");
+const manifest = fs.readFileSync(manifestPath, "utf8");
+const provisioning = fs.readFileSync(provisioningPath, "utf8");
 
 function fail(message) {
   throw new Error(`Voice artifact retention contract: ${message}`);
@@ -123,6 +128,30 @@ requireFragments(runbook, "release runbook", [
   "Raw recording: disabled",
   "PCAP: disabled",
 ]);
+
+requireFragments(manifest, "Vapi manifest", [
+  "autoFallback: { enabled: false }",
+  'provider: "assembly-ai"',
+  'speechModel: "universal-streaming-english"',
+  "vadAssistedEndpointingEnabled: true",
+  "recordingEnabled: false",
+  "videoRecordingEnabled: false",
+  "pcapEnabled: false",
+  "loggingEnabled: false",
+  "fullMessageHistoryEnabled: false",
+  "transcriptPlan: { enabled: false }",
+]);
+requireFragments(provisioning, "Vapi provisioning runbook", [
+  "owner declined Vapi's paid Zero Data Retention add-on",
+  "not equivalent to organization-level ZDR",
+  "Automatic implicit fallback is disabled",
+  "vadAssistedEndpointingEnabled: true",
+  "Operational call metadata may remain",
+]);
+
+if (/autoFallback:\s*\{\s*enabled:\s*true\s*\}/.test(manifest)) {
+  fail("Vapi manifest enables unreviewed automatic transcriber fallback");
+}
 
 requireFragments(preflight, "hosted preflight", [
   "BEGIN TRANSACTION READ ONLY",
