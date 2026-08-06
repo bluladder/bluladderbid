@@ -1,78 +1,78 @@
-# Customer Intelligence + Admin Portal — Staged Plan
+# PR #80 Release Preflight — Read-Only Report
 
-## Reality check
+No source, secret, environment, deployment, SQL, data, or provider state was changed. All findings come from the linked repository checkout, `supabase/config.toml`, the project's native backend metadata, and unauthenticated `OPTIONS` probes (no function logic invoked).
 
-The scope you sent spans 11 major systems (admin shell, action inbox, knowledge-gap automation, lead attribution end-to-end, CallRail intelligence + webhooks, missed-call/promise tracking, Gmail assistant with OAuth, KPI reporting engine, content recommendations, customer 360, policy conflict detector) plus tests. Every one of those is a multi-day slice on this codebase (63-column bookings table, 90+ tables, dozens of edge functions already in flight).
+## 1. Linked commit
 
-Doing it "in one coherent pass" would produce thin scaffolding everywhere and near-guaranteed regressions in the live booking, SMS, and campaign flows. I want to build this well, not everywhere-at-once.
+CONFIRMED. Linked repository HEAD is exactly:
 
-I'm asking for approval on staged delivery. Each phase is a single implementation pass with tests, ends in a working state, and doesn't block the ones after it.
+```text
+3ece0ec373a17d671cbb7ba6a44774c49affb35e   (2026-08-06 08:43:03 -0500)
+```
 
-## Proposed phases
+Working tree is clean on the active edit branch.
 
-**Phase 1 — Admin shell + Overview + Action Inbox (data model + UI)**
-- New `/admin` shell with left nav (Overview, Action Inbox, Leads, Conversations, Knowledge, Email Drafts, Reports, Integrations, Settings). Existing tabs move into the shell — no capability removed.
-- `action_inbox_items` table (all 11 types, priority/status/snooze/owner/metadata, admin RLS).
-- Overview cards wired to real counts (leads, bookings, close rate, open actions, unresolved gaps).
-- Action Inbox list + detail with filters, bulk resolve, source links.
+## 2. Backend identity
 
-**Phase 2 — Lead attribution end-to-end**
-- Schema: `self_reported_source`, `self_reported_source_detail`, `attribution_*`, first/last touch on `quote_sessions`, `quotes`, `bookings`, `customers`.
-- `lead_sources` admin table (aliases, grouping, active flag, seed defaults).
-- Booking flow: required-with-skip lead source step + "Other" custom text.
-- Jobber sync audit + safest mapping (custom field or note), sync status surfaced in Admin.
-- Tests: capture, normalization, Jobber idempotency, fallback.
+CONFIRMED as the BluLadder Bid production backend, by exact non-secret identifiers:
 
-**Phase 3 — Knowledge-gap automation + notification routing**
-- `knowledge_gaps` classification (7 reasons), dedup, escalation.
-- Hook into orchestrator low-confidence path → creates gap + Action Inbox item.
-- Notification service using existing SMS/email infra, admin preferences, safe-disabled state.
-- Immediate vs digest routing rules.
+- Project reference: `gyndziiuizpgwhqwyrvn`
+- Backend URL: `https://gyndziiuizpgwhqwyrvn.supabase.co`
+- Managed by Lovable: true; Paused: false
+- Same reference is pinned in `supabase/config.toml` (`project_id`) and in the deployment smoke test's production constant.
 
-**Phase 4 — CallRail conversation intelligence**
-- `callrail_calls`, `conversation_transcripts`, `conversation_insights`, `promises` (idempotent on CallRail call ID).
-- Webhook ingestion + reconciliation cron for late transcripts.
-- Insights extraction (intent, objections, promises, risk flags) via existing AI orchestrator.
-- Conversations admin page with actions ("Create knowledge record", etc.).
+No keys, tokens, passwords, or connection credentials are reproduced here.
 
-**Phase 5 — Missed-call recovery + promise tracking**
-- Missed-call → Action Inbox item + suggested SMS draft (no auto-send).
-- Overdue promise flagging.
+## 3. Function existence
 
-**Phase 6 — Gmail draft assistant (code-complete, gated)**
-- Integrations > Gmail setup screen; verifies mailbox == ben@bluladder.com.
-- `email_threads`, `email_drafts` schema; classification + draft generation service.
-- Email Drafts admin page (edit/approve/dismiss/owner-needed).
-- Full functional path behind "Connect ben@bluladder.com" disabled state until OAuth secrets provided. I'll list exact secrets needed.
+All four exist in source and answer on the deployed edge runtime (no `NOT_FOUND_FUNCTION_BLOB`):
 
-**Phase 7 — Reporting + KPIs + scheduling**
-- `marketing_spend`, `report_runs`, `report_artifacts`.
-- Aggregation service for all listed KPIs, channel breakdown, WoW/MoM/QoQ/YoY.
-- Weekly + monthly cron; archived Reports page; email to ben@bluladder.com when email is configured.
+| Function | Source present | Deployed probe |
+| --- | --- | --- |
+| validate-discount-code | yes | 200 |
+| send-sms | yes | 200 |
+| voice-vapi-events | yes | 200 |
+| voice-llm-adapter | yes | 200 |
 
-**Phase 8 — Content recommendations + Customer 360 + policy-conflict detector**
-- `content_recommendations` with clustering/dedup.
-- Customer timeline view combining calls, texts, emails, quotes, bookings, appointments, AI chats, actions.
-- Policy-conflict detector across transcripts, templates, KB, website-synced knowledge → Action Inbox items.
+## 4. Version marker and verify_jwt
 
-## Cross-cutting rules (applied every phase)
+| Function | Build/version marker | verify_jwt |
+| --- | --- | --- |
+| validate-discount-code | none (no build marker emitted; version = commit only) | false (explicit in config.toml) |
+| send-sms | none (no build marker emitted; version = commit only) | false (explicit in config.toml) |
+| voice-vapi-events | shared `BUILD_ID` = `voice-adapter-4C-b.6.8-address-gate-enforcement` | false (explicit in config.toml) |
+| voice-llm-adapter | shared `BUILD_ID` = `voice-adapter-4C-b.6.8-address-gate-enforcement` | false (explicit in config.toml) |
 
-- Idempotent migrations; no data loss; no infra migration; no publish/deploy.
-- **Auto-send policy (Ben's clarification):**
-  - **Email:** draft-only, always. Create a Gmail draft in the original thread for ben@bluladder.com and notify Ben. Never auto-send customer email.
-  - **SMS + operational follow-ups:** automatic by default for approved, low-risk workflows — missed-call recovery, quote follow-up, appointment reminders/follow-up, promised callbacks, knowledge-gap escalation to Ben. Enforce consent/opt-out, quiet hours, rate limits, idempotency, and stop conditions.
-  - **Never auto-send substantive customer replies** for complaints, damage claims, refunds, legal/safety, pricing exceptions, or unusual jobs. Create urgent owner Action Inbox items + internal notifications; only a safe acknowledgment from an approved template is allowed.
-  - **Per-workflow admin config:** enabled, delay, cadence, max attempts, channel, template, quiet hours, escalation. Preserve existing approved transactional automation.
-- Admin RLS on every new table; rate limits + idempotency on all webhooks/ingestion.
-- Typecheck + production build + focused tests must stay green.
-- Final honest audit each phase: what works, what's awaiting credentials, exact manual setup steps.
+Note: `BUILD_ID` is a shared constant, so the two voice functions cannot be distinguished from each other by marker alone; the authoritative per-deploy identity is the commit SHA above. The marker string is unchanged from the previously deployed value, so a post-deploy read-back of the marker will NOT by itself prove the new bundle landed.
 
-## Ask
+## 5. Flag presence (state only, no values)
 
-Reply with one of:
-1. **"Go phase 1"** — I start on the admin shell + Action Inbox now, ship it end-to-end with tests, then stop and wait for your review before phase 2.
-2. **"Reorder to X first"** — tell me which phase to lead with (e.g., attribution is the highest business ROI; CallRail intelligence is the biggest unlock).
-3. **"Compress to N phases"** — I'll merge and tell you exactly what gets thinner.
-4. **"Just do everything, thin is fine"** — I'll do one shallow pass across all 11 areas with schema + skeleton UI + no deep logic, and be explicit that most of it is scaffolding.
+| Variable | State |
+| --- | --- |
+| VOICE_LIVE_BOOKING_ENABLED | present |
+| VOICE_PROVIDER_DEBUG | absent |
+| VOICE_PROVIDER_DEBUG_PRODUCTION_OVERRIDE | absent |
+| VOICE_LATENCY_METRICS | absent |
+| VOICE_WORKFLOW_CONTROLLER_ENABLED | absent |
 
-Default recommendation: **Go phase 1**, then attribution (phase 2), then CallRail (phase 4) — those three unlock the Action Inbox, the reporting numbers, and the intelligence feed everything else depends on.
+Code defaults for the absent flags: provider debug fails closed (off, and additionally suppressed in production without the override), latency metrics off, workflow controller defaults to enabled-with-allowlist per `rolloutRoute.ts` — so its behavior is governed by the separately present allowlist/test-secret secrets rather than by an explicit enable flag.
+
+## 6. Blockers to deploying the four bundles in order
+
+No hard blocker found for the deployment sequence itself:
+
+1. validate-discount-code
+2. send-sms
+3. voice-vapi-events
+4. voice-llm-adapter
+
+Conditions and cautions to record before proceeding:
+
+- Deployment must be authorized separately; this preflight performed none.
+- CI (lint, typecheck, unit, build, deno tests) and the SQL/migration gate must be green at `3ece0ec…` — not verified in this read-only pass, since running them was outside the requested scope.
+- `send-sms` and `voice-llm-adapter` sit on live customer-facing delivery paths; deploy them only after the two lower-risk bundles read back healthy.
+- Verification caveat: because `BUILD_ID` is unchanged, confirm the deploy by the platform's reported deployment/revision result plus a `GET /diagnostics` 200 on `voice-llm-adapter`, not by marker comparison.
+- `verify_jwt = false` is declared for all four in the single `config.toml`; do not add per-function overrides during deploy.
+- Voice live-booking and public-booking flags are owner-controlled secrets; nothing in this sequence should change them.
+
+Redaction: no tokens, keys, phone numbers, customer data, transcripts, or provider identifiers are included above.
