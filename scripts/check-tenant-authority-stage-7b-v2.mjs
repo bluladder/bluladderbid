@@ -214,12 +214,13 @@ const allowedEdgePaths = new Set([
 ]);
 const changedEdgePaths = changedPaths(["supabase/functions"]);
 // Main already carried this Lovable-generated MCP bundle before PR #80. Keep
-// that inherited drift separate from the voice-policy review and pin its exact
-// blob so this exception cannot silently authorize a later MCP regeneration.
+// that inherited drift separate from the voice-policy review and pin the exact
+// Lovable SDK 0.20.1 regeneration so this exception cannot silently authorize
+// a later MCP regeneration.
 const inheritedEdgeBlobs = new Map([
   [
     "supabase/functions/mcp/index.ts",
-    "030bf54cb69a4ae8324c54bf4a9cf1f3e640747d",
+    "ff48f6ebdafd458a10e8bef2aac1309c5feb3761",
   ],
 ]);
 for (const [path, expectedBlob] of inheritedEdgeBlobs) {
