@@ -407,7 +407,11 @@ const VALID_DISCOUNTS: Row[] = [
     discount_type: "percentage",
     discount_value: 10,
     is_active: true,
-    expires_at: "2026-08-06T00:00:00.000Z",
+    // This fixture represents an always-valid code. Expiration behavior is
+    // covered below with an explicitly expired row and by the validator's
+    // injected-clock tests; a wall-clock date here makes the rollout suite
+    // fail after that date passes.
+    expires_at: null,
     usage_count: 0,
     max_uses: null,
   },
