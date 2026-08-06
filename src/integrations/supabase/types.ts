@@ -6121,6 +6121,94 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_external_action_claims: {
+        Row: {
+          action_key: string
+          call_id: string
+          claim_token: string
+          created_at: string
+          finished_at: string | null
+          organization_id: string
+          status: string
+          turn_id: string
+        }
+        Insert: {
+          action_key: string
+          call_id: string
+          claim_token: string
+          created_at?: string
+          finished_at?: string | null
+          organization_id: string
+          status: string
+          turn_id: string
+        }
+        Update: {
+          action_key?: string
+          call_id?: string
+          claim_token?: string
+          created_at?: string
+          finished_at?: string | null
+          organization_id?: string
+          status?: string
+          turn_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_external_action_claims_organization_id_call_id_turn__fkey"
+            columns: ["organization_id", "call_id", "turn_id"]
+            isOneToOne: false
+            referencedRelation: "voice_turn_claims"
+            referencedColumns: ["organization_id", "call_id", "turn_id"]
+          },
+        ]
+      }
+      voice_turn_claims: {
+        Row: {
+          call_id: string
+          claim_token: string
+          completed_at: string | null
+          content_hash: string
+          created_at: string
+          lease_expires_at: string
+          organization_id: string
+          position: number
+          status: string
+          turn_id: string
+        }
+        Insert: {
+          call_id: string
+          claim_token: string
+          completed_at?: string | null
+          content_hash: string
+          created_at?: string
+          lease_expires_at: string
+          organization_id: string
+          position: number
+          status: string
+          turn_id: string
+        }
+        Update: {
+          call_id?: string
+          claim_token?: string
+          completed_at?: string | null
+          content_hash?: string
+          created_at?: string
+          lease_expires_at?: string
+          organization_id?: string
+          position?: number
+          status?: string
+          turn_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_turn_claims_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       weather_status: {
         Row: {
           advisory_message: string | null
@@ -6461,6 +6549,31 @@ export type Database = {
         Args: { p_confirmation_id: string; p_execution_token: string }
         Returns: Json
       }
+      claim_voice_external_action: {
+        Args: {
+          p_action_key: string
+          p_call_id: string
+          p_claim_token: string
+          p_organization_id: string
+          p_turn_id: string
+        }
+        Returns: {
+          status: string
+        }[]
+      }
+      claim_voice_turn: {
+        Args: {
+          p_call_id: string
+          p_claim_token: string
+          p_content_hash: string
+          p_organization_id: string
+          p_position: number
+          p_turn_id: string
+        }
+        Returns: {
+          status: string
+        }[]
+      }
       clear_live_jobber_authorization: {
         Args: { p_email: string }
         Returns: undefined
@@ -6479,6 +6592,14 @@ export type Database = {
           p_reference_number: string
         }
         Returns: Json
+      }
+      complete_voice_turn: {
+        Args: {
+          p_call_id: string
+          p_organization_id: string
+          p_turn_id: string
+        }
+        Returns: undefined
       }
       compute_customer_lifecycle: {
         Args: { p_customer_id: string }
@@ -6540,6 +6661,16 @@ export type Database = {
         }
         Returns: Json
       }
+      finish_voice_external_action: {
+        Args: {
+          p_action_key: string
+          p_call_id: string
+          p_organization_id: string
+          p_outcome: string
+          p_turn_id: string
+        }
+        Returns: undefined
+      }
       generate_booking_reference: { Args: never; Returns: string }
       has_admin_level: {
         Args: { _min_level: string; _user_id: string }
@@ -6553,6 +6684,14 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      is_authoritative_voice_turn: {
+        Args: {
+          p_call_id: string
+          p_organization_id: string
+          p_turn_id: string
+        }
+        Returns: boolean
+      }
       is_read_only_admin: { Args: never; Returns: boolean }
       mark_sms_booking_recoverable_failure: {
         Args: {
@@ -6577,6 +6716,14 @@ export type Database = {
           p_provider_response: Json
         }
         Returns: Json
+      }
+      mark_voice_turn_uncertain: {
+        Args: {
+          p_call_id: string
+          p_organization_id: string
+          p_turn_id: string
+        }
+        Returns: undefined
       }
       normalize_lead_source: { Args: { p_value: string }; Returns: string }
       protect_reservation_for_execution: {
