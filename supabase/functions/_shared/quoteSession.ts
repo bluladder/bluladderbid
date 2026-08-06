@@ -195,9 +195,19 @@ export interface QuoteSessionFields {
     | "contact_confirmed"
     | "declined";
   callerIdProposedE164?: string;
+  /** Opaque same-tenant candidate only; never customer authority by itself. */
+  returningCustomerCandidateId?: string;
   returningCustomerId?: string;
   returningCustomerResolved?: boolean;
   awaitingDisambiguator?: boolean;
+  returningCustomerLookupStatus?:
+    | "candidate"
+    | "verified"
+    | "ambiguous"
+    | "not_found"
+    | "unavailable"
+    | "unverifiable"
+    | "name_conflict";
   lastQuoteResult?: {
     status?: string;
     estimatedDurationMinutes?: number | null;
@@ -211,6 +221,20 @@ export interface QuoteSessionFields {
    * migration or parallel voice-only record is required.
    */
   voiceJourney?: {
+    /** Declarative conversational policy version used for this session. */
+    policyVersion?: string;
+    retryCounts?: Record<string, number>;
+    conditionalModifierQuestionAsked?: string;
+    volunteeredNotes?: string[];
+    requestedNextStep?: "text_quote" | "schedule" | "none";
+    coupon?: {
+      code: string;
+      status: "captured" | "valid" | "invalid" | "unclear";
+      reason?: string | null;
+      discountType?: "percentage" | "fixed" | null;
+      discountValue?: number | null;
+      authoritativeAmount?: number | null;
+    } | null;
     intent?:
       | "new_quote"
       | "schedule"
@@ -261,10 +285,16 @@ export interface QuoteSessionFields {
         | "delivered"
         | "retry_pending"
         | "uncertain"
+        | "suppressed"
+        | "manual_follow_up"
         | "failed_terminal";
       attemptId?: string | null;
       providerMessageId?: string | null;
       requestedAt?: string | null;
+      deliveryIdentityKey?: string | null;
+      quoteFingerprint?: string | null;
+      recipientHash?: string | null;
+      purpose?: "voice_generated_quote" | "generic_bid_link";
     } | null;
     availability?: {
       status:
@@ -430,6 +460,13 @@ export function mergeFields(
       if (!resolved || resolved === prev.fields.phone) continue;
       nextFields.phone = resolved;
       nextStatus.phone = prev.fields.phone ? "corrected" : "captured";
+      // A changed contact number invalidates every phone-derived customer
+      // candidate and verification result. Nothing may carry across numbers.
+      delete nextFields.returningCustomerCandidateId;
+      delete nextFields.returningCustomerId;
+      delete nextFields.returningCustomerResolved;
+      delete nextFields.awaitingDisambiguator;
+      delete nextFields.returningCustomerLookupStatus;
       continue;
     }
     (nextFields as Record<string, unknown>)[key] = v;
@@ -438,6 +475,13 @@ export function mergeFields(
     const changed = prevVal !== undefined &&
       JSON.stringify(prevVal) !== JSON.stringify(v);
     nextStatus[key] = wasCaptured && changed ? "corrected" : "captured";
+    if (key === "name" && changed) {
+      delete nextFields.returningCustomerCandidateId;
+      delete nextFields.returningCustomerId;
+      delete nextFields.returningCustomerResolved;
+      delete nextFields.awaitingDisambiguator;
+      delete nextFields.returningCustomerLookupStatus;
+    }
     if (key !== "answerProvenance" && key !== "confirmationSummary") {
       nextProvenance[key] = "explicitly_selected";
     }
@@ -528,6 +572,7 @@ export function mergeFields(
     if (nextFields.voiceJourney) {
       nextFields.voiceJourney = {
         ...nextFields.voiceJourney,
+        requestedNextStep: "none",
         quoteContext: null,
         delivery: null,
         availability: null,
@@ -1141,11 +1186,18 @@ function stableValue(value: unknown): unknown {
  * arithmetic inputs.
  */
 export function sessionInputsKey(fields: QuoteSessionFields): string {
-  const source = fields as unknown as Record<string, unknown>;
+  const source = {
+    ...(fields as unknown as Record<string, unknown>),
+    services: evaluateQuoteIntake(fields as unknown as Record<string, unknown>)
+      .services.slice().sort(),
+  };
   const contractValues: Record<string, unknown> = {};
   const includedFieldIds = new Set<string>();
   const selectedServices = evaluateQuoteIntake(source).services;
+  const storyNeutralWindowOnly = selectedServices.length === 1 &&
+    selectedServices[0] === "window_cleaning";
   for (const spec of CANONICAL_INTAKE_FIELDS) {
+    if (storyNeutralWindowOnly && spec.fieldId === "stories") continue;
     if (
       spec.appliesToServices.some((service) =>
         selectedServices.includes(service)

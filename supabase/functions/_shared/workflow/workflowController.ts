@@ -11,9 +11,9 @@
 //   7. LLM produces natural wording ONLY for the resolved Action
 //
 // The rollout-gated controller owns quote sequencing and invokes the hardened
-// pricing/availability/booking boundaries directly. Tenant-scoped existing
-// record and destructive appointment paths remain explicitly blocked until
-// server-derived organization authority is available.
+// pricing/availability/booking boundaries directly. Phone-first reuse is an
+// opaque, tenant-scoped contact candidate only; existing-record and destructive
+// appointment paths remain explicitly blocked.
 // ============================================================================
 
 import type { QuoteSessionChannel } from "../quoteSession.ts";
@@ -31,6 +31,11 @@ import {
   sessionInputsKey,
 } from "../quoteSession.ts";
 import { quoteSessionFieldsToQuoteInput } from "../quoteSessionPricingAdapter.ts";
+import {
+  type DiscountValidationReason,
+  normalizeAuthoritativeDiscountCode,
+  validateDiscountCodeAuthoritatively,
+} from "../discountCodeValidation.ts";
 import {
   confirmationPrompt,
   interpretConfirmation,
@@ -74,9 +79,159 @@ import {
   parseSpokenEmail,
 } from "../voice/spokenEmail.ts";
 import { parseSpokenName } from "../voice/quoteByText.ts";
+import {
+  applyApprovedWindowDefaults,
+  applyVolunteeredVoiceFacts,
+  classifyContextualVoiceQuoteByTextRejection,
+  classifyContextualVoiceQuoteByTextRequest,
+  hasVolunteeredDiscountCodeCue,
+  isOperationalInstructionClause,
+  normalizeVolunteeredDiscountCode,
+  splitVoiceClauses,
+  VOICE_QUOTE_POLICY,
+} from "../voice/voicePolicy.ts";
+import {
+  resolveCustomerByPhone,
+  verifiedNameMatchesCustomerCandidate,
+} from "./customerResolver.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
+
+function parseSpelledDiscountCodeAnswer(utterance: string): string | null {
+  const text = String(utterance ?? "").toUpperCase().trim();
+  const direct = normalizeAuthoritativeDiscountCode(text);
+  if (direct) return direct;
+  if (!/^[A-Z0-9](?:[\s,.-]+[A-Z0-9]){2,19}[\s.!?]*$/.test(text)) {
+    return null;
+  }
+  return normalizeAuthoritativeDiscountCode(text.replace(/[^A-Z0-9]/g, ""));
+}
+
+function discountInvalidSpeech(
+  reason: DiscountValidationReason | "malformed" | "non_dfw",
+): string {
+  switch (reason) {
+    case "inactive":
+      return "That code is not active, so I cannot apply it.";
+    case "expired":
+      return "That code has expired, so I cannot apply it.";
+    case "exhausted":
+      return "That code has already reached its usage limit, so I cannot apply it.";
+    case "uncertain":
+      return "I cannot verify that code safely right now, so I will not apply it.";
+    case "non_dfw":
+      return "I cannot apply discount codes for this market yet.";
+    case "malformed":
+      return "I could not capture a valid discount code, so I will not apply it.";
+    default:
+      return "I could not find that discount code, so I cannot apply it.";
+  }
+}
+
+const SCHEDULE_TOPIC =
+  /\b(?:schedule|scheduling|book|booking|appointment|availability|appointment times?|time slots?)\b/i;
+
+function isGenericPostPriceRejection(text: string): boolean {
+  return splitVoiceClauses(text).some((clause) => {
+    const normalized = clause.toLowerCase().replaceAll("’", "'").trim();
+    if (/^no problem\b/.test(normalized)) return false;
+    return /^(?:no(?:pe|,?\s+thanks?|\s+need)?|not (?:right )?now|not today|not at this time|maybe later|never mind|forget it|stop|cancel that|i changed my mind|i(?:'d| would) rather not|i(?:'m| am) not ready|(?:please\s+)?(?:i\s+)?(?:do not|don't|dont)\s+(?:(?:want|need)\s+to\s+)?(?:continue|proceed|go ahead|do (?:that|it)))\b/
+      .test(
+        normalized,
+      );
+  });
+}
+
+export function classifyContextualVoiceScheduleRejection(
+  text: string,
+): boolean {
+  return splitVoiceClauses(text).some((clause) => {
+    if (
+      isOperationalInstructionClause(clause) && !SCHEDULE_TOPIC.test(clause)
+    ) {
+      return false;
+    }
+    const normalized = clause.toLowerCase().replaceAll("’", "'");
+    return /\b(?:do not|don't|dont|never|not ready to|not going to|rather not|no longer want to|let(?:'s| us) not|skip|stop|cancel)\b[^.;!?]{0,48}\b(?:schedule|scheduling|book|booking|check (?:current )?availability|continue (?:toward|to|with) scheduling)\b/
+      .test(
+        normalized,
+      ) ||
+      /\b(?:do not|don't|dont|never|not ready for|rather not have|do not want|don't want|no)\b[^.;!?]{0,36}\b(?:an? )?appointment\b/
+        .test(
+          normalized,
+        ) ||
+      /\b(?:schedule|scheduling|book|booking|appointment)\b[^.;!?]{0,32}\b(?:not now|later|never mind)\b/
+        .test(
+          normalized,
+        ) ||
+      /\b(?:not now|maybe later|never mind)\b[^.;!?]{0,32}\b(?:schedule|scheduling|book|booking|appointment|availability)\b/
+        .test(
+          normalized,
+        ) ||
+      /\bno\s+(?:scheduling|booking|appointment)(?:\s+(?:now|yet|today))?\b/
+        .test(
+          normalized,
+        );
+  });
+}
+
+export function classifyContextualVoiceScheduleRequest(text: string): boolean {
+  return splitVoiceClauses(text).some((clause) => {
+    if (!SCHEDULE_TOPIC.test(clause)) return false;
+    if (classifyContextualVoiceScheduleRejection(clause)) return false;
+    if (
+      isOperationalInstructionClause(clause) && !SCHEDULE_TOPIC.test(clause)
+    ) {
+      return false;
+    }
+    return /\bcontinue\s+(?:on\s+)?(?:toward|to|with)\s+scheduling\b/i.test(
+      clause,
+    ) ||
+      /\b(?:schedule|book)\s+(?:it|this|that|me|an? appointment|the appointment)\b/i
+        .test(
+          clause,
+        ) ||
+      /\b(?:let(?:'s| us)|please|can we|could we|i(?:'d| would)? like to|i want to|i am ready to|i'm ready to|go ahead(?: and)?|yes,?|sure,?|okay,?)\b[^.;!?]{0,48}\b(?:schedule|scheduling|book|booking|check (?:current )?availability|see (?:current )?appointment times?)\b/i
+        .test(
+          clause,
+        ) ||
+      /\b(?:check|show|see)\s+(?:me\s+)?(?:current\s+)?(?:availability|appointment times?|time slots?)\b/i
+        .test(
+          clause,
+        ) ||
+      /\bwhen can (?:you|they|the crew)\b/i.test(clause);
+  });
+}
+
+function isExplicitPriceCorrectionAttempt(text: string): boolean {
+  const normalized = String(text ?? "").toLowerCase();
+  if (
+    !/\b(?:actually|correction|correct that|change that|make that)\b/.test(
+      normalized,
+    )
+  ) {
+    return false;
+  }
+  return /\b\d[\d,]*\s*(?:square\s*(?:feet|foot)|sq\.?\s*ft\.?|sf)\b/.test(
+    normalized,
+  ) ||
+    /\b(?:inside\s+(?:and|&)\s+outside|outside(?:\s+only)?|exterior(?:\s+only)?)\b/
+      .test(
+        normalized,
+      ) ||
+    /\b(?:unusual\s+(?:ladder\s+)?access|ladder\s+(?:work|access)|hard[ -]?water|french panes?|solar screens?|screened patio|sunroom)\b/
+      .test(
+        normalized,
+      );
+}
+
+function isExplicitPriceRepeatRequest(text: string): boolean {
+  return splitVoiceClauses(text).some((clause) =>
+    /\b(?:what (?:was|is) (?:the|my) (?:price|quote|estimate|total)(?: again)?|(?:say|tell me|repeat|remind me(?: of)?) (?:the|my) (?:price|quote|estimate|total)(?: again)?|how much was (?:it|the quote|the estimate)(?: again)?)\b/i
+      .test(clause)
+  );
+}
 
 export interface ControllerInput {
   supabase: SB;
@@ -95,7 +250,12 @@ export interface ControllerInput {
   runTool?: typeof runTool;
   /** Sanitized stage timing callback; receives no customer content or ids. */
   onTiming?: (
-    stage: "pricing" | "address_service_area" | "availability" | "booking",
+    stage:
+      | "session_load"
+      | "pricing"
+      | "address_service_area"
+      | "availability"
+      | "booking",
     durationMs: number,
   ) => void;
 }
@@ -121,10 +281,16 @@ function requireControllerOrganization(input: ControllerInput): string | null {
  */
 /** Probe the canonical pricing engine for `missing[]`. Returns null if pricing
  *  config cannot be loaded (the FSM will fall back to its manifest tokens). */
-async function probePricingMissing(
+async function probeCanonicalPricing(
   supabase: SB,
   session: QuoteSession,
-): Promise<string[] | null> {
+): Promise<
+  {
+    missing: string[];
+    loaded: Awaited<ReturnType<typeof loadPricing>>;
+    result: ReturnType<typeof calculateQuote>;
+  } | null
+> {
   try {
     const loaded = await loadPricing(supabase);
     if (!loaded.ok || !loaded.pricing) return null;
@@ -133,7 +299,7 @@ async function probePricingMissing(
       loaded.pricing,
       loaded.ruleVersion,
     );
-    return result.missing ?? [];
+    return { missing: result.missing ?? [], loaded, result };
   } catch {
     return null;
   }
@@ -160,7 +326,8 @@ export async function runTurn(input: ControllerInput): Promise<TurnResult> {
     case "schedule_service": {
       // Canonical engine is the sole authority on pricing readiness.
       const pricingMissing = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
-        ? await probePricingMissing(input.supabase, session)
+        ? (await probeCanonicalPricing(input.supabase, session))?.missing ??
+          null
         : null;
       action = decideResidentialQuoteAction(session, pricingMissing);
       break;
@@ -190,8 +357,8 @@ export async function runTurn(input: ControllerInput): Promise<TurnResult> {
 
 // ---------------------------------------------------------------------------
 // Rollout-gated wrapper: caller-ID contact confirmation, canonical quote
-// intake, pricing, availability, and booking continuation. Tenant-scoped
-// returning-customer lookup remains deferred.
+// intake, pricing, availability, booking continuation, and tenant-scoped
+// phone candidate reuse after the contact number is explicitly confirmed.
 // ---------------------------------------------------------------------------
 
 export type ControllerPreAction =
@@ -245,7 +412,7 @@ function correctedAddressComponent(text: string): AddressComponentName | null {
   if (/\bcity\b/i.test(text)) return "city";
   if (/\bstate\b/i.test(text)) return "state";
   if (/\bunit|suite|apartment\b/i.test(text)) return "unit";
-  if (/\bstreet|road|drive|lane|avenue|boulevard\b|\bnot\b/i.test(text)) {
+  if (/\bstreet|road|drive|lane|avenue|boulevard\b/i.test(text)) {
     return "street";
   }
   return null;
@@ -294,12 +461,46 @@ function speakForFsm(action: WorkflowAction): string {
   }
 }
 
+function expressPriceStatement(session: QuoteSession, total: number): string {
+  const scope = session.fields.windowCleaningSides === "inside_and_outside"
+    ? "For inside and outside window cleaning, "
+    : session.fields.windowCleaningSides === "outside_only"
+    ? "For all exterior windows, "
+    : "";
+  return `${scope}${
+    buildCanonicalPriceStatement(total)
+  } Would you like the quote texted, or would you like to continue toward scheduling?`;
+}
+
+function postPriceChoicePrompt(): string {
+  return "Would you like the quote texted, or would you like to continue toward scheduling?";
+}
+
+function scheduleContinuationIsAuthorized(session: QuoteSession): boolean {
+  return session.quoteStatus === "firm" &&
+    session.fields.voiceJourney?.requestedNextStep === "schedule";
+}
+
+function isControllerOwnedManualReviewTerminal(
+  lastStep: string | null | undefined,
+): boolean {
+  return lastStep?.startsWith("manual_review:retry_exhausted:") === true ||
+    lastStep?.startsWith("manual_review:conditional_modifier_budget:") ===
+      true ||
+    lastStep === "manual_review:address_uncertain";
+}
+
 export async function runControllerTurn(
   input: ControllerInput,
 ): Promise<ControllerTurnResult> {
   const organizationId = requireControllerOrganization(input);
   const measure = async <T>(
-    stage: "pricing" | "address_service_area" | "availability" | "booking",
+    stage:
+      | "session_load"
+      | "pricing"
+      | "address_service_area"
+      | "availability"
+      | "booking",
     operation: () => Promise<T> | T,
   ): Promise<T> => {
     const started = performance.now();
@@ -311,14 +512,29 @@ export async function runControllerTurn(
       } catch { /* telemetry must never change the call */ }
     }
   };
-  let session = await reloadSession(input.supabase, {
-    sessionId: input.sessionId,
-    conversationId: input.conversationId,
-    channel: input.channel,
-    phone: input.phone,
-    email: input.email,
-    resolvedOrganizationId: organizationId,
-  });
+  let session = await measure(
+    "session_load",
+    () =>
+      reloadSession(input.supabase, {
+        sessionId: input.sessionId,
+        conversationId: input.conversationId,
+        channel: input.channel,
+        phone: input.phone,
+        email: input.email,
+        resolvedOrganizationId: organizationId,
+      }),
+  );
+  const persistedScheduleContinuationAuthorized =
+    scheduleContinuationIsAuthorized(session);
+  const persistedPostPriceBranch = session.quoteStatus === "firm"
+    ? session.fields.voiceJourney?.requestedNextStep ?? "none"
+    : "none";
+  const persistedFirmInputsKey = session.quoteStatus === "firm"
+    ? sessionInputsKey(session.fields)
+    : null;
+  const explicitPriceCorrectionAttempt = isExplicitPriceCorrectionAttempt(
+    input.utterance,
+  );
   // Controller-only metadata is stripped by persistControllerPatch. Keeping
   // the observed row version beside the patch makes every early return use the
   // same optimistic-concurrency boundary without writing it into JSONB.
@@ -335,6 +551,96 @@ export async function runControllerTurn(
     sessionPatch.booking_ready = session.bookingReady;
     sessionPatch.last_step = lastStep;
   };
+  const addressClarificationAttempts = (): number =>
+    Math.max(
+      0,
+      Number(session.fields.voiceJourney?.retryCounts?.address ?? 0) || 0,
+    );
+
+  const addressManualReview = (
+    spoken =
+      "I couldn't confirm the service address safely, so I kept your quote but stopped scheduling. A team member can verify the address with you.",
+  ): ControllerTurnResult => {
+    const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+    const next = mergeFields(
+      session,
+      {
+        serviceAreaStatus: "manual_review_required",
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          retryCounts,
+          pendingAddressComponent: null,
+          requestedNextStep: "none",
+          availability: null,
+          booking: { status: "not_started" as const },
+        },
+      },
+      { markDerived: ["serviceAreaStatus"] },
+    );
+    capture(
+      { ...next, quoteStatus: session.quoteStatus, bookingReady: false },
+      "manual_review:address_uncertain",
+    );
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action: { kind: "handoff", reason: "safety_or_access_flag" },
+        spoken,
+      },
+    };
+  };
+
+  const beginAddressClarification = (
+    lastStep: string,
+    spoken: string,
+  ): ControllerTurnResult => {
+    const attempts = addressClarificationAttempts();
+    if (attempts >= VOICE_QUOTE_POLICY.address.clarificationLimit) {
+      return addressManualReview();
+    }
+    const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          retryCounts: { ...retryCounts, address: attempts + 1 },
+        },
+      }),
+      lastStep,
+    );
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action: {
+          kind: "ask",
+          field: "address",
+          prompt: spoken,
+        } as unknown as WorkflowAction,
+        spoken,
+      },
+    };
+  };
+
+  if (isControllerOwnedManualReviewTerminal(session.lastStep)) {
+    const action = {
+      kind: "handoff" as const,
+      reason: "safety_or_access_flag" as const,
+    } as unknown as WorkflowAction;
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken:
+          "This quote is already flagged for manual review, so I won't ask more pricing questions or guess. A team member can finish it.",
+      },
+    };
+  }
 
   // The reason for the call is always established before callback, account,
   // quote, or appointment questions. It becomes sticky canonical journey
@@ -368,6 +674,313 @@ export async function runControllerTurn(
     );
   }
 
+  let validDiscountAppliedToFirmQuote = false;
+  let discountSpeechPrefix = "";
+  const volunteeredDiscountCode = normalizeVolunteeredDiscountCode(
+    input.utterance,
+  );
+  if (volunteeredDiscountCode) {
+    if (organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
+      // Oregon limitation: the current hosted discount_codes table is global
+      // DFW configuration, so voice fails closed for any non-DFW organization
+      // before the global lookup can run.
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            coupon: {
+              code: volunteeredDiscountCode,
+              status: "invalid",
+              reason: "non_dfw",
+            },
+          },
+        }),
+        "discount_code_rejected:non_dfw",
+      );
+      discountSpeechPrefix = `${discountInvalidSpeech("non_dfw")} `;
+      if (session.quoteStatus === "firm") {
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: { kind: "answer_side_question", topic: "discount_code" },
+            spoken: `${discountSpeechPrefix}${postPriceChoicePrompt()}`,
+          },
+        };
+      }
+    } else {
+      const validation = await validateDiscountCodeAuthoritatively(
+        input.supabase,
+        volunteeredDiscountCode,
+      );
+      if (validation.status === "valid") {
+        const existingCoupon = session.fields.voiceJourney?.coupon;
+        const identicalAlreadyApplied = session.quoteStatus === "firm" &&
+          session.fields.discountCode === validation.code &&
+          existingCoupon?.status === "valid" &&
+          existingCoupon.discountType === validation.discountType &&
+          existingCoupon.discountValue === validation.discountValue;
+        if (identicalAlreadyApplied) {
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: { kind: "answer_side_question", topic: "discount_code" },
+              spoken:
+                `That code is already applied. ${postPriceChoicePrompt()}`,
+            },
+          };
+        }
+        validDiscountAppliedToFirmQuote = session.quoteStatus === "firm";
+        discountSpeechPrefix = "I have that discount code. ";
+        capture(
+          mergeFields(session, {
+            discountCode: validation.code,
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              coupon: {
+                code: validation.code,
+                status: "valid",
+                reason: null,
+                discountType: validation.discountType,
+                discountValue: validation.discountValue,
+                authoritativeAmount: null,
+              },
+            },
+          }, { markVerified: ["discountCode"] }),
+          "discount_code_validated",
+        );
+      } else {
+        capture(
+          mergeFields(session, {
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              coupon: {
+                code: validation.code,
+                status: "invalid",
+                reason: validation.reason,
+              },
+            },
+          }),
+          `discount_code_rejected:${validation.reason}`,
+        );
+        discountSpeechPrefix = `${discountInvalidSpeech(validation.reason)} `;
+        if (session.quoteStatus === "firm") {
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: { kind: "answer_side_question", topic: "discount_code" },
+              spoken: `${discountSpeechPrefix}${postPriceChoicePrompt()}`,
+            },
+          };
+        }
+      }
+    }
+  } else if (hasVolunteeredDiscountCodeCue(input.utterance)) {
+    const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+    const currentRetries = Number(retryCounts.discountCode ?? 0);
+    if (currentRetries < VOICE_QUOTE_POLICY.coupon.retryLimit) {
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            retryCounts: { ...retryCounts, discountCode: currentRetries + 1 },
+            coupon: { code: "", status: "unclear", reason: "malformed" },
+          },
+        }),
+        "asked:discountCode",
+      );
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "discountCode",
+            prompt:
+              "Please spell the discount code once, one letter or number at a time.",
+          } as unknown as WorkflowAction,
+          spoken:
+            "Please spell the discount code once, one letter or number at a time.",
+        },
+      };
+    }
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          retryCounts,
+          coupon: { code: "", status: "invalid", reason: "malformed" },
+        },
+      }),
+      "discount_code_rejected:malformed",
+    );
+    discountSpeechPrefix = `${discountInvalidSpeech("malformed")} `;
+    if (session.quoteStatus === "firm") {
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: { kind: "answer_side_question", topic: "discount_code" },
+          spoken: `${discountSpeechPrefix}${postPriceChoicePrompt()}`,
+        },
+      };
+    }
+  }
+
+  // Policy-owned capture handles direct quote details, approved assumptions,
+  // volunteered modifiers, and inert notes before selecting one question.
+  const volunteered = applyVolunteeredVoiceFacts(session, input.utterance);
+  // Defaults establish a priceable express quote; they must not be injected
+  // during post-price contact collection because that would invalidate the
+  // already-authoritative quote on an unrelated email or address answer.
+  const enriched = volunteered.quoteStatus === "none"
+    ? applyApprovedWindowDefaults(volunteered)
+    : volunteered;
+  if (JSON.stringify(enriched.fields) !== JSON.stringify(session.fields)) {
+    // mergeFields deliberately nulls lastStep when a canonical price input
+    // changes. Never reattach the stale scheduling/delivery step here.
+    const correctionInvalidatedFirmQuote = persistedFirmInputsKey !== null &&
+      enriched.quoteStatus === "none";
+    capture(
+      enriched,
+      correctionInvalidatedFirmQuote
+        ? enriched.lastStep ?? "voice_policy_applied"
+        : session.lastStep ?? "voice_policy_applied",
+    );
+  }
+
+  const hasScopedConfirmationPending =
+    session.fields.callerIdConfirmationStatus === "pending" ||
+    session.fields.callerIdConfirmationStatus === "manual_pending" ||
+    session.lastStep?.startsWith("confirming:") === true ||
+    session.lastStep?.startsWith("asked:contact_") === true;
+  const genericPostPriceRejection = !hasScopedConfirmationPending &&
+    isGenericPostPriceRejection(input.utterance);
+  const currentBranchRejected = session.quoteStatus === "firm" &&
+    ((persistedPostPriceBranch === "text_quote" &&
+      (classifyContextualVoiceQuoteByTextRejection(input.utterance) ||
+        genericPostPriceRejection)) ||
+      (persistedPostPriceBranch === "schedule" &&
+        (classifyContextualVoiceScheduleRejection(input.utterance) ||
+          genericPostPriceRejection)));
+  if (currentBranchRejected) {
+    const rejectedBranch = persistedPostPriceBranch;
+    const bookingStatus = session.fields.voiceJourney?.booking?.status;
+    const schedulingOutcomeMayExist = bookingStatus === "submitting" ||
+      bookingStatus === "confirmed" || bookingStatus === "recovery_pending";
+    capture(
+      mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          requestedNextStep: "none",
+        },
+      }),
+      rejectedBranch === "schedule"
+        ? "scheduling_declined"
+        : "quote_text_declined",
+    );
+    const action: WorkflowAction = rejectedBranch === "schedule"
+      ? { kind: "end", reason: "scheduling_declined" }
+      : { kind: "answer_side_question", topic: "post_price_choice" };
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken: rejectedBranch === "schedule"
+          ? schedulingOutcomeMayExist
+            ? "I won't take another scheduling action. The existing appointment status has not been changed."
+            : "No appointment was created. Your quote remains available if you would like to schedule later."
+          : `I won't send another quote text. ${postPriceChoicePrompt()}`,
+      },
+    };
+  }
+
+  if (
+    session.quoteStatus === "firm" &&
+    isExplicitPriceRepeatRequest(input.utterance)
+  ) {
+    const last = session.fields.lastQuoteResult;
+    const total = Number(last?.estimatedTotal ?? last?.total ?? 0);
+    if (last?.finalQuoteDisposition === "firm" && total > 0) {
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: { kind: "speak_price" },
+          spoken: `Your authoritative tax-inclusive total is ${
+            formatCanonicalCurrency(total)
+          }. ${postPriceChoicePrompt()}`,
+        },
+      };
+    }
+  }
+
+  if (
+    session.quoteStatus === "firm" && explicitPriceCorrectionAttempt &&
+    persistedFirmInputsKey === sessionInputsKey(session.fields)
+  ) {
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action: { kind: "answer_side_question", topic: "post_price_choice" },
+        spoken: `That matches the current quote. ${postPriceChoicePrompt()}`,
+      },
+    };
+  }
+
+  if (session.quoteStatus === "firm") {
+    const requestedNextStep =
+      classifyContextualVoiceQuoteByTextRequest(input.utterance)
+        ? "text_quote" as const
+        : classifyContextualVoiceScheduleRequest(input.utterance)
+        ? "schedule" as const
+        : null;
+    if (requestedNextStep) {
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            requestedNextStep,
+          },
+        }),
+        "post_price_choice_captured",
+      );
+    }
+  }
+
+  if (
+    session.quoteStatus === "firm" &&
+    session.fields.voiceJourney?.intent === "new_quote" &&
+    session.fields.voiceJourney?.requestedNextStep !== "text_quote" &&
+    session.fields.voiceJourney?.requestedNextStep !== "schedule"
+  ) {
+    const action: WorkflowAction = {
+      kind: "answer_side_question",
+      topic: "post_price_choice",
+    };
+    return {
+      sessionId: session.id,
+      sessionPatch,
+      pre: {
+        kind: "fsm",
+        action,
+        spoken: postPriceChoicePrompt(),
+      },
+    };
+  }
+
   let f = session.fields;
 
   // Step 1: caller-ID confirmation dance (only when we have an ANI and no
@@ -375,7 +988,7 @@ export async function runControllerTurn(
   const havePhone = !!f.phone &&
     (session.fieldStatus.phone === "captured" ||
       session.fieldStatus.phone === "verified");
-  if (!havePhone && input.callerIdE164) {
+  if (!havePhone && input.callerIdE164 && session.quoteStatus === "firm") {
     const status = f.callerIdConfirmationStatus;
     if (!status) {
       // First time: propose the caller ID for confirmation.
@@ -479,19 +1092,141 @@ export async function runControllerTurn(
     }
   }
 
-  // Step 2: tenant-scoped returning-customer resolution is intentionally not
-  // wired until server-derived organization authority exists. The former
-  // phone-only service-role lookup was cross-organization and could reveal a
-  // stored first name. Remove any controller-era unscoped marker and continue
-  // as ordinary intake without reading or disclosing customer records.
-  if (f.returningCustomerId || f.awaitingDisambiguator) {
+  // Step 2: a confirmed phone may seed one opaque same-tenant candidate. It
+  // remains non-authoritative until the caller independently supplies and
+  // confirms the full name. No stored name, email, address, quote, booking, or
+  // history is projected or spoken during this comparison.
+  const clearPhoneReuse = (
+    status: NonNullable<
+      QuoteSession["fields"]["returningCustomerLookupStatus"]
+    >,
+  ): QuoteSession => {
     const {
-      returningCustomerId: _discardedCustomerId,
-      awaitingDisambiguator: _discardedDisambiguation,
+      returningCustomerCandidateId: _candidate,
+      returningCustomerId: _customer,
+      returningCustomerResolved: _resolved,
+      awaitingDisambiguator: _awaiting,
       ...safeFields
     } = session.fields;
-    capture({ ...session, fields: safeFields }, "tenant_identity_deferred");
+    return {
+      ...session,
+      fields: { ...safeFields, returningCustomerLookupStatus: status },
+    };
+  };
+  const setVerifiedPhoneReuse = (customerId: string): QuoteSession => {
+    const next = clearPhoneReuse("verified");
+    return {
+      ...next,
+      fields: {
+        ...next.fields,
+        returningCustomerId: customerId,
+        returningCustomerResolved: true,
+        awaitingDisambiguator: false,
+      },
+    };
+  };
+  if (
+    (f.returningCustomerId && f.returningCustomerResolved !== true) ||
+    (f.awaitingDisambiguator && !f.returningCustomerCandidateId)
+  ) {
+    capture(clearPhoneReuse("unavailable"), "tenant_identity_legacy_cleared");
     f = session.fields;
+  }
+  const phoneConfirmedForReuse = !!f.phone &&
+    (session.fieldStatus.phone === "verified" ||
+      session.fieldStatus.phone === "corrected" ||
+      f.callerIdConfirmationStatus === "contact_confirmed" ||
+      f.callerIdConfirmationStatus === "confirmed");
+  const phoneReuseScopeEligible = input.channel === "voice" &&
+    !!organizationId && session.quoteStatus === "firm" &&
+    f.voiceJourney?.intent === "new_quote" &&
+    (f.voiceJourney?.requestedNextStep === "text_quote" ||
+      f.voiceJourney?.requestedNextStep === "schedule") &&
+    phoneConfirmedForReuse;
+
+  const verifyPendingPhoneCandidate = async (): Promise<void> => {
+    const candidateId = session.fields.returningCustomerCandidateId;
+    const phone = session.fields.phone;
+    const name = session.fields.name;
+    const nameConfirmed = session.fieldStatus.name === "verified" ||
+      session.fieldStatus.name === "corrected";
+    if (
+      !phoneReuseScopeEligible || !candidateId || !phone || !name ||
+      !nameConfirmed || !organizationId
+    ) return;
+    const current = await resolveCustomerByPhone(
+      input.supabase,
+      organizationId,
+      phone,
+    );
+    if (
+      current.kind === "resolved" &&
+      current.customer.customerId === candidateId &&
+      await verifiedNameMatchesCustomerCandidate({
+        organizationId,
+        phoneE164: phone,
+        suppliedName: name,
+        customer: current.customer,
+      })
+    ) {
+      capture(setVerifiedPhoneReuse(candidateId), session.lastStep);
+      f = session.fields;
+      return;
+    }
+    const status = current.kind === "resolved"
+      ? "name_conflict" as const
+      : current.kind;
+    capture(clearPhoneReuse(status), session.lastStep);
+    f = session.fields;
+  };
+
+  if (
+    phoneReuseScopeEligible && !f.returningCustomerResolved &&
+    !f.returningCustomerCandidateId && !f.returningCustomerLookupStatus &&
+    organizationId && f.phone
+  ) {
+    const result = await resolveCustomerByPhone(
+      input.supabase,
+      organizationId,
+      f.phone,
+    );
+    if (result.kind === "resolved") {
+      capture({
+        ...session,
+        fields: {
+          ...session.fields,
+          returningCustomerCandidateId: result.customer.customerId,
+          returningCustomerResolved: false,
+          awaitingDisambiguator: true,
+          returningCustomerLookupStatus: "candidate",
+        },
+      }, session.lastStep);
+      f = session.fields;
+      const nameConfirmed = (session.fieldStatus.name === "verified" ||
+        session.fieldStatus.name === "corrected") && !!f.name;
+      if (nameConfirmed) {
+        await verifyPendingPhoneCandidate();
+      } else {
+        const spoken = "What full name should I use for this quote?";
+        capture(session, "asked:contact_name");
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: {
+              kind: "ask",
+              field: "contact_name",
+              prompt: spoken,
+            } as unknown as WorkflowAction,
+            spoken,
+          },
+        };
+      }
+    } else {
+      capture(clearPhoneReuse(result.kind), session.lastStep);
+      f = session.fields;
+    }
   }
 
   // Deterministic scheduling continuation. Availability and booking still run
@@ -532,6 +1267,7 @@ export async function runControllerTurn(
 
   const validateVoiceAddress = async (
     candidate: string,
+    requireConfirmation = true,
   ): Promise<ControllerTurnResult> => {
     const raw = await measure(
       "address_service_area",
@@ -551,6 +1287,59 @@ export async function runControllerTurn(
       (status === "eligible" || status === "manual_review_required") &&
       formatted
     ) {
+      const confirmedStatus = status === "eligible"
+        ? "eligible" as const
+        : "manual_review_required" as const;
+      if (!requireConfirmation) {
+        if (confirmedStatus !== "eligible") {
+          return addressManualReview(
+            "I corrected the address, but it still needs a team member to verify the service area. I kept your quote and stopped scheduling.",
+          );
+        }
+        const corrected = mergeFields(
+          session,
+          {
+            address: formatted,
+            addressComponents: components,
+            serviceAreaStatus: confirmedStatus,
+            serviceAreaResult: raw,
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              pendingAddressComponent: null,
+            },
+          },
+          { markVerified: ["address", "serviceAreaStatus"] },
+        );
+        const nextAction = decideResidentialQuoteAction(corrected, []);
+        if (nextAction.kind === "ask") {
+          capture(corrected, `asked:${nextAction.field}`);
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: nextAction,
+              spoken: nextAction.prompt,
+            },
+          };
+        }
+        if (nextAction.kind === "offer_scheduling") {
+          capture(corrected, "offered_scheduling");
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: nextAction,
+              spoken:
+                "Thanks, I corrected the address. Would you like me to check current appointment times?",
+            },
+          };
+        }
+        return addressManualReview(
+          "I corrected the address, but I couldn't safely continue toward scheduling. I kept your quote for a team member to review.",
+        );
+      }
       const next = mergeFields(session, {
         address: formatted,
         addressComponents: components,
@@ -562,6 +1351,7 @@ export async function runControllerTurn(
         },
       });
       capture(next, "confirming:address");
+      const spoken = buildAddressReadback(formatted);
       return {
         sessionId: session.id,
         sessionPatch,
@@ -570,9 +1360,9 @@ export async function runControllerTurn(
           action: {
             kind: "ask",
             field: "address",
-            prompt: buildAddressReadback(formatted),
+            prompt: spoken,
           } as unknown as WorkflowAction,
-          spoken: buildAddressReadback(formatted),
+          spoken,
         },
       };
     }
@@ -590,18 +1380,42 @@ export async function runControllerTurn(
         }),
         `address_component:${missing}`,
       );
-      const spoken = addressComponentQuestion(missing);
+      return beginAddressClarification(
+        `address_component:${missing}`,
+        `${
+          addressComponentQuestion(missing)
+        } This is the one address clarification I need before scheduling.`,
+      );
+    }
+    const customerMessage =
+      typeof raw.customerMessage === "string" && raw.customerMessage.trim()
+        ? raw.customerMessage
+        : "I couldn't verify that address right now.";
+    if (status === "ineligible") {
+      capture(
+        mergeFields(
+          session,
+          {
+            serviceAreaStatus: "ineligible",
+            serviceAreaResult: raw,
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              requestedNextStep: "none",
+              availability: null,
+              booking: { status: "not_started" as const },
+            },
+          },
+          { markDerived: ["serviceAreaStatus", "serviceAreaResult"] },
+        ),
+        "service_area_ineligible",
+      );
       return {
         sessionId: session.id,
         sessionPatch,
         pre: {
           kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
+          action: { kind: "handoff", reason: "safety_or_access_flag" },
+          spoken: customerMessage,
         },
       };
     }
@@ -612,19 +1426,9 @@ export async function runControllerTurn(
       }, { markDerived: ["serviceAreaStatus", "serviceAreaResult"] }),
       "service_area_unavailable",
     );
-    const spoken =
-      typeof raw.customerMessage === "string" && raw.customerMessage.trim()
-        ? raw.customerMessage
-        : "I couldn't verify that address right now, so I have not checked appointment times.";
-    return {
-      sessionId: session.id,
-      sessionPatch,
-      pre: {
-        kind: "fsm",
-        action: { kind: "handoff", reason: "safety_or_access_flag" },
-        spoken,
-      },
-    };
+    return addressManualReview(
+      `${customerMessage} I kept your quote but stopped scheduling so a team member can verify the address.`,
+    );
   };
 
   if (session.lastStep?.startsWith("confirming:")) {
@@ -640,6 +1444,7 @@ export async function runControllerTurn(
           }),
           "contact_name_confirmed",
         );
+        await verifyPendingPhoneCandidate();
       } else if (field === "contact_email" && session.fields.email) {
         capture(
           mergeFields(session, { email: session.fields.email }, {
@@ -660,10 +1465,10 @@ export async function runControllerTurn(
           session.fields.serviceAreaResult?.status ?? "",
         );
         const confirmedStatus = candidateStatus === "eligible"
-          ? "eligible"
+          ? "eligible" as const
           : candidateStatus === "manual_review_required"
-          ? "manual_review_required"
-          : "unavailable";
+          ? "manual_review_required" as const
+          : "unavailable" as const;
         capture(
           mergeFields(session, {
             address: session.fields.address,
@@ -671,6 +1476,11 @@ export async function runControllerTurn(
           }, { markVerified: ["address", "serviceAreaStatus"] }),
           "address_confirmed",
         );
+        if (confirmedStatus !== "eligible") {
+          return addressManualReview(
+            "I confirmed the address, but the service area still needs a team member to verify it. I kept your quote and stopped scheduling.",
+          );
+        }
       }
       f = session.fields;
     } else if (field === "contact_name") {
@@ -759,54 +1569,37 @@ export async function runControllerTurn(
       };
     } else if (field === "address") {
       const component = correctedAddressComponent(input.utterance);
-      if (component) {
-        const correction = normalizeAddressComponentAnswer(
-          component,
-          input.utterance,
-        );
-        if (correction) {
-          const components = {
-            ...(session.fields.addressComponents ?? {}),
-            [component]: correction,
-          };
-          const completed = formatAddressComponents(components);
-          capture(
-            mergeFields(session, {
-              addressComponents: components,
-              voiceJourney: {
-                ...(session.fields.voiceJourney ?? {}),
-                pendingAddressComponent: null,
-              },
-            }),
-            "address_correction_captured",
-          );
-          return await validateVoiceAddress(completed);
+      const correction = component
+        ? normalizeAddressComponentAnswer(component, input.utterance)
+        : null;
+      if (component && correction) {
+        const attempts = addressClarificationAttempts();
+        if (attempts >= VOICE_QUOTE_POLICY.address.clarificationLimit) {
+          return addressManualReview();
         }
+        const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+        const components = {
+          ...(session.fields.addressComponents ?? {}),
+          [component]: correction,
+        };
+        const completed = formatAddressComponents(components);
+        capture(
+          mergeFields(session, {
+            addressComponents: components,
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              retryCounts: { ...retryCounts, address: attempts + 1 },
+              pendingAddressComponent: null,
+            },
+          }),
+          "address_correction_captured",
+        );
+        return await validateVoiceAddress(completed, false);
       }
-      const spoken =
-        "Which part should I correct: the house number, street, city, state, or ZIP code?";
-      capture(
-        mergeFields(session, {
-          voiceJourney: {
-            ...(session.fields.voiceJourney ?? {}),
-            pendingAddressComponent: null,
-          },
-        }),
+      return beginAddressClarification(
         "address_component:choose",
+        "Which part should I correct: the house number, street, city, state, or ZIP code?",
       );
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
     } else {
       return askConfirmation(
         field as "contact_name",
@@ -820,70 +1613,13 @@ export async function runControllerTurn(
     const component = token === "choose"
       ? correctedAddressComponent(input.utterance)
       : token as AddressComponentName;
-    if (!component) {
-      const spoken =
-        "Which part should I correct: the house number, street, city, state, or ZIP code?";
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
-    }
-    if (token === "choose") {
-      capture(
-        mergeFields(session, {
-          voiceJourney: {
-            ...(session.fields.voiceJourney ?? {}),
-            pendingAddressComponent: component,
-          },
-        }),
-        `address_component:${component}`,
-      );
-      const spoken = addressComponentQuestion(component);
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
-    }
+    if (!component) return addressManualReview();
     const value = normalizeAddressComponentAnswer(component, input.utterance);
-    if (!value) {
-      const spoken = addressComponentQuestion(component);
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
-    }
+    if (!value) return addressManualReview();
     const components = {
       ...(session.fields.addressComponents ?? {}),
       [component]: value,
     };
-    const missing = nextMissingAddressComponent(components);
     if (
       !components.house_number || !components.street || !components.city ||
       !components.state || !components.postal_code
@@ -893,31 +1629,27 @@ export async function runControllerTurn(
           addressComponents: components,
           voiceJourney: {
             ...(session.fields.voiceJourney ?? {}),
-            pendingAddressComponent: missing,
+            pendingAddressComponent: nextMissingAddressComponent(components),
           },
         }),
-        `address_component:${missing}`,
+        "address_correction_incomplete",
       );
-      const spoken = addressComponentQuestion(missing);
-      return {
-        sessionId: session.id,
-        sessionPatch,
-        pre: {
-          kind: "fsm",
-          action: {
-            kind: "ask",
-            field: "address",
-            prompt: spoken,
-          } as unknown as WorkflowAction,
-          spoken,
-        },
-      };
+      return addressManualReview();
     }
     capture(
-      mergeFields(session, { addressComponents: components }),
+      mergeFields(session, {
+        addressComponents: components,
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          pendingAddressComponent: null,
+        },
+      }),
       "address_components_complete",
     );
-    return await validateVoiceAddress(formatAddressComponents(components));
+    return await validateVoiceAddress(
+      formatAddressComponents(components),
+      false,
+    );
   }
   if (session.lastStep === "offered_scheduling") {
     const answer = classifyExplicitConfirmation(input.utterance);
@@ -957,6 +1689,17 @@ export async function runControllerTurn(
           action,
           spoken:
             "Would you like me to check current appointment times for this quote?",
+        },
+      };
+    }
+    if (!persistedScheduleContinuationAuthorized) {
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: { kind: "answer_side_question", topic: "post_price_choice" },
+          spoken: postPriceChoicePrompt(),
         },
       };
     }
@@ -1237,6 +1980,17 @@ export async function runControllerTurn(
         },
       };
     }
+    if (!persistedScheduleContinuationAuthorized) {
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: { kind: "answer_side_question", topic: "post_price_choice" },
+          spoken: postPriceChoicePrompt(),
+        },
+      };
+    }
     capture(
       mergeFields(session, {
         voiceJourney: {
@@ -1301,13 +2055,165 @@ export async function runControllerTurn(
   const askedField = session.lastStep?.startsWith("asked:")
     ? session.lastStep.slice("asked:".length)
     : null;
-  if (askedField) {
+  if (askedField === "discountCode") {
+    const spelledCode = parseSpelledDiscountCodeAnswer(input.utterance);
+    if (spelledCode) {
+      if (organizationId !== PUBLIC_BOOKING_ORGANIZATION_ID) {
+        capture(
+          mergeFields(session, {
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              coupon: {
+                code: spelledCode,
+                status: "invalid",
+                reason: "non_dfw",
+              },
+            },
+          }),
+          "discount_code_rejected:non_dfw",
+        );
+        if (session.quoteStatus === "firm") {
+          return {
+            sessionId: session.id,
+            sessionPatch,
+            pre: {
+              kind: "fsm",
+              action: { kind: "answer_side_question", topic: "discount_code" },
+              spoken: `${
+                discountInvalidSpeech("non_dfw")
+              } ${postPriceChoicePrompt()}`,
+            },
+          };
+        }
+      } else {
+        const validation = await validateDiscountCodeAuthoritatively(
+          input.supabase,
+          spelledCode,
+        );
+        if (validation.status === "valid") {
+          validDiscountAppliedToFirmQuote = session.quoteStatus === "firm";
+          capture(
+            mergeFields(session, {
+              discountCode: validation.code,
+              voiceJourney: {
+                ...(session.fields.voiceJourney ?? {}),
+                coupon: {
+                  code: validation.code,
+                  status: "valid",
+                  reason: null,
+                  discountType: validation.discountType,
+                  discountValue: validation.discountValue,
+                  authoritativeAmount: null,
+                },
+              },
+            }, { markVerified: ["discountCode"] }),
+            "discount_code_validated",
+          );
+        } else {
+          capture(
+            mergeFields(session, {
+              voiceJourney: {
+                ...(session.fields.voiceJourney ?? {}),
+                coupon: {
+                  code: validation.code,
+                  status: "invalid",
+                  reason: validation.reason,
+                },
+              },
+            }),
+            `discount_code_rejected:${validation.reason}`,
+          );
+          if (session.quoteStatus === "firm") {
+            return {
+              sessionId: session.id,
+              sessionPatch,
+              pre: {
+                kind: "fsm",
+                action: {
+                  kind: "answer_side_question",
+                  topic: "discount_code",
+                },
+                spoken: `${
+                  discountInvalidSpeech(validation.reason)
+                } ${postPriceChoicePrompt()}`,
+              },
+            };
+          }
+        }
+      }
+    } else {
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            coupon: { code: "", status: "invalid", reason: "malformed" },
+          },
+        }),
+        "discount_code_rejected:malformed",
+      );
+      if (session.quoteStatus === "firm") {
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: { kind: "answer_side_question", topic: "discount_code" },
+            spoken: `${
+              discountInvalidSpeech("malformed")
+            } ${postPriceChoicePrompt()}`,
+          },
+        };
+      }
+    }
+  }
+  if (askedField && askedField !== "discountCode") {
     const parsed = applyCanonicalVoiceAnswer(
       session,
       askedField,
       input.utterance,
     );
     if (!parsed.accepted) {
+      const retryCounts = session.fields.voiceJourney?.retryCounts ?? {};
+      const currentRetries = Number(retryCounts[askedField] ?? 0);
+      if (currentRetries >= 1) {
+        const terminal = mergeFields(session, {
+          lastQuoteResult: undefined,
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            retryCounts,
+            requestedNextStep: "none",
+            quoteContext: null,
+            delivery: null,
+            availability: null,
+            booking: { status: "not_started" as const },
+          },
+        });
+        delete terminal.fields.lastQuoteResult;
+        terminal.quoteStatus = "manual_review";
+        terminal.bookingReady = false;
+        capture(terminal, `manual_review:retry_exhausted:${askedField}`);
+        const action = {
+          kind: "handoff" as const,
+          reason: "safety_or_access_flag" as const,
+        } as unknown as WorkflowAction;
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action,
+            spoken:
+              "I still couldn't capture that detail safely, so I've flagged the quote for manual review. A team member can finish it without me guessing.",
+          },
+        };
+      }
+      const retried = mergeFields(session, {
+        voiceJourney: {
+          ...(session.fields.voiceJourney ?? {}),
+          retryCounts: { ...retryCounts, [askedField]: currentRetries + 1 },
+        },
+      });
+      capture(retried, `asked:${askedField}`);
       const prompt = askedField === "priceChangingAssumptionConfirmation"
         ? buildCanonicalPrePriceRecap(session.fields)
         : promptForCanonicalField(askedField);
@@ -1448,21 +2354,88 @@ export async function runControllerTurn(
     };
   }
 
-  const pricingMissing = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
-    ? await probePricingMissing(input.supabase, session)
+  // The readiness decision and customer-facing calculation consume the same
+  // canonical pricing snapshot. Reusing it within this immutable section
+  // removes one database read and one complete calculation without relaxing
+  // freshness, tenant, coupon, promotion, tax, or duration authority.
+  const pricingProbe = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
+    ? await measure(
+      "pricing",
+      () => probeCanonicalPricing(input.supabase, session),
+    )
     : null;
+  const pricingMissing = pricingProbe?.missing ?? null;
   let action = decideResidentialQuoteAction(session, pricingMissing);
   if (action.kind === "handoff" && action.reason === "unsupported_service") {
+    const allowedUnsupportedClarificationFields = [
+      // Stories are deliberately neutral for window-only pricing, but remain
+      // a canonical input for a separately volunteered house-wash service.
+      "stories",
+      "ladderAffectedWindowEquivalents",
+      "hardWaterAffectedWindowEquivalents",
+    ];
     const missing = computeRequired(session.fields);
-    if (missing.length > 0) {
+    const allowedField = allowedUnsupportedClarificationFields.find((field) =>
+      missing.includes(field)
+    );
+    if (allowedField) {
       action = {
         kind: "ask",
-        field: missing[0],
-        prompt: promptForCanonicalField(missing[0]),
+        field: allowedField,
+        prompt: promptForCanonicalField(allowedField),
       } as unknown as WorkflowAction;
     }
   }
   if (action.kind === "ask") {
+    const conditionalQuantityFields = new Set([
+      "ladderAffectedWindowEquivalents",
+      "hardWaterAffectedWindowEquivalents",
+    ]);
+    if (conditionalQuantityFields.has(action.field)) {
+      const alreadyAsked = session.fields.voiceJourney
+        ?.conditionalModifierQuestionAsked;
+      if (alreadyAsked && alreadyAsked !== action.field) {
+        const terminal = mergeFields(session, {
+          lastQuoteResult: undefined,
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            requestedNextStep: "none",
+            quoteContext: null,
+            delivery: null,
+            availability: null,
+            booking: { status: "not_started" as const },
+          },
+        });
+        delete terminal.fields.lastQuoteResult;
+        terminal.quoteStatus = "manual_review";
+        terminal.bookingReady = false;
+        capture(
+          terminal,
+          `manual_review:conditional_modifier_budget:${action.field}`,
+        );
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: { kind: "handoff", reason: "safety_or_access_flag" },
+            spoken:
+              "This quote needs a quick manual review because there are multiple specialty window details. A team member can finish it without me guessing.",
+          },
+        };
+      }
+      if (!alreadyAsked) {
+        capture(
+          mergeFields(session, {
+            voiceJourney: {
+              ...(session.fields.voiceJourney ?? {}),
+              conditionalModifierQuestionAsked: action.field,
+            },
+          }),
+          session.lastStep,
+        );
+      }
+    }
     const prompt = action.field === "priceChangingAssumptionConfirmation"
       ? buildCanonicalPrePriceRecap(session.fields)
       : action.prompt;
@@ -1471,7 +2444,7 @@ export async function runControllerTurn(
     return {
       sessionId: session.id,
       sessionPatch,
-      pre: { kind: "fsm", action, spoken: prompt },
+      pre: { kind: "fsm", action, spoken: `${discountSpeechPrefix}${prompt}` },
     };
   }
   if (action.kind === "calculate_price") {
@@ -1492,7 +2465,8 @@ export async function runControllerTurn(
         },
       };
     }
-    const loaded = await measure("pricing", () => loadPricing(input.supabase));
+    const loaded = pricingProbe?.loaded ??
+      await measure("pricing", () => loadPricing(input.supabase));
     if (!loaded.ok || !loaded.pricing) {
       const failed: WorkflowAction = {
         kind: "handoff",
@@ -1509,12 +2483,13 @@ export async function runControllerTurn(
       };
     }
     const pricing = loaded.pricing;
-    const result = await measure("pricing", () =>
-      calculateQuote(
-        quoteSessionFieldsToQuoteInput(session.fields),
-        pricing,
-        loaded.ruleVersion,
-      ));
+    const result = pricingProbe?.result ??
+      await measure("pricing", () =>
+        calculateQuote(
+          quoteSessionFieldsToQuoteInput(session.fields),
+          pricing,
+          loaded.ruleVersion,
+        ));
     const inputsKey = sessionInputsKey(session.fields);
     const intake = evaluateQuoteIntake(
       session.fields as unknown as Record<string, unknown>,
@@ -1566,6 +2541,12 @@ export async function runControllerTurn(
       lastQuoteResult: stamped,
       voiceJourney: {
         ...(session.fields.voiceJourney ?? {}),
+        coupon: session.fields.voiceJourney?.coupon
+          ? {
+            ...session.fields.voiceJourney.coupon,
+            authoritativeAmount: result.discount?.amount ?? null,
+          }
+          : null,
         quoteContext: {
           inputsKey,
           quoteId: session.quoteId ?? null,
@@ -1589,10 +2570,27 @@ export async function runControllerTurn(
         booking: { status: "not_started" as const },
       },
     };
-    capture({ ...session, fields: nextFields, quoteStatus }, "priced_spoken");
-    const spoken = disposition.finalQuoteDisposition === "firm" &&
-        canonicalCustomerTotal > 0
-      ? buildCanonicalPriceStatement(canonicalCustomerTotal)
+    capture(
+      { ...session, fields: nextFields, quoteStatus },
+      "offered_post_price_choice",
+    );
+    const validDiscountCouldNotStack = validDiscountAppliedToFirmQuote &&
+      disposition.finalQuoteDisposition === "firm" &&
+      canonicalCustomerTotal > 0 &&
+      session.fields.promotionId && !result.discount;
+    const spoken = validDiscountCouldNotStack
+      ? `That code is valid, but it cannot be combined with this promotion. Your total remains ${
+        formatCanonicalCurrency(canonicalCustomerTotal)
+      }, including tax.`
+      : validDiscountAppliedToFirmQuote &&
+          disposition.finalQuoteDisposition === "firm" &&
+          canonicalCustomerTotal > 0
+      ? `That code is valid. Your updated total is ${
+        formatCanonicalCurrency(canonicalCustomerTotal)
+      }, including tax.`
+      : disposition.finalQuoteDisposition === "firm" &&
+          canonicalCustomerTotal > 0
+      ? expressPriceStatement(session, canonicalCustomerTotal)
       : disposition.finalQuoteDisposition === "estimated" &&
           canonicalCustomerTotal > 0
       ? `The current estimate is ${
@@ -1619,7 +2617,7 @@ export async function runControllerTurn(
     const total = Number(last?.estimatedTotal ?? last?.total ?? 0);
     const disposition = String(last?.finalQuoteDisposition ?? "");
     const spoken = disposition === "firm" && total > 0
-      ? buildCanonicalPriceStatement(total)
+      ? expressPriceStatement(session, total)
       : disposition === "estimated" && total > 0
       ? `The current estimate is ${
         formatCanonicalCurrency(total)
@@ -1638,7 +2636,7 @@ export async function runControllerTurn(
             : null,
         },
       }),
-      "priced_spoken",
+      "offered_post_price_choice",
     );
     return {
       sessionId: session.id,

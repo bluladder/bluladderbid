@@ -1,10 +1,5 @@
-import {
-  assertEquals,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
-import {
-  parseSpokenQuantity,
-  spokenToNumber,
-} from "./spokenQuantity.ts";
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { parseSpokenQuantity, spokenToNumber } from "./spokenQuantity.ts";
 
 const zeroThroughTwenty: Array<[string, number]> = [
   ["zero", 0],
@@ -72,6 +67,12 @@ Deno.test("spoken quantity supports half-window equivalents", () => {
       spoken,
     );
   }
+});
+
+Deno.test("phase3 spoken quantity strips terminal punctuation without damaging decimals", () => {
+  assertEquals(parseSpokenQuantity("Two."), 2);
+  assertEquals(parseSpokenQuantity("2.5.", { min: 0.5, step: 0.5 }), 2.5);
+  assertEquals(parseSpokenQuantity("Two, please."), 2);
 });
 
 Deno.test("spoken quantity rejects ambiguity, addresses and invalid field shapes", () => {

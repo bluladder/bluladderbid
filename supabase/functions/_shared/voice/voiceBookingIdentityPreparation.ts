@@ -382,8 +382,12 @@ export async function prepareVoiceBookingIdentity(
       args.session.propertyId && conversation.data.property_id &&
       args.session.propertyId !== conversation.data.property_id
     ) return { status: "blocked", blocker: "property_ownership_conflict" };
+    const phoneReuseCustomerId =
+      args.session.fields.returningCustomerResolved === true
+        ? args.session.fields.returningCustomerId ?? null
+        : null;
     const expectedCustomerId = args.session.customerId ??
-      conversation.data.customer_id ?? null;
+      conversation.data.customer_id ?? phoneReuseCustomerId;
     const expectedPropertyId = args.session.propertyId ??
       conversation.data.property_id ?? null;
     const customer = await resolveOrCreateCustomer(

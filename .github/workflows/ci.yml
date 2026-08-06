@@ -128,6 +128,7 @@ jobs:
           createdb --host localhost --username postgres voice_retention_rehearsal
           createdb --host localhost --username postgres voice_retention_lovable_rehearsal
           createdb --host localhost --username postgres voice_retention_lovable_rebuild_rehearsal
+          createdb --host localhost --username postgres voice_turn_single_flight_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -149,6 +150,10 @@ jobs:
           VOICE_RETENTION_LOVABLE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_retention_lovable_rehearsal
           VOICE_RETENTION_LOVABLE_REBUILD_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_retention_lovable_rebuild_rehearsal
         run: bash scripts/rehearse-voice-artifact-retention-lovable-postgres.sh
+      - name: Rehearse voice turn single-flight release candidate
+        env:
+          VOICE_TURN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_turn_single_flight_rehearsal
+        run: bash scripts/rehearse-voice-turn-single-flight-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard

@@ -276,6 +276,38 @@ Deno.test("uncertain actual quote outcome never falls through to generic SMS", a
   assertEquals(generic.calls.length, 0);
 });
 
+Deno.test("phase6 terminal generated quote and generic fallback never execute in one event", async () => {
+  const generic = recordingDeliver();
+  let actualCalls = 0;
+  const result = await runVoiceHangupBidLinkFollowup({
+    supabase: stubSupabase({
+      quoteSessionId: "00000000-0000-4000-8000-000000000073",
+      facts: {
+        contact: { phone: "+14692150144", phoneConfirmed: true },
+        quote: { status: "firm", firm: true, total: 216.5 },
+      },
+    }),
+    body: endOfCallBody(),
+    eventType: "end-of-call-report",
+    organizationId: "00000000-0000-4000-8000-000000000072",
+    callFunction: async () => ({ status: 500, json: {} }),
+    deliverActualQuote: async () => {
+      actualCalls += 1;
+      return {
+        ok: false,
+        status: "failed_terminal",
+        reason: "email_unavailable",
+        detail: "canonical_email_unconfirmed",
+      };
+    },
+    deliver: generic.fn,
+  });
+  assertEquals(actualCalls, 1);
+  assertEquals(generic.calls.length, 0);
+  assertEquals(result.status, "failed");
+  assertEquals(result.detail, "canonical_email_unconfirmed");
+});
+
 Deno.test("provider acceptance without a durable delivery-mode marker stays pending", async () => {
   const generic = recordingDeliver();
   const result = await runVoiceHangupBidLinkFollowup({

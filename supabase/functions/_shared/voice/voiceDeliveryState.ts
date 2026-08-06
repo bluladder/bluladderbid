@@ -10,6 +10,8 @@ export type VoiceDeliveryStatus =
   | "delivered"
   | "retry_pending"
   | "uncertain"
+  | "suppressed"
+  | "manual_follow_up"
   | "failed_terminal";
 
 export interface VoiceDeliveryReceipt {
@@ -85,6 +87,22 @@ export function describeVoiceDelivery(
         spoken:
           `The ${noun} request reached the delivery system, but the provider outcome is uncertain. I can't confirm that it was sent.`,
       };
+    case "suppressed":
+      return {
+        completed: false,
+        retryExpected: false,
+        event: `voice_${receipt.channel}_suppressed`,
+        spoken:
+          `The ${noun} was blocked by the delivery safeguards, so it was not sent.`,
+      };
+    case "manual_follow_up":
+      return {
+        completed: false,
+        retryExpected: false,
+        event: `voice_${receipt.channel}_manual_follow_up`,
+        spoken:
+          `The ${noun} was not sent automatically. A teammate can follow up manually.`,
+      };
     case "failed_terminal":
       return {
         completed: false,
@@ -119,6 +137,11 @@ export function normalizeDeliveryStatus(status: unknown): VoiceDeliveryStatus {
     case "uncertain":
     case "delivery_unknown":
       return "uncertain";
+    case "suppressed":
+    case "cancelled":
+      return "suppressed";
+    case "manual_follow_up":
+      return "manual_follow_up";
     default:
       return "failed_terminal";
   }

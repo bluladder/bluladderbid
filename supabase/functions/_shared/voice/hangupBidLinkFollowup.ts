@@ -401,9 +401,29 @@ export async function runVoiceHangupBidLinkFollowup(
           : `${actual.status}_mode_record_unconfirmed`,
       };
     }
-    // A terminal non-deliverable firm context may use the ordinary online bid
-    // fallback. No price is reconstructed and no second actual-quote attempt
-    // is made below.
+    // Once the generated-quote path is selected, this final-event request may
+    // never fall through to the generic bid link. Even a known terminal or
+    // suppressed outcome remains on the selected path so both links cannot
+    // compete in one event.
+    const terminalStatus = actual.status === "suppressed"
+      ? "suppressed"
+      : actual.status === "manual_follow_up"
+      ? "manual_follow_up"
+      : "failed_terminal";
+    const modeRecorded = await recordHangupDeliveryMode(supabase, {
+      quoteSessionId,
+      organizationId: input.organizationId,
+      mode: "actual_quote",
+      status: terminalStatus,
+      attemptId: actual.attemptId ?? null,
+      providerMessageId: actual.providerMessageId ?? null,
+    });
+    return {
+      status: actual.status === "suppressed" ? "suppressed" : "failed",
+      detail: modeRecorded
+        ? actual.detail ?? `actual_quote_${terminalStatus}`
+        : `actual_quote_${terminalStatus}_mode_record_unconfirmed`,
+    };
   }
 
   // Authoritative delivery-safety checks, immediately before enqueue.

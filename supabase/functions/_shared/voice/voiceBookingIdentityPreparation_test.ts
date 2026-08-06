@@ -204,6 +204,67 @@ Deno.test("new voice caller reaches local identity and authorized property readi
   assertEquals(supabase._tables.customer_properties.length, 1);
 });
 
+Deno.test("phase7 verified phone candidate is reused only after every booking identity gate", async () => {
+  const existingId = "00000000-0000-4000-8000-000000000075";
+  const supabase = fakeSupabase({
+    customers: [{
+      id: existingId,
+      organization_id: ORG,
+      email: "synthetic.issue72@example.com",
+      phone: "+14695550172",
+      first_name: "Synthetic",
+      last_name: "Caller",
+    }],
+  });
+  const session = readySession();
+  session.fields.returningCustomerId = existingId;
+  session.fields.returningCustomerResolved = true;
+  session.fields.returningCustomerLookupStatus = "verified";
+  const result = await prepareVoiceBookingIdentity(supabase, {
+    session,
+    conversationId: session.conversationIds[0],
+    organizationId: ORG,
+  });
+  assertEquals(result.status, "ready");
+  if (result.status === "ready") {
+    assertEquals(result.customerId, existingId);
+    assertEquals(result.customerCreated, false);
+  }
+  assertEquals(supabase._tables.customers.length, 1);
+});
+
+Deno.test("phase7 phone candidate alone cannot authorize identity or booking lineage", async () => {
+  const supabase = fakeSupabase({
+    customers: [{
+      id: "00000000-0000-4000-8000-000000000075",
+      organization_id: ORG,
+      email: "synthetic.issue72@example.com",
+      phone: "+14695550172",
+      first_name: "Synthetic",
+      last_name: "Caller",
+    }],
+  });
+  const session = readySession();
+  session.fields.returningCustomerCandidateId =
+    "00000000-0000-4000-8000-000000000075";
+  session.fields.returningCustomerResolved = false;
+  session.fields.awaitingDisambiguator = true;
+  session.fields.returningCustomerLookupStatus = "candidate";
+  session.fieldStatus.email = "unanswered";
+  const result = await prepareVoiceBookingIdentity(supabase, {
+    session,
+    conversationId: session.conversationIds[0],
+    organizationId: ORG,
+  });
+  assertEquals(result, {
+    status: "not_ready",
+    blocker: "email_unconfirmed",
+  });
+  assertEquals(supabase._tables.properties.length, 0);
+  assertEquals(supabase._tables.customer_properties.length, 0);
+  assertEquals(supabase._tables.chat_conversations[0].customer_id, null);
+});
+
 Deno.test("cross-tenant global email collision fails opaque and closed", async () => {
   const supabase = fakeSupabase({
     customers: [{

@@ -31,11 +31,11 @@ import type { WorkflowAction, RequiredField } from "../types.ts";
 import {
   RESIDENTIAL_INTAKE_BY_ID,
   RESIDENTIAL_INTAKE_PRIORITY,
-  fieldsForEngineMissing,
   nextResidentialQuestion,
   type ResidentialIntakeFieldId,
 } from "../../salesEngine/residentialQuoteManifest.ts";
 import { evaluateQuoteIntake } from "../../salesEngine/quoteIntakeContract.ts";
+import { nextExpressPrePriceField } from "../../voice/voicePolicy.ts";
 
 function ask(field: ResidentialIntakeFieldId): WorkflowAction {
   const spec = RESIDENTIAL_INTAKE_BY_ID[field];
@@ -52,51 +52,49 @@ function capturedIds(session: QuoteSession): ResidentialIntakeFieldId[] {
 }
 
 /** Decide the next Action for a residential-quote turn. Sequencing only —
- *  never speaks; never invents pricing.
- *
- *  Readiness authority:
- *  - `pricingEngineMissing` is the canonical pricing engine's `missing[]`.
- *    When provided, THIS is the source of truth for whether pricing inputs
- *    are complete. Passing null means the caller has not yet probed the
- *    engine — we defer to the shared manifest's pricing tokens as a proxy.
- */
+ * never speaks; never invents pricing. */
 export function decideResidentialQuoteAction(
   session: QuoteSession,
   _pricingEngineMissing: readonly string[] | null = null,
 ): WorkflowAction {
   const captured = capturedIds(session);
-
-  // 1. Confirm service intent, then capture a callback/mobile number before
-  //    pricing intake on voice/SMS. Web has no early contact wall. The
-  //    next-question helper enforces manifest priority and skips captured fields.
-  // Phase 0 contract authority. The engine probe remains useful as a parity
-  // signal, but service-specific readiness comes from quoteSession, which is
-  // itself derived from the shared Sales Engine contract.
   const engineMissingForIntake = computeRequired(session.fields);
 
-  const preQuote = nextResidentialQuestion({
-    captured,
-    engineMissing: engineMissingForIntake,
-    channel: session.channel === "chat" ? "web" : session.channel,
-    // Intake parity with BluLadder Bid web: residential window cleaning must
-    // capture window condition before pricing. The canonical engine treats
-    // condition as an optional modifier (no `missing[]` token), so we inject
-    // it here via `additionallyRequired` instead of creating a voice-only
-    // required-field list.
-    additionallyRequired: wantsResidentialWindow(session)
-      ? ["windowCleaningCondition"]
-      : [],
-  });
-  if (preQuote) return ask(preQuote.id);
-  if (engineMissingForIntake.length > 0) {
-    return { kind: "handoff", reason: "unsupported_service" };
-  }
-  const intake = evaluateQuoteIntake(session.fields as unknown as Record<string, unknown>);
+  if (session.fields.voiceJourney?.policyVersion === "voice-express-v1") {
+    const expressField = nextExpressPrePriceField(session);
+    if (expressField) return ask(expressField as ResidentialIntakeFieldId);
 
-  // 2. Ready to price. A manual-review or owner-decision service may coexist
-  // with independently firm services. Let the canonical engine calculate once
-  // before applying product-policy disposition so those firm portions are not
-  // discarded. Pure commercial/partial-window paths remain non-automated.
+    // The owner-approved express defaults remain visible as
+    // approved_business_default provenance. They do not require a synthetic
+    // customer recap; only the voice express workflow may suppress this one
+    // legacy blocker. All actual missing fields and modifiers still block.
+    const expressMissing = engineMissingForIntake.filter((field) =>
+      field !== "priceChangingAssumptionConfirmation"
+    );
+    if (expressMissing.length > 0) {
+      return { kind: "handoff", reason: "unsupported_service" };
+    }
+  } else {
+    const preQuote = nextResidentialQuestion({
+      captured,
+      engineMissing: engineMissingForIntake,
+      channel: session.channel === "chat" ? "web" : session.channel,
+      additionallyRequired: wantsResidentialWindow(session)
+        ? ["windowCleaningCondition"]
+        : [],
+    });
+    if (preQuote) return ask(preQuote.id);
+    if (engineMissingForIntake.length > 0) {
+      return { kind: "handoff", reason: "unsupported_service" };
+    }
+  }
+  const intake = evaluateQuoteIntake(
+    session.fields as unknown as Record<string, unknown>,
+  );
+
+  // Ready to price. A manual-review or owner-decision service may coexist with
+  // independently firm services. Let the engine calculate once before applying
+  // product-policy disposition so firm portions are not discarded.
   if (session.quoteStatus === "none") {
     const hasAutomatedResidentialPortion = intake.services.some((service) =>
       service !== "commercial_window_bid" &&
@@ -110,7 +108,9 @@ export function decideResidentialQuoteAction(
         : "unsupported_service",
     };
   }
-  if (session.quoteStatus === "error") return { kind: "handoff", reason: "pricing_error" };
+  if (session.quoteStatus === "error") {
+    return { kind: "handoff", reason: "pricing_error" };
+  }
   if (intake.manualReview.length > 0 || session.quoteStatus === "manual_review") {
     return {
       kind: "handoff",
@@ -123,9 +123,8 @@ export function decideResidentialQuoteAction(
     return { kind: "handoff", reason: "owner_decision_required" };
   }
 
-  // 3. Speak the authoritative quote before asking anything else. Email is
-  //    NOT required to speak a price — it is required before booking or
-  //    finalizing an unbooked proposal.
+  // Speak the authoritative quote before asking anything else. Email is not
+  // required to speak a price.
   const quoteContext = session.fields.voiceJourney?.quoteContext;
   const spokenForCurrentInputs =
     quoteContext?.inputsKey === sessionInputsKey(session.fields) &&
@@ -134,7 +133,7 @@ export function decideResidentialQuoteAction(
     return { kind: "speak_price" };
   }
 
-  // 4. Post-quote: collect email + address before offering scheduling.
+  // Post-quote collection remains separate from the pricing critical path.
   if (!session.bookingReady) {
     const nextBook = nextResidentialQuestion({
       captured,
@@ -143,9 +142,8 @@ export function decideResidentialQuoteAction(
       channel: session.channel === "chat" ? "web" : session.channel,
     });
     if (nextBook) return ask(nextBook.id);
-    // Legacy fallback in case future required booking fields appear.
     const legacyMissing = missingResidentialBookingFields(session.fields).filter(
-      (f) => !hasUsableFact(f, session),
+      (field) => !hasUsableFact(field, session),
     );
     if (legacyMissing.length === 0) return { kind: "offer_scheduling" };
     return ask(legacyMissing[0] as ResidentialIntakeFieldId);
@@ -157,15 +155,11 @@ export function decideResidentialQuoteAction(
 function wantsResidentialWindow(session: QuoteSession): boolean {
   const services = session.fields.services ?? [];
   const isWindow = services.some(
-    (s) => s === "windowCleaning" || s === "window_cleaning",
+    (service) => service === "windowCleaning" || service === "window_cleaning",
   );
   if (!isWindow) return false;
-  // Only whole-home / unspecified residential intake needs the condition
-  // modifier. Commercial custom bids and per-window partials do not price
-  // through the residential modifier path.
   const scope = session.fields.windowCleaningScope;
   if (scope === "commercial_custom" || scope === "partial") return false;
-  const customerType = session.fields.customerType;
-  if (customerType === "commercial") return false;
+  if (session.fields.customerType === "commercial") return false;
   return true;
 }

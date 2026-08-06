@@ -84,13 +84,12 @@ describe("pricing engine — minimum charges enforced", () => {
 });
 
 describe("pricing engine — story & condition modifiers", () => {
-  it("2-story window adds 12%", () => {
-    const r = calc({
-      homeDetails: baseHome({ squareFootage: 3000, stories: 2 }),
+  it("1-, 2-, and 3-story window inputs price identically", () => {
+    const totals = [1, 2, 3].map((stories) => calc({
+      homeDetails: baseHome({ squareFootage: 3000, stories }),
       additionalServices: { ...noServices(), windowCleaning: true },
-    });
-    // 3000*0.08=240, +12% => 268.8 -> round 269
-    expect(r.total).toBe(269);
+    }).total);
+    expect(totals).toEqual([240, 240, 240]);
   });
   it("heavy condition adds 15% to windows", () => {
     const r = calc({
@@ -190,13 +189,16 @@ describe("pricing engine — safe failure modes", () => {
     expect(r.status).toBe("missing_information");
     expect(r.missing).toContain("squareFootage");
   });
-  it("invalid stories -> missing_information", () => {
-    const r = calc({
-      homeDetails: baseHome({ stories: 7 }),
-      additionalServices: { ...noServices(), windowCleaning: true },
-    });
-    expect(r.status).toBe("missing_information");
-    expect(r.missing).toContain("stories");
+  it("invalid or missing stories do not block a window-only quote", () => {
+    for (const stories of [7, undefined]) {
+      const r = calc({
+        homeDetails: baseHome({ stories }),
+        additionalServices: { ...noServices(), windowCleaning: true },
+      });
+      expect(r.status).toBe("firm");
+      expect(r.total).toBe(185);
+      expect(r.missing).not.toContain("stories");
+    }
   });
   it("negative square footage -> missing_information", () => {
     const r = calc({

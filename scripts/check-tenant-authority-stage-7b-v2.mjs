@@ -126,6 +126,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/bookingReadiness.ts",
   "supabase/functions/_shared/bookingReadiness_test.ts",
   "supabase/functions/_shared/deterministicUuid.ts",
+  "supabase/functions/_shared/discountCodeValidation.ts",
+  "supabase/functions/_shared/discountCodeValidation_test.ts",
   "supabase/functions/_shared/executeSmsBooking.ts",
   "supabase/functions/_shared/identityAnchor.ts",
   "supabase/functions/_shared/identityAnchor_test.ts",
@@ -149,8 +151,14 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/controllerRoute_test.ts",
   "supabase/functions/_shared/voice/hangupBidLinkFollowup.ts",
   "supabase/functions/_shared/voice/hangupBidLinkFollowup_test.ts",
+  "supabase/functions/_shared/voice/postCallOperationalNote.ts",
+  "supabase/functions/_shared/voice/postCallOperationalNote_test.ts",
   "supabase/functions/_shared/voice/quoteByTextDelivery.ts",
   "supabase/functions/_shared/voice/quoteByTextDelivery_test.ts",
+  "supabase/functions/_shared/voice/quoteByText.ts",
+  "supabase/functions/_shared/voice/quoteByText_test.ts",
+  "supabase/functions/_shared/voice/quoteDeliveryIdentity.ts",
+  "supabase/functions/_shared/voice/quoteDeliveryIdentity_test.ts",
   "supabase/functions/_shared/voice/quoteSessionProjection.ts",
   "supabase/functions/_shared/voice/quoteSessionProjection_test.ts",
   "supabase/functions/_shared/voice/spokenEmail.ts",
@@ -163,33 +171,69 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/voiceBookingIdentityPreparation.ts",
   "supabase/functions/_shared/voice/voiceBookingIdentityPreparation_test.ts",
   "supabase/functions/_shared/voice/voiceCanonicalIntake.ts",
+  "supabase/functions/_shared/voice/voiceJourneyContract.ts",
   "supabase/functions/_shared/voice/voiceJourneyCompletion_test.ts",
+  "supabase/functions/_shared/voice/voicePolicy.ts",
+  "supabase/functions/_shared/voice/voicePolicy_test.ts",
   "supabase/functions/_shared/voice/voiceOrganizationAuthority.ts",
   "supabase/functions/_shared/voice/voiceOrganizationAuthority_test.ts",
+  "supabase/functions/_shared/voice/voiceRemediation67_test.ts",
   "supabase/functions/_shared/voice/voiceRemediation68_test.ts",
+  "supabase/functions/_shared/voice/voiceTurnCoordinator.ts",
+  "supabase/functions/_shared/voice/voiceTurnCoordinator_test.ts",
+  "supabase/functions/_shared/voice/voiceTurnLatency.ts",
+  "supabase/functions/_shared/voice/voiceTurnLatency_test.ts",
+  "supabase/functions/_shared/voice/voiceDeliveryState.ts",
   "supabase/functions/_shared/voiceAdapter.ts",
   "supabase/functions/_shared/voiceAdapter_streaming_test.ts",
   "supabase/functions/_shared/voiceAdapter_test.ts",
   "supabase/functions/_shared/voiceBookingAdapter.ts",
   "supabase/functions/_shared/voiceBookingAdapter_test.ts",
+  "supabase/functions/_shared/quoteSessionPricingAdapter.ts",
   "supabase/functions/_shared/voiceBookingDryRun_test.ts",
   "supabase/functions/_shared/voiceLiveBooking_test.ts",
   "supabase/functions/_shared/voiceProviderConfig.ts",
   "supabase/functions/_shared/voiceProviderConfig_test.ts",
+  "supabase/functions/_shared/workflow/customerResolver.ts",
+  "supabase/functions/_shared/workflow/customerResolver_test.ts",
   "supabase/functions/_shared/workflow/workflowController.ts",
   "supabase/functions/_shared/workflow/workflowController_rollout_test.ts",
   "supabase/functions/_shared/workflow/rolloutRoute.ts",
   "supabase/functions/_shared/workflow/rolloutRoute_test.ts",
   "supabase/functions/_shared/workflow/workflowSession.ts",
+  "supabase/functions/_shared/workflow/workflows/residentialQuote.ts",
   "supabase/functions/attribution-ingest/index.ts",
   "supabase/functions/jobber-create-booking/index.ts",
   "supabase/functions/jobber-create-booking/launch_safety_test.ts",
+  "supabase/functions/send-sms/index.ts",
   "supabase/functions/voice-llm-adapter/index.ts",
+  "supabase/functions/validate-discount-code/index.ts",
+  "supabase/functions/validate-discount-code/shared_validator_contract_test.ts",
   "supabase/functions/voice-vapi-events/index.ts",
+  "supabase/functions/voice-vapi-events/index_test.ts",
 ]);
 const changedEdgePaths = changedPaths(["supabase/functions"]);
+// Main already carried this Lovable-generated MCP bundle before PR #80. Keep
+// that inherited drift separate from the voice-policy review and pin its exact
+// blob so this exception cannot silently authorize a later MCP regeneration.
+const inheritedEdgeBlobs = new Map([
+  [
+    "supabase/functions/mcp/index.ts",
+    "030bf54cb69a4ae8324c54bf4a9cf1f3e640747d",
+  ],
+]);
+for (const [path, expectedBlob] of inheritedEdgeBlobs) {
+  const actualBlob = execFileSync("git", ["rev-parse", `HEAD:${path}`], {
+    encoding: "utf8",
+  }).trim();
+  if (actualBlob !== expectedBlob) {
+    throw new Error(
+      `inherited Edge path changed outside its reviewed blob pin: ${path}`,
+    );
+  }
+}
 const unexpectedEdgePaths = changedEdgePaths.filter((path) =>
-  !allowedEdgePaths.has(path)
+  !allowedEdgePaths.has(path) && !inheritedEdgeBlobs.has(path)
 );
 if (unexpectedEdgePaths.length) {
   throw new Error(
@@ -208,8 +252,11 @@ if (missingEdgePaths.length) {
 }
 
 const reviewedPostRuntimeProtectedPaths = new Set([
+  "src/lib/pricing/__fixtures__/legacyBundlePricing.ts",
   "src/lib/pricing/__fixtures__/liveConfig.ts",
   "src/lib/pricing/engine.ts",
+  "src/lib/pricing/engine.planOptions.test.ts",
+  "src/lib/pricing/engine.test.ts",
   "src/lib/pricing/fromQuoteResult.ts",
   "src/lib/pricing/fromQuoteResult.test.ts",
   "src/lib/pricing/gutterBasePricing.regression.test.ts",
@@ -219,6 +266,7 @@ const reviewedPostRuntimeProtectedPaths = new Set([
   "src/lib/pricing/toQuoteInput.ts",
   "src/lib/pricing/toQuoteInput.selectedServices.test.ts",
   "supabase/functions/_shared/pricingEngine.ts",
+  "supabase/functions/_shared/quoteSessionPricingAdapter.ts",
 ]);
 const protectedContractPaths = changedPaths([
   "packages/sales-engine",

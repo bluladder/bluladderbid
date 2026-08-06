@@ -48,6 +48,51 @@ Deno.test("mergeFields: changing a captured value marks it corrected", () => {
   assertEquals(s.fieldStatus.squareFootage, "corrected");
 });
 
+Deno.test("phase7 changing the phone revokes every phone-derived customer candidate", () => {
+  const session: QuoteSession = {
+    ...empty(),
+    fields: {
+      phone: "+14695550111",
+      returningCustomerCandidateId: "candidate-a",
+      returningCustomerId: "customer-a",
+      returningCustomerResolved: true,
+      awaitingDisambiguator: false,
+      returningCustomerLookupStatus: "verified",
+    },
+    fieldStatus: { phone: "verified" },
+  };
+  const changed = mergeFields(session, { phone: "+14695550222" }, {
+    markVerified: ["phone"],
+  });
+  assertEquals(changed.fields.phone, "+14695550222");
+  assertEquals(changed.fields.returningCustomerCandidateId, undefined);
+  assertEquals(changed.fields.returningCustomerId, undefined);
+  assertEquals(changed.fields.returningCustomerResolved, undefined);
+  assertEquals(changed.fields.awaitingDisambiguator, undefined);
+  assertEquals(changed.fields.returningCustomerLookupStatus, undefined);
+});
+
+Deno.test("phase7 correcting the verified name revokes phone reuse", () => {
+  const session: QuoteSession = {
+    ...empty(),
+    fields: {
+      phone: "+14695550111",
+      name: "Alex Rivera",
+      returningCustomerId: "customer-a",
+      returningCustomerResolved: true,
+      returningCustomerLookupStatus: "verified",
+    },
+    fieldStatus: { phone: "verified", name: "verified" },
+  };
+  const changed = mergeFields(session, { name: "Bailey Rivera" }, {
+    markVerified: ["name"],
+  });
+  assertEquals(changed.fields.name, "Bailey Rivera");
+  assertEquals(changed.fields.returningCustomerId, undefined);
+  assertEquals(changed.fields.returningCustomerResolved, undefined);
+  assertEquals(changed.fields.returningCustomerLookupStatus, undefined);
+});
+
 Deno.test("field provenance keeps defaulted distinct from verified", () => {
   const s = mergeFields(empty(), { stories: 1 }, {
     markDefaulted: ["stories"],

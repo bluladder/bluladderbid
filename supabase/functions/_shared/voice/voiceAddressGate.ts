@@ -3,8 +3,8 @@
 //
 // A geocoded candidate never becomes booking / availability / text-delivery
 // eligible until the caller explicitly confirms the complete canonical
-// address. The readback spells the street and reads the house number digit by
-// digit, because ASR routinely mangles both (incident 019fb423: "5610" was
+// address. The readback preserves the canonical street wording and reads the
+// house number digit by digit, because ASR routinely mangles both (incident 019fb423: "5610" was
 // persisted when the caller said "5612").
 //
 // Pure module — no I/O. Web and SMS behavior is unaffected.
@@ -128,8 +128,23 @@ export function normalizeAddressComponentAnswer(
     if (/\b(texas|tx)\b/i.test(raw)) return "TX";
     return /^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : null;
   }
+  if (component === "city") {
+    const explicit = raw.match(
+      /\bcity(?:\s+is)?\s+([A-Za-z][A-Za-z'’.-]*(?:\s+[A-Za-z][A-Za-z'’.-]*){0,2})(?:[,.!?]|$)/i,
+    )?.[1];
+    const value = (explicit ?? raw).replace(/[.!?]+$/, "").trim();
+    if (/^(?:the\s+)?city$/i.test(value)) return null;
+    return /^[A-Za-z][A-Za-z'’.-]*(?:\s+[A-Za-z][A-Za-z'’.-]*){0,2}$/
+        .test(value)
+      ? value
+      : null;
+  }
   if (component === "unit") return raw.length <= 20 ? raw : null;
   if (component === "street") {
+    const direct = raw.replace(
+      /^(?:no[, ]+)?(?:the\s+)?street(?:\s+name)?(?:\s+is)?\s+/i,
+      "",
+    ).replace(/[.!?]+$/, "").trim();
     const corrected = raw.match(
       /\b([A-Za-z][A-Za-z'’-]{1,40})\s+(?:not|instead of)\s+[A-Za-z][A-Za-z'’-]{1,40}/i,
     )?.[1];
@@ -153,6 +168,7 @@ export function normalizeAddressComponentAnswer(
       return [corrected, suffix ? expandStreetSuffix(suffix) : ""]
         .filter(Boolean).join(" ");
     }
+    if (direct !== raw && direct.length <= 80) return direct;
   }
   return raw.length <= 80 && !/@/.test(raw) ? raw : null;
 }
@@ -285,13 +301,21 @@ export function houseNumberOf(
   return m ? m[1] : null;
 }
 
-/** Split "5612 Binbranch Lane, McKinney, TX 75071" for a spoken readback. */
+/** Build one concise confirmation while reading the house number digit by digit. */
 export function buildAddressReadback(formatted: string): string {
   const segs = String(formatted ?? "").split(",").map((s) => s.trim()).filter(
     Boolean,
   );
   const street = segs[0] ?? "";
-  const tail = segs.slice(1).join(", ");
+  const remainder = segs.slice(1);
+  const unit =
+    remainder.find((segment) =>
+      /^(?:apt|apartment|unit|suite|#)\b/i.test(segment)
+    ) ?? "";
+  const city =
+    remainder.find((segment) =>
+      segment !== unit && !/^[A-Z]{2}\b(?:\s+\d{5})?/i.test(segment)
+    ) ?? "";
   const words = street.split(/\s+/).filter(Boolean);
   const house = houseNumberOf(street);
   const body = house ? words.slice(1) : words;
@@ -301,10 +325,13 @@ export function buildAddressReadback(formatted: string): string {
   const name = (body.length > 1 ? body.slice(0, -1) : body).join(" ");
   const parts: string[] = [];
   if (house) parts.push(speakDigits(house));
-  if (name) parts.push(`${name}, spelled ${spellOut(name)}`);
+  if (name) parts.push(name);
   if (suffix) parts.push(suffix);
-  const spoken = [parts.join(" "), tail].filter(Boolean).join(", ");
-  return `I have ${spoken}. Is that exactly right?`;
+  const conciseStreet = [parts.join(" "), unit].filter(Boolean).join(", ") ||
+    street || formatted;
+  return `I found ${conciseStreet}${
+    city ? ` in ${city}` : ""
+  }. Is that correct?`;
 }
 
 /** Ask for the house number one digit at a time (mismatch recovery). */

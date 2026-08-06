@@ -9,11 +9,14 @@ import {
   assertStringIncludes,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  classifyContextualVoiceScheduleRejection,
+  classifyContextualVoiceScheduleRequest,
   persistControllerPatch,
   runControllerTurn as runControllerTurnBase,
 } from "./workflowController.ts";
 import { type QuoteSessionFields, sessionInputsKey } from "../quoteSession.ts";
 import { PUBLIC_BOOKING_ORGANIZATION_ID } from "../publicBookingServiceArea.ts";
+import { PRICE_ASSURANCE } from "../voice/voiceJourneyContract.ts";
 
 type Row = Record<string, unknown>;
 const TEST_ORGANIZATION_ID = PUBLIC_BOOKING_ORGANIZATION_ID;
@@ -38,7 +41,10 @@ function makeFake(opts: {
   customers?: Row[];
   customersThrow?: boolean;
   pricingRows?: Row[];
+  discountRows?: readonly Row[];
+  discountError?: unknown;
 } = {}) {
+  let writeVersion = 0;
   const state = {
     session: {
       id: "qs_1",
@@ -60,6 +66,8 @@ function makeFake(opts: {
       organization_id: TEST_ORGANIZATION_ID,
     } as Row,
     customerReads: 0,
+    discountReads: 0,
+    discountWrites: 0,
   };
   const sb: any = {
     from(table: string) {
@@ -109,6 +117,7 @@ function makeFake(opts: {
           return { data: (rows.data as Row[])?.[0] ?? null, error: null };
         },
         insert(row: Row) {
+          if (this._table === "discount_codes") state.discountWrites += 1;
           if (this._table === "quote_sessions") {
             state.session = { ...state.session, ...row, id: "qs_new" };
             return {
@@ -141,6 +150,7 @@ function makeFake(opts: {
         },
         update(patch: Row) {
           const table = this._table;
+          if (table === "discount_codes") state.discountWrites += 1;
           const filters: Row = {};
           let applied = false;
           const apply = () => {
@@ -157,7 +167,10 @@ function makeFake(opts: {
             applied = true;
             const next = { ...current, ...patch };
             if (table === "quote_sessions") {
-              next.updated_at = "2026-08-01T12:00:01.000Z";
+              writeVersion += 1;
+              next.updated_at = `2026-08-01T12:00:${
+                String(writeVersion).padStart(2, "0")
+              }.000Z`;
               state.session = next;
             }
             if (table === "chat_conversations") state.convo = next;
@@ -213,6 +226,18 @@ function makeFake(opts: {
               data: opts.pricingRows ?? [],
               error: null,
             });
+          }
+          if (this._table === "discount_codes") {
+            state.discountReads += 1;
+            if (opts.discountError) {
+              return Promise.resolve({ data: null, error: opts.discountError });
+            }
+            const rows = (opts.discountRows ?? []).filter((row) =>
+              Object.entries(this._filter).every(([key, value]) =>
+                row[key] === value
+              )
+            );
+            return Promise.resolve({ data: rows, error: null });
           }
           if (this._table === "customers") {
             state.customerReads += 1;
@@ -358,8 +383,150 @@ const PRICING_ROWS: Row[] = [
   },
 ];
 
+const PROMO_PRICING_ROWS: Row[] = [
+  ...PRICING_ROWS,
+  {
+    config_key: "window_promo_99",
+    config_value: {
+      active: true,
+      promoId: "PROMO_99_WINDOWS",
+      version: 1,
+      flatPrice: 99,
+      maxWindows: 10,
+      effectiveStart: null,
+      effectiveEnd: null,
+      prepInstructions: "Please have the selected windows accessible.",
+      stackingPolicy: "none",
+    },
+  },
+];
+
+const VALID_DISCOUNTS: Row[] = [
+  {
+    code: "SAVE10",
+    discount_type: "percentage",
+    discount_value: 10,
+    is_active: true,
+    expires_at: "2026-08-06T00:00:00.000Z",
+    usage_count: 0,
+    max_uses: null,
+  },
+  {
+    code: "FIVE",
+    discount_type: "fixed",
+    discount_value: 5,
+    is_active: true,
+    expires_at: null,
+    usage_count: 0,
+    max_uses: null,
+  },
+];
+
+function setFirmWindowSession(
+  sb: any,
+  requestedNextStep: "none" | "text_quote" | "schedule" = "none",
+) {
+  sb._state.session.quote_status = "firm";
+  sb._state.session.fields = {
+    voiceJourney: {
+      intent: "new_quote",
+      requestedNextStep,
+      quoteContext: { inputsKey: "firm-before" },
+      delivery: null,
+      availability: null,
+      booking: { status: "not_started" },
+    },
+    services: ["window_cleaning"],
+    customerType: "residential",
+    windowCleaningScope: "whole_home",
+    windowCleaningSides: "outside_only",
+    squareFootage: 2000,
+    stories: 1,
+    condition: "maintenance",
+    screenProfile: "standard_removable",
+    advancedWindowConditions: false,
+    hardWaterStains: false,
+    frenchPanes: false,
+    ladderWork: false,
+    enclosedPatioProfile: "none",
+    lastQuoteResult: {
+      status: "firm",
+      finalQuoteDisposition: "firm",
+      estimatedTotal: 200.26,
+      total: 185,
+      discount: null,
+      inputsKey: "firm-before",
+    },
+  };
+}
+
+Deno.test("phase3 schedule classifiers are clause-local, note-safe, and rejection-safe", () => {
+  for (
+    const utterance of [
+      "Continue toward scheduling",
+      "Please continue toward scheduling; text me before arrival because the dog is behind the gate",
+      "Let's schedule an appointment, and please park outside the gate",
+      "Please check current availability; the crew should use the side gate",
+    ]
+  ) {
+    assertEquals(
+      classifyContextualVoiceScheduleRequest(utterance),
+      true,
+      utterance,
+    );
+    assertEquals(
+      classifyContextualVoiceScheduleRejection(utterance),
+      false,
+      utterance,
+    );
+  }
+
+  for (
+    const utterance of [
+      "Don't schedule anything",
+      "Do not continue toward scheduling",
+      "I'm not ready to schedule",
+      "I don't want an appointment",
+      "Please do not check availability",
+      "Schedule it later, not now",
+      "Never mind, stop scheduling",
+      "I’d rather not book an appointment",
+    ]
+  ) {
+    assertEquals(
+      classifyContextualVoiceScheduleRejection(utterance),
+      true,
+      utterance,
+    );
+    assertEquals(
+      classifyContextualVoiceScheduleRequest(utterance),
+      false,
+      utterance,
+    );
+  }
+
+  for (
+    const operationalOnly of [
+      "Text me before arrival",
+      "The dog is behind the gate",
+      "Please park outside",
+    ]
+  ) {
+    assertEquals(
+      classifyContextualVoiceScheduleRequest(operationalOnly),
+      false,
+      operationalOnly,
+    );
+  }
+});
+
 Deno.test("caller-ID confirmation: captures contact phone without verifying identity", async () => {
   const sb = makeFake();
+  // Contact confirmation belongs after pricing in the express journey.
+  sb._state.session.quote_status = "firm";
+  sb._state.session.fields = {
+    voiceJourney: { intent: "new_quote", requestedNextStep: "schedule" },
+  };
   const turn1 = await runControllerTurn({
     supabase: sb,
     conversationId: "c1",
@@ -384,7 +551,7 @@ Deno.test("caller-ID confirmation: captures contact phone without verifying iden
     supabase: sb,
     conversationId: "c1",
     channel: "voice",
-    utterance: "yes that's right",
+    utterance: "yes",
     history: [],
     callerIdE164: "+14697472877",
   });
@@ -432,9 +599,11 @@ Deno.test("spoofed ANI cannot disclose or link a returning customer", async () =
 Deno.test("caller-ID declined: asks for preferred mobile number without repeating full number", async () => {
   const sb = makeFake();
   // Pre-set pending state.
+  sb._state.session.quote_status = "firm";
   sb._state.session.fields = {
     callerIdConfirmationStatus: "pending",
     callerIdProposedE164: "+14697472877",
+    voiceJourney: { intent: "new_quote", requestedNextStep: "schedule" },
   };
   const turn = await runControllerTurn({
     supabase: sb,
@@ -447,6 +616,154 @@ Deno.test("caller-ID declined: asks for preferred mobile number without repeatin
   assertEquals(turn.pre.kind, "ask_preferred_phone");
   if (turn.pre.kind === "ask_preferred_phone") {
     assertEquals(turn.pre.spoken.includes("2877"), false);
+  }
+});
+
+function setPhase7ConfirmedPhone(sb: any) {
+  setFirmWindowSession(sb, "schedule");
+  sb._state.session.fields = {
+    ...sb._state.session.fields,
+    phone: "+14695551212",
+    callerIdConfirmationStatus: "contact_confirmed",
+  };
+  sb._state.session.field_status = { phone: "verified" };
+}
+
+Deno.test("phase7 one exact same-tenant candidate is reused only after neutral name verification", async () => {
+  const sb = makeFake({
+    customers: [{
+      id: "cust_phase7",
+      organization_id: TEST_ORGANIZATION_ID,
+      first_name: "Alex",
+      last_name: "Rivera",
+      phone: "+14695551212",
+      email: "private@example.invalid",
+      address: "Private stored address",
+    }],
+  });
+  setPhase7ConfirmedPhone(sb);
+  const candidate = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  assertEquals(candidate.pre.kind, "fsm");
+  assertEquals(
+    candidate.pre.spoken,
+    "What full name should I use for this quote?",
+  );
+  assertEquals(candidate.pre.spoken.includes("Alex"), false);
+  assertEquals(candidate.pre.spoken.includes("Rivera"), false);
+  assertEquals(candidate.pre.spoken.includes("Private"), false);
+  assertEquals(
+    (candidate.sessionPatch.fields as QuoteSessionFields).returningCustomerId,
+    undefined,
+  );
+  assertEquals(
+    (candidate.sessionPatch.fields as QuoteSessionFields)
+      .returningCustomerCandidateId,
+    "cust_phase7",
+  );
+  await persistControllerPatch(sb, "qs_1", candidate.sessionPatch);
+
+  const suppliedName = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "Alex Rivera",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  assertEquals(suppliedName.pre.kind, "fsm");
+  assertStringIncludes(suppliedName.pre.spoken, "A-L-E-X");
+  assertEquals(
+    (suppliedName.sessionPatch.fields as QuoteSessionFields)
+      .returningCustomerResolved,
+    false,
+  );
+  await persistControllerPatch(sb, "qs_1", suppliedName.sessionPatch);
+
+  const verified = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  const verifiedFields = verified.sessionPatch.fields as QuoteSessionFields;
+  assertEquals(verifiedFields.returningCustomerId, "cust_phase7");
+  assertEquals(verifiedFields.returningCustomerResolved, true);
+  assertEquals(verifiedFields.returningCustomerCandidateId, undefined);
+  assertEquals(verifiedFields.awaitingDisambiguator, false);
+  assertEquals(verifiedFields.returningCustomerLookupStatus, "verified");
+});
+
+Deno.test("phase7 shared phone ambiguity selects nobody and discloses nothing", async () => {
+  const sb = makeFake({
+    customers: [{
+      id: "household_a",
+      organization_id: TEST_ORGANIZATION_ID,
+      first_name: "Alex",
+      last_name: "Rivera",
+      phone: "+14695551212",
+    }, {
+      id: "household_b",
+      organization_id: TEST_ORGANIZATION_ID,
+      first_name: "Bailey",
+      last_name: "Rivera",
+      phone: "+14695551212",
+    }],
+  });
+  setPhase7ConfirmedPhone(sb);
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "continue",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  const fields = turn.sessionPatch.fields as QuoteSessionFields;
+  assertEquals(fields.returningCustomerLookupStatus, "ambiguous");
+  assertEquals(fields.returningCustomerCandidateId, undefined);
+  assertEquals(fields.returningCustomerId, undefined);
+  assertEquals(turn.pre.spoken.includes("Alex"), false);
+  assertEquals(turn.pre.spoken.includes("Bailey"), false);
+});
+
+Deno.test("phase7 cross-tenant candidate is invisible and zero matches preserve the firm quote", async () => {
+  for (
+    const customers of [
+      [{
+        id: "oregon_only",
+        organization_id: "00000000-0000-4000-8000-000000000099",
+        first_name: "Private",
+        last_name: "Customer",
+        phone: "+14695551212",
+      }],
+      [],
+    ]
+  ) {
+    const sb = makeFake({ customers });
+    setPhase7ConfirmedPhone(sb);
+    const turn = await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance: "continue",
+      history: [],
+      callerIdE164: "+14695551212",
+    });
+    const fields = turn.sessionPatch.fields as QuoteSessionFields;
+    assertEquals(fields.returningCustomerLookupStatus, "not_found");
+    assertEquals(fields.returningCustomerCandidateId, undefined);
+    assertEquals(fields.returningCustomerId, undefined);
+    assertEquals(turn.sessionPatch.quote_status, "firm");
+    assertEquals(turn.pre.spoken.includes("Private"), false);
   }
 });
 
@@ -527,10 +844,12 @@ Deno.test("scheduling decline ends without creating an appointment", async () =>
     returningCustomerResolved: true,
     voiceJourney: {
       intent: "schedule",
+      requestedNextStep: "schedule",
       availability: { status: "not_requested" },
       booking: { status: "not_started" },
     },
   };
+  sb._state.session.quote_status = "firm";
   sb._state.session.field_status = { phone: "verified" };
   sb._state.session.last_step = "offered_scheduling";
 
@@ -566,6 +885,7 @@ Deno.test("slot selection is resolved only against the current offered set", asy
     lastQuoteResult: { total: 250 },
     voiceJourney: {
       intent: "schedule",
+      requestedNextStep: "schedule",
       quoteContext: { estimatedTotal: 250 },
       availability: {
         status: "offered",
@@ -591,6 +911,7 @@ Deno.test("slot selection is resolved only against the current offered set", asy
       booking: { status: "not_started" },
     },
   };
+  sb._state.session.quote_status = "firm";
   sb._state.session.field_status = { phone: "verified" };
   sb._state.session.last_step = "awaiting_slot_selection";
 
@@ -629,6 +950,7 @@ Deno.test("ambiguous booking confirmation cannot reach the booking tool", async 
     returningCustomerResolved: true,
     voiceJourney: {
       intent: "schedule",
+      requestedNextStep: "schedule",
       availability: {
         status: "offered",
         selectedSlotId: "slot-1",
@@ -644,6 +966,7 @@ Deno.test("ambiguous booking confirmation cannot reach the booking tool", async 
       booking: { status: "confirmation_required" },
     },
   };
+  sb._state.session.quote_status = "firm";
   sb._state.session.field_status = { phone: "verified" };
   sb._state.session.last_step = "confirming_booking";
 
@@ -698,6 +1021,7 @@ Deno.test("post-price contact answer advances without repeating the price", asyn
     },
     voiceJourney: {
       intent: "new_quote",
+      requestedNextStep: "schedule",
       quoteContext: {
         inputsKey,
         estimatedTotal: 216.50,
@@ -871,7 +1195,9 @@ Deno.test("tenant-scoped record, appointment, and memo intents fail closed", asy
     const sb = makeFake();
     sb._state.session.fields = {
       phone: "+14697472877",
+      returningCustomerId: "phone_candidate_only",
       returningCustomerResolved: true,
+      returningCustomerLookupStatus: "verified",
       voiceJourney: { intent },
     };
     sb._state.session.field_status = { phone: "captured" };
@@ -1018,4 +1344,1656 @@ Deno.test("controller persistence predicates the organization as well as row ver
     status: "conflict",
     reason: "quote_session_changed",
   });
+});
+
+async function persistAndReload(
+  sb: any,
+  turn: Awaited<ReturnType<typeof runControllerTurn>>,
+) {
+  const result = await persistControllerPatch(
+    sb,
+    turn.sessionId,
+    turn.sessionPatch,
+  );
+  assertEquals(result.status, "persisted");
+  return sb._state.session;
+}
+
+function completeWindowFields(
+  overrides: Partial<QuoteSessionFields> = {},
+): QuoteSessionFields {
+  return {
+    voiceJourney: {
+      intent: "new_quote",
+      policyVersion: "voice-express-v1",
+      requestedNextStep: "none",
+    },
+    services: ["window_cleaning"],
+    customerType: "residential",
+    windowCleaningScope: "whole_home",
+    windowCleaningSides: "outside_only",
+    squareFootage: 2000,
+    condition: "maintenance",
+    screenProfile: "standard_removable",
+    advancedWindowConditions: false,
+    hardWaterStains: false,
+    frenchPanes: false,
+    ladderWork: false,
+    enclosedPatioProfile: "none",
+    ...overrides,
+  };
+}
+
+async function createFirmWindowQuote(
+  overrides: Partial<QuoteSessionFields> = {},
+) {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  sb._state.session.fields = completeWindowFields(overrides) as Row;
+  const priced = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "continue",
+    history: [],
+  });
+  assertEquals(priced.pre.kind, "fsm");
+  if (priced.pre.kind === "fsm") {
+    assertEquals(priced.pre.action.kind, "speak_price");
+  }
+  await persistAndReload(sb, priced);
+  assertEquals(sb._state.session.quote_status, "firm");
+  return sb;
+}
+
+Deno.test("phase3 firm quote corrections invalidate stale branches and reprice once without contact", async () => {
+  const cases = [
+    {
+      utterance: "Actually it is 2500 square feet",
+      initial: {},
+      verify(fields: QuoteSessionFields) {
+        assertEquals(fields.squareFootage, 2500);
+      },
+    },
+    {
+      utterance: "Actually I need inside and outside",
+      initial: {},
+      verify(fields: QuoteSessionFields) {
+        assertEquals(fields.windowCleaningSides, "inside_and_outside");
+      },
+    },
+    {
+      utterance: "Actually no unusual ladder access",
+      initial: {
+        advancedWindowConditions: true,
+        ladderWork: true,
+        ladderAffectedWindowEquivalents: 2,
+      },
+      verify(fields: QuoteSessionFields) {
+        assertEquals(fields.ladderWork, false);
+        assertEquals(fields.ladderAffectedWindowEquivalents, undefined);
+      },
+    },
+  ] as const;
+
+  for (const correction of cases) {
+    const sb = await createFirmWindowQuote(correction.initial);
+    const before = sb._state.session.fields as QuoteSessionFields;
+    const beforeInputsKey = String(before.lastQuoteResult?.inputsKey ?? "");
+    sb._state.session.fields = {
+      ...before,
+      voiceJourney: {
+        ...(before.voiceJourney ?? {}),
+        requestedNextStep: "schedule",
+        delivery: {
+          channel: "sms",
+          mode: "actual_quote",
+          status: "pending",
+        },
+        availability: { status: "offered" },
+        booking: { status: "confirmation_required" },
+      },
+    } as Row;
+    sb._state.session.last_step = "offered_scheduling";
+    const providerCalls: string[] = [];
+    const corrected = await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance: correction.utterance,
+      history: [],
+      runTool: ((name: string) => {
+        providerCalls.push(name);
+        return Promise.resolve({});
+      }) as any,
+    });
+
+    assertEquals(corrected.pre.kind, "fsm", correction.utterance);
+    if (corrected.pre.kind === "fsm") {
+      assertEquals(
+        corrected.pre.action.kind,
+        "speak_price",
+        correction.utterance,
+      );
+      assertEquals(
+        (corrected.pre.spoken.match(/\$[0-9,]+\.\d{2}/g) ?? []).length,
+        1,
+        correction.utterance,
+      );
+      assertEquals(
+        corrected.pre.spoken.split(PRICE_ASSURANCE).length - 1,
+        1,
+        correction.utterance,
+      );
+    }
+    const fields = corrected.sessionPatch.fields as QuoteSessionFields;
+    correction.verify(fields);
+    assertEquals(corrected.sessionPatch.quote_status, "firm");
+    assertEquals(fields.voiceJourney?.requestedNextStep, "none");
+    assertEquals(fields.voiceJourney?.delivery, null);
+    assertEquals(fields.voiceJourney?.availability, null);
+    assertEquals(fields.voiceJourney?.booking?.status, "not_started");
+    assertEquals(fields.lastQuoteResult?.inputsKey, sessionInputsKey(fields));
+    assertEquals(fields.lastQuoteResult?.inputsKey === beforeInputsKey, false);
+    assertEquals(fields.name, undefined);
+    assertEquals(fields.phone, undefined);
+    assertEquals(fields.email, undefined);
+    assertEquals(fields.address, undefined);
+    assertEquals(providerCalls, []);
+  }
+});
+
+Deno.test("phase3 unchanged correction does not repeat price or cross a provider boundary", async () => {
+  const sb = await createFirmWindowQuote();
+  const fields = sb._state.session.fields as QuoteSessionFields;
+  sb._state.session.fields = {
+    ...fields,
+    voiceJourney: {
+      ...(fields.voiceJourney ?? {}),
+      requestedNextStep: "schedule",
+    },
+  } as Row;
+  sb._state.session.last_step = "offered_scheduling";
+  const providerCalls: string[] = [];
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "Actually it is 2000 square feet",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve({});
+    }) as any,
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action.kind, "answer_side_question");
+    assertStringIncludes(turn.pre.spoken, "matches the current quote");
+    assertEquals(turn.pre.spoken.includes("$"), false);
+    assertEquals(turn.pre.spoken.includes(PRICE_ASSURANCE), false);
+  }
+  assertEquals(providerCalls, []);
+});
+
+Deno.test("phase3 explicit price repeat speaks one persisted tax-inclusive total without disclosure", async () => {
+  const sb = await createFirmWindowQuote();
+  const providerCalls: string[] = [];
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "What was the price again?",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve({});
+    }) as any,
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action.kind, "speak_price");
+    assertStringIncludes(turn.pre.spoken, "authoritative tax-inclusive total");
+    assertEquals((turn.pre.spoken.match(/\$200\.26/g) ?? []).length, 1);
+    assertEquals(turn.pre.spoken.includes(PRICE_ASSURANCE), false);
+    assertStringIncludes(turn.pre.spoken, "Would you like the quote texted");
+  }
+  assertEquals(providerCalls, []);
+});
+
+Deno.test("phase3 post-price branch refusals clear authority before availability or booking", async () => {
+  for (
+    const utterance of [
+      "Don't schedule anything",
+      "I'm not ready to continue toward scheduling",
+      "No thanks",
+      "Not right now",
+      "I don't want to continue",
+    ]
+  ) {
+    const sb = await createFirmWindowQuote();
+    const fields = sb._state.session.fields as QuoteSessionFields;
+    sb._state.session.fields = {
+      ...fields,
+      voiceJourney: {
+        ...(fields.voiceJourney ?? {}),
+        requestedNextStep: "schedule",
+        availability: { status: "not_requested" },
+        booking: { status: "not_started" },
+      },
+    } as Row;
+    sb._state.session.last_step = "offered_scheduling";
+    const providerCalls: string[] = [];
+    const turn = await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance,
+      history: [],
+      runTool: ((name: string) => {
+        providerCalls.push(name);
+        return Promise.resolve({});
+      }) as any,
+    });
+    assertEquals(turn.pre.kind, "fsm", utterance);
+    if (turn.pre.kind === "fsm") {
+      assertEquals(turn.pre.action.kind, "end", utterance);
+      assertStringIncludes(turn.pre.spoken, "No appointment was created");
+    }
+    assertEquals(
+      (turn.sessionPatch.fields as QuoteSessionFields).voiceJourney
+        ?.requestedNextStep,
+      "none",
+      utterance,
+    );
+    assertEquals(providerCalls, [], utterance);
+  }
+
+  for (
+    const utterance of [
+      "Don't text it",
+      "I do not want the quote texted",
+      "No, do not send that",
+    ]
+  ) {
+    const sb = await createFirmWindowQuote();
+    const fields = sb._state.session.fields as QuoteSessionFields;
+    sb._state.session.fields = {
+      ...fields,
+      voiceJourney: {
+        ...(fields.voiceJourney ?? {}),
+        requestedNextStep: "text_quote",
+      },
+    } as Row;
+    const providerCalls: string[] = [];
+    const turn = await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance,
+      history: [],
+      runTool: ((name: string) => {
+        providerCalls.push(name);
+        return Promise.resolve({});
+      }) as any,
+    });
+    assertEquals(turn.pre.kind, "fsm", utterance);
+    assertEquals(
+      (turn.sessionPatch.fields as QuoteSessionFields).voiceJourney
+        ?.requestedNextStep,
+      "none",
+      utterance,
+    );
+    assertEquals(providerCalls, [], utterance);
+  }
+});
+
+Deno.test("phase3 schedule choice with inert notes is persisted before any provider call", async () => {
+  const sb = await createFirmWindowQuote();
+  const providerCalls: string[] = [];
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance:
+      "Continue toward scheduling; please text me before arrival because the dog is behind the gate",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve({});
+    }) as any,
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  assertEquals(
+    (turn.sessionPatch.fields as QuoteSessionFields).voiceJourney
+      ?.requestedNextStep,
+    "schedule",
+  );
+  assertEquals(providerCalls, []);
+});
+
+Deno.test("phase3 same-turn schedule choice cannot authorize availability or booking", async () => {
+  for (const lastStep of ["offered_scheduling", "confirming_booking"]) {
+    const sb = await createFirmWindowQuote();
+    const fields = sb._state.session.fields as QuoteSessionFields;
+    sb._state.session.fields = {
+      ...fields,
+      voiceJourney: {
+        ...(fields.voiceJourney ?? {}),
+        requestedNextStep: "none",
+        availability: lastStep === "confirming_booking"
+          ? {
+            status: "offered",
+            selectedSlotId: "slot-1",
+            offeredSlotIds: ["slot-1"],
+            offeredSlots: [{
+              slotId: "slot-1",
+              startAt: "2026-08-03T09:00:00-05:00",
+              endAt: "2026-08-03T11:00:00-05:00",
+              label: "Monday from 9 to 11 AM",
+              timezone: "America/Chicago",
+            }],
+          }
+          : { status: "not_requested" },
+        booking: lastStep === "confirming_booking"
+          ? { status: "confirmation_required" }
+          : { status: "not_started" },
+      },
+    } as Row;
+    sb._state.session.last_step = lastStep;
+    const providerCalls: string[] = [];
+    const turn = await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance: "Yes, continue toward scheduling",
+      history: [],
+      runTool: ((name: string) => {
+        providerCalls.push(name);
+        return Promise.resolve({});
+      }) as any,
+    });
+    assertEquals(turn.pre.kind, "fsm", lastStep);
+    assertEquals(providerCalls, [], lastStep);
+    assertEquals(
+      (turn.sessionPatch.fields as QuoteSessionFields).voiceJourney
+        ?.requestedNextStep,
+      "schedule",
+      lastStep,
+    );
+  }
+});
+
+Deno.test("phase3 direct outside quote skips generic intent and persists sticky new_quote", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I need a quote for outside window cleaning",
+    history: [],
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action.kind, "ask");
+    assertEquals((turn.pre.action as any).field, "squareFootage");
+  }
+  const row = await persistAndReload(sb, turn);
+  assertEquals((row.fields as any).voiceJourney.intent, "new_quote");
+  assertEquals((row.fields as any).services, ["window_cleaning"]);
+  assertEquals((row.fields as any).windowCleaningSides, "outside_only");
+});
+
+Deno.test("phase3 asked ladder context stores Two as numeric affected window equivalents", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  sb._state.session.fields = {
+    voiceJourney: { intent: "new_quote", policyVersion: "voice-express-v1" },
+    services: ["window_cleaning"],
+    customerType: "residential",
+    windowCleaningScope: "whole_home",
+    squareFootage: 2000,
+    stories: 1,
+    condition: "maintenance",
+    screenProfile: "standard_removable",
+    advancedWindowConditions: false,
+    hardWaterStains: false,
+    frenchPanes: false,
+    ladderWork: true,
+    enclosedPatioProfile: "none",
+  };
+  sb._state.session.field_status = { services: "captured" };
+  sb._state.session.last_step = "asked:ladderAffectedWindowEquivalents";
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "Two.",
+    history: [],
+  });
+  const row = await persistAndReload(sb, turn);
+  assertEquals((row.fields as any).ladderAffectedWindowEquivalents, 2);
+});
+
+Deno.test("phase3 durable retry persists first unclear, terminal second, third does not reask or price", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  sb._state.session.fields = {
+    voiceJourney: { intent: "new_quote", policyVersion: "voice-express-v1" },
+    services: ["window_cleaning"],
+  };
+  sb._state.session.last_step = "asked:squareFootage";
+  const first = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "not sure",
+    history: [],
+  });
+  let row = await persistAndReload(sb, first);
+  assertEquals((row.fields as any).voiceJourney.retryCounts.squareFootage, 1);
+  assertEquals(row.quote_status, "none");
+  assertEquals(row.last_step, "asked:squareFootage");
+
+  const second = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I don't know",
+    history: [],
+  });
+  row = await persistAndReload(sb, second);
+  assertEquals(row.quote_status, "manual_review");
+  assertEquals(row.last_step, "manual_review:retry_exhausted:squareFootage");
+  assertEquals((row.fields as any).voiceJourney.retryCounts.squareFootage, 1);
+  assertEquals((row.fields as any).lastQuoteResult, undefined);
+  assertEquals((row.fields as any).voiceJourney.requestedNextStep, "none");
+  assertEquals((row.fields as any).voiceJourney.delivery, null);
+
+  let pricingLoads = 0;
+  const terminalSnapshot = JSON.stringify(sb._state.session);
+  const third = await runControllerTurn({
+    supabase: {
+      ...sb,
+      from(table: string) {
+        if (table === "pricing_config") pricingLoads += 1;
+        return sb.from(table);
+      },
+    },
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "2000 square feet",
+    history: [],
+  });
+  assertEquals(third.pre.kind, "fsm");
+  if (third.pre.kind === "fsm") {
+    assertEquals(third.pre.action.kind, "handoff");
+    assertEquals((third.pre.action as any).field, undefined);
+  }
+  assertEquals(pricingLoads, 0);
+  assertEquals(JSON.stringify(sb._state.session), terminalSnapshot);
+});
+
+Deno.test("phase3 valid second answer advances without exhausting retry", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  sb._state.session.fields = {
+    voiceJourney: { intent: "new_quote", policyVersion: "voice-express-v1" },
+    services: ["window_cleaning"],
+  };
+  sb._state.session.last_step = "asked:squareFootage";
+  await persistAndReload(
+    sb,
+    await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance: "unclear",
+      history: [],
+    }),
+  );
+  const second = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "about 2,000 square feet",
+    history: [],
+  });
+  const row = await persistAndReload(sb, second);
+  assertEquals((row.fields as any).squareFootage, 2000);
+  assertEquals(row.quote_status, "none");
+  assertEquals(row.last_step, "asked:windowCleaningSides");
+});
+
+Deno.test("phase3 persistence conflict/noop does not spend another retry and duplicate loser composes to count one", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  sb._state.session.fields = {
+    voiceJourney: { intent: "new_quote", policyVersion: "voice-express-v1" },
+    services: ["window_cleaning"],
+  };
+  sb._state.session.last_step = "asked:squareFootage";
+  const loser = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "unclear",
+    history: [],
+  });
+  sb._state.session.updated_at = "changed-before-loser";
+  const conflict = await persistControllerPatch(
+    sb,
+    loser.sessionId,
+    loser.sessionPatch,
+  );
+  assertEquals(conflict.status, "conflict");
+  assertEquals(
+    (sb._state.session.fields as any).voiceJourney.retryCounts,
+    undefined,
+  );
+  sb._state.session.updated_at = "2026-08-01T12:00:00.000Z";
+  const winner = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "unclear",
+    history: [],
+  });
+  const row = await persistAndReload(sb, winner);
+  assertEquals((row.fields as any).voiceJourney.retryCounts.squareFootage, 1);
+});
+
+Deno.test("phase3 story-neutral fingerprint for window-only but mixed services remain story-sensitive", () => {
+  const windowBase = {
+    services: ["windowCleaning"],
+    customerType: "residential",
+    windowCleaningScope: "whole_home",
+    windowCleaningSides: "outside_only",
+    squareFootage: 2000,
+    condition: "maintenance",
+    screenProfile: "standard_removable",
+    advancedWindowConditions: false,
+    hardWaterStains: false,
+    frenchPanes: false,
+    ladderWork: false,
+    enclosedPatioProfile: "none",
+    answerProvenance: { stories: "approved_business_default" },
+  };
+  const one = sessionInputsKey({ ...windowBase, stories: 1 } as any);
+  const three = sessionInputsKey(
+    {
+      ...windowBase,
+      stories: 3,
+      answerProvenance: { stories: "explicitly_selected" },
+    } as any,
+  );
+  assertEquals(one, three);
+  const mixedOne = sessionInputsKey(
+    {
+      ...windowBase,
+      services: ["windowCleaning", "houseWash"],
+      stories: 1,
+    } as any,
+  );
+  const mixedThree = sessionInputsKey(
+    {
+      ...windowBase,
+      services: ["windowCleaning", "houseWash"],
+      stories: 3,
+    } as any,
+  );
+  assertEquals(mixedOne === mixedThree, false);
+});
+
+Deno.test("phase3 conditional modifier budget asks at most one specialty quantity", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  sb._state.session.fields = {
+    voiceJourney: { intent: "new_quote", policyVersion: "voice-express-v1" },
+    services: ["window_cleaning"],
+    customerType: "residential",
+    windowCleaningScope: "whole_home",
+    windowCleaningSides: "outside_only",
+    squareFootage: 2000,
+    stories: 1,
+    condition: "maintenance",
+    screenProfile: "standard_removable",
+    advancedWindowConditions: true,
+    hardWaterStains: true,
+    frenchPanes: false,
+    ladderWork: true,
+    enclosedPatioProfile: "none",
+  };
+  const first = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "continue",
+    history: [],
+  });
+  let row = await persistAndReload(sb, first);
+  assertEquals(row.last_step, "asked:ladderAffectedWindowEquivalents");
+  assertEquals(
+    (row.fields as any).voiceJourney.conditionalModifierQuestionAsked,
+    "ladderAffectedWindowEquivalents",
+  );
+  const second = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "two",
+    history: [],
+  });
+  row = await persistAndReload(sb, second);
+  assertEquals(row.quote_status, "manual_review");
+  assertEquals(
+    row.last_step,
+    "manual_review:conditional_modifier_budget:hardWaterAffectedWindowEquivalents",
+  );
+  let pricingLoads = 0;
+  const terminalSnapshot = JSON.stringify(sb._state.session);
+  const third = await runControllerTurn({
+    supabase: {
+      ...sb,
+      from(table: string) {
+        if (table === "pricing_config") pricingLoads += 1;
+        return sb.from(table);
+      },
+    },
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "three ladder windows",
+    history: [],
+  });
+  assertEquals(third.pre.kind, "fsm");
+  if (third.pre.kind === "fsm") assertEquals(third.pre.action.kind, "handoff");
+  assertEquals(pricingLoads, 0);
+  assertEquals(JSON.stringify(sb._state.session), terminalSnapshot);
+});
+
+Deno.test("phase3 synthetic behavioral reconstruction 019fc50e-8582-7bb3-9545-2005bbfee183", async () => {
+  // Synthetic deterministic behavioral reconstruction only: not original provider logs, no real PII.
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  const trace: string[] = [];
+  const turn1 = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance:
+      "I need a quote for outside window cleaning about 2,000 square feet and ladder work",
+    history: [],
+  });
+  trace.push(
+    turn1.pre.kind === "fsm"
+      ? `${turn1.pre.action.kind}:${(turn1.pre.action as any).field ?? ""}`
+      : turn1.pre.kind,
+  );
+  await persistAndReload(sb, turn1);
+  assertEquals((sb._state.session.fields as any).services, ["window_cleaning"]);
+  assertEquals(
+    (sb._state.session.fields as any).windowCleaningScope,
+    "whole_home",
+  );
+  assertEquals(
+    (sb._state.session.fields as any).windowCleaningSides,
+    "outside_only",
+  );
+  assertEquals((sb._state.session.fields as any).squareFootage, 2000);
+  assertEquals((sb._state.session.fields as any).ladderWork, true);
+  assertEquals(
+    JSON.stringify(sb._state.session.fields).includes("houseWashWindowBundle"),
+    false,
+  );
+  assertEquals(
+    ((sb._state.session.fields as any).services ?? []).includes("house_wash"),
+    false,
+  );
+
+  const turn2 = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "Two.",
+    history: [],
+  });
+  trace.push(
+    turn2.pre.kind === "fsm"
+      ? `${turn2.pre.action.kind}:${(turn2.pre.action as any).field ?? ""}`
+      : turn2.pre.kind,
+  );
+  assertEquals(turn2.pre.kind, "fsm");
+  if (turn2.pre.kind === "fsm") {
+    assertEquals(turn2.pre.action.kind, "speak_price");
+  }
+  await persistAndReload(sb, turn2);
+  assertEquals(
+    (sb._state.session.fields as any).ladderAffectedWindowEquivalents,
+    2,
+  );
+  assertEquals(sb._state.session.quote_status, "firm");
+  assertEquals(
+    (sb._state.session.fields as any).lastQuoteResult?.finalQuoteDisposition,
+    "firm",
+  );
+  assertEquals(
+    (sb._state.session.fields as any).lastQuoteResult?.estimatedTotal,
+    200.26,
+  );
+  assertStringIncludes(turn2.pre.spoken, "For all exterior windows");
+  assertEquals(
+    (`${turn1.pre.spoken} ${turn2.pre.spoken}`.match(/\$[0-9]/g) ?? []).length,
+    1,
+  );
+  assertEquals(turn2.pre.spoken.split(PRICE_ASSURANCE).length - 1, 1);
+  assertStringIncludes(turn2.pre.spoken, PRICE_ASSURANCE);
+  assertEquals(
+    /priceChangingAssumptionConfirmation|recap|summary/i.test(
+      trace.join(" ") + turn2.pre.spoken,
+    ),
+    false,
+  );
+  assertEquals(/name|phone|address|email/i.test(turn2.pre.spoken), false);
+  assertStringIncludes(
+    turn2.pre.spoken,
+    "Would you like the quote texted, or would you like to continue toward scheduling?",
+  );
+  assertEquals(
+    trace.filter((value) => value === "ask:ladderAffectedWindowEquivalents")
+      .length,
+    1,
+  );
+  assertEquals(trace.includes("ask:advancedWindowConditions"), false);
+  assertEquals(trace.includes("ask:stories"), false);
+});
+
+Deno.test("phase3 price input change clears stale requestedNextStep", async () => {
+  const before: QuoteSessionFields = {
+    services: ["window_cleaning"],
+    customerType: "residential",
+    windowCleaningScope: "whole_home",
+    windowCleaningSides: "outside_only",
+    squareFootage: 2000,
+    stories: 1,
+    condition: "maintenance",
+    screenProfile: "standard_removable",
+    advancedWindowConditions: false,
+    hardWaterStains: false,
+    frenchPanes: false,
+    ladderWork: false,
+    enclosedPatioProfile: "none",
+    voiceJourney: {
+      intent: "new_quote",
+      policyVersion: "voice-express-v1",
+      requestedNextStep: "text_quote",
+    },
+    lastQuoteResult: { status: "firm" },
+  };
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  sb._state.session.fields = before as any;
+  sb._state.session.quote_status = "firm";
+  sb._state.session.last_step = "asked:squareFootage";
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "2500 square feet",
+    history: [],
+  });
+  const row = await persistAndReload(sb, turn);
+  assertEquals((row.fields as any).voiceJourney.requestedNextStep, "none");
+  assertEquals((row.fields as any).lastQuoteResult?.status, "firm");
+  assertEquals(
+    (row.fields as any).lastQuoteResult?.inputsKey,
+    sessionInputsKey(row.fields as any),
+  );
+});
+
+Deno.test("phase3 canonical engine totals are story-neutral only for window-only", async () => {
+  const totals: number[] = [];
+  for (const storyValue of [undefined, 1, 3]) {
+    const sb = makeFake({ pricingRows: PRICING_ROWS });
+    sb._state.session.fields = {
+      voiceJourney: { intent: "new_quote", policyVersion: "voice-express-v1" },
+      services: ["window_cleaning"],
+      customerType: "residential",
+      windowCleaningScope: "whole_home",
+      windowCleaningSides: "outside_only",
+      squareFootage: 2000,
+      condition: "maintenance",
+      screenProfile: "standard_removable",
+      advancedWindowConditions: false,
+      hardWaterStains: false,
+      frenchPanes: false,
+      ladderWork: false,
+      enclosedPatioProfile: "none",
+      ...(storyValue === undefined ? {} : { stories: storyValue }),
+    };
+    const turn = await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance: "continue",
+      history: [],
+    });
+    await persistAndReload(sb, turn);
+    assertEquals(sb._state.session.quote_status, "firm");
+    totals.push(
+      (sb._state.session.fields as any).lastQuoteResult.estimatedTotal,
+    );
+  }
+  assertEquals(totals, [200.26, 200.26, 200.26]);
+
+  const mixed = makeFake({ pricingRows: PRICING_ROWS });
+  mixed._state.session.fields = {
+    voiceJourney: { intent: "new_quote", policyVersion: "voice-express-v1" },
+    services: ["window_cleaning", "house_wash"],
+    customerType: "residential",
+    windowCleaningScope: "whole_home",
+    windowCleaningSides: "outside_only",
+    squareFootage: 2000,
+    condition: "maintenance",
+    screenProfile: "standard_removable",
+    advancedWindowConditions: false,
+    hardWaterStains: false,
+    frenchPanes: false,
+    ladderWork: false,
+    enclosedPatioProfile: "none",
+  };
+  const mixedTurn = await runControllerTurn({
+    supabase: mixed,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "continue",
+    history: [],
+  });
+  assertEquals(mixedTurn.pre.kind, "fsm");
+  if (mixedTurn.pre.kind === "fsm") {
+    assertEquals(mixedTurn.pre.action.kind, "ask");
+    assertEquals((mixedTurn.pre.action as any).field, "stories");
+  }
+  assertEquals((mixed._state.session.fields as any).stories, undefined);
+  assertEquals(
+    (mixed._state.session.fields as any).answerProvenance?.stories,
+    undefined,
+  );
+  const withStory = sessionInputsKey({
+    ...(mixed._state.session.fields as any),
+    stories: 1,
+  });
+  const withoutStory = sessionInputsKey(mixed._state.session.fields as any);
+  assertEquals(withStory === withoutStory, false);
+});
+
+Deno.test("phase4 coupons are never requested proactively during express intake", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I need a quote for outside window cleaning",
+    history: [],
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  assertEquals(/coupon|promo|discount code/i.test(turn.pre.spoken), false);
+  assertEquals((turn.sessionPatch.fields as any).discountCode, undefined);
+});
+
+Deno.test("phase4 direct malformed discount separators ask one clarification without valid lookup", async () => {
+  const sb = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance:
+      "I need a quote for outside window cleaning and coupon code is save-10",
+    history: [],
+  });
+  const row = await persistAndReload(sb, turn);
+  assertEquals(sb._state.discountReads, 0);
+  assertStringIncludes(turn.pre.spoken, "Please spell the discount code once");
+  assertEquals((row.fields as any).discountCode, undefined);
+  assertEquals((row.fields as any).voiceJourney.retryCounts.discountCode, 1);
+  assertEquals((row.fields as any).voiceJourney.coupon.status, "unclear");
+});
+
+Deno.test("phase4 asked discount spelling parser accepts letters once and rejects claims", async () => {
+  const accepted = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  accepted._state.session.fields = {
+    voiceJourney: { intent: "new_quote" },
+    services: ["window_cleaning"],
+  };
+  accepted._state.session.last_step = "asked:discountCode";
+  const acceptedTurn = await runControllerTurn({
+    supabase: accepted,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "S A V E 1 0",
+    history: [],
+  });
+  let row = await persistAndReload(accepted, acceptedTurn);
+  assertEquals((row.fields as any).discountCode, "SAVE10");
+  assertEquals((row.fields as any).voiceJourney.coupon.status, "valid");
+
+  const rejected = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  rejected._state.session.fields = {
+    voiceJourney: { intent: "new_quote" },
+    services: ["window_cleaning"],
+  };
+  rejected._state.session.last_step = "asked:discountCode";
+  const rejectedTurn = await runControllerTurn({
+    supabase: rejected,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "the code gives me ten percent",
+    history: [],
+  });
+  row = await persistAndReload(rejected, rejectedTurn);
+  assertEquals(rejected._state.discountReads, 0);
+  assertEquals((row.fields as any).discountCode, undefined);
+  assertEquals((row.fields as any).voiceJourney.coupon.status, "unclear");
+  assertEquals((row.fields as any).voiceJourney.coupon.reason, "malformed");
+  assertStringIncludes(
+    rejectedTurn.pre.spoken,
+    "Please spell the discount code once",
+  );
+  assertEquals((row.fields as any).voiceJourney.retryCounts.discountCode, 1);
+});
+
+Deno.test("phase4 pre-price valid coupon is normalized captured and later priced authoritatively", async () => {
+  const sb = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  const turn1 = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance:
+      "I need a quote for outside window cleaning and coupon code is save10",
+    history: [],
+  });
+  let row = await persistAndReload(sb, turn1);
+  assertStringIncludes(turn1.pre.spoken, "I have that discount code");
+  assertStringIncludes(turn1.pre.spoken, "How many square feet is your home?");
+  assertEquals((row.fields as any).discountCode, "SAVE10");
+  assertEquals((row.fields as any).voiceJourney.coupon.discountValue, 10);
+  const turn2 = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "about 2,000 square feet",
+    history: [],
+  });
+  row = await persistAndReload(sb, turn2);
+  assertEquals(row.quote_status, "firm");
+  assertEquals((row.fields as any).lastQuoteResult.discount.code, "SAVE10");
+  assertEquals((row.fields as any).lastQuoteResult.discount.amount > 0, true);
+  assertEquals((turn2.pre.spoken.match(/\$[0-9]/g) ?? []).length, 1);
+});
+
+Deno.test("phase9 post-price coupon reuses one canonical pricing snapshot", async () => {
+  let pricingLoads = 0;
+  const base = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  setFirmWindowSession(base);
+  const sb = {
+    ...base,
+    from(table: string) {
+      if (table === "pricing_config") pricingLoads += 1;
+      return base.from(table);
+    },
+  };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "coupon code is save10",
+    history: [],
+  });
+  const row = await persistAndReload(base, turn);
+  // Readiness and the customer-facing total share one immutable canonical
+  // pricing snapshot; there is no second database read or recalculation.
+  assertEquals(pricingLoads, 1);
+  assertStringIncludes(
+    turn.pre.spoken,
+    "That code is valid. Your updated total is",
+  );
+  assertEquals((turn.pre.spoken.match(/\$[0-9]/g) ?? []).length, 1);
+  assertEquals((row.fields as any).lastQuoteResult.discount.code, "SAVE10");
+  assertEquals(
+    (row.fields as any).voiceJourney.coupon.authoritativeAmount,
+    (row.fields as any).lastQuoteResult.discount.amount,
+  );
+});
+
+Deno.test("phase4 generated quote snapshot retains authoritative discount", async () => {
+  const sb = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  setFirmWindowSession(sb);
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "coupon code is five",
+    history: [],
+  });
+  const row = await persistAndReload(sb, turn);
+  assertEquals((row.fields as any).discountCode, "FIVE");
+  assertEquals((row.fields as any).voiceJourney.coupon.discountType, "fixed");
+  assertEquals((row.fields as any).lastQuoteResult.discount.code, "FIVE");
+  assertEquals((row.fields as any).lastQuoteResult.discount.amount, 5);
+});
+
+Deno.test("phase4 invalid inactive expired exhausted and uncertain codes are rejected without changing firm quote", async () => {
+  for (
+    const [_label, discountRows, expected] of [
+      ["unknown", [], "could not find"],
+      ["inactive", [{ ...VALID_DISCOUNTS[0], is_active: false }], "not active"],
+      ["expired", [{
+        ...VALID_DISCOUNTS[0],
+        expires_at: "2020-01-01T00:00:00.000Z",
+      }], "expired"],
+      [
+        "exhausted",
+        [{ ...VALID_DISCOUNTS[0], usage_count: 1, max_uses: 1 }],
+        "usage limit",
+      ],
+      [
+        "uncertain",
+        [{ ...VALID_DISCOUNTS[0], discount_value: 101 }],
+        "cannot verify that code safely",
+      ],
+    ] as const
+  ) {
+    const sb = makeFake({ pricingRows: PRICING_ROWS, discountRows });
+    setFirmWindowSession(sb, "text_quote");
+    const before = structuredClone(sb._state.session.fields);
+    const turn = await runControllerTurn({
+      supabase: sb,
+      conversationId: "c1",
+      channel: "voice",
+      utterance: "coupon code is save10",
+      history: [],
+    });
+    const row = await persistAndReload(sb, turn);
+    assertStringIncludes(turn.pre.spoken, expected);
+    assertEquals((row.fields as any).discountCode, undefined);
+    assertEquals(
+      (row.fields as any).lastQuoteResult,
+      (before as any).lastQuoteResult,
+    );
+    assertEquals(
+      (row.fields as any).voiceJourney.quoteContext,
+      (before as any).voiceJourney.quoteContext,
+    );
+    assertEquals(
+      (row.fields as any).voiceJourney.delivery,
+      (before as any).voiceJourney.delivery,
+    );
+    assertEquals(
+      (row.fields as any).voiceJourney.availability,
+      (before as any).voiceJourney.availability,
+    );
+    assertEquals(
+      (row.fields as any).voiceJourney.booking,
+      (before as any).voiceJourney.booking,
+    );
+    assertEquals(
+      (row.fields as any).voiceJourney.requestedNextStep,
+      "text_quote",
+    );
+  }
+});
+
+Deno.test("phase4 malformed discount code receives one spelling clarification", async () => {
+  const sb = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  sb._state.session.fields = {
+    voiceJourney: { intent: "new_quote" },
+    services: ["window_cleaning"],
+  };
+  const first = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "my coupon code is dash dash",
+    history: [],
+  });
+  let row = await persistAndReload(sb, first);
+  assertStringIncludes(first.pre.spoken, "Please spell the discount code once");
+  assertEquals((row.fields as any).voiceJourney.retryCounts.discountCode, 1);
+  const second = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "still dash dash",
+    history: [],
+  });
+  row = await persistAndReload(sb, second);
+  assertEquals((row.fields as any).voiceJourney.coupon.status, "invalid");
+  assertEquals((row.fields as any).voiceJourney.coupon.reason, "malformed");
+});
+
+Deno.test("phase4 duplicate text delivery after discount does not reapply or respeak adjustment", async () => {
+  const sb = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  setFirmWindowSession(sb, "text_quote");
+  sb._state.session.fields.discountCode = "SAVE10";
+  sb._state.session.fields.voiceJourney.coupon = {
+    code: "SAVE10",
+    status: "valid",
+    discountType: "percentage",
+    discountValue: 10,
+    authoritativeAmount: 18.5,
+  };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "coupon code is save10",
+    history: [],
+  });
+  assertEquals(
+    (turn.pre.spoken.match(/updated total|\$[0-9]/g) ?? []).length,
+    0,
+  );
+  assertEquals(
+    (turn.sessionPatch.fields as any)?.voiceJourney?.delivery?.status,
+    undefined,
+  );
+});
+
+Deno.test("phase4 promotion path remains distinct and coupon state alone cannot authorize providers", async () => {
+  const promo = makeFake({
+    pricingRows: PROMO_PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  promo._state.session.fields = { voiceJourney: { intent: "new_quote" } };
+  promo._state.session.last_step = "asked:services";
+  const promoTurn = await runControllerTurn({
+    supabase: promo,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I want the $99 window special",
+    history: [],
+  });
+  const promoRow = await persistAndReload(promo, promoTurn);
+  assertEquals((promoRow.fields as any).promotionId, "PROMO_99_WINDOWS");
+  assertEquals((promoRow.fields as any).discountCode, undefined);
+
+  const couponOnly = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  setFirmWindowSession(couponOnly, "none");
+  const turn = await runControllerTurn({
+    supabase: couponOnly,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "coupon code is save10",
+    history: [],
+  });
+  const row = await persistAndReload(couponOnly, turn);
+  assertEquals((row.fields as any).voiceJourney.requestedNextStep, "none");
+  assertEquals((row.fields as any).voiceJourney.delivery, null);
+  assertEquals((row.fields as any).voiceJourney.availability, null);
+  assertEquals((row.fields as any).voiceJourney.booking.status, "not_started");
+});
+
+Deno.test("phase4 non-DFW voice coupon fails closed without discount lookup or provider state changes", async () => {
+  const sb = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  setFirmWindowSession(sb, "schedule");
+  sb._state.session.organization_id = "org_oregon";
+  sb._state.convo.organization_id = "org_oregon";
+  const before = structuredClone(sb._state.session.fields);
+  const turn = await runControllerTurnBase({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "discount code is save10",
+    history: [],
+    organizationAuthority: {
+      status: "resolved",
+      organizationId: "org_oregon",
+      source: "resource",
+      evidence: ["resource:conversation"],
+      sensitiveActionsAllowed: true,
+    },
+  });
+  const row = await persistAndReload(sb, turn);
+  assertEquals(sb._state.discountReads, 0);
+  assertEquals(
+    (row.fields as any).lastQuoteResult,
+    (before as any).lastQuoteResult,
+  );
+  assertEquals(
+    (row.fields as any).voiceJourney.quoteContext,
+    (before as any).voiceJourney.quoteContext,
+  );
+  assertEquals(
+    (row.fields as any).voiceJourney.delivery,
+    (before as any).voiceJourney.delivery,
+  );
+  assertEquals(
+    (row.fields as any).voiceJourney.availability,
+    (before as any).voiceJourney.availability,
+  );
+  assertEquals(
+    (row.fields as any).voiceJourney.booking,
+    (before as any).voiceJourney.booking,
+  );
+  assertEquals((row.fields as any).voiceJourney.requestedNextStep, "schedule");
+  assertStringIncludes(
+    turn.pre.spoken,
+    "cannot apply discount codes for this market yet",
+  );
+});
+
+Deno.test("phase4 pre-price invalid coupon explains rejection and continues exact intake", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS, discountRows: [] });
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance:
+      "I need a quote for outside window cleaning and coupon code is nope",
+    history: [],
+  });
+  const row = await persistAndReload(sb, turn);
+  assertStringIncludes(turn.pre.spoken, "I could not find that discount code");
+  assertStringIncludes(turn.pre.spoken, "How many square feet is your home?");
+  assertEquals((row.fields as any).discountCode, undefined);
+  assertEquals((row.fields as any).voiceJourney.coupon.status, "invalid");
+});
+
+Deno.test("phase4 identical already-applied valid coupon is idempotent", async () => {
+  let pricingLoads = 0;
+  const base = makeFake({
+    pricingRows: PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  setFirmWindowSession(base);
+  base._state.session.fields.discountCode = "SAVE10";
+  base._state.session.fields.voiceJourney = {
+    ...(base._state.session.fields.voiceJourney as any),
+    coupon: {
+      code: "SAVE10",
+      status: "valid",
+      discountType: "percentage",
+      discountValue: 10,
+      authoritativeAmount: 18.5,
+    },
+  };
+  const sb = {
+    ...base,
+    from(table: string) {
+      if (table === "pricing_config") pricingLoads += 1;
+      return base.from(table);
+    },
+  };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "coupon code is save10",
+    history: [],
+  });
+  assertEquals(pricingLoads, 0);
+  assertEquals((turn.pre.spoken.match(/\$[0-9]/g) ?? []).length, 0);
+  assertStringIncludes(turn.pre.spoken, "already applied");
+});
+
+Deno.test("phase4 post-price promotion stacking none refuses coupon with unchanged total", async () => {
+  const sb = makeFake({
+    pricingRows: PROMO_PRICING_ROWS,
+    discountRows: VALID_DISCOUNTS,
+  });
+  setFirmWindowSession(sb);
+  sb._state.session.fields = {
+    ...sb._state.session.fields,
+    voiceJourney: {
+      ...(sb._state.session.fields as any).voiceJourney,
+      quoteContext: { inputsKey: "promo-before" },
+    },
+    promotionId: "PROMO_99_WINDOWS",
+    windowCount: 10,
+    lastQuoteResult: {
+      status: "firm",
+      finalQuoteDisposition: "firm",
+      estimatedTotal: 107.17,
+      total: 99,
+      discount: null,
+      inputsKey: "promo-before",
+    },
+  };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "coupon code is save10",
+    history: [],
+  });
+  const row = await persistAndReload(sb, turn);
+  assertStringIncludes(
+    turn.pre.spoken,
+    "cannot be combined with this promotion",
+  );
+  assertStringIncludes(turn.pre.spoken, "Your total remains");
+  assertEquals((row.fields as any).lastQuoteResult.discount, null);
+  assertEquals((row.fields as any).voiceJourney.coupon.status, "valid");
+});
+
+Deno.test("phase4 post-price promotion allow_discount_codes speaks canonical updated total", async () => {
+  const allowRows = PROMO_PRICING_ROWS.map((row) =>
+    row.config_key === "window_promo_99"
+      ? {
+        ...row,
+        config_value: {
+          ...(row.config_value as any),
+          stackingPolicy: "allow_discount_codes",
+        },
+      }
+      : row
+  );
+  const sb = makeFake({
+    pricingRows: allowRows,
+    discountRows: VALID_DISCOUNTS,
+  });
+  setFirmWindowSession(sb);
+  sb._state.session.fields = {
+    ...sb._state.session.fields,
+    voiceJourney: {
+      ...(sb._state.session.fields as any).voiceJourney,
+      quoteContext: { inputsKey: "promo-before" },
+    },
+    promotionId: "PROMO_99_WINDOWS",
+    windowCount: 10,
+    lastQuoteResult: {
+      status: "firm",
+      finalQuoteDisposition: "firm",
+      estimatedTotal: 107.17,
+      total: 99,
+      discount: null,
+      inputsKey: "promo-before",
+    },
+  };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "coupon code is save10",
+    history: [],
+  });
+  const row = await persistAndReload(sb, turn);
+  assertStringIncludes(
+    turn.pre.spoken,
+    "That code is valid. Your updated total is",
+  );
+  assertEquals((row.fields as any).lastQuoteResult.discount.code, "SAVE10");
+  assertEquals((row.fields as any).lastQuoteResult.discount.amount, 9.9);
+});
+function setPhase5AddressSession(sb: any) {
+  setFirmWindowSession(sb, "schedule");
+  const base = {
+    ...sb._state.session.fields,
+    name: "Casey Caller",
+    email: "casey.phase5@example.invalid",
+    phone: "+14695550155",
+    callerIdConfirmationStatus: "contact_confirmed",
+  } as QuoteSessionFields;
+  const inputsKey = sessionInputsKey(base);
+  sb._state.session.fields = {
+    ...base,
+    lastQuoteResult: {
+      ...(base.lastQuoteResult ?? {}),
+      status: "firm",
+      finalQuoteDisposition: "firm",
+      inputsKey,
+      estimatedTotal: 200.26,
+      total: 185,
+    },
+    voiceJourney: {
+      ...(base.voiceJourney ?? {}),
+      requestedNextStep: "schedule",
+      quoteContext: {
+        inputsKey,
+        finalQuoteDisposition: "firm",
+        estimatedTotal: 200.26,
+        spokenAt: "2026-08-05T00:00:00.000Z",
+      },
+      availability: null,
+      booking: { status: "not_started" },
+    },
+  };
+  sb._state.session.field_status = {
+    name: "verified",
+    email: "verified",
+    phone: "verified",
+  };
+  sb._state.session.last_step = "asked:address";
+}
+
+const PHASE5_ELIGIBLE_ADDRESS = {
+  status: "eligible",
+  formattedAddress: "5612 Binbranch Ln, McKinney, TX 75071",
+  streetNumber: "5612",
+  route: "Binbranch Ln",
+  city: "McKinney",
+  state: "TX",
+  postalCode: "75071",
+} as const;
+
+Deno.test("phase5 address candidate receives one concise confirmation before scheduling", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  setPhase5AddressSession(sb);
+  const providerCalls: string[] = [];
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "5612 Binbranch Lane, McKinney, Texas 75071",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve(PHASE5_ELIGIBLE_ADDRESS);
+    }) as any,
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action.kind, "ask");
+    assertEquals((turn.pre.action as any).field, "address");
+    assertEquals(
+      turn.pre.spoken,
+      "I found five-six-one-two Binbranch Lane in McKinney. Is that correct?",
+    );
+    assertEquals(turn.pre.spoken.includes("spelled"), false);
+    assertEquals((turn.pre.spoken.match(/\?/g) ?? []).length, 1);
+    assertEquals(turn.pre.spoken.includes("$"), false);
+  }
+  let row = await persistAndReload(sb, turn);
+  assertEquals(providerCalls, ["validate_service_area"]);
+  assertEquals((row.fields as any).serviceAreaStatus, "pending_confirmation");
+  assertEquals(row.last_step, "confirming:address");
+  assertEquals((row.fields as any).voiceJourney.requestedNextStep, "schedule");
+  providerCalls.length = 0;
+  const confirmed = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve({});
+    }) as any,
+  });
+  row = await persistAndReload(sb, confirmed);
+  assertEquals(providerCalls, []);
+  assertEquals(
+    (row.fields as any).address,
+    PHASE5_ELIGIBLE_ADDRESS.formattedAddress,
+  );
+  assertEquals((row.field_status as any)?.address, "verified");
+  assertEquals((row.field_status as any)?.serviceAreaStatus, "verified");
+  assertEquals((row.fields as any).serviceAreaStatus, "eligible");
+  assertEquals((row.fields as any).voiceJourney.requestedNextStep, "schedule");
+  assertEquals(confirmed.pre.kind, "fsm");
+  if (confirmed.pre.kind === "fsm") {
+    assertEquals(confirmed.pre.action.kind, "offer_scheduling");
+    assertEquals(confirmed.pre.spoken.includes("$"), false);
+  }
+});
+
+Deno.test("phase5 address uncertainty allows one clarification then preserves quote for manual review", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  setPhase5AddressSession(sb);
+  sb._state.session.fields = {
+    ...sb._state.session.fields,
+    address: PHASE5_ELIGIBLE_ADDRESS.formattedAddress,
+    addressComponents: {
+      house_number: "5612",
+      street: "Binbranch Ln",
+      city: "McKinney",
+      state: "TX",
+      postal_code: "75071",
+    },
+    serviceAreaStatus: "pending_confirmation",
+    serviceAreaResult: PHASE5_ELIGIBLE_ADDRESS,
+  };
+  sb._state.session.last_step = "confirming:address";
+  const providerCalls: string[] = [];
+  const first = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "No, that is not right",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve({});
+    }) as any,
+  });
+  let row = await persistAndReload(sb, first);
+  assertStringIncludes(first.pre.spoken, "Which part should I correct");
+  assertEquals((row.fields as any).voiceJourney.retryCounts.address, 1);
+  assertEquals(row.last_step, "address_component:choose");
+  assertEquals(providerCalls, []);
+
+  const second = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I am not sure",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve({});
+    }) as any,
+  });
+  row = await persistAndReload(sb, second);
+  assertEquals(second.pre.kind, "fsm");
+  if (second.pre.kind === "fsm") {
+    assertEquals(second.pre.action.kind, "handoff");
+    assertStringIncludes(
+      second.pre.spoken,
+      "kept your quote but stopped scheduling",
+    );
+  }
+  assertEquals(row.quote_status, "firm");
+  assertEquals(row.last_step, "manual_review:address_uncertain");
+  assertEquals((row.fields as any).serviceAreaStatus, "manual_review_required");
+  assertEquals((row.fields as any).voiceJourney.requestedNextStep, "none");
+  assertEquals((row.fields as any).voiceJourney.availability, null);
+  assertEquals((row.fields as any).voiceJourney.booking.status, "not_started");
+  assertEquals(
+    (row.fields as any).address,
+    PHASE5_ELIGIBLE_ADDRESS.formattedAddress,
+  );
+  assertEquals(providerCalls, []);
+
+  const terminal = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "The city is Frisco",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve({});
+    }) as any,
+  });
+  assertEquals(terminal.pre.kind, "fsm");
+  if (terminal.pre.kind === "fsm") {
+    assertEquals(terminal.pre.action.kind, "handoff");
+  }
+  assertEquals(providerCalls, []);
+});
+
+Deno.test("phase5 one direct address correction is revalidated once without a second readback", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  setPhase5AddressSession(sb);
+  sb._state.session.fields = {
+    ...sb._state.session.fields,
+    address: "5610 Binbranch Ln, McKinney, TX 75071",
+    addressComponents: {
+      house_number: "5610",
+      street: "Binbranch Ln",
+      city: "McKinney",
+      state: "TX",
+      postal_code: "75071",
+    },
+    serviceAreaStatus: "pending_confirmation",
+    serviceAreaResult: {
+      ...PHASE5_ELIGIBLE_ADDRESS,
+      formattedAddress: "5610 Binbranch Ln, McKinney, TX 75071",
+      streetNumber: "5610",
+    },
+  };
+  sb._state.session.last_step = "confirming:address";
+  const providerCalls: string[] = [];
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "No, the house number is 5612",
+    history: [],
+    runTool:
+      ((name: string, _context: unknown, args: Record<string, unknown>) => {
+        providerCalls.push(name);
+        assertEquals(args.address, "5612 Binbranch Ln, McKinney TX 75071");
+        return Promise.resolve(PHASE5_ELIGIBLE_ADDRESS);
+      }) as any,
+  });
+  const row = await persistAndReload(sb, turn);
+  assertEquals(providerCalls, ["validate_service_area"]);
+  assertEquals((row.fields as any).voiceJourney.retryCounts.address, 1);
+  assertEquals((row.fields as any).serviceAreaStatus, "eligible");
+  assertEquals((row.field_status as any)?.address, "verified");
+  assertEquals((row.field_status as any)?.serviceAreaStatus, "verified");
+  assertEquals(row.last_step, "offered_scheduling");
+  assertEquals((row.fields as any).voiceJourney.availability, null);
+  assertEquals((row.fields as any).voiceJourney.booking.status, "not_started");
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action.kind, "offer_scheduling");
+    assertEquals(
+      turn.pre.spoken,
+      "Thanks, I corrected the address. Would you like me to check current appointment times?",
+    );
+    assertEquals(turn.pre.spoken.includes("I found"), false);
+  }
 });

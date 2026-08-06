@@ -66,15 +66,15 @@ Deno.test("geocoded candidate is never eligible before confirmation", () => {
   });
   assertEquals(gate.kind, "ask_confirmation");
   assertEquals(gate.serviceAreaStatus, "pending_confirmation");
-  assertStringIncludes(gate.reply, "Is that exactly right?");
+  assertStringIncludes(gate.reply, "Is that correct?");
 });
 
-Deno.test("readback spells the street and reads digits", () => {
+Deno.test("readback preserves the canonical street and reads digits", () => {
   const readback = buildAddressReadback(
     "5612 Binbranch Ln, McKinney, TX 75071",
   );
   assertStringIncludes(readback, "five-six-one-two");
-  assertStringIncludes(readback, "B-I-N-B-R-A-N-C-H");
+  assertStringIncludes(readback, "Binbranch Lane");
 });
 
 Deno.test("explicit yes confirms; no/correction rejects", () => {
