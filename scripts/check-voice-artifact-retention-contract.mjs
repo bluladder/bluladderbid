@@ -207,5 +207,6 @@ if (
 console.log(
   "Voice artifact retention contract passed: one tenant-backed chat_messages " +
     "delete target, strict deadlines, bounded locking, private metrics, one " +
-    "pg_cron job, disposable rehearsal, and release gates are present.",
+    "pg_cron job, disposable rehearsal, Vapi content retention disabled, " +
+    "and reviewed transcriber fallback enforced.",
 );
