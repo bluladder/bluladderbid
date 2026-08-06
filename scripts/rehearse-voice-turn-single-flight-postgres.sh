@@ -12,6 +12,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN BYPASSRLS; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sandbox_exec') THEN CREATE ROLE sandbox_exec NOLOGIN; END IF;
 END;
 $roles$;
 ALTER ROLE service_role BYPASSRLS;
@@ -28,6 +29,13 @@ CREATE TABLE public.organizations (
 );
 INSERT INTO public.organizations (id, slug, display_name, status)
 VALUES ('11111111-1111-4111-8111-111111111111', 'rehearsal', 'Rehearsal', 'active');
+
+-- Reproduce the existing-project defaults observed in production so the
+-- release candidate must normalize them explicitly on its two ledger tables.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT ON TABLES TO sandbox_exec;
 SQL
 
 # This applies the review-only candidate solely inside the disposable CI DB.
@@ -120,6 +128,18 @@ BEGIN
     RAISE EXCEPTION 'caller roles gained ledger table access';
   END IF;
   IF EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+     WHERE n.nspname='public' AND c.relname IN ('voice_turn_claims','voice_external_action_claims')
+       AND EXISTS (
+         SELECT 1
+           FROM aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl
+           JOIN pg_roles role ON role.oid=acl.grantee
+          WHERE role.rolname='sandbox_exec'
+       )
+  ) THEN
+    RAISE EXCEPTION 'sandbox_exec retained ledger table access';
+  END IF;
+  IF EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
      WHERE n.nspname='public' AND p.proname IN (
        'claim_voice_turn','complete_voice_turn','mark_voice_turn_uncertain',
@@ -135,7 +155,14 @@ BEGIN
        AND (NOT has_table_privilege('service_role',c.oid,'SELECT')
          OR NOT has_table_privilege('service_role',c.oid,'INSERT')
          OR NOT has_table_privilege('service_role',c.oid,'UPDATE')
-         OR has_table_privilege('service_role',c.oid,'DELETE'))
+         OR has_table_privilege('service_role',c.oid,'DELETE')
+         OR EXISTS (
+           SELECT 1
+             FROM aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl
+             JOIN pg_roles role ON role.oid=acl.grantee
+            WHERE role.rolname='service_role'
+              AND acl.privilege_type NOT IN ('SELECT','INSERT','UPDATE')
+         ))
   ) OR EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
      WHERE n.nspname='public' AND p.proname IN (

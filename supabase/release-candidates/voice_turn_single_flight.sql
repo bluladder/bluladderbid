@@ -33,7 +33,14 @@ ALTER TABLE public.voice_turn_claims ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.voice_turn_claims FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.voice_external_action_claims ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.voice_external_action_claims FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON public.voice_turn_claims, public.voice_external_action_claims FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.voice_turn_claims, public.voice_external_action_claims FROM PUBLIC, anon, authenticated, service_role;
+DO $sandbox_privileges$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'sandbox_exec') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.voice_turn_claims, public.voice_external_action_claims FROM sandbox_exec';
+  END IF;
+END;
+$sandbox_privileges$;
 GRANT SELECT, INSERT, UPDATE ON public.voice_turn_claims, public.voice_external_action_claims TO service_role;
 
 CREATE OR REPLACE FUNCTION public.claim_voice_turn(
