@@ -17,6 +17,16 @@ export interface VapiAssistantPatch extends JsonRecord {
 }
 
 /**
+ * Non-secret identity proof for the credentials attached to an assistant.
+ * Capture this from an approved baseline and keep it in operator-controlled
+ * release evidence; never persist or print the raw credential values.
+ */
+export interface VapiAssistantAuthorityFingerprint {
+  credentialIdsSha256: string;
+  serverSecretSha256: string;
+}
+
+/**
  * Builds the smallest complete Vapi PATCH needed to reconcile reviewed voice
  * behavior. Credential IDs, server headers, voice selection, and other
  * unrelated live fields are deliberately not sent. The current model object
@@ -78,10 +88,11 @@ export function buildVapiAssistantPatch(
  * omitted object or an explicit false is therefore fail-closed. Explicit true
  * always fails.
  */
-export function verifyVapiAssistantSnapshot(
+export async function verifyVapiAssistantSnapshot(
   snapshot: unknown,
   manifest: VoiceBetaManifest,
-): string[] {
+  expectedAuthority: VapiAssistantAuthorityFingerprint,
+): Promise<string[]> {
   const issues: string[] = [];
   const assistant = asRecord(snapshot);
   if (!assistant) return ["assistant response is not an object"];
@@ -199,21 +210,43 @@ export function verifyVapiAssistantSnapshot(
     manifest.stopSpeakingPlan,
   );
 
-  try {
-    requireCredentialPresence(assistant);
-  } catch (error) {
-    issues.push((error as Error).message);
-  }
-  try {
-    requireServerAuthority(assistant, manifest.serverEvents.url);
-  } catch (error) {
-    issues.push((error as Error).message);
-  }
+  await verifyAuthorityFingerprint(
+    issues,
+    assistant,
+    manifest.serverEvents.url,
+    expectedAuthority,
+  );
 
   return issues;
 }
 
+/**
+ * Creates a non-secret fingerprint from a separately approved assistant
+ * snapshot. The caller must treat the input as sensitive and must not log it.
+ */
+export async function fingerprintVapiAssistantAuthority(
+  snapshot: unknown,
+  manifest: VoiceBetaManifest,
+): Promise<VapiAssistantAuthorityFingerprint> {
+  const assistant = requireRecord(snapshot, "assistant");
+  const credentialIds = requireCredentialIds(assistant);
+  const serverSecret = requireServerSecret(
+    assistant,
+    manifest.serverEvents.url,
+  );
+  return {
+    credentialIdsSha256: await sha256(
+      JSON.stringify([...credentialIds].sort()),
+    ),
+    serverSecretSha256: await sha256(serverSecret),
+  };
+}
+
 function requireCredentialPresence(assistant: JsonRecord): void {
+  requireCredentialIds(assistant);
+}
+
+function requireCredentialIds(assistant: JsonRecord): string[] {
   if (
     !Array.isArray(assistant.credentialIds) ||
     assistant.credentialIds.length === 0 ||
@@ -225,12 +258,20 @@ function requireCredentialPresence(assistant: JsonRecord): void {
       "assistant.credentialIds must contain saved credential IDs",
     );
   }
+  return assistant.credentialIds as string[];
 }
 
 function requireServerAuthority(
   assistant: JsonRecord,
   expectedUrl: string,
 ): void {
+  requireServerSecret(assistant, expectedUrl);
+}
+
+function requireServerSecret(
+  assistant: JsonRecord,
+  expectedUrl: string,
+): string {
   const server = requireRecord(assistant.server, "assistant.server");
   if (server.url !== expectedUrl) {
     throw new Error("assistant.server.url does not match the manifest");
@@ -242,6 +283,63 @@ function requireServerAuthority(
   ) {
     throw new Error("assistant.server.headers lacks X-Vapi-Secret presence");
   }
+  return headers["X-Vapi-Secret"] as string;
+}
+
+async function verifyAuthorityFingerprint(
+  issues: string[],
+  assistant: JsonRecord,
+  expectedUrl: string,
+  expected: VapiAssistantAuthorityFingerprint,
+): Promise<void> {
+  const expectedRecord = asRecord(expected);
+  if (!isSha256(expectedRecord?.credentialIdsSha256)) {
+    issues.push("expected credential ID fingerprint is missing or malformed");
+  }
+  if (!isSha256(expectedRecord?.serverSecretSha256)) {
+    issues.push("expected server secret fingerprint is missing or malformed");
+  }
+  if (issues.some((issue) => issue.startsWith("expected "))) return;
+
+  const expectedCredentialIdsSha256 = expectedRecord
+    ?.credentialIdsSha256 as string;
+  const expectedServerSecretSha256 = expectedRecord
+    ?.serverSecretSha256 as string;
+
+  try {
+    const credentialIds = requireCredentialIds(assistant);
+    const actual = await sha256(JSON.stringify([...credentialIds].sort()));
+    if (actual !== expectedCredentialIdsSha256) {
+      issues.push("assistant credential identity does not match approval");
+    }
+  } catch (error) {
+    issues.push((error as Error).message);
+  }
+
+  try {
+    const serverSecret = requireServerSecret(assistant, expectedUrl);
+    const actual = await sha256(serverSecret);
+    if (actual !== expectedServerSecretSha256) {
+      issues.push("assistant server credential does not match approval");
+    }
+  } catch (error) {
+    issues.push((error as Error).message);
+  }
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 function requireRecord(value: unknown, path: string): JsonRecord {
@@ -281,7 +379,32 @@ function expectJson(
   actual: unknown,
   expected: unknown,
 ): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+  if (!jsonSemanticallyEqual(actual, expected)) {
     issues.push(`${path} does not match the manifest`);
   }
+}
+
+/** JSON object key order is not semantic; array order and object shape are. */
+function jsonSemanticallyEqual(actual: unknown, expected: unknown): boolean {
+  if (actual === expected) return true;
+
+  if (Array.isArray(actual) || Array.isArray(expected)) {
+    return Array.isArray(actual) && Array.isArray(expected) &&
+      actual.length === expected.length &&
+      actual.every((value, index) =>
+        jsonSemanticallyEqual(value, expected[index])
+      );
+  }
+
+  const actualRecord = asRecord(actual);
+  const expectedRecord = asRecord(expected);
+  if (!actualRecord || !expectedRecord) return false;
+
+  const actualKeys = Object.keys(actualRecord).sort();
+  const expectedKeys = Object.keys(expectedRecord).sort();
+  return actualKeys.length === expectedKeys.length &&
+    actualKeys.every((key, index) =>
+      key === expectedKeys[index] &&
+      jsonSemanticallyEqual(actualRecord[key], expectedRecord[key])
+    );
 }

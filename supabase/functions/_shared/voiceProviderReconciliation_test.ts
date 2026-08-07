@@ -6,6 +6,7 @@ import {
 import { buildVoiceBetaAssistantManifest } from "./voiceProviderConfig.ts";
 import {
   buildVapiAssistantPatch,
+  fingerprintVapiAssistantAuthority,
   verifyVapiAssistantSnapshot,
 } from "./voiceProviderReconciliation.ts";
 
@@ -69,8 +70,9 @@ Deno.test("Vapi reconciliation: rejects missing credential or server authority",
   assertThrows(() => buildVapiAssistantPatch(wrongServer, manifest));
 });
 
-Deno.test("Vapi reconciliation: reported saved state fails exact verification", () => {
+Deno.test("Vapi reconciliation: reported saved state fails exact verification", async () => {
   const saved = currentAssistant() as Record<string, unknown>;
+  const authority = await fingerprintVapiAssistantAuthority(saved, manifest);
   saved.serverMessages = ["status-update", "hang", "end-of-call-report"];
   saved.artifactPlan = {
     recordingEnabled: false,
@@ -78,7 +80,7 @@ Deno.test("Vapi reconciliation: reported saved state fails exact verification", 
     pcapEnabled: false,
     transcriptPlan: { enabled: true },
   };
-  const issues = verifyVapiAssistantSnapshot(saved, manifest);
+  const issues = await verifyVapiAssistantSnapshot(saved, manifest, authority);
   assert(issues.some((issue) => issue.startsWith("serverMessages")));
   assert(issues.some((issue) => issue.startsWith("artifactPlan")));
   assert(
@@ -88,8 +90,9 @@ Deno.test("Vapi reconciliation: reported saved state fails exact verification", 
   );
 });
 
-Deno.test("Vapi reconciliation: exact saved state passes with false canonicalized away", () => {
+Deno.test("Vapi reconciliation: exact saved state passes with false canonicalized away", async () => {
   const current = currentAssistant();
+  const authority = await fingerprintVapiAssistantAuthority(current, manifest);
   const patch = buildVapiAssistantPatch(current, manifest);
   const saved = {
     ...current,
@@ -101,16 +104,155 @@ Deno.test("Vapi reconciliation: exact saved state passes with false canonicalize
     unknown
   >;
   delete fallbackPlan.autoFallback;
-  assertEquals(verifyVapiAssistantSnapshot(saved, manifest), []);
+  assertEquals(
+    await verifyVapiAssistantSnapshot(saved, manifest, authority),
+    [],
+  );
 });
 
-Deno.test("Vapi reconciliation: enabled automatic fallback always fails", () => {
+Deno.test("Vapi reconciliation: enabled automatic fallback always fails", async () => {
   const current = currentAssistant();
+  const authority = await fingerprintVapiAssistantAuthority(current, manifest);
   const patch = buildVapiAssistantPatch(current, manifest);
   const saved = { ...current, ...patch };
   (saved.transcriber.fallbackPlan as Record<string, unknown>).autoFallback = {
     enabled: true,
   };
-  const issues = verifyVapiAssistantSnapshot(saved, manifest);
+  const issues = await verifyVapiAssistantSnapshot(saved, manifest, authority);
   assert(issues.some((issue) => issue.includes("autoFallback")));
+});
+
+Deno.test("Vapi reconciliation: provider object key order is not semantic drift", async () => {
+  const current = currentAssistant();
+  const authority = await fingerprintVapiAssistantAuthority(current, manifest);
+  const patch = buildVapiAssistantPatch(current, manifest);
+  const saved = {
+    ...current,
+    ...patch,
+    transcriber: {
+      ...patch.transcriber,
+      fallbackPlan: {
+        transcribers: [{
+          vadAssistedEndpointingEnabled: true,
+          keytermsPrompt: [...manifest.transcriber.keyterm],
+          language: "en",
+          speechModel: "universal-streaming-english",
+          provider: "assembly-ai",
+        }],
+      },
+    },
+    hooks: patch.hooks.map((hook) => {
+      const action = (hook.do as Record<string, unknown>[])[0];
+      const options = hook.options as Record<string, unknown>;
+      return {
+        do: [{ exact: action.exact, type: action.type }],
+        options: { seconds: options.seconds },
+        on: hook.on,
+      };
+    }),
+    artifactPlan: {
+      transcriptPlan: { enabled: false },
+      fullMessageHistoryEnabled: false,
+      loggingEnabled: false,
+      pcapEnabled: false,
+      videoRecordingEnabled: false,
+      recordingEnabled: false,
+    },
+    startSpeakingPlan: {
+      transcriptionEndpointingPlan: {
+        onNumberSeconds: 1,
+        onNoPunctuationSeconds: 1.2,
+        onPunctuationSeconds: 0.3,
+      },
+      smartEndpointingPlan: {
+        waitFunction: manifest.startSpeakingPlan.smartEndpointingPlan
+          .waitFunction,
+        provider: "livekit",
+      },
+      waitSeconds: 0.4,
+    },
+  };
+
+  assertEquals(
+    await verifyVapiAssistantSnapshot(saved, manifest, authority),
+    [],
+  );
+});
+
+Deno.test("Vapi reconciliation: arrays and extra object fields remain exact", async () => {
+  const current = currentAssistant();
+  const authority = await fingerprintVapiAssistantAuthority(current, manifest);
+  const patch = buildVapiAssistantPatch(current, manifest);
+
+  const reorderedArray = {
+    ...current,
+    ...patch,
+    serverMessages: [...patch.serverMessages].reverse(),
+  };
+  const arrayIssues = await verifyVapiAssistantSnapshot(
+    reorderedArray,
+    manifest,
+    authority,
+  );
+  assert(arrayIssues.some((issue) => issue.startsWith("serverMessages")));
+
+  const extraObjectField = {
+    ...current,
+    ...patch,
+    artifactPlan: { ...patch.artifactPlan, providerAdded: true },
+  };
+  const objectIssues = await verifyVapiAssistantSnapshot(
+    extraObjectField,
+    manifest,
+    authority,
+  );
+  assert(objectIssues.some((issue) => issue.startsWith("artifactPlan")));
+});
+
+Deno.test("Vapi reconciliation: changed credential authority fails closed", async () => {
+  const current = currentAssistant();
+  const authority = await fingerprintVapiAssistantAuthority(current, manifest);
+  const patch = buildVapiAssistantPatch(current, manifest);
+
+  const changedCredential = {
+    ...current,
+    ...patch,
+    credentialIds: ["different-credential-id"],
+  };
+  const credentialIssues = await verifyVapiAssistantSnapshot(
+    changedCredential,
+    manifest,
+    authority,
+  );
+  assert(
+    credentialIssues.some((issue) => issue.includes("credential identity")),
+  );
+
+  const changedServerSecret = {
+    ...current,
+    ...patch,
+    server: {
+      ...current.server,
+      headers: { "X-Vapi-Secret": "different-secret" },
+    },
+  };
+  const serverIssues = await verifyVapiAssistantSnapshot(
+    changedServerSecret,
+    manifest,
+    authority,
+  );
+  assert(
+    serverIssues.some((issue) => issue.includes("server credential")),
+  );
+
+  const malformedAuthorityIssues = await verifyVapiAssistantSnapshot(
+    { ...current, ...patch },
+    manifest,
+    {} as never,
+  );
+  assert(
+    malformedAuthorityIssues.some((issue) =>
+      issue.includes("fingerprint is missing or malformed")
+    ),
+  );
 });
