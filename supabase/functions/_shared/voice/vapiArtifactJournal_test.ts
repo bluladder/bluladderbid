@@ -3,7 +3,10 @@ import {
   assert,
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { persistVapiEndOfCallArtifacts } from "./vapiArtifactJournal.ts";
+import {
+  normalizeVapiAssistantArtifactContent,
+  persistVapiEndOfCallArtifacts,
+} from "./vapiArtifactJournal.ts";
 
 const ORG = "00000000-0000-4000-8000-000000000072";
 const CALL = "019fc00a-5558-7dda-a6ba-52764207ca2a";
@@ -137,6 +140,36 @@ Deno.test("end-of-call messages are bounded, sanitized, tenant linked and idempo
 
   const replay = await persistVapiEndOfCallArtifacts(supabase, {
     body: payload(),
+    organizationId: ORG,
+  });
+  assertEquals(replay.status, "duplicate");
+  assertEquals(supabase._messages.length, 2);
+});
+
+Deno.test("transport acknowledgement is removed before artifact deduplication", async () => {
+  assertEquals(
+    normalizeVapiAssistantArtifactContent(
+      "One moment. <flush /> The quote total is ready.",
+    ),
+    "The quote total is ready.",
+  );
+  assertEquals(
+    normalizeVapiAssistantArtifactContent("One moment. <flush />"),
+    "",
+  );
+
+  const supabase = fakeSupabase();
+  const live = payload();
+  live.message.artifact.messages[1].message = "The quote total is ready.";
+  await persistVapiEndOfCallArtifacts(supabase, {
+    body: live,
+    organizationId: ORG,
+  });
+  const artifact = payload();
+  artifact.message.artifact.messages[1].message =
+    "One moment. <flush /> The quote total is ready.";
+  const replay = await persistVapiEndOfCallArtifacts(supabase, {
+    body: artifact,
     organizationId: ORG,
   });
   assertEquals(replay.status, "duplicate");

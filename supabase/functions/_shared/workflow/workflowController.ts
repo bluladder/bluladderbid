@@ -476,6 +476,10 @@ function postPriceChoicePrompt(): string {
   return "Would you like the quote texted, or would you like to continue toward scheduling?";
 }
 
+function postPriceChoiceClarification(): string {
+  return "Just to make sure I heard you: should I text the written quote, or check appointment times?";
+}
+
 function scheduleContinuationIsAuthorized(session: QuoteSession): boolean {
   return session.quoteStatus === "firm" &&
     session.fields.voiceJourney?.requestedNextStep === "schedule";
@@ -976,7 +980,7 @@ export async function runControllerTurn(
       pre: {
         kind: "fsm",
         action,
-        spoken: postPriceChoicePrompt(),
+        spoken: postPriceChoiceClarification(),
       },
     };
   }

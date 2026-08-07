@@ -33,6 +33,9 @@ function input() {
       sensitiveActionsAllowed: true,
     },
     callId: "vapi_call:synthetic-72",
+    turnId: "turn-synthetic-72",
+    turnPosition: 2,
+    contentHash: "content-hash-synthetic-72",
     messages: [{ role: "user" as const, content: "I need window cleaning" }],
   };
 }
@@ -85,6 +88,9 @@ Deno.test("controller route journals the exact persisted/projection-backed turn"
   assertEquals(order, ["controller", "persist", "project", "read", "journal"]);
   assertEquals(result.spoken, "About how many square feet is the home?");
   assertEquals(journalArgs.organizationId, ORG);
+  assertEquals(journalArgs.turnId, "turn-synthetic-72");
+  assertEquals(journalArgs.turnPosition, 2);
+  assertEquals(journalArgs.contentHash, "content-hash-synthetic-72");
   assertEquals(journalArgs.turns, [
     { role: "user", content: "I need window cleaning" },
     { role: "assistant", content: "About how many square feet is the home?" },

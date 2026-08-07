@@ -46,6 +46,10 @@ import {
   VoiceTurnLatencyRecorder,
   type VoiceTurnLatencyRoute,
 } from "../_shared/voice/voiceTurnLatency.ts";
+import { readReplayableControllerReply } from "../_shared/voice/turnJournal.ts";
+import {
+  resolveCompletedVoiceTurnReplay,
+} from "../_shared/voice/voiceTurnReplay.ts";
 import {
   buildControllerStreamResponse,
   type ControllerStreamResult,
@@ -303,6 +307,12 @@ Deno.serve(async (req) => {
   const earlyModel = request.model || "bluladder-voice-adapter";
   const ingress = await prepareVoiceIngress(request);
   if (ingress.status === "ignored") {
+    console.log(JSON.stringify({
+      at: "voice-llm-adapter",
+      buildId: BUILD_ID,
+      route: "ingress",
+      reason: `ingress_ignored_${ingress.reason}`,
+    }));
     return buildSilentVoiceResponse(earlyModel, request.stream);
   }
   const turn: VoiceTurnDescriptor = ingress.turn;
@@ -424,6 +434,97 @@ Deno.serve(async (req) => {
         : claim === "wait"
         ? "wait_suppressed"
         : "uncertain_suppressed";
+      if (claim === "duplicate") {
+        const replayStarted = performance.now();
+        const replay = await resolveCompletedVoiceTurnReplay({
+          readReply: () =>
+            readReplayableControllerReply(supabase, {
+              organizationId: providerAuthority.organizationId,
+              sessionToken: request.sessionId,
+              turnId: turn.turnId,
+              turnPosition: turn.position,
+              contentHash: turn.contentHash,
+              messages: providerMessagesForJournal,
+            }),
+          isAuthoritative: () =>
+            isAuthoritativeVoiceTurn(supabase, {
+              organizationId: providerAuthority.organizationId,
+              callId: turn.callId,
+              turnId: turn.turnId,
+            }),
+        });
+        latency.add("databaseMs", performance.now() - replayStarted);
+        if (replay.status === "replay") {
+          console.log(JSON.stringify({
+            at: "voice-llm-adapter",
+            buildId: BUILD_ID,
+            correlationId,
+            route: "single_flight",
+            reason: "duplicate_replayed",
+          }));
+          if (!request.stream) {
+            return finishImmediate(
+              buildNonStreamingResponse(model, {
+                content: replay.spoken,
+                action: { kind: "speak" },
+                orchestrator: {
+                  reply: replay.spoken,
+                  toolEvents: [],
+                  events: ["voice_turn_replayed"],
+                  state: "workflow_controller",
+                  voice: { type: "speak" },
+                },
+              }),
+              "single_flight",
+              "responded",
+            );
+          }
+          return buildControllerStreamResponse({
+            model,
+            buildId: BUILD_ID,
+            headers: corsHeaders,
+            run: () =>
+              Promise.resolve({
+                status: "speak",
+                spoken: replay.spoken,
+                metadata: {
+                  event: "voice_turn_replayed",
+                  route: "single_flight_replay",
+                },
+              }),
+            lifecycle: {
+              onFirstChunk: () => latency.mark("firstResponseChunkMs"),
+              onComplete: () =>
+                emitVoiceTurnLatency(latency.finish({
+                  route: "single_flight",
+                  outcome: "responded",
+                })),
+            },
+          });
+        }
+        console.log(JSON.stringify({
+          at: "voice-llm-adapter",
+          buildId: BUILD_ID,
+          correlationId,
+          route: "single_flight",
+          reason: replay.reason === "reply_unavailable"
+            ? "duplicate_replay_unavailable"
+            : "duplicate_replay_not_authoritative",
+          replayReason: replay.detail ?? replay.reason,
+        }));
+      } else {
+        console.log(JSON.stringify({
+          at: "voice-llm-adapter",
+          buildId: BUILD_ID,
+          correlationId,
+          route: "single_flight",
+          reason: claim === "stale"
+            ? "stale_suppressed"
+            : claim === "wait"
+            ? "wait_suppressed"
+            : "uncertain_suppressed",
+        }));
+      }
       return finishImmediate(
         buildSilentVoiceResponse(model, request.stream),
         "single_flight",
@@ -540,6 +641,9 @@ Deno.serve(async (req) => {
           organizationId: organizationAuthority.organizationId,
           organizationAuthority,
           callId: request.sessionId,
+          turnId: turn.turnId,
+          turnPosition: turn.position,
+          contentHash: turn.contentHash,
           messages: request.messages,
           journalMessages: providerMessagesForJournal,
           callerIdE164: request.callerIdE164,
@@ -633,6 +737,13 @@ Deno.serve(async (req) => {
         });
         latency.add("databaseMs", performance.now() - completionStarted);
         if (!authoritative) {
+          console.log(JSON.stringify({
+            at: "voice-llm-adapter",
+            buildId: BUILD_ID,
+            correlationId,
+            route: "single_flight",
+            reason: "stale_suppressed",
+          }));
           finishControllerSuppressed(
             "single_flight",
             "stale_suppressed",
@@ -650,6 +761,13 @@ Deno.serve(async (req) => {
           buildId: BUILD_ID,
           route: "controller",
           reason: "workflow_controller_failed_closed",
+        }));
+        console.log(JSON.stringify({
+          at: "voice-llm-adapter",
+          buildId: BUILD_ID,
+          correlationId,
+          route: "controller",
+          reason: "uncertain_suppressed",
         }));
         // The claim is terminal after an unknown execution outcome. An
         // external action may have crossed its provider boundary, so emit and

@@ -6,7 +6,6 @@
 // identity/property -> re-project lineage -> journal the exact spoken turn.
 // ============================================================================
 
-import { deterministicUuid } from "../deterministicUuid.ts";
 import type { QuoteSession } from "../quoteSession.ts";
 import type { ConversationFacts } from "../conversationState.ts";
 import type { OrganizationAuthorityResolution } from "../organizationAuthority.ts";
@@ -28,6 +27,7 @@ import {
   type VoiceIdentityPreparationResult,
 } from "./voiceBookingIdentityPreparation.ts";
 import {
+  buildControllerTurnJournalIdentity,
   recordVoiceTurns,
   voiceTranscriptRetentionExpiresAt,
   type VoiceTurnJournalResult,
@@ -68,6 +68,10 @@ export interface ExecuteControllerRouteInput {
   organizationId: string;
   organizationAuthority: OrganizationAuthorityResolution;
   callId: string;
+  /** Exact single-flight lineage for safe completed-turn replay. */
+  turnId?: string;
+  turnPosition?: number;
+  contentHash?: string;
   messages: ChatMessage[];
   /** Original provider messages before parsing-only normalization. */
   journalMessages?: ChatMessage[];
@@ -449,13 +453,10 @@ export async function executeControllerRoute(
     }
   }
 
-  const turnIdentity = await deterministicUuid(
-    "voice-controller-request",
-    input.callId,
-    String(journalReconstructed.nonSystemCount),
-    String(journalReconstructed.lastUserIndex),
-    journalReconstructed.userMessage,
-  );
+  const turnIdentity = await buildControllerTurnJournalIdentity({
+    callId: input.callId,
+    messages: input.journalMessages ?? input.messages,
+  });
   const journalStarted = now();
   const journal = await journalTurns(input.supabase, {
     conversationId: input.conversationId,
@@ -465,6 +466,9 @@ export async function executeControllerRoute(
     state: turn.pre.kind === "fsm" ? turn.pre.action.kind : turn.pre.kind,
     source: "controller",
     retentionExpiresAt: voiceTranscriptRetentionExpiresAt(),
+    turnId: input.turnId ?? null,
+    turnPosition: input.turnPosition ?? null,
+    contentHash: input.contentHash ?? null,
     turns: [
       { role: "user", content: journalReconstructed.userMessage },
       { role: "assistant", content: spoken },

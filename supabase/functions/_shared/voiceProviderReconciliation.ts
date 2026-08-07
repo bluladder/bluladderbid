@@ -56,7 +56,11 @@ export function buildVapiAssistantPatch(
   return {
     name: manifest.name,
     transcriber: structuredClone(manifest.transcriber) as unknown as JsonRecord,
-    model: { ...model, tools: [] },
+    model: {
+      ...model,
+      timeoutSeconds: manifest.model.timeoutSeconds,
+      tools: [],
+    },
     serverMessages: [...manifest.serverEvents.events],
     maxDurationSeconds: manifest.duration.maxDurationSeconds,
     endCallMessage: manifest.duration.hardCutoffMessage,
@@ -156,6 +160,12 @@ export async function verifyVapiAssistantSnapshot(
     if (typeof model.model !== "string" || model.model.length === 0) {
       issues.push("model.model is missing");
     }
+    expectEqual(
+      issues,
+      "model.timeoutSeconds",
+      model.timeoutSeconds,
+      manifest.model.timeoutSeconds,
+    );
     expectJson(issues, "model.tools", model.tools, []);
   }
 

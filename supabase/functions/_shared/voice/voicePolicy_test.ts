@@ -625,6 +625,9 @@ Deno.test("phase3 quote-text choice accepts exact positive echoes", () => {
       "I would like the quote texted",
       "have it texted",
       "text the quote",
+      "text it to me",
+      "send that to my phone",
+      "the written quote please",
       "send that to me and park outside the gate",
     ]
   ) {
@@ -637,6 +640,13 @@ Deno.test("phase3 quote-text choice accepts exact positive echoes", () => {
       classifyContextualVoiceQuoteByTextRejection(utterance),
       false,
       utterance,
+    );
+  }
+  for (const ambiguous of ["yes", "sure", "okay", "that one"]) {
+    assertEquals(
+      classifyContextualVoiceQuoteByTextRequest(ambiguous),
+      false,
+      ambiguous,
     );
   }
 });
@@ -930,8 +940,6 @@ Deno.test("phase4 malformed discount cue is detected for one clarification", () 
   assertEquals(hasVolunteeredDiscountCodeCue("my coupon code is ??"), true);
   assertEquals(hasVolunteeredDiscountCodeCue("outside window cleaning"), false);
 });
-
-
 Deno.test("phase4 malformed discount separators cue clarification without normalization", () => {
   for (const utterance of [
     "coupon code is SAVE-10",
