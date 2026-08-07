@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.8-address-gate-enforcement";
+export const BUILD_ID = "voice-adapter-4C-b.6.9-deferred-sse";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -49,4 +49,10 @@ export const BUILD_FEATURES = {
   voiceReplyFinalizeFunnel: true,
   voiceHouseNumberMismatchRecovery: true,
   voiceTruthfulEscalationLanguage: true,
+  // 6.9 — controller streams establish the provider response before deferred
+  // processing, use one bounded neutral flush acknowledgement, and never let
+  // provider-side phrases terminate an active quote turn.
+  voiceControllerDeferredSse: true,
+  voiceControllerBoundedFlushAcknowledgement: true,
+  voiceProviderEndCallPhrasesDisabled: true,
 } as const;
