@@ -46,6 +46,10 @@ import {
   VoiceTurnLatencyRecorder,
   type VoiceTurnLatencyRoute,
 } from "../_shared/voice/voiceTurnLatency.ts";
+import {
+  buildControllerStreamResponse,
+  type ControllerStreamResult,
+} from "../_shared/voice/voiceControllerStream.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -520,160 +524,191 @@ Deno.serve(async (req) => {
   }
 
   if (decision.route === "controller") {
-    // Rollout-gated deterministic journey. Canonical pricing, availability,
-    // and booking tool boundaries are invoked by the controller; unsupported
-    // tenant-scoped record actions fail closed instead of falling through.
-    try {
-      const route = await executeControllerRoute({
-        supabase,
-        conversationId: identity.conversationId,
-        organizationId: organizationAuthority.organizationId,
-        organizationAuthority,
-        callId: request.sessionId,
-        messages: request.messages,
-        journalMessages: providerMessagesForJournal,
-        callerIdE164: request.callerIdE164,
-        runTool: (name, context, body) =>
-          runClaimedExternalAction(supabase, {
-            organizationId: organizationAuthority.organizationId,
-            callId: turn.callId,
-            turnId: turn.turnId,
-            actionKey: `tool:${name}`,
-            run: () => runTool(name, context, body),
-            uncertain: () => ({
-              status: "uncertain",
-              message:
-                "The provider outcome could not be confirmed and will not be retried automatically.",
+    const finishControllerSuppressed = (
+      route: VoiceTurnLatencyRoute,
+      outcome: VoiceTurnLatencyOutcome,
+    ) => {
+      latency.mark("firstResponseChunkMs");
+      emitVoiceTurnLatency(latency.finish({ route, outcome }));
+    };
+
+    const runControllerTurn = async (): Promise<ControllerStreamResult> => {
+      try {
+        const route = await executeControllerRoute({
+          supabase,
+          conversationId: identity.conversationId,
+          organizationId: organizationAuthority.organizationId,
+          organizationAuthority,
+          callId: request.sessionId,
+          messages: request.messages,
+          journalMessages: providerMessagesForJournal,
+          callerIdE164: request.callerIdE164,
+          runTool: (name, context, body) =>
+            runClaimedExternalAction(supabase, {
+              organizationId: organizationAuthority.organizationId,
+              callId: turn.callId,
+              turnId: turn.turnId,
+              actionKey: `tool:${name}`,
+              run: () => runTool(name, context, body),
+              uncertain: () => ({
+                status: "uncertain",
+                message:
+                  "The provider outcome could not be confirmed and will not be retried automatically.",
+              }),
             }),
-          }),
-        callFunction: (name, body) =>
-          runClaimedExternalAction(supabase, {
-            organizationId: organizationAuthority.organizationId,
-            callId: turn.callId,
-            turnId: turn.turnId,
-            actionKey: `edge:${name}`,
-            run: () =>
-              callInternalQuoteFunction(supabaseUrl, serviceKey, name, body),
-            uncertain: () => ({
-              status: 503,
-              json: { status: "uncertain", retryable: false },
+          callFunction: (name, body) =>
+            runClaimedExternalAction(supabase, {
+              organizationId: organizationAuthority.organizationId,
+              callId: turn.callId,
+              turnId: turn.turnId,
+              actionKey: `edge:${name}`,
+              run: () =>
+                callInternalQuoteFunction(supabaseUrl, serviceKey, name, body),
+              uncertain: () => ({
+                status: 503,
+                json: { status: "uncertain", retryable: false },
+              }),
             }),
-          }),
-      });
-      latency.mark("controllerCompletedMs");
-      latency.mark("persistenceCompletedMs");
-      latency.add(
-        "deterministicControllerMs",
-        route.timings.controllerMs,
-      );
-      latency.add("conversationSessionLoadMs", route.timings.sessionLoadMs);
-      latency.add("pricingMs", route.timings.pricingMs);
-      latency.add(
-        "addressIdentityMs",
-        route.timings.addressServiceAreaMs +
-          route.timings.identityPreparationMs,
-      );
-      latency.add("externalToolMs", route.timings.externalToolMs);
-      const persistenceMs = route.timings.persistenceMs +
-        route.timings.projectionMs + route.timings.journalMs;
-      latency.add("persistenceMs", persistenceMs);
-      latency.add(
-        "databaseMs",
-        route.timings.sessionLoadMs + persistenceMs,
-      );
-      const spoken = route.spoken;
+        });
+        latency.mark("controllerCompletedMs");
+        latency.mark("persistenceCompletedMs");
+        latency.add(
+          "deterministicControllerMs",
+          route.timings.controllerMs,
+        );
+        latency.add("conversationSessionLoadMs", route.timings.sessionLoadMs);
+        latency.add("pricingMs", route.timings.pricingMs);
+        latency.add(
+          "addressIdentityMs",
+          route.timings.addressServiceAreaMs +
+            route.timings.identityPreparationMs,
+        );
+        latency.add("externalToolMs", route.timings.externalToolMs);
+        const persistenceMs = route.timings.persistenceMs +
+          route.timings.projectionMs + route.timings.journalMs;
+        latency.add("persistenceMs", persistenceMs);
+        latency.add(
+          "databaseMs",
+          route.timings.sessionLoadMs + persistenceMs,
+        );
+        const spoken = route.spoken;
+        console.log(JSON.stringify({
+          at: "voice-llm-adapter",
+          buildId: BUILD_ID,
+          correlationId,
+          route: "controller",
+          event: route.event,
+          preKind: route.pre.kind,
+          replyLen: spoken.length,
+          stream: request.stream,
+          projectionStatus: route.projection?.status ?? null,
+          identityPreparationStatus: route.identityPreparation?.status ?? null,
+          journal: {
+            written: route.journal.written,
+            duplicates: route.journal.duplicates,
+            failed: route.journal.failed,
+            reason: route.journal.reason ?? null,
+          },
+          timings: {
+            requestToControllerCompletionMs: Math.max(
+              0,
+              Math.round(performance.now() - requestArrival),
+            ),
+            ...route.timings,
+          },
+        }));
+        const completionStarted = performance.now();
+        await completeVoiceTurn(supabase, {
+          organizationId: organizationAuthority.organizationId,
+          callId: turn.callId,
+          turnId: turn.turnId,
+        });
+        // Re-read immediately before canonical content is emitted. A newer
+        // committed turn revokes this turn's authority after the harmless role
+        // delta/neutral acknowledgement but before any business response.
+        const authoritative = await isAuthoritativeVoiceTurn(supabase, {
+          organizationId: organizationAuthority.organizationId,
+          callId: turn.callId,
+          turnId: turn.turnId,
+        });
+        latency.add("databaseMs", performance.now() - completionStarted);
+        if (!authoritative) {
+          finishControllerSuppressed(
+            "single_flight",
+            "stale_suppressed",
+          );
+          return { status: "suppressed" };
+        }
+        return {
+          status: "speak",
+          spoken,
+          metadata: { event: route.event },
+        };
+      } catch {
+        console.warn(JSON.stringify({
+          at: "voice-llm-adapter",
+          buildId: BUILD_ID,
+          route: "controller",
+          reason: "workflow_controller_failed_closed",
+        }));
+        // The claim is terminal after an unknown execution outcome. An
+        // external action may have crossed its provider boundary, so emit and
+        // retry none.
+        await markVoiceTurnUncertain(supabase, {
+          organizationId: organizationAuthority.organizationId,
+          callId: turn.callId,
+          turnId: turn.turnId,
+        });
+        finishControllerSuppressed(
+          "controller",
+          "uncertain_suppressed",
+        );
+        return { status: "suppressed" };
+      }
+    };
+
+    if (!request.stream) {
+      const result = await runControllerTurn();
+      if (result.status !== "speak") {
+        return buildSilentVoiceResponse(model, false);
+      }
+      const event = result.metadata?.event;
       const completion = {
-        content: spoken,
+        content: result.spoken,
         action: { kind: "speak" as const },
         orchestrator: {
-          reply: spoken,
+          reply: result.spoken,
           toolEvents: [],
-          events: [route.event],
+          events: event ? [event] : [],
           state: "workflow_controller" as const,
           voice: { type: "speak" as const },
         },
       };
-      console.log(JSON.stringify({
-        at: "voice-llm-adapter",
-        buildId: BUILD_ID,
-        correlationId,
-        route: "controller",
-        event: route.event,
-        preKind: route.pre.kind,
-        replyLen: spoken.length,
-        stream: request.stream,
-        projectionStatus: route.projection?.status ?? null,
-        identityPreparationStatus: route.identityPreparation?.status ?? null,
-        journal: {
-          written: route.journal.written,
-          duplicates: route.journal.duplicates,
-          failed: route.journal.failed,
-          reason: route.journal.reason ?? null,
-        },
-        timings: {
-          requestToResponseStreamStartMs: Math.max(
-            0,
-            Math.round(performance.now() - requestArrival),
-          ),
-          ...route.timings,
-        },
-      }));
-      const completionStarted = performance.now();
-      await completeVoiceTurn(supabase, {
-        organizationId: organizationAuthority.organizationId,
-        callId: turn.callId,
-        turnId: turn.turnId,
-      });
-      // Re-read immediately before response construction. A newer committed
-      // turn revokes this turn's authority before any response bytes exist.
-      const authoritative = await isAuthoritativeVoiceTurn(supabase, {
-        organizationId: organizationAuthority.organizationId,
-        callId: turn.callId,
-        turnId: turn.turnId,
-      });
-      latency.add("databaseMs", performance.now() - completionStarted);
-      if (!authoritative) {
-        return finishImmediate(
-          buildSilentVoiceResponse(model, request.stream),
-          "single_flight",
-          "stale_suppressed",
-        );
-      }
-      if (!request.stream) {
-        return finishImmediate(
-          buildNonStreamingResponse(model, completion),
-          "controller",
-          "responded",
-        );
-      }
-      return buildStreamingTextResponse(model, spoken, {}, {
-        onFirstChunk: () => latency.mark("firstResponseChunkMs"),
-        onComplete: () =>
-          emitVoiceTurnLatency(latency.finish({
-            route: "controller",
-            outcome: "responded",
-          })),
-      });
-    } catch {
-      console.warn(JSON.stringify({
-        at: "voice-llm-adapter",
-        buildId: BUILD_ID,
-        route: "controller",
-        reason: "workflow_controller_failed_closed",
-      }));
-      // The claim is terminal after an unknown execution outcome. An external
-      // action may have crossed its provider boundary, so emit and retry none.
-      await markVoiceTurnUncertain(supabase, {
-        organizationId: organizationAuthority.organizationId,
-        callId: turn.callId,
-        turnId: turn.turnId,
-      });
       return finishImmediate(
-        buildSilentVoiceResponse(model, request.stream),
+        buildNonStreamingResponse(model, completion),
         "controller",
-        "uncertain_suppressed",
+        "responded",
       );
     }
+
+    // Return the SSE response immediately. The role frame establishes the
+    // stream; canonical business content remains gated by controller
+    // completion and the final authoritative-turn re-read.
+    return buildControllerStreamResponse({
+      model,
+      buildId: BUILD_ID,
+      headers: corsHeaders,
+      run: runControllerTurn,
+      lifecycle: {
+        onFirstChunk: () => latency.mark("firstResponseChunkMs"),
+        onComplete: (status) => {
+          emitVoiceTurnLatency(latency.finish({
+            route: "controller",
+            outcome: status === "speak" ? "responded" : "uncertain_suppressed",
+          }));
+        },
+      },
+    });
   }
 
   // All accepted Vapi traffic reaches this point with reconciled provider

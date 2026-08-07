@@ -41,11 +41,17 @@ Deno.test("BUILD marker exposes the 6.7 voice remediation flags", () => {
   assertEquals(BUILD_FEATURES.voiceAddressConfirmationGate, true);
   assertEquals(BUILD_FEATURES.voiceReplySafety, true);
   assertEquals(BUILD_FEATURES.voiceExitIntentHandling, true);
-  assert(BUILD_ID.includes("6.8"));
+});
+
+Deno.test("BUILD marker exposes the 6.9 deferred-SSE repair flags", () => {
+  assert(BUILD_ID.includes("6.9"));
+  assertEquals(BUILD_ID, "voice-adapter-4C-b.6.9-deferred-sse");
+  assertEquals(BUILD_FEATURES.voiceControllerDeferredSse, true);
   assertEquals(
-    BUILD_ID,
-    "voice-adapter-4C-b.6.8-address-gate-enforcement",
+    BUILD_FEATURES.voiceControllerBoundedFlushAcknowledgement,
+    true,
   );
+  assertEquals(BUILD_FEATURES.voiceProviderEndCallPhrasesDisabled, true);
 });
 
 Deno.test("BUILD marker exposes the 6.8 address-gate enforcement flags", () => {

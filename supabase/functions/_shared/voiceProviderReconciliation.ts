@@ -9,6 +9,7 @@ export interface VapiAssistantPatch extends JsonRecord {
   serverMessages: string[];
   maxDurationSeconds: number;
   endCallMessage: string;
+  endCallPhrases: string[];
   hooks: JsonRecord[];
   artifactPlan: JsonRecord;
   analysisPlan: JsonRecord;
@@ -59,6 +60,7 @@ export function buildVapiAssistantPatch(
     serverMessages: [...manifest.serverEvents.events],
     maxDurationSeconds: manifest.duration.maxDurationSeconds,
     endCallMessage: manifest.duration.hardCutoffMessage,
+    endCallPhrases: [...manifest.endCallPhrases],
     hooks: manifest.duration.timeElapsedHooks.map((hook) => ({
       on: "call.timeElapsed",
       options: { seconds: hook.seconds },
@@ -175,6 +177,11 @@ export async function verifyVapiAssistantSnapshot(
     assistant.endCallMessage,
     manifest.duration.hardCutoffMessage,
   );
+  // Vapi may canonicalize an empty list by omitting the field. Any present
+  // value must be exactly empty; null or a legacy phrase fails closed.
+  if (assistant.endCallPhrases !== undefined) {
+    expectJson(issues, "endCallPhrases", assistant.endCallPhrases, []);
+  }
   expectJson(
     issues,
     "hooks",

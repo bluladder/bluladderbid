@@ -116,6 +116,13 @@ authoritative source of truth — this list mirrors it for convenience.
   - Streaming: enabled.
 - Tools: none. Explicitly clear the tool list — no transfer tool, no callback
   tool, no Jobber tool, no pricing tool, no booking tool.
+- Provider end-call phrases = empty. Do not retain broad phrases such as
+  "thank you" or "have a great day"; they can terminate an active quote turn.
+- Streaming response contract: emit the OpenAI assistant role frame
+  immediately. If authoritative controller processing remains pending for
+  1.2 seconds, emit exactly one neutral "One moment. <flush />" acknowledgement.
+  Emit no price, booking, delivery, identity, or address claim until controller
+  completion and the final authoritative-turn check pass.
 - Artifacts: recording, video recording, PCAP, logging, full message history,
   and transcript retention all disabled. Summary, structured-data analysis,
   and success analysis remain disabled.
@@ -164,6 +171,10 @@ changed custom-LLM credential ID or server-event secret fingerprint fails the
 release; credential values must never be printed or persisted as evidence.
 Raw JSON object-key order is not provider drift, but array order, object shape,
 field names, values, and credential fingerprints remain exact.
+
+The outgoing PATCH also includes `endCallPhrases: []`. Vapi may omit an
+empty saved list; post-save verification accepts only omission or an exact
+empty list. Any null or non-empty phrase list fails closed.
 
 The outgoing PATCH includes `autoFallback.enabled: false`. Vapi documents
 automatic fallback as opt-in and may canonicalize a saved false value by

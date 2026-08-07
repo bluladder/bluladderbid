@@ -134,6 +134,7 @@ requireFragments(runbook, "release runbook", [
 
 requireFragments(manifest, "Vapi manifest", [
   '"BluLadder Voice Beta (isolated)"',
+  "endCallPhrases: [],",
   "autoFallback: { enabled: false }",
   'provider: "assembly-ai"',
   'speechModel: "universal-streaming-english"',
@@ -153,6 +154,7 @@ requireFragments(provisioning, "Vapi provisioning runbook", [
   "Operational call metadata may remain",
   "Raw API reconciliation requirement",
   "Transcript artifact delivery = disabled",
+  "Provider end-call phrases = empty",
 ]);
 requireFragments(reconciliation, "Vapi raw reconciliation", [
   "buildVapiAssistantPatch",
@@ -163,6 +165,7 @@ requireFragments(reconciliation, "Vapi raw reconciliation", [
   "serverSecretSha256",
   "assistant.credentialIds must contain saved credential IDs",
   "autoFallback must be absent or explicitly disabled",
+  "endCallPhrases: [...manifest.endCallPhrases]",
 ]);
 
 if (/autoFallback:\s*\{\s*enabled:\s*true\s*\}/.test(manifest)) {

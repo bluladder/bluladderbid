@@ -81,6 +81,8 @@ export interface VoiceBetaManifest {
     voiceSeconds: number;
     backoffSeconds: number;
   };
+  /** Fail-closed: no provider-side phrase may end a call. */
+  endCallPhrases: [];
   // No phone number configuration in this manifest — the isolated test DID is
   // attached in the Vapi dashboard by the owner and never checked into the
   // repository.
@@ -209,6 +211,7 @@ export function buildVoiceBetaAssistantManifest(
       voiceSeconds: 0.2,
       backoffSeconds: 1.0,
     },
+    endCallPhrases: [],
     phoneNumber: null,
     transferDestination: null,
     duration: {
