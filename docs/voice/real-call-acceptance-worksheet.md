@@ -9,7 +9,8 @@ deployment, production-data mutation, a Jobber write, customer communication,
 or live booking.
 
 Scenarios marked `REAL_CALL` may run only after provider configuration,
-isolated-number connectivity, ZDR, endpoint authentication, and no-write
+isolated-number connectivity, the owner-approved lower-cost privacy mode,
+endpoint authentication, and no-write
 preflight all pass. Scenarios marked `OFFLINE_FAULT` must run in an isolated
 test harness unless the authorization explicitly permits a provider-native
 fault simulation that cannot affect customers or create provider writes.
@@ -47,9 +48,9 @@ real-call execution.
 |---|---|---|
 | Authorization explicitly permits the planned real calls | `[ ]` | `[ ]` |
 | Provider account, hosted project, assistant, and build identities match | `[ ]` | `[ ]` |
-| Vapi ZDR is enabled and HIPAA mode is disabled | `[ ]` | `[ ]` |
-| Raw recording, video, packet capture, summary, structured output, and analysis are disabled | `[ ]` | `[ ]` |
-| Transcript delivery, full message history, sanitized logs, tenant linkage, and the 30-day expiry process match the reviewed manifest | `[ ]` | `[ ]` |
+| ZDR and HIPAA are disabled with no billing change | `[ ]` | `[ ]` |
+| Vapi recording, video, PCAP, logging, full message history, transcript retention, summary, structured output, and analysis are disabled | `[ ]` | `[ ]` |
+| Application-owned bounded turns, tenant linkage, and the 30-day expiry process match the reviewed manifest | `[ ]` | `[ ]` |
 | Custom-LLM credential is attached; value was not viewed | `[ ]` | `[ ]` |
 | Server-event credential is attached; value was not viewed | `[ ]` | `[ ]` |
 | Provider tools are empty | `[ ]` | `[ ]` |
@@ -162,7 +163,7 @@ sanitized observations.
 | Provider/business writes | `[must be zero]` |
 | Before/after local row-count evidence | `[required]` |
 | Post-call observation window | `[start/end; minimum authorized wait]` |
-| ZDR and artifact-absence evidence | `[required]` |
+| Provider privacy-mode and artifact-absence evidence | `[required]` |
 | Diagnostic/operator outcome evidence | `[reference]` |
 | Redaction attestation | `[yes / no]` |
 | Stop condition or anomaly | `[none / detail]` |
@@ -235,7 +236,7 @@ Cleanup must preserve evidence and must not mutate provider configuration:
 | No Jobber or booking record was created | `[ ]` | `[ ]` |
 | CallRail routing remains unchanged | `[ ]` | `[ ]` |
 | Oregon remains inactive | `[ ]` | `[ ]` |
-| ZDR/artifact absence remains confirmed | `[ ]` | `[ ]` |
+| Provider privacy mode/artifact absence remains confirmed | `[ ]` | `[ ]` |
 | Final read-only counts captured | `[ ]` | `[ ]` |
 | Evidence redacted and moved to restricted storage | `[ ]` | `[ ]` |
 | Temporary local evidence containing PII does not exist | `[ ]` | `[ ]` |
@@ -259,6 +260,6 @@ Cleanup must preserve evidence and must not mutate provider configuration:
 | Retest authorization required | `[yes / no]` |
 
 Overall `PASS` requires all 15 scenarios, complete no-write evidence, provider
-configuration evidence, isolated-number connectivity, ZDR/artifact absence,
+configuration evidence, isolated-number connectivity, provider privacy-mode/artifact absence,
 operator outcome evidence, and both signoffs. Repository readiness alone is
 not real-call acceptance.

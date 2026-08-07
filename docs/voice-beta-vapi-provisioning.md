@@ -20,32 +20,40 @@ variable stays configured for a later phase and is not used here.
 - Human-transfer destination (Phase 4C-γ, not used yet): `+14692150144`.
 - Retired ResponsiBid: `+14692426556` — must remain retired.
 
-## Provider ZDR and BluLadder transcript retention (mandatory)
+## Owner-approved lower-cost provider privacy mode (mandatory)
 
-Vapi ZDR is an owner-controlled organization setting, not a per-assistant
-field. Do not proceed to live calls until ZDR is confirmed.
+The owner declined Vapi's paid Zero Data Retention add-on. This exception is
+not equivalent to organization-level ZDR and must never be described as ZDR.
+The assistant therefore disables every configurable Vapi call-content
+retention surface while preserving only the reviewed server events needed by
+the application.
 
 1. Sign in to the Vapi organization used for this beta.
 2. Open Organization Settings > Compliance.
-3. Enable Zero Data Retention.
-4. Confirm HIPAA mode is NOT simultaneously enabled.
-5. During the separately authorized controlled-call window, place one short
+3. Confirm Zero Data Retention is disabled and no ZDR billing change was made.
+4. Confirm HIPAA mode is disabled.
+5. Confirm recording, video recording, PCAP, logging, full message history,
+   transcript retention, summary, structured output, and success analysis are
+   all disabled.
+6. Confirm the approved server URL and exact event allowlist remain configured.
+7. During the separately authorized controlled-call window, place one short
    test call.
-6. Open the completed call in the Vapi dashboard and confirm:
+8. Open the completed call in the Vapi dashboard and confirm:
    - Operational metadata (call start/end, duration, status) is visible.
    - Raw audio/video/packet recordings, summary, structured output, and
      analysis are empty or unavailable.
-   - The configured end-of-call transcript/message event was delivered to the
-     BluLadder event URL even though Vapi does not retain the artifact.
-7. If ZDR cannot be enabled on the current plan, stop. Report the plan or
-   account limitation before scheduling any live test. Do not silently accept
-   provider retention.
+   - The configured end-of-call event was delivered to the BluLadder event URL
+     without requiring a Vapi-retained transcript or message history.
+9. Stop if the dashboard or saved assistant re-enables any content-retention
+   surface, silently removes required endpointing, or adds an unreviewed audio
+   processor. Operational call metadata may remain under Vapi's ordinary
+   account policy; do not claim otherwise.
 
 BluLadder stores bounded, sanitized user/assistant turns for 30 days in the
 tenant-scoped canonical conversation journal. Each new voice row carries an
-explicit `retention_expires_at` deadline. Provider transcript delivery must not
-be enabled until the owner has approved and verified the expired-row purge
-procedure described in `docs/voice/issue-72-emergency-repair.md`.
+explicit `retention_expires_at` deadline. Vapi transcript retention must remain
+disabled. The approved expired-row purge procedure is described in
+`docs/voice/issue-72-emergency-repair.md`.
 
 ## Supabase secrets
 
@@ -93,7 +101,8 @@ authoritative source of truth — this list mirrors it for convenience.
   - Fallback: AssemblyAI `universal-streaming-english`, language `en`, the
     exact `keytermsPrompt` list, and VAD-assisted endpointing enabled.
   - Automatic implicit fallback is disabled; only the explicit reviewed
-    fallback is allowed.
+    fallback is allowed. Publication must preserve
+    `vadAssistedEndpointingEnabled: true` on that fallback.
 - Start-speaking/turn detection:
   - `waitSeconds` = 0.4
   - Vapi smart endpointing enabled
@@ -106,6 +115,9 @@ authoritative source of truth — this list mirrors it for convenience.
   - Streaming: enabled.
 - Tools: none. Explicitly clear the tool list — no transfer tool, no callback
   tool, no Jobber tool, no pricing tool, no booking tool.
+- Artifacts: recording, video recording, PCAP, logging, full message history,
+  and transcript retention all disabled. Summary, structured-data analysis,
+  and success analysis remain disabled.
 - No provider phone number pre-selected.
 - Transfer destination: none.
 - Duration:

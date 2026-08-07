@@ -50,7 +50,9 @@ export interface VoiceBetaManifest {
     smartFormat: true;
     keyterm: string[];
     fallbackPlan: {
-      autoFallback: { enabled: true };
+      // Fail closed: implicit fallback could send caller audio to an
+      // unreviewed transcription provider.
+      autoFallback: { enabled: false };
       transcribers: Array<{
         provider: "assembly-ai";
         speechModel: "universal-streaming-english";
@@ -92,9 +94,12 @@ export interface VoiceBetaManifest {
     recordingEnabled: false;
     videoRecordingEnabled: false;
     pcapEnabled: false;
-    loggingEnabled: true;
-    fullMessageHistoryEnabled: true;
-    transcriptPlan: { enabled: true };
+    // The owner declined Vapi's paid ZDR add-on. Disable every configurable
+    // retained call-content surface instead. This is deliberately not
+    // represented as equivalent to organization-level ZDR.
+    loggingEnabled: false;
+    fullMessageHistoryEnabled: false;
+    transcriptPlan: { enabled: false };
   };
   analysisPlan: {
     summaryPlan: { enabled: false };
@@ -171,7 +176,7 @@ export function buildVoiceBetaAssistantManifest(
       smartFormat: true,
       keyterm: [...VOICE_TRANSCRIBER_KEYTERMS],
       fallbackPlan: {
-        autoFallback: { enabled: true },
+        autoFallback: { enabled: false },
         transcribers: [{
           provider: "assembly-ai",
           speechModel: "universal-streaming-english",
@@ -216,9 +221,9 @@ export function buildVoiceBetaAssistantManifest(
       recordingEnabled: false,
       videoRecordingEnabled: false,
       pcapEnabled: false,
-      loggingEnabled: true,
-      fullMessageHistoryEnabled: true,
-      transcriptPlan: { enabled: true },
+      loggingEnabled: false,
+      fullMessageHistoryEnabled: false,
+      transcriptPlan: { enabled: false },
     },
     analysisPlan: {
       summaryPlan: { enabled: false },
