@@ -41,6 +41,7 @@ export interface VoiceBetaManifest {
     // dashboard as a server-side API key; it never appears in this manifest.
     authenticationMode: "bearer-api-key";
     stream: true;
+    timeoutSeconds: 20;
   };
   // No provider tools of any kind in this phase. The orchestrator owns every
   // business decision. Explicit empty list so future edits are deliberate.
@@ -77,7 +78,7 @@ export interface VoiceBetaManifest {
     };
   };
   stopSpeakingPlan: {
-    numWords: 0;
+    numWords: 2;
     voiceSeconds: number;
     backoffSeconds: number;
   };
@@ -171,6 +172,7 @@ export function buildVoiceBetaAssistantManifest(
       url: adapterUrl,
       authenticationMode: "bearer-api-key",
       stream: true,
+      timeoutSeconds: 20,
     },
     tools: [],
     transcriber: {
@@ -207,8 +209,8 @@ export function buildVoiceBetaAssistantManifest(
       },
     },
     stopSpeakingPlan: {
-      numWords: 0,
-      voiceSeconds: 0.2,
+      numWords: 2,
+      voiceSeconds: 0.4,
       backoffSeconds: 1.0,
     },
     endCallPhrases: [],

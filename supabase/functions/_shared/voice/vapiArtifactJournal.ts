@@ -21,6 +21,13 @@ type SB = any;
 
 export const VAPI_ARTIFACT_MAX_MESSAGES = 200;
 export const VAPI_ARTIFACT_RETENTION_DAYS = VOICE_TRANSCRIPT_RETENTION_DAYS;
+const DEFERRED_STREAM_PREFIX = /^\s*one\s+moment\.?(?:\s*<flush\s*\/>)?\s*/i;
+
+/** Remove the one known transport-only prefix before artifact comparison. */
+export function normalizeVapiAssistantArtifactContent(content: string): string {
+  return sanitizeTurnContent(content).replace(DEFERRED_STREAM_PREFIX, "")
+    .trim();
+}
 
 export interface VapiArtifactJournalResult extends VoiceTurnJournalResult {
   status: "persisted" | "duplicate" | "ignored" | "error";
@@ -60,13 +67,14 @@ function turnsFromMessages(messages: unknown[]): VoiceTurn[] {
       : providerRole === "assistant" || providerRole === "bot"
       ? "assistant" as const
       : null;
-    const content = sanitizeTurnContent(
-      typeof row.message === "string"
-        ? row.message
-        : typeof row.content === "string"
-        ? row.content
-        : "",
-    );
+    const rawContent = typeof row.message === "string"
+      ? row.message
+      : typeof row.content === "string"
+      ? row.content
+      : "";
+    const content = role === "assistant"
+      ? normalizeVapiAssistantArtifactContent(rawContent)
+      : sanitizeTurnContent(rawContent);
     if (!role || !content) return [];
     return [{
       role,
@@ -95,12 +103,15 @@ function turnsFromTranscript(body: unknown): VoiceTurn[] {
         /^\s*(user|customer|assistant|bot)\s*:\s*(.+)$/i,
       );
       if (!match) return [];
-      const content = sanitizeTurnContent(match[2]);
+      const role = /user|customer/i.test(match[1])
+        ? "user" as const
+        : "assistant" as const;
+      const content = role === "assistant"
+        ? normalizeVapiAssistantArtifactContent(match[2])
+        : sanitizeTurnContent(match[2]);
       if (!content) return [];
       return [{
-        role: /user|customer/i.test(match[1])
-          ? "user" as const
-          : "assistant" as const,
+        role,
         content,
         providerSequence: index,
       }];

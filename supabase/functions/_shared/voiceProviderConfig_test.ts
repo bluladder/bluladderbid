@@ -102,8 +102,8 @@ Deno.test("manifest: explicit English Nova-3 primary and AssemblyAI fallback", (
   );
   assert(m.startSpeakingPlan.transcriptionEndpointingPlan.onNumberSeconds >= 1);
   assertEquals(m.stopSpeakingPlan, {
-    numWords: 0,
-    voiceSeconds: 0.2,
+    numWords: 2,
+    voiceSeconds: 0.4,
     backoffSeconds: 1,
   });
 });
@@ -121,6 +121,7 @@ Deno.test("manifest: custom-llm model config points at adapter and streams", () 
   assertEquals(m.model.provider, "custom-llm");
   assertEquals(m.model.url, adapterUrl);
   assertEquals(m.model.stream, true);
+  assertEquals(m.model.timeoutSeconds, 20);
 });
 
 Deno.test("manifest: allow-listed server events only", () => {

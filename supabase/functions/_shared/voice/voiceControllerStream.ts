@@ -86,7 +86,7 @@ export function buildControllerStreamResponse(
   let completeSeen = false;
 
   const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    start(controller) {
       const complete = (
         status: "speak" | "suppressed" | "aborted",
       ) => {
@@ -155,72 +155,82 @@ export function buildControllerStreamResponse(
         return;
       }
 
-      let settled = false;
-      const work = options.run().then(
-        (result) => {
-          settled = true;
-          return result;
-        },
-        (): ControllerStreamResult => {
-          settled = true;
-          return { status: "suppressed" };
-        },
-      );
-      const delay = scheduleDelay(Math.max(0, ackDelayMs));
-      await Promise.race([work, delay.promise]);
-      delay.cancel();
+      // Keep start() synchronous. Some Edge transports wait for an async
+      // underlying-source start promise before flushing queued bytes. The
+      // producer therefore runs in a detached, fully caught pump after the
+      // role frame is queued, so the Response and first byte are available
+      // immediately while canonical business content remains gated below.
+      const pump = async () => {
+        let settled = false;
+        const work = options.run().then(
+          (result) => {
+            settled = true;
+            return result;
+          },
+          (): ControllerStreamResult => {
+            settled = true;
+            return { status: "suppressed" };
+          },
+        );
+        const delay = scheduleDelay(Math.max(0, ackDelayMs));
+        await Promise.race([work, delay.promise]);
+        delay.cancel();
 
-      let acknowledgementEmitted = false;
-      if (!settled && !closed) {
-        acknowledgementEmitted = write(frame({
-          content: `${VOICE_STREAM_ACKNOWLEDGEMENT}${VOICE_STREAM_FLUSH_TAG}`,
-        }, null));
-        if (acknowledgementEmitted) {
-          try {
-            options.lifecycle?.onAcknowledgement?.();
-          } catch {
-            // Telemetry must never change streaming.
+        let acknowledgementEmitted = false;
+        if (!settled && !closed) {
+          acknowledgementEmitted = write(frame({
+            content: `${VOICE_STREAM_ACKNOWLEDGEMENT}${VOICE_STREAM_FLUSH_TAG}`,
+          }, null));
+          if (acknowledgementEmitted) {
+            try {
+              options.lifecycle?.onAcknowledgement?.();
+            } catch {
+              // Telemetry must never change streaming.
+            }
           }
         }
-      }
 
-      const result = await work;
-      if (closed) {
-        complete("aborted");
-        return;
-      }
-      if (result.status !== "speak" || !result.spoken.trim()) {
-        complete("suppressed");
-        return;
-      }
+        const result = await work;
+        if (closed) {
+          complete("aborted");
+          return;
+        }
+        if (result.status !== "speak" || !result.spoken.trim()) {
+          complete("suppressed");
+          return;
+        }
 
-      const chunks = splitSpokenChunks(result.spoken, options.chunkChars);
-      for (let index = 0; index < chunks.length; index++) {
-        const needsSpace = acknowledgementEmitted || index > 0;
+        const chunks = splitSpokenChunks(result.spoken, options.chunkChars);
+        for (let index = 0; index < chunks.length; index++) {
+          const needsSpace = acknowledgementEmitted || index > 0;
+          if (
+            !write(frame({
+              content: needsSpace ? ` ${chunks[index]}` : chunks[index],
+            }, null))
+          ) {
+            complete("aborted");
+            return;
+          }
+        }
         if (
-          !write(frame({
-            content: needsSpace ? ` ${chunks[index]}` : chunks[index],
-          }, null))
+          !write(frame({}, "stop", {
+            bluladder: {
+              buildId: options.buildId,
+              action: result.metadata?.action ?? { kind: "speak" },
+              state: result.metadata?.state ?? "workflow_controller",
+              route: result.metadata?.route ?? "controller",
+              ...(result.metadata?.event
+                ? { event: result.metadata.event }
+                : {}),
+            },
+          }))
         ) {
           complete("aborted");
           return;
         }
-      }
-      if (
-        !write(frame({}, "stop", {
-          bluladder: {
-            buildId: options.buildId,
-            action: result.metadata?.action ?? { kind: "speak" },
-            state: result.metadata?.state ?? "workflow_controller",
-            route: result.metadata?.route ?? "controller",
-            ...(result.metadata?.event ? { event: result.metadata.event } : {}),
-          },
-        }))
-      ) {
-        complete("aborted");
-        return;
-      }
-      complete("speak");
+        complete("speak");
+      };
+      void pump().catch(() => complete("suppressed"));
     },
     cancel() {
       closed = true;

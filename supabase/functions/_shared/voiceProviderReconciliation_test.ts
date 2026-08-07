@@ -50,6 +50,12 @@ Deno.test("Vapi reconciliation: builds a bounded patch without credentials or vo
   const patch = buildVapiAssistantPatch(currentAssistant(), manifest);
   assertEquals(patch.name, "BluLadder Voice Beta (isolated)");
   assertEquals(patch.model.tools, []);
+  assertEquals(patch.model.timeoutSeconds, 20);
+  assertEquals(patch.stopSpeakingPlan, {
+    numWords: 2,
+    voiceSeconds: 0.4,
+    backoffSeconds: 1,
+  });
   assertEquals(patch.transcriber, manifest.transcriber);
   assertEquals(patch.serverMessages, [...manifest.serverEvents.events]);
   assertEquals(patch.artifactPlan, manifest.artifactPlan);
@@ -58,6 +64,40 @@ Deno.test("Vapi reconciliation: builds a bounded patch without credentials or vo
   assert(!("server" in patch));
   assert(!("voice" in patch));
   assert(!JSON.stringify(patch).includes("present-but-never-logged"));
+});
+
+Deno.test("Vapi reconciliation: interruption and timeout drift fail closed", async () => {
+  const current = currentAssistant();
+  const authority = await fingerprintVapiAssistantAuthority(current, manifest);
+  const patch = buildVapiAssistantPatch(current, manifest);
+  const interruptionIssues = await verifyVapiAssistantSnapshot(
+    {
+      ...current,
+      ...patch,
+      stopSpeakingPlan: {
+        numWords: 0,
+        voiceSeconds: 0.2,
+        backoffSeconds: 1,
+      },
+    },
+    manifest,
+    authority,
+  );
+  assert(
+    interruptionIssues.some((issue) => issue.startsWith("stopSpeakingPlan")),
+  );
+  const timeoutIssues = await verifyVapiAssistantSnapshot(
+    {
+      ...current,
+      ...patch,
+      model: { ...patch.model, timeoutSeconds: null },
+    },
+    manifest,
+    authority,
+  );
+  assert(
+    timeoutIssues.some((issue) => issue.startsWith("model.timeoutSeconds")),
+  );
 });
 
 Deno.test("Vapi reconciliation: rejects missing credential or server authority", () => {

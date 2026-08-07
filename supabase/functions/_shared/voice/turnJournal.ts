@@ -58,6 +58,37 @@ export interface VoiceTurn {
   providerSequence?: number | null;
 }
 
+export interface VoiceControllerJournalMessage {
+  role: string;
+  content: string;
+}
+
+export async function buildControllerTurnJournalIdentity(args: {
+  callId: string;
+  messages: VoiceControllerJournalMessage[];
+}): Promise<string> {
+  const nonSystem = args.messages.filter((message) =>
+    message.role !== "system" && message.role !== "tool"
+  );
+  let lastUserIndex = -1;
+  for (let index = nonSystem.length - 1; index >= 0; index--) {
+    if (nonSystem[index].role === "user") {
+      lastUserIndex = index;
+      break;
+    }
+  }
+  const userMessage = lastUserIndex >= 0
+    ? nonSystem[lastUserIndex].content
+    : "";
+  return await deterministicUuid(
+    "voice-controller-request",
+    args.callId,
+    String(nonSystem.length),
+    String(lastUserIndex),
+    userMessage,
+  );
+}
+
 export type VoiceTurnJournalSource = "controller" | "legacy" | "end_of_call";
 
 export function buildTurnRows(args: {
@@ -99,6 +130,9 @@ export async function buildIdempotentTurnRows(args: {
   state?: string | null;
   source: VoiceTurnJournalSource;
   retentionExpiresAt?: string | null;
+  turnId?: string | null;
+  turnPosition?: number | null;
+  contentHash?: string | null;
   turns: VoiceTurn[];
 }): Promise<Record<string, unknown>[]> {
   const base = buildTurnRows(args);
@@ -115,6 +149,11 @@ export async function buildIdempotentTurnRows(args: {
     ai_metadata: {
       ...(row.ai_metadata as Record<string, unknown>),
       turn_identity: args.turnIdentity,
+      ...(args.turnId ? { turn_id: args.turnId } : {}),
+      ...(args.turnPosition !== null && args.turnPosition !== undefined
+        ? { turn_position: args.turnPosition }
+        : {}),
+      ...(args.contentHash ? { content_hash: args.contentHash } : {}),
     },
   })));
 }
@@ -143,6 +182,10 @@ export async function recordVoiceTurns(
     turnIdentity?: string | null;
     /** Documented retention deadline for provider-derived artifacts. */
     retentionExpiresAt?: string | null;
+    /** Exact single-flight lineage used only for completed-turn replay. */
+    turnId?: string | null;
+    turnPosition?: number | null;
+    contentHash?: string | null;
     turns: VoiceTurn[];
   },
 ): Promise<VoiceTurnJournalResult> {
@@ -155,6 +198,9 @@ export async function recordVoiceTurns(
       state: args.state,
       source: args.source ?? "controller",
       retentionExpiresAt: args.retentionExpiresAt,
+      turnId: args.turnId,
+      turnPosition: args.turnPosition,
+      contentHash: args.contentHash,
       turns: args.turns,
     })
     : buildTurnRows(args);
@@ -232,5 +278,100 @@ export async function recordVoiceTurns(
       failed: rows.length,
       reason: "journal_write_failed",
     };
+  }
+}
+
+export type VoiceTurnReplayRead =
+  | { status: "found"; spoken: string }
+  | {
+    status: "unavailable";
+    reason:
+      | "conversation_unavailable"
+      | "conversation_ambiguous"
+      | "reply_missing"
+      | "reply_lineage_mismatch";
+  };
+
+/**
+ * Read the one canonical controller reply for an exact completed turn.
+ * This performs no writes and never falls back to provider artifacts.
+ */
+export async function readReplayableControllerReply(
+  supabase: SB,
+  args: {
+    organizationId: string;
+    sessionToken: string;
+    turnId: string;
+    turnPosition: number;
+    contentHash: string;
+    messages: VoiceControllerJournalMessage[];
+  },
+): Promise<VoiceTurnReplayRead> {
+  try {
+    const conversationRead = await supabase
+      .from("chat_conversations")
+      .select("id, organization_id, session_token, channel")
+      .eq("organization_id", args.organizationId)
+      .eq("session_token", args.sessionToken)
+      .eq("channel", "voice")
+      .limit(2);
+    if (conversationRead?.error) {
+      return { status: "unavailable", reason: "conversation_unavailable" };
+    }
+    const conversations = Array.isArray(conversationRead?.data)
+      ? conversationRead.data
+      : [];
+    if (conversations.length !== 1) {
+      return {
+        status: "unavailable",
+        reason: conversations.length > 1
+          ? "conversation_ambiguous"
+          : "conversation_unavailable",
+      };
+    }
+    const conversationId = String(conversations[0].id ?? "");
+    if (!conversationId) {
+      return { status: "unavailable", reason: "conversation_unavailable" };
+    }
+    const turnIdentity = await buildControllerTurnJournalIdentity({
+      callId: args.sessionToken,
+      messages: args.messages,
+    });
+    const assistantRowId = await deterministicUuid(
+      "voice-turn-journal",
+      conversationId,
+      args.sessionToken,
+      turnIdentity,
+      "1",
+      "assistant",
+    );
+    const replyRead = await supabase.from("chat_messages")
+      .select("id, conversation_id, role, content, ai_metadata")
+      .eq("id", assistantRowId)
+      .eq("conversation_id", conversationId)
+      .maybeSingle();
+    if (replyRead?.error || !replyRead?.data) {
+      return { status: "unavailable", reason: "reply_missing" };
+    }
+    const row = replyRead.data as Record<string, unknown>;
+    const metadata = row.ai_metadata && typeof row.ai_metadata === "object"
+      ? row.ai_metadata as Record<string, unknown>
+      : {};
+    const spoken = sanitizeTurnContent(String(row.content ?? ""));
+    if (
+      row.role !== "assistant" || !spoken ||
+      metadata.channel !== "voice" ||
+      metadata.source !== "controller" ||
+      metadata.provider_call_id !== args.sessionToken ||
+      metadata.turn_identity !== turnIdentity ||
+      metadata.turn_id !== args.turnId ||
+      metadata.turn_position !== args.turnPosition ||
+      metadata.content_hash !== args.contentHash
+    ) {
+      return { status: "unavailable", reason: "reply_lineage_mismatch" };
+    }
+    return { status: "found", spoken };
+  } catch {
+    return { status: "unavailable", reason: "conversation_unavailable" };
   }
 }

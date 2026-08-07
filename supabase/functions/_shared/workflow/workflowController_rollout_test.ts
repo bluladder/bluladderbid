@@ -5,6 +5,7 @@
 
 import {
   assertEquals,
+  assertNotEquals,
   assertRejects,
   assertStringIncludes,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
@@ -522,6 +523,41 @@ Deno.test("phase3 schedule classifiers are clause-local, note-safe, and rejectio
       operationalOnly,
     );
   }
+});
+
+Deno.test("post-price ambiguity asks a distinct bounded clarification", async () => {
+  const sb = await createFirmWindowQuote();
+  const providerCalls: string[] = [];
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes that sounds good",
+    history: [],
+    runTool: ((name: string) => {
+      providerCalls.push(name);
+      return Promise.resolve({});
+    }) as any,
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") {
+    assertEquals(turn.pre.action.kind, "answer_side_question");
+    assertEquals(
+      turn.pre.spoken,
+      "Just to make sure I heard you: should I text the written quote, or check appointment times?",
+    );
+    assertNotEquals(
+      turn.pre.spoken,
+      "Would you like the quote texted, or would you like to continue toward scheduling?",
+      "the ambiguity reply must not repeat the previous prompt",
+    );
+  }
+  assertEquals(
+    (turn.sessionPatch.fields as QuoteSessionFields | undefined)?.voiceJourney
+      ?.requestedNextStep ?? "none",
+    "none",
+  );
+  assertEquals(providerCalls, []);
 });
 
 Deno.test("caller-ID confirmation: captures contact phone without verifying identity", async () => {

@@ -129,9 +129,14 @@ function isShortQuoteTextEcho(clause: string): boolean {
     .test(clause.trim());
 }
 
+function isShortWrittenQuoteChoice(clause: string): boolean {
+  return /^(?:please\s+)?(?:the\s+)?written\s+(?:quote|estimate|price)(?:\s+please)?[.!]?$/i
+    .test(clause.trim());
+}
+
 function hasQuoteTextContext(clause: string): boolean {
   return QUOTE_TEXT_NOUN.test(clause) || QUOTE_TEXT_PRONOUN.test(clause) ||
-    isShortQuoteTextEcho(clause);
+    isShortQuoteTextEcho(clause) || isShortWrittenQuoteChoice(clause);
 }
 
 function clauseRejectsQuoteText(clause: string): boolean {
@@ -172,7 +177,10 @@ function clauseRejectsQuoteText(clause: string): boolean {
 }
 
 function clauseRequestsQuoteText(clause: string): boolean {
-  if (!QUOTE_TEXT_DELIVERY.test(clause)) return false;
+  if (
+    !QUOTE_TEXT_DELIVERY.test(clause) &&
+    !isShortWrittenQuoteChoice(clause)
+  ) return false;
   if (
     /^\s*(?:(?:did|have|has|had|was|were|are)\s+(?:you|we|they)\b|(?:is|was|are|were)\s+(?:the\s+|my\s+)?(?:quote|price|estimate|bid|total)\b)/i
       .test(clause)

@@ -187,6 +187,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/voiceTurnCoordinator_test.ts",
   "supabase/functions/_shared/voice/voiceTurnLatency.ts",
   "supabase/functions/_shared/voice/voiceTurnLatency_test.ts",
+  "supabase/functions/_shared/voice/voiceTurnReplay.ts",
+  "supabase/functions/_shared/voice/voiceTurnReplay_test.ts",
   "supabase/functions/_shared/voice/voiceDeliveryState.ts",
   "supabase/functions/_shared/voiceAdapter.ts",
   "supabase/functions/_shared/voiceAdapter_streaming_test.ts",

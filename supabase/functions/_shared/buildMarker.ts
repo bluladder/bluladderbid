@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.9-deferred-sse";
+export const BUILD_ID = "voice-adapter-4C-b.6.10-retry-resume";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -55,4 +55,10 @@ export const BUILD_FEATURES = {
   voiceControllerDeferredSse: true,
   voiceControllerBoundedFlushAcknowledgement: true,
   voiceProviderEndCallPhrasesDisabled: true,
+  // 6.10 — the stream producer no longer exposes an async start barrier;
+  // exact completed-turn retries may replay only their durable canonical
+  // reply, and provider interruption thresholds reject incidental audio.
+  voiceControllerSynchronousStreamStart: true,
+  voiceCompletedTurnReplay: true,
+  voiceProviderBoundedInterruption: true,
 } as const;
