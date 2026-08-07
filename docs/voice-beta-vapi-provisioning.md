@@ -93,7 +93,8 @@ Create a new Inbound Assistant using the values described in
 `supabase/functions/_shared/voiceProviderConfig.ts`. The manifest is the
 authoritative source of truth — this list mirrors it for convenience.
 
-- Name: `BluLadder Voice Beta (isolated direct-DID test)`.
+- Name: `BluLadder Voice Beta (isolated)` (31 characters; Vapi's current
+  assistant-name limit is 40).
 - Language: English only.
 - Transcriber:
   - Primary: Deepgram `nova-3`, language `en`, smart formatting enabled, and
@@ -136,9 +137,9 @@ authoritative source of truth — this list mirrors it for convenience.
   - `recordingEnabled` = false
   - `videoRecordingEnabled` = false
   - `pcapEnabled` = false
-  - `loggingEnabled` = true
-  - `fullMessageHistoryEnabled` = true
-  - Transcript artifact delivery = enabled
+  - `loggingEnabled` = false
+  - `fullMessageHistoryEnabled` = false
+  - Transcript artifact delivery = disabled
   - Summary generation = disabled
   - Structured output = disabled
   - Analysis = disabled
@@ -148,6 +149,21 @@ authoritative source of truth — this list mirrors it for convenience.
     `end-of-call-report`. Do not subscribe to `tool-calls`,
     `transfer-destination-request`, or `handoff-destination-request`.
 
+### Raw API reconciliation requirement
+
+The Vapi CLI v0.2.1 typed assistant output is not release evidence because it
+omits fields required by this manifest. Reconciliation must use the raw
+`GET /assistant/:id` REST response and the bounded patch/verification helpers in
+`voiceProviderReconciliation.ts`. Never print the raw response because it may
+contain credential IDs or server-header values.
+
+The outgoing PATCH includes `autoFallback.enabled: false`. Vapi documents
+automatic fallback as opt-in and may canonicalize a saved false value by
+omitting `autoFallback` from the raw response. Post-save verification accepts
+only an omitted object or explicit false; explicit true always fails. Every
+artifact field, manual fallback field, tool list, hook, endpointing value, and
+server event must still be returned and verified exactly.
+
 ## Isolated test phone number
 
 1. Purchase or reserve one US Vapi test number. Do not use CallRail.
@@ -156,8 +172,9 @@ authoritative source of truth — this list mirrors it for convenience.
 4. Confirm no transfer destination is configured.
 5. Confirm `maxDurationSeconds` reads 900 and both time-elapsed hooks are
    present with the exact copy above.
-6. Confirm raw recording/video/packet capture is disabled and the reviewed
-   transcript/full-message/end-of-call artifact settings are enabled.
+6. Confirm recording, video, packet capture, logging, transcript retention,
+   and full message history are disabled. Confirm only the reviewed
+   end-of-call server event remains enabled.
 
 ## Direct-DID test order
 

@@ -13,6 +13,8 @@ const ciPath = ".github/workflows/ci.yml";
 const manifestPath =
   "supabase/functions/_shared/voiceProviderConfig.ts";
 const provisioningPath = "docs/voice-beta-vapi-provisioning.md";
+const reconciliationPath =
+  "supabase/functions/_shared/voiceProviderReconciliation.ts";
 
 const migration = fs.readFileSync(migrationPath, "utf8");
 const rehearsal = fs.readFileSync(rehearsalPath, "utf8");
@@ -23,6 +25,7 @@ const stage7bChecker = fs.readFileSync(stage7bCheckerPath, "utf8");
 const ci = fs.readFileSync(ciPath, "utf8");
 const manifest = fs.readFileSync(manifestPath, "utf8");
 const provisioning = fs.readFileSync(provisioningPath, "utf8");
+const reconciliation = fs.readFileSync(reconciliationPath, "utf8");
 
 function fail(message) {
   throw new Error(`Voice artifact retention contract: ${message}`);
@@ -130,6 +133,7 @@ requireFragments(runbook, "release runbook", [
 ]);
 
 requireFragments(manifest, "Vapi manifest", [
+  '"BluLadder Voice Beta (isolated)"',
   "autoFallback: { enabled: false }",
   'provider: "assembly-ai"',
   'speechModel: "universal-streaming-english"',
@@ -147,10 +151,25 @@ requireFragments(provisioning, "Vapi provisioning runbook", [
   "Automatic implicit fallback is disabled",
   "vadAssistedEndpointingEnabled: true",
   "Operational call metadata may remain",
+  "Raw API reconciliation requirement",
+  "Transcript artifact delivery = disabled",
+]);
+requireFragments(reconciliation, "Vapi raw reconciliation", [
+  "buildVapiAssistantPatch",
+  "verifyVapiAssistantSnapshot",
+  "assistant.credentialIds must contain saved credential IDs",
+  "autoFallback must be absent or explicitly disabled",
 ]);
 
 if (/autoFallback:\s*\{\s*enabled:\s*true\s*\}/.test(manifest)) {
   fail("Vapi manifest enables unreviewed automatic transcriber fallback");
+}
+if (
+  /`loggingEnabled`\s*=\s*true|`fullMessageHistoryEnabled`\s*=\s*true|Transcript artifact delivery\s*=\s*enabled/.test(
+    provisioning,
+  )
+) {
+  fail("Vapi provisioning runbook contains a retained-content contradiction");
 }
 
 requireFragments(preflight, "hosted preflight", [

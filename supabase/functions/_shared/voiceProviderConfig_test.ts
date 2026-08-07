@@ -5,6 +5,7 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildVoiceBetaAssistantManifest,
+  VOICE_BETA_ASSISTANT_NAME,
   VOICE_BETA_CUTOFF_MESSAGE,
   VOICE_BETA_MAX_DURATION_SECONDS,
   VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS,
@@ -17,6 +18,13 @@ import {
 const adapterUrl = "https://example.supabase.co/functions/v1/voice-llm-adapter";
 const serverEventsUrl =
   "https://example.supabase.co/functions/v1/voice-vapi-events";
+
+Deno.test("manifest: assistant name is exact and accepted by Vapi", () => {
+  const m = buildVoiceBetaAssistantManifest({ adapterUrl, serverEventsUrl });
+  assertEquals(m.name, VOICE_BETA_ASSISTANT_NAME);
+  assertEquals(m.name, "BluLadder Voice Beta (isolated)");
+  assert(m.name.length <= 40);
+});
 
 Deno.test("manifest: exact duration and hook copy", () => {
   const m = buildVoiceBetaAssistantManifest({ adapterUrl, serverEventsUrl });

@@ -26,6 +26,8 @@ export const VOICE_BETA_CUTOFF_MESSAGE =
 
 export const VOICE_BETA_MAX_DURATION_SECONDS = 900;
 export const VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS = [780, 870] as const;
+/** Vapi limits assistant names to 40 characters. */
+export const VOICE_BETA_ASSISTANT_NAME = "BluLadder Voice Beta (isolated)";
 
 export interface VoiceBetaManifest {
   name: string;
@@ -158,7 +160,7 @@ export function buildVoiceBetaAssistantManifest(
     throw new Error("serverEventsUrl must be an https URL");
   }
   return {
-    name: "BluLadder Voice Beta (isolated direct-DID test)",
+    name: VOICE_BETA_ASSISTANT_NAME,
     isolated: true,
     inboundOnly: true,
     language: "en",
