@@ -31,6 +31,7 @@ export interface ControllerStreamOptions {
   run: () => Promise<ControllerStreamResult>;
   ackDelayMs?: number;
   chunkChars?: number;
+  headers?: HeadersInit;
   lifecycle?: ControllerStreamLifecycle;
   scheduleDelay?: (ms: number) => {
     promise: Promise<void>;
@@ -229,6 +230,7 @@ export function buildControllerStreamResponse(
   return new Response(body, {
     status: 200,
     headers: {
+      ...Object.fromEntries(new Headers(options.headers).entries()),
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       "Connection": "keep-alive",
