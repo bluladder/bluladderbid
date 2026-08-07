@@ -119,6 +119,7 @@ if (unexpectedMigrationPaths.length) {
 const allowedEdgePaths = new Set([
   "supabase/functions/_shared/aiOrchestrator.ts",
   "supabase/functions/_shared/buildMarker.ts",
+  "supabase/functions/_shared/buildMarker_test.ts",
   "supabase/functions/_shared/aiTools.ts",
   "supabase/functions/_shared/availabilityLookup.ts",
   "supabase/functions/_shared/availabilityLookup_test.ts",
