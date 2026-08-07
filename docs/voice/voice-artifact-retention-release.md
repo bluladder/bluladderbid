@@ -221,9 +221,11 @@ isolated assistant to `buildVoiceBetaAssistantManifest()` in
 
 - Use the raw Vapi REST assistant response. The v0.2.1 CLI typed projection is
   insufficient because it omits release-critical fields.
-- Build the bounded outgoing payload with `buildVapiAssistantPatch()` and
-  verify the raw saved response with `verifyVapiAssistantSnapshot()`. Do not
-  print raw credential IDs or server-header values.
+- Capture a separately approved non-secret credential fingerprint with
+  `fingerprintVapiAssistantAuthority()`, build the bounded outgoing payload
+  with `buildVapiAssistantPatch()`, and pass that fingerprint to
+  `verifyVapiAssistantSnapshot()` when verifying the raw saved response. Do
+  not print raw credential IDs or server-header values.
 
 - Language: English (`en`).
 - Primary transcriber: Deepgram **Nova-3**, English, smart formatting enabled.

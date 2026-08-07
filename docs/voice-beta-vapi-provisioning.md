@@ -157,6 +157,14 @@ omits fields required by this manifest. Reconciliation must use the raw
 `voiceProviderReconciliation.ts`. Never print the raw response because it may
 contain credential IDs or server-header values.
 
+Before publication, capture a separately approved non-secret credential
+fingerprint with `fingerprintVapiAssistantAuthority()`. Supply that fingerprint
+to `verifyVapiAssistantSnapshot()` after publication. A missing, malformed, or
+changed custom-LLM credential ID or server-event secret fingerprint fails the
+release; credential values must never be printed or persisted as evidence.
+Raw JSON object-key order is not provider drift, but array order, object shape,
+field names, values, and credential fingerprints remain exact.
+
 The outgoing PATCH includes `autoFallback.enabled: false`. Vapi documents
 automatic fallback as opt-in and may canonicalize a saved false value by
 omitting `autoFallback` from the raw response. Post-save verification accepts

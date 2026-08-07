@@ -156,7 +156,11 @@ requireFragments(provisioning, "Vapi provisioning runbook", [
 ]);
 requireFragments(reconciliation, "Vapi raw reconciliation", [
   "buildVapiAssistantPatch",
+  "fingerprintVapiAssistantAuthority",
   "verifyVapiAssistantSnapshot",
+  "jsonSemanticallyEqual",
+  "credentialIdsSha256",
+  "serverSecretSha256",
   "assistant.credentialIds must contain saved credential IDs",
   "autoFallback must be absent or explicitly disabled",
 ]);
