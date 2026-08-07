@@ -704,9 +704,7 @@ Deno.serve(async (req) => {
         onComplete: (status) => {
           emitVoiceTurnLatency(latency.finish({
             route: "controller",
-            outcome: status === "speak"
-              ? "responded"
-              : "uncertain_suppressed",
+            outcome: status === "speak" ? "responded" : "uncertain_suppressed",
           }));
         },
       },
