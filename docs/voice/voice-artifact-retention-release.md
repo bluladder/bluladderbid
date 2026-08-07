@@ -219,6 +219,12 @@ Only after a separately approved provider-configuration window, reconcile the
 isolated assistant to `buildVoiceBetaAssistantManifest()` in
 `supabase/functions/_shared/voiceProviderConfig.ts`:
 
+- Use the raw Vapi REST assistant response. The v0.2.1 CLI typed projection is
+  insufficient because it omits release-critical fields.
+- Build the bounded outgoing payload with `buildVapiAssistantPatch()` and
+  verify the raw saved response with `verifyVapiAssistantSnapshot()`. Do not
+  print raw credential IDs or server-header values.
+
 - Language: English (`en`).
 - Primary transcriber: Deepgram **Nova-3**, English, smart formatting enabled.
 - Approved keyterms, exactly and in order: `BluLadder`, `McKinney`, `Frisco`,
@@ -227,7 +233,8 @@ isolated assistant to `buildVoiceBetaAssistantManifest()` in
   `house washing`, `pressure washing`, `solar screens`.
 - Explicit fallback: AssemblyAI Universal Streaming English with the same
   keyterm prompt and VAD-assisted endpointing enabled; implicit automatic
-  fallback disabled.
+  fallback disabled. Vapi may omit an opt-in `autoFallback` object when false;
+  omission or explicit false passes, while explicit true always fails.
 - Start speaking wait: 0.4 seconds; Vapi smart endpointing enabled; punctuation
   wait 0.3 seconds; no-punctuation wait 1.2 seconds; spoken-number wait 1.0
   second.
@@ -246,10 +253,11 @@ isolated assistant to `buildVoiceBetaAssistantManifest()` in
 - Tools and transfer destination: none.
 - Maximum duration and warning/cutoff copy: unchanged from the manifest.
 
-Verify dashboard values without copying secrets, contact data, or transcripts
-into release evidence. The owner declined the paid ZDR add-on; do not represent
-this configuration as ZDR. Stop if Vapi cannot match the reviewed manifest,
-adds an unreviewed transcriber path, or removes required VAD-assisted
+Verify the raw saved API values without copying secrets, contact data, or
+transcripts into release evidence. The dashboard is a secondary visual check,
+not the authoritative serializer. The owner declined the paid ZDR add-on; do
+not represent this configuration as ZDR. Stop if Vapi cannot match the reviewed
+manifest, adds an unreviewed transcriber path, or removes required VAD-assisted
 endpointing from the explicit fallback.
 
 ### 7. Authorize and run one controlled paid call

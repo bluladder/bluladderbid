@@ -194,6 +194,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voiceLiveBooking_test.ts",
   "supabase/functions/_shared/voiceProviderConfig.ts",
   "supabase/functions/_shared/voiceProviderConfig_test.ts",
+  "supabase/functions/_shared/voiceProviderReconciliation.ts",
+  "supabase/functions/_shared/voiceProviderReconciliation_test.ts",
   "supabase/functions/_shared/workflow/customerResolver.ts",
   "supabase/functions/_shared/workflow/customerResolver_test.ts",
   "supabase/functions/_shared/workflow/workflowController.ts",
