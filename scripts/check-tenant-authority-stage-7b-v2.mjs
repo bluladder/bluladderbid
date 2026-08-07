@@ -118,6 +118,7 @@ if (unexpectedMigrationPaths.length) {
 
 const allowedEdgePaths = new Set([
   "supabase/functions/_shared/aiOrchestrator.ts",
+  "supabase/functions/_shared/buildMarker.ts",
   "supabase/functions/_shared/aiTools.ts",
   "supabase/functions/_shared/availabilityLookup.ts",
   "supabase/functions/_shared/availabilityLookup_test.ts",
@@ -149,6 +150,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/supabaseOrganizationAuthority_test.ts",
   "supabase/functions/_shared/voice/controllerRoute.ts",
   "supabase/functions/_shared/voice/controllerRoute_test.ts",
+  "supabase/functions/_shared/voice/voiceControllerStream.ts",
+  "supabase/functions/_shared/voice/voiceControllerStream_test.ts",
   "supabase/functions/_shared/voice/hangupBidLinkFollowup.ts",
   "supabase/functions/_shared/voice/hangupBidLinkFollowup_test.ts",
   "supabase/functions/_shared/voice/postCallOperationalNote.ts",
@@ -194,6 +197,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voiceLiveBooking_test.ts",
   "supabase/functions/_shared/voiceProviderConfig.ts",
   "supabase/functions/_shared/voiceProviderConfig_test.ts",
+  "supabase/functions/_shared/voiceProviderEndCallPhrases_test.ts",
   "supabase/functions/_shared/voiceProviderReconciliation.ts",
   "supabase/functions/_shared/voiceProviderReconciliation_test.ts",
   "supabase/functions/_shared/workflow/customerResolver.ts",
