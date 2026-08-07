@@ -8,7 +8,6 @@ import {
   VOICE_STREAM_FLUSH_TAG,
 } from "./voiceControllerStream.ts";
 
-
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
