@@ -1,0 +1,37 @@
+name: Product design governance
+
+on:
+  pull_request:
+    paths:
+      - ".codex/agents/**"
+      - ".agents/skills/**"
+      - "docs/design-system/**"
+      - "scripts/check-product-design-governance.mjs"
+      - "AGENTS.md"
+      - "package.json"
+      - ".github/workflows/product-design-governance.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".codex/agents/**"
+      - ".agents/skills/**"
+      - "docs/design-system/**"
+      - "scripts/check-product-design-governance.mjs"
+      - "AGENTS.md"
+      - "package.json"
+      - ".github/workflows/product-design-governance.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-product-design-governance.mjs

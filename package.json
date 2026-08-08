@@ -36,7 +36,8 @@
     "launch:readiness": "node scripts/check-launch-readiness.mjs",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:design-governance": "node scripts/check-product-design-governance.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
