@@ -179,6 +179,94 @@ Deno.test("unknown and incomplete locations never fall back to DFW", () => {
   );
 });
 
+Deno.test("Phase 0A Oregon Klamath/Lake planning rules remain inactive", () => {
+  const klamathFalls: RoutingLocation = {
+    countryCode: "US",
+    stateCode: "OR",
+    county: "Klamath",
+    city: "Klamath Falls",
+    postalCode: "97601",
+  };
+  const lakeview: RoutingLocation = {
+    countryCode: "US",
+    stateCode: "OR",
+    county: "Lake",
+    city: "Lakeview",
+    postalCode: "97630",
+  };
+  const oregonPlanningRules = [
+    rule({
+      id: "oregon-klamath-planning",
+      name: "Klamath County planning fixture",
+      organizationId: OREGON_TEST_ORGANIZATION_ID,
+      organizationStatus: "provisioning",
+      county: "Klamath",
+      status: "inactive",
+    }),
+    rule({
+      id: "oregon-lake-planning",
+      name: "Lake County planning fixture",
+      organizationId: OREGON_TEST_ORGANIZATION_ID,
+      organizationStatus: "provisioning",
+      county: "Lake",
+      status: "inactive",
+    }),
+  ];
+
+  assertEquals(routeOrganizationByTerritory(klamathFalls, oregonPlanningRules), {
+    status: "manual_review",
+    reason: "unknown_territory",
+    candidateOrganizationIds: [],
+  });
+  assertEquals(routeOrganizationByTerritory(lakeview, oregonPlanningRules), {
+    status: "manual_review",
+    reason: "unknown_territory",
+    candidateOrganizationIds: [],
+  });
+});
+
+Deno.test("Phase 0A commercial and storefront Oregon services stay manual review", () => {
+  const rules = [
+    {
+      organizationId: OREGON_TEST_ORGANIZATION_ID,
+      serviceKey: "commercial_services",
+      availability: "manual_review" as const,
+      status: "active" as const,
+      reason: "oregon_commercial_requires_manual_review",
+    },
+    {
+      organizationId: OREGON_TEST_ORGANIZATION_ID,
+      serviceKey: "storefront_window_cleaning",
+      availability: "manual_review" as const,
+      status: "active" as const,
+      reason: "oregon_storefront_requires_manual_review",
+    },
+  ];
+
+  assertEquals(
+    resolveServiceAvailability(
+      OREGON_TEST_ORGANIZATION_ID,
+      "commercial_services",
+      rules,
+    ),
+    {
+      status: "manual_review",
+      reason: "oregon_commercial_requires_manual_review",
+    },
+  );
+  assertEquals(
+    resolveServiceAvailability(
+      OREGON_TEST_ORGANIZATION_ID,
+      "storefront_window_cleaning",
+      rules,
+    ),
+    {
+      status: "manual_review",
+      reason: "oregon_storefront_requires_manual_review",
+    },
+  );
+});
+
 Deno.test("service availability is organization-specific and fails closed", () => {
   const rules = [{
     organizationId: DFW_ORGANIZATION_ID,

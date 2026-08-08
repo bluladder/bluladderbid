@@ -47,6 +47,46 @@ Deno.test("connector selection is organization-isolated with no DFW fallback", (
   );
 });
 
+Deno.test("Oregon JobTread remains unsupported without validated capabilities", () => {
+  assertEquals(
+    selectOrganizationConnector(OREGON, "booking_create", [
+      config({
+        id: "oregon-jobtread-planning",
+        organizationId: OREGON,
+        kind: "jobtread",
+        capabilities: ["health"],
+        credentialReference: null,
+      }),
+      config(),
+    ]),
+    {
+      status: "manual_review",
+      code: "capability_unsupported",
+      candidateConnectorIds: ["oregon-jobtread-planning"],
+    },
+  );
+});
+
+Deno.test("Oregon never falls back to DFW Jobber when JobTread lacks credentials", () => {
+  assertEquals(
+    selectOrganizationConnector(OREGON, "booking_create", [
+      config({
+        id: "oregon-jobtread-planning",
+        organizationId: OREGON,
+        kind: "jobtread",
+        capabilities: ["booking_create"],
+        credentialReference: null,
+      }),
+      config(),
+    ]),
+    {
+      status: "manual_review",
+      code: "credential_reference_missing",
+      candidateConnectorIds: ["oregon-jobtread-planning"],
+    },
+  );
+});
+
 Deno.test("connector selection requires active configuration", () => {
   assertEquals(
     selectOrganizationConnector(DFW, "booking_create", [
