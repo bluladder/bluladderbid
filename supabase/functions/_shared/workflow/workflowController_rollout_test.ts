@@ -56,6 +56,7 @@ function makeFake(opts: {
       required_remaining: [],
       quote_status: "none",
       booking_ready: false,
+      phone_e164: null,
       organization_id: TEST_ORGANIZATION_ID,
       updated_at: "2026-08-01T12:00:00.000Z",
     } as Row,
@@ -602,10 +603,85 @@ Deno.test("caller-ID confirmation: captures contact phone without verifying iden
     "contact_confirmed",
   );
   assertEquals((sb._state.session.field_status as any).phone, "captured");
+  assertEquals(sb._state.session.phone_e164, "+14697472877");
   assertEquals(
     (sb._state.session.fields as any).returningCustomerId,
     undefined,
   );
+});
+
+Deno.test("caller-ID confirmation accepts the explicitly spoken matching full number once", async () => {
+  const sb = makeFake();
+  sb._state.session.quote_status = "firm";
+  sb._state.session.fields = {
+    callerIdConfirmationStatus: "pending",
+    callerIdProposedE164: "+14697472877",
+    voiceJourney: { intent: "new_quote", requestedNextStep: "text_quote" },
+  };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "469 747 2877",
+    history: [],
+    callerIdE164: "+14697472877",
+  });
+  await persistControllerPatch(sb, "qs_1", turn.sessionPatch);
+  assertEquals((sb._state.session.fields as any).phone, "+14697472877");
+  assertEquals(
+    (sb._state.session.fields as any).callerIdConfirmationStatus,
+    "contact_confirmed",
+  );
+  assertEquals(sb._state.session.phone_e164, "+14697472877");
+  assertEquals(
+    (sb._state.session.fields as any).returningCustomerId,
+    undefined,
+  );
+});
+
+Deno.test("a different spoken number remains untrusted until its last-four confirmation", async () => {
+  const sb = makeFake();
+  sb._state.session.quote_status = "firm";
+  sb._state.session.fields = {
+    callerIdConfirmationStatus: "pending",
+    callerIdProposedE164: "+14697472877",
+    voiceJourney: { intent: "new_quote", requestedNextStep: "text_quote" },
+  };
+  const candidate = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "469 555 1212",
+    history: [],
+    callerIdE164: "+14697472877",
+  });
+  assertEquals(candidate.pre.kind, "fsm");
+  assertEquals(
+    candidate.pre.spoken,
+    "I have the mobile number ending in 1212. Is that right?",
+  );
+  await persistControllerPatch(sb, "qs_1", candidate.sessionPatch);
+  assertEquals((sb._state.session.fields as any).phone, "+14695551212");
+  assertEquals(
+    (sb._state.session.fields as any).callerIdConfirmationStatus,
+    "manual_pending",
+  );
+  assertEquals(sb._state.session.phone_e164, null);
+
+  const confirmed = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yes",
+    history: [],
+    callerIdE164: "+14697472877",
+  });
+  await persistControllerPatch(sb, "qs_1", confirmed.sessionPatch);
+  assertEquals(
+    (sb._state.session.fields as any).callerIdConfirmationStatus,
+    "contact_confirmed",
+  );
+  assertEquals(sb._state.session.phone_e164, "+14695551212");
 });
 
 Deno.test("spoofed ANI cannot disclose or link a returning customer", async () => {

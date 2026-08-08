@@ -43,9 +43,9 @@ Deno.test("BUILD marker exposes the 6.7 voice remediation flags", () => {
   assertEquals(BUILD_FEATURES.voiceExitIntentHandling, true);
 });
 
-Deno.test("BUILD marker exposes the 6.10 retry-resume repair flags", () => {
-  assert(BUILD_ID.includes("6.10"));
-  assertEquals(BUILD_ID, "voice-adapter-4C-b.6.10-retry-resume");
+Deno.test("BUILD marker exposes the 6.11 phone-resume repair flags", () => {
+  assert(BUILD_ID.includes("6.11"));
+  assertEquals(BUILD_ID, "voice-adapter-4C-b.6.11-phone-resume");
   assertEquals(BUILD_FEATURES.voiceControllerDeferredSse, true);
   assertEquals(
     BUILD_FEATURES.voiceControllerBoundedFlushAcknowledgement,
@@ -54,6 +54,8 @@ Deno.test("BUILD marker exposes the 6.10 retry-resume repair flags", () => {
   assertEquals(BUILD_FEATURES.voiceProviderEndCallPhrasesDisabled, true);
   assertEquals(BUILD_FEATURES.voiceControllerSynchronousStreamStart, true);
   assertEquals(BUILD_FEATURES.voiceCompletedTurnReplay, true);
+  assertEquals(BUILD_FEATURES.voiceStaleCompletedTurnReplay, true);
+  assertEquals(BUILD_FEATURES.voiceConfirmedPhoneProjection, true);
   assertEquals(BUILD_FEATURES.voiceProviderBoundedInterruption, true);
 });
 

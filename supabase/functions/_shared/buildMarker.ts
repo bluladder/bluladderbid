@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.10-retry-resume";
+export const BUILD_ID = "voice-adapter-4C-b.6.11-phone-resume";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -60,5 +60,10 @@ export const BUILD_FEATURES = {
   // reply, and provider interruption thresholds reject incidental audio.
   voiceControllerSynchronousStreamStart: true,
   voiceCompletedTurnReplay: true,
+  // 6.11 — explicit full-number answers advance the confirmed contact gate,
+  // and interrupted-response stale claims enter the same exact-lineage replay
+  // resolver without rerunning controller or provider work.
+  voiceStaleCompletedTurnReplay: true,
+  voiceConfirmedPhoneProjection: true,
   voiceProviderBoundedInterruption: true,
 } as const;

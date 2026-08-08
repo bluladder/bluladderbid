@@ -10,6 +10,16 @@ export type CompletedVoiceTurnReplay =
     detail?: string;
   };
 
+export function mayReplayCompletedVoiceTurnClaim(
+  claim: "acquired" | "duplicate" | "stale" | "wait" | "uncertain",
+): claim is "duplicate" | "stale" {
+  // A provider can reconnect after the original response body was interrupted
+  // and receive `stale` from the position uniqueness guard. Replay still has
+  // to pass the exact tenant/session/turn/position/content-hash journal check
+  // below; this predicate never authorizes controller or provider work.
+  return claim === "duplicate" || claim === "stale";
+}
+
 /**
  * Resolve a retry only from the canonical journal row for the exact completed
  * turn, then recheck single-flight authority immediately before replay. The
