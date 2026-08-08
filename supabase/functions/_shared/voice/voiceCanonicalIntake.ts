@@ -85,7 +85,8 @@ const FIELD_PROMPTS: Readonly<Record<string, string>> = {
     "What email should we use for the quote and booking confirmation?",
   contact_phone:
     "What is the best ten-digit mobile number in case we get disconnected?",
-  address: "What is the service address?",
+  address:
+    "What is the complete service address, including the street, city, state, and five-digit ZIP code?",
   serviceAreaStatus:
     "Let me verify the service address before I check appointment times.",
 };

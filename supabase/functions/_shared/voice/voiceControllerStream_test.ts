@@ -4,9 +4,22 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildControllerStreamResponse,
+  splitSpokenChunks,
   VOICE_STREAM_ACKNOWLEDGEMENT,
   VOICE_STREAM_FLUSH_TAG,
 } from "./voiceControllerStream.ts";
+
+Deno.test("controller stream prefers complete spoken sentences within the bound", () => {
+  const spoken =
+    "The house number is five, six, one, two. The street is Binbranch Lane. Is that exactly right?";
+  const chunks = splitSpokenChunks(spoken, 50);
+  assertEquals(chunks, [
+    "The house number is five, six, one, two.",
+    "The street is Binbranch Lane.",
+    "Is that exactly right?",
+  ]);
+  assertEquals(chunks.join(" "), spoken);
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -122,6 +135,7 @@ Deno.test("controller stream suppresses rejected and stale work without business
 
 Deno.test("controller stream lifecycle completes once for spoken output", async () => {
   let first = 0;
+  let firstContent = 0;
   const completed: string[] = [];
   const response = buildControllerStreamResponse({
     model: "m",
@@ -129,11 +143,13 @@ Deno.test("controller stream lifecycle completes once for spoken output", async 
     run: () => Promise.resolve({ status: "speak", spoken: "Ready." }),
     lifecycle: {
       onFirstChunk: () => first++,
+      onFirstContentChunk: () => firstContent++,
       onComplete: (status) => completed.push(status),
     },
   });
   await response.text();
   assertEquals(first, 1);
+  assertEquals(firstContent, 1);
   assertEquals(completed, ["speak"]);
 });
 

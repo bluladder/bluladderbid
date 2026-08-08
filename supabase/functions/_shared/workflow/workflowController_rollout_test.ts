@@ -658,7 +658,7 @@ Deno.test("a different spoken number remains untrusted until its last-four confi
   assertEquals(candidate.pre.kind, "fsm");
   assertEquals(
     candidate.pre.spoken,
-    "I have the mobile number ending in 1212. Is that right?",
+    "I have the mobile number ending in one, two, one, two. Is that right?",
   );
   await persistControllerPatch(sb, "qs_1", candidate.sessionPatch);
   assertEquals((sb._state.session.fields as any).phone, "+14695551212");
@@ -1235,7 +1235,12 @@ Deno.test("post-price contact answer advances without repeating the price", asyn
     if (turn.pre.action.kind === "ask") {
       assertEquals(turn.pre.action.field, "contact_email");
     }
-    assertEquals(turn.pre.spoken.includes("alex at example dot com"), true);
+    assertEquals(
+      turn.pre.spoken.includes(
+        "A, L, E, X. At. E, X, A, M, P, L, E. Dot. C, O, M",
+      ),
+      true,
+    );
     assertEquals(turn.pre.spoken.includes("216"), false);
   }
 
@@ -2997,7 +3002,7 @@ Deno.test("phase5 address candidate receives one concise confirmation before sch
     assertEquals((turn.pre.action as any).field, "address");
     assertEquals(
       turn.pre.spoken,
-      "I found five-six-one-two Binbranch Lane in McKinney. Is that correct?",
+      "The house number is five, six, one, two. The street is Binbranch Lane. The city is McKinney. The state is Texas. The ZIP code is seven, five, zero, seven, one. Is that complete address exactly right?",
     );
     assertEquals(turn.pre.spoken.includes("spelled"), false);
     assertEquals((turn.pre.spoken.match(/\?/g) ?? []).length, 1);

@@ -123,16 +123,63 @@ export function parseSpokenEmail(
   return only;
 }
 
-/** Natural, single readback for explicit voice confirmation. */
+const SPOKEN_EMAIL_DIGITS: Readonly<Record<string, string>> = {
+  "0": "zero",
+  "1": "one",
+  "2": "two",
+  "3": "three",
+  "4": "four",
+  "5": "five",
+  "6": "six",
+  "7": "seven",
+  "8": "eight",
+  "9": "nine",
+};
+
+const SPOKEN_EMAIL_SYMBOLS: Readonly<Record<string, string>> = {
+  ".": "Dot",
+  "_": "Underscore",
+  "-": "Dash",
+  "+": "Plus",
+};
+
+/**
+ * Spell one email side with explicit punctuation pauses. This is deliberately
+ * verbose: a customer must be able to hear and correct the durable identity
+ * before a quote or booking is associated with it.
+ */
+function spellEmailSide(value: string): string {
+  const phrases: string[] = [];
+  let alphanumeric: string[] = [];
+  const flush = () => {
+    if (!alphanumeric.length) return;
+    phrases.push(alphanumeric.join(", "));
+    alphanumeric = [];
+  };
+  for (const character of value) {
+    if (/[a-z]/i.test(character)) {
+      alphanumeric.push(character.toUpperCase());
+      continue;
+    }
+    if (/\d/.test(character)) {
+      alphanumeric.push(SPOKEN_EMAIL_DIGITS[character]);
+      continue;
+    }
+    const symbol = SPOKEN_EMAIL_SYMBOLS[character];
+    if (symbol) {
+      flush();
+      phrases.push(symbol);
+    }
+  }
+  flush();
+  return phrases.join(". ");
+}
+
+/** Deliberate, character-by-character readback for explicit confirmation. */
 export function buildSpokenEmailReadback(email: string): string {
   const safe = String(email ?? "").trim().toLowerCase();
-  const spoken = safe
-    .replaceAll("_", " underscore ")
-    .replaceAll("-", " dash ")
-    .replaceAll("+", " plus ")
-    .replace("@", " at ")
-    .replaceAll(".", " dot ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return `I have ${spoken}. Is that exactly right?`;
+  const [local = "", domain = ""] = safe.split("@");
+  return `I heard the email as: ${spellEmailSide(local)}. At. ${
+    spellEmailSide(domain)
+  }. Is that exactly right?`;
 }

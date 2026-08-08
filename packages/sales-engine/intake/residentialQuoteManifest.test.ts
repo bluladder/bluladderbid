@@ -34,6 +34,15 @@ describe("residentialQuoteManifest", () => {
     );
   });
 
+  it("asks for complete post-price identity details in one turn", () => {
+    expect(RESIDENTIAL_INTAKE_BY_ID.contact_name.prompt).toBe(
+      "May I get your first and last name for the quote?",
+    );
+    expect(RESIDENTIAL_INTAKE_BY_ID.address.prompt).toBe(
+      "What is the complete service address, including the street, city, state, and five-digit ZIP code?",
+    );
+  });
+
   it("every manifest entry states a business purpose", () => {
     for (const spec of RESIDENTIAL_INTAKE_MANIFEST) {
       expect(spec.purpose.length).toBeGreaterThan(10);

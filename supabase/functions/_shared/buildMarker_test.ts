@@ -43,9 +43,9 @@ Deno.test("BUILD marker exposes the 6.7 voice remediation flags", () => {
   assertEquals(BUILD_FEATURES.voiceExitIntentHandling, true);
 });
 
-Deno.test("BUILD marker exposes the 6.12 contact-resume repair flags", () => {
-  assert(BUILD_ID.includes("6.12"));
-  assertEquals(BUILD_ID, "voice-adapter-4C-b.6.12-contact-resume");
+Deno.test("BUILD marker exposes the 6.13 owner-call recovery flags", () => {
+  assert(BUILD_ID.includes("6.13"));
+  assertEquals(BUILD_ID, "voice-adapter-4C-b.6.13-owner-call-recovery");
   assertEquals(BUILD_FEATURES.voiceControllerDeferredSse, true);
   assertEquals(
     BUILD_FEATURES.voiceControllerBoundedFlushAcknowledgement,
@@ -63,6 +63,12 @@ Deno.test("BUILD marker exposes the 6.12 contact-resume repair flags", () => {
   assertEquals(BUILD_FEATURES.voiceLazyPricingProbe, true);
   assertEquals(BUILD_FEATURES.voiceNaturalSlowTurnAcknowledgement, true);
   assertEquals(BUILD_FEATURES.voiceWaitCompletedTurnReplay, true);
+  assertEquals(BUILD_FEATURES.voiceContextualOutsideHomophone, true);
+  assertEquals(BUILD_FEATURES.voiceCompleteIdentityPrompts, true);
+  assertEquals(BUILD_FEATURES.voiceDeliberateContactReadback, true);
+  assertEquals(BUILD_FEATURES.voiceSentenceAwareStreaming, true);
+  assertEquals(BUILD_FEATURES.voiceFirstContentChunkLatency, true);
+  assertEquals(BUILD_FEATURES.voiceLatestAuthoritativeStaleReplay, true);
 });
 
 Deno.test("BUILD marker exposes the 6.8 address-gate enforcement flags", () => {

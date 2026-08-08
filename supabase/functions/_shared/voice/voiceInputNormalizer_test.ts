@@ -75,6 +75,22 @@ Deno.test("bare window-side answers require explicit side-selection context", ()
   assertEquals(normalizeVoiceInput("both", []).text, "both");
 });
 
+Deno.test("incident: contextual 'household only' means outside only without a global rewrite", () => {
+  const sidesQ = [{
+    role: "assistant" as const,
+    content:
+      "Would you like all the windows cleaned both inside and outside, or outside only?",
+  }];
+  assertEquals(
+    normalizeVoiceInput("Household only.", sidesQ),
+    { text: "exterior only", applied: ["window_sides"] },
+  );
+  assertEquals(
+    normalizeVoiceInput("Household only.", []),
+    { text: "Household only.", applied: [] },
+  );
+});
+
 Deno.test("no-context utterances pass through untouched", () => {
   const r = normalizeVoiceInput("one", []);
   assertEquals(r.applied, []);

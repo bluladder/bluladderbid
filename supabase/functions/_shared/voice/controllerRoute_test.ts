@@ -434,7 +434,7 @@ Deno.test("phase6 pending generated quote resumes after a contact confirmation a
 
 Deno.test("pending caller-ID confirmation owns the spoken turn over sticky quote delivery", async () => {
   const last4Prompt =
-    "I have this number ending in 0144. Is this the best mobile number for your quote and appointment details?";
+    "I have this number ending in zero, one, four, four. Is this the best mobile number for your quote and appointment details?";
   const firmSession: QuoteSession = {
     ...session,
     fields: {

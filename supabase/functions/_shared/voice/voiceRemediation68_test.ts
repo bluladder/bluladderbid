@@ -409,7 +409,7 @@ Deno.test("a fresh pending address is read back even for an ordinary no-tool rep
     },
     events,
   });
-  assertStringIncludes(spoken, "Is that correct?");
+  assertStringIncludes(spoken, "Is that complete address exactly right?");
   assert(events.includes("voice_address_confirmation_required"));
 });
 
@@ -465,7 +465,7 @@ Deno.test("5610-vs-5612 mismatch recovers on the next turn", () => {
   });
   assertEquals(turn2.kind, "ask_confirmation");
   assertEquals(turn2.serviceAreaStatus, "pending_confirmation");
-  assertStringIncludes(turn2.reply, "five-six-one-two");
+  assertStringIncludes(turn2.reply, "five, six, one, two");
   assertStringIncludes(turn2.reply, "Binbranch Lane");
 });
 
@@ -523,4 +523,6 @@ Deno.test("street suffix abbreviations are expanded for speech", () => {
   const reply = buildAddressReadback("5612 Binbranch Ln, McKinney, TX 75071");
   assertStringIncludes(reply, "Lane");
   assert(!/\bLn\b/.test(reply));
+  assertStringIncludes(reply, "The state is Texas.");
+  assertStringIncludes(reply, "The ZIP code is seven, five, zero, seven, one.");
 });

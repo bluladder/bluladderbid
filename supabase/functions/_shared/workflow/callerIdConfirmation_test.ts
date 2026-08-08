@@ -4,14 +4,17 @@ import {
   interpretConfirmation,
   last4,
   normalizeSpokenPhone,
+  spokenLast4,
 } from "./callerIdConfirmation.ts";
 
 Deno.test("confirmation prompt uses last-4 only and never speaks the full number", () => {
   const prompt = confirmationPrompt("+14697472877");
-  assertEquals(prompt.includes("2877"), true);
+  assertEquals(prompt.includes("two, eight, seven, seven"), true);
+  assertEquals(prompt.includes("2877"), false);
   assertEquals(prompt.includes("469747"), false);
   assertEquals(prompt.includes("+1"), false);
   assertEquals(last4("+14697472877"), "2877");
+  assertEquals(spokenLast4("+14697472877"), "two, eight, seven, seven");
 });
 
 Deno.test("interpretConfirmation: yes/no/unclear", () => {
