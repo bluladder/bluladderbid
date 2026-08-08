@@ -48,6 +48,7 @@ import {
 } from "../_shared/voice/voiceTurnLatency.ts";
 import { readReplayableControllerReply } from "../_shared/voice/turnJournal.ts";
 import {
+  mayReplayCompletedVoiceTurnClaim,
   resolveCompletedVoiceTurnReplay,
 } from "../_shared/voice/voiceTurnReplay.ts";
 import {
@@ -434,7 +435,7 @@ Deno.serve(async (req) => {
         : claim === "wait"
         ? "wait_suppressed"
         : "uncertain_suppressed";
-      if (claim === "duplicate") {
+      if (mayReplayCompletedVoiceTurnClaim(claim)) {
         const replayStarted = performance.now();
         const replay = await resolveCompletedVoiceTurnReplay({
           readReply: () =>
@@ -460,7 +461,7 @@ Deno.serve(async (req) => {
             buildId: BUILD_ID,
             correlationId,
             route: "single_flight",
-            reason: "duplicate_replayed",
+            reason: claim === "stale" ? "stale_replayed" : "duplicate_replayed",
           }));
           if (!request.stream) {
             return finishImmediate(
@@ -508,8 +509,8 @@ Deno.serve(async (req) => {
           correlationId,
           route: "single_flight",
           reason: replay.reason === "reply_unavailable"
-            ? "duplicate_replay_unavailable"
-            : "duplicate_replay_not_authoritative",
+            ? `${claim}_replay_unavailable`
+            : `${claim}_replay_not_authoritative`,
           replayReason: replay.detail ?? replay.reason,
         }));
       } else {
@@ -518,11 +519,7 @@ Deno.serve(async (req) => {
           buildId: BUILD_ID,
           correlationId,
           route: "single_flight",
-          reason: claim === "stale"
-            ? "stale_suppressed"
-            : claim === "wait"
-            ? "wait_suppressed"
-            : "uncertain_suppressed",
+          reason: claim === "wait" ? "wait_suppressed" : "uncertain_suppressed",
         }));
       }
       return finishImmediate(

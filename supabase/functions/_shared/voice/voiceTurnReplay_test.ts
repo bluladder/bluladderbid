@@ -4,7 +4,10 @@ import {
   buildIdempotentTurnRows,
   readReplayableControllerReply,
 } from "./turnJournal.ts";
-import { resolveCompletedVoiceTurnReplay } from "./voiceTurnReplay.ts";
+import {
+  mayReplayCompletedVoiceTurnClaim,
+  resolveCompletedVoiceTurnReplay,
+} from "./voiceTurnReplay.ts";
 
 function replayReadSupabase(args: {
   conversations: Array<Record<string, unknown>>;
@@ -81,6 +84,37 @@ Deno.test("completed duplicate replays the canonical reply without rerunning wor
   assertEquals(authorityChecks, 1);
   assertEquals(controllerAttempts, 1);
   assertEquals(externalActionAttempts, 1);
+});
+
+Deno.test("interrupted-response stale claims enter only the exact completed-replay gate", () => {
+  assertEquals(mayReplayCompletedVoiceTurnClaim("duplicate"), true);
+  assertEquals(mayReplayCompletedVoiceTurnClaim("stale"), true);
+  assertEquals(mayReplayCompletedVoiceTurnClaim("acquired"), false);
+  assertEquals(mayReplayCompletedVoiceTurnClaim("wait"), false);
+  assertEquals(mayReplayCompletedVoiceTurnClaim("uncertain"), false);
+});
+
+Deno.test("stale retry replays durable speech without rerunning controller or SMS", async () => {
+  const controllerAttempts = 1;
+  const smsAttempts = 1;
+  const claim = "stale" as const;
+  const replay = mayReplayCompletedVoiceTurnClaim(claim)
+    ? await resolveCompletedVoiceTurnReplay({
+      readReply: () =>
+        Promise.resolve({
+          status: "found" as const,
+          spoken: "I have your number. What full name should I use?",
+        }),
+      isAuthoritative: () => Promise.resolve(true),
+    })
+    : { status: "suppressed" as const };
+
+  assertEquals(replay, {
+    status: "replay",
+    spoken: "I have your number. What full name should I use?",
+  });
+  assertEquals(controllerAttempts, 1);
+  assertEquals(smsAttempts, 1);
 });
 
 Deno.test("completed duplicate fails closed when the journal is unavailable", async () => {

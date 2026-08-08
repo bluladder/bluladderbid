@@ -26,6 +26,7 @@ import { calculateQuote } from "../pricingEngine.ts";
 import {
   computeRequired,
   mergeFields,
+  normalizePhone,
   type QuoteSession,
   sessionBookingInputsKey,
   sessionInputsKey,
@@ -1016,8 +1017,13 @@ export async function runControllerTurn(
     }
     if (status === "pending") {
       const reply = interpretConfirmation(input.utterance);
-      if (reply === "confirmed") {
-        const proposed = f.callerIdProposedE164 || input.callerIdE164;
+      const proposed = f.callerIdProposedE164 || input.callerIdE164;
+      const spokenPhone = normalizeSpokenPhone(input.utterance);
+      const explicitlySelectedProposed = !!spokenPhone &&
+        spokenPhone === proposed && reply !== "declined";
+      const explicitlyConfirmsProposed = reply === "confirmed" &&
+        (!spokenPhone || spokenPhone === proposed);
+      if (explicitlyConfirmsProposed || explicitlySelectedProposed) {
         capture(
           mergeFields(session, {
             phone: proposed,
@@ -1029,6 +1035,30 @@ export async function runControllerTurn(
         // contact number. It does not verify identity or authorize lookup of a
         // stored customer record.
         f = session.fields;
+      } else if (spokenPhone) {
+        capture(
+          mergeFields(session, {
+            phone: spokenPhone,
+            callerIdConfirmationStatus: "manual_pending",
+          }),
+          "confirming:contact_phone",
+        );
+        const spoken = `I have the mobile number ending in ${
+          digits(spokenPhone).slice(-4)
+        }. Is that right?`;
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: {
+              kind: "ask",
+              field: "contact_phone",
+              prompt: spoken,
+            } as unknown as WorkflowAction,
+            spoken,
+          },
+        };
       } else if (reply === "declined") {
         capture(
           mergeFields(session, { callerIdConfirmationStatus: "declined" }),
@@ -2718,6 +2748,26 @@ export async function persistControllerPatch(
       reason: "organization_authority_required",
     };
   }
+  const fields = databasePatch.fields &&
+      typeof databasePatch.fields === "object" &&
+      !Array.isArray(databasePatch.fields)
+    ? databasePatch.fields as QuoteSession["fields"]
+    : null;
+  const fieldStatus = databasePatch.field_status &&
+      typeof databasePatch.field_status === "object" &&
+      !Array.isArray(databasePatch.field_status)
+    ? databasePatch.field_status as QuoteSession["fieldStatus"]
+    : null;
+  const phoneContactConfirmed = !!fields && (
+    fields.callerIdConfirmationStatus === "contact_confirmed" ||
+    fields.callerIdConfirmationStatus === "confirmed" ||
+    fieldStatus?.phone === "verified" ||
+    fieldStatus?.phone === "corrected"
+  );
+  const confirmedPhone = phoneContactConfirmed
+    ? normalizePhone(fields?.phone)
+    : null;
+  if (confirmedPhone) databasePatch.phone_e164 = confirmedPhone;
   try {
     let query = supabase.from("quote_sessions").update(databasePatch).eq(
       "id",
