@@ -50,6 +50,7 @@ import { readReplayableControllerReply } from "../_shared/voice/turnJournal.ts";
 import {
   mayReplayCompletedVoiceTurnClaim,
   resolveCompletedVoiceTurnReplay,
+  waitForCompletedVoiceTurnReplay,
 } from "../_shared/voice/voiceTurnReplay.ts";
 import {
   buildControllerStreamResponse,
@@ -435,9 +436,9 @@ Deno.serve(async (req) => {
         : claim === "wait"
         ? "wait_suppressed"
         : "uncertain_suppressed";
-      if (mayReplayCompletedVoiceTurnClaim(claim)) {
+      if (mayReplayCompletedVoiceTurnClaim(claim) || claim === "wait") {
         const replayStarted = performance.now();
-        const replay = await resolveCompletedVoiceTurnReplay({
+        const replayDependencies = {
           readReply: () =>
             readReplayableControllerReply(supabase, {
               organizationId: providerAuthority.organizationId,
@@ -453,7 +454,10 @@ Deno.serve(async (req) => {
               callId: turn.callId,
               turnId: turn.turnId,
             }),
-        });
+        };
+        const replay = claim === "wait"
+          ? await waitForCompletedVoiceTurnReplay(replayDependencies)
+          : await resolveCompletedVoiceTurnReplay(replayDependencies);
         latency.add("databaseMs", performance.now() - replayStarted);
         if (replay.status === "replay") {
           console.log(JSON.stringify({
@@ -461,7 +465,11 @@ Deno.serve(async (req) => {
             buildId: BUILD_ID,
             correlationId,
             route: "single_flight",
-            reason: claim === "stale" ? "stale_replayed" : "duplicate_replayed",
+            reason: claim === "stale"
+              ? "stale_replayed"
+              : claim === "wait"
+              ? "wait_replayed"
+              : "duplicate_replayed",
           }));
           if (!request.stream) {
             return finishImmediate(

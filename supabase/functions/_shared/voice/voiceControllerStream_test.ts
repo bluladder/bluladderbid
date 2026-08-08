@@ -58,6 +58,7 @@ Deno.test("controller stream emits one neutral flush acknowledgement only when s
   await readEvent(reader);
   timer.resolve();
   const ack = await readEvent(reader);
+  assertEquals(VOICE_STREAM_ACKNOWLEDGEMENT, "Got it.");
   assert(ack.includes(VOICE_STREAM_ACKNOWLEDGEMENT));
   assert(ack.includes(VOICE_STREAM_FLUSH_TAG));
   assert(!/[0-9$]/.test(VOICE_STREAM_ACKNOWLEDGEMENT));

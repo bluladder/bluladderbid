@@ -622,7 +622,7 @@ Deno.test("caller-ID confirmation accepts the explicitly spoken matching full nu
     supabase: sb,
     conversationId: "c1",
     channel: "voice",
-    utterance: "469 747 2877",
+    utterance: "four six nine seven four seven two eight seven seven",
     history: [],
     callerIdE164: "+14697472877",
   });
@@ -793,16 +793,31 @@ Deno.test("phase7 one exact same-tenant candidate is reused only after neutral n
     history: [],
     callerIdE164: "+14695551212",
   });
-  assertEquals(suppliedName.pre.kind, "fsm");
-  assertStringIncludes(suppliedName.pre.spoken, "A-L-E-X");
+  const verifiedFields = suppliedName.sessionPatch.fields as QuoteSessionFields;
+  assertEquals(verifiedFields.returningCustomerId, "cust_phase7");
+  assertEquals(verifiedFields.returningCustomerResolved, true);
+  assertEquals(verifiedFields.returningCustomerCandidateId, undefined);
+  assertEquals(verifiedFields.awaitingDisambiguator, false);
+  assertEquals(verifiedFields.returningCustomerLookupStatus, "verified");
   assertEquals(
-    (suppliedName.sessionPatch.fields as QuoteSessionFields)
-      .returningCustomerResolved,
+    suppliedName.pre.spoken.includes("A-L-E-X"),
     false,
+    "a direct full-name answer must not create a redundant readback turn",
   );
-  await persistControllerPatch(sb, "qs_1", suppliedName.sessionPatch);
+});
 
-  const verified = await runControllerTurn({
+Deno.test("phase7 one-word name remains unverified and cannot reuse a phone candidate", async () => {
+  const sb = makeFake({
+    customers: [{
+      id: "cust_phase7_one_word",
+      organization_id: TEST_ORGANIZATION_ID,
+      first_name: "Alex",
+      last_name: "Rivera",
+      phone: "+14695551212",
+    }],
+  });
+  setPhase7ConfirmedPhone(sb);
+  const candidate = await runControllerTurn({
     supabase: sb,
     conversationId: "c1",
     channel: "voice",
@@ -810,12 +825,60 @@ Deno.test("phase7 one exact same-tenant candidate is reused only after neutral n
     history: [],
     callerIdE164: "+14695551212",
   });
-  const verifiedFields = verified.sessionPatch.fields as QuoteSessionFields;
-  assertEquals(verifiedFields.returningCustomerId, "cust_phase7");
-  assertEquals(verifiedFields.returningCustomerResolved, true);
-  assertEquals(verifiedFields.returningCustomerCandidateId, undefined);
-  assertEquals(verifiedFields.awaitingDisambiguator, false);
-  assertEquals(verifiedFields.returningCustomerLookupStatus, "verified");
+  await persistControllerPatch(sb, "qs_1", candidate.sessionPatch);
+
+  const suppliedName = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "Alex",
+    history: [],
+    callerIdE164: "+14695551212",
+  });
+  const fields = suppliedName.sessionPatch.fields as QuoteSessionFields;
+  assertEquals(
+    suppliedName.pre.spoken,
+    "May I get your first and last name for the quote?",
+  );
+  assertEquals(fields.returningCustomerResolved, false);
+  assertEquals(fields.returningCustomerId, undefined);
+  assertEquals(fields.returningCustomerCandidateId, "cust_phase7_one_word");
+  assertEquals(fields.name, undefined);
+  assertEquals(
+    (suppliedName.sessionPatch.field_status as
+      | Record<string, string>
+      | undefined)?.name,
+    undefined,
+  );
+});
+
+Deno.test("phase9 pre-price question performs no eager canonical pricing work", async () => {
+  let pricingLoads = 0;
+  const base = makeFake({ pricingRows: PRICING_ROWS });
+  base._state.session.fields = {
+    voiceJourney: { intent: "new_quote", policyVersion: "voice-express-v1" },
+    services: ["window_cleaning"],
+  };
+  const timings: string[] = [];
+  const sb = {
+    ...base,
+    from(table: string) {
+      if (table === "pricing_config") pricingLoads += 1;
+      return base.from(table);
+    },
+  };
+  const turn = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "I need outside window cleaning",
+    history: [],
+    onTiming: (stage) => timings.push(stage),
+  });
+  assertEquals(turn.pre.kind, "fsm");
+  if (turn.pre.kind === "fsm") assertEquals(turn.pre.action.kind, "ask");
+  assertEquals(pricingLoads, 0);
+  assertEquals(timings.includes("pricing"), false);
 });
 
 Deno.test("phase7 shared phone ambiguity selects nobody and discloses nothing", async () => {

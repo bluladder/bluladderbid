@@ -2279,7 +2279,33 @@ export async function runControllerTurn(
     capture(parsedSession, "answer_captured");
     f = session.fields;
     if (askedField === "contact_name" && f.name) {
-      return askConfirmation("contact_name", buildNameReadback(f.name));
+      const nameParts = f.name.trim().split(/\s+/).filter(Boolean);
+      if (nameParts.length < 2) {
+        capture(session, "asked:contact_name");
+        const spoken = "Please say both your first and last name together.";
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: {
+              kind: "ask",
+              field: "contact_name",
+              prompt: spoken,
+            } as unknown as WorkflowAction,
+            spoken,
+          },
+        };
+      }
+      // The caller supplied a full name in direct response to the neutral
+      // verification question. Treat that answer as the verification act;
+      // do not add a second readback turn or disclose a stored candidate name.
+      capture(
+        mergeFields(session, { name: f.name }, { markVerified: ["name"] }),
+        "contact_name_confirmed",
+      );
+      await verifyPendingPhoneCandidate();
+      f = session.fields;
     }
     if (askedField === "contact_email" && f.email) {
       return askConfirmation(
@@ -2388,18 +2414,10 @@ export async function runControllerTurn(
     };
   }
 
-  // The readiness decision and customer-facing calculation consume the same
-  // canonical pricing snapshot. Reusing it within this immutable section
-  // removes one database read and one complete calculation without relaxing
-  // freshness, tenant, coupon, promotion, tax, or duration authority.
-  const pricingProbe = organizationId === PUBLIC_BOOKING_ORGANIZATION_ID
-    ? await measure(
-      "pricing",
-      () => probeCanonicalPricing(input.supabase, session),
-    )
-    : null;
-  const pricingMissing = pricingProbe?.missing ?? null;
-  let action = decideResidentialQuoteAction(session, pricingMissing);
+  // Intake readiness is deterministic from the session. Load canonical
+  // pricing only on the turn that will calculate a price; question turns must
+  // not pay for a pricing read and calculation they cannot use.
+  let action = decideResidentialQuoteAction(session, null);
   if (action.kind === "handoff" && action.reason === "unsupported_service") {
     const allowedUnsupportedClarificationFields = [
       // Stories are deliberately neutral for window-only pricing, but remain
@@ -2499,6 +2517,12 @@ export async function runControllerTurn(
         },
       };
     }
+    // The readiness decision and customer-facing calculation consume one
+    // fresh canonical snapshot on the actual price turn.
+    const pricingProbe = await measure(
+      "pricing",
+      () => probeCanonicalPricing(input.supabase, session),
+    );
     const loaded = pricingProbe?.loaded ??
       await measure("pricing", () => loadPricing(input.supabase));
     if (!loaded.ok || !loaded.pricing) {

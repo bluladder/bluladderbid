@@ -1,6 +1,6 @@
 // Deferred OpenAI-compatible SSE writer for one authoritative voice turn.
 export const VOICE_STREAM_ACK_DELAY_MS = 1_200;
-export const VOICE_STREAM_ACKNOWLEDGEMENT = "One moment.";
+export const VOICE_STREAM_ACKNOWLEDGEMENT = "Got it.";
 export const VOICE_STREAM_FLUSH_TAG = " <flush />";
 export const VOICE_STREAM_CHUNK_CHARS = 80;
 

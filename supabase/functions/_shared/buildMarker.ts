@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.11-phone-resume";
+export const BUILD_ID = "voice-adapter-4C-b.6.12-contact-resume";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -66,4 +66,14 @@ export const BUILD_FEATURES = {
   voiceStaleCompletedTurnReplay: true,
   voiceConfirmedPhoneProjection: true,
   voiceProviderBoundedInterruption: true,
+  // 6.12 — preserve the controller's pending contact question, understand
+  // spoken phone digits, accept a directly supplied full name without a
+  // redundant readback, avoid eager pricing work, and use a natural bounded
+  // acknowledgement while slow deterministic work finishes.
+  voiceControllerPromptAuthority: true,
+  voiceSpokenPhoneWords: true,
+  voiceSingleTurnNameVerification: true,
+  voiceLazyPricingProbe: true,
+  voiceNaturalSlowTurnAcknowledgement: true,
+  voiceWaitCompletedTurnReplay: true,
 } as const;
