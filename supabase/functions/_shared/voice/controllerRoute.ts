@@ -364,10 +364,17 @@ export async function executeControllerRoute(
   if (stateCommitted && event === "workflow_controller") {
     const deliverySession = committedSession;
     const delivery = deliverySession?.fields.voiceJourney?.delivery;
+    // A controller question owns the spoken turn. Delivery remains sticky in
+    // durable state and may resume only after the caller answers that exact
+    // question. This prevents the delivery planner from replacing a caller-ID,
+    // contact, or address prompt while the controller still expects its answer.
+    const controllerQuestionPending = turn.pre.kind !== "fsm" ||
+      turn.pre.action.kind === "ask";
     const stickyOpenRequest = !!deliverySession &&
       deliverySession.fields.voiceJourney?.requestedNextStep === "text_quote" &&
       !delivery;
     const deliveryAllowed = !!deliverySession &&
+      !controllerQuestionPending &&
       deliverySession.quoteStatus === "firm" &&
       deliverySession.fields.voiceJourney?.requestedNextStep === "text_quote" &&
       stickyOpenRequest;

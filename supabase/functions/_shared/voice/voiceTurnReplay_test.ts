@@ -7,6 +7,7 @@ import {
 import {
   mayReplayCompletedVoiceTurnClaim,
   resolveCompletedVoiceTurnReplay,
+  waitForCompletedVoiceTurnReplay,
 } from "./voiceTurnReplay.ts";
 
 function replayReadSupabase(args: {
@@ -147,6 +148,89 @@ Deno.test("completed duplicate fails closed when authority changed", async () =>
     status: "suppressed",
     reason: "turn_not_authoritative",
   });
+});
+
+Deno.test("in-progress retry waits only for the exact durable completed reply", async () => {
+  let reads = 0;
+  let authorityChecks = 0;
+  const delays: number[] = [];
+  const replay = await waitForCompletedVoiceTurnReplay({
+    readReply: () => {
+      reads += 1;
+      return Promise.resolve(
+        reads < 3
+          ? { status: "unavailable" as const, reason: "reply_missing" }
+          : {
+            status: "found" as const,
+            spoken: "What full name should I use?",
+          },
+      );
+    },
+    isAuthoritative: () => {
+      authorityChecks += 1;
+      return Promise.resolve(true);
+    },
+    delay: (milliseconds) => {
+      delays.push(milliseconds);
+      return Promise.resolve();
+    },
+  }, { maxAttempts: 4, intervalMs: 75 });
+
+  assertEquals(replay, {
+    status: "replay",
+    spoken: "What full name should I use?",
+  });
+  assertEquals(reads, 3);
+  assertEquals(authorityChecks, 1);
+  assertEquals(delays, [75, 75]);
+});
+
+Deno.test("in-progress retry fails immediately on lineage mismatch", async () => {
+  let delays = 0;
+  const replay = await waitForCompletedVoiceTurnReplay({
+    readReply: () =>
+      Promise.resolve({
+        status: "unavailable",
+        reason: "reply_lineage_mismatch",
+      }),
+    isAuthoritative: () => Promise.resolve(true),
+    delay: () => {
+      delays += 1;
+      return Promise.resolve();
+    },
+  });
+  assertEquals(replay, {
+    status: "suppressed",
+    reason: "reply_unavailable",
+    detail: "reply_lineage_mismatch",
+  });
+  assertEquals(delays, 0);
+});
+
+Deno.test("in-progress retry exhausts its bounded wait and stays suppressed", async () => {
+  let reads = 0;
+  let delays = 0;
+  const replay = await waitForCompletedVoiceTurnReplay({
+    readReply: () => {
+      reads += 1;
+      return Promise.resolve({
+        status: "unavailable",
+        reason: "reply_missing",
+      });
+    },
+    isAuthoritative: () => Promise.resolve(true),
+    delay: () => {
+      delays += 1;
+      return Promise.resolve();
+    },
+  }, { maxAttempts: 3, intervalMs: 25 });
+  assertEquals(replay, {
+    status: "suppressed",
+    reason: "reply_unavailable",
+    detail: "reply_missing",
+  });
+  assertEquals(reads, 3);
+  assertEquals(delays, 2);
 });
 
 Deno.test("journal replay requires exact tenant and single-flight lineage", async () => {

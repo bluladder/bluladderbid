@@ -48,3 +48,45 @@ export async function resolveCompletedVoiceTurnReplay(
   }
   return { status: "replay", spoken: reply.spoken };
 }
+
+/**
+ * A concurrent provider retry receives `wait` while the acquired request is
+ * still running. Poll only for the exact durable controller reply, for a
+ * bounded interval, then apply the same fresh authority check used by
+ * duplicate/stale replay. No controller or provider operation can run here.
+ */
+export async function waitForCompletedVoiceTurnReplay(
+  dependencies: {
+    readReply: () => Promise<CompletedVoiceTurnReply>;
+    isAuthoritative: () => Promise<boolean>;
+    delay?: (milliseconds: number) => Promise<void>;
+  },
+  options: {
+    maxAttempts?: number;
+    intervalMs?: number;
+  } = {},
+): Promise<CompletedVoiceTurnReplay> {
+  const maxAttempts = Math.max(1, Math.min(options.maxAttempts ?? 16, 20));
+  const intervalMs = Math.max(25, Math.min(options.intervalMs ?? 250, 500));
+  const delay = dependencies.delay ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const replay = await resolveCompletedVoiceTurnReplay(dependencies);
+    if (
+      replay.status === "replay" ||
+      replay.reason === "turn_not_authoritative" ||
+      replay.detail !== "reply_missing" ||
+      attempt === maxAttempts
+    ) {
+      return replay;
+    }
+    await delay(intervalMs);
+  }
+  return {
+    status: "suppressed",
+    reason: "reply_unavailable",
+    detail: "reply_missing",
+  };
+}

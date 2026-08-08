@@ -253,7 +253,14 @@ Deno.test("quote delivery reports a post-send projection failure without retryin
     runController: async () => ({
       sessionId: firmSession.id,
       sessionPatch: {},
-      pre: { kind: "ask_intent" as const, spoken: "Certainly." },
+      pre: {
+        kind: "fsm" as const,
+        action: {
+          kind: "answer_side_question" as const,
+          topic: "delivery_ready",
+        },
+        spoken: "Certainly.",
+      },
     }),
     persist: async (_supabase, _sessionId, patch) => {
       if (patch.fields) {
@@ -327,7 +334,14 @@ Deno.test("provider acceptance relies on the delivery operation's durable eviden
     runController: async () => ({
       sessionId: firmSession.id,
       sessionPatch: {},
-      pre: { kind: "ask_intent" as const, spoken: "Certainly." },
+      pre: {
+        kind: "fsm" as const,
+        action: {
+          kind: "answer_side_question" as const,
+          topic: "delivery_ready",
+        },
+        spoken: "Certainly.",
+      },
     }),
     persist: async (_supabase, _sessionId, patch) => {
       if (patch.fields) {
@@ -391,7 +405,14 @@ Deno.test("phase6 pending generated quote resumes after a contact confirmation a
     runController: async () => ({
       sessionId: readySession.id,
       sessionPatch: {},
-      pre: { kind: "ask_intent" as const, spoken: "Thank you." },
+      pre: {
+        kind: "fsm" as const,
+        action: {
+          kind: "answer_side_question" as const,
+          topic: "delivery_ready",
+        },
+        spoken: "Thank you.",
+      },
     }),
     persist: async () => ({ status: "persisted" as const }),
     project: async () => ({ status: "projected" as const, attempts: 1 }),
@@ -409,6 +430,61 @@ Deno.test("phase6 pending generated quote resumes after a contact confirmation a
   assertEquals(deliveries, 1);
   assertEquals(result.event, "voice_quote_by_text_provider_accepted");
   assertStringIncludes(result.spoken, "accepted for delivery");
+});
+
+Deno.test("pending caller-ID confirmation owns the spoken turn over sticky quote delivery", async () => {
+  const last4Prompt =
+    "I have this number ending in 0144. Is this the best mobile number for your quote and appointment details?";
+  const firmSession: QuoteSession = {
+    ...session,
+    fields: {
+      services: ["windowCleaning"],
+      callerIdConfirmationStatus: "pending",
+      callerIdProposedE164: "+14695550144",
+      lastQuoteResult: {
+        status: "firm",
+        finalQuoteDisposition: "firm",
+        total: 185,
+        estimatedTotal: 200.26,
+      },
+      voiceJourney: { requestedNextStep: "text_quote" },
+    },
+    quoteStatus: "firm",
+  };
+  let deliveries = 0;
+  const result = await executeControllerRoute({
+    ...input(),
+    messages: [{ role: "user" as const, content: "Please text the quote" }],
+    callFunction: () => Promise.resolve({ status: 200, json: {} }),
+  }, {
+    runController: async () => ({
+      sessionId: firmSession.id,
+      sessionPatch: {
+        fields: firmSession.fields,
+        quote_status: "firm" as const,
+      },
+      pre: {
+        kind: "ask_confirm_caller_id" as const,
+        last4: "0144",
+        spoken: last4Prompt,
+      },
+    }),
+    persist: async () => ({ status: "persisted" as const }),
+    project: async () => ({
+      status: "projected" as const,
+      attempts: 1,
+      session: firmSession,
+    }),
+    readSession: async () => firmSession,
+    deliverQuote: async () => {
+      deliveries += 1;
+      return { ok: true, status: "provider_accepted" as const };
+    },
+    journal: async () => ({ written: 2, duplicates: 0, failed: 0 }),
+  });
+  assertEquals(result.spoken, last4Prompt);
+  assertEquals(result.event, "workflow_controller");
+  assertEquals(deliveries, 0);
 });
 
 Deno.test("duplicate intake write continues when the proposed answer is already present", async () => {
@@ -899,11 +975,10 @@ Deno.test("phase6 controller reports revoked delivery authority without a succes
       pre: {
         kind: "fsm" as const,
         action: {
-          kind: "ask" as const,
-          field: "contact_name" as const,
-          prompt: "Name?",
+          kind: "answer_side_question" as const,
+          topic: "delivery_ready",
         },
-        spoken: "Name?",
+        spoken: "I have the required contact details.",
       },
     }),
     persist: async () => ({ status: "persisted" as const }),

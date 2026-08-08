@@ -12,7 +12,9 @@ export function last4(phoneE164: string): string {
 }
 
 export function confirmationPrompt(phoneE164: string): string {
-  return `I have this number ending in ${last4(phoneE164)}. Is this the best mobile number for your quote and appointment details?`;
+  return `I have this number ending in ${
+    last4(phoneE164)
+  }. Is this the best mobile number for your quote and appointment details?`;
 }
 
 export const REPROMPT_PREFERRED_NUMBER =
@@ -20,8 +22,10 @@ export const REPROMPT_PREFERRED_NUMBER =
 
 export type ConfirmationReply = "confirmed" | "declined" | "unclear";
 
-const YES = /\b(yes|yeah|yep|yup|correct|that('| i)?s (right|correct)|sure|please do|use (that|this)|works|good|ok|okay)\b/i;
-const NO = /\b(no|nope|nah|not|different|another|other|change|update|use (a )?different|call me at|text me at)\b/i;
+const YES =
+  /\b(yes|yeah|yep|yup|correct|that('| i)?s (right|correct)|sure|please do|use (that|this)|works|good|ok|okay)\b/i;
+const NO =
+  /\b(no|nope|nah|not|different|another|other|change|update|use (a )?different|call me at|text me at)\b/i;
 
 export function interpretConfirmation(utterance: string): ConfirmationReply {
   const s = (utterance ?? "").trim();
@@ -33,10 +37,40 @@ export function interpretConfirmation(utterance: string): ConfirmationReply {
   return "unclear";
 }
 
-/** Normalize an E.164 phone extracted from an utterance the caller spoke. */
+const SPOKEN_PHONE_DIGITS: Readonly<Record<string, string>> = {
+  zero: "0",
+  oh: "0",
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+};
+
+function normalizeNanpDigits(value: string): string | null {
+  if (value.length === 11 && value.startsWith("1")) return `+${value}`;
+  if (value.length === 10) return `+1${value}`;
+  return null;
+}
+
+/** Normalize an E.164 phone extracted from an utterance the caller spoke.
+ *
+ * Deepgram can deliver a phone as formatted digits, individual number words,
+ * or a mixture of both. Only explicit digit tokens are accepted; ambiguous
+ * homophones such as "to" and "for" are deliberately excluded.
+ */
 export function normalizeSpokenPhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, "");
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  if (digits.length === 10) return `+1${digits}`;
-  return null;
+  const formatted = normalizeNanpDigits(digits);
+  if (formatted) return formatted;
+
+  const tokens = raw.toLowerCase().match(/[a-z]+|\d+/g) ?? [];
+  const spokenDigits = tokens.map((token) =>
+    /^\d+$/.test(token) ? token : SPOKEN_PHONE_DIGITS[token] ?? ""
+  ).join("");
+  return normalizeNanpDigits(spokenDigits);
 }

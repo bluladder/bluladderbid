@@ -120,7 +120,7 @@ authoritative source of truth — this list mirrors it for convenience.
   "thank you" or "have a great day"; they can terminate an active quote turn.
 - Streaming response contract: emit the OpenAI assistant role frame
   immediately. If authoritative controller processing remains pending for
-  1.2 seconds, emit exactly one neutral "One moment. <flush />" acknowledgement.
+  1.2 seconds, emit exactly one neutral "Got it. <flush />" acknowledgement.
   Emit no price, booking, delivery, identity, or address claim until controller
   completion and the final authoritative-turn check pass.
 - Artifacts: recording, video recording, PCAP, logging, full message history,

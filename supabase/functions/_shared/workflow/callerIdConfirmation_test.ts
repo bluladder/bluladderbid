@@ -26,5 +26,29 @@ Deno.test("interpretConfirmation: yes/no/unclear", () => {
 Deno.test("normalizeSpokenPhone accepts 10-digit and returns E.164", () => {
   assertEquals(normalizeSpokenPhone("469 555 1212"), "+14695551212");
   assertEquals(normalizeSpokenPhone("1 469 555 1212"), "+14695551212");
+  assertEquals(
+    normalizeSpokenPhone(
+      "four six nine seven four seven two eight seven seven",
+    ),
+    "+14697472877",
+  );
+  assertEquals(
+    normalizeSpokenPhone("four six nine, 747, two eight seven seven"),
+    "+14697472877",
+  );
+  assertEquals(
+    normalizeSpokenPhone(
+      "one four six nine seven four seven two eight seven seven",
+    ),
+    "+14697472877",
+  );
+  assertEquals(
+    normalizeSpokenPhone("use the one ending in two eight seven seven"),
+    null,
+  );
+  assertEquals(
+    normalizeSpokenPhone("call me at four to nine for service"),
+    null,
+  );
   assertEquals(normalizeSpokenPhone("hello"), null);
 });
