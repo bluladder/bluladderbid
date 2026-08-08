@@ -35,6 +35,7 @@ export type VoiceTurnLatencyMilestone =
   | "controllerCompletedMs"
   | "persistenceCompletedMs"
   | "firstResponseChunkMs"
+  | "firstResponseContentChunkMs"
   | "responseCompletedMs";
 
 export type VoiceTurnLatencyDuration =
@@ -48,6 +49,7 @@ export type VoiceTurnLatencyDuration =
   | "externalToolMs"
   | "persistenceMs"
   | "applicationToFirstChunkMs"
+  | "applicationToFirstContentChunkMs"
   | "applicationTotalMs";
 
 export interface VoiceTurnLatencyEvent {
@@ -168,10 +170,17 @@ export class VoiceTurnLatencyRecorder {
     this.#finished = true;
     this.mark("responseCompletedMs");
     const first = this.#milestones.firstResponseChunkMs;
+    const firstContent = this.#milestones.firstResponseContentChunkMs;
     const user = this.#milestones.finalUserTurnReceivedMs;
     const completed = this.#milestones.responseCompletedMs;
     if (first !== undefined && user !== undefined) {
       this.#durations.applicationToFirstChunkMs = Math.max(0, first - user);
+    }
+    if (firstContent !== undefined && user !== undefined) {
+      this.#durations.applicationToFirstContentChunkMs = Math.max(
+        0,
+        firstContent - user,
+      );
     }
     if (completed !== undefined && user !== undefined) {
       this.#durations.applicationTotalMs = Math.max(0, completed - user);

@@ -42,6 +42,7 @@ import {
   interpretConfirmation,
   normalizeSpokenPhone,
   REPROMPT_PREFERRED_NUMBER,
+  spokenLast4,
 } from "./callerIdConfirmation.ts";
 import {
   applyCanonicalVoiceAnswer,
@@ -1044,7 +1045,7 @@ export async function runControllerTurn(
           "confirming:contact_phone",
         );
         const spoken = `I have the mobile number ending in ${
-          digits(spokenPhone).slice(-4)
+          spokenLast4(spokenPhone)
         }. Is that right?`;
         return {
           sessionId: session.id,
@@ -1098,7 +1099,7 @@ export async function runControllerTurn(
           "confirming:contact_phone",
         );
         const spoken = `I have the mobile number ending in ${
-          digits(parsed).slice(-4)
+          spokenLast4(parsed)
         }. Is that right?`;
         return {
           sessionId: session.id,
@@ -1582,7 +1583,7 @@ export async function runControllerTurn(
           "confirming:contact_phone",
         );
         const spoken = `I have the mobile number ending in ${
-          digits(correction).slice(-4)
+          spokenLast4(correction)
         }. Is that right?`;
         return askConfirmation("contact_phone", spoken);
       }
@@ -2321,7 +2322,7 @@ export async function runControllerTurn(
       return askConfirmation(
         "contact_phone",
         `I have the mobile number ending in ${
-          digits(f.phone).slice(-4)
+          spokenLast4(f.phone)
         }. Is that right?`,
       );
     }

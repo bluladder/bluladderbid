@@ -147,6 +147,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/pricingEngine.ts",
   "supabase/functions/_shared/quoteSession.ts",
   "supabase/functions/_shared/quoteSession_test.ts",
+  "supabase/functions/_shared/salesEngine/residentialQuoteManifest.ts",
   "supabase/functions/_shared/supabaseOrganizationAuthority.ts",
   "supabase/functions/_shared/supabaseOrganizationAuthority_test.ts",
   "supabase/functions/_shared/voice/controllerRoute.ts",
@@ -166,6 +167,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/quoteSessionProjection.ts",
   "supabase/functions/_shared/voice/quoteSessionProjection_test.ts",
   "supabase/functions/_shared/voice/spokenEmail.ts",
+  "supabase/functions/_shared/voice/spokenEmail_test.ts",
   "supabase/functions/_shared/voice/spokenQuantity.ts",
   "supabase/functions/_shared/voice/spokenQuantity_test.ts",
   "supabase/functions/_shared/voice/turnJournal.ts",
@@ -175,6 +177,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/voiceBookingIdentityPreparation.ts",
   "supabase/functions/_shared/voice/voiceBookingIdentityPreparation_test.ts",
   "supabase/functions/_shared/voice/voiceCanonicalIntake.ts",
+  "supabase/functions/_shared/voice/voiceInputNormalizer.ts",
+  "supabase/functions/_shared/voice/voiceInputNormalizer_test.ts",
   "supabase/functions/_shared/voice/voiceJourneyContract.ts",
   "supabase/functions/_shared/voice/voiceJourneyCompletion_test.ts",
   "supabase/functions/_shared/voice/voicePolicy.ts",
@@ -264,6 +268,10 @@ if (missingEdgePaths.length) {
 }
 
 const reviewedPostRuntimeProtectedPaths = new Set([
+  // Exact owner-call prompt-only repair. These two synchronized manifests
+  // change no intake fields, pricing inputs, rates, tax, totals, or duration.
+  "packages/sales-engine/intake/residentialQuoteManifest.ts",
+  "packages/sales-engine/intake/residentialQuoteManifest.test.ts",
   "src/lib/pricing/__fixtures__/legacyBundlePricing.ts",
   "src/lib/pricing/__fixtures__/liveConfig.ts",
   "src/lib/pricing/engine.ts",
@@ -279,6 +287,7 @@ const reviewedPostRuntimeProtectedPaths = new Set([
   "src/lib/pricing/toQuoteInput.selectedServices.test.ts",
   "supabase/functions/_shared/pricingEngine.ts",
   "supabase/functions/_shared/quoteSessionPricingAdapter.ts",
+  "supabase/functions/_shared/salesEngine/residentialQuoteManifest.ts",
 ]);
 const protectedContractPaths = changedPaths([
   "packages/sales-engine",

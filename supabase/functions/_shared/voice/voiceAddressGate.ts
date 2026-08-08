@@ -290,7 +290,7 @@ export function spellOut(word: string): string {
 
 export function speakDigits(value: string): string {
   return value.replace(/\D/g, "").split("").map((d) => DIGITS[Number(d)]).join(
-    "-",
+    ", ",
   );
 }
 
@@ -301,7 +301,22 @@ export function houseNumberOf(
   return m ? m[1] : null;
 }
 
-/** Build one concise confirmation while reading the house number digit by digit. */
+const STATE_NAMES: Readonly<Record<string, string>> = {
+  TX: "Texas",
+};
+
+function speakState(value: string): string {
+  const state = value.trim();
+  if (!state) return "";
+  const abbreviation = state.toUpperCase();
+  if (STATE_NAMES[abbreviation]) return STATE_NAMES[abbreviation];
+  if (/^[A-Z]{2}$/.test(abbreviation)) {
+    return abbreviation.split("").join(", ");
+  }
+  return state;
+}
+
+/** Build one complete, deliberately paced confirmation. */
 export function buildAddressReadback(formatted: string): string {
   const segs = String(formatted ?? "").split(",").map((s) => s.trim()).filter(
     Boolean,
@@ -316,6 +331,12 @@ export function buildAddressReadback(formatted: string): string {
     remainder.find((segment) =>
       segment !== unit && !/^[A-Z]{2}\b(?:\s+\d{5})?/i.test(segment)
     ) ?? "";
+  const statePostal =
+    remainder.find((segment) =>
+      /^[A-Z]{2}\b(?:\s+\d{5}(?:-\d{4})?)?/i.test(segment)
+    ) ?? "";
+  const state = statePostal.match(/^([A-Z]{2})\b/i)?.[1] ?? "";
+  const postalCode = statePostal.match(/\b(\d{5}(?:-\d{4})?)\b/)?.[1] ?? "";
   const words = street.split(/\s+/).filter(Boolean);
   const house = houseNumberOf(street);
   const body = house ? words.slice(1) : words;
@@ -323,15 +344,18 @@ export function buildAddressReadback(formatted: string): string {
     ? expandStreetSuffix(body[body.length - 1])
     : "";
   const name = (body.length > 1 ? body.slice(0, -1) : body).join(" ");
-  const parts: string[] = [];
-  if (house) parts.push(speakDigits(house));
-  if (name) parts.push(name);
-  if (suffix) parts.push(suffix);
-  const conciseStreet = [parts.join(" "), unit].filter(Boolean).join(", ") ||
-    street || formatted;
-  return `I found ${conciseStreet}${
-    city ? ` in ${city}` : ""
-  }. Is that correct?`;
+  const streetName = [name, suffix].filter(Boolean).join(" ") || street;
+  const statements: string[] = [];
+  if (house) statements.push(`The house number is ${speakDigits(house)}.`);
+  if (streetName) statements.push(`The street is ${streetName}.`);
+  if (unit) statements.push(`The unit is ${unit}.`);
+  if (city) statements.push(`The city is ${city}.`);
+  if (state) statements.push(`The state is ${speakState(state)}.`);
+  if (postalCode) {
+    statements.push(`The ZIP code is ${speakDigits(postalCode)}.`);
+  }
+  if (!statements.length) statements.push(`I found ${formatted}.`);
+  return `${statements.join(" ")} Is that complete address exactly right?`;
 }
 
 /** Ask for the house number one digit at a time (mismatch recovery). */

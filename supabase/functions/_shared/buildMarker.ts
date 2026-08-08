@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.12-contact-resume";
+export const BUILD_ID = "voice-adapter-4C-b.6.13-owner-call-recovery";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -76,4 +76,15 @@ export const BUILD_FEATURES = {
   voiceLazyPricingProbe: true,
   voiceNaturalSlowTurnAcknowledgement: true,
   voiceWaitCompletedTurnReplay: true,
+  // 6.13 — failed owner-call recovery: contextual outside-only ASR,
+  // one-turn identity prompts, deliberately paced contact/address readbacks,
+  // sentence-aware speech chunks, content-chunk latency evidence, and a
+  // tenant/call-scoped latest-authoritative fallback for stale retries whose
+  // exact old journal row is unavailable.
+  voiceContextualOutsideHomophone: true,
+  voiceCompleteIdentityPrompts: true,
+  voiceDeliberateContactReadback: true,
+  voiceSentenceAwareStreaming: true,
+  voiceFirstContentChunkLatency: true,
+  voiceLatestAuthoritativeStaleReplay: true,
 } as const;

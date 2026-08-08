@@ -46,7 +46,10 @@ import {
   VoiceTurnLatencyRecorder,
   type VoiceTurnLatencyRoute,
 } from "../_shared/voice/voiceTurnLatency.ts";
-import { readReplayableControllerReply } from "../_shared/voice/turnJournal.ts";
+import {
+  readLatestReplayableControllerReply,
+  readReplayableControllerReply,
+} from "../_shared/voice/turnJournal.ts";
 import {
   mayReplayCompletedVoiceTurnClaim,
   resolveCompletedVoiceTurnReplay,
@@ -448,16 +451,33 @@ Deno.serve(async (req) => {
               contentHash: turn.contentHash,
               messages: providerMessagesForJournal,
             }),
-          isAuthoritative: () =>
+          isAuthoritative: (authoritativeTurnId?: string) =>
             isAuthoritativeVoiceTurn(supabase, {
               organizationId: providerAuthority.organizationId,
               callId: turn.callId,
-              turnId: turn.turnId,
+              turnId: authoritativeTurnId ?? turn.turnId,
             }),
         };
-        const replay = claim === "wait"
+        let replay = claim === "wait"
           ? await waitForCompletedVoiceTurnReplay(replayDependencies)
           : await resolveCompletedVoiceTurnReplay(replayDependencies);
+        let replaySource: "exact" | "latest_authoritative" = "exact";
+        if (
+          claim === "stale" && replay.status === "suppressed" &&
+          replay.reason === "reply_unavailable" &&
+          replay.detail === "reply_missing"
+        ) {
+          replay = await resolveCompletedVoiceTurnReplay({
+            readReply: () =>
+              readLatestReplayableControllerReply(supabase, {
+                organizationId: providerAuthority.organizationId,
+                callId: turn.callId,
+                sessionToken: request.sessionId,
+              }),
+            isAuthoritative: replayDependencies.isAuthoritative,
+          });
+          replaySource = "latest_authoritative";
+        }
         latency.add("databaseMs", performance.now() - replayStarted);
         if (replay.status === "replay") {
           console.log(JSON.stringify({
@@ -466,7 +486,9 @@ Deno.serve(async (req) => {
             correlationId,
             route: "single_flight",
             reason: claim === "stale"
-              ? "stale_replayed"
+              ? replaySource === "latest_authoritative"
+                ? "stale_latest_authoritative_replayed"
+                : "stale_replayed"
               : claim === "wait"
               ? "wait_replayed"
               : "duplicate_replayed",
@@ -503,6 +525,8 @@ Deno.serve(async (req) => {
               }),
             lifecycle: {
               onFirstChunk: () => latency.mark("firstResponseChunkMs"),
+              onFirstContentChunk: () =>
+                latency.mark("firstResponseContentChunkMs"),
               onComplete: () =>
                 emitVoiceTurnLatency(latency.finish({
                   route: "single_flight",
@@ -824,6 +848,7 @@ Deno.serve(async (req) => {
       run: runControllerTurn,
       lifecycle: {
         onFirstChunk: () => latency.mark("firstResponseChunkMs"),
+        onFirstContentChunk: () => latency.mark("firstResponseContentChunkMs"),
         onComplete: (status) => {
           emitVoiceTurnLatency(latency.finish({
             route: "controller",

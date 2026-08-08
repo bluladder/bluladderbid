@@ -1,5 +1,5 @@
 export type CompletedVoiceTurnReply =
-  | { status: "found"; spoken: string }
+  | { status: "found"; spoken: string; authoritativeTurnId?: string }
   | { status: "unavailable"; reason: string };
 
 export type CompletedVoiceTurnReplay =
@@ -28,7 +28,7 @@ export function mayReplayCompletedVoiceTurnClaim(
 export async function resolveCompletedVoiceTurnReplay(
   dependencies: {
     readReply: () => Promise<CompletedVoiceTurnReply>;
-    isAuthoritative: () => Promise<boolean>;
+    isAuthoritative: (turnId?: string) => Promise<boolean>;
   },
 ): Promise<CompletedVoiceTurnReplay> {
   const reply = await dependencies.readReply();
@@ -40,7 +40,7 @@ export async function resolveCompletedVoiceTurnReplay(
     };
   }
   try {
-    if (!await dependencies.isAuthoritative()) {
+    if (!await dependencies.isAuthoritative(reply.authoritativeTurnId)) {
       return { status: "suppressed", reason: "turn_not_authoritative" };
     }
   } catch {
@@ -58,7 +58,7 @@ export async function resolveCompletedVoiceTurnReplay(
 export async function waitForCompletedVoiceTurnReplay(
   dependencies: {
     readReply: () => Promise<CompletedVoiceTurnReply>;
-    isAuthoritative: () => Promise<boolean>;
+    isAuthoritative: (turnId?: string) => Promise<boolean>;
     delay?: (milliseconds: number) => Promise<void>;
   },
   options: {

@@ -53,6 +53,8 @@ Deno.test("phase9 recorder produces deterministic boundary and delay buckets", (
   recorder.mark("persistenceCompletedMs");
   now = 1045;
   recorder.mark("firstResponseChunkMs");
+  now = 1047;
+  recorder.mark("firstResponseContentChunkMs");
   now = 1050;
   const event = recorder.finish({ route: "controller", outcome: "responded" });
   assert(event);
@@ -64,6 +66,7 @@ Deno.test("phase9 recorder produces deterministic boundary and delay buckets", (
     controllerCompletedMs: 40,
     persistenceCompletedMs: 40,
     firstResponseChunkMs: 45,
+    firstResponseContentChunkMs: 47,
     responseCompletedMs: 50,
   });
   assertEquals(event.durations, {
@@ -76,6 +79,7 @@ Deno.test("phase9 recorder produces deterministic boundary and delay buckets", (
     externalToolMs: 4,
     persistenceMs: 5,
     applicationToFirstChunkMs: 40,
+    applicationToFirstContentChunkMs: 42,
     applicationTotalMs: 45,
   });
   assertEquals(
@@ -183,6 +187,7 @@ Deno.test("phase9 adapter contract marks actual first enqueue and completed stre
   assertStringIncludes(source, "route.timings.addressServiceAreaMs");
   assertStringIncludes(source, "route.timings.externalToolMs");
   assertStringIncludes(source, "route.timings.persistenceMs");
+  assertStringIncludes(source, 'latency.mark("firstResponseContentChunkMs"');
   const firstCallback = source.indexOf("lifecycle.onFirstChunk?.()");
   const firstEnqueue = source.indexOf(
     "controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\\n\\n`))",

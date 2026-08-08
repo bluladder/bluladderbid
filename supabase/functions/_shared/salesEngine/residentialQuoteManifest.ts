@@ -59,7 +59,7 @@ export interface IntakeFieldSpec {
 export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
   {
     id: "contact_name",
-    prompt: "May I get your first name so I can put this quote under it?",
+    prompt: "May I get your first and last name for the quote?",
     label: "Customer name",
     engineMissingTokens: [],
     purpose:
@@ -182,8 +182,9 @@ export const RESIDENTIAL_INTAKE_MANIFEST: readonly IntakeFieldSpec[] = [
   },
   {
     id: "address",
-    prompt: "What's the street address for the visit?",
-    label: "Street address",
+    prompt:
+      "What is the complete service address, including the street, city, state, and five-digit ZIP code?",
+    label: "Complete service address",
     engineMissingTokens: [],
     purpose:
       "Required for booking, availability, and drive-time routing — not for a rough quote.",

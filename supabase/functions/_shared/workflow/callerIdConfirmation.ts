@@ -11,9 +11,29 @@ export function last4(phoneE164: string): string {
   return digits.slice(-4);
 }
 
+const PHONE_DIGIT_WORDS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+] as const;
+
+/** Speak only the last four digits, separated by deliberate TTS pauses. */
+export function spokenLast4(phoneE164: string): string {
+  return last4(phoneE164).split("").map((digit) =>
+    PHONE_DIGIT_WORDS[Number(digit)]
+  ).join(", ");
+}
+
 export function confirmationPrompt(phoneE164: string): string {
   return `I have this number ending in ${
-    last4(phoneE164)
+    spokenLast4(phoneE164)
   }. Is this the best mobile number for your quote and appointment details?`;
 }
 

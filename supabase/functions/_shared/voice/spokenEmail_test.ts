@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { parseSpokenEmail } from "./spokenEmail.ts";
+import { buildSpokenEmailReadback, parseSpokenEmail } from "./spokenEmail.ts";
 
 Deno.test("spoken email: written address passes through", () => {
   assertEquals(parseSpokenEmail("ben@bluladder.com"), "ben@bluladder.com");
@@ -37,4 +37,11 @@ Deno.test("spoken email: two candidates are ambiguous", () => {
     null,
   );
   assertEquals(parseSpokenEmail("ben@a.com and sara@b.com"), null);
+});
+
+Deno.test("spoken email: readback spells identity with deliberate punctuation", () => {
+  assertEquals(
+    buildSpokenEmailReadback("ben.millen+2@bluladder.com"),
+    "I heard the email as: B, E, N. Dot. M, I, L, L, E, N. Plus. two. At. B, L, U, L, A, D, D, E, R. Dot. C, O, M. Is that exactly right?",
+  );
 });

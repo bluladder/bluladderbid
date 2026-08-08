@@ -282,14 +282,16 @@ export async function recordVoiceTurns(
 }
 
 export type VoiceTurnReplayRead =
-  | { status: "found"; spoken: string }
+  | { status: "found"; spoken: string; authoritativeTurnId?: string }
   | {
     status: "unavailable";
     reason:
       | "conversation_unavailable"
       | "conversation_ambiguous"
       | "reply_missing"
-      | "reply_lineage_mismatch";
+      | "reply_lineage_mismatch"
+      | "latest_claim_unavailable"
+      | "latest_claim_ambiguous";
   };
 
 /**
@@ -373,5 +375,124 @@ export async function readReplayableControllerReply(
     return { status: "found", spoken };
   } catch {
     return { status: "unavailable", reason: "conversation_unavailable" };
+  }
+}
+
+/**
+ * Read the latest completed controller reply for a stale provider request.
+ * This is intentionally separate from exact-turn replay and is safe only when
+ * the caller immediately rechecks authority for the returned turn id. Every
+ * read remains scoped to the server-resolved organization and authenticated
+ * call; a row with any mismatched journal lineage is rejected.
+ */
+export async function readLatestReplayableControllerReply(
+  supabase: SB,
+  args: {
+    organizationId: string;
+    /** Raw authenticated provider call id used by voice_turn_claims. */
+    callId: string;
+    /** Canonical vapi_call:<id> conversation/journal token. */
+    sessionToken: string;
+  },
+): Promise<VoiceTurnReplayRead> {
+  try {
+    const conversationRead = await supabase
+      .from("chat_conversations")
+      .select("id, organization_id, session_token, channel")
+      .eq("organization_id", args.organizationId)
+      .eq("session_token", args.sessionToken)
+      .eq("channel", "voice")
+      .limit(2);
+    if (conversationRead?.error) {
+      return { status: "unavailable", reason: "conversation_unavailable" };
+    }
+    const conversations = Array.isArray(conversationRead?.data)
+      ? conversationRead.data
+      : [];
+    if (conversations.length !== 1) {
+      return {
+        status: "unavailable",
+        reason: conversations.length > 1
+          ? "conversation_ambiguous"
+          : "conversation_unavailable",
+      };
+    }
+    const conversationId = String(conversations[0].id ?? "");
+    if (!conversationId) {
+      return { status: "unavailable", reason: "conversation_unavailable" };
+    }
+
+    const claimRead = await supabase
+      .from("voice_turn_claims")
+      .select(
+        "organization_id, call_id, turn_id, position, content_hash, status",
+      )
+      .eq("organization_id", args.organizationId)
+      .eq("call_id", args.callId)
+      .eq("status", "completed")
+      .order("position", { ascending: false })
+      .limit(2);
+    if (claimRead?.error) {
+      return { status: "unavailable", reason: "latest_claim_unavailable" };
+    }
+    const claims = Array.isArray(claimRead?.data) ? claimRead.data : [];
+    if (!claims.length) {
+      return { status: "unavailable", reason: "latest_claim_unavailable" };
+    }
+    const claim = claims[0] as Record<string, unknown>;
+    const turnId = String(claim.turn_id ?? "");
+    const position = Number(claim.position);
+    const contentHash = String(claim.content_hash ?? "");
+    if (
+      claim.organization_id !== args.organizationId ||
+      claim.call_id !== args.callId ||
+      claim.status !== "completed" ||
+      !/^[0-9a-f-]{36}$/i.test(turnId) ||
+      !Number.isInteger(position) || position < 1 ||
+      !/^[0-9a-f]{64}$/i.test(contentHash) ||
+      (claims[1] && Number(claims[1].position) >= position)
+    ) {
+      return { status: "unavailable", reason: "latest_claim_ambiguous" };
+    }
+
+    const replyRead = await supabase.from("chat_messages")
+      .select("id, conversation_id, role, content, ai_metadata")
+      .eq("conversation_id", conversationId)
+      .eq("role", "assistant")
+      .eq("ai_metadata->>channel", "voice")
+      .eq("ai_metadata->>source", "controller")
+      .eq("ai_metadata->>provider_call_id", args.sessionToken)
+      .eq("ai_metadata->>turn_id", turnId)
+      .eq("ai_metadata->>turn_position", String(position))
+      .eq("ai_metadata->>content_hash", contentHash)
+      .limit(2);
+    if (replyRead?.error) {
+      return { status: "unavailable", reason: "reply_missing" };
+    }
+    const replies = Array.isArray(replyRead?.data) ? replyRead.data : [];
+    if (replies.length !== 1) {
+      return {
+        status: "unavailable",
+        reason: replies.length > 1 ? "reply_lineage_mismatch" : "reply_missing",
+      };
+    }
+    const row = replies[0] as Record<string, unknown>;
+    const metadata = row.ai_metadata && typeof row.ai_metadata === "object"
+      ? row.ai_metadata as Record<string, unknown>
+      : {};
+    const spoken = sanitizeTurnContent(String(row.content ?? ""));
+    if (
+      row.conversation_id !== conversationId || row.role !== "assistant" ||
+      !spoken || metadata.channel !== "voice" ||
+      metadata.source !== "controller" ||
+      metadata.provider_call_id !== args.sessionToken ||
+      metadata.turn_id !== turnId || metadata.turn_position !== position ||
+      metadata.content_hash !== contentHash
+    ) {
+      return { status: "unavailable", reason: "reply_lineage_mismatch" };
+    }
+    return { status: "found", spoken, authoritativeTurnId: turnId };
+  } catch {
+    return { status: "unavailable", reason: "latest_claim_unavailable" };
   }
 }

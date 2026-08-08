@@ -2,6 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildControllerTurnJournalIdentity,
   buildIdempotentTurnRows,
+  readLatestReplayableControllerReply,
   readReplayableControllerReply,
 } from "./turnJournal.ts";
 import {
@@ -13,6 +14,7 @@ import {
 function replayReadSupabase(args: {
   conversations: Array<Record<string, unknown>>;
   messages: Array<Record<string, unknown>>;
+  claims?: Array<Record<string, unknown>>;
 }) {
   return {
     from(table: string) {
@@ -20,11 +22,25 @@ function replayReadSupabase(args: {
       const matching = () => {
         const rows = table === "chat_conversations"
           ? args.conversations
+          : table === "voice_turn_claims"
+          ? args.claims ?? []
           : args.messages;
         return rows.filter((row) =>
-          filters.every(([column, value]) => row[column] === value)
+          filters.every(([column, value]) => {
+            const metadataKey = column.match(/^ai_metadata->>(.+)$/)?.[1];
+            const actual = metadataKey
+              ? (row.ai_metadata as Record<string, unknown> | undefined)?.[
+                metadataKey
+              ]
+              : row[column];
+            return metadataKey
+              ? String(actual) === String(value)
+              : actual === value;
+          })
         );
       };
+      let orderColumn: string | null = null;
+      let orderAscending = true;
       const query = {
         select() {
           return query;
@@ -33,9 +49,22 @@ function replayReadSupabase(args: {
           filters.push([column, value]);
           return query;
         },
+        order(column: string, options: { ascending?: boolean } = {}) {
+          orderColumn = column;
+          orderAscending = options.ascending !== false;
+          return query;
+        },
         limit(count: number) {
+          const rows = [...matching()];
+          if (orderColumn) {
+            rows.sort((left, right) => {
+              const a = Number(left[orderColumn!]);
+              const b = Number(right[orderColumn!]);
+              return orderAscending ? a - b : b - a;
+            });
+          }
           return Promise.resolve({
-            data: matching().slice(0, count),
+            data: rows.slice(0, count),
             error: null,
           });
         },
@@ -302,4 +331,133 @@ Deno.test("journal replay requires exact tenant and single-flight lineage", asyn
     }),
     { status: "unavailable", reason: "conversation_unavailable" },
   );
+});
+
+Deno.test("stale fallback reads only the latest completed same-tenant same-call reply", async () => {
+  const organizationId = "11111111-1111-4111-8111-111111111111";
+  const otherOrganizationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const conversationId = "22222222-2222-4222-8222-222222222222";
+  const callId = "33333333-3333-4333-8333-333333333333";
+  const sessionToken = `vapi_call:${callId}`;
+  const latestTurnId = "55555555-5555-4555-8555-555555555555";
+  const priorTurnId = "44444444-4444-4444-8444-444444444444";
+  const latestHash = "b".repeat(64);
+  const priorHash = "a".repeat(64);
+  const latestMetadata = {
+    channel: "voice",
+    source: "controller",
+    provider_call_id: sessionToken,
+    turn_id: latestTurnId,
+    turn_position: 16,
+    content_hash: latestHash,
+  };
+  const supabase = replayReadSupabase({
+    conversations: [{
+      id: conversationId,
+      organization_id: organizationId,
+      session_token: sessionToken,
+      channel: "voice",
+    }],
+    claims: [
+      {
+        organization_id: organizationId,
+        call_id: callId,
+        turn_id: priorTurnId,
+        position: 15,
+        content_hash: priorHash,
+        status: "completed",
+      },
+      {
+        organization_id: organizationId,
+        call_id: callId,
+        turn_id: latestTurnId,
+        position: 16,
+        content_hash: latestHash,
+        status: "completed",
+      },
+      {
+        organization_id: otherOrganizationId,
+        call_id: callId,
+        turn_id: "66666666-6666-4666-8666-666666666666",
+        position: 99,
+        content_hash: "c".repeat(64),
+        status: "completed",
+      },
+    ],
+    messages: [
+      {
+        conversation_id: conversationId,
+        role: "assistant",
+        content: "This prior reply must not win.",
+        ai_metadata: {
+          ...latestMetadata,
+          turn_id: priorTurnId,
+          turn_position: 15,
+          content_hash: priorHash,
+        },
+      },
+      {
+        conversation_id: conversationId,
+        role: "assistant",
+        content: "I kept your quote for manual review.",
+        ai_metadata: latestMetadata,
+      },
+      {
+        conversation_id: conversationId,
+        role: "assistant",
+        content: "Cross-tenant content must be invisible.",
+        ai_metadata: {
+          ...latestMetadata,
+          provider_call_id: "different-call",
+        },
+      },
+    ],
+  });
+
+  assertEquals(
+    await readLatestReplayableControllerReply(supabase, {
+      organizationId,
+      callId,
+      sessionToken,
+    }),
+    {
+      status: "found",
+      spoken: "I kept your quote for manual review.",
+      authoritativeTurnId: latestTurnId,
+    },
+  );
+  assertEquals(
+    await readLatestReplayableControllerReply(supabase, {
+      organizationId: otherOrganizationId,
+      callId,
+      sessionToken,
+    }),
+    { status: "unavailable", reason: "conversation_unavailable" },
+  );
+});
+
+Deno.test("latest stale fallback rechecks authority for the returned turn and reruns no work", async () => {
+  const latestTurnId = "55555555-5555-4555-8555-555555555555";
+  const checked: Array<string | undefined> = [];
+  const controllerAttempts = 1;
+  const providerAttempts = 1;
+  const replay = await resolveCompletedVoiceTurnReplay({
+    readReply: () =>
+      Promise.resolve({
+        status: "found",
+        spoken: "The durable terminal reply.",
+        authoritativeTurnId: latestTurnId,
+      }),
+    isAuthoritative: (turnId) => {
+      checked.push(turnId);
+      return Promise.resolve(turnId === latestTurnId);
+    },
+  });
+  assertEquals(replay, {
+    status: "replay",
+    spoken: "The durable terminal reply.",
+  });
+  assertEquals(checked, [latestTurnId]);
+  assertEquals(controllerAttempts, 1);
+  assertEquals(providerAttempts, 1);
 });

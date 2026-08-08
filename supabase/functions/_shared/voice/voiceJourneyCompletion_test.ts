@@ -308,7 +308,7 @@ Deno.test("spelled email capture is specialized, bounded and read back once", ()
   assertEquals(email, "synthetic.caller@example.com");
   assertEquals(
     buildSpokenEmailReadback(email!),
-    "I have synthetic dot caller at example dot com. Is that exactly right?",
+    "I heard the email as: S, Y, N, T, H, E, T, I, C. Dot. C, A, L, L, E, R. At. E, X, A, M, P, L, E. Dot. C, O, M. Is that exactly right?",
   );
   assertEquals(parseSpokenEmail("synthetic dot caller at"), null);
 });
@@ -482,7 +482,6 @@ Deno.test("field-team memo is bounded and cannot alter quote state", () => {
   });
 });
 
-
 Deno.test("canonical voice intake stores ordinary spoken quantities in the requested fields", () => {
   const cases: Array<{
     field: string;
@@ -632,7 +631,6 @@ Deno.test("every reachable price-changing count has a direct question", () => {
     assert(!prompt.includes("one more confirmed detail"), field);
   }
 });
-
 
 Deno.test("failed-call transcript reaches pricing readiness after a spoken ladder count", () => {
   let session = empty();

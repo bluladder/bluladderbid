@@ -66,7 +66,14 @@ function normalizeWindowSideShorthand(
       .test(lastAssistant);
   if (asksWindowSides) {
     const trimmed = out.trim();
-    if (/^(?:outside|exterior)(?:\s+only)?$/i.test(trimmed)) {
+    if (
+      /^(?:outside|exterior)(?:\s+only)?[.!?]?$/i.test(trimmed) ||
+      // Exact incident recovery: Deepgram rendered "outside only" as
+      // "household only". Interpret this homophone only while the immediately
+      // preceding assistant turn is explicitly choosing window sides. The
+      // same words remain untouched everywhere else.
+      /^household(?:\s+only)?[.!?]?$/i.test(trimmed)
+    ) {
       out = "exterior only";
       applied = true;
     } else if (
