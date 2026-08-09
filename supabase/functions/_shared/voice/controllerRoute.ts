@@ -286,6 +286,9 @@ export async function executeControllerRoute(
       sessionId: turn.sessionId,
       conversationId: input.conversationId,
       organizationId: input.organizationId,
+      session: persistence.status === "persisted"
+        ? persistence.session
+        : undefined,
     });
     timings.projectionMs += elapsed(projectionStarted);
     if (projection.status === "conflict" || projection.status === "error") {

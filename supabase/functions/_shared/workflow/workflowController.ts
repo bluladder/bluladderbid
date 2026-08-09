@@ -26,6 +26,7 @@ import { calculateQuote } from "../pricingEngine.ts";
 import {
   computeRequired,
   mergeFields,
+  normalizeEmail,
   normalizePhone,
   type QuoteSession,
   sessionBookingInputsKey,
@@ -86,8 +87,10 @@ import {
   applyVolunteeredVoiceFacts,
   classifyContextualVoiceQuoteByTextRejection,
   classifyContextualVoiceQuoteByTextRequest,
+  classifyWholeHomeWindowPackageChoice,
   hasVolunteeredDiscountCodeCue,
   isOperationalInstructionClause,
+  mayPresentWholeHomeWindowPackageOptions,
   normalizeVolunteeredDiscountCode,
   splitVoiceClauses,
   VOICE_QUOTE_POLICY,
@@ -472,6 +475,32 @@ function expressPriceStatement(session: QuoteSession, total: number): string {
   return `${scope}${
     buildCanonicalPriceStatement(total)
   } Would you like the quote texted, or would you like to continue toward scheduling?`;
+}
+
+function windowPackageChoicePrompt(
+  insideAndOutsideTotal: number,
+  outsideOnlyTotal: number,
+): string {
+  return `For all the windows inside and outside, the total is ${
+    formatCanonicalCurrency(insideAndOutsideTotal)
+  }, including tax. For all exterior windows only, the total is ${
+    formatCanonicalCurrency(outsideOnlyTotal)
+  }, including tax. Which package would you like?`;
+}
+
+/** Everyday affirmative variants are safe for a scoped contact readback, but
+ * must never broaden the stricter booking/cancellation confirmation grammar. */
+function classifyContactReadbackConfirmation(
+  text: string,
+): ReturnType<typeof classifyExplicitConfirmation> {
+  const strict = classifyExplicitConfirmation(text);
+  if (strict !== "unclear") return strict;
+  return /^(?:yeah|yep|yup|correct|right|that'?s right|you got it)[.! ]*$/i
+      .test(
+        String(text ?? "").trim(),
+      )
+    ? "confirmed"
+    : "unclear";
 }
 
 function postPriceChoicePrompt(): string {
@@ -944,6 +973,67 @@ export async function runControllerTurn(
         spoken: `That matches the current quote. ${postPriceChoicePrompt()}`,
       },
     };
+  }
+
+  // A two-package presentation is not itself a firm quote. It is durable only
+  // long enough to interpret the caller's scoped choice; any pricing-input
+  // change clears it in mergeFields and forces fresh canonical calculations.
+  if (
+    session.lastStep === "offered_window_package_choice" &&
+    !session.fields.windowCleaningSides
+  ) {
+    const choice = classifyWholeHomeWindowPackageChoice(input.utterance);
+    if (choice) {
+      capture(
+        mergeFields(session, { windowCleaningSides: choice }),
+        `window_package_selected:${choice}`,
+      );
+    } else {
+      const options = session.fields.voiceJourney?.windowPackageOptions;
+      const insideInputsKey = sessionInputsKey({
+        ...session.fields,
+        windowCleaningSides: "inside_and_outside",
+      });
+      const outsideInputsKey = sessionInputsKey({
+        ...session.fields,
+        windowCleaningSides: "outside_only",
+      });
+      if (
+        options?.status === "presented" &&
+        options.insideAndOutside.inputsKey === insideInputsKey &&
+        options.outsideOnly.inputsKey === outsideInputsKey
+      ) {
+        capture(session, "offered_window_package_choice");
+        const spoken = windowPackageChoicePrompt(
+          options.insideAndOutside.total,
+          options.outsideOnly.total,
+        );
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: {
+              kind: "ask",
+              field: "windowCleaningSides",
+              prompt: spoken,
+            },
+            spoken,
+          },
+        };
+      }
+      // Stored options do not match current canonical inputs. Do not reuse or
+      // speak them; the regular decision path will recalculate fail-closed.
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            windowPackageOptions: null,
+          },
+        }),
+        null,
+      );
+    }
   }
 
   if (session.quoteStatus === "firm") {
@@ -1470,6 +1560,9 @@ export async function runControllerTurn(
     const field = session.lastStep.slice("confirming:".length);
     const answer = field === "address"
       ? classifyAddressConfirmation(input.utterance)
+      : field === "contact_name" || field === "contact_email" ||
+          field === "contact_phone"
+      ? classifyContactReadbackConfirmation(input.utterance)
       : classifyExplicitConfirmation(input.utterance);
     if (answer === "yes" || answer === "confirmed") {
       if (field === "contact_name" && session.fields.name) {
@@ -2518,6 +2611,113 @@ export async function runControllerTurn(
         },
       };
     }
+    if (
+      !session.fields.windowCleaningSides &&
+      mayPresentWholeHomeWindowPackageOptions(session)
+    ) {
+      const loaded = await measure(
+        "pricing",
+        () => loadPricing(input.supabase),
+      );
+      if (!loaded.ok || !loaded.pricing) {
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: { kind: "handoff", reason: "pricing_error" },
+            spoken: VOICE_RECOVERY_LANGUAGE.human_follow_up,
+          },
+        };
+      }
+      const calculatePackage = (
+        windowCleaningSides: "inside_and_outside" | "outside_only",
+      ) => {
+        const fields = { ...session.fields, windowCleaningSides };
+        const result = calculateQuote(
+          quoteSessionFieldsToQuoteInput(fields),
+          loaded.pricing!,
+          loaded.ruleVersion,
+        );
+        const intake = evaluateQuoteIntake(
+          fields as unknown as Record<string, unknown>,
+        );
+        const total = Number(result.estimatedTotal ?? result.total ?? 0);
+        const firm = result.status === "firm" && result.firm === true &&
+          result.missing.length === 0 &&
+          result.manualReviewReasons.length === 0 &&
+          intake.requiredToPrice.length === 0 &&
+          intake.manualReview.length === 0 &&
+          intake.ownerDecisions.length === 0 &&
+          Number.isFinite(total) && total > 0;
+        return {
+          firm,
+          total,
+          inputsKey: sessionInputsKey(fields),
+          pricingVersion: result.ruleVersion,
+          engineVersion: result.engineVersion,
+          taxPolicyVersion: result.taxPolicyVersion,
+        };
+      };
+      const insideAndOutside = calculatePackage("inside_and_outside");
+      const outsideOnly = calculatePackage("outside_only");
+      if (!insideAndOutside.firm || !outsideOnly.firm) {
+        capture(session, "window_package_options_unavailable");
+        return {
+          sessionId: session.id,
+          sessionPatch,
+          pre: {
+            kind: "fsm",
+            action: { kind: "handoff", reason: "pricing_error" },
+            spoken: VOICE_RECOVERY_LANGUAGE.quote_needs_clarification,
+          },
+        };
+      }
+      const presentedAt = new Date().toISOString();
+      capture(
+        mergeFields(session, {
+          voiceJourney: {
+            ...(session.fields.voiceJourney ?? {}),
+            windowPackageOptions: {
+              status: "presented",
+              presentedAt,
+              insideAndOutside: {
+                total: insideAndOutside.total,
+                inputsKey: insideAndOutside.inputsKey,
+                pricingVersion: insideAndOutside.pricingVersion,
+                engineVersion: insideAndOutside.engineVersion,
+                taxPolicyVersion: insideAndOutside.taxPolicyVersion,
+              },
+              outsideOnly: {
+                total: outsideOnly.total,
+                inputsKey: outsideOnly.inputsKey,
+                pricingVersion: outsideOnly.pricingVersion,
+                engineVersion: outsideOnly.engineVersion,
+                taxPolicyVersion: outsideOnly.taxPolicyVersion,
+              },
+            },
+          },
+        }),
+        "offered_window_package_choice",
+      );
+      const spoken = windowPackageChoicePrompt(
+        insideAndOutside.total,
+        outsideOnly.total,
+      );
+      return {
+        sessionId: session.id,
+        sessionPatch,
+        pre: {
+          kind: "fsm",
+          action: {
+            kind: "ask",
+            field: "windowCleaningSides",
+            prompt: spoken,
+          },
+          spoken,
+        },
+      };
+    }
     // The readiness decision and customer-facing calculation consume one
     // fresh canonical snapshot on the actual price turn.
     const pricingProbe = await measure(
@@ -2747,7 +2947,8 @@ export async function runControllerTurn(
 }
 
 export type ControllerPatchPersistence =
-  | { status: "persisted" | "noop" }
+  | { status: "persisted"; session?: QuoteSession }
+  | { status: "noop" }
   | { status: "conflict" | "error"; reason: string };
 
 /** Persist the sessionPatch returned by runControllerTurn. The update is
@@ -2792,7 +2993,13 @@ export async function persistControllerPatch(
   const confirmedPhone = phoneContactConfirmed
     ? normalizePhone(fields?.phone)
     : null;
+  const emailContactConfirmed = fieldStatus?.email === "verified" ||
+    fieldStatus?.email === "corrected";
+  const confirmedEmail = emailContactConfirmed
+    ? normalizeEmail(fields?.email)
+    : null;
   if (confirmedPhone) databasePatch.phone_e164 = confirmedPhone;
+  if (confirmedEmail) databasePatch.email_normalized = confirmedEmail;
   try {
     let query = supabase.from("quote_sessions").update(databasePatch).eq(
       "id",
@@ -2802,14 +3009,37 @@ export async function persistControllerPatch(
       query = query.eq("updated_at", expectedUpdatedAt);
     }
     query = query.eq("organization_id", expectedOrganizationId);
-    const { data, error } = await query.select("id").maybeSingle();
+    const { data, error } = await query.select("*").maybeSingle();
     if (error) {
       return { status: "error", reason: "quote_session_update_failed" };
     }
     if (!data) {
       return { status: "conflict", reason: "quote_session_changed" };
     }
-    return { status: "persisted" };
+    return {
+      status: "persisted",
+      session: data && typeof data === "object"
+        ? {
+          id: String(data.id),
+          organizationId: data.organization_id as string | null,
+          channel: data.channel as QuoteSession["channel"],
+          conversationIds: (data.conversation_ids as string[]) ?? [],
+          customerId: data.customer_id as string | null,
+          propertyId: data.property_id as string | null,
+          quoteId: data.quote_id as string | null,
+          fields: (data.fields as QuoteSession["fields"]) ?? {},
+          fieldStatus: (data.field_status as QuoteSession["fieldStatus"]) ?? {},
+          requiredRemaining: (data.required_remaining as string[]) ?? [],
+          lastStep: data.last_step as string | null,
+          quoteStatus: (data.quote_status as QuoteSession["quoteStatus"]) ??
+            "none",
+          bookingReady: !!data.booking_ready,
+          phoneE164: data.phone_e164 as string | null,
+          emailNormalized: data.email_normalized as string | null,
+          updatedAt: data.updated_at as string | null,
+        }
+        : undefined,
+    };
   } catch {
     return { status: "error", reason: "quote_session_update_failed" };
   }

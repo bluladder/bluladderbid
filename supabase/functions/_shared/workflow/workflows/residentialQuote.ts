@@ -16,26 +16,27 @@
 
 import {
   computeRequired,
-  sessionInputsKey,
   type QuoteSession,
+  sessionInputsKey,
 } from "../../quoteSession.ts";
 import { hasUsableFact } from "../hasUsableFact.ts";
-import {
-  missingResidentialBookingFields,
-} from "../intakeSchemas.ts";
-import type { WorkflowAction, RequiredField } from "../types.ts";
+import { missingResidentialBookingFields } from "../intakeSchemas.ts";
+import type { RequiredField, WorkflowAction } from "../types.ts";
 // Runtime-neutral Sales Engine shared contract — see packages/sales-engine/README.md.
 // The edge-function bundler cannot reach out of the supabase/ tree, so we ship
 // a mirror at supabase/functions/_shared/salesEngine/. Keep the two in sync;
 // the packages/ copy remains the source of truth for web/tests.
 import {
+  nextResidentialQuestion,
   RESIDENTIAL_INTAKE_BY_ID,
   RESIDENTIAL_INTAKE_PRIORITY,
-  nextResidentialQuestion,
   type ResidentialIntakeFieldId,
 } from "../../salesEngine/residentialQuoteManifest.ts";
 import { evaluateQuoteIntake } from "../../salesEngine/quoteIntakeContract.ts";
-import { nextExpressPrePriceField } from "../../voice/voicePolicy.ts";
+import {
+  mayPresentWholeHomeWindowPackageOptions,
+  nextExpressPrePriceField,
+} from "../../voice/voicePolicy.ts";
 
 function ask(field: ResidentialIntakeFieldId): WorkflowAction {
   const spec = RESIDENTIAL_INTAKE_BY_ID[field];
@@ -68,8 +69,11 @@ export function decideResidentialQuoteAction(
     // approved_business_default provenance. They do not require a synthetic
     // customer recap; only the voice express workflow may suppress this one
     // legacy blocker. All actual missing fields and modifiers still block.
+    const packageOptionsPending = !session.fields.windowCleaningSides &&
+      mayPresentWholeHomeWindowPackageOptions(session);
     const expressMissing = engineMissingForIntake.filter((field) =>
-      field !== "priceChangingAssumptionConfirmation"
+      field !== "priceChangingAssumptionConfirmation" &&
+      !(packageOptionsPending && field === "windowCleaningSides")
     );
     if (expressMissing.length > 0) {
       return { kind: "handoff", reason: "unsupported_service" };
@@ -111,7 +115,9 @@ export function decideResidentialQuoteAction(
   if (session.quoteStatus === "error") {
     return { kind: "handoff", reason: "pricing_error" };
   }
-  if (intake.manualReview.length > 0 || session.quoteStatus === "manual_review") {
+  if (
+    intake.manualReview.length > 0 || session.quoteStatus === "manual_review"
+  ) {
     return {
       kind: "handoff",
       reason: intake.services.includes("commercial_window_bid")
@@ -142,9 +148,10 @@ export function decideResidentialQuoteAction(
       channel: session.channel === "chat" ? "web" : session.channel,
     });
     if (nextBook) return ask(nextBook.id);
-    const legacyMissing = missingResidentialBookingFields(session.fields).filter(
-      (field) => !hasUsableFact(field, session),
-    );
+    const legacyMissing = missingResidentialBookingFields(session.fields)
+      .filter(
+        (field) => !hasUsableFact(field, session),
+      );
     if (legacyMissing.length === 0) return { kind: "offer_scheduling" };
     return ask(legacyMissing[0] as ResidentialIntakeFieldId);
   }

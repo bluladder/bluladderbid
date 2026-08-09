@@ -8,6 +8,7 @@ import {
   applyVolunteeredVoiceFacts,
   classifyContextualVoiceQuoteByTextRejection,
   classifyContextualVoiceQuoteByTextRequest,
+  classifyWholeHomeWindowPackageChoice,
   hasVolunteeredDiscountCodeCue,
   isOperationalInstructionClause,
   isProviderRecordingNotice,
@@ -97,7 +98,7 @@ Deno.test("express path asks only true pricing gaps", () => {
     initial,
     "The home is 2,000 square feet.",
   );
-  assertEquals(nextExpressPrePriceField(withSqft), "windowCleaningSides");
+  assertEquals(nextExpressPrePriceField(withSqft), null);
   const complete = applyVolunteeredVoiceFacts(withSqft, "Outside only.");
   assertEquals(nextExpressPrePriceField(complete), null);
 });
@@ -125,14 +126,49 @@ Deno.test("phase3 outside quote captures sides and next asks only square footage
   assertEquals(nextExpressPrePriceField(next), "squareFootage");
 });
 
-Deno.test("phase3 sides are asked once and not repeated after capture", () => {
+Deno.test("whole-home express path presents both packages instead of asking sides first", () => {
   const initial = applyApprovedWindowDefaults(
     session({ services: ["window_cleaning"], squareFootage: 2000 }),
   );
-  assertEquals(nextExpressPrePriceField(initial), "windowCleaningSides");
+  assertEquals(nextExpressPrePriceField(initial), null);
   const captured = applyVolunteeredVoiceFacts(initial, "All exterior windows.");
   assertEquals(captured.fields.windowCleaningSides, "outside_only");
   assertEquals(nextExpressPrePriceField(captured), null);
+});
+
+Deno.test("partial and multi-service quotes retain side-before-price intake", () => {
+  const partial = session({
+    voiceJourney: { policyVersion: "voice-express-v1" },
+    services: ["window_cleaning"],
+    customerType: "residential",
+    windowCleaningScope: "partial",
+    squareFootage: 2000,
+  });
+  assertEquals(nextExpressPrePriceField(partial), "windowCleaningSides");
+  const multi = session({
+    voiceJourney: { policyVersion: "voice-express-v1" },
+    services: ["window_cleaning", "house_wash"],
+    customerType: "residential",
+    windowCleaningScope: "whole_home",
+    squareFootage: 2000,
+  });
+  assertEquals(nextExpressPrePriceField(multi), "windowCleaningSides");
+});
+
+Deno.test("package choice parser is scoped, unambiguous, and rejects generic yes", () => {
+  assertEquals(
+    classifyWholeHomeWindowPackageChoice("the first package"),
+    "inside_and_outside",
+  );
+  assertEquals(
+    classifyWholeHomeWindowPackageChoice("exterior only"),
+    "outside_only",
+  );
+  assertEquals(classifyWholeHomeWindowPackageChoice("yes"), null);
+  assertEquals(
+    classifyWholeHomeWindowPackageChoice("inside and outside or exterior"),
+    null,
+  );
 });
 
 Deno.test("phase3 approved defaults cover ordinary whole-home windows and explicit overrides win", () => {
@@ -930,10 +966,22 @@ Deno.test("phase3 firm quote accepts only changed high-confidence pricing facts"
 });
 
 Deno.test("phase4 volunteered discount codes normalize without promotion conversion", () => {
-  assertEquals(normalizeVolunteeredDiscountCode("My coupon code is save10"), "SAVE10");
-  assertEquals(normalizeVolunteeredDiscountCode("discount code blue50"), "BLUE50");
-  assertEquals(normalizeVolunteeredDiscountCode("I saw your $99 window special"), null);
-  assertEquals(normalizeVolunteeredDiscountCode("I do not have a coupon"), null);
+  assertEquals(
+    normalizeVolunteeredDiscountCode("My coupon code is save10"),
+    "SAVE10",
+  );
+  assertEquals(
+    normalizeVolunteeredDiscountCode("discount code blue50"),
+    "BLUE50",
+  );
+  assertEquals(
+    normalizeVolunteeredDiscountCode("I saw your $99 window special"),
+    null,
+  );
+  assertEquals(
+    normalizeVolunteeredDiscountCode("I do not have a coupon"),
+    null,
+  );
 });
 
 Deno.test("phase4 malformed discount cue is detected for one clarification", () => {
@@ -941,15 +989,23 @@ Deno.test("phase4 malformed discount cue is detected for one clarification", () 
   assertEquals(hasVolunteeredDiscountCodeCue("outside window cleaning"), false);
 });
 Deno.test("phase4 malformed discount separators cue clarification without normalization", () => {
-  for (const utterance of [
-    "coupon code is SAVE-10",
-    "coupon code is SAVE_10",
-    "coupon code is SAVE 10",
-    "coupon code is SAVE.10",
-  ]) {
+  for (
+    const utterance of [
+      "coupon code is SAVE-10",
+      "coupon code is SAVE_10",
+      "coupon code is SAVE 10",
+      "coupon code is SAVE.10",
+    ]
+  ) {
     assertEquals(normalizeVolunteeredDiscountCode(utterance), null, utterance);
     assertEquals(hasVolunteeredDiscountCodeCue(utterance), true, utterance);
   }
-  assertEquals(normalizeVolunteeredDiscountCode("coupon code is save10"), "SAVE10");
-  assertEquals(hasVolunteeredDiscountCodeCue("I saw your $99 window special"), false);
+  assertEquals(
+    normalizeVolunteeredDiscountCode("coupon code is save10"),
+    "SAVE10",
+  );
+  assertEquals(
+    hasVolunteeredDiscountCodeCue("I saw your $99 window special"),
+    false,
+  );
 });

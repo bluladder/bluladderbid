@@ -246,14 +246,10 @@ export async function recordVoiceTurns(
       return { written: rows.length, duplicates: 0, failed: 0 };
     }
 
-    let written = 0;
-    let duplicates = 0;
-    let failed = 0;
-    for (const row of rows) {
+    const outcomes = await Promise.all(rows.map(async (row) => {
       const { error } = await supabase.from("chat_messages").insert(row);
       if (!error) {
-        written += 1;
-        continue;
+        return "written" as const;
       }
       // A deterministic-id conflict is a replay only when the winner belongs
       // to this exact conversation. Any unreadable/mismatched winner fails.
@@ -262,9 +258,14 @@ export async function recordVoiceTurns(
         .eq("id", row.id)
         .eq("conversation_id", args.conversationId)
         .maybeSingle();
-      if (!winner?.error && winner?.data) duplicates += 1;
-      else failed += 1;
-    }
+      return !winner?.error && winner?.data
+        ? "duplicate" as const
+        : "failed" as const;
+    }));
+    const written = outcomes.filter((outcome) => outcome === "written").length;
+    const duplicates = outcomes.filter((outcome) => outcome === "duplicate")
+      .length;
+    const failed = outcomes.filter((outcome) => outcome === "failed").length;
     return {
       written,
       duplicates,

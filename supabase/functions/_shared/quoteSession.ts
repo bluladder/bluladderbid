@@ -227,6 +227,26 @@ export interface QuoteSessionFields {
     conditionalModifierQuestionAsked?: string;
     volunteeredNotes?: string[];
     requestedNextStep?: "text_quote" | "schedule" | "none";
+    /** Canonical, tax-inclusive alternatives shown before a whole-home window
+     * caller selects the one package that will become the firm quote. */
+    windowPackageOptions?: {
+      status: "presented";
+      presentedAt: string;
+      insideAndOutside: {
+        total: number;
+        inputsKey: string;
+        pricingVersion?: number | string | null;
+        engineVersion?: string | null;
+        taxPolicyVersion?: string | null;
+      };
+      outsideOnly: {
+        total: number;
+        inputsKey: string;
+        pricingVersion?: number | string | null;
+        engineVersion?: string | null;
+        taxPolicyVersion?: string | null;
+      };
+    } | null;
     coupon?: {
       code: string;
       status: "captured" | "valid" | "invalid" | "unclear";
@@ -573,6 +593,7 @@ export function mergeFields(
       nextFields.voiceJourney = {
         ...nextFields.voiceJourney,
         requestedNextStep: "none",
+        windowPackageOptions: null,
         quoteContext: null,
         delivery: null,
         availability: null,
