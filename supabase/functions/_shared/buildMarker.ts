@@ -6,8 +6,14 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.14-dual-package-latency-repair";
+export const BUILD_ID = "voice-realtime-link-mvp.1";
 export const BUILD_FEATURES = {
+  // Issue #91 — native OpenAI Realtime provider target plus two exact,
+  // no-argument customer-link tools on the authenticated Vapi webhook.
+  voiceRealtimeLinkMvp: true,
+  voiceRealtimeNativeAudio: true,
+  voiceRealtimeQuoteLinkTool: true,
+  voiceRealtimeBookingManagementLinkTool: true,
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
   voiceBookingDryRun: true,

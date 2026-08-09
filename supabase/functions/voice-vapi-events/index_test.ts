@@ -89,13 +89,95 @@ Deno.test("event receiver: recognized informational event returns 200", async ()
 Deno.test("event receiver: unsupported event type is safely ignored", async () => {
   setEnv("VAPI_SERVER_SECRET", SECRET);
   const res = await handleVapiEventRequest(post(
-    { message: { type: "tool-calls" } },
+    { message: { type: "transfer-destination-request" } },
     { "x-vapi-secret": SECRET },
   ));
   assertEquals(res.status, 200);
   const body = await res.json();
   assertEquals(body.received, false);
   assertEquals(body.ignored, true);
+});
+
+Deno.test("event receiver: authenticated tool call returns Vapi's exact results shape", async () => {
+  setEnv("VAPI_SERVER_SECRET", SECRET);
+  let calls = 0;
+  const res = await handleVapiEventRequest(
+    post({
+      message: {
+        type: "tool-calls",
+        toolCallList: [{ id: "tool-1", name: "send_online_quote_link" }],
+        call: {
+          id: "call-1",
+          assistantId: "mapped-assistant",
+          customer: { number: "+14697472877" },
+        },
+      },
+    }, { "x-vapi-secret": SECRET }),
+    {
+      organizationId: "00000000-0000-4000-8000-000000000091",
+      handleLinkTools: (_supabase, input) => {
+        calls++;
+        assertEquals(
+          input.organizationId,
+          "00000000-0000-4000-8000-000000000091",
+        );
+        return Promise.resolve({
+          results: [{
+            toolCallId: "tool-1",
+            result: {
+              status: "provider_accepted",
+              message: "provider accepted",
+            },
+          }],
+        });
+      },
+    },
+  );
+  assertEquals(res.status, 200);
+  assertEquals(calls, 1);
+  assertEquals(await res.json(), {
+    results: [{
+      toolCallId: "tool-1",
+      result: {
+        status: "provider_accepted",
+        message: "provider accepted",
+      },
+    }],
+  });
+});
+
+Deno.test("event receiver: missing tool tenant authority fails closed without executing delivery", async () => {
+  setEnv("VAPI_SERVER_SECRET", SECRET);
+  let deliveries = 0;
+  const res = await handleVapiEventRequest(
+    post({
+      message: {
+        type: "tool-calls",
+        toolCallList: [{ id: "tool-1", name: "send_online_quote_link" }],
+        call: { id: "call-1", customer: { number: "+14697472877" } },
+      },
+    }, { "x-vapi-secret": SECRET }),
+    {
+      handleLinkTools: (_supabase, input) => {
+        deliveries++;
+        return Promise.resolve({
+          results: [{
+            toolCallId: "tool-1",
+            result: {
+              status: input.organizationId
+                ? "provider_accepted"
+                : "invalid_request",
+              message: "authority required",
+            },
+          }],
+        });
+      },
+    },
+  );
+  assertEquals(res.status, 200);
+  assertEquals(deliveries, 1);
+  const response = await res.json();
+  assertEquals(response.results[0].result.status, "invalid_request");
 });
 
 Deno.test("event receiver: does not log transcript or full phone number", async () => {

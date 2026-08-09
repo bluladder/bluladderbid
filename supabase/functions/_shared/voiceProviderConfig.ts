@@ -131,6 +131,214 @@ export interface BuildManifestInput {
   serverEventsUrl: string;
 }
 
+// ---------------------------------------------------------------------------
+// Thin OpenAI Realtime MVP. This is a separate, versioned target; the legacy
+// Phase 4C-beta custom-LLM manifest above remains unchanged as rollback.
+// ---------------------------------------------------------------------------
+
+export const VOICE_REALTIME_MVP_ASSISTANT_NAME = "BluLadder Realtime Link MVP";
+export const VOICE_REALTIME_MVP_MODEL = "gpt-realtime-2025-08-28";
+export const VOICE_REALTIME_MVP_VOICE = "marin";
+
+export const VOICE_REALTIME_MVP_SYSTEM_PROMPT = `# Role & objective
+You are BluLadder's friendly phone receptionist. Help callers quickly in English.
+
+# Approved facts
+- BluLadder provides window cleaning, gutter cleaning, roof soft washing, house washing, driveway and flatwork pressure washing, solar-panel cleaning, and screen repair.
+- Exact prices, service-area checks, available times, and new bookings are handled by BluLadder's online bid flow.
+- Existing appointments are viewed or changed through BluLadder's secure customer portal.
+
+# Call flow
+- Keep each reply to one or two short sentences.
+- Speak naturally at a moderate pace. Do not rush, fade out, or use filler such as "one second."
+- Do not repeat a question already answered.
+- NEVER calculate, estimate, invent, or speak a price.
+- For a price, quote, or new booking request, offer to text the online quote link. After clear consent, call send_online_quote_link immediately.
+- For an existing appointment, reschedule, or cancellation request, offer to text the secure portal link. After clear consent, call send_booking_management_link immediately.
+- Never ask for a phone number, email, address, name, square footage, or service details before sending either link. The server uses trusted caller ID.
+- Never directly book, cancel, reschedule, or modify an appointment.
+- Send at most one link purpose per call. If intent conflicts, ask which single link they want.
+- If asked about an unlisted policy or fact, say you do not want to guess and direct the caller to the website.
+
+# Tool truthfulness
+- Say a link was sent only when the tool returns provider_accepted.
+- For queued, uncertain, suppressed, opted_out, paused, failed, unsupported, or invalid_request, follow the tool message exactly and never claim delivery.`;
+
+export interface VoiceRealtimeFunctionTool {
+  type: "function";
+  function: {
+    name:
+      | "send_online_quote_link"
+      | "send_booking_management_link";
+    description: string;
+    parameters: {
+      type: "object";
+      properties: Record<string, never>;
+      required: [];
+      additionalProperties: false;
+    };
+  };
+}
+
+export interface VoiceRealtimeMvpManifest {
+  name: string;
+  isolated: true;
+  inboundOnly: true;
+  language: "en";
+  firstMessage: string;
+  firstMessageMode: "assistant-speaks-first";
+  firstMessageInterruptionsEnabled: true;
+  model: {
+    provider: "openai";
+    model: "gpt-realtime-2025-08-28";
+    messages: [{ role: "system"; content: string }];
+    temperature: 0.6;
+    maxTokens: 250;
+    tools: [VoiceRealtimeFunctionTool, VoiceRealtimeFunctionTool];
+  };
+  voice: {
+    provider: "openai";
+    voiceId: "marin";
+  };
+  /** Native audio-in/audio-out: a separate STT configuration must be absent. */
+  transcriber: null;
+  startSpeakingPlan: {
+    waitSeconds: 0.3;
+    smartEndpointingPlan: { provider: "livekit" };
+  };
+  stopSpeakingPlan: {
+    numWords: 2;
+    voiceSeconds: 0.4;
+    backoffSeconds: 1;
+  };
+  backgroundSound: "off";
+  modelOutputInMessagesEnabled: false;
+  endCallPhrases: [];
+  phoneNumber: null;
+  transferDestination: null;
+  duration: VoiceBetaManifest["duration"];
+  artifactPlan: {
+    recordingEnabled: false;
+    videoRecordingEnabled: false;
+    pcapEnabled: false;
+    loggingEnabled: false;
+    fullMessageHistoryEnabled: false;
+    /** Owner-requested QA transcript; audio recording remains disabled. */
+    transcriptPlan: { enabled: true };
+  };
+  analysisPlan: VoiceBetaManifest["analysisPlan"];
+  serverEvents: {
+    url: string;
+    authenticationMode: "shared-header-credential";
+    events: typeof VOICE_REALTIME_VAPI_ALLOWED_EVENTS;
+  };
+  callRail: null;
+}
+
+export interface BuildVoiceRealtimeMvpManifestInput {
+  /** Fully-qualified voice-vapi-events URL. */
+  serverEventsUrl: string;
+}
+
+function realtimeLinkTool(
+  name: VoiceRealtimeFunctionTool["function"]["name"],
+  description: string,
+): VoiceRealtimeFunctionTool {
+  return {
+    type: "function",
+    function: {
+      name,
+      description,
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+export function buildVoiceRealtimeMvpManifest(
+  input: BuildVoiceRealtimeMvpManifestInput,
+): VoiceRealtimeMvpManifest {
+  if (!isHttpsUrl(input.serverEventsUrl)) {
+    throw new Error("serverEventsUrl must be an https URL");
+  }
+  return {
+    name: VOICE_REALTIME_MVP_ASSISTANT_NAME,
+    isolated: true,
+    inboundOnly: true,
+    language: "en",
+    firstMessage: "Thanks for calling BluLadder. How can I help you today?",
+    firstMessageMode: "assistant-speaks-first",
+    firstMessageInterruptionsEnabled: true,
+    model: {
+      provider: "openai",
+      model: VOICE_REALTIME_MVP_MODEL,
+      messages: [{
+        role: "system",
+        content: VOICE_REALTIME_MVP_SYSTEM_PROMPT,
+      }],
+      temperature: 0.6,
+      maxTokens: 250,
+      tools: [
+        realtimeLinkTool(
+          "send_online_quote_link",
+          "Text the canonical BluLadder online quote and new-booking link to the trusted current caller ID after explicit caller consent.",
+        ),
+        realtimeLinkTool(
+          "send_booking_management_link",
+          "Text the canonical secure appointment portal link to the trusted current caller ID after explicit caller consent.",
+        ),
+      ],
+    },
+    voice: { provider: "openai", voiceId: VOICE_REALTIME_MVP_VOICE },
+    transcriber: null,
+    startSpeakingPlan: {
+      waitSeconds: 0.3,
+      smartEndpointingPlan: { provider: "livekit" },
+    },
+    stopSpeakingPlan: {
+      numWords: 2,
+      voiceSeconds: 0.4,
+      backoffSeconds: 1,
+    },
+    backgroundSound: "off",
+    modelOutputInMessagesEnabled: false,
+    endCallPhrases: [],
+    phoneNumber: null,
+    transferDestination: null,
+    duration: {
+      maxDurationSeconds: 900,
+      hardCutoffMessage: VOICE_BETA_CUTOFF_MESSAGE,
+      timeElapsedHooks: [
+        { seconds: 780, say: VOICE_BETA_WARNING_780 },
+        { seconds: 870, say: VOICE_BETA_WARNING_870 },
+      ],
+    },
+    artifactPlan: {
+      recordingEnabled: false,
+      videoRecordingEnabled: false,
+      pcapEnabled: false,
+      loggingEnabled: false,
+      fullMessageHistoryEnabled: false,
+      transcriptPlan: { enabled: true },
+    },
+    analysisPlan: {
+      summaryPlan: { enabled: false },
+      structuredDataPlan: { enabled: false },
+      successEvaluationPlan: { enabled: false },
+    },
+    serverEvents: {
+      url: input.serverEventsUrl,
+      authenticationMode: "shared-header-credential",
+      events: VOICE_REALTIME_VAPI_ALLOWED_EVENTS,
+    },
+    callRail: null,
+  };
+}
+
 export const VOICE_TRANSCRIBER_KEYTERMS = [
   "BluLadder",
   "McKinney",
@@ -260,11 +468,20 @@ function isHttpsUrl(u: string): boolean {
   }
 }
 
-/** Server events accepted by voice-vapi-events during Phase 4C-β. */
-export const VOICE_VAPI_ALLOWED_EVENTS = [
+/** Exact legacy server-event target retained for Phase 4C-beta rollback. */
+export const VOICE_BETA_VAPI_ALLOWED_EVENTS = [
   "assistant.started",
   "status-update",
   "hang",
   "end-of-call-report",
 ] as const;
+
+/** Exact Realtime MVP server-event target, including synchronous tool calls. */
+export const VOICE_REALTIME_VAPI_ALLOWED_EVENTS = [
+  ...VOICE_BETA_VAPI_ALLOWED_EVENTS,
+  "tool-calls",
+] as const;
+
+/** Runtime receiver allowlist: exact union of reviewed provider targets. */
+export const VOICE_VAPI_ALLOWED_EVENTS = VOICE_REALTIME_VAPI_ALLOWED_EVENTS;
 export type VoiceVapiAllowedEvent = typeof VOICE_VAPI_ALLOWED_EVENTS[number];

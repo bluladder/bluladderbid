@@ -31,6 +31,10 @@ import {
   persistPostCallOperationalNote,
   type PostCallOperationalNoteResult,
 } from "../_shared/voice/postCallOperationalNote.ts";
+import {
+  handleVoiceLinkToolCalls,
+  type VapiToolResultEnvelope,
+} from "../_shared/voice/voiceLinkTools.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -89,6 +93,7 @@ export interface VapiEventDeps {
   runHangupFollowup?: typeof runVoiceHangupBidLinkFollowup;
   persistArtifacts?: typeof persistVapiEndOfCallArtifacts;
   persistPostCallNote?: typeof persistPostCallOperationalNote;
+  handleLinkTools?: typeof handleVoiceLinkToolCalls;
   organizationId?: string;
 }
 
@@ -182,6 +187,57 @@ export async function handleVapiEventRequest(
     };
   }
   console.log(JSON.stringify(logBase));
+
+  // Thin Realtime MVP tools. The model selects only one exact link purpose;
+  // tenant and destination authority are resolved from the authenticated Vapi
+  // envelope before the durable outbox can run. Vapi requires a synchronous
+  // 200 + results response even when the action fails closed.
+  if (allowed && eventType === "tool-calls") {
+    let toolResponse: VapiToolResultEnvelope;
+    const run = deps.handleLinkTools ?? handleVoiceLinkToolCalls;
+    try {
+      if (deps.handleLinkTools) {
+        toolResponse = await run(null, {
+          body,
+          organizationId: deps.organizationId ?? "",
+        });
+      } else {
+        const url = Deno.env.get("SUPABASE_URL");
+        const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        if (!url || !key) {
+          toolResponse = await handleVoiceLinkToolCalls(null, {
+            body,
+            organizationId: "",
+          });
+        } else {
+          const supabase = createClient(url, key, {
+            auth: { persistSession: false, autoRefreshToken: false },
+          });
+          const authority = deps.organizationId
+            ? {
+              status: "resolved" as const,
+              organizationId: deps.organizationId,
+            }
+            : await resolveVoiceProviderOrganizationAuthority(supabase, body);
+          toolResponse = await run(supabase, {
+            body,
+            organizationId: authority.status === "resolved"
+              ? authority.organizationId
+              : "",
+          });
+        }
+      }
+    } catch {
+      toolResponse = await handleVoiceLinkToolCalls(null, {
+        body,
+        organizationId: "",
+      });
+    }
+    return new Response(JSON.stringify(toolResponse), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   // Post-hangup online-bid SMS fallback. Runs ONLY for the authoritative final
   // call-ended event, never for status-update / hang / diagnostics traffic.

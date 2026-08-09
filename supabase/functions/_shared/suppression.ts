@@ -22,6 +22,7 @@
 // unsubscribe) — that check runs inside sendEmail() and always overrides.
 // It also does NOT replace SMS opt-out checks — those run in call sites.
 // ============================================================================
+// deno-lint-ignore-file no-explicit-any
 export function normalizeEmail(raw?: string | null): string | null {
   if (!raw) return null;
   const t = String(raw).trim().toLowerCase();
@@ -51,8 +52,9 @@ export type TransactionalPurpose =
   | "booking_confirmed"
   | "booking_updated"
   | "booking_cancelled"
-  | "verification"            // portal OTP / phone verification
-  | "quote_requested"         // customer-requested delivery of a quote
+  | "verification" // portal OTP / phone verification
+  | "quote_requested" // customer-requested delivery of a quote
+  | "booking_management_requested" // customer-requested secure portal link
   | "contact_request_received"; // callback / "contact us" confirmation
 
 const IDENTITY_ALLOWLIST: ReadonlySet<TransactionalPurpose> = new Set([
@@ -61,6 +63,7 @@ const IDENTITY_ALLOWLIST: ReadonlySet<TransactionalPurpose> = new Set([
   "booking_cancelled",
   "verification",
   "quote_requested",
+  "booking_management_requested",
   "contact_request_received",
 ]);
 
@@ -69,6 +72,7 @@ const IDENTITY_ALLOWLIST: ReadonlySet<TransactionalPurpose> = new Set([
 // to send to a protected identity.
 const REQUIRES_CUSTOMER_INITIATED: ReadonlySet<TransactionalPurpose> = new Set([
   "quote_requested",
+  "booking_management_requested",
 ]);
 
 export interface SuppressionOptions {
@@ -80,14 +84,17 @@ export interface SuppressionOptions {
 
 /** Pure policy decision — given a matched test identity and options, is the
  *  send allowed through? Exported for direct unit testing. */
-export function isPurposeAllowlisted(opts: SuppressionOptions | undefined): boolean {
+export function isPurposeAllowlisted(
+  opts: SuppressionOptions | undefined,
+): boolean {
   if (!opts?.purpose) return false;
   if (!IDENTITY_ALLOWLIST.has(opts.purpose)) return false;
-  if (REQUIRES_CUSTOMER_INITIATED.has(opts.purpose) && !opts.customerInitiated) return false;
+  if (
+    REQUIRES_CUSTOMER_INITIATED.has(opts.purpose) && !opts.customerInitiated
+  ) return false;
   return true;
 }
 
-// deno-lint-ignore no-explicit-any
 export async function checkSuppression(
   supabase: any,
   target: { phone?: string | null; email?: string | null },
@@ -101,7 +108,10 @@ export async function checkSuppression(
     Deno.env.get("DENO_ENV") ||
     ""
   ).toLowerCase();
-  if (env === "preview" || env === "staging" || env === "development" || env === "dev") {
+  if (
+    env === "preview" || env === "staging" || env === "development" ||
+    env === "dev"
+  ) {
     return { suppressed: true, reason: `environment:${env}` };
   }
 
@@ -121,7 +131,10 @@ export async function checkSuppression(
       };
     }
     if (cfg?.suppress_all) {
-      return { suppressed: true, reason: cfg.suppress_reason || "system_test_suppression_enabled" };
+      return {
+        suppressed: true,
+        reason: cfg.suppress_reason || "system_test_suppression_enabled",
+      };
     }
   } catch {
     return {
