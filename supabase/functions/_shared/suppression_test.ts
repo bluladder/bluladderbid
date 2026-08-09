@@ -1,5 +1,10 @@
+// deno-lint-ignore-file no-explicit-any
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { checkSuppression, normalizeEmail, normalizePhoneE164 } from "./suppression.ts";
+import {
+  checkSuppression,
+  normalizeEmail,
+  normalizePhoneE164,
+} from "./suppression.ts";
 
 // Minimal fake Supabase client returning canned test_identities / config.
 function fakeClient(opts: {
@@ -12,15 +17,27 @@ function fakeClient(opts: {
     from(table: string) {
       const builder: any = {
         _table: table,
-        select() { return builder; },
-        eq() { return builder; },
+        select() {
+          return builder;
+        },
+        eq() {
+          return builder;
+        },
         _ors: [] as string[],
-        or(s: string) { builder._ors = s.split(","); return builder; },
-        limit() { return builder; },
-        async maybeSingle() {
+        or(s: string) {
+          builder._ors = s.split(",");
+          return builder;
+        },
+        limit() {
+          return builder;
+        },
+        maybeSingle() {
           if (table === "system_test_config") {
             return {
-              data: { suppress_all: !!opts.suppressAll, suppress_reason: "admin_switch" },
+              data: {
+                suppress_all: !!opts.suppressAll,
+                suppress_reason: "admin_switch",
+              },
               error: opts.configError ? { message: "unavailable" } : null,
             };
           }
@@ -40,7 +57,7 @@ function fakeClient(opts: {
                 const field = o.slice(0, idx);
                 const val = o.slice(idx + 4);
                 return (field === "email" && id.email === val) ||
-                       (field === "phone" && id.phone === val);
+                  (field === "phone" && id.phone === val);
               })
             );
             resolve({ data: matches, error: null });
@@ -61,21 +78,30 @@ Deno.test("normalizers", () => {
 });
 
 Deno.test("suppresses an approved test identity by email (no purpose)", async () => {
-  const c = fakeClient({ identities: [{ email: "blmillen@gmail.com", phone: "+14692150144" }] });
+  const c = fakeClient({
+    identities: [{ email: "blmillen@gmail.com", phone: "+14692150144" }],
+  });
   const r = await checkSuppression(c, { email: "BLMillen@gmail.com" });
   assertEquals(r.suppressed, true);
   assertEquals(r.reason, "test_identity");
 });
 
 Deno.test("suppresses an approved test identity by phone", async () => {
-  const c = fakeClient({ identities: [{ email: "blmillen@gmail.com", phone: "+14692150144" }] });
+  const c = fakeClient({
+    identities: [{ email: "blmillen@gmail.com", phone: "+14692150144" }],
+  });
   const r = await checkSuppression(c, { phone: "469-215-0144" });
   assertEquals(r.suppressed, true);
 });
 
 Deno.test("does NOT suppress a real customer", async () => {
-  const c = fakeClient({ identities: [{ email: "blmillen@gmail.com", phone: "+14692150144" }] });
-  const r = await checkSuppression(c, { email: "real.customer@example.com", phone: "+12145559999" });
+  const c = fakeClient({
+    identities: [{ email: "blmillen@gmail.com", phone: "+14692150144" }],
+  });
+  const r = await checkSuppression(c, {
+    email: "real.customer@example.com",
+    phone: "+12145559999",
+  });
   assertEquals(r.suppressed, false);
 });
 
@@ -113,43 +139,78 @@ const TEST_ID = { email: "blmillen@gmail.com", phone: "+14692150144" };
 
 Deno.test("allowlist: protected identity + booking_confirmed → allowed", async () => {
   const c = fakeClient({ identities: [TEST_ID] });
-  const r = await checkSuppression(c, { email: TEST_ID.email }, { purpose: "booking_confirmed" });
+  const r = await checkSuppression(c, { email: TEST_ID.email }, {
+    purpose: "booking_confirmed",
+  });
   assertEquals(r.suppressed, false);
 });
 
 Deno.test("allowlist: protected identity + booking_updated → allowed", async () => {
   const c = fakeClient({ identities: [TEST_ID] });
-  const r = await checkSuppression(c, { phone: TEST_ID.phone }, { purpose: "booking_updated" });
+  const r = await checkSuppression(c, { phone: TEST_ID.phone }, {
+    purpose: "booking_updated",
+  });
   assertEquals(r.suppressed, false);
 });
 
 Deno.test("allowlist: protected identity + booking_cancelled → allowed", async () => {
   const c = fakeClient({ identities: [TEST_ID] });
-  const r = await checkSuppression(c, { phone: TEST_ID.phone }, { purpose: "booking_cancelled" });
+  const r = await checkSuppression(c, { phone: TEST_ID.phone }, {
+    purpose: "booking_cancelled",
+  });
   assertEquals(r.suppressed, false);
 });
 
 Deno.test("allowlist: protected identity + verification (OTP) → allowed", async () => {
   const c = fakeClient({ identities: [TEST_ID] });
-  const r = await checkSuppression(c, { phone: TEST_ID.phone }, { purpose: "verification" });
+  const r = await checkSuppression(c, { phone: TEST_ID.phone }, {
+    purpose: "verification",
+  });
   assertEquals(r.suppressed, false);
 });
 
 Deno.test("allowlist: protected identity + contact_request_received → allowed", async () => {
   const c = fakeClient({ identities: [TEST_ID] });
-  const r = await checkSuppression(c, { email: TEST_ID.email }, { purpose: "contact_request_received" });
+  const r = await checkSuppression(c, { email: TEST_ID.email }, {
+    purpose: "contact_request_received",
+  });
   assertEquals(r.suppressed, false);
 });
 
 Deno.test("allowlist: quote_requested REQUIRES customerInitiated=true", async () => {
   const c = fakeClient({ identities: [TEST_ID] });
-  const auto = await checkSuppression(c, { email: TEST_ID.email }, { purpose: "quote_requested" });
+  const auto = await checkSuppression(c, { email: TEST_ID.email }, {
+    purpose: "quote_requested",
+  });
   assertEquals(auto.suppressed, true);
-  assertEquals(auto.reason, "test_identity:purpose_not_allowlisted:quote_requested");
+  assertEquals(
+    auto.reason,
+    "test_identity:purpose_not_allowlisted:quote_requested",
+  );
   const requested = await checkSuppression(
     c,
     { email: TEST_ID.email },
     { purpose: "quote_requested", customerInitiated: true },
+  );
+  assertEquals(requested.suppressed, false);
+});
+
+Deno.test("allowlist: booking_management_requested requires customerInitiated=true", async () => {
+  const c = fakeClient({ identities: [TEST_ID] });
+  const automatic = await checkSuppression(
+    c,
+    { phone: TEST_ID.phone },
+    { purpose: "booking_management_requested" },
+  );
+  assertEquals(automatic.suppressed, true);
+  assertEquals(
+    automatic.reason,
+    "test_identity:purpose_not_allowlisted:booking_management_requested",
+  );
+  const requested = await checkSuppression(
+    c,
+    { phone: TEST_ID.phone },
+    { purpose: "booking_management_requested", customerInitiated: true },
   );
   assertEquals(requested.suppressed, false);
 });
@@ -163,14 +224,17 @@ Deno.test("still blocked: protected identity + marketing/campaign (no purpose)",
 
 Deno.test("still blocked: protected identity + automated quote follow-up (no customerInitiated)", async () => {
   const c = fakeClient({ identities: [TEST_ID] });
-  const r = await checkSuppression(c, { email: TEST_ID.email }, { purpose: "quote_requested" });
+  const r = await checkSuppression(c, { email: TEST_ID.email }, {
+    purpose: "quote_requested",
+  });
   assertEquals(r.suppressed, true);
 });
 
 Deno.test("still blocked: protected identity + synthetic/QA send (unknown purpose)", async () => {
   const c = fakeClient({ identities: [TEST_ID] });
-  // deno-lint-ignore no-explicit-any
-  const r = await checkSuppression(c, { email: TEST_ID.email }, { purpose: "qa_smoke" as any });
+  const r = await checkSuppression(c, { email: TEST_ID.email }, {
+    purpose: "qa_smoke" as any,
+  });
   assertEquals(r.suppressed, true);
   assertEquals(r.reason, "test_identity:purpose_not_allowlisted:qa_smoke");
 });
@@ -187,7 +251,9 @@ Deno.test("normal customer transactional sends remain unaffected", async () => {
 
 Deno.test("admin kill-switch overrides transactional allowlist", async () => {
   const c = fakeClient({ suppressAll: true, identities: [TEST_ID] });
-  const r = await checkSuppression(c, { email: TEST_ID.email }, { purpose: "booking_confirmed" });
+  const r = await checkSuppression(c, { email: TEST_ID.email }, {
+    purpose: "booking_confirmed",
+  });
   assertEquals(r.suppressed, true);
   assertEquals(r.reason, "admin_switch");
 });

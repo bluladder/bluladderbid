@@ -36,6 +36,7 @@ import {
   deliverVoiceQuoteByText,
 } from "./quoteByTextDelivery.ts";
 import type { QuoteSessionFields } from "../quoteSession.ts";
+import { buildVoiceCallLinkOutboundKey } from "./voiceCallLinkIdentity.ts";
 
 type SB = any;
 
@@ -85,9 +86,7 @@ export function buildBidLinkOutboundKey(
   callId: string,
   phoneE164: string,
 ): string {
-  return `voice_call_bid_link:${callId}:${
-    phoneE164.replace(/\D/g, "").slice(-10)
-  }`;
+  return buildVoiceCallLinkOutboundKey(callId, phoneE164);
 }
 
 export interface CallEndContext {

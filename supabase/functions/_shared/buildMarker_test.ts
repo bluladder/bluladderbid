@@ -43,11 +43,17 @@ Deno.test("BUILD marker exposes the 6.7 voice remediation flags", () => {
   assertEquals(BUILD_FEATURES.voiceExitIntentHandling, true);
 });
 
-Deno.test("BUILD marker exposes the 6.14 dual-package latency repair flags", () => {
-  assert(BUILD_ID.includes("6.14"));
+Deno.test("BUILD marker exposes the Realtime link MVP and inherited repair flags", () => {
   assertEquals(
     BUILD_ID,
-    "voice-adapter-4C-b.6.14-dual-package-latency-repair",
+    "voice-realtime-link-mvp.1",
+  );
+  assertEquals(BUILD_FEATURES.voiceRealtimeLinkMvp, true);
+  assertEquals(BUILD_FEATURES.voiceRealtimeNativeAudio, true);
+  assertEquals(BUILD_FEATURES.voiceRealtimeQuoteLinkTool, true);
+  assertEquals(
+    BUILD_FEATURES.voiceRealtimeBookingManagementLinkTool,
+    true,
   );
   assertEquals(BUILD_FEATURES.voiceControllerDeferredSse, true);
   assertEquals(

@@ -5,12 +5,17 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildVoiceBetaAssistantManifest,
+  buildVoiceRealtimeMvpManifest,
   VOICE_BETA_ASSISTANT_NAME,
   VOICE_BETA_CUTOFF_MESSAGE,
   VOICE_BETA_MAX_DURATION_SECONDS,
   VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS,
+  VOICE_BETA_VAPI_ALLOWED_EVENTS,
   VOICE_BETA_WARNING_780,
   VOICE_BETA_WARNING_870,
+  VOICE_REALTIME_MVP_MODEL,
+  VOICE_REALTIME_MVP_SYSTEM_PROMPT,
+  VOICE_REALTIME_VAPI_ALLOWED_EVENTS,
   VOICE_TRANSCRIBER_KEYTERMS,
   VOICE_VAPI_ALLOWED_EVENTS,
 } from "./voiceProviderConfig.ts";
@@ -129,7 +134,7 @@ Deno.test("manifest: allow-listed server events only", () => {
   assertEquals(m.serverEvents.url, serverEventsUrl);
   assertEquals(
     [...m.serverEvents.events].sort(),
-    [...VOICE_VAPI_ALLOWED_EVENTS].sort(),
+    [...VOICE_BETA_VAPI_ALLOWED_EVENTS].sort(),
   );
 });
 
@@ -154,6 +159,78 @@ Deno.test("manifest: rejects non-https urls", () => {
     buildVoiceBetaAssistantManifest({
       adapterUrl,
       serverEventsUrl: "not a url",
+    })
+  );
+});
+
+Deno.test("realtime manifest: native audio replaces the custom adapter and transcriber", () => {
+  const m = buildVoiceRealtimeMvpManifest({ serverEventsUrl });
+  assertEquals(m.model.provider, "openai");
+  assertEquals(m.model.model, VOICE_REALTIME_MVP_MODEL);
+  assertEquals(m.voice, { provider: "openai", voiceId: "marin" });
+  assertEquals(m.transcriber, null);
+  assertEquals("url" in m.model, false);
+  assertEquals(m.backgroundSound, "off");
+  assertEquals(m.model.maxTokens, 250);
+});
+
+Deno.test("realtime manifest: exact tools accept no model authority arguments", () => {
+  const m = buildVoiceRealtimeMvpManifest({ serverEventsUrl });
+  assertEquals(
+    m.model.tools.map((tool) => tool.function.name),
+    ["send_online_quote_link", "send_booking_management_link"],
+  );
+  for (const tool of m.model.tools) {
+    assertEquals(tool.function.parameters, {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    });
+  }
+  assertEquals(m.serverEvents.events, VOICE_REALTIME_VAPI_ALLOWED_EVENTS);
+  assertEquals(VOICE_VAPI_ALLOWED_EVENTS, VOICE_REALTIME_VAPI_ALLOWED_EVENTS);
+});
+
+Deno.test("realtime manifest: prompt sends callers to proven web flows without phone pricing or mutations", () => {
+  const prompt = VOICE_REALTIME_MVP_SYSTEM_PROMPT;
+  assert(/NEVER calculate, estimate, invent, or speak a price/.test(prompt));
+  assert(/Never directly book, cancel, reschedule, or modify/.test(prompt));
+  assert(
+    /Never ask for a phone number, email, address, name, square footage/.test(
+      prompt,
+    ),
+  );
+  assert(/send_online_quote_link/.test(prompt));
+  assert(/send_booking_management_link/.test(prompt));
+  assert(/provider_accepted/.test(prompt));
+  assert(/moderate pace/.test(prompt));
+  assert(/Do not repeat a question already answered/.test(prompt));
+});
+
+Deno.test("realtime manifest: QA transcript is explicit while audio and logs remain off", () => {
+  const m = buildVoiceRealtimeMvpManifest({ serverEventsUrl });
+  assertEquals(m.artifactPlan.transcriptPlan.enabled, true);
+  assertEquals(m.artifactPlan.recordingEnabled, false);
+  assertEquals(m.artifactPlan.videoRecordingEnabled, false);
+  assertEquals(m.artifactPlan.loggingEnabled, false);
+  assertEquals(m.artifactPlan.fullMessageHistoryEnabled, false);
+});
+
+Deno.test("realtime manifest: old custom-LLM rollback output remains exact", () => {
+  const old = buildVoiceBetaAssistantManifest({ adapterUrl, serverEventsUrl });
+  assertEquals(old.model.provider, "custom-llm");
+  assertEquals(old.model.url, adapterUrl);
+  assertEquals(old.tools, []);
+  assertEquals(old.transcriber.provider, "deepgram");
+  assertEquals(old.artifactPlan.transcriptPlan.enabled, false);
+  assertEquals(old.serverEvents.events, VOICE_BETA_VAPI_ALLOWED_EVENTS);
+});
+
+Deno.test("realtime manifest: rejects non-https server URL", () => {
+  assertThrows(() =>
+    buildVoiceRealtimeMvpManifest({
+      serverEventsUrl: "http://insecure.example.com/events",
     })
   );
 });
