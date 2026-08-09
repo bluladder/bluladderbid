@@ -1589,6 +1589,111 @@ async function createFirmWindowQuote(
   return sb;
 }
 
+Deno.test("owner flow presents two canonical whole-home window packages before selection", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  const fields = completeWindowFields();
+  delete fields.windowCleaningSides;
+  sb._state.session.fields = fields as Row;
+
+  const options = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "continue",
+    history: [],
+  });
+  assertEquals(options.pre.kind, "fsm");
+  if (options.pre.kind === "fsm") {
+    assertEquals(options.pre.action.kind, "ask");
+    assertEquals((options.pre.action as any).field, "windowCleaningSides");
+    assertStringIncludes(options.pre.spoken, "inside and outside");
+    assertStringIncludes(options.pre.spoken, "exterior windows only");
+    assertEquals((options.pre.spoken.match(/including tax/g) ?? []).length, 2);
+  }
+  let row = await persistAndReload(sb, options);
+  const presented = (row.fields as QuoteSessionFields).voiceJourney
+    ?.windowPackageOptions;
+  assertEquals(row.quote_status, "none");
+  assertEquals((row.fields as QuoteSessionFields).lastQuoteResult, undefined);
+  assertEquals(row.last_step, "offered_window_package_choice");
+  assertEquals(presented?.status, "presented");
+  assertEquals(
+    Number(presented?.insideAndOutside.total) >
+      Number(presented?.outsideOnly.total),
+    true,
+  );
+
+  const selected = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "the second package",
+    history: [],
+  });
+  assertEquals(selected.pre.kind, "fsm");
+  if (selected.pre.kind === "fsm") {
+    assertEquals(
+      selected.pre.action.kind,
+      "speak_price",
+      JSON.stringify(selected.pre),
+    );
+    assertStringIncludes(selected.pre.spoken, "all exterior windows");
+  }
+  row = await persistAndReload(sb, selected);
+  const selectedFields = row.fields as QuoteSessionFields;
+  assertEquals(selectedFields.windowCleaningSides, "outside_only");
+  assertEquals(selectedFields.voiceJourney?.windowPackageOptions, null);
+  assertEquals(row.quote_status, "firm");
+  assertEquals(
+    selectedFields.lastQuoteResult?.inputsKey,
+    sessionInputsKey(selectedFields),
+  );
+});
+
+Deno.test("colloquial email confirmation advances once and persists canonical email", async () => {
+  const sb = makeFake({ pricingRows: PRICING_ROWS });
+  setFirmWindowSession(sb, "text_quote");
+  sb._state.session.fields = {
+    ...sb._state.session.fields,
+    name: "Alex Rivera",
+    email: "Alex@example.com",
+    phone: "+14697472877",
+    callerIdConfirmationStatus: "contact_confirmed",
+  };
+  const confirmedInputsKey = sessionInputsKey(
+    sb._state.session.fields as QuoteSessionFields,
+  );
+  (sb._state.session.fields as any).lastQuoteResult.inputsKey =
+    confirmedInputsKey;
+  (sb._state.session.fields as any).voiceJourney.quoteContext.inputsKey =
+    confirmedInputsKey;
+  (sb._state.session.fields as any).voiceJourney.quoteContext.spokenAt =
+    "2026-08-08T00:00:00.000Z";
+  sb._state.session.field_status = {
+    name: "verified",
+    email: "captured",
+    phone: "verified",
+  };
+  sb._state.session.last_step = "confirming:contact_email";
+
+  const confirmed = await runControllerTurn({
+    supabase: sb,
+    conversationId: "c1",
+    channel: "voice",
+    utterance: "yeah",
+    history: [],
+  });
+  assertEquals(confirmed.pre.kind, "fsm");
+  if (confirmed.pre.kind === "fsm") {
+    assertEquals(confirmed.pre.action.kind, "ask");
+    assertEquals((confirmed.pre.action as any).field, "address");
+  }
+  const row = await persistAndReload(sb, confirmed);
+  assertEquals((row.field_status as Row).email, "verified");
+  assertEquals(row.email_normalized, "alex@example.com");
+  assertEquals(row.last_step, "asked:address");
+});
+
 Deno.test("phase3 firm quote corrections invalidate stale branches and reprice once without contact", async () => {
   const cases = [
     {
@@ -2042,7 +2147,12 @@ Deno.test("phase3 valid second answer advances without exhausting retry", async 
   const row = await persistAndReload(sb, second);
   assertEquals((row.fields as any).squareFootage, 2000);
   assertEquals(row.quote_status, "none");
-  assertEquals(row.last_step, "asked:windowCleaningSides");
+  assertEquals(row.last_step, "offered_window_package_choice");
+  assertEquals(
+    (row.fields as QuoteSessionFields).voiceJourney?.windowPackageOptions
+      ?.status,
+    "presented",
+  );
 });
 
 Deno.test("phase3 persistence conflict/noop does not spend another retry and duplicate loser composes to count one", async () => {

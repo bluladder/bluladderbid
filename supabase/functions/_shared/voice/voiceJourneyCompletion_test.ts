@@ -92,6 +92,7 @@ Deno.test("voice journey intent separates quote, existing records and destructiv
 Deno.test("destructive confirmation rejects conversational acknowledgements", () => {
   assertEquals(classifyExplicitConfirmation("sounds good"), "unclear");
   assertEquals(classifyExplicitConfirmation("okay"), "unclear");
+  assertEquals(classifyExplicitConfirmation("yeah"), "unclear");
   assertEquals(classifyExplicitConfirmation("yes, cancel it"), "unclear");
   assertEquals(classifyExplicitConfirmation("cancel it"), "confirmed");
   assertEquals(classifyExplicitConfirmation("no, don't"), "declined");

@@ -4,12 +4,61 @@ import {
   buildIdempotentTurnRows,
   readLatestReplayableControllerReply,
   readReplayableControllerReply,
+  recordVoiceTurns,
 } from "./turnJournal.ts";
 import {
   mayReplayCompletedVoiceTurnClaim,
   resolveCompletedVoiceTurnReplay,
   waitForCompletedVoiceTurnReplay,
 } from "./voiceTurnReplay.ts";
+
+Deno.test("idempotent user and assistant journal writes start concurrently", async () => {
+  let insertStarts = 0;
+  const resolveInserts: Array<() => void> = [];
+  const supabase = {
+    from(table: string) {
+      if (table === "chat_conversations") {
+        const query = {
+          select: () => query,
+          eq: () => query,
+          maybeSingle: () =>
+            Promise.resolve({
+              data: { id: "conversation", organization_id: "organization" },
+              error: null,
+            }),
+        };
+        return query;
+      }
+      return {
+        insert: () => {
+          insertStarts += 1;
+          return new Promise<{ error: null }>((resolve) => {
+            resolveInserts.push(() => resolve({ error: null }));
+          });
+        },
+      };
+    },
+  };
+  const pending = recordVoiceTurns(supabase, {
+    conversationId: "conversation",
+    organizationId: "organization",
+    callId: "call",
+    turnIdentity: "turn",
+    source: "controller",
+    turns: [
+      { role: "user", content: "bounded user turn" },
+      { role: "assistant", content: "bounded assistant reply" },
+    ],
+  });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  assertEquals(insertStarts, 2);
+  resolveInserts.forEach((resolve) => resolve());
+  assertEquals(await pending, {
+    written: 2,
+    duplicates: 0,
+    failed: 0,
+  });
+});
 
 function replayReadSupabase(args: {
   conversations: Array<Record<string, unknown>>;
@@ -260,6 +309,35 @@ Deno.test("in-progress retry exhausts its bounded wait and stays suppressed", as
   });
   assertEquals(reads, 3);
   assertEquals(delays, 2);
+});
+
+Deno.test("measured wait window reaches a late exact reply without rerunning work", async () => {
+  let reads = 0;
+  let delays = 0;
+  const replay = await waitForCompletedVoiceTurnReplay({
+    readReply: () => {
+      reads += 1;
+      return Promise.resolve(
+        reads < 28
+          ? { status: "unavailable" as const, reason: "reply_missing" }
+          : {
+            status: "found" as const,
+            spoken: "What is the complete service address?",
+          },
+      );
+    },
+    isAuthoritative: () => Promise.resolve(true),
+    delay: () => {
+      delays += 1;
+      return Promise.resolve();
+    },
+  });
+  assertEquals(replay, {
+    status: "replay",
+    spoken: "What is the complete service address?",
+  });
+  assertEquals(reads, 28);
+  assertEquals(delays, 27);
 });
 
 Deno.test("journal replay requires exact tenant and single-flight lineage", async () => {

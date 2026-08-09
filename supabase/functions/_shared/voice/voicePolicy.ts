@@ -638,7 +638,13 @@ export function nextExpressPrePriceField(session: QuoteSession): string | null {
     )
   ) return null;
   if (!session.fields.squareFootage) return "squareFootage";
-  if (!session.fields.windowCleaningSides) return "windowCleaningSides";
+  // Ordinary whole-home, window-only callers hear both canonical package
+  // totals before selecting a package. The pricing engine still requires a
+  // side selection for the final firm quote; only the question order changes.
+  if (
+    !session.fields.windowCleaningSides &&
+    !mayPresentWholeHomeWindowPackageOptions(session)
+  ) return "windowCleaningSides";
   if (
     session.fields.ladderWork && !session.fields.ladderAffectedWindowEquivalents
   ) {
@@ -653,6 +659,45 @@ export function nextExpressPrePriceField(session: QuoteSession): string | null {
   return null;
 }
 
+/** True only for the owner-approved two-package whole-home voice presentation.
+ * Partial, commercial, multi-service, and non-express requests retain the
+ * canonical side-before-price intake contract. */
+export function mayPresentWholeHomeWindowPackageOptions(
+  session: QuoteSession,
+): boolean {
+  if (
+    session.fields.voiceJourney?.policyVersion !== VOICE_QUOTE_POLICY.version
+  ) {
+    return false;
+  }
+  const services = (session.fields.services ?? [])
+    .map((service) => normalizeServiceId(service) ?? service);
+  return services.length === 1 && services[0] === "window_cleaning" &&
+    session.fields.customerType !== "commercial" &&
+    (session.fields.windowCleaningScope === undefined ||
+      session.fields.windowCleaningScope === "whole_home");
+}
+
+/** Parse only an answer to the already-spoken two-package choice. This helper
+ * is never used for generic confirmations, booking, or provider actions. */
+export function classifyWholeHomeWindowPackageChoice(
+  text: string,
+): QuoteSessionFields["windowCleaningSides"] | null {
+  const value = String(text ?? "").trim().toLowerCase();
+  if (!value) return null;
+  const insideOutside =
+    /\b(?:inside\s+(?:and|&)\s+outside|both\s+(?:inside\s+and\s+outside|sides)|full(?:\s+service)?|first(?:\s+(?:one|option|package))?)\b/i;
+  const outsideOnly =
+    /\b(?:(?:outside|exterior)(?:\s+(?:only|windows?))?|second(?:\s+(?:one|option|package))?)\b/i;
+  const first = insideOutside.test(value);
+  const second = outsideOnly.test(value);
+  return first === second
+    ? null
+    : first
+    ? "inside_and_outside"
+    : "outside_only";
+}
+
 export function hasVolunteeredDiscountCodeCue(text: string): boolean {
   return /\b(?:coupon|discount|promo)\s+(?:code\b|is\b|:)/i.test(text) ||
     /\b(?:code)\s+(?:is\s+)?[a-z0-9_-]/i.test(text);
@@ -660,7 +705,10 @@ export function hasVolunteeredDiscountCodeCue(text: string): boolean {
 
 export function normalizeVolunteeredDiscountCode(text: string): string | null {
   const normalized = String(text ?? "").replaceAll("’", "'");
-  if (/\b(?:no|not|without|do\s+not|don't|dont)\b[^.;!?]{0,32}\b(?:coupon|discount|promo)\b/i.test(normalized)) {
+  if (
+    /\b(?:no|not|without|do\s+not|don't|dont)\b[^.;!?]{0,32}\b(?:coupon|discount|promo)\b/i
+      .test(normalized)
+  ) {
     return null;
   }
   const match = normalized.match(

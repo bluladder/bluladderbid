@@ -372,22 +372,39 @@ export async function projectQuoteSessionToConversation(
     sessionId: string;
     conversationId: string;
     organizationId: string;
+    /** Exact row returned by the just-completed tenant-scoped optimistic
+     * update. Supplying it removes one redundant quote-session read. */
+    session?: QuoteSession;
   },
 ): Promise<QuoteSessionProjectionResult> {
   try {
-    const sessionRead = await supabase.from("quote_sessions")
-      .select("*")
-      .eq("id", args.sessionId)
-      .eq("organization_id", args.organizationId)
-      .maybeSingle();
-    if (sessionRead?.error || !sessionRead?.data) {
+    let session = args.session;
+    if (
+      session &&
+      (session.id !== args.sessionId ||
+        session.organizationId !== args.organizationId)
+    ) {
       return {
         status: "error",
-        reason: "quote_session_unavailable",
+        reason: "quote_session_lineage_conflict",
         attempts: 0,
       };
     }
-    const session = quoteSessionFromPersistenceRow(sessionRead.data);
+    if (!session) {
+      const sessionRead = await supabase.from("quote_sessions")
+        .select("*")
+        .eq("id", args.sessionId)
+        .eq("organization_id", args.organizationId)
+        .maybeSingle();
+      if (sessionRead?.error || !sessionRead?.data) {
+        return {
+          status: "error",
+          reason: "quote_session_unavailable",
+          attempts: 0,
+        };
+      }
+      session = quoteSessionFromPersistenceRow(sessionRead.data);
+    }
     for (let attempt = 1; attempt <= 2; attempt++) {
       const conversationRead = await supabase.from("chat_conversations")
         .select(

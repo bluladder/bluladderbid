@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-adapter-4C-b.6.13-owner-call-recovery";
+export const BUILD_ID = "voice-adapter-4C-b.6.14-dual-package-latency-repair";
 export const BUILD_FEATURES = {
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
@@ -87,4 +87,14 @@ export const BUILD_FEATURES = {
   voiceSentenceAwareStreaming: true,
   voiceFirstContentChunkLatency: true,
   voiceLatestAuthoritativeStaleReplay: true,
+  // 6.14 — ordinary whole-home callers hear both canonical window packages
+  // before choosing; colloquial contact confirmations persist durably without
+  // widening booking authority; projection reuses the optimistic winner row,
+  // journal writes run concurrently, and wait retries cover the measured tail.
+  voiceDualWholeHomeWindowPackages: true,
+  voiceScopedContactConfirmation: true,
+  voiceConfirmedEmailPersistence: true,
+  voiceProjectionWinnerReuse: true,
+  voiceConcurrentTurnJournal: true,
+  voiceMeasuredWaitReplayWindow: true,
 } as const;

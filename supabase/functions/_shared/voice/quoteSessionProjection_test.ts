@@ -5,6 +5,7 @@ import {
 import type { QuoteSession } from "../quoteSession.ts";
 import {
   buildQuoteSessionConversationProjection,
+  projectQuoteSessionToConversation,
   quoteSessionConversationLineageConflict,
 } from "./quoteSessionProjection.ts";
 
@@ -176,4 +177,43 @@ Deno.test("engine firmness never overrides a manual-review disposition", () => {
     (patch.facts as { quote: { firm: boolean } }).quote.firm,
     false,
   );
+});
+
+Deno.test("projection reuses the exact persisted session winner without rereading it", async () => {
+  let quoteSessionReads = 0;
+  const committed = session();
+  const conversation = {
+    id: committed.conversationIds[0],
+    organization_id: committed.organizationId,
+    updated_at: "2026-08-08T00:00:00.000Z",
+    quote_session_id: committed.id,
+  };
+  const chain = (result: Record<string, unknown>) => {
+    const query = {
+      eq: () => query,
+      select: () => query,
+      maybeSingle: () => Promise.resolve(result),
+    };
+    return query;
+  };
+  const supabase = {
+    from(table: string) {
+      if (table === "quote_sessions") {
+        quoteSessionReads += 1;
+        throw new Error("preloaded_session_must_avoid_read");
+      }
+      return {
+        select: () => chain({ data: conversation, error: null }),
+        update: () => chain({ data: { id: conversation.id }, error: null }),
+      };
+    },
+  };
+  const result = await projectQuoteSessionToConversation(supabase, {
+    sessionId: committed.id,
+    conversationId: conversation.id,
+    organizationId: committed.organizationId!,
+    session: committed,
+  });
+  assertEquals(result.status, "projected");
+  assertEquals(quoteSessionReads, 0);
 });

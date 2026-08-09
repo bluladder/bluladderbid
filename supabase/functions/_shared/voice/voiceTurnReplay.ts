@@ -66,7 +66,11 @@ export async function waitForCompletedVoiceTurnReplay(
     intervalMs?: number;
   } = {},
 ): Promise<CompletedVoiceTurnReplay> {
-  const maxAttempts = Math.max(1, Math.min(options.maxAttempts ?? 16, 20));
+  // The measured controller tail can exceed four seconds when a provider
+  // reconnect races persistence/projection. Keep the retry bounded, but long
+  // enough for the exact durable reply to become visible instead of returning
+  // silence just before the authoritative write completes.
+  const maxAttempts = Math.max(1, Math.min(options.maxAttempts ?? 28, 32));
   const intervalMs = Math.max(25, Math.min(options.intervalMs ?? 250, 500));
   const delay = dependencies.delay ??
     ((milliseconds: number) =>
