@@ -312,6 +312,48 @@ Deno.test("event receiver: tool diagnostics expose only bounded status evidence"
   assert(!joined.includes("+14697472877"));
 });
 
+Deno.test("event receiver: rejected tool envelope logs structural counts without identifiers or PII", async () => {
+  setLegacySecret(SECRET);
+  const logs: string[] = [];
+  const originalLog = console.log;
+  console.log = (msg: string) => logs.push(String(msg));
+  try {
+    const res = await handleVapiEventRequest(
+      post({
+        message: {
+          type: "tool-calls",
+          toolCallList: [{
+            id: "private-rejected-tool-id",
+            function: {
+              arguments: JSON.stringify({ phone: "+14697472877" }),
+            },
+          }],
+          call: {
+            id: "private-rejected-call-id",
+            customer: { number: "+14697472877" },
+          },
+        },
+      }, { "x-vapi-secret": SECRET }),
+      {
+        organizationId: "00000000-0000-4000-8000-000000000091",
+        handleLinkTools: () => Promise.resolve({ results: [] }),
+      },
+    );
+    assertEquals(res.status, 200);
+    await res.text();
+  } finally {
+    console.log = originalLog;
+  }
+
+  const joined = logs.join("\n");
+  assert(joined.includes('"toolResults":0'));
+  assert(joined.includes('"directCount":1'));
+  assert(joined.includes('"directWithId":1'));
+  assert(!joined.includes("private-rejected-tool-id"));
+  assert(!joined.includes("private-rejected-call-id"));
+  assert(!joined.includes("+14697472877"));
+});
+
 Deno.test("event receiver: logs redact token, digest, auth headers, identifiers, transcript, and phone", async () => {
   const digest = await sha256Hex(SECRET);
   setDigestSecret(digest);

@@ -127,6 +127,20 @@ single-line string. The repair therefore:
 This repair does not add a new SMS path, modify pricing, mutate Jobber, or trust
 model-supplied contact or tenant data.
 
+### Second controlled-call evidence
+
+The owner retested after the string-result repair was deployed. The authenticated
+`tool-calls` event reached `voice-vapi-events`, but the live build logged
+`toolResults: 0` and returned an empty results array. No trusted-caller check,
+tenant lookup, idempotency claim, outbox row, or provider request occurred.
+
+The native Realtime lane used Vapi's documented OpenAI-compatible function
+nesting (`toolCallList[].function.name` or
+`toolWithToolCallList[].toolCall.function.name`). The parser accepted only
+flattened names. The follow-up repair accepts those two exact nested name paths,
+continues to ignore every model-supplied argument, and emits only non-sensitive
+structural counts if a future envelope cannot be parsed.
+
 ## Fast-launch scope and deferred extensions
 
 Launch readiness requires the two existing link tools to pass one controlled
@@ -158,7 +172,7 @@ part of this release.
 
 1. Call the owner-only test number.
 2. Say: “What services do you offer?” Confirm a short, natural answer.
-3. Say: “I need a quote for window cleaning.”
+3. Use ordinary customer wording, such as: “I need my windows cleaned.”
 4. When offered a text, say: “Yes, text me the link.”
 5. Confirm one spoken acknowledgement and one SMS only.
 6. Open the link and confirm the existing online quote/booking flow loads.

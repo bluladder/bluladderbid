@@ -202,6 +202,9 @@ Deno.test("realtime manifest: prompt sends callers to proven web flows without p
     ),
   );
   assert(/send_online_quote_link/.test(prompt));
+  assert(/I need my windows cleaned/.test(prompt));
+  assert(/Callers do not need to ask for an “online quote.”/.test(prompt));
+  assert(/get an exact price and choose an available appointment/.test(prompt));
   assert(/send_booking_management_link/.test(prompt));
   assert(/provider_accepted/.test(prompt));
   assert(/moderate pace/.test(prompt));
