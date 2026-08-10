@@ -57,20 +57,51 @@ function isProduction(): boolean {
   return env === "production" || env === "prod";
 }
 
-function checkSharedSecret(
-  req: Request,
-  expected: string | undefined,
+function constantTimeEqual(
+  supplied: string,
+  expected: string,
 ): boolean {
-  if (!expected) return false;
-  // Vapi uses X-Vapi-Secret as the server-URL shared credential.
-  const supplied = req.headers.get("x-vapi-secret") || "";
-  if (!supplied) return false;
   if (supplied.length !== expected.length) return false;
   let diff = 0;
   for (let i = 0; i < expected.length; i++) {
     diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
   }
   return diff === 0;
+}
+
+function checkLegacySharedSecret(
+  req: Request,
+  expected: string | undefined,
+): boolean {
+  if (!expected) return false;
+  // Vapi uses X-Vapi-Secret as the server-URL shared credential.
+  const supplied = req.headers.get("x-vapi-secret") || "";
+  return supplied.length > 0 && constantTimeEqual(supplied, expected);
+}
+
+function normalizeSha256Digest(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(normalized) ? normalized : null;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+async function checkHashedSharedSecret(
+  req: Request,
+  expectedDigest: string,
+): Promise<boolean> {
+  const supplied = req.headers.get("x-vapi-secret") || "";
+  const suppliedDigest = await sha256Hex(supplied);
+  return constantTimeEqual(suppliedDigest, expectedDigest);
 }
 
 function extractEventType(body: unknown): string | null {
@@ -141,17 +172,34 @@ export async function handleVapiEventRequest(
     return jsonError(415, "unsupported_content_type");
   }
 
-  const secret = Deno.env.get("VAPI_SERVER_SECRET");
-  if (!secret) {
-    console.warn("voice-vapi-events: shared secret not configured");
-    return jsonError(
-      500,
-      isProduction()
-        ? "shared_secret_missing_production"
-        : "shared_secret_missing",
-    );
+  const configuredDigest = Deno.env.get("VAPI_SERVER_SECRET_SHA256");
+  let authenticated = false;
+  if (configuredDigest !== undefined) {
+    const expectedDigest = normalizeSha256Digest(configuredDigest);
+    if (!expectedDigest) {
+      console.warn("voice-vapi-events: shared secret digest is invalid");
+      return jsonError(
+        500,
+        isProduction()
+          ? "shared_secret_digest_invalid_production"
+          : "shared_secret_digest_invalid",
+      );
+    }
+    authenticated = await checkHashedSharedSecret(req, expectedDigest);
+  } else {
+    const legacySecret = Deno.env.get("VAPI_SERVER_SECRET");
+    if (!legacySecret) {
+      console.warn("voice-vapi-events: shared secret not configured");
+      return jsonError(
+        500,
+        isProduction()
+          ? "shared_secret_missing_production"
+          : "shared_secret_missing",
+      );
+    }
+    authenticated = checkLegacySharedSecret(req, legacySecret);
   }
-  if (!checkSharedSecret(req, secret)) return jsonError(401, "unauthorized");
+  if (!authenticated) return jsonError(401, "unauthorized");
 
   const raw = await req.text();
   if (raw.length > MAX_BODY_BYTES) return jsonError(413, "too_large");

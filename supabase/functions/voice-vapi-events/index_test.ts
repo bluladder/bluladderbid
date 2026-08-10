@@ -5,10 +5,32 @@ import {
 import { handleVapiEventRequest } from "./index.ts";
 
 const SECRET = "test-vapi-secret-abcdef";
+const LEGACY_SECRET = "legacy-fixture";
 
 function setEnv(k: string, v: string | null) {
   if (v === null) Deno.env.delete(k);
   else Deno.env.set(k, v);
+}
+
+function setLegacySecret(secret: string | null) {
+  setEnv("VAPI_SERVER_SECRET_SHA256", null);
+  setEnv("VAPI_SERVER_SECRET", secret);
+}
+
+function setDigestSecret(digest: string, legacySecret: string | null = null) {
+  setEnv("VAPI_SERVER_SECRET_SHA256", digest);
+  setEnv("VAPI_SERVER_SECRET", legacySecret);
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 function post(body: unknown, headers: Record<string, string> = {}): Request {
@@ -20,14 +42,72 @@ function post(body: unknown, headers: Record<string, string> = {}): Request {
 }
 
 Deno.test("event receiver: missing production secret fails closed", async () => {
-  setEnv("VAPI_SERVER_SECRET", null);
+  setLegacySecret(null);
   const res = await handleVapiEventRequest(post({ message: { type: "hang" } }));
   assertEquals(res.status, 500);
   await res.text();
 });
 
+Deno.test("event receiver: accepts the correct token through the normalized SHA-256 digest", async () => {
+  const digest = await sha256Hex(SECRET);
+  setDigestSecret(`  ${digest.toUpperCase()}  `);
+  const res = await handleVapiEventRequest(post(
+    { message: { type: "assistant.started" } },
+    { "x-vapi-secret": SECRET },
+  ));
+  assertEquals(res.status, 200);
+  assertEquals((await res.json()).received, true);
+});
+
+Deno.test("event receiver: rejects an incorrect token when digest auth is configured", async () => {
+  setDigestSecret(await sha256Hex(SECRET));
+  const res = await handleVapiEventRequest(post(
+    { message: { type: "assistant.started" } },
+    { "x-vapi-secret": "incorrect-token" },
+  ));
+  assertEquals(res.status, 401);
+  await res.text();
+});
+
+Deno.test("event receiver: malformed digest fails closed without plaintext fallback", async () => {
+  setDigestSecret("not-a-valid-sha256-digest", SECRET);
+  const res = await handleVapiEventRequest(post(
+    { message: { type: "assistant.started" } },
+    { "x-vapi-secret": SECRET },
+  ));
+  assertEquals(res.status, 500);
+  assertEquals((await res.json()).error.code, "shared_secret_digest_invalid");
+});
+
+Deno.test("event receiver: digest configuration takes precedence over plaintext", async () => {
+  setDigestSecret(await sha256Hex(SECRET), LEGACY_SECRET);
+  const legacyRes = await handleVapiEventRequest(post(
+    { message: { type: "assistant.started" } },
+    { "x-vapi-secret": LEGACY_SECRET },
+  ));
+  assertEquals(legacyRes.status, 401);
+  await legacyRes.text();
+
+  const digestRes = await handleVapiEventRequest(post(
+    { message: { type: "assistant.started" } },
+    { "x-vapi-secret": SECRET },
+  ));
+  assertEquals(digestRes.status, 200);
+  await digestRes.text();
+});
+
+Deno.test("event receiver: plaintext secret remains a deployment fallback when digest is absent", async () => {
+  setLegacySecret(SECRET);
+  const res = await handleVapiEventRequest(post(
+    { message: { type: "assistant.started" } },
+    { "x-vapi-secret": SECRET },
+  ));
+  assertEquals(res.status, 200);
+  await res.text();
+});
+
 Deno.test("event receiver: 405 on unsupported method", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   const res = await handleVapiEventRequest(
     new Request("http://local/voice-vapi-events", { method: "GET" }),
   );
@@ -36,7 +116,7 @@ Deno.test("event receiver: 405 on unsupported method", async () => {
 });
 
 Deno.test("event receiver: 415 on non-json content type", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   const req = new Request("http://local/voice-vapi-events", {
     method: "POST",
     headers: { "Content-Type": "text/plain", "x-vapi-secret": SECRET },
@@ -48,14 +128,14 @@ Deno.test("event receiver: 415 on non-json content type", async () => {
 });
 
 Deno.test("event receiver: 401 on missing auth", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   const res = await handleVapiEventRequest(post({ message: { type: "hang" } }));
   assertEquals(res.status, 401);
   await res.text();
 });
 
 Deno.test("event receiver: 401 on invalid auth", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   const res = await handleVapiEventRequest(post(
     { message: { type: "hang" } },
     { "x-vapi-secret": "wrong" },
@@ -65,7 +145,7 @@ Deno.test("event receiver: 401 on invalid auth", async () => {
 });
 
 Deno.test("event receiver: 413 on oversized body", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   const big = "x".repeat(70 * 1024);
   const res = await handleVapiEventRequest(post(JSON.stringify({ big }), {
     "x-vapi-secret": SECRET,
@@ -75,7 +155,7 @@ Deno.test("event receiver: 413 on oversized body", async () => {
 });
 
 Deno.test("event receiver: recognized informational event returns 200", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   const res = await handleVapiEventRequest(post(
     { message: { type: "status-update" } },
     { "x-vapi-secret": SECRET },
@@ -87,7 +167,7 @@ Deno.test("event receiver: recognized informational event returns 200", async ()
 });
 
 Deno.test("event receiver: unsupported event type is safely ignored", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   const res = await handleVapiEventRequest(post(
     { message: { type: "transfer-destination-request" } },
     { "x-vapi-secret": SECRET },
@@ -99,7 +179,7 @@ Deno.test("event receiver: unsupported event type is safely ignored", async () =
 });
 
 Deno.test("event receiver: authenticated tool call returns Vapi's exact results shape", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   let calls = 0;
   const res = await handleVapiEventRequest(
     post({
@@ -147,7 +227,7 @@ Deno.test("event receiver: authenticated tool call returns Vapi's exact results 
 });
 
 Deno.test("event receiver: missing tool tenant authority fails closed without executing delivery", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   let deliveries = 0;
   const res = await handleVapiEventRequest(
     post({
@@ -180,11 +260,16 @@ Deno.test("event receiver: missing tool tenant authority fails closed without ex
   assertEquals(response.results[0].result.status, "invalid_request");
 });
 
-Deno.test("event receiver: does not log transcript or full phone number", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+Deno.test("event receiver: logs redact token, digest, auth headers, identifiers, transcript, and phone", async () => {
+  const digest = await sha256Hex(SECRET);
+  setDigestSecret(digest);
   const logs: string[] = [];
   const originalLog = console.log;
+  const originalWarn = console.warn;
   console.log = (msg: string) => {
+    logs.push(String(msg));
+  };
+  console.warn = (msg: string) => {
     logs.push(String(msg));
   };
   try {
@@ -201,6 +286,7 @@ Deno.test("event receiver: does not log transcript or full phone number", async 
         {
           "x-vapi-secret": SECRET,
           "authorization": "Bearer SECRET-BEARER-TOKEN",
+          "x-vapi-credential-id": "SECRET-CREDENTIAL-ID",
         },
       ),
       { runHangupFollowup: () => Promise.resolve({ status: "missing_phone" }) },
@@ -209,16 +295,20 @@ Deno.test("event receiver: does not log transcript or full phone number", async 
     await res.text();
   } finally {
     console.log = originalLog;
+    console.warn = originalWarn;
   }
   const joined = logs.join("\n");
   assert(!joined.includes("SECRET TRANSCRIPT CONTENT"));
   assert(!joined.includes("SECRET SUMMARY"));
   assert(!joined.includes("+14697472877"));
   assert(!joined.includes("SECRET-BEARER-TOKEN"));
+  assert(!joined.includes("SECRET-CREDENTIAL-ID"));
+  assert(!joined.includes(SECRET));
+  assert(!joined.includes(digest));
 });
 
 Deno.test("event receiver: final call-ended event runs the bid-link follow-up once", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   let calls = 0;
   const res = await handleVapiEventRequest(
     post({ message: { type: "end-of-call-report", call: { id: "call_1" } } }, {
@@ -238,7 +328,7 @@ Deno.test("event receiver: final call-ended event runs the bid-link follow-up on
 });
 
 Deno.test("event receiver: final event runs one local post-call note path without a provider memo", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   let notes = 0;
   const res = await handleVapiEventRequest(
     post({ message: { type: "end-of-call-report", call: { id: "call_1" } } }, {
@@ -267,7 +357,7 @@ Deno.test("event receiver: final event runs one local post-call note path withou
 });
 
 Deno.test("event receiver: non-final events never run the follow-up", async () => {
-  setEnv("VAPI_SERVER_SECRET", SECRET);
+  setLegacySecret(SECRET);
   let calls = 0;
   for (const type of ["status-update", "hang", "assistant.started"]) {
     const res = await handleVapiEventRequest(
