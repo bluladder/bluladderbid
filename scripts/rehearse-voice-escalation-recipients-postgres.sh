@@ -35,8 +35,11 @@ CREATE TABLE public.organization_memberships (
   status text NOT NULL
 );
 
-CREATE OR REPLACE FUNCTION public.is_organization_member(p_organization_id uuid)
-RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
+CREATE SCHEMA IF NOT EXISTS tenant_security;
+CREATE OR REPLACE FUNCTION tenant_security.current_organization_role(
+  p_organization_id uuid
+)
+RETURNS text LANGUAGE sql STABLE AS $$ SELECT NULL::text $$;
 
 CREATE TABLE public.escalation_recipients (
   id uuid PRIMARY KEY,
@@ -158,8 +161,11 @@ CREATE TABLE public.organization_memberships (
   role text NOT NULL,
   status text NOT NULL
 );
-CREATE OR REPLACE FUNCTION public.is_organization_member(p_organization_id uuid)
-RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
+CREATE SCHEMA IF NOT EXISTS tenant_security;
+CREATE OR REPLACE FUNCTION tenant_security.current_organization_role(
+  p_organization_id uuid
+)
+RETURNS text LANGUAGE sql STABLE AS $$ SELECT NULL::text $$;
 CREATE TABLE public.escalation_recipients (
   id uuid PRIMARY KEY,
   name text NOT NULL,
