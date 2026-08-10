@@ -1,11 +1,14 @@
 // Deno tests for the server-only voice transfer destination resolver.
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   AI_ENTRANCE_E164,
-  RETIRED_TRANSFER_NUMBERS,
   maskForLog,
   normalizeE164,
   resolveTransferDestination,
+  RETIRED_TRANSFER_NUMBERS,
 } from "./voiceTransferResolver.ts";
 
 const BENS_CELL = "+14692150144";
@@ -15,14 +18,28 @@ function envWith(map: Record<string, string | undefined>) {
 }
 
 Deno.test("resolves Ben's configured number to a valid destination", () => {
-  const r = resolveTransferDestination({ getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: BENS_CELL }) });
+  const r = resolveTransferDestination({
+    getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: BENS_CELL }),
+  });
+  assert(r.ok);
+  if (!r.ok) return;
+  assertEquals(r.destinationE164, BENS_CELL);
+});
+
+Deno.test("tenant-resolved destination takes priority over the legacy environment fallback", () => {
+  const r = resolveTransferDestination({
+    configuredDestination: BENS_CELL,
+    getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: AI_ENTRANCE_E164 }),
+  });
   assert(r.ok);
   if (!r.ok) return;
   assertEquals(r.destinationE164, BENS_CELL);
 });
 
 Deno.test("full number is masked in logs", () => {
-  const r = resolveTransferDestination({ getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: BENS_CELL }) });
+  const r = resolveTransferDestination({
+    getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: BENS_CELL }),
+  });
   assert(r.ok);
   if (!r.ok) return;
   assertEquals(r.destinationMasked, "***-***-0144");
@@ -33,7 +50,9 @@ Deno.test("full number is masked in logs", () => {
 });
 
 Deno.test("rejects the AI entrance number", () => {
-  const r = resolveTransferDestination({ getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: AI_ENTRANCE_E164 }) });
+  const r = resolveTransferDestination({
+    getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: AI_ENTRANCE_E164 }),
+  });
   assertEquals(r.ok, false);
   if (!r.ok) assertEquals(r.reason, "ai_entrance");
 });
@@ -58,13 +77,17 @@ Deno.test("rejects the provider receiving DID", () => {
 
 Deno.test("rejects the retired ResponsiBid number", () => {
   assert(RETIRED_TRANSFER_NUMBERS.includes("+14692426556"));
-  const r = resolveTransferDestination({ getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: "+14692426556" }) });
+  const r = resolveTransferDestination({
+    getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: "+14692426556" }),
+  });
   assertEquals(r.ok, false);
   if (!r.ok) assertEquals(r.reason, "retired_number");
 });
 
 Deno.test("rejects invalid E.164 input", () => {
-  const r = resolveTransferDestination({ getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: "not-a-number" }) });
+  const r = resolveTransferDestination({
+    getEnv: envWith({ VOICE_HUMAN_TRANSFER_NUMBER: "not-a-number" }),
+  });
   assertEquals(r.ok, false);
   if (!r.ok) assertEquals(r.reason, "invalid");
 });

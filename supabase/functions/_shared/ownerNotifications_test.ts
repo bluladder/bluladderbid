@@ -3,11 +3,13 @@ import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
   buildInboundOwnerMessage,
   isGenuineInboundCustomerMessage,
+  loadOwnerNotificationRecipients,
 } from "./ownerNotifications.ts";
 import type { ResolvedContext } from "./conversationContext.ts";
 
 const baseCtx: ResolvedContext = {
   conversationId: "conv-1",
+  organizationId: "00000000-0000-4000-8000-000000000091",
   customerId: "cust-1",
   customerName: "Jane Doe",
   customerEmail: "jane@example.com",
@@ -22,7 +24,12 @@ const baseCtx: ResolvedContext = {
 
 Deno.test("buildInboundOwnerMessage — high-confidence includes all fields, no review flag", () => {
   const msg = buildInboundOwnerMessage(
-    { providerMessageId: "p1", fromPhone: "+14695551234", messagePreview: "hey can we reschedule?", context: baseCtx },
+    {
+      providerMessageId: "p1",
+      fromPhone: "+14695551234",
+      messagePreview: "hey can we reschedule?",
+      context: baseCtx,
+    },
     "https://bid.bluladder.com/admin?tab=conversations&conversation=conv-1",
   );
   const expected = [
@@ -39,13 +46,23 @@ Deno.test("buildInboundOwnerMessage — high-confidence includes all fields, no 
 Deno.test("buildInboundOwnerMessage — ambiguous match surfaces review flag", () => {
   const ctx: ResolvedContext = {
     ...baseCtx,
-    customerId: null, customerName: null, customerEmail: null,
-    serviceAddress: null, latestQuoteId: null,
-    resolutionMethod: "ambiguous", resolutionConfidence: "ambiguous",
-    unresolvedReason: "multiple_customers_share_phone", matchNeedsReview: true,
+    customerId: null,
+    customerName: null,
+    customerEmail: null,
+    serviceAddress: null,
+    latestQuoteId: null,
+    resolutionMethod: "ambiguous",
+    resolutionConfidence: "ambiguous",
+    unresolvedReason: "multiple_customers_share_phone",
+    matchNeedsReview: true,
   };
   const msg = buildInboundOwnerMessage(
-    { providerMessageId: "p2", fromPhone: "+14695559999", messagePreview: "hi", context: ctx },
+    {
+      providerMessageId: "p2",
+      fromPhone: "+14695559999",
+      messagePreview: "hi",
+      context: ctx,
+    },
     "https://x/y",
   );
   const lines = msg.split("\n");
@@ -116,4 +133,32 @@ Deno.test("isGenuineInboundCustomerMessage — rejects empty body", () => {
   });
   assertEquals(r.ok, false);
   assertEquals(r.reason, "empty_body");
+});
+
+Deno.test("owner notification recipients are tenant scoped", async () => {
+  const filters: Array<[string, unknown]> = [];
+  const builder = {
+    select() {
+      return this;
+    },
+    eq(column: string, value: unknown) {
+      filters.push([column, value]);
+      return this;
+    },
+    then(resolve: (value: unknown) => unknown) {
+      return Promise.resolve({ data: [{ id: "local-operator" }], error: null })
+        .then(resolve);
+    },
+  };
+  const rows = await loadOwnerNotificationRecipients({
+    from(table: string) {
+      assertEquals(table, "escalation_recipients");
+      return builder;
+    },
+  }, baseCtx.organizationId!);
+  assertEquals(rows, [{ id: "local-operator" }]);
+  assertEquals(filters, [
+    ["organization_id", baseCtx.organizationId],
+    ["is_enabled", true],
+  ]);
 });

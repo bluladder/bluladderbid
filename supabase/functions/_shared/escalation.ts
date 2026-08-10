@@ -11,16 +11,21 @@ import { checkSuppression } from "./suppression.ts";
 import { getPhoneByPurpose } from "./phoneConfig.ts";
 import { sendEmail } from "./emailConfig.ts";
 import {
-  rollupDeliveryState,
   type ChannelDeliveryStatus,
   type EscalationDeliveryState,
+  rollupDeliveryState,
 } from "./escalationDelivery.ts";
 
 export const SEVERITY_RANK: Record<string, number> = {
-  low: 1, normal: 2, high: 3, urgent: 4,
+  low: 1,
+  normal: 2,
+  high: 3,
+  urgent: 4,
 };
 
 export interface EscalationInput {
+  /** Server-resolved tenant authority. Model arguments are never trusted. */
+  organizationId?: string | null;
   conversationId?: string | null;
   recordRef?: string | null;
   prospectName?: string | null;
@@ -54,7 +59,11 @@ export function buildAlertMessage(
   const lines = [
     "BluLadder AI escalation",
     esc.prospectName ? `Name: ${esc.prospectName}` : null,
-    esc.prospectPhone ? `Callback: ${esc.prospectPhone}` : (callbackNumberDisplay ? `Callback via office: ${callbackNumberDisplay}` : null),
+    esc.prospectPhone
+      ? `Callback: ${esc.prospectPhone}`
+      : (callbackNumberDisplay
+        ? `Callback via office: ${callbackNumberDisplay}`
+        : null),
     esc.prospectEmail ? `Email: ${esc.prospectEmail}` : null,
     esc.serviceAddress ? `Address: ${esc.serviceAddress}` : null,
     `Reason: ${esc.category.replace(/_/g, " ")}`,
@@ -78,14 +87,28 @@ async function sendEscalationEmail(
   subject: string,
   body: string,
 ): Promise<{ status: string; error: string | null }> {
-  const html = `<pre style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${
-    body.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string))
-  }</pre>`;
+  const html =
+    `<pre style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${
+      body.replace(
+        /[&<>]/g,
+        (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string),
+      )
+    }</pre>`;
   // Single centralized sender — no hard-coded From. Never throws.
-  const res = await sendEmail({ to, subject, html, fromNameOverride: "BluLadder Alerts" });
+  const res = await sendEmail({
+    to,
+    subject,
+    html,
+    fromNameOverride: "BluLadder Alerts",
+  });
   if (res.ok) return { status: "sent", error: null };
-  if (res.failure?.category === "provider_not_configured") return { status: "not_configured", error: res.failure.message };
-  return { status: "failed", error: res.failure?.message ?? "provider rejected" };
+  if (res.failure?.category === "provider_not_configured") {
+    return { status: "not_configured", error: res.failure.message };
+  }
+  return {
+    status: "failed",
+    error: res.failure?.message ?? "provider rejected",
+  };
 }
 
 /**
@@ -98,7 +121,9 @@ export async function escalateToHuman(
   supabase: any,
   input: EscalationInput,
 ): Promise<EscalationResult> {
-  const severity = input.severity && SEVERITY_RANK[input.severity] ? input.severity : "normal";
+  const severity = input.severity && SEVERITY_RANK[input.severity]
+    ? input.severity
+    : "normal";
 
   // 1) Idempotent record: reuse an existing active escalation if present.
   let existing: any = null;
@@ -118,7 +143,8 @@ export async function escalateToHuman(
   let shouldAlert: boolean;
 
   if (existing) {
-    const prevAlertRank = SEVERITY_RANK[existing.last_alert_severity ?? existing.severity] ?? 0;
+    const prevAlertRank =
+      SEVERITY_RANK[existing.last_alert_severity ?? existing.severity] ?? 0;
     const newRank = SEVERITY_RANK[severity] ?? 2;
     // Only re-alert if this is genuinely higher severity than last alerted.
     shouldAlert = existing.alert_count > 0 ? newRank > prevAlertRank : true;
@@ -153,23 +179,85 @@ export async function escalateToHuman(
       .single();
     if (error || !data) {
       // A concurrent insert may have created the active row; treat as existing.
-      return { escalationId: "", created: false, alertStatus: "delivery_failed", alertSent: false, deliveryState: "delivery_failed", severity };
+      return {
+        escalationId: "",
+        created: false,
+        alertStatus: "delivery_failed",
+        alertSent: false,
+        deliveryState: "delivery_failed",
+        severity,
+      };
     }
     escalationId = data.id;
     created = true;
     shouldAlert = true;
   }
 
-  const deliveryState = await maybeQueueAlert(supabase, escalationId, input, severity, shouldAlert);
+  const organizationId = await resolveEscalationOrganizationId(
+    supabase,
+    input,
+  );
+  const deliveryState = await maybeQueueAlert(
+    supabase,
+    escalationId,
+    input,
+    severity,
+    shouldAlert,
+    organizationId,
+  );
   return {
     escalationId,
     created,
     alertStatus: deliveryState,
     // "sent" ONLY when the provider actually confirmed acceptance.
-    alertSent: deliveryState === "sms_sent" || deliveryState === "email_sent" || deliveryState === "partially_delivered",
+    alertSent: deliveryState === "sms_sent" || deliveryState === "email_sent" ||
+      deliveryState === "partially_delivered",
     deliveryState,
     severity,
   };
+}
+
+const ORGANIZATION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Resolve recipient authority from the durable conversation, never globally. */
+export async function resolveEscalationOrganizationId(
+  supabase: any,
+  input: Pick<EscalationInput, "conversationId" | "organizationId">,
+): Promise<string | null> {
+  const supplied = typeof input.organizationId === "string" &&
+      ORGANIZATION_ID_PATTERN.test(input.organizationId.trim())
+    ? input.organizationId.trim().toLowerCase()
+    : null;
+  if (!input.conversationId) return supplied;
+  try {
+    const { data, error } = await supabase.from("chat_conversations")
+      .select("organization_id")
+      .eq("id", input.conversationId)
+      .maybeSingle();
+    const durable = typeof data?.organization_id === "string"
+      ? data.organization_id.toLowerCase()
+      : null;
+    if (error || !durable || (supplied && supplied !== durable)) return null;
+    return durable;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadEnabledEscalationRecipients(
+  supabase: any,
+  organizationId: string,
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.from("escalation_recipients")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("is_enabled", true);
+    return error || !Array.isArray(data) ? [] : data;
+  } catch {
+    return [];
+  }
 }
 
 async function maybeQueueAlert(
@@ -178,50 +266,75 @@ async function maybeQueueAlert(
   input: EscalationInput,
   severity: string,
   shouldAlert: boolean,
+  organizationId: string | null,
 ): Promise<EscalationDeliveryState> {
   const nowIso = new Date().toISOString();
   // A repeat (same/lower severity) escalation does not re-alert; report the
   // record's CURRENT persisted delivery state so language stays accurate.
   if (!shouldAlert) {
     const { data: cur } = await supabase
-      .from("ai_escalations").select("alert_status").eq("id", escalationId).maybeSingle();
+      .from("ai_escalations").select("alert_status").eq("id", escalationId)
+      .maybeSingle();
     const known: EscalationDeliveryState[] = [
-      "created", "queued", "sms_sent", "email_sent",
-      "partially_delivered", "delivery_failed", "suppressed", "no_recipient_configured",
+      "created",
+      "queued",
+      "sms_sent",
+      "email_sent",
+      "partially_delivered",
+      "delivery_failed",
+      "suppressed",
+      "no_recipient_configured",
     ];
     const s = cur?.alert_status as EscalationDeliveryState | undefined;
     return s && known.includes(s) ? s : "queued";
   }
 
   const { data: settings } = await supabase
-    .from("escalation_settings").select("*").eq("singleton", true).maybeSingle();
+    .from("escalation_settings").select("*").eq("singleton", true)
+    .maybeSingle();
   if (!settings?.internal_alerts_enabled) {
     await supabase.from("ai_escalations").update({
-      alert_status: "no_recipient_configured", alert_last_attempt_at: nowIso,
+      alert_status: "no_recipient_configured",
+      alert_last_attempt_at: nowIso,
+    }).eq("id", escalationId);
+    return "no_recipient_configured";
+  }
+
+  if (!organizationId) {
+    await supabase.from("ai_escalations").update({
+      alert_status: "no_recipient_configured",
+      alert_last_attempt_at: nowIso,
     }).eq("id", escalationId);
     return "no_recipient_configured";
   }
 
   // Choose an enabled recipient that handles this category (or urgent).
-  const { data: recipients } = await supabase
-    .from("escalation_recipients").select("*").eq("is_enabled", true);
+  const recipients = await loadEnabledEscalationRecipients(
+    supabase,
+    organizationId,
+  );
   const isUrgent = severity === "urgent";
-  const pick = (recipients ?? []).filter((r: any) => {
+  const pick = recipients.filter((r: any) => {
     const cats = Array.isArray(r.categories) ? r.categories : [];
     if (isUrgent && r.handles_urgent) return true;
     return cats.length === 0 || cats.includes(input.category);
   });
-  pick.sort((a: any, b: any) => (a.role === "primary" ? -1 : 1) - (b.role === "primary" ? -1 : 1));
+  pick.sort((a: any, b: any) =>
+    (a.role === "primary" ? -1 : 1) - (b.role === "primary" ? -1 : 1)
+  );
   const recipient = pick[0];
   if (!recipient) {
     await supabase.from("ai_escalations").update({
-      alert_status: "no_recipient_configured", alert_last_attempt_at: nowIso,
+      alert_status: "no_recipient_configured",
+      alert_last_attempt_at: nowIso,
     }).eq("id", escalationId);
     return "no_recipient_configured";
   }
 
   // Suppression is re-checked at delivery too, but check here to record status.
-  const suppression = await checkSuppression(supabase, { phone: recipient.phone });
+  const suppression = await checkSuppression(supabase, {
+    phone: recipient.phone,
+  });
   const primary = await getPhoneByPurpose(supabase, "primary_public");
   const dashHint = settings.dashboard_base_url
     ? `Open: ${settings.dashboard_base_url}`
@@ -244,33 +357,48 @@ async function maybeQueueAlert(
   const smsStatus: ChannelDeliveryStatus = insErr
     ? "failed"
     : suppression.suppressed
-      ? "suppressed"
-      : "queued";
+    ? "suppressed"
+    : "queued";
   const smsError = insErr
     ? (insErr.message ?? "sms enqueue failed").slice(0, 200)
     : suppression.suppressed
-      ? `suppressed:${suppression.reason ?? "unknown"}`
-      : null;
-  const smsProviderResponse = insErr ? "enqueue_failed" : suppression.suppressed ? "suppressed" : "queued";
+    ? `suppressed:${suppression.reason ?? "unknown"}`
+    : null;
+  const smsProviderResponse = insErr
+    ? "enqueue_failed"
+    : suppression.suppressed
+    ? "suppressed"
+    : "queued";
 
   // Secondary EMAIL alert (best-effort). Uses the recipient's own email when
   // set, otherwise the configured default notify_email. Never blocks the SMS.
   let emailStatus: ChannelDeliveryStatus = "skipped";
   let emailError: string | null = null;
   let emailProviderResponse: string | null = null;
-  const emailTarget = (recipient.email as string | null) || (settings.notify_email as string | null) || null;
+  const emailTarget = (recipient.email as string | null) ||
+    (settings.notify_email as string | null) || null;
   if (settings.email_alerts_enabled && emailTarget) {
-    const emailSuppression = await checkSuppression(supabase, { email: emailTarget });
+    const emailSuppression = await checkSuppression(supabase, {
+      email: emailTarget,
+    });
     if (emailSuppression.suppressed) {
       emailStatus = "suppressed";
       emailError = emailSuppression.reason ?? null;
       emailProviderResponse = "suppressed";
     } else {
-      const subj = `BluLadder escalation: ${input.category.replace(/_/g, " ")} (${severity})`;
+      const subj = `BluLadder escalation: ${
+        input.category.replace(/_/g, " ")
+      } (${severity})`;
       const r = await sendEscalationEmail(emailTarget, subj, messageBody);
-      emailStatus = r.status === "sent" ? "sent" : r.status === "not_configured" ? "not_configured" : "failed";
+      emailStatus = r.status === "sent"
+        ? "sent"
+        : r.status === "not_configured"
+        ? "not_configured"
+        : "failed";
       emailError = r.error;
-      emailProviderResponse = r.status === "sent" ? "accepted" : (r.error ?? r.status);
+      emailProviderResponse = r.status === "sent"
+        ? "accepted"
+        : (r.error ?? r.status);
     }
   }
 
@@ -282,7 +410,8 @@ async function maybeQueueAlert(
   });
 
   const { data: cur } = await supabase
-    .from("ai_escalations").select("alert_count").eq("id", escalationId).maybeSingle();
+    .from("ai_escalations").select("alert_count").eq("id", escalationId)
+    .maybeSingle();
   const attempted = deliveryState !== "no_recipient_configured";
   const nextCount = (cur?.alert_count ?? 0) + (attempted ? 1 : 0);
   await supabase.from("ai_escalations").update({

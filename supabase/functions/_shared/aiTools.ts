@@ -131,6 +131,7 @@ async function recordSlotFailure(
   if (count >= MAX_SLOT_FAILURES_BEFORE_ESCALATION) {
     try {
       await escalateToHuman(ctx.supabase, {
+        organizationId: validVoiceOrganizationId(ctx),
         conversationId: ctx.conversationId,
         category: "booking_needs_attention",
         severity: "high",
@@ -1481,6 +1482,7 @@ async function createBookingTool(
     // needs_attention itself is a first-class escalation path.
     try {
       const escalation = await escalateToHuman(ctx.supabase, {
+        organizationId: validVoiceOrganizationId(ctx),
         conversationId: ctx.conversationId,
         category: "booking_needs_attention",
         severity: "high",
@@ -1814,6 +1816,7 @@ async function humanCallbackTool(
   const unanswered =
     /can'?t (confirm|answer)|not sure|unsure|don'?t know|missing/i.test(reason);
   const cbResult = await escalateToHuman(ctx.supabase, {
+    organizationId: validVoiceOrganizationId(ctx),
     conversationId: ctx.conversationId,
     category: unanswered ? "unanswered_question" : "human_request",
     severity: "normal",
@@ -1901,6 +1904,7 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
   await escalationUpdate;
 
   const result = await escalateToHuman(ctx.supabase, {
+    organizationId: validVoiceOrganizationId(ctx),
     conversationId: ctx.conversationId,
     category,
     severity,

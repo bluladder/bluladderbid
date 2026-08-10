@@ -226,6 +226,57 @@ Deno.test("event receiver: authenticated tool call returns Vapi's exact results 
   });
 });
 
+Deno.test("event receiver: routes the exact human-transfer tool without invoking a link delivery", async () => {
+  setLegacySecret(SECRET);
+  let transfers = 0;
+  let links = 0;
+  const res = await handleVapiEventRequest(
+    post({
+      message: {
+        type: "tool-calls",
+        toolCallList: [{ id: "transfer-1", name: "request_human_transfer" }],
+        call: {
+          id: "call-1",
+          assistantId: "mapped-assistant",
+          customer: { number: "+14697472877" },
+          monitor: { controlUrl: "https://api.vapi.ai/call/call-1" },
+        },
+      },
+    }, { "x-vapi-secret": SECRET }),
+    {
+      organizationId: "00000000-0000-4000-8000-000000000091",
+      handleHumanTransfer: (_supabase, input) => {
+        transfers++;
+        assertEquals(
+          input.organizationId,
+          "00000000-0000-4000-8000-000000000091",
+        );
+        return Promise.resolve({
+          results: [{
+            toolCallId: "transfer-1",
+            result: JSON.stringify({
+              status: "transfer_requested",
+              message: "provider accepted transfer control",
+            }),
+          }],
+        });
+      },
+      handleLinkTools: () => {
+        links++;
+        return Promise.resolve({ results: [] });
+      },
+    },
+  );
+  assertEquals(res.status, 200);
+  assertEquals(transfers, 1);
+  assertEquals(links, 0);
+  const response = await res.json();
+  assertEquals(
+    JSON.parse(response.results[0].result).status,
+    "transfer_requested",
+  );
+});
+
 Deno.test("event receiver: missing tool tenant authority fails closed without executing delivery", async () => {
   setLegacySecret(SECRET);
   let deliveries = 0;

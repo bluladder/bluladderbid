@@ -17,34 +17,57 @@ import { sendEmail } from "../_shared/emailConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
 
   const token = getBearer(req);
   const adminId = await verifyAdmin(token, "operations_admin");
   if (!adminId) return json({ error: "Unauthorized" }, 401);
 
   const body = await req.json().catch(() => ({}));
-  if (body?.confirm !== true) return json({ error: "Explicit confirmation required" }, 400);
+  if (body?.confirm !== true) {
+    return json({ error: "Explicit confirmation required" }, 400);
+  }
   // Email-only mode: the admin Email Diagnostics panel verifies the email path
   // without dispatching an SMS. Defaults to false (full SMS+email test).
   const emailOnly = body?.emailOnly === true;
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
+
+  const { data: memberships, error: membershipError } = await supabase
+    .from("organization_memberships")
+    .select("organization_id")
+    .eq("user_id", adminId)
+    .eq("status", "active")
+    .in("role", ["owner", "admin"])
+    .limit(2);
+  if (membershipError || memberships?.length !== 1) {
+    return json({ error: "Exactly one active organization is required." }, 409);
+  }
+  const organizationId = memberships[0].organization_id;
 
   const { data: recipient } = await supabase
     .from("escalation_recipients")
     .select("name, phone, email")
+    .eq("organization_id", organizationId)
     .eq("is_enabled", true)
     .order("role", { ascending: true })
     .limit(1)
@@ -55,7 +78,11 @@ Deno.serve(async (req) => {
     .eq("singleton", true)
     .maybeSingle();
 
-  if (!emailOnly && !recipient?.phone) return json({ error: "No enabled escalation recipient with a phone is configured." }, 400);
+  if (!emailOnly && !recipient?.phone) {
+    return json({
+      error: "No enabled escalation recipient with a phone is configured.",
+    }, 400);
+  }
 
   const messageBody = [
     "BluLadder internal test alert",
@@ -88,10 +115,19 @@ Deno.serve(async (req) => {
   let emailFailureCategory: string | null = null;
   const emailTo = recipient.email || settings?.notify_email || null;
   if (settings?.email_alerts_enabled && emailTo) {
-    const html = `<pre style="font-family:system-ui,sans-serif;white-space:pre-wrap">${
-      messageBody.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string))
-    }</pre>`;
-    const res = await sendEmail({ to: emailTo, subject: "BluLadder internal test alert", html, fromNameOverride: "BluLadder Alerts" });
+    const html =
+      `<pre style="font-family:system-ui,sans-serif;white-space:pre-wrap">${
+        messageBody.replace(
+          /[&<>]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string),
+        )
+      }</pre>`;
+    const res = await sendEmail({
+      to: emailTo,
+      subject: "BluLadder internal test alert",
+      html,
+      fromNameOverride: "BluLadder Alerts",
+    });
     emailFrom = res.from;
     if (res.ok) {
       emailStatus = "sent";
@@ -102,9 +138,19 @@ Deno.serve(async (req) => {
         const { data: sr } = await supabase.from("system_issues")
           .select("id").eq("dedupe_key", "email_send_success").maybeSingle();
         if (sr) {
-          await supabase.from("system_issues").update({ status: "resolved", last_seen_at: now, details: { last_success_at: now } }).eq("id", sr.id);
+          await supabase.from("system_issues").update({
+            status: "resolved",
+            last_seen_at: now,
+            details: { last_success_at: now },
+          }).eq("id", sr.id);
         } else {
-          await supabase.from("system_issues").insert({ issue_type: "email_delivery", dedupe_key: "email_send_success", severity: "info", status: "resolved", details: { last_success_at: now } });
+          await supabase.from("system_issues").insert({
+            issue_type: "email_delivery",
+            dedupe_key: "email_send_success",
+            severity: "info",
+            status: "resolved",
+            details: { last_success_at: now },
+          });
         }
       } catch { /* health bookkeeping must never break the send result */ }
     } else if (res.failure?.category === "provider_not_configured") {
@@ -122,7 +168,14 @@ Deno.serve(async (req) => {
     status: "done",
     recipient: recipient.name,
     sms: { status: smsStatus, error: smsError, to: recipient.phone },
-    email: { status: emailStatus, error: emailError, category: emailFailureCategory, from: emailFrom, providerMessageId: emailProviderMessageId, to: emailTo },
+    email: {
+      status: emailStatus,
+      error: emailError,
+      category: emailFailureCategory,
+      from: emailFrom,
+      providerMessageId: emailProviderMessageId,
+      to: emailTo,
+    },
     emailOnly,
   });
 });

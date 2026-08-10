@@ -13,21 +13,21 @@
 
 export type TransferDestinationResult =
   | {
-      ok: true;
-      destinationE164: string;
-      destinationMasked: string;
-    }
+    ok: true;
+    destinationE164: string;
+    destinationMasked: string;
+  }
   | {
-      ok: false;
-      reason:
-        | "missing"
-        | "invalid"
-        | "self_transfer"
-        | "ai_entrance"
-        | "provider_did"
-        | "retired_number"
-        | "known_forwarding_loop";
-    };
+    ok: false;
+    reason:
+      | "missing"
+      | "invalid"
+      | "self_transfer"
+      | "ai_entrance"
+      | "provider_did"
+      | "retired_number"
+      | "known_forwarding_loop";
+  };
 
 // The public AI entrance. Transferring to this number would loop the caller
 // straight back into the assistant.
@@ -66,6 +66,10 @@ export function maskForLog(e164: string): string {
 }
 
 export interface ResolveTransferOptions {
+  /** Explicit server-resolved destination. When present, this takes priority
+   *  over the legacy environment fallback so tenant-scoped configuration can
+   *  be resolved before the loop guard runs. */
+  configuredDestination?: string | null;
   /** Env-lookup override; defaults to Deno.env.get("VOICE_HUMAN_TRANSFER_NUMBER"). */
   getEnv?: (name: string) => string | undefined;
   /** The current inbound caller ANI, if known. Rejected as a self-transfer. */
@@ -78,7 +82,9 @@ export interface ResolveTransferOptions {
   extraLoopNumbers?: ReadonlyArray<string>;
 }
 
-export function resolveTransferDestination(opts: ResolveTransferOptions = {}): TransferDestinationResult {
+export function resolveTransferDestination(
+  opts: ResolveTransferOptions = {},
+): TransferDestinationResult {
   const getEnv = opts.getEnv ?? ((n) => {
     try {
       // Deno is available in edge functions; fall back to process.env for tests
@@ -91,7 +97,12 @@ export function resolveTransferDestination(opts: ResolveTransferOptions = {}): T
     return (globalThis as any).process?.env?.[n];
   });
 
-  const raw = getEnv("VOICE_HUMAN_TRANSFER_NUMBER");
+  const raw = Object.prototype.hasOwnProperty.call(
+      opts,
+      "configuredDestination",
+    )
+    ? opts.configuredDestination
+    : getEnv("VOICE_HUMAN_TRANSFER_NUMBER");
   if (!raw) return { ok: false, reason: "missing" };
   const e164 = normalizeE164(raw);
   if (!e164) return { ok: false, reason: "invalid" };
@@ -105,13 +116,21 @@ export function resolveTransferDestination(opts: ResolveTransferOptions = {}): T
   if (caller && caller === e164) return { ok: false, reason: "self_transfer" };
 
   const providerDid = normalizeE164(opts.providerDid ?? null);
-  if (providerDid && providerDid === e164) return { ok: false, reason: "provider_did" };
+  if (providerDid && providerDid === e164) {
+    return { ok: false, reason: "provider_did" };
+  }
 
   const loopNumbers = new Set<string>([
     ...KNOWN_FORWARDING_LOOP_NUMBERS,
     ...(opts.extraLoopNumbers ?? []),
   ]);
-  if (loopNumbers.has(e164)) return { ok: false, reason: "known_forwarding_loop" };
+  if (loopNumbers.has(e164)) {
+    return { ok: false, reason: "known_forwarding_loop" };
+  }
 
-  return { ok: true, destinationE164: e164, destinationMasked: maskForLog(e164) };
+  return {
+    ok: true,
+    destinationE164: e164,
+    destinationMasked: maskForLog(e164),
+  };
 }
