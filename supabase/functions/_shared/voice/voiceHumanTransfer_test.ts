@@ -103,7 +103,10 @@ Deno.test("human transfer: duplicate tool calls issue one server-resolved transf
   assertEquals(decoded(result.results[0].result).status, "transfer_requested");
   assertEquals(decoded(result.results[1].result).status, "transfer_requested");
   assert(!result.results[0].result.includes("+12145550000"));
-  assert(!/human answered/i.test(decoded(result.results[0].result).message));
+  assertEquals(
+    decoded(result.results[0].result).message,
+    "Vapi accepted the transfer control request. Say you are connecting the caller now; do not claim that a human answered.",
+  );
 });
 
 Deno.test("human transfer: a replay never issues a second provider request", async () => {
