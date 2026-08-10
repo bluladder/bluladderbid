@@ -19,7 +19,7 @@ Deno.test("voice escalation recipient migration is additive, guarded, and tenant
       "VALIDATE CONSTRAINT escalation_recipients_organization_id_fkey",
       "escalation_recipients_one_active_primary_idx",
       "WHERE is_enabled = true AND role = 'primary'",
-      "public.is_organization_member(organization_id)",
+      "tenant_security.current_organization_role(organization_id) IS NOT NULL",
       "actor.organization_id = escalation_recipients.organization_id",
       "actor.status = 'active'",
       "actor.role IN ('owner', 'admin')",
@@ -35,6 +35,10 @@ Deno.test("voice escalation recipient migration is additive, guarded, and tenant
   assertEquals(
     /\b(?:DROP\s+TABLE|DROP\s+COLUMN|TRUNCATE|SECURITY\s+DEFINER)\b/i
       .test(migration),
+    false,
+  );
+  assertEquals(
+    migration.includes("public.is_organization_member"),
     false,
   );
 });

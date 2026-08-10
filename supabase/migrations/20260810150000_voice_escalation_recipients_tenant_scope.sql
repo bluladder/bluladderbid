@@ -82,7 +82,9 @@ DROP POLICY IF EXISTS "Organization admins manage escalation recipients"
 
 CREATE POLICY "Members read escalation recipients"
   ON public.escalation_recipients FOR SELECT TO authenticated
-  USING (public.is_organization_member(organization_id));
+  USING (
+    tenant_security.current_organization_role(organization_id) IS NOT NULL
+  );
 
 CREATE POLICY "Organization admins manage escalation recipients"
   ON public.escalation_recipients FOR ALL TO authenticated
