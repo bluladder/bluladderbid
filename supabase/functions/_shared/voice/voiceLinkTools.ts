@@ -54,7 +54,13 @@ export interface VoiceLinkToolResult {
 export interface VapiToolResultEnvelope {
   results: Array<{
     toolCallId: string;
-    result: VoiceLinkToolResult;
+    /**
+     * Vapi's synchronous custom-tool serializer accepts a single-line string.
+     * Keep the structured status inside that string so Realtime receives a
+     * deterministic truthfulness directive instead of its generic
+     * "No result returned" fallback.
+     */
+    result: string;
   }>;
 }
 
@@ -108,11 +114,28 @@ function parseToolCalls(body: unknown): ParsedToolCall[] {
   const top = record(body);
   const message = record(top.message);
   if (message.type !== "tool-calls") return [];
-  const raw = Array.isArray(message.toolCallList) ? message.toolCallList : [];
-  return raw.flatMap((candidate) => {
+
+  const direct = Array.isArray(message.toolCallList)
+    ? message.toolCallList.flatMap((candidate) => {
+      const tool = record(candidate);
+      const id = nonEmptyString(tool.id);
+      const name = nonEmptyString(tool.name);
+      return id && name ? [{ id, name }] : [];
+    })
+    : [];
+  if (direct.length) return direct;
+
+  // Vapi documents toolWithToolCallList alongside toolCallList. Some provider
+  // lanes retain only this wrapped representation, so accept exactly that
+  // documented fallback without inspecting model-supplied parameters.
+  const wrapped = Array.isArray(message.toolWithToolCallList)
+    ? message.toolWithToolCallList
+    : [];
+  return wrapped.flatMap((candidate) => {
     const tool = record(candidate);
-    const id = nonEmptyString(tool.id);
-    const name = nonEmptyString(tool.name);
+    const toolCall = record(tool.toolCall);
+    const id = nonEmptyString(toolCall.id);
+    const name = nonEmptyString(tool.name) ?? nonEmptyString(toolCall.name);
     return id && name ? [{ id, name }] : [];
   });
 }
@@ -175,8 +198,12 @@ function sameResult(
   calls: ParsedToolCall[],
   result: VoiceLinkToolResult,
 ): VapiToolResultEnvelope {
+  const serialized = JSON.stringify(result);
   return {
-    results: calls.map((call) => ({ toolCallId: call.id, result })),
+    results: calls.map((call) => ({
+      toolCallId: call.id,
+      result: serialized,
+    })),
   };
 }
 

@@ -34,6 +34,7 @@ import {
 import {
   handleVoiceLinkToolCalls,
   type VapiToolResultEnvelope,
+  type VoiceLinkToolStatus,
 } from "../_shared/voice/voiceLinkTools.ts";
 
 const corsHeaders = {
@@ -43,6 +44,18 @@ const corsHeaders = {
 };
 
 const MAX_BODY_BYTES = 64 * 1024;
+
+const VOICE_LINK_TOOL_STATUSES = new Set<VoiceLinkToolStatus>([
+  "provider_accepted",
+  "queued",
+  "uncertain",
+  "suppressed",
+  "opted_out",
+  "paused",
+  "failed",
+  "unsupported",
+  "invalid_request",
+]);
 
 function jsonError(status: number, code: string): Response {
   return new Response(JSON.stringify({ error: { code } }), {
@@ -117,6 +130,22 @@ function extractEventType(body: unknown): string | null {
     ? top
     : null;
   return t;
+}
+
+function summarizeLinkToolStatuses(
+  response: VapiToolResultEnvelope,
+): Array<VoiceLinkToolStatus | "unreadable"> {
+  return response.results.map((entry) => {
+    try {
+      const parsed = JSON.parse(entry.result) as { status?: unknown };
+      return typeof parsed.status === "string" &&
+          VOICE_LINK_TOOL_STATUSES.has(parsed.status as VoiceLinkToolStatus)
+        ? parsed.status as VoiceLinkToolStatus
+        : "unreadable";
+    } catch {
+      return "unreadable";
+    }
+  });
 }
 
 export interface VapiEventDeps {
@@ -281,6 +310,12 @@ export async function handleVapiEventRequest(
         organizationId: "",
       });
     }
+    console.log(JSON.stringify({
+      at: "voice-vapi-events",
+      buildId: BUILD_ID,
+      toolResults: toolResponse.results.length,
+      toolStatuses: summarizeLinkToolStatuses(toolResponse),
+    }));
     return new Response(JSON.stringify(toolResponse), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

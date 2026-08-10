@@ -204,10 +204,10 @@ Deno.test("event receiver: authenticated tool call returns Vapi's exact results 
         return Promise.resolve({
           results: [{
             toolCallId: "tool-1",
-            result: {
+            result: JSON.stringify({
               status: "provider_accepted",
               message: "provider accepted",
-            },
+            }),
           }],
         });
       },
@@ -218,10 +218,10 @@ Deno.test("event receiver: authenticated tool call returns Vapi's exact results 
   assertEquals(await res.json(), {
     results: [{
       toolCallId: "tool-1",
-      result: {
+      result: JSON.stringify({
         status: "provider_accepted",
         message: "provider accepted",
-      },
+      }),
     }],
   });
 });
@@ -243,12 +243,12 @@ Deno.test("event receiver: missing tool tenant authority fails closed without ex
         return Promise.resolve({
           results: [{
             toolCallId: "tool-1",
-            result: {
+            result: JSON.stringify({
               status: input.organizationId
                 ? "provider_accepted"
                 : "invalid_request",
               message: "authority required",
-            },
+            }),
           }],
         });
       },
@@ -257,7 +257,59 @@ Deno.test("event receiver: missing tool tenant authority fails closed without ex
   assertEquals(res.status, 200);
   assertEquals(deliveries, 1);
   const response = await res.json();
-  assertEquals(response.results[0].result.status, "invalid_request");
+  assertEquals(
+    JSON.parse(response.results[0].result).status,
+    "invalid_request",
+  );
+});
+
+Deno.test("event receiver: tool diagnostics expose only bounded status evidence", async () => {
+  setLegacySecret(SECRET);
+  const logs: string[] = [];
+  const originalLog = console.log;
+  console.log = (msg: string) => logs.push(String(msg));
+  try {
+    const res = await handleVapiEventRequest(
+      post({
+        message: {
+          type: "tool-calls",
+          toolCallList: [{
+            id: "private-tool-call-id",
+            name: "send_online_quote_link",
+          }],
+          call: {
+            id: "private-call-id",
+            assistantId: "private-assistant-id",
+            customer: { number: "+14697472877" },
+          },
+        },
+      }, { "x-vapi-secret": SECRET }),
+      {
+        organizationId: "00000000-0000-4000-8000-000000000091",
+        handleLinkTools: () =>
+          Promise.resolve({
+            results: [{
+              toolCallId: "private-tool-call-id",
+              result: JSON.stringify({
+                status: "provider_accepted",
+                message: "provider accepted",
+              }),
+            }],
+          }),
+      },
+    );
+    assertEquals(res.status, 200);
+    await res.text();
+  } finally {
+    console.log = originalLog;
+  }
+
+  const joined = logs.join("\n");
+  assert(joined.includes('"toolStatuses":["provider_accepted"]'));
+  assert(!joined.includes("private-tool-call-id"));
+  assert(!joined.includes("private-call-id"));
+  assert(!joined.includes("private-assistant-id"));
+  assert(!joined.includes("+14697472877"));
 });
 
 Deno.test("event receiver: logs redact token, digest, auth headers, identifiers, transcript, and phone", async () => {
