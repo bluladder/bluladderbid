@@ -10,6 +10,7 @@ import {
   VOICE_BOOKING_MANAGEMENT_LINK_TOOL,
   VOICE_QUOTE_LINK_TOOL,
   type VoiceLinkToolDeps,
+  type VoiceLinkToolResult,
 } from "./voiceLinkTools.ts";
 
 const ORG = "00000000-0000-4000-8000-000000000091";
@@ -47,6 +48,10 @@ function acceptedResult() {
     escalated: false,
     providerMessageId: "provider-1",
   };
+}
+
+function decodedResult(value: string): VoiceLinkToolResult {
+  return JSON.parse(value) as VoiceLinkToolResult;
 }
 
 function allowedDeps(
@@ -88,8 +93,15 @@ Deno.test("voice link tools: duplicate calls share one delivery attempt and exac
     buildVoiceCallLinkOutboundKey("call-91", "+14697472877"),
   );
   assertEquals(result.results.length, 2);
-  assertEquals(result.results[0].result.status, "provider_accepted");
-  assertEquals(result.results[1].result.status, "provider_accepted");
+  assertEquals(
+    decodedResult(result.results[0].result).status,
+    "provider_accepted",
+  );
+  assertEquals(
+    decodedResult(result.results[1].result).status,
+    "provider_accepted",
+  );
+  assertEquals(result.results[0].result.includes("\n"), false);
 });
 
 Deno.test("voice link tools: quote and appointment purposes never compete", async () => {
@@ -110,7 +122,7 @@ Deno.test("voice link tools: quote and appointment purposes never compete", asyn
   );
   assertEquals(deliveries, 0);
   assertEquals(
-    result.results.map((entry) => entry.result.status),
+    result.results.map((entry) => decodedResult(entry.result).status),
     ["invalid_request", "invalid_request"],
   );
 });
@@ -151,7 +163,7 @@ Deno.test("voice link tools: spoken success is authorized only by durable provid
       { body: body([VOICE_QUOTE_LINK_TOOL]), organizationId: ORG },
       allowedDeps(() => Promise.resolve(outbox)),
     );
-    const evidence = result.results[0].result;
+    const evidence = decodedResult(result.results[0].result);
     assertEquals(evidence.status, expected);
     assertEquals(
       /may say the link was sent/i.test(evidence.message),
@@ -174,7 +186,10 @@ Deno.test("voice link tools: model-supplied phone and tenant authority are ignor
     }),
   );
   assertEquals(deliveries, 0);
-  assertEquals(result.results[0].result.status, "invalid_request");
+  assertEquals(
+    decodedResult(result.results[0].result).status,
+    "invalid_request",
+  );
 });
 
 Deno.test("voice link tools: exact canonical links contain no customer data", () => {
@@ -236,6 +251,41 @@ Deno.test("voice link tools: suppression, opt-out, and pause prevent outbox disp
       deps,
     );
     assertEquals(deliveries, 0);
-    assertEquals(result.results[0].result.status, testCase.expected);
+    assertEquals(
+      decodedResult(result.results[0].result).status,
+      testCase.expected,
+    );
   }
+});
+
+Deno.test("voice link tools: documented wrapped Vapi tool calls execute and return a string result", async () => {
+  let deliveries = 0;
+  const wrapped = body([]);
+  const message = wrapped.message as Record<string, unknown>;
+  delete message.toolCallList;
+  message.toolWithToolCallList = [{
+    name: VOICE_QUOTE_LINK_TOOL,
+    toolCall: {
+      id: "wrapped-tool-1",
+      parameters: { phone: "+12145550000" },
+    },
+  }];
+
+  const result = await handleVoiceLinkToolCalls(
+    null,
+    { body: wrapped, organizationId: ORG },
+    allowedDeps(() => {
+      deliveries++;
+      return Promise.resolve(acceptedResult());
+    }),
+  );
+
+  assertEquals(deliveries, 1);
+  assertEquals(result.results.length, 1);
+  assertEquals(result.results[0].toolCallId, "wrapped-tool-1");
+  assertEquals(typeof result.results[0].result, "string");
+  assertEquals(
+    decodedResult(result.results[0].result).status,
+    "provider_accepted",
+  );
 });

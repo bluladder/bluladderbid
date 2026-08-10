@@ -102,6 +102,39 @@ After deployment, the controlled call must capture from Vapi's call record:
 
 Do not advertise a latency improvement until those measurements exist.
 
+## First controlled-call evidence (2026-08-09)
+
+The first owner-controlled inbound call on the isolated Realtime assistant
+completed in 105 seconds and proved that the architecture change removed the
+legacy multi-second application turn loop. Vapi reported 1,450 ms average turn
+latency, with 388 ms average transcription and 315 ms average endpointing.
+
+The quote-link tool was requested twice, but no SMS outbox row or provider
+attempt was created. Vapi stored its generic `No result returned` fallback for
+both tool attempts. The repository response used an object in `result`; Vapi's
+documented synchronous custom-tool contract requires `result` to be a
+single-line string. The repair therefore:
+
+- serializes the bounded `{ status, message }` evidence as one JSON string;
+- accepts both documented `toolCallList` and `toolWithToolCallList` request
+  representations;
+- logs only the bounded tool-result count and status for the next controlled
+  call, never caller data or provider identifiers;
+- adds the approved scheduling answer: BluLadder is usually booking one to two
+  weeks out, can sometimes schedule sooner, and confirms exact availability
+  only after quote details establish job duration.
+
+This repair does not add a new SMS path, modify pricing, mutate Jobber, or trust
+model-supplied contact or tenant data.
+
+## Fast-launch scope and deferred extensions
+
+Launch readiness requires the two existing link tools to pass one controlled
+call each. Human transfer is the next bounded addition after link delivery is
+proven. Spoken canonical pricing and direct appointment mutations are deferred
+from the fast launch: they remain feasible as separate server-owned tools, but
+must not delay the DFW FAQ/link receptionist or the Southern Oregon rollout.
+
 ## Bounded release order
 
 1. Review and merge the exact green PR for issue #91.

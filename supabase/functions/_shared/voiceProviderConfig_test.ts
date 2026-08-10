@@ -206,6 +206,10 @@ Deno.test("realtime manifest: prompt sends callers to proven web flows without p
   assert(/provider_accepted/.test(prompt));
   assert(/moderate pace/.test(prompt));
   assert(/Do not repeat a question already answered/.test(prompt));
+  assert(/usually booking about one to two weeks out/.test(prompt));
+  assert(/sometimes get you in sooner/.test(prompt));
+  assert(/know how long the job will take/.test(prompt));
+  assert(/accurate available times/.test(prompt));
 });
 
 Deno.test("realtime manifest: QA transcript is explicit while audio and logs remain off", () => {
