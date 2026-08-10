@@ -69,6 +69,19 @@ interface ParsedToolCall {
   name: string;
 }
 
+export interface VoiceLinkToolEnvelopeSummary {
+  messageTypeIsToolCalls: boolean;
+  directCount: number;
+  directWithId: number;
+  directWithFlatName: number;
+  directWithFunctionName: number;
+  wrappedCount: number;
+  wrappedWithId: number;
+  wrappedWithTopName: number;
+  wrappedWithToolCallName: number;
+  wrappedWithFunctionName: number;
+}
+
 export interface VoiceLinkToolDeps {
   deliver?: typeof sendOutboxSms;
   suppressionCheck?: typeof checkSuppression;
@@ -119,7 +132,10 @@ function parseToolCalls(body: unknown): ParsedToolCall[] {
     ? message.toolCallList.flatMap((candidate) => {
       const tool = record(candidate);
       const id = nonEmptyString(tool.id);
-      const name = nonEmptyString(tool.name);
+      // Vapi emits both its flattened tool-call representation and the
+      // OpenAI-compatible function wrapper used by native Realtime lanes.
+      const name = nonEmptyString(tool.name) ??
+        nonEmptyString(record(tool.function).name);
       return id && name ? [{ id, name }] : [];
     })
     : [];
@@ -135,9 +151,58 @@ function parseToolCalls(body: unknown): ParsedToolCall[] {
     const tool = record(candidate);
     const toolCall = record(tool.toolCall);
     const id = nonEmptyString(toolCall.id);
-    const name = nonEmptyString(tool.name) ?? nonEmptyString(toolCall.name);
+    const name = nonEmptyString(tool.name) ?? nonEmptyString(toolCall.name) ??
+      nonEmptyString(record(toolCall.function).name);
     return id && name ? [{ id, name }] : [];
   });
+}
+
+/**
+ * Count only non-sensitive structural markers when a provider envelope cannot
+ * be parsed. Never logs arguments, identifiers, names, phone numbers, or raw
+ * keys from the request.
+ */
+export function summarizeVoiceLinkToolEnvelope(
+  body: unknown,
+): VoiceLinkToolEnvelopeSummary {
+  const top = record(body);
+  const message = record(top.message);
+  const direct = Array.isArray(message.toolCallList)
+    ? message.toolCallList
+    : [];
+  const wrapped = Array.isArray(message.toolWithToolCallList)
+    ? message.toolWithToolCallList
+    : [];
+  return {
+    messageTypeIsToolCalls: message.type === "tool-calls",
+    directCount: direct.length,
+    directWithId:
+      direct.filter((candidate) => nonEmptyString(record(candidate).id)).length,
+    directWithFlatName:
+      direct.filter((candidate) => nonEmptyString(record(candidate).name))
+        .length,
+    directWithFunctionName:
+      direct.filter((candidate) =>
+        nonEmptyString(record(record(candidate).function).name)
+      ).length,
+    wrappedCount: wrapped.length,
+    wrappedWithId:
+      wrapped.filter((candidate) =>
+        nonEmptyString(record(record(candidate).toolCall).id)
+      ).length,
+    wrappedWithTopName:
+      wrapped.filter((candidate) => nonEmptyString(record(candidate).name))
+        .length,
+    wrappedWithToolCallName:
+      wrapped.filter((candidate) =>
+        nonEmptyString(record(record(candidate).toolCall).name)
+      ).length,
+    wrappedWithFunctionName: wrapped.filter((candidate) =>
+      nonEmptyString(
+        record(record(record(candidate).toolCall).function).name,
+      )
+    ).length,
+  };
 }
 
 export function buildVoiceCustomerLink(

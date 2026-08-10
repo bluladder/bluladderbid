@@ -33,6 +33,7 @@ import {
 } from "../_shared/voice/postCallOperationalNote.ts";
 import {
   handleVoiceLinkToolCalls,
+  summarizeVoiceLinkToolEnvelope,
   type VapiToolResultEnvelope,
   type VoiceLinkToolStatus,
 } from "../_shared/voice/voiceLinkTools.ts";
@@ -310,12 +311,16 @@ export async function handleVapiEventRequest(
         organizationId: "",
       });
     }
-    console.log(JSON.stringify({
+    const toolLog: Record<string, unknown> = {
       at: "voice-vapi-events",
       buildId: BUILD_ID,
       toolResults: toolResponse.results.length,
       toolStatuses: summarizeLinkToolStatuses(toolResponse),
-    }));
+    };
+    if (toolResponse.results.length === 0) {
+      toolLog.toolEnvelope = summarizeVoiceLinkToolEnvelope(body);
+    }
+    console.log(JSON.stringify(toolLog));
     return new Response(JSON.stringify(toolResponse), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-realtime-link-mvp.2-tool-result-repair";
+export const BUILD_ID = "voice-realtime-link-mvp.3-openai-tool-envelope";
 export const BUILD_FEATURES = {
   // Issue #91 — native OpenAI Realtime provider target plus two exact,
   // no-argument customer-link tools on the authenticated Vapi webhook.
@@ -15,6 +15,7 @@ export const BUILD_FEATURES = {
   voiceRealtimeQuoteLinkTool: true,
   voiceRealtimeBookingManagementLinkTool: true,
   voiceRealtimeStringToolResults: true,
+  voiceRealtimeOpenAiToolEnvelope: true,
   voiceRealtimeSchedulingFaq: true,
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,

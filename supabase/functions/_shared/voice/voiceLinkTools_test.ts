@@ -7,6 +7,7 @@ import type { OutboxSendInput } from "../smsOutbox.ts";
 import {
   buildVoiceCustomerLink,
   handleVoiceLinkToolCalls,
+  summarizeVoiceLinkToolEnvelope,
   VOICE_BOOKING_MANAGEMENT_LINK_TOOL,
   VOICE_QUOTE_LINK_TOOL,
   type VoiceLinkToolDeps,
@@ -288,4 +289,105 @@ Deno.test("voice link tools: documented wrapped Vapi tool calls execute and retu
     decodedResult(result.results[0].result).status,
     "provider_accepted",
   );
+});
+
+Deno.test("voice link tools: OpenAI-style direct function nesting executes without trusting arguments", async () => {
+  let deliveredTo: string | null = null;
+  const nested = body([]);
+  const message = nested.message as Record<string, unknown>;
+  message.toolCallList = [{
+    id: "openai-direct-1",
+    type: "function",
+    function: {
+      name: VOICE_QUOTE_LINK_TOOL,
+      arguments: JSON.stringify({
+        phone: "+12145550000",
+        organizationId: "hostile-model-org",
+      }),
+    },
+  }];
+
+  const result = await handleVoiceLinkToolCalls(
+    null,
+    { body: nested, organizationId: ORG },
+    allowedDeps((_client, input) => {
+      deliveredTo = input.toNumber;
+      return Promise.resolve(acceptedResult());
+    }),
+  );
+
+  assertEquals(result.results[0].toolCallId, "openai-direct-1");
+  assertEquals(
+    decodedResult(result.results[0].result).status,
+    "provider_accepted",
+  );
+  assertEquals(deliveredTo, "+14697472877");
+});
+
+Deno.test("voice link tools: OpenAI-style wrapped function nesting executes", async () => {
+  let deliveries = 0;
+  const nested = body([]);
+  const message = nested.message as Record<string, unknown>;
+  delete message.toolCallList;
+  message.toolWithToolCallList = [{
+    type: "function",
+    toolCall: {
+      id: "openai-wrapped-1",
+      type: "function",
+      function: {
+        name: VOICE_QUOTE_LINK_TOOL,
+        arguments: "{}",
+      },
+    },
+  }];
+
+  const result = await handleVoiceLinkToolCalls(
+    null,
+    { body: nested, organizationId: ORG },
+    allowedDeps(() => {
+      deliveries++;
+      return Promise.resolve(acceptedResult());
+    }),
+  );
+
+  assertEquals(deliveries, 1);
+  assertEquals(result.results[0].toolCallId, "openai-wrapped-1");
+  assertEquals(
+    decodedResult(result.results[0].result).status,
+    "provider_accepted",
+  );
+});
+
+Deno.test("voice link tools: rejected-envelope diagnostics contain counts only", () => {
+  const summary = summarizeVoiceLinkToolEnvelope({
+    message: {
+      type: "tool-calls",
+      toolCallList: [{
+        id: "private-tool-id",
+        function: {
+          arguments: JSON.stringify({ phone: "+14697472877" }),
+        },
+      }],
+      call: {
+        id: "private-call-id",
+        customer: { number: "+14697472877" },
+      },
+    },
+  });
+  assertEquals(summary, {
+    messageTypeIsToolCalls: true,
+    directCount: 1,
+    directWithId: 1,
+    directWithFlatName: 0,
+    directWithFunctionName: 0,
+    wrappedCount: 0,
+    wrappedWithId: 0,
+    wrappedWithTopName: 0,
+    wrappedWithToolCallName: 0,
+    wrappedWithFunctionName: 0,
+  });
+  const serialized = JSON.stringify(summary);
+  assertEquals(serialized.includes("private-tool-id"), false);
+  assertEquals(serialized.includes("private-call-id"), false);
+  assertEquals(serialized.includes("+14697472877"), false);
 });
