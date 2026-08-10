@@ -49,22 +49,23 @@ The Realtime target has these deliberate properties:
 - no separate transcriber configuration;
 - no background sound;
 - short responses, moderate speaking pace, no filler, no repeated questions;
-- exactly two no-argument tools;
+- exactly three no-argument tools;
 - no phone number, email, address, customer, quote, booking, price, or tenant
   authority supplied by the model;
-- no transfer destination or direct appointment mutation;
+- no model-supplied transfer destination or direct appointment mutation;
 - audio/video/PCAP recording and Vapi logging remain off;
 - text transcript retention is on for owner-requested call QA;
 - summary, structured-data analysis, and success evaluation remain off.
 
 ## Tool boundary
 
-Both tools use the existing authenticated `voice-vapi-events` function:
+All three tools use the existing authenticated `voice-vapi-events` function:
 
 | Tool | Customer result |
 | --- | --- |
 | `send_online_quote_link` | Canonical online bid/new-booking URL |
 | `send_booking_management_link` | Canonical secure customer portal URL |
+| `request_human_transfer` | One server-resolved live transfer request, or one local-operator follow-up when transfer cannot be confirmed |
 
 The webhook resolves the organization only from mapped Vapi assistant/phone
 resources. The destination comes only from the provider's trusted call envelope.
@@ -84,6 +85,31 @@ fallback use the same call-plus-recipient outbox identity. Therefore:
 Only `provider_accepted` permits “sent” wording. `queued`, `uncertain`,
 `suppressed`, `opted_out`, `paused`, `failed`, `unsupported`, and
 `invalid_request` have explicit non-success wording.
+
+The transfer tool has no arguments. Its destination is the one verified,
+enabled primary recipient inside the organization already resolved from the
+mapped Vapi resource. The destination is never placed in the model prompt or
+accepted from model arguments. One deterministic call-scoped note claims the
+action before Vapi call control is requested, so duplicate tool calls, provider
+retries, and reconnects cannot issue another transfer. Vapi acceptance means
+only that the transfer control request was accepted; it does not prove a human
+answered.
+
+If transfer cannot be attempted, fails, or has an uncertain transport outcome,
+the same tenant-scoped operator receives at most one idempotent SMS and one
+idempotent email follow-up. The note and alert include the caller contact and an
+internal conversation link, but no transcript, raw provider identifier,
+pricing authority, address authority, or booking authority. A successful
+transfer request does not also send an operator alert.
+
+## Scheduling FAQ
+
+The exact short answer is: “We're usually scheduling about one to two weeks
+out, though sooner openings sometimes become available. Once we have your
+service details and know how long the appointment will take, we can show you
+the exact available times.” The assistant must not promise a date before the
+existing web booking flow has enough details to calculate duration and return
+real availability.
 
 ## Latency claim boundary
 
@@ -143,30 +169,37 @@ structural counts if a future envelope cannot be parsed.
 
 ## Fast-launch scope and deferred extensions
 
-Launch readiness requires the two existing link tools to pass one controlled
-call each. Human transfer is the next bounded addition after link delivery is
-proven. Spoken canonical pricing and direct appointment mutations are deferred
+Launch readiness requires the two customer-link tools and the human-transfer
+tool to pass bounded controlled calls. Spoken canonical pricing and direct appointment mutations are deferred
 from the fast launch: they remain feasible as separate server-owned tools, but
 must not delay the DFW FAQ/link receptionist or the Southern Oregon rollout.
 
 ## Bounded release order
 
-1. Review and merge the exact green PR for issue #91.
-2. Deploy only `voice-vapi-events` from the merged release SHA.
-3. Retrieve and preserve the current Vapi assistant and phone-resource IDs as
+1. Review and merge the exact green PR for issue #96.
+2. Review and apply only
+   `20260810150000_voice_escalation_recipients_tenant_scope.sql`. It may
+   backfill the historical recipient to DFW only while DFW is the sole active
+   organization; otherwise it aborts.
+3. Verify one enabled, verified primary DFW operator with phone and email.
+4. Deploy only `voice-vapi-events` from the merged release SHA.
+5. Retrieve and preserve the current Vapi assistant and phone-resource IDs as
    the rollback target.
-4. Reconcile a new isolated assistant to the Realtime manifest. Do not overwrite
-   or delete the legacy assistant.
-5. Verify raw saved state: model, voice, absent transcriber, exact prompt/tools,
+6. Reconcile the existing isolated Realtime assistant to the new prompt and
+   exact three-tool manifest. Do not overwrite or delete the legacy assistant.
+7. Verify raw saved state: model, voice, absent transcriber, exact prompt/tools,
    exact server URL/events, duration, transcript-on, recording/logging-off,
-   no transfers, and unchanged credential presence.
-6. Point the test phone resource at the verified Realtime assistant.
-7. Reload the assistant and phone resource and compare their immutable IDs.
-8. Place one separately approved owner-controlled call.
+   no static transfer destination, and unchanged credential presence.
+8. Reload the assistant and phone resource and compare their immutable IDs.
+9. Place one owner-controlled management-link call, then inspect the durable
+   outbox/provider evidence.
+10. Place one owner-controlled human-transfer call, then inspect Vapi control,
+    operational-note, SMS, and email evidence.
 
-No SQL, migration, Lovable publication, pricing configuration, customer record,
-Jobber record, campaign, CallRail configuration, or live-booking flag change is
-part of this release.
+No Lovable publication, pricing configuration, customer record, Jobber record,
+campaign, CallRail configuration, or live-booking flag change is part of this
+release. The one additive tenant-recipient migration is required before the new
+tool is enabled.
 
 ## Controlled-call script
 
@@ -176,10 +209,14 @@ part of this release.
 4. When offered a text, say: “Yes, text me the link.”
 5. Confirm one spoken acknowledgement and one SMS only.
 6. Open the link and confirm the existing online quote/booking flow loads.
-7. In a second separately authorized call, say: “I need to reschedule an
+7. In a second controlled link call, say: “I need to reschedule an
    existing appointment.” Accept the portal text and confirm the secure portal
    loads without any customer detail being spoken on the call.
-8. Review the text transcript and the measured timing boundaries. Do not place a
+8. In the controlled transfer call, say: “I need to talk to a person.” Confirm
+   the assistant immediately says “Absolutely—I’ll connect you now,” then
+   verify the owner phone rings. If transfer is intentionally rejected, verify
+   exactly one local-operator SMS/email follow-up and one conversation note.
+9. Review the text transcript and the measured timing boundaries. Do not place a
    direct voice booking, cancellation, or reschedule in this MVP.
 
 ## Rollback

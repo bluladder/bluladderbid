@@ -6,10 +6,11 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-realtime-link-mvp.3-openai-tool-envelope";
+export const BUILD_ID = "voice-realtime-link-mvp.4-human-transfer";
 export const BUILD_FEATURES = {
-  // Issue #91 — native OpenAI Realtime provider target plus two exact,
-  // no-argument customer-link tools on the authenticated Vapi webhook.
+  // Issue #91/#96 — native OpenAI Realtime provider target plus three exact,
+  // no-argument customer-link and human-transfer tools on the authenticated
+  // Vapi webhook.
   voiceRealtimeLinkMvp: true,
   voiceRealtimeNativeAudio: true,
   voiceRealtimeQuoteLinkTool: true,
@@ -17,6 +18,12 @@ export const BUILD_FEATURES = {
   voiceRealtimeStringToolResults: true,
   voiceRealtimeOpenAiToolEnvelope: true,
   voiceRealtimeSchedulingFaq: true,
+  // Issue #96 — one no-argument transfer tool resolves the verified primary
+  // operator inside the authoritative organization, claims one transfer per
+  // call, and alerts that operator only when transfer is unavailable or not
+  // provider-confirmed.
+  voiceRealtimeHumanTransfer: true,
+  voiceRealtimeTenantOperatorAlerts: true,
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
   voiceBookingDryRun: true,

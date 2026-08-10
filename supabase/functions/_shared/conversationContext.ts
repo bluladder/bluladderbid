@@ -32,10 +32,16 @@ export type ResolutionMethod =
   | "ambiguous"
   | "unresolved";
 
-export type ResolutionConfidence = "high" | "medium" | "low" | "ambiguous" | "unknown";
+export type ResolutionConfidence =
+  | "high"
+  | "medium"
+  | "low"
+  | "ambiguous"
+  | "unknown";
 
 export interface ResolvedContext {
   conversationId: string;
+  organizationId?: string | null;
   customerId: string | null;
   customerName: string | null;
   customerEmail: string | null;
@@ -98,7 +104,8 @@ export async function resolveInboundContext(
   if (customerRows.length === 1) {
     const c = customerRows[0];
     customerId = c.id;
-    customerName = [c.first_name, c.last_name].filter(Boolean).join(" ") || null;
+    customerName = [c.first_name, c.last_name].filter(Boolean).join(" ") ||
+      null;
     customerEmail = c.email ?? null;
     method = "phone_exact";
     confidence = "high";
@@ -123,7 +130,8 @@ export async function resolveInboundContext(
         .maybeSingle();
       if (c) {
         customerId = c.id;
-        customerName = [c.first_name, c.last_name].filter(Boolean).join(" ") || null;
+        customerName = [c.first_name, c.last_name].filter(Boolean).join(" ") ||
+          null;
         customerEmail = c.email ?? null;
         method = "customer_account";
         confidence = "medium";
@@ -137,7 +145,9 @@ export async function resolveInboundContext(
   // email). This takes precedence over quote/booking enrichment.
   const { data: threadPeek } = await supabase
     .from("chat_conversations")
-    .select("id, customer_id, confirmed_email_customer_id, confirmed_email, awaiting_email_disambiguation")
+    .select(
+      "id, organization_id, customer_id, confirmed_email_customer_id, confirmed_email, awaiting_email_disambiguation",
+    )
     .eq("channel", "sms")
     .eq("prospect_phone", phone)
     .order("last_activity_at", { ascending: false })
@@ -152,7 +162,8 @@ export async function resolveInboundContext(
       .maybeSingle();
     if (anchor) {
       customerId = anchor.id;
-      customerName = [anchor.first_name, anchor.last_name].filter(Boolean).join(" ") || null;
+      customerName =
+        [anchor.first_name, anchor.last_name].filter(Boolean).join(" ") || null;
       customerEmail = anchor.email ?? null;
       method = "customer_account";
       confidence = "high";
@@ -188,7 +199,8 @@ export async function resolveInboundContext(
       .maybeSingle();
     if (bookingRow) {
       latestBookingId = bookingRow.id ?? null;
-      serviceAddress = serviceAddress ?? await lookupPropertyAddress(supabase, bookingRow.property_id);
+      serviceAddress = serviceAddress ??
+        await lookupPropertyAddress(supabase, bookingRow.property_id);
     }
   } else if (method !== "ambiguous") {
     // Unresolved (E): promote a solo phone-matched quote/booking as a
@@ -202,7 +214,8 @@ export async function resolveInboundContext(
       .maybeSingle();
     if (quoteRow) {
       latestQuoteId = quoteRow.id ?? null;
-      serviceAddress = serviceAddress ?? await lookupPropertyAddress(supabase, quoteRow.property_id);
+      serviceAddress = serviceAddress ??
+        await lookupPropertyAddress(supabase, quoteRow.property_id);
       if (quoteRow.customer_id) {
         customerId = quoteRow.customer_id;
         method = "recent_quote";
@@ -222,7 +235,8 @@ export async function resolveInboundContext(
         .maybeSingle();
       if (bookingRow) {
         latestBookingId = bookingRow.id ?? null;
-        serviceAddress = serviceAddress ?? await lookupPropertyAddress(supabase, bookingRow.property_id);
+        serviceAddress = serviceAddress ??
+          await lookupPropertyAddress(supabase, bookingRow.property_id);
       }
     }
   }
@@ -231,14 +245,15 @@ export async function resolveInboundContext(
   const existingThread = threadPeek;
 
   let conversationId: string;
+  let organizationId: string | null = existingThread?.organization_id ?? null;
   if (existingThread?.id) {
     conversationId = existingThread.id;
     // Never overwrite a durable customer anchor. If the thread already had a
     // customer_id, keep it. If it did not and resolution is not ambiguous,
     // we may set it now. Ambiguous threads stay customer_id = NULL until an
     // email disambiguation lands.
-    const nextCustomerId = existingThread.customer_id
-      ?? (method === "ambiguous" ? null : customerId);
+    const nextCustomerId = existingThread.customer_id ??
+      (method === "ambiguous" ? null : customerId);
     await supabase
       .from("chat_conversations")
       .update({
@@ -277,16 +292,18 @@ export async function resolveInboundContext(
         last_activity_at: now,
         summary: "SMS conversation",
       })
-      .select("id")
+      .select("id, organization_id")
       .single();
     if (insErr || !inserted) {
       throw insErr ?? new Error("thread_insert_failed");
     }
     conversationId = inserted.id;
+    organizationId = inserted.organization_id ?? null;
   }
 
   return {
     conversationId,
+    organizationId,
     customerId: method === "ambiguous" ? null : customerId,
     customerName,
     customerEmail,

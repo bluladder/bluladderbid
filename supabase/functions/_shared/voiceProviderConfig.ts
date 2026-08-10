@@ -147,7 +147,7 @@ You are BluLadder's friendly phone receptionist. Help callers quickly in English
 - BluLadder provides window cleaning, gutter cleaning, roof soft washing, house washing, driveway and flatwork pressure washing, solar-panel cleaning, and screen repair.
 - Exact prices, service-area checks, available times, and new bookings are handled by BluLadder's online bid flow.
 - Existing appointments are viewed or changed through BluLadder's secure customer portal.
-- If asked how far out BluLadder is scheduling, say: "We're usually booking about one to two weeks out, although we can sometimes get you in sooner. Once we have your quote details and know how long the job will take, we can show you the accurate available times."
+- If asked how far out BluLadder is scheduling, say: "We're usually scheduling about one to two weeks out, though sooner openings sometimes become available. Once we have your service details and know how long the appointment will take, we can show you the exact available times."
 
 # Call flow
 - Keep each reply to one or two short sentences.
@@ -160,6 +160,8 @@ You are BluLadder's friendly phone receptionist. Help callers quickly in English
 - Never ask for a phone number, email, address, name, square footage, or service details before sending either link. The server uses trusted caller ID.
 - Never directly book, cancel, reschedule, or modify an appointment.
 - Send at most one link purpose per call. If intent conflicts, ask which single link they want.
+- If the caller asks for a person, manager, owner, or transfer—or a link fails and the caller wants help—say: "Absolutely—I'll connect you now." Then call request_human_transfer immediately. Never ask for or speak the transfer number.
+- If request_human_transfer reports transfer_requested, say only that you are connecting the caller; never claim a human answered. For any failed, uncertain, or follow-up result, follow the tool message exactly.
 - If asked about an unlisted policy or fact, say you do not want to guess and direct the caller to the website.
 
 # Tool truthfulness
@@ -171,7 +173,8 @@ export interface VoiceRealtimeFunctionTool {
   function: {
     name:
       | "send_online_quote_link"
-      | "send_booking_management_link";
+      | "send_booking_management_link"
+      | "request_human_transfer";
     description: string;
     parameters: {
       type: "object";
@@ -196,7 +199,11 @@ export interface VoiceRealtimeMvpManifest {
     messages: [{ role: "system"; content: string }];
     temperature: 0.6;
     maxTokens: 250;
-    tools: [VoiceRealtimeFunctionTool, VoiceRealtimeFunctionTool];
+    tools: [
+      VoiceRealtimeFunctionTool,
+      VoiceRealtimeFunctionTool,
+      VoiceRealtimeFunctionTool,
+    ];
   };
   voice: {
     provider: "openai";
@@ -292,6 +299,10 @@ export function buildVoiceRealtimeMvpManifest(
         realtimeLinkTool(
           "send_booking_management_link",
           "Text the canonical secure appointment portal link to the trusted current caller ID after explicit caller consent.",
+        ),
+        realtimeLinkTool(
+          "request_human_transfer",
+          "Transfer the current caller to the authoritative local operator. The server resolves the destination; this tool accepts no destination or caller arguments.",
         ),
       ],
     },

@@ -3151,6 +3151,7 @@ export type Database = {
           id: string
           is_enabled: boolean
           name: string
+          organization_id: string
           phone: string
           role: string
           updated_at: string
@@ -3164,6 +3165,7 @@ export type Database = {
           id?: string
           is_enabled?: boolean
           name: string
+          organization_id: string
           phone: string
           role?: string
           updated_at?: string
@@ -3177,12 +3179,21 @@ export type Database = {
           id?: string
           is_enabled?: boolean
           name?: string
+          organization_id?: string
           phone?: string
           role?: string
           updated_at?: string
           verified_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "escalation_recipients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       escalation_settings: {
         Row: {

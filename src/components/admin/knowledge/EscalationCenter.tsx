@@ -20,6 +20,7 @@ interface Esc {
 interface Recipient {
   id: string; name: string; phone: string; role: string; is_enabled: boolean;
   handles_urgent: boolean; verified_at: string | null;
+  organization_id: string;
 }
 interface Settings {
   id: string; internal_alerts_enabled: boolean; after_hours_behavior: string;
@@ -40,9 +41,19 @@ export function EscalationCenter() {
   const [escs, setEscs] = useState<Esc[]>([]);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [newR, setNewR] = useState({ name: '', phone: '' });
 
   const load = useCallback(async () => {
+    const { data: auth } = await supabase.auth.getUser();
+    const { data: memberships } = auth.user
+      ? await supabase.from('organization_memberships')
+        .select('organization_id')
+        .eq('user_id', auth.user.id)
+        .eq('status', 'active')
+        .limit(2)
+      : { data: null };
+    setOrganizationId(memberships?.length === 1 ? memberships[0].organization_id : null);
     const [{ data: e }, { data: r }, { data: s }] = await Promise.all([
       supabase.from('ai_escalations').select('*').order('created_at', { ascending: false }).limit(100),
       supabase.from('escalation_recipients').select('*').order('role'),
@@ -63,8 +74,8 @@ export function EscalationCenter() {
   };
 
   const addRecipient = async () => {
-    if (!newR.name || !newR.phone) return;
-    const { error } = await supabase.from('escalation_recipients').insert({ name: newR.name, phone: newR.phone, role: 'primary' });
+    if (!newR.name || !newR.phone || !organizationId) return;
+    const { error } = await supabase.from('escalation_recipients').insert({ organization_id: organizationId, name: newR.name, phone: newR.phone, role: 'primary' });
     if (error) { toast({ title: 'Failed', description: error.message, variant: 'destructive' }); return; }
     setNewR({ name: '', phone: '' });
     toast({ title: 'Recipient added', description: 'Enable it after you verify the number.' });
@@ -141,8 +152,9 @@ export function EscalationCenter() {
           <div className="flex gap-2">
             <Input placeholder="Name" value={newR.name} onChange={(e) => setNewR({ ...newR, name: e.target.value })} />
             <Input placeholder="Phone (+1…)" value={newR.phone} onChange={(e) => setNewR({ ...newR, phone: e.target.value })} />
-            <Button size="sm" onClick={addRecipient}>Add</Button>
+            <Button size="sm" disabled={!organizationId} onClick={addRecipient}>Add</Button>
           </div>
+          {!organizationId && <p className="text-xs text-destructive">Select exactly one active organization before adding a recipient.</p>}
         </CardContent>
       </Card>
 

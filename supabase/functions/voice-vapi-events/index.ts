@@ -33,10 +33,16 @@ import {
 } from "../_shared/voice/postCallOperationalNote.ts";
 import {
   handleVoiceLinkToolCalls,
+  parseVoiceToolCalls,
   summarizeVoiceLinkToolEnvelope,
   type VapiToolResultEnvelope,
   type VoiceLinkToolStatus,
 } from "../_shared/voice/voiceLinkTools.ts";
+import {
+  handleVoiceHumanTransferToolCalls,
+  VOICE_HUMAN_TRANSFER_TOOL,
+  type VoiceHumanTransferStatus,
+} from "../_shared/voice/voiceHumanTransfer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,7 +52,9 @@ const corsHeaders = {
 
 const MAX_BODY_BYTES = 64 * 1024;
 
-const VOICE_LINK_TOOL_STATUSES = new Set<VoiceLinkToolStatus>([
+type VoiceRealtimeToolStatus = VoiceLinkToolStatus | VoiceHumanTransferStatus;
+
+const VOICE_REALTIME_TOOL_STATUSES = new Set<VoiceRealtimeToolStatus>([
   "provider_accepted",
   "queued",
   "uncertain",
@@ -56,6 +64,9 @@ const VOICE_LINK_TOOL_STATUSES = new Set<VoiceLinkToolStatus>([
   "failed",
   "unsupported",
   "invalid_request",
+  "transfer_requested",
+  "followup_provider_accepted",
+  "followup_recorded",
 ]);
 
 function jsonError(status: number, code: string): Response {
@@ -135,13 +146,15 @@ function extractEventType(body: unknown): string | null {
 
 function summarizeLinkToolStatuses(
   response: VapiToolResultEnvelope,
-): Array<VoiceLinkToolStatus | "unreadable"> {
+): Array<VoiceRealtimeToolStatus | "unreadable"> {
   return response.results.map((entry) => {
     try {
       const parsed = JSON.parse(entry.result) as { status?: unknown };
       return typeof parsed.status === "string" &&
-          VOICE_LINK_TOOL_STATUSES.has(parsed.status as VoiceLinkToolStatus)
-        ? parsed.status as VoiceLinkToolStatus
+          VOICE_REALTIME_TOOL_STATUSES.has(
+            parsed.status as VoiceRealtimeToolStatus,
+          )
+        ? parsed.status as VoiceRealtimeToolStatus
         : "unreadable";
     } catch {
       return "unreadable";
@@ -155,6 +168,7 @@ export interface VapiEventDeps {
   persistArtifacts?: typeof persistVapiEndOfCallArtifacts;
   persistPostCallNote?: typeof persistPostCallOperationalNote;
   handleLinkTools?: typeof handleVoiceLinkToolCalls;
+  handleHumanTransfer?: typeof handleVoiceHumanTransferToolCalls;
   organizationId?: string;
 }
 
@@ -272,9 +286,18 @@ export async function handleVapiEventRequest(
   // 200 + results response even when the action fails closed.
   if (allowed && eventType === "tool-calls") {
     let toolResponse: VapiToolResultEnvelope;
-    const run = deps.handleLinkTools ?? handleVoiceLinkToolCalls;
+    const parsedCalls = parseVoiceToolCalls(body);
+    const isHumanTransfer = parsedCalls.some((call) =>
+      call.name === VOICE_HUMAN_TRANSFER_TOOL
+    );
+    const run = isHumanTransfer
+      ? deps.handleHumanTransfer ?? handleVoiceHumanTransferToolCalls
+      : deps.handleLinkTools ?? handleVoiceLinkToolCalls;
     try {
-      if (deps.handleLinkTools) {
+      if (
+        (isHumanTransfer && deps.handleHumanTransfer) ||
+        (!isHumanTransfer && deps.handleLinkTools)
+      ) {
         toolResponse = await run(null, {
           body,
           organizationId: deps.organizationId ?? "",
@@ -306,10 +329,15 @@ export async function handleVapiEventRequest(
         }
       }
     } catch {
-      toolResponse = await handleVoiceLinkToolCalls(null, {
-        body,
-        organizationId: "",
-      });
+      toolResponse = isHumanTransfer
+        ? await handleVoiceHumanTransferToolCalls(null, {
+          body,
+          organizationId: "",
+        })
+        : await handleVoiceLinkToolCalls(null, {
+          body,
+          organizationId: "",
+        });
     }
     const toolLog: Record<string, unknown> = {
       at: "voice-vapi-events",

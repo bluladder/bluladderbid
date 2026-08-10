@@ -178,7 +178,11 @@ Deno.test("realtime manifest: exact tools accept no model authority arguments", 
   const m = buildVoiceRealtimeMvpManifest({ serverEventsUrl });
   assertEquals(
     m.model.tools.map((tool) => tool.function.name),
-    ["send_online_quote_link", "send_booking_management_link"],
+    [
+      "send_online_quote_link",
+      "send_booking_management_link",
+      "request_human_transfer",
+    ],
   );
   for (const tool of m.model.tools) {
     assertEquals(tool.function.parameters, {
@@ -209,10 +213,13 @@ Deno.test("realtime manifest: prompt sends callers to proven web flows without p
   assert(/provider_accepted/.test(prompt));
   assert(/moderate pace/.test(prompt));
   assert(/Do not repeat a question already answered/.test(prompt));
-  assert(/usually booking about one to two weeks out/.test(prompt));
-  assert(/sometimes get you in sooner/.test(prompt));
-  assert(/know how long the job will take/.test(prompt));
-  assert(/accurate available times/.test(prompt));
+  assert(/usually scheduling about one to two weeks out/.test(prompt));
+  assert(/sooner openings sometimes become available/.test(prompt));
+  assert(/know how long the appointment will take/.test(prompt));
+  assert(/exact available times/.test(prompt));
+  assert(/request_human_transfer immediately/.test(prompt));
+  assert(/Never ask for or speak the transfer number/.test(prompt));
+  assert(/never claim a human answered/.test(prompt));
 });
 
 Deno.test("realtime manifest: QA transcript is explicit while audio and logs remain off", () => {

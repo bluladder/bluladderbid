@@ -18,7 +18,7 @@ import type { ResolvedContext } from "./conversationContext.ts";
 type Supa = any;
 
 export interface OwnerNotifyInput {
-  eventId: string;                // callrail_inbound_events.id
+  eventId: string; // callrail_inbound_events.id
   providerMessageId: string;
   fromPhone: string;
   messagePreview: string;
@@ -31,6 +31,21 @@ export interface OwnerNotifyResult {
   recipients: number;
   smsQueued: number;
   emailSent: number;
+}
+
+export async function loadOwnerNotificationRecipients(
+  supabase: Supa,
+  organizationId: string,
+): Promise<any[]> {
+  try {
+    const { data, error } = await supabase.from("escalation_recipients")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("is_enabled", true);
+    return error || !Array.isArray(data) ? [] : data;
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -74,11 +89,18 @@ export async function notifyOwnerOfInboundReply(
     .eq("id", input.eventId)
     .maybeSingle();
   if (guard?.owner_notified_at) {
-    return { notified: false, skippedReason: "already_notified", recipients: 0, smsQueued: 0, emailSent: 0 };
+    return {
+      notified: false,
+      skippedReason: "already_notified",
+      recipients: 0,
+      smsQueued: 0,
+      emailSent: 0,
+    };
   }
 
   const { data: settings } = await supabase
-    .from("escalation_settings").select("*").eq("singleton", true).maybeSingle();
+    .from("escalation_settings").select("*").eq("singleton", true)
+    .maybeSingle();
   const alertsOn = !!settings?.internal_alerts_enabled;
   const emailOn = !!settings?.email_alerts_enabled;
 
@@ -86,22 +108,52 @@ export async function notifyOwnerOfInboundReply(
     await supabase.from("callrail_inbound_events").update({
       owner_notification_skipped_reason: "internal_alerts_disabled",
     }).eq("id", input.eventId);
-    return { notified: false, skippedReason: "internal_alerts_disabled", recipients: 0, smsQueued: 0, emailSent: 0 };
+    return {
+      notified: false,
+      skippedReason: "internal_alerts_disabled",
+      recipients: 0,
+      smsQueued: 0,
+      emailSent: 0,
+    };
   }
 
-  const { data: recipients } = await supabase
-    .from("escalation_recipients").select("*").eq("is_enabled", true);
-  const rs = (recipients ?? []) as Array<any>;
+  const organizationId = input.context.organizationId ?? null;
+  if (!organizationId) {
+    await supabase.from("callrail_inbound_events").update({
+      owner_notification_skipped_reason: "tenant_authority_unavailable",
+    }).eq("id", input.eventId);
+    return {
+      notified: false,
+      skippedReason: "tenant_authority_unavailable",
+      recipients: 0,
+      smsQueued: 0,
+      emailSent: 0,
+    };
+  }
+
+  const rs = await loadOwnerNotificationRecipients(
+    supabase,
+    organizationId,
+  );
   if (rs.length === 0) {
     await supabase.from("callrail_inbound_events").update({
       owner_notification_skipped_reason: "no_recipient_configured",
     }).eq("id", input.eventId);
-    return { notified: false, skippedReason: "no_recipient_configured", recipients: 0, smsQueued: 0, emailSent: 0 };
+    return {
+      notified: false,
+      skippedReason: "no_recipient_configured",
+      recipients: 0,
+      smsQueued: 0,
+      emailSent: 0,
+    };
   }
 
-  const adminUrl = `${getAppUrl()}/admin?tab=conversations&conversation=${input.context.conversationId}`;
+  const adminUrl =
+    `${getAppUrl()}/admin?tab=conversations&conversation=${input.context.conversationId}`;
   const body = buildInboundOwnerMessage(input, adminUrl);
-  const subject = `BluLadder: new customer reply${input.context.matchNeedsReview ? " (match needs review)" : ""}`;
+  const subject = `BluLadder: new customer reply${
+    input.context.matchNeedsReview ? " (match needs review)" : ""
+  }`;
   const defaultEmail = (settings?.notify_email as string | null) ?? null;
 
   let smsQueued = 0;
@@ -119,7 +171,9 @@ export async function notifyOwnerOfInboundReply(
         message_kind: "owner_inbound_notification",
         status: suppression.suppressed ? "cancelled" : "pending",
         suppressed: suppression.suppressed || undefined,
-        suppressed_reason: suppression.suppressed ? suppression.reason : undefined,
+        suppressed_reason: suppression.suppressed
+          ? suppression.reason
+          : undefined,
         send_at: nowIso,
       });
       if (!error && !suppression.suppressed) smsQueued += 1;
@@ -134,10 +188,25 @@ export async function notifyOwnerOfInboundReply(
         try {
           const es = await checkSuppression(supabase, { email: target });
           if (!es.suppressed) {
-            const html = `<pre style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${
-              body.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch] as string))
-            }</pre>`;
-            const res = await sendEmail({ to: target, subject, html, fromNameOverride: "BluLadder Alerts" });
+            const html =
+              `<pre style="font-family:system-ui,sans-serif;font-size:14px;white-space:pre-wrap">${
+                body.replace(
+                  /[&<>]/g,
+                  (
+                    ch,
+                  ) => ({
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;",
+                  }[ch] as string),
+                )
+              }</pre>`;
+            const res = await sendEmail({
+              to: target,
+              subject,
+              html,
+              fromNameOverride: "BluLadder Alerts",
+            });
             if (res.ok) emailSent += 1;
           }
         } catch (e) {
@@ -162,18 +231,24 @@ export async function notifyOwnerOfInboundReply(
 export function isGenuineInboundCustomerMessage(input: {
   content: string;
   complianceIntent: "stop" | "start" | null;
-  richIntentKind: string;   // classifyInboundIntent().kind
+  richIntentKind: string; // classifyInboundIntent().kind
   fromPhone: string | null;
   ownedSenderNumbers: string[]; // e.g. BluLadder-owned E.164 numbers
-  eventType?: string | null;    // callrail event_type
+  eventType?: string | null; // callrail event_type
 }): { ok: boolean; reason?: string } {
   if (!input.fromPhone) return { ok: false, reason: "no_from_phone" };
-  if (input.complianceIntent) return { ok: false, reason: `compliance_${input.complianceIntent}` };
+  if (input.complianceIntent) {
+    return { ok: false, reason: `compliance_${input.complianceIntent}` };
+  }
   const et = (input.eventType ?? "inbound_sms").toLowerCase();
-  if (et.includes("status") || et.includes("delivery") || et.includes("receipt")) {
+  if (
+    et.includes("status") || et.includes("delivery") || et.includes("receipt")
+  ) {
     return { ok: false, reason: "delivery_receipt" };
   }
-  if (input.richIntentKind === "system" || input.richIntentKind === "automated") {
+  if (
+    input.richIntentKind === "system" || input.richIntentKind === "automated"
+  ) {
     return { ok: false, reason: "internal_system_event" };
   }
   if (input.ownedSenderNumbers.includes(input.fromPhone)) {

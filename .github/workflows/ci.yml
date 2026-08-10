@@ -129,6 +129,7 @@ jobs:
           createdb --host localhost --username postgres voice_retention_lovable_rehearsal
           createdb --host localhost --username postgres voice_retention_lovable_rebuild_rehearsal
           createdb --host localhost --username postgres voice_turn_single_flight_rehearsal
+          createdb --host localhost --username postgres voice_escalation_recipient_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -154,6 +155,10 @@ jobs:
         env:
           VOICE_TURN_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_turn_single_flight_rehearsal
         run: bash scripts/rehearse-voice-turn-single-flight-postgres.sh
+      - name: Rehearse tenant-scoped voice escalation recipients
+        env:
+          VOICE_ESCALATION_RECIPIENT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_escalation_recipient_rehearsal
+        run: bash scripts/rehearse-voice-escalation-recipients-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard

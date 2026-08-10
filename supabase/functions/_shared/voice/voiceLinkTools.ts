@@ -64,7 +64,7 @@ export interface VapiToolResultEnvelope {
   }>;
 }
 
-interface ParsedToolCall {
+export interface ParsedVoiceToolCall {
   id: string;
   name: string;
 }
@@ -123,7 +123,7 @@ export function extractTrustedVapiCallId(body: unknown): string | null {
     nonEmptyString(top.callId);
 }
 
-function parseToolCalls(body: unknown): ParsedToolCall[] {
+export function parseVoiceToolCalls(body: unknown): ParsedVoiceToolCall[] {
   const top = record(body);
   const message = record(top.message);
   if (message.type !== "tool-calls") return [];
@@ -260,7 +260,7 @@ function evidenceResult(result: OutboxSendResult): VoiceLinkToolResult {
 }
 
 function sameResult(
-  calls: ParsedToolCall[],
+  calls: ParsedVoiceToolCall[],
   result: VoiceLinkToolResult,
 ): VapiToolResultEnvelope {
   const serialized = JSON.stringify(result);
@@ -286,7 +286,7 @@ export async function handleVoiceLinkToolCalls(
   },
   deps: VoiceLinkToolDeps = {},
 ): Promise<VapiToolResultEnvelope> {
-  const calls = parseToolCalls(input.body);
+  const calls = parseVoiceToolCalls(input.body);
   if (!calls.length) return { results: [] };
 
   if (!nonEmptyString(input.organizationId)) {

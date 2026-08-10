@@ -104,6 +104,10 @@ const reviewedPostRuntimeMigrations = new Set([
   // matching production provenance (see
   // docs/releases/voice-artifact-retention-lovable-v1/evidence.json).
   "supabase/migrations/20260802143334_ece8e99d-b64a-4c85-ae68-869db62f2b8f.sql",
+  // Issue #96: additive, fail-closed tenant binding for the existing operator
+  // recipient table. The migration aborts rather than guessing once any
+  // active non-DFW organization exists.
+  "supabase/migrations/20260810150000_voice_escalation_recipients_tenant_scope.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
@@ -131,12 +135,16 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/discountCodeValidation.ts",
   "supabase/functions/_shared/discountCodeValidation_test.ts",
   "supabase/functions/_shared/executeSmsBooking.ts",
+  "supabase/functions/_shared/escalation.ts",
+  "supabase/functions/_shared/escalation_test.ts",
   "supabase/functions/_shared/identityAnchor.ts",
   "supabase/functions/_shared/identityAnchor_test.ts",
   "supabase/functions/_shared/jobberClient.ts",
   "supabase/functions/_shared/jobberClientMutation_test.ts",
   "supabase/functions/_shared/organizationAuthority.ts",
   "supabase/functions/_shared/organizationAuthority_test.ts",
+  "supabase/functions/_shared/ownerNotifications.ts",
+  "supabase/functions/_shared/ownerNotifications_test.ts",
   "supabase/functions/_shared/profile/normalizeAddress.ts",
   "supabase/functions/_shared/profile/normalizeAddress_test.ts",
   "supabase/functions/_shared/publicBookingCustomer.ts",
@@ -159,6 +167,9 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voice/hangupBidLinkFollowup.ts",
   "supabase/functions/_shared/voice/hangupBidLinkFollowup_test.ts",
   "supabase/functions/_shared/voice/voiceCallLinkIdentity.ts",
+  "supabase/functions/_shared/voice/voiceEscalationRecipientTenantMigration_test.ts",
+  "supabase/functions/_shared/voice/voiceHumanTransfer.ts",
+  "supabase/functions/_shared/voice/voiceHumanTransfer_test.ts",
   "supabase/functions/_shared/voice/voiceLinkTools.ts",
   "supabase/functions/_shared/voice/voiceLinkTools_test.ts",
   "supabase/functions/_shared/voice/postCallOperationalNote.ts",
@@ -212,6 +223,9 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voiceProviderEndCallPhrases_test.ts",
   "supabase/functions/_shared/voiceProviderReconciliation.ts",
   "supabase/functions/_shared/voiceProviderReconciliation_test.ts",
+  "supabase/functions/_shared/voiceTransferResolver.ts",
+  "supabase/functions/_shared/voiceTransferResolver_test.ts",
+  "supabase/functions/_shared/conversationContext.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation_test.ts",
   "supabase/functions/_shared/workflow/customerResolver.ts",
@@ -227,6 +241,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/jobber-create-booking/index.ts",
   "supabase/functions/jobber-create-booking/launch_safety_test.ts",
   "supabase/functions/send-sms/index.ts",
+  "supabase/functions/escalation-test-notify/index.ts",
   "supabase/functions/voice-llm-adapter/index.ts",
   "supabase/functions/validate-discount-code/index.ts",
   "supabase/functions/validate-discount-code/shared_validator_contract_test.ts",
@@ -468,6 +483,18 @@ if (
   !secretScanWorkflow.includes(exactHeadCheckout)
 ) {
   throw new Error("CI or secret scan does not checkout the exact PR head");
+}
+
+for (
+  const fragment of [
+    "voice_escalation_recipient_rehearsal",
+    "VOICE_ESCALATION_RECIPIENT_DATABASE_URL",
+    "rehearse-voice-escalation-recipients-postgres.sh",
+  ]
+) {
+  if (!ciWorkflow.includes(fragment)) {
+    throw new Error(`CI omits voice operator tenant rehearsal: ${fragment}`);
+  }
 }
 
 // Repository automation may rehearse migrations, but it may not publish or

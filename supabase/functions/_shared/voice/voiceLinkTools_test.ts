@@ -105,6 +105,39 @@ Deno.test("voice link tools: duplicate calls share one delivery attempt and exac
   assertEquals(result.results[0].result.includes("\n"), false);
 });
 
+Deno.test("voice link tools: duplicate booking-management requests send one exact portal link", async () => {
+  const deliveries: OutboxSendInput[] = [];
+  const result = await handleVoiceLinkToolCalls(
+    null,
+    {
+      body: body([
+        VOICE_BOOKING_MANAGEMENT_LINK_TOOL,
+        VOICE_BOOKING_MANAGEMENT_LINK_TOOL,
+      ]),
+      organizationId: ORG,
+    },
+    allowedDeps((_client, input) => {
+      deliveries.push(input);
+      return Promise.resolve(acceptedResult());
+    }),
+  );
+
+  assertEquals(deliveries.length, 1);
+  assertEquals(deliveries[0].messageKind, "voice_booking_management_link");
+  assertEquals(
+    new URL(deliveries[0].body.split(" ").at(-1)!).pathname,
+    "/customer-portal",
+  );
+  assertEquals(
+    deliveries[0].outboundKey,
+    buildVoiceCallLinkOutboundKey("call-91", "+14697472877"),
+  );
+  assertEquals(
+    result.results.map((entry) => decodedResult(entry.result).status),
+    ["provider_accepted", "provider_accepted"],
+  );
+});
+
 Deno.test("voice link tools: quote and appointment purposes never compete", async () => {
   let deliveries = 0;
   const result = await handleVoiceLinkToolCalls(
