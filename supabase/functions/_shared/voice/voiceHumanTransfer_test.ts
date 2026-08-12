@@ -5,10 +5,12 @@ import {
 import type { OutboxSendInput } from "../smsOutbox.ts";
 import {
   executeVapiTransferControl,
+  finishVoiceTransferAttempt,
   handleVoiceHumanTransferToolCalls,
   inspectPriorVoiceCustomerLink,
   normalizeVapiControlEndpoint,
   notifyVoiceOperatorFollowup,
+  recordVoiceOperatorEmailAttempt,
   resolveAuthoritativeVoiceOperator,
   VOICE_HUMAN_TRANSFER_TOOL,
   type VoiceHumanTransferToolResult,
@@ -362,6 +364,31 @@ Deno.test("human transfer: caller/operator self-transfer is blocked before provi
   );
 });
 
+Deno.test("human transfer: provider alert is not claimed when durable callback completion is missing", async () => {
+  const result = await handleVoiceHumanTransferToolCalls(null, {
+    body: body([VOICE_HUMAN_TRANSFER_TOOL]),
+    organizationId: ORG,
+  }, {
+    claimTransfer: () => Promise.resolve(winner()),
+    resolveOperator: () => Promise.resolve(operator()),
+    executeTransfer: () =>
+      Promise.resolve({ status: "failed", httpStatus: 502 }),
+    notifyOperator: () =>
+      Promise.resolve({
+        sms: "provider_accepted",
+        email: "skipped",
+        providerAccepted: true,
+      }),
+    finishTransfer: () => Promise.resolve(false),
+  });
+  const evidence = decoded(result.results[0].result);
+  assertEquals(evidence.status, "uncertain");
+  assert(/durable callback evidence could not be verified/i.test(
+    evidence.message,
+  ));
+  assert(/do not claim alert delivery/i.test(evidence.message));
+});
+
 Deno.test("human transfer: authoritative operator lookup is organization-scoped and rejects cross-tenant rows", async () => {
   const filters: Array<[string, unknown]> = [];
   const builder = {
@@ -446,6 +473,7 @@ Deno.test("human transfer: control URL validation permits only documented Vapi c
 Deno.test("human transfer: failed transfer queues one bounded operator SMS and email identity", async () => {
   const sms: OutboxSendInput[] = [];
   const emails: Array<Record<string, unknown>> = [];
+  const emailAttempts: Array<Record<string, unknown>> = [];
   const settingsBuilder = {
     select() {
       return this;
@@ -465,8 +493,30 @@ Deno.test("human transfer: failed transfer queues one bounded operator SMS and e
   };
   const alert = await notifyVoiceOperatorFollowup({
     from(table: string) {
-      assertEquals(table, "escalation_settings");
-      return settingsBuilder;
+      if (table === "escalation_settings") return settingsBuilder;
+      assertEquals(table, "email_send_attempts");
+      const chain = {
+        insert(row: Record<string, unknown>) {
+          emailAttempts.push(row);
+          return this;
+        },
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        contains() {
+          return this;
+        },
+        maybeSingle() {
+          return Promise.resolve({
+            data: emailAttempts[emailAttempts.length - 1],
+            error: null,
+          });
+        },
+      };
+      return chain;
     },
   }, {
     organizationId: ORG,
@@ -505,8 +555,10 @@ Deno.test("human transfer: failed transfer queues one bounded operator SMS and e
     },
   });
   assertEquals(alert.providerAccepted, true);
+  assertEquals(alert.email, "provider_accepted");
   assertEquals(sms.length, 1);
   assertEquals(emails.length, 1);
+  assertEquals(emailAttempts.length, 1);
   assertEquals(sms[0].messageKind, "voice_operator_alert");
   assert(sms[0].outboundKey.includes(ORG));
   assert(sms[0].outboundKey.includes("a".repeat(64)));
@@ -518,4 +570,165 @@ Deno.test("human transfer: failed transfer queues one bounded operator SMS and e
     emails[0].idempotencyKey,
     `voice-operator-alert-${ORG}-${"a".repeat(64)}`,
   );
+  assertEquals(emailAttempts[0].template, "voice_operator_alert");
+  assertEquals(emailAttempts[0].status, "accepted");
+  assertEquals(emailAttempts[0].provider_message_id, "email-1");
+  assertEquals(emailAttempts[0].source_session_id, "conversation-91");
+  assertEquals(
+    (emailAttempts[0].metadata as Record<string, unknown>).source,
+    "voice_human_transfer",
+  );
+});
+
+Deno.test("human transfer: 2xx email without provider correlation remains uncertain", async () => {
+  const rows: Array<Record<string, unknown>> = [];
+  const state = await recordVoiceOperatorEmailAttempt({
+    from(table: string) {
+      assertEquals(table, "email_send_attempts");
+      return {
+        insert(row: Record<string, unknown>) {
+          rows.push(row);
+          return this;
+        },
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        contains() {
+          return this;
+        },
+        maybeSingle() {
+          return Promise.resolve({ data: rows[rows.length - 1], error: null });
+        },
+      };
+    },
+  }, {
+    organizationId: ORG,
+    transferStatus: "failed",
+    contact: operator().contact,
+    claim: winner(),
+  }, {
+    ok: true,
+    providerMessageId: null,
+    from: "BluLadder <alerts@example.com>",
+    replyTo: "info@example.com",
+    to: operator().contact.email!,
+    httpStatus: 202,
+    reachedProvider: true,
+    failure: null,
+  });
+  assertEquals(state, "uncertain");
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].status, "failed");
+  assertEquals(
+    rows[0].failure_category,
+    "provider_accepted_without_message_id",
+  );
+});
+
+Deno.test("human transfer: completion verifies the note and callback row before reporting durable success", async () => {
+  const noteUpdates: Array<Record<string, unknown>> = [];
+  const conversationUpdates: Array<Record<string, unknown>> = [];
+  const client = {
+    from(table: string) {
+      let update: Record<string, unknown> = {};
+      const chain = {
+        update(value: Record<string, unknown>) {
+          update = value;
+          if (table === "chat_messages") noteUpdates.push(value);
+          if (table === "chat_conversations") conversationUpdates.push(value);
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        contains() {
+          return this;
+        },
+        select() {
+          return this;
+        },
+        maybeSingle() {
+          if (table === "chat_messages") {
+            return Promise.resolve({
+              data: {
+                id: winner().noteId,
+                conversation_id: winner().conversationId,
+                ai_metadata: update.ai_metadata,
+              },
+              error: null,
+            });
+          }
+          return Promise.resolve({
+            data: { id: winner().conversationId, ...update },
+            error: null,
+          });
+        },
+      };
+      return chain;
+    },
+  };
+  const persisted = await finishVoiceTransferAttempt(client, {
+    claim: winner(),
+    organizationId: ORG,
+    callerPhone: CALLER,
+    transferStatus: "failed",
+    alert: {
+      sms: "provider_accepted",
+      email: "provider_accepted",
+      providerAccepted: true,
+    },
+    appUrl: "https://bid.bluladder.com",
+  });
+  assertEquals(persisted, true);
+  assertEquals(noteUpdates.length, 1);
+  assertEquals(conversationUpdates, [{
+    callback_requested: true,
+    needs_attention: true,
+    manual_review_reason: "voice_human_transfer_followup",
+  }]);
+  const metadata = noteUpdates[0].ai_metadata as Record<string, unknown>;
+  assertEquals(metadata.callback_notification_status, "provider_accepted");
+  assertEquals(metadata.callback_notification_channels, {
+    sms: "provider_accepted",
+    email: "provider_accepted",
+  });
+});
+
+Deno.test("human transfer: zero-row operational-note update is not durable success", async () => {
+  let conversationUpdates = 0;
+  const persisted = await finishVoiceTransferAttempt({
+    from(table: string) {
+      const chain = {
+        update() {
+          if (table === "chat_conversations") conversationUpdates++;
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        contains() {
+          return this;
+        },
+        select() {
+          return this;
+        },
+        maybeSingle() {
+          return Promise.resolve({ data: null, error: null });
+        },
+      };
+      return chain;
+    },
+  }, {
+    claim: winner(),
+    organizationId: ORG,
+    callerPhone: CALLER,
+    transferStatus: "failed",
+    alert: null,
+    appUrl: "https://bid.bluladder.com",
+  });
+  assertEquals(persisted, false);
+  assertEquals(conversationUpdates, 0);
 });

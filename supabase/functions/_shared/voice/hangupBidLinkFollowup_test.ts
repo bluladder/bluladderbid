@@ -53,15 +53,25 @@ function stubSupabase(opts: {
   journalError?: boolean;
   quoteSessionId?: string | null;
   quoteSessionWriteError?: boolean;
+  callbackRequested?: boolean;
+  manualReviewReason?: string | null;
+  humanTransferRows?: Array<{
+    id: string;
+    ai_metadata: Record<string, unknown>;
+  }>;
+  humanTransferError?: boolean;
 } = {}) {
   const touched: string[] = [];
   const journalQueries: Array<Record<string, unknown>> = [];
+  const humanTransferQueries: Array<Record<string, unknown>> = [];
   const conversationRow = opts.facts === null ? null : {
     id: "conv-1",
     facts: opts.facts ?? {},
     booking_status: opts.bookingStatus ?? "none",
     quote_session_id: opts.quoteSessionId ?? null,
     organization_id: "00000000-0000-4000-8000-000000000072",
+    callback_requested: opts.callbackRequested ?? false,
+    manual_review_reason: opts.manualReviewReason ?? null,
   };
   const builder = (table: string) => {
     touched.push(table);
@@ -136,8 +146,10 @@ function stubSupabase(opts: {
     }
     // chat_messages: assert the exact bounded query shape, then resolve.
     if (table === "chat_messages") {
-      const q: Record<string, unknown> = { eq: {} as Record<string, unknown> };
-      journalQueries.push(q);
+      const q: Record<string, unknown> = {
+        eq: {} as Record<string, unknown>,
+        contains: {} as Record<string, unknown>,
+      };
       (chain as any).select = (cols: string) => {
         q.select = cols;
         return chain;
@@ -146,8 +158,25 @@ function stubSupabase(opts: {
         (q.eq as Record<string, unknown>)[col] = val;
         return chain;
       };
+      (chain as any).contains = (col: string, val: unknown) => {
+        (q.contains as Record<string, unknown>)[col] = val;
+        return chain;
+      };
       (chain as any).limit = (n: number) => {
         q.limit = n;
+        const metadata = (q.contains as Record<string, unknown>).ai_metadata;
+        const humanTransfer = !!metadata && typeof metadata === "object" &&
+          (metadata as Record<string, unknown>).source ===
+            "voice_human_transfer";
+        if (humanTransfer) {
+          humanTransferQueries.push(q);
+          return Promise.resolve(
+            opts.humanTransferError
+              ? { data: null, error: { message: "read failed" } }
+              : { data: opts.humanTransferRows ?? [], error: null },
+          );
+        }
+        journalQueries.push(q);
         return Promise.resolve(
           opts.journalError
             ? { data: null, error: { message: "read failed" } }
@@ -160,6 +189,7 @@ function stubSupabase(opts: {
   return {
     touched,
     journalQueries,
+    humanTransferQueries,
     from: (t: string) => builder(t),
     rpc: (name: string) => {
       touched.push(`rpc:${name}`);
@@ -399,6 +429,65 @@ Deno.test("completed booking skips the follow-up", async () => {
   assertEquals(deliver.calls.length, 0);
 });
 
+Deno.test("durable callback state suppresses the unrelated hangup bid link", async () => {
+  const deliver = recordingDeliver();
+  const sb = stubSupabase({
+    facts: {},
+    callbackRequested: true,
+    manualReviewReason: "voice_human_transfer_followup",
+  });
+  const res = await runVoiceHangupBidLinkFollowup({
+    supabase: sb,
+    body: endOfCallBody(),
+    eventType: "end-of-call-report",
+    deliver: deliver.fn,
+  });
+  assertEquals(res.status, "human_followup_requested");
+  assertEquals(deliver.calls.length, 0);
+  assertEquals(sb.humanTransferQueries.length, 0);
+});
+
+Deno.test("provider-accepted transfer claim suppresses the hangup bid link without callback flags", async () => {
+  const deliver = recordingDeliver();
+  const sb = stubSupabase({
+    facts: {},
+    humanTransferRows: [{
+      id: "transfer-note-1",
+      ai_metadata: { source: "voice_human_transfer" },
+    }],
+  });
+  const res = await runVoiceHangupBidLinkFollowup({
+    supabase: sb,
+    body: endOfCallBody(),
+    eventType: "end-of-call-report",
+    deliver: deliver.fn,
+  });
+  assertEquals(res.status, "human_followup_requested");
+  assertEquals(deliver.calls.length, 0);
+  assertEquals(sb.humanTransferQueries.length, 1);
+  assertEquals(
+    sb.humanTransferQueries[0].select,
+    "id, ai_metadata",
+  );
+  assertEquals(
+    (sb.humanTransferQueries[0].contains as any).ai_metadata,
+    { source: "voice_human_transfer" },
+  );
+});
+
+Deno.test("unreadable transfer-claim evidence fails closed before hangup delivery", async () => {
+  const deliver = recordingDeliver();
+  const res = await runVoiceHangupBidLinkFollowup({
+    supabase: stubSupabase({ facts: {}, humanTransferError: true }),
+    body: endOfCallBody(),
+    eventType: "end-of-call-report",
+    deliver: deliver.fn,
+  });
+  assertEquals(res.status, "failed");
+  assertEquals(res.detail, "human_followup_unreadable");
+  assertEquals(deliver.calls.length, 0);
+});
+
 Deno.test("explicit 'don't text me' cancellation skips the follow-up", async () => {
   const deliver = recordingDeliver();
   const res = await runVoiceHangupBidLinkFollowup({
@@ -605,6 +694,7 @@ Deno.test("eligibility is pure and fail-closed", () => {
       phoneE164: "+14692150144",
       hadCustomerUtterance: true,
       systemTest: false,
+      humanFollowupRequested: false,
       facts: {},
     }).eligible,
     true,
@@ -614,6 +704,7 @@ Deno.test("eligibility is pure and fail-closed", () => {
       phoneE164: "+14692150144",
       hadCustomerUtterance: true,
       systemTest: true,
+      humanFollowupRequested: false,
       facts: {},
     }).eligible,
     false,
