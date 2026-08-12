@@ -218,6 +218,9 @@ Deno.test("realtime manifest: prompt sends callers to proven web flows without p
   assert(/know how long the appointment will take/.test(prompt));
   assert(/exact available times/.test(prompt));
   assert(/request_human_transfer immediately/.test(prompt));
+  assert(/reschedule or cancellation request alone is NEVER/.test(prompt));
+  assert(/do not call request_human_transfer later in that call/.test(prompt));
+  assert(/mutually exclusive within one call/.test(prompt));
   assert(/Never ask for or speak the transfer number/.test(prompt));
   assert(/never claim a human answered/.test(prompt));
 });

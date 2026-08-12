@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, Phone, FileText, ExternalLink, Mail, Lock } from 'lucide-react';
+import { ShieldCheck, MessageSquare, LogOut, Loader2, CalendarClock, XCircle, FileText, ExternalLink, Mail, Lock } from 'lucide-react';
 import { CustomerHeader } from '@/components/CustomerHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -1037,8 +1037,8 @@ function UpcomingAppointmentRow({
   const smsBody = (kind: 'reschedule' | 'cancel') =>
     encodeURIComponent(
       kind === 'reschedule'
-        ? `Hi BluLadder — I'd like to reschedule appointment ${appt.reference_number} (${fmtDate(appt.scheduled_start)}).`
-        : `Hi BluLadder — I need to cancel appointment ${appt.reference_number} (${fmtDate(appt.scheduled_start)}).`,
+        ? `Hi BluLadder, please reschedule my appointment. Ref ${appt.reference_number}, currently scheduled for ${fmtDate(appt.scheduled_start)}.`
+        : `Hi BluLadder, please cancel my appointment. Ref ${appt.reference_number}, currently scheduled for ${fmtDate(appt.scheduled_start)}.`,
     );
 
   return (
@@ -1081,13 +1081,13 @@ function UpcomingAppointmentRow({
             <DialogDescription>
               {withinLockout ? (
                 <>
-                  Your appointment is within 48 hours, so changes need to go through our team.
-                  Text or call us and we'll take care of it right away.
+                  Your appointment is within 48 hours, so it can't be changed automatically.
+                  Text our team and we'll review your request as soon as possible.
                 </>
               ) : (
                 <>
-                  To keep your crew assignment and route correct, {action === 'reschedule' ? 'reschedules' : 'cancellations'} from
-                  the portal go through our team. Text or call and we'll confirm within business hours.
+                  To keep your crew assignment and route correct, {action === 'reschedule' ? 'reschedules' : 'cancellations'} are
+                  confirmed by our team. Text us and we'll follow up during business hours.
                 </>
               )}
             </DialogDescription>
@@ -1099,17 +1099,11 @@ function UpcomingAppointmentRow({
             {appt.address && <div className="text-muted-foreground">{appt.address}</div>}
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-2 flex-col sm:flex-row">
-            <Button asChild variant="outline" className="w-full sm:w-auto">
-              <a href={`tel:${phoneDigits}`}>
-                <Phone className="w-4 h-4 mr-2" />
-                Call {PRIMARY_PUBLIC_PHONE.display}
-              </a>
-            </Button>
-            <Button asChild className="w-full sm:w-auto">
+          <DialogFooter>
+            <Button asChild className="w-full">
               <a href={`sms:${phoneDigits}?&body=${smsBody(action ?? 'reschedule')}`}>
                 <MessageSquare className="w-4 h-4 mr-2" />
-                Text us
+                Text our team
               </a>
             </Button>
           </DialogFooter>

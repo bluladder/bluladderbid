@@ -35,17 +35,23 @@ export interface DeliveryInputs {
   email: ChannelDeliveryStatus;
 }
 
+export type CustomerEscalationChannel = "web" | "voice" | "sms";
+
 /**
  * Collapse the two channel outcomes into ONE overall state. Ordering of the
  * checks encodes the priority: a confirmed send beats a queue; a queue means
  * "recorded, not yet confirmed"; only when nothing is queued and something
  * failed do we surface a failure.
  */
-export function rollupDeliveryState(i: DeliveryInputs): EscalationDeliveryState {
+export function rollupDeliveryState(
+  i: DeliveryInputs,
+): EscalationDeliveryState {
   if (!i.alertsEnabled || !i.hasRecipient) return "no_recipient_configured";
 
   const channels = [i.sms, i.email];
-  const attempted = channels.filter((c) => c !== "skipped" && c !== "not_configured");
+  const attempted = channels.filter((c) =>
+    c !== "skipped" && c !== "not_configured"
+  );
 
   const smsSent = i.sms === "sent";
   const emailSent = i.email === "sent";
@@ -75,7 +81,8 @@ export function rollupDeliveryState(i: DeliveryInputs): EscalationDeliveryState 
 
 /** True only when the AI is allowed to tell the customer an alert was sent. */
 export function isConfirmedDelivered(state: EscalationDeliveryState): boolean {
-  return state === "sms_sent" || state === "email_sent" || state === "partially_delivered";
+  return state === "sms_sent" || state === "email_sent" ||
+    state === "partially_delivered";
 }
 
 /**
@@ -87,8 +94,24 @@ export function customerEscalationMessage(
   state: EscalationDeliveryState,
   severity: string,
   officeDisplay: string,
+  channel: CustomerEscalationChannel = "web",
 ): string {
   const office = (officeDisplay && officeDisplay.trim()) || "(469) 747-2877";
+
+  // An inbound SMS conversation already provides the reply path. Sending the
+  // customer back to the public phone line can loop them into the voice AI, so
+  // SMS copy stays in-channel and never includes a phone number or call CTA.
+  if (channel === "sms") {
+    if (isConfirmedDelivered(state)) {
+      return severity === "urgent"
+        ? "Your urgent request has been sent to our team. We'll follow up with you here by text."
+        : "Your request has been sent to our team. We'll follow up with you here by text.";
+    }
+    if (state === "delivery_failed") {
+      return "Your request was saved, but I couldn't confirm that our team was notified. Please reply here if you need to add anything.";
+    }
+    return "Your request was saved for our team to review. Please reply here if you need to add anything.";
+  }
 
   if (isConfirmedDelivered(state)) {
     if (severity === "urgent") {

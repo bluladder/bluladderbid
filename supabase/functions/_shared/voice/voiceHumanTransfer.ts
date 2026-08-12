@@ -25,6 +25,7 @@ import {
   parseVoiceToolCalls,
   type VapiToolResultEnvelope,
 } from "./voiceLinkTools.ts";
+import { buildVoiceCallLinkOutboundKey } from "./voiceCallLinkIdentity.ts";
 
 type SB = any;
 
@@ -77,6 +78,11 @@ export interface VoiceOperatorAlertResult {
   providerAccepted: boolean;
 }
 
+export type VoicePriorCustomerLinkState =
+  | "none"
+  | "provider_accepted"
+  | "unreadable";
+
 export interface VoiceHumanTransferDeps {
   resolveOperator?: typeof resolveAuthoritativeVoiceOperator;
   claimTransfer?: typeof claimVoiceTransferAttempt;
@@ -86,6 +92,7 @@ export interface VoiceHumanTransferDeps {
   deliverSms?: typeof sendOutboxSms;
   sendOperatorEmail?: typeof sendEmail;
   suppressionCheck?: typeof checkSuppression;
+  inspectPriorCustomerLink?: typeof inspectPriorVoiceCustomerLink;
   appUrl?: string;
 }
 
@@ -243,6 +250,52 @@ export async function resolveAuthoritativeVoiceOperator(
     };
   } catch {
     return { status: "unavailable", reason: "lookup_failed" };
+  }
+}
+
+/**
+ * A provider-accepted customer link and a transfer are mutually exclusive in
+ * one call. This durable read makes that rule independent of model behavior.
+ * The lookup uses only trusted call identity + ANI and returns no message body,
+ * provider identifier, or customer content.
+ */
+export async function inspectPriorVoiceCustomerLink(
+  supabase: SB,
+  args: { callId: string; callerPhone: string },
+): Promise<VoicePriorCustomerLinkState> {
+  try {
+    const outboundKey = buildVoiceCallLinkOutboundKey(
+      args.callId,
+      args.callerPhone,
+    );
+    const { data, error } = await supabase.from("sms_messages")
+      .select(
+        "outbound_idempotency_key, to_number, message_kind, outbox_state, status",
+      )
+      .eq("outbound_idempotency_key", outboundKey)
+      .limit(2);
+    if (error) return "unreadable";
+    const rows = Array.isArray(data) ? data : [];
+    if (rows.length === 0) return "none";
+    if (rows.length !== 1) return "unreadable";
+
+    const row = rows[0];
+    const expectedKinds = new Set([
+      "voice_booking_management_link",
+      "voice_online_quote_link",
+    ]);
+    if (
+      row.outbound_idempotency_key !== outboundKey ||
+      normalizeE164(row.to_number) !== args.callerPhone ||
+      !expectedKinds.has(String(row.message_kind ?? ""))
+    ) {
+      return "unreadable";
+    }
+    return row.outbox_state === "provider_accepted" || row.status === "sent"
+      ? "provider_accepted"
+      : "none";
+  } catch {
+    return "unreadable";
   }
 }
 
@@ -624,6 +677,37 @@ export async function handleVoiceHumanTransferToolCalls(
       message:
         "Trusted call identity is missing. Do not ask the caller to provide a transfer destination.",
     });
+  }
+
+  // Unit tests inject all external behavior while using a null client. In the
+  // live handler a service-role client is always present, so the durable guard
+  // always runs before a transfer claim or provider request.
+  if (supabase || deps.inspectPriorCustomerLink) {
+    const inspectPriorCustomerLink = deps.inspectPriorCustomerLink ??
+      inspectPriorVoiceCustomerLink;
+    let priorLink: VoicePriorCustomerLinkState = "unreadable";
+    try {
+      priorLink = await inspectPriorCustomerLink(supabase, {
+        callId,
+        callerPhone,
+      });
+    } catch {
+      priorLink = "unreadable";
+    }
+    if (priorLink === "provider_accepted") {
+      return sameResult(calls, {
+        status: "invalid_request",
+        message:
+          "A customer link was already provider-accepted for this call. Do not transfer or alert an operator; acknowledge the link once and end politely.",
+      });
+    }
+    if (priorLink === "unreadable") {
+      return sameResult(calls, {
+        status: "failed",
+        message:
+          "Prior call actions could not be verified. Do not transfer or alert an operator; apologize briefly and direct the caller to bid.bluladder.com.",
+      });
+    }
   }
 
   const claimTransfer = deps.claimTransfer ?? claimVoiceTransferAttempt;
