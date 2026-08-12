@@ -164,21 +164,23 @@ export function extractTrustedVapiProviderDid(body: unknown): string | null {
   );
 }
 
-/** Restrict live call control to Vapi's documented US/EU API origins. */
+/**
+ * Validate the opaque live-control capability supplied by Vapi's authenticated
+ * call envelope. Vapi's contract requires posting directly to controlUrl; its
+ * path and query are provider-managed and must never be reconstructed.
+ */
 export function normalizeVapiControlEndpoint(value: string): string | null {
   try {
+    if (!value || value !== value.trim()) return null;
     const url = new URL(value);
     if (url.protocol !== "https:") return null;
-    if (
-      !(url.hostname === "api.vapi.ai" || url.hostname === "api.eu.vapi.ai")
-    ) {
-      return null;
-    }
-    if (!url.pathname.startsWith("/call/")) return null;
-    if (!url.pathname.endsWith("/control")) {
-      url.pathname = `${url.pathname.replace(/\/+$/, "")}/control`;
-    }
-    return url.toString();
+    if (url.username || url.password) return null;
+    if (url.port && url.port !== "443") return null;
+    const hostname = url.hostname.toLowerCase();
+    if (!(hostname === "vapi.ai" || hostname.endsWith(".vapi.ai"))) return null;
+    if (!url.pathname || url.pathname === "/") return null;
+    if (url.hash) return null;
+    return value;
   } catch {
     return null;
   }
@@ -200,6 +202,7 @@ export async function executeVapiTransferControl(
         destination: { type: "number", number: destinationE164 },
         content: "Transferring you now.",
       }),
+      redirect: "error",
       signal: AbortSignal.timeout(VOICE_TRANSFER_CONTROL_TIMEOUT_MS),
     });
     try {

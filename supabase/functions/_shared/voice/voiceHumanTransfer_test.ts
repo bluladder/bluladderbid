@@ -21,7 +21,8 @@ const ORG = "00000000-0000-4000-8000-000000000091";
 const OTHER_ORG = "00000000-0000-4000-8000-000000000092";
 const CALLER = "+14697472877";
 const OPERATOR = "+14692150144";
-const CONTROL = "https://api.vapi.ai/call/provider-call-91";
+const CONTROL =
+  "https://control.vapi.ai/live/provider-call-91/session?token=synthetic";
 
 function body(names: string[]): Record<string, unknown> {
   return {
@@ -433,14 +434,16 @@ Deno.test("human transfer: authoritative operator lookup is organization-scoped 
   );
 });
 
-Deno.test("human transfer: control URL validation permits only documented Vapi call endpoints", async () => {
+Deno.test("human transfer: control URL validation preserves opaque Vapi capability URLs", async () => {
   assertEquals(
     normalizeVapiControlEndpoint(CONTROL),
-    `${CONTROL}/control`,
+    CONTROL,
   );
   assertEquals(
-    normalizeVapiControlEndpoint(`${CONTROL}/control`),
-    `${CONTROL}/control`,
+    normalizeVapiControlEndpoint(
+      "https://api.eu.vapi.ai/provider-managed/control/path?signature=synthetic",
+    ),
+    "https://api.eu.vapi.ai/provider-managed/control/path?signature=synthetic",
   );
   assertEquals(normalizeVapiControlEndpoint("http://api.vapi.ai/call/x"), null);
   assertEquals(
@@ -448,7 +451,35 @@ Deno.test("human transfer: control URL validation permits only documented Vapi c
     null,
   );
   assertEquals(
-    normalizeVapiControlEndpoint("https://api.vapi.ai/tool/x"),
+    normalizeVapiControlEndpoint("https://api.vapi.ai.evil.example/call/x"),
+    null,
+  );
+  assertEquals(
+    normalizeVapiControlEndpoint("https://evilvapi.ai/call/x"),
+    null,
+  );
+  assertEquals(
+    normalizeVapiControlEndpoint("https://user@api.vapi.ai/call/x"),
+    null,
+  );
+  assertEquals(
+    normalizeVapiControlEndpoint("https://api.vapi.ai:8443/call/x"),
+    null,
+  );
+  assertEquals(
+    normalizeVapiControlEndpoint("https://api.vapi.ai./call/x"),
+    null,
+  );
+  assertEquals(
+    normalizeVapiControlEndpoint("https://api.vapi.ai/"),
+    null,
+  );
+  assertEquals(
+    normalizeVapiControlEndpoint("https://api.vapi.ai/call/x#fragment"),
+    null,
+  );
+  assertEquals(
+    normalizeVapiControlEndpoint(" https://api.vapi.ai/call/x"),
     null,
   );
 
@@ -456,9 +487,11 @@ Deno.test("human transfer: control URL validation permits only documented Vapi c
   const accepted = await executeVapiTransferControl(
     CONTROL,
     OPERATOR,
-    (_input, init) => {
+    (input, init) => {
       requests++;
+      assertEquals(String(input), CONTROL);
       assertEquals(init?.method, "POST");
+      assertEquals(init?.redirect, "error");
       assertEquals(
         JSON.parse(String(init?.body)).destination,
         { type: "number", number: OPERATOR },
@@ -468,6 +501,20 @@ Deno.test("human transfer: control URL validation permits only documented Vapi c
   );
   assertEquals(requests, 1);
   assertEquals(accepted, { status: "provider_accepted", httpStatus: 202 });
+});
+
+Deno.test("human transfer: rejected control URL never reaches fetch", async () => {
+  let requests = 0;
+  const rejected = await executeVapiTransferControl(
+    "https://api.vapi.ai.evil.example/control",
+    OPERATOR,
+    () => {
+      requests++;
+      return Promise.resolve(new Response(null, { status: 202 }));
+    },
+  );
+  assertEquals(requests, 0);
+  assertEquals(rejected, { status: "failed", httpStatus: null });
 });
 
 Deno.test("human transfer: failed transfer queues one bounded operator SMS and email identity", async () => {
