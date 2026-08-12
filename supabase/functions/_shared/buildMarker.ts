@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-realtime-link-mvp.6-human-followup-repair";
+export const BUILD_ID = "voice-realtime-link-mvp.7-control-url-compatibility";
 export const BUILD_FEATURES = {
   // Issue #91/#96 — native OpenAI Realtime provider target plus three exact,
   // no-argument customer-link and human-transfer tools on the authenticated
@@ -33,6 +33,10 @@ export const BUILD_FEATURES = {
   // before the model may claim that the team was alerted.
   voiceRealtimeHumanFollowupDurability: true,
   voiceRealtimeHangupHumanSuppression: true,
+  // Vapi's authenticated call envelope supplies an opaque live control URL.
+  // Preserve that HTTPS Vapi-owned capability URL exactly instead of
+  // reconstructing a legacy /call/.../control management path.
+  voiceRealtimeVapiControlUrlCompatibility: true,
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
   voiceBookingDryRun: true,
