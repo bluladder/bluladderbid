@@ -12,7 +12,7 @@
 
 import { getAppUrl } from "../appUrl.ts";
 import { deterministicUuid } from "../deterministicUuid.ts";
-import { sendEmail } from "../emailConfig.ts";
+import { sendEmail, type SendEmailResult } from "../emailConfig.ts";
 import { checkSuppression } from "../suppression.ts";
 import { type OutboxSendResult, sendOutboxSms } from "../smsOutbox.ts";
 import {
@@ -31,6 +31,7 @@ type SB = any;
 
 export const VOICE_HUMAN_TRANSFER_TOOL = "request_human_transfer";
 export const VOICE_HUMAN_TRANSFER_NOTE_VERSION = "voice-human-transfer-v1";
+export const VOICE_OPERATOR_ALERT_EMAIL_TEMPLATE = "voice_operator_alert";
 export const VOICE_TRANSFER_CONTROL_TIMEOUT_MS = 4_000;
 
 export type VoiceHumanTransferStatus =
@@ -73,8 +74,19 @@ export interface VoiceTransferClaim {
 }
 
 export interface VoiceOperatorAlertResult {
-  sms: "provider_accepted" | "queued" | "failed" | "suppressed" | "skipped";
-  email: "provider_accepted" | "failed" | "suppressed" | "skipped";
+  sms:
+    | "provider_accepted"
+    | "queued"
+    | "failed"
+    | "uncertain"
+    | "suppressed"
+    | "skipped";
+  email:
+    | "provider_accepted"
+    | "failed"
+    | "uncertain"
+    | "suppressed"
+    | "skipped";
   providerAccepted: boolean;
 }
 
@@ -479,6 +491,10 @@ export async function finishVoiceTransferAttempt(
       call_identity_sha256: args.claim.callHash,
       transfer_control_status: args.transferStatus,
       callback_notification_status: alertStatus,
+      callback_notification_channels: {
+        sms: args.alert?.sms ?? "not_requested",
+        email: args.alert?.email ?? "not_requested",
+      },
       customer_id: args.claim.customerId,
       pricing_authority: false,
       address_authority: false,
@@ -486,15 +502,39 @@ export async function finishVoiceTransferAttempt(
     },
   }).eq("id", args.claim.noteId)
     .eq("conversation_id", args.claim.conversationId)
-    .contains("ai_metadata", { note_identity: args.claim.noteId });
-  if (updated?.error) return false;
+    .contains("ai_metadata", { note_identity: args.claim.noteId })
+    .select("id, conversation_id, ai_metadata")
+    .maybeSingle();
+  const updatedMetadata = record(updated?.data?.ai_metadata);
+  if (
+    updated?.error || updated?.data?.id !== args.claim.noteId ||
+    updated?.data?.conversation_id !== args.claim.conversationId ||
+    updatedMetadata.note_identity !== args.claim.noteId ||
+    updatedMetadata.source !== "voice_human_transfer" ||
+    updatedMetadata.transfer_control_status !== args.transferStatus ||
+    updatedMetadata.callback_notification_status !== alertStatus
+  ) {
+    return false;
+  }
   if (args.transferStatus !== "provider_accepted") {
-    await supabase.from("chat_conversations").update({
+    const conversation = await supabase.from("chat_conversations").update({
       callback_requested: true,
       needs_attention: true,
       manual_review_reason: "voice_human_transfer_followup",
     }).eq("id", args.claim.conversationId)
-      .eq("organization_id", args.organizationId);
+      .eq("organization_id", args.organizationId)
+      .select("id, callback_requested, needs_attention, manual_review_reason")
+      .maybeSingle();
+    if (
+      conversation?.error ||
+      conversation?.data?.id !== args.claim.conversationId ||
+      conversation?.data?.callback_requested !== true ||
+      conversation?.data?.needs_attention !== true ||
+      conversation?.data?.manual_review_reason !==
+        "voice_human_transfer_followup"
+    ) {
+      return false;
+    }
   }
   return true;
 }
@@ -527,11 +567,129 @@ function emailHtml(body: string): string {
   }</pre>`;
 }
 
+function classifyVoiceOperatorEmailEvidence(
+  row: Record<string, unknown> | null,
+): VoiceOperatorAlertResult["email"] {
+  if (!row) return "uncertain";
+  const status = nonEmptyString(row.status);
+  const providerMessageId = nonEmptyString(row.provider_message_id);
+  const failureCategory = nonEmptyString(row.failure_category);
+  if (
+    (status === "accepted" || status === "delivered") && providerMessageId
+  ) {
+    return "provider_accepted";
+  }
+  if (status === "suppressed") return "suppressed";
+  if (failureCategory === "provider_accepted_without_message_id") {
+    return "uncertain";
+  }
+  if (
+    status === "failed" || status === "bounced" || status === "complained"
+  ) {
+    return "failed";
+  }
+  return "uncertain";
+}
+
+/**
+ * Persist the provider result in the existing outbound-email attempt ledger.
+ * A 2xx response is not model-facing provider evidence unless it includes a
+ * provider correlation id and the exact call-scoped row is readable afterward.
+ */
+export async function recordVoiceOperatorEmailAttempt(
+  supabase: SB,
+  args: {
+    organizationId: string;
+    transferStatus: "failed" | "uncertain";
+    contact: VoiceOperatorContact;
+    claim: VoiceTransferClaim;
+  },
+  result: SendEmailResult,
+): Promise<VoiceOperatorAlertResult["email"]> {
+  const providerMessageId = nonEmptyString(result.providerMessageId);
+  const accepted = result.ok && !!providerMessageId;
+  const providerAcceptedWithoutId = result.ok && !providerMessageId;
+  const suppressed = result.failure?.category === "suppressed";
+  const status = accepted ? "accepted" : suppressed ? "suppressed" : "failed";
+  const attemptId = await deterministicUuid(
+    "voice-operator-email-attempt",
+    args.organizationId,
+    args.claim.callHash,
+    args.contact.id,
+    VOICE_HUMAN_TRANSFER_NOTE_VERSION,
+  );
+  const submittedAt = new Date().toISOString();
+  const row = {
+    id: attemptId,
+    quote_id: null,
+    template: VOICE_OPERATOR_ALERT_EMAIL_TEMPLATE,
+    recipient_email: args.contact.email,
+    provider: "resend",
+    provider_message_id: providerMessageId,
+    status,
+    failure_category: providerAcceptedWithoutId
+      ? "provider_accepted_without_message_id"
+      : result.failure?.category ?? null,
+    failure_reason: providerAcceptedWithoutId
+      ? "Provider accepted the request without a correlation id."
+      : result.failure?.message ?? null,
+    http_status: result.httpStatus,
+    source_session_id: args.claim.conversationId,
+    submitted_at: submittedAt,
+    accepted_at: accepted ? submittedAt : null,
+    suppressed_at: suppressed ? submittedAt : null,
+    metadata: {
+      source: "voice_human_transfer",
+      organization_id: args.organizationId,
+      conversation_id: args.claim.conversationId,
+      call_identity_sha256: args.claim.callHash,
+      transfer_control_status: args.transferStatus,
+      note_identity: args.claim.noteId,
+    },
+  };
+  const columns = "id, status, provider_message_id, failure_category, metadata";
+  let persisted: Record<string, unknown> | null = null;
+  try {
+    const inserted = await supabase.from("email_send_attempts").insert(row)
+      .select(columns)
+      .maybeSingle();
+    if (!inserted?.error && inserted?.data) {
+      persisted = record(inserted.data);
+    } else {
+      const existing = await supabase.from("email_send_attempts")
+        .select(columns)
+        .eq("id", attemptId)
+        .contains("metadata", {
+          source: "voice_human_transfer",
+          organization_id: args.organizationId,
+          call_identity_sha256: args.claim.callHash,
+        })
+        .maybeSingle();
+      if (!existing?.error && existing?.data) {
+        persisted = record(existing.data);
+      }
+    }
+  } catch {
+    persisted = null;
+  }
+  const evidence = classifyVoiceOperatorEmailEvidence(persisted);
+  if (accepted && evidence !== "provider_accepted") return "uncertain";
+  if (providerAcceptedWithoutId) return "uncertain";
+  if (!accepted && !persisted) return suppressed ? "suppressed" : "failed";
+  return evidence;
+}
+
 function smsDeliveryStatus(
   result: OutboxSendResult,
 ): VoiceOperatorAlertResult["sms"] {
-  if (result.sent) return "provider_accepted";
-  if (result.inProgress) return "queued";
+  const durableId = nonEmptyString(result.smsMessageId);
+  if (
+    result.sent && durableId && result.outboxState === "provider_accepted"
+  ) {
+    return "provider_accepted";
+  }
+  if (result.inProgress && durableId) return "queued";
+  if (result.sent || result.inProgress) return "uncertain";
   return "failed";
 }
 
@@ -606,7 +764,7 @@ export async function notifyVoiceOperatorFollowup(
         idempotencyKey:
           `voice-operator-alert-${args.organizationId}-${args.claim.callHash}`,
       });
-      email = result.ok ? "provider_accepted" : "failed";
+      email = await recordVoiceOperatorEmailAttempt(supabase, args, result);
     }
   }
   return {
@@ -799,11 +957,18 @@ export async function handleVoiceHumanTransferToolCalls(
         "Vapi accepted the transfer control request. Say you are connecting the caller now; do not claim that a human answered.",
     });
   }
-  if (alert?.providerAccepted) {
+  if (alert?.providerAccepted && recorded) {
     return sameResult(calls, {
       status: "followup_provider_accepted",
       message:
         "The transfer could not be completed. An operator alert was provider-accepted; say the team was alerted to call back, but do not claim a human answered.",
+    });
+  }
+  if (alert?.providerAccepted && !recorded) {
+    return sameResult(calls, {
+      status: "uncertain",
+      message:
+        "An operator alert may have been provider-accepted, but durable callback evidence could not be verified. Do not claim alert delivery or a human answer.",
     });
   }
   if (recorded) {

@@ -58,6 +58,7 @@ export type HangupFollowupStatus =
   | "no_customer_interaction"
   | "already_delivered"
   | "already_booked"
+  | "human_followup_requested"
   | "declined_texting"
   | "failed";
 
@@ -185,6 +186,7 @@ export function evaluateHangupFollowupEligibility(args: {
   phoneE164: string | null;
   hadCustomerUtterance: boolean;
   systemTest: boolean;
+  humanFollowupRequested: boolean;
   facts: ConversationFacts | null;
 }): EligibilityDecision {
   if (!args.phoneE164) {
@@ -199,6 +201,9 @@ export function evaluateHangupFollowupEligibility(args: {
   }
   if (!args.hadCustomerUtterance) {
     return { eligible: false, status: "no_customer_interaction" };
+  }
+  if (args.humanFollowupRequested) {
+    return { eligible: false, status: "human_followup_requested" };
   }
   const facts = args.facts;
   if (!facts) {
@@ -222,6 +227,31 @@ export function evaluateHangupFollowupEligibility(args: {
     return { eligible: false, status: "declined_texting" };
   }
   return { eligible: true };
+}
+
+/**
+ * A human-transfer claim is mutually exclusive with the generic post-call bid
+ * link. The claim note is created before any provider action, so it also
+ * suppresses the link after a provider-accepted live transfer where callback
+ * flags correctly remain false. An unreadable query fails closed at the call
+ * site and never permits a customer SMS.
+ */
+export async function inspectHumanFollowupClaim(
+  supabase: SB,
+  conversationId: string,
+): Promise<boolean | "unreadable"> {
+  try {
+    const { data, error } = await supabase.from("chat_messages")
+      .select("id, ai_metadata")
+      .eq("conversation_id", conversationId)
+      .contains("ai_metadata", { source: "voice_human_transfer" })
+      .limit(1);
+    if (error) return "unreadable";
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    return rows.length > 0;
+  } catch {
+    return "unreadable";
+  }
 }
 
 export interface HangupFollowupInput {
@@ -282,11 +312,15 @@ export async function runVoiceHangupBidLinkFollowup(
   let facts: ConversationFacts | null = null;
   let conversationId: string | null = null;
   let quoteSessionId: string | null = null;
+  let callbackRequested = false;
+  let humanTransferReason = false;
   if (ctx.callId) {
     try {
       let conversationQuery = supabase
         .from("chat_conversations")
-        .select("id, facts, booking_status, quote_session_id, organization_id")
+        .select(
+          "id, facts, booking_status, quote_session_id, organization_id, callback_requested, manual_review_reason",
+        )
         .eq("session_token", `vapi_call:${ctx.callId}`)
         .eq("channel", "voice")
         .order("created_at", { ascending: false });
@@ -302,6 +336,9 @@ export async function runVoiceHangupBidLinkFollowup(
         quoteSessionId = typeof data.quote_session_id === "string"
           ? data.quote_session_id
           : null;
+        callbackRequested = data.callback_requested === true;
+        humanTransferReason =
+          data.manual_review_reason === "voice_human_transfer_followup";
         const stored = (data.facts && typeof data.facts === "object")
           ? data.facts as ConversationFacts
           : {} as ConversationFacts;
@@ -317,6 +354,18 @@ export async function runVoiceHangupBidLinkFollowup(
         detail: "conversation_unreadable",
       };
     }
+  }
+
+  let humanFollowupRequested = callbackRequested || humanTransferReason;
+  if (!humanFollowupRequested && conversationId) {
+    const transferClaim = await inspectHumanFollowupClaim(
+      supabase,
+      conversationId,
+    );
+    if (transferClaim === "unreadable") {
+      return { status: "failed", detail: "human_followup_unreadable" };
+    }
+    humanFollowupRequested = transferClaim;
   }
 
   // Provider artifacts can be delayed, absent under ZDR, or incomplete. Our
@@ -338,6 +387,7 @@ export async function runVoiceHangupBidLinkFollowup(
     phoneE164,
     hadCustomerUtterance,
     systemTest: ctx.systemTest,
+    humanFollowupRequested,
     facts,
   });
   if (!eligibility.eligible) {
