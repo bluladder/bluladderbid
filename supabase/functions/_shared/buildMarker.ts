@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-realtime-link-mvp.4-human-transfer";
+export const BUILD_ID = "voice-realtime-link-mvp.5-polish-repair";
 export const BUILD_FEATURES = {
   // Issue #91/#96 — native OpenAI Realtime provider target plus three exact,
   // no-argument customer-link and human-transfer tools on the authenticated
@@ -24,6 +24,10 @@ export const BUILD_FEATURES = {
   // provider-confirmed.
   voiceRealtimeHumanTransfer: true,
   voiceRealtimeTenantOperatorAlerts: true,
+  // The durable customer-link outbox is checked before transfer control. A
+  // provider-accepted link blocks every later same-call transfer/provider
+  // mutation, even if the model emits the transfer tool unexpectedly.
+  voiceRealtimeSameCallTransferGuard: true,
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
   voiceBookingDryRun: true,

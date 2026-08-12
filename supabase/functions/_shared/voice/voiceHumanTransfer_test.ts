@@ -6,6 +6,7 @@ import type { OutboxSendInput } from "../smsOutbox.ts";
 import {
   executeVapiTransferControl,
   handleVoiceHumanTransferToolCalls,
+  inspectPriorVoiceCustomerLink,
   normalizeVapiControlEndpoint,
   notifyVoiceOperatorFollowup,
   resolveAuthoritativeVoiceOperator,
@@ -155,6 +156,94 @@ Deno.test("human transfer: competing transfer and customer-link actions execute 
   assertEquals(
     result.results.map((entry) => decoded(entry.result).status),
     ["invalid_request", "invalid_request"],
+  );
+});
+
+Deno.test("human transfer: provider-accepted same-call link blocks transfer before claim or alert", async () => {
+  let claims = 0;
+  let executions = 0;
+  let notifications = 0;
+  const result = await handleVoiceHumanTransferToolCalls(null, {
+    body: body([VOICE_HUMAN_TRANSFER_TOOL]),
+    organizationId: ORG,
+  }, {
+    inspectPriorCustomerLink: () => Promise.resolve("provider_accepted"),
+    claimTransfer: () => {
+      claims++;
+      return Promise.resolve(winner());
+    },
+    executeTransfer: () => {
+      executions++;
+      return Promise.resolve({ status: "provider_accepted", httpStatus: 200 });
+    },
+    notifyOperator: () => {
+      notifications++;
+      return Promise.resolve({
+        sms: "provider_accepted",
+        email: "skipped",
+        providerAccepted: true,
+      });
+    },
+  });
+  assertEquals(claims, 0);
+  assertEquals(executions, 0);
+  assertEquals(notifications, 0);
+  const evidence = decoded(result.results[0].result);
+  assertEquals(evidence.status, "invalid_request");
+  assert(/link was already provider-accepted/i.test(evidence.message));
+});
+
+Deno.test("human transfer: unreadable same-call link evidence fails closed before transfer", async () => {
+  let claims = 0;
+  const result = await handleVoiceHumanTransferToolCalls(null, {
+    body: body([VOICE_HUMAN_TRANSFER_TOOL]),
+    organizationId: ORG,
+  }, {
+    inspectPriorCustomerLink: () => Promise.resolve("unreadable"),
+    claimTransfer: () => {
+      claims++;
+      return Promise.resolve(winner());
+    },
+  });
+  assertEquals(claims, 0);
+  assertEquals(decoded(result.results[0].result).status, "failed");
+});
+
+Deno.test("human transfer: durable prior-link lookup accepts only exact trusted provider evidence", async () => {
+  const rows = [{
+    outbound_idempotency_key: "voice_call_bid_link:provider-call-91:4697472877",
+    to_number: CALLER,
+    message_kind: "voice_booking_management_link",
+    outbox_state: "provider_accepted",
+    status: "sent",
+  }];
+  const builder = {
+    select() {
+      return this;
+    },
+    eq() {
+      return this;
+    },
+    limit() {
+      return Promise.resolve({ data: rows, error: null });
+    },
+  };
+  const state = await inspectPriorVoiceCustomerLink({
+    from(table: string) {
+      assertEquals(table, "sms_messages");
+      return builder;
+    },
+  }, { callId: "provider-call-91", callerPhone: CALLER });
+  assertEquals(state, "provider_accepted");
+
+  rows[0].outbox_state = "send_failed";
+  rows[0].status = "failed";
+  assertEquals(
+    await inspectPriorVoiceCustomerLink({ from: () => builder }, {
+      callId: "provider-call-91",
+      callerPhone: CALLER,
+    }),
+    "none",
   );
 });
 

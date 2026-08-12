@@ -1508,6 +1508,7 @@ async function createBookingTool(
             escalation.deliveryState,
             escalation.severity,
             office.display,
+            ctx.channel,
           ),
       };
     } catch (_e) { /* non-blocking */ }
@@ -1849,6 +1850,7 @@ async function humanCallbackTool(
       cbResult.deliveryState,
       cbResult.severity,
       cbOffice,
+      ctx.channel,
     ),
   };
 }
@@ -1941,6 +1943,7 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
       result.deliveryState,
       result.severity,
       escOffice,
+      ctx.channel,
     ),
   };
 }
