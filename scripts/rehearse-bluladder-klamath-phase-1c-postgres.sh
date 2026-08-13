@@ -58,6 +58,15 @@ CREATE TABLE public.organization_resolution_keys (
   UNIQUE (key_type, key_hash)
 );
 
+-- Match the tenant-foundation grants already present in hosted schema history.
+-- The Phase 1C RLS policies evaluate organization_memberships for authenticated
+-- callers, so omitting this established grant would make the disposable fixture
+-- less capable than the real prerequisite schema.
+GRANT SELECT ON public.organizations, public.organization_memberships
+  TO authenticated;
+GRANT ALL ON public.organizations, public.organization_memberships,
+  public.organization_resolution_keys TO service_role;
+
 CREATE TABLE public.organization_settings (
   organization_id uuid PRIMARY KEY REFERENCES public.organizations(id),
   legal_name text,

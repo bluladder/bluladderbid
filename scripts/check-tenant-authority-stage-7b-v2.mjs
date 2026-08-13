@@ -108,6 +108,10 @@ const reviewedPostRuntimeMigrations = new Set([
   // recipient table. The migration aborts rather than guessing once any
   // active non-DFW organization exists.
   "supabase/migrations/20260810150000_voice_escalation_recipients_tenant_scope.sql",
+  // Phase 1C: reviewed inactive Klamath foundation candidate. This migration
+  // provisions no members, provider mappings, runtime routing, published site,
+  // customer traffic, or enabled pricing, and remains unapplied in this PR.
+  "supabase/migrations/20260813223348_bluladder_klamath_phase_1c_inactive_foundation.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
