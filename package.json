@@ -26,6 +26,7 @@
     "check:organization-pricing": "node scripts/check-organization-pricing.mjs",
     "check:klamath-phase-0b": "node scripts/check-bluladder-klamath-phase-0b.mjs",
     "check:klamath-phase-1a": "node scripts/check-bluladder-klamath-phase-1a.mjs",
+    "check:klamath-phase-1b": "node scripts/check-bluladder-klamath-phase-1b.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",
     "check:launch-contract": "node scripts/check-launch-readiness.mjs --contract-only --self-test",

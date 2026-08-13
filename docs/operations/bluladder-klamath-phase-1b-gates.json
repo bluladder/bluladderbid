@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "phase": "1B",
+  "customer_facing_name": "BluLadder Klamath",
+  "prepared_from_main": "fd6671d8d9baadf6b9810932226df6b0c11894d6",
+  "canonical_hostname": "klamath.bluladder.com",
+  "lifecycle": "provisioning",
+  "activation_allowed": false,
+  "customer_traffic_allowed": false,
+  "runtime_routing_enabled": false,
+  "site_published": false,
+  "hosted_organization_provisioned": false,
+  "dfw_fallback_allowed": false,
+  "number_provisioned": false,
+  "authorized_actions": {
+    "merge": false,
+    "deploy": false,
+    "migration": false,
+    "hosted_mutation": false,
+    "provider_change": false,
+    "credential_creation": false,
+    "call_or_message": false,
+    "lovable_credit": false
+  },
+  "gates": [
+    { "id": "exact_host_authority_contract", "status": "ready" },
+    { "id": "organization_scoped_customer_site_resolver", "status": "ready" },
+    { "id": "dfw_exact_link_compatibility", "status": "ready" },
+    { "id": "unknown_tenant_link_denial", "status": "ready" },
+    { "id": "inactive_klamath_link_denial", "status": "ready" },
+    { "id": "hosted_organization_and_site_mapping", "status": "blocked" },
+    { "id": "site_publication_and_runtime_wiring", "status": "blocked" },
+    { "id": "tenant_scoped_public_quote_and_booking", "status": "blocked" },
+    { "id": "tenant_scoped_portal_and_appointments", "status": "blocked" },
+    { "id": "tenant_scoped_messaging_and_outbox", "status": "blocked" },
+    { "id": "jobtread_connector", "status": "blocked" },
+    { "id": "twilio_and_vapi_resources", "status": "blocked" },
+    { "id": "deployment_and_verification", "status": "blocked" },
+    { "id": "owner_controlled_acceptance", "status": "blocked" },
+    { "id": "activation", "status": "blocked" }
+  ]
+}

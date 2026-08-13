@@ -16,6 +16,13 @@ const relative = {
   bookingReadiness: "supabase/functions/_shared/bookingReadiness.ts",
   availability: "supabase/functions/_shared/availabilityLookup.ts",
   voiceLinks: "supabase/functions/_shared/voice/voiceLinkTools.ts",
+  customerSites: "supabase/functions/_shared/organizationCustomerSites.ts",
+  customerSiteTests:
+    "supabase/functions/_shared/organizationCustomerSites_test.ts",
+  hangupLinks:
+    "supabase/functions/_shared/voice/hangupBidLinkFollowup.ts",
+  hangupTests:
+    "supabase/functions/_shared/voice/hangupBidLinkFollowup_test.ts",
   portal: "supabase/functions/customer-portal-data/index.ts",
   smsOutbox: "supabase/functions/_shared/smsOutbox.ts",
   autosync: "supabase/functions/jobber-autosync/index.ts",
@@ -124,14 +131,22 @@ for (const [key, phrase] of [
 ])
   requireText(key, phrase);
 
-// Current-code evidence for every major blocked gate. If implementation later
-// closes one, this checker intentionally fails until the register is reviewed.
+// Current-code evidence for every major blocked gate. Phase 1B narrows the
+// customer-link risk, but the Klamath site/link gate remains blocked until its
+// hosted organization, publication, runtime, and customer-traffic flags pass.
 requireText("publicBooking", "PUBLIC_DFW_COUNTIES");
 requireText("bookingReadiness", "organizationPricingSupported");
 requireText("availability", "provider_connector_unavailable_for_organization");
+requireText("voiceLinks", "resolveOrganizationCustomerSite(");
+requireText("customerSites", 'code: "customer_site_unavailable"');
 requireText(
-  "voiceLinks",
-  "buildVoiceCustomerLink(toolName, deps.appUrl ?? getAppUrl())",
+  "customerSiteTests",
+  "unknown organization never falls back to DFW",
+);
+requireText("hangupLinks", "buildBidLinkMessage(customerSite.baseUrl)");
+requireText(
+  "hangupTests",
+  "unrouted organization cannot receive the generic DFW hangup link",
 );
 requireText("adminFlag", "ORGANIZATION_ADMIN_SURFACES_ENABLED = false");
 if (content.portal?.includes("organization_id")) {

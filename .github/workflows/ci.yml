@@ -55,6 +55,7 @@ jobs:
           bun run check:organization-pricing
           bun run check:klamath-phase-0b
           bun run check:klamath-phase-1a
+          bun run check:klamath-phase-1b
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
           bun run check:launch-contract

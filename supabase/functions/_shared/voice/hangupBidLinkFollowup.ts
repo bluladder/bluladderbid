@@ -26,6 +26,11 @@
 // deno-lint-ignore-file no-explicit-any
 
 import { getAppUrl } from "../appUrl.ts";
+import {
+  buildDfwCustomerSiteRoute,
+  type OrganizationCustomerSiteRoute,
+  resolveOrganizationCustomerSite,
+} from "../organizationCustomerSites.ts";
 import { normalizePhoneE164 } from "../suppression.ts";
 import { checkSuppression } from "../suppression.ts";
 import { checkPhoneOptOut, getCustomerPause } from "../sms.ts";
@@ -73,7 +78,7 @@ export function isFinalCallEndedEvent(eventType: string | null): boolean {
   return eventType === FINAL_CALL_ENDED_EVENT;
 }
 
-/** Canonical public online bid entry point. Never a hardcoded duplicate. */
+/** Legacy DFW helper. Tenant-aware delivery must use the resolved site route. */
 export function canonicalOnlineBidUrl(): string {
   return getAppUrl();
 }
@@ -262,6 +267,10 @@ export interface HangupFollowupInput {
   deliver?: typeof sendOutboxSms;
   /** Server-derived organization authority for scoped reads/writes. */
   organizationId?: string | null;
+  /** Test/next-tenant injection only. Production currently has one exact DFW route. */
+  customerSiteRoutes?: readonly OrganizationCustomerSiteRoute[];
+  /** Exact DFW compatibility override used only after organization resolution. */
+  appUrl?: string;
   /** Canonical save-quote/send-sms nested Edge boundary. */
   callFunction?: CallEdgeFunction;
   /** Provider-stub seam for deterministic tests. */
@@ -395,6 +404,16 @@ export async function runVoiceHangupBidLinkFollowup(
   }
   const phone = phoneE164 as string;
 
+  const customerSite = resolveOrganizationCustomerSite(
+    input.organizationId ?? "",
+    input.customerSiteRoutes ?? [
+      buildDfwCustomerSiteRoute(input.appUrl ?? getAppUrl()),
+    ],
+  );
+  if (customerSite.status !== "resolved") {
+    return { status: "failed", detail: "customer_site_unavailable" };
+  }
+
   // Prefer the actual saved/resumable quote when the canonical session proves
   // it is fresh, firm and tied to verified recipient/address facts. Any
   // uncertain/queued provider outcome suppresses the generic fallback so a
@@ -500,7 +519,7 @@ export async function runVoiceHangupBidLinkFollowup(
   const result = await deliver(supabase, {
     outboundKey,
     toNumber: phone,
-    body: buildBidLinkMessage(canonicalOnlineBidUrl()),
+    body: buildBidLinkMessage(customerSite.baseUrl),
     messageKind: VOICE_HANGUP_BID_LINK_MESSAGE_KIND,
   });
   if (result.replay || result.inProgress) {
