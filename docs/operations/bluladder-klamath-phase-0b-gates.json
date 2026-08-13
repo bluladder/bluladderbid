@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "phase": "0B",
+  "customer_facing_name": "BluLadder Klamath",
+  "prepared_from_main": "906c4101464b9e420eb50bb69628871a54bc1cf8",
+  "activation_allowed": false,
+  "crm": "jobtread",
+  "dfw_fallback_allowed": false,
+  "authorized_actions": {
+    "merge": false,
+    "deploy": false,
+    "migration": false,
+    "hosted_mutation": false,
+    "provider_change": false,
+    "call_or_message": false,
+    "lovable_credit": false
+  },
+  "gates": [
+    { "id": "repository_tenant_authority", "status": "ready" },
+    { "id": "hosted_tenant_state", "status": "unverified" },
+    { "id": "site_authority_and_links", "status": "blocked" },
+    { "id": "public_quote_and_booking", "status": "blocked" },
+    { "id": "portal_identity_and_appointments", "status": "blocked" },
+    { "id": "pricing_and_service_catalog", "status": "blocked" },
+    { "id": "jobtread_connector", "status": "blocked" },
+    { "id": "messaging_and_outbox", "status": "blocked" },
+    { "id": "background_jobs", "status": "blocked" },
+    { "id": "uniqueness_and_identity_decisions", "status": "blocked" },
+    { "id": "local_contacts", "status": "unverified" },
+    { "id": "isolated_vapi_resources", "status": "unverified" },
+    { "id": "controlled_acceptance_tests", "status": "blocked" }
+  ]
+}

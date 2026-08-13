@@ -24,6 +24,7 @@
     "check:roadmap-ledger": "node scripts/check-roadmap-ledger.mjs",
     "check:organization-connectors": "node scripts/check-organization-connectors.mjs",
     "check:organization-pricing": "node scripts/check-organization-pricing.mjs",
+    "check:klamath-phase-0b": "node scripts/check-bluladder-klamath-phase-0b.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",
     "check:launch-contract": "node scripts/check-launch-readiness.mjs --contract-only --self-test",

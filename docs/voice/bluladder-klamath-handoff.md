@@ -21,13 +21,20 @@ The link-first Realtime receptionist can be reused after Klamath has its own:
 - quote and customer-portal base URL/configuration;
 - messaging sender and consent/suppression configuration;
 - local pricing manifest and service-area rules;
-- Jobber connector capability, if Klamath will book into a separate account;
+- a verified JobTread connector for every capability Klamath will use;
 - bounded FAQ/branding prompt reviewed as BluLadder Klamath.
 
 The assistant may answer the approved FAQ, text the canonical quote link, text
 the secure appointment-management link, and request a live operator transfer.
 Spoken canonical pricing remains a separate follow-on and must not block the
 Klamath launch.
+
+Current repository evidence blocks activation until Klamath has organization-
+scoped site/link authority, portal identity and appointment reads, messaging
+and outbox lineage, background jobs, uniqueness decisions, and its own approved
+pricing. JobTread remains unsupported until official documentation and the
+authorized account prove the required capabilities. Missing support must fail
+closed to manual review; it must never select DFW Jobber.
 
 ## Provisioning order
 
