@@ -4,6 +4,7 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { buildVoiceCallLinkOutboundKey } from "./voiceCallLinkIdentity.ts";
 import type { OutboxSendInput } from "../smsOutbox.ts";
+import { DFW_ORGANIZATION_ID } from "../organizationRouting.ts";
 import {
   buildVoiceCustomerLink,
   handleVoiceLinkToolCalls,
@@ -14,7 +15,8 @@ import {
   type VoiceLinkToolResult,
 } from "./voiceLinkTools.ts";
 
-const ORG = "00000000-0000-4000-8000-000000000091";
+const ORG = DFW_ORGANIZATION_ID;
+const UNROUTED_ORG = "00000000-0000-4000-8000-000000000091";
 
 function body(
   names: string[],
@@ -240,6 +242,34 @@ Deno.test("voice link tools: exact canonical links contain no customer data", ()
   assert(new URL(quote).searchParams.has("utm_source"));
   assert(!quote.includes("4697472877"));
   assert(!manage.includes(ORG));
+});
+
+Deno.test("voice link tools: an unrouted tenant cannot receive the DFW customer link", async () => {
+  let suppressionChecks = 0;
+  let deliveries = 0;
+  const result = await handleVoiceLinkToolCalls(
+    null,
+    {
+      body: body([VOICE_QUOTE_LINK_TOOL]),
+      organizationId: UNROUTED_ORG,
+    },
+    {
+      ...allowedDeps(() => {
+        deliveries++;
+        return Promise.resolve(acceptedResult());
+      }),
+      suppressionCheck: () => {
+        suppressionChecks++;
+        return Promise.resolve({ suppressed: false, reason: null });
+      },
+    },
+  );
+
+  assertEquals(suppressionChecks, 0);
+  assertEquals(deliveries, 0);
+  const evidence = decodedResult(result.results[0].result);
+  assertEquals(evidence.status, "invalid_request");
+  assertEquals(evidence.message.includes("bid.bluladder.com"), false);
 });
 
 Deno.test("voice link tools: suppression, opt-out, and pause prevent outbox dispatch", async () => {

@@ -6,14 +6,21 @@ import {
 import {
   buildBidLinkMessage,
   buildBidLinkOutboundKey,
-  canonicalOnlineBidUrl,
   evaluateHangupFollowupEligibility,
   extractCallEndContext,
   isFinalCallEndedEvent,
   runVoiceHangupBidLinkFollowup,
 } from "./hangupBidLinkFollowup.ts";
+import {
+  DFW_ORGANIZATION_ID,
+  OREGON_TEST_ORGANIZATION_ID,
+} from "../organizationRouting.ts";
 
 const CALL_ID = "019fb423-7a5b-7990-98fe-6e7db8062f50";
+const DFW_CUSTOMER_SITE = {
+  organizationId: DFW_ORGANIZATION_ID,
+  appUrl: "https://bid.bluladder.com",
+} as const;
 
 function endOfCallBody(opts: {
   facts?: unknown;
@@ -69,7 +76,7 @@ function stubSupabase(opts: {
     facts: opts.facts ?? {},
     booking_status: opts.bookingStatus ?? "none",
     quote_session_id: opts.quoteSessionId ?? null,
-    organization_id: "00000000-0000-4000-8000-000000000072",
+    organization_id: DFW_ORGANIZATION_ID,
     callback_requested: opts.callbackRequested ?? false,
     manual_review_reason: opts.manualReviewReason ?? null,
   };
@@ -125,7 +132,7 @@ function stubSupabase(opts: {
             : {
               data: {
                 id: opts.quoteSessionId,
-                organization_id: "00000000-0000-4000-8000-000000000072",
+                organization_id: DFW_ORGANIZATION_ID,
                 fields: {},
                 updated_at: "2026-08-01T00:00:00.000Z",
               },
@@ -263,7 +270,7 @@ Deno.test("deliverable firm session sends the actual quote and suppresses generi
     }),
     body: endOfCallBody(),
     eventType: "end-of-call-report",
-    organizationId: "00000000-0000-4000-8000-000000000072",
+    ...DFW_CUSTOMER_SITE,
     callFunction: async () => ({ status: 500, json: {} }),
     deliverActualQuote: async () => {
       actualCalls += 1;
@@ -292,7 +299,7 @@ Deno.test("uncertain actual quote outcome never falls through to generic SMS", a
     }),
     body: endOfCallBody(),
     eventType: "end-of-call-report",
-    organizationId: "00000000-0000-4000-8000-000000000072",
+    ...DFW_CUSTOMER_SITE,
     callFunction: async () => ({ status: 500, json: {} }),
     deliverActualQuote: async () => ({
       ok: false,
@@ -319,7 +326,7 @@ Deno.test("phase6 terminal generated quote and generic fallback never execute in
     }),
     body: endOfCallBody(),
     eventType: "end-of-call-report",
-    organizationId: "00000000-0000-4000-8000-000000000072",
+    ...DFW_CUSTOMER_SITE,
     callFunction: async () => ({ status: 500, json: {} }),
     deliverActualQuote: async () => {
       actualCalls += 1;
@@ -350,7 +357,7 @@ Deno.test("provider acceptance without a durable delivery-mode marker stays pend
     }),
     body: endOfCallBody({ number: "+14695550172" }),
     eventType: "end-of-call-report",
-    organizationId: "00000000-0000-4000-8000-000000000072",
+    ...DFW_CUSTOMER_SITE,
     callFunction: async () => ({ status: 500, json: {} }),
     deliverActualQuote: async () => ({
       ok: true,
@@ -371,6 +378,7 @@ Deno.test("eligible final hangup sends the exact canonical online-bid link", asy
     supabase: sb,
     body: endOfCallBody(),
     eventType: "end-of-call-report",
+    ...DFW_CUSTOMER_SITE,
     deliver: deliver.fn,
   });
   assertEquals(res.status, "sent");
@@ -378,9 +386,9 @@ Deno.test("eligible final hangup sends the exact canonical online-bid link", asy
   assertEquals(deliver.calls[0].toNumber, "+14692150144");
   assertEquals(
     deliver.calls[0].body,
-    buildBidLinkMessage(canonicalOnlineBidUrl()),
+    buildBidLinkMessage(DFW_CUSTOMER_SITE.appUrl),
   );
-  assert(deliver.calls[0].body.includes(canonicalOnlineBidUrl()));
+  assert(deliver.calls[0].body.includes(DFW_CUSTOMER_SITE.appUrl));
   assertEquals(
     deliver.calls[0].outboundKey,
     `voice_call_bid_link:${CALL_ID}:4692150144`,
@@ -395,6 +403,7 @@ Deno.test("duplicate final webhook produces no second upstream send", async () =
     supabase: sb,
     body: endOfCallBody(),
     eventType: "end-of-call-report",
+    ...DFW_CUSTOMER_SITE,
     deliver: deliver.fn,
   });
   assertEquals(res.status, "duplicate");
@@ -403,6 +412,28 @@ Deno.test("duplicate final webhook produces no second upstream send", async () =
     buildBidLinkOutboundKey(CALL_ID, "+14692150144"),
     buildBidLinkOutboundKey(CALL_ID, "(469) 215-0144"),
   );
+});
+
+Deno.test("unrouted organization cannot receive the generic DFW hangup link", async () => {
+  const sb = stubSupabase({ facts: {} });
+  const deliver = recordingDeliver();
+  const result = await runVoiceHangupBidLinkFollowup({
+    supabase: sb,
+    body: endOfCallBody(),
+    eventType: "end-of-call-report",
+    organizationId: OREGON_TEST_ORGANIZATION_ID,
+    appUrl: DFW_CUSTOMER_SITE.appUrl,
+    deliver: deliver.fn,
+  });
+
+  assertEquals(result, {
+    status: "failed",
+    detail: "customer_site_unavailable",
+  });
+  assertEquals(deliver.calls.length, 0);
+  assertEquals(sb.touched.includes("system_test_config"), false);
+  assertEquals(sb.touched.includes("sms_opt_outs"), false);
+  assertEquals(sb.touched.includes("customers"), false);
 });
 
 Deno.test("accepted quote-by-text delivery skips the follow-up", async () => {
@@ -558,6 +589,7 @@ Deno.test("suppressed / opted-out / paused / provider-unknown are never 'sent'",
       supabase: stubSupabase({ facts: {}, ...opts }),
       body: endOfCallBody(),
       eventType: "end-of-call-report",
+      ...DFW_CUSTOMER_SITE,
       deliver: deliver.fn,
     });
     assertEquals(res.status, expected);
@@ -568,6 +600,7 @@ Deno.test("suppressed / opted-out / paused / provider-unknown are never 'sent'",
     supabase: stubSupabase({ facts: {} }),
     body: endOfCallBody(),
     eventType: "end-of-call-report",
+    ...DFW_CUSTOMER_SITE,
     deliver: deliver.fn,
   });
   assertEquals(res.status, "failed");
@@ -591,6 +624,7 @@ Deno.test("suppressed transcript artifact + persisted internal caller turn is el
     supabase: sb,
     body: endOfCallBody({ noArtifact: true }),
     eventType: "end-of-call-report",
+    ...DFW_CUSTOMER_SITE,
     deliver: deliver.fn,
   });
   assertEquals(res.status, "sent");
@@ -650,6 +684,7 @@ Deno.test("provider utterance evidence alone remains sufficient", async () => {
     supabase: sb,
     body: endOfCallBody(),
     eventType: "end-of-call-report",
+    ...DFW_CUSTOMER_SITE,
     deliver: deliver.fn,
   });
   assertEquals(res.status, "sent");

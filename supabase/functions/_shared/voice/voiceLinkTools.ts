@@ -15,6 +15,11 @@
 
 import { getAppUrl } from "../appUrl.ts";
 import {
+  buildDfwCustomerSiteRoute,
+  type OrganizationCustomerSiteRoute,
+  resolveOrganizationCustomerSite,
+} from "../organizationCustomerSites.ts";
+import {
   checkSuppression,
   normalizePhoneE164,
   type TransactionalPurpose,
@@ -87,6 +92,8 @@ export interface VoiceLinkToolDeps {
   suppressionCheck?: typeof checkSuppression;
   phoneOptOutCheck?: typeof checkPhoneOptOut;
   customerPauseCheck?: typeof getCustomerPause;
+  /** Test/next-tenant injection only. Production currently has one exact DFW route. */
+  customerSiteRoutes?: readonly OrganizationCustomerSiteRoute[];
   appUrl?: string;
 }
 
@@ -316,6 +323,20 @@ export async function handleVoiceLinkToolCalls(
   }
   const toolName = requestedName as VoiceLinkToolName;
 
+  const customerSite = resolveOrganizationCustomerSite(
+    input.organizationId,
+    deps.customerSiteRoutes ?? [
+      buildDfwCustomerSiteRoute(deps.appUrl ?? getAppUrl()),
+    ],
+  );
+  if (customerSite.status !== "resolved") {
+    return sameResult(calls, {
+      status: "invalid_request",
+      message:
+        "The customer site for this organization is unavailable. Do not send a text, disclose another location's website, or claim success.",
+    });
+  }
+
   const callId = extractTrustedVapiCallId(input.body);
   const phone = extractTrustedVapiCallerNumber(input.body);
   if (!callId || !phone) {
@@ -365,7 +386,7 @@ export async function handleVoiceLinkToolCalls(
     });
   }
 
-  const link = buildVoiceCustomerLink(toolName, deps.appUrl ?? getAppUrl());
+  const link = buildVoiceCustomerLink(toolName, customerSite.baseUrl);
   const deliver = deps.deliver ?? sendOutboxSms;
   const result = await deliver(supabase, {
     // Intentionally the same identity used by the final-event generic link.
