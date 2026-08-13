@@ -1,0 +1,213 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const relative = {
+  migration:
+    "supabase/migrations/20260813223348_bluladder_klamath_phase_1c_inactive_foundation.sql",
+  preflight: "supabase/preflight/bluladder_klamath_phase_1c.sql",
+  verification: "supabase/verification/bluladder_klamath_phase_1c.sql",
+  contract:
+    "docs/architecture/bluladder-klamath-phase-1c-contract.md",
+  register: "docs/operations/bluladder-klamath-phase-1c-gates.json",
+  pricing: "packages/tenant-config/bluladderKlamathPricingDraft.ts",
+  rehearsal: "scripts/rehearse-bluladder-klamath-phase-1c-postgres.sh",
+};
+
+const content = {};
+const errors = [];
+for (const [key, file] of Object.entries(relative)) {
+  const full = path.join(root, file);
+  if (!fs.existsSync(full)) errors.push(`missing ${file}`);
+  else content[key] = fs.readFileSync(full, "utf8");
+}
+
+function requireText(key, text) {
+  if (!content[key]?.includes(text)) {
+    errors.push(`${relative[key]} omits: ${text}`);
+  }
+}
+
+for (const text of [
+  "BEGIN;",
+  "LOCK TABLE",
+  "Phase 1C target tables already exist; inspect before retry",
+  "CREATE TABLE public.organization_customer_sites",
+  "CREATE TABLE public.organization_pricing_profiles",
+  "ALTER TABLE public.organization_customer_sites ENABLE ROW LEVEL SECURITY",
+  "ALTER TABLE public.organization_pricing_profiles ENABLE ROW LEVEL SECURITY",
+  "organization_customer_sites_activation_check",
+  "organization_customer_sites_traffic_check",
+  "organization_pricing_profiles_runtime_check",
+  "'bluladder-klamath'",
+  "'BluLadder Klamath'",
+  "'klamath.bluladder.com'",
+  "'provisioning'",
+  "'disabled'",
+  "'inactive'",
+  "'manual_review'",
+  "'draft'",
+  "$klamath_pricing$",
+  "COMMIT;",
+]) requireText("migration", text);
+
+for (const prohibited of [
+  /INSERT\s+INTO\s+public\.organization_contacts/i,
+  /INSERT\s+INTO\s+public\.organization_memberships/i,
+  /\+1\d{10}/,
+  /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+  /\b(?:TRUNCATE|DROP\s+TABLE|DROP\s+COLUMN)\b/i,
+]) {
+  if (prohibited.test(content.migration ?? "")) {
+    errors.push(`migration contains prohibited pattern: ${prohibited}`);
+  }
+}
+
+const hostname = "klamath.bluladder.com";
+const expectedHostnameHash = crypto
+  .createHash("sha256")
+  .update(hostname)
+  .digest("hex");
+if (!content.migration?.includes(`'${expectedHostnameHash}'`)) {
+  errors.push("migration hostname SHA-256 does not match canonical hostname");
+}
+
+const pricingMatch = content.migration?.match(
+  /\$klamath_pricing\$([\s\S]*?)\$klamath_pricing\$::jsonb/,
+);
+let migrationPricing;
+try {
+  migrationPricing = JSON.parse(pricingMatch?.[1] ?? "");
+} catch (error) {
+  errors.push(`migration pricing snapshot is invalid JSON: ${error.message}`);
+}
+
+function extractObjectLiteral(source, declaration) {
+  const start = source.indexOf(declaration);
+  if (start < 0) throw new Error(`missing declaration ${declaration}`);
+  const open = source.indexOf("{", start);
+  if (open < 0) throw new Error(`missing object for ${declaration}`);
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open, index + 1);
+    }
+  }
+  throw new Error(`unterminated object for ${declaration}`);
+}
+
+try {
+  const literal = extractObjectLiteral(
+    content.pricing ?? "",
+    "export const BLULADDER_KLAMATH_PRICING_DRAFT",
+  );
+  const repositoryPricing = Function(
+    `"use strict"; return (${literal});`,
+  )();
+  if (JSON.stringify(repositoryPricing) !== JSON.stringify(migrationPricing)) {
+    errors.push("migration pricing snapshot drifted from the Phase 1A draft");
+  }
+} catch (error) {
+  errors.push(`could not verify pricing parity: ${error.message}`);
+}
+
+function strippedSql(key) {
+  return (content[key] ?? "")
+    .replace(/--.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+}
+for (const key of ["preflight", "verification"]) {
+  if (!/BEGIN\s+TRANSACTION\s+READ\s+ONLY/i.test(content[key] ?? "")) {
+    errors.push(`${relative[key]} is not explicitly read-only`);
+  }
+  if (/\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|GRANT|REVOKE)\b/i.test(strippedSql(key))) {
+    errors.push(`${relative[key]} contains a mutating SQL statement`);
+  }
+}
+
+for (const text of [
+  "repository-only migration candidate",
+  "one `provisioning`, non-default BluLadder Klamath organization",
+  "runtime routing off, publication off, and customer traffic off",
+  "creates no membership, contact destination, JobTread mapping",
+  "Application requires a new explicit authorization",
+]) requireText("contract", text);
+
+let register;
+try {
+  register = JSON.parse(content.register ?? "{}");
+} catch (error) {
+  errors.push(`Phase 1C gate register is invalid JSON: ${error.message}`);
+}
+
+if (register) {
+  if (
+    register.phase !== "1C" ||
+    register.prepared_from_main !==
+      "958157e215e039353629496316ba13623a5e9642" ||
+    register.migration_version !== "20260813223348" ||
+    register.canonical_hostname !== hostname
+  ) errors.push("Phase 1C repository identity drifted");
+
+  const requiredFalse = [
+    "migration_applied",
+    "hosted_organization_provisioned",
+    "activation_allowed",
+    "customer_traffic_allowed",
+    "runtime_routing_enabled",
+    "site_published",
+    "hostname_resolution_key_enabled",
+    "pricing_runtime_enabled",
+    "contacts_configured",
+    "memberships_configured",
+    "provider_mappings_configured",
+    "dfw_fallback_allowed",
+  ];
+  for (const key of requiredFalse) {
+    if (register[key] !== false) errors.push(`${key} must remain false`);
+  }
+  if (
+    register.lifecycle_after_application !== "provisioning" ||
+    register.pricing_status !== "draft" ||
+    register.migration_prepared !== true
+  ) errors.push("Phase 1C inactive posture drifted");
+  if (
+    Object.values(register.authorized_actions ?? {}).some(
+      (allowed) => allowed !== false,
+    )
+  ) errors.push("Phase 1C authorizes an out-of-scope action");
+}
+
+for (const text of [
+  "collision rollback",
+  "customer_traffic_allowed = true",
+  "runtime_enabled = true",
+  "SET ROLE authenticated",
+]) requireText("rehearsal", text);
+
+if (errors.length) {
+  console.error(errors.join("\n"));
+  process.exit(1);
+}
+
+console.log(
+  "BluLadder Klamath Phase 1C gate OK: inactive hosted foundation is prepared, pricing is exact, verification is read-only, and every live action remains blocked.",
+);
