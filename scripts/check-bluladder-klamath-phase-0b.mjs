@@ -11,9 +11,7 @@ const relative = {
     "docs/operations/bluladder-klamath-phase-0b-readiness-checklist.md",
   register: "docs/operations/bluladder-klamath-phase-0b-gates.json",
   handoff: "docs/voice/bluladder-klamath-handoff.md",
-  pricingTests: "packages/sales-engine/pricing/organizationPricing.test.ts",
-  organizationTests: "src/lib/organizations/organizations.test.ts",
-  phase0bTests: "supabase/functions/_shared/bluladderKlamathPhase0B_test.ts",
+  phase0bTests: "src/test/bluladderKlamathPhase0B.test.ts",
   publicBooking: "supabase/functions/_shared/publicBookingServiceArea.ts",
   bookingReadiness: "supabase/functions/_shared/bookingReadiness.ts",
   availability: "supabase/functions/_shared/availabilityLookup.ts",
@@ -113,9 +111,9 @@ if (register) {
 
 // Pure contract coverage carried forward from PR #81 on current main.
 for (const [key, phrase] of [
-  ["pricingTests", "Klamath copy instead of DFW fallback"],
-  ["pricingTests", "Klamath calculation in manual review"],
-  ["organizationTests", "inactive Klamath from becoming authoritative"],
+  ["phase0bTests", "Klamath copy instead of DFW fallback"],
+  ["phase0bTests", "Klamath calculation in manual review"],
+  ["phase0bTests", "inactive Klamath from becoming authoritative"],
   ["phase0bTests", "Klamath JobTread remains unsupported"],
   ["phase0bTests", "Klamath never falls back to DFW Jobber"],
   ["phase0bTests", "Klamath and Lake planning rules remain inactive"],

@@ -61,22 +61,6 @@ describe('organization application context', () => {
     ).toEqual({ ok: false, reason });
   });
 
-  it('keeps inactive Klamath from becoming authoritative even with a matching membership', () => {
-    const klamathMembership = {
-      ...dfwAdminMembership(USER_ID),
-      organizationId: OREGON_ORGANIZATION_ID,
-    };
-
-    expect(
-      resolveOrganizationContext({
-        authenticatedUserId: USER_ID,
-        requestedOrganizationId: OREGON_ORGANIZATION_ID,
-        organizations: [DFW_ORGANIZATION, INACTIVE_OREGON_ORGANIZATION],
-        memberships: [klamathMembership],
-      }),
-    ).toEqual({ ok: false, reason: 'inactive_organization' });
-  });
-
   it('requires an explicit trusted selection for multiple memberships', () => {
     const oregonMembership = {
       ...dfwAdminMembership(USER_ID),
