@@ -145,6 +145,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/identityAnchor_test.ts",
   "supabase/functions/_shared/jobberClient.ts",
   "supabase/functions/_shared/jobberClientMutation_test.ts",
+  "supabase/functions/_shared/organizationCustomerSites.ts",
+  "supabase/functions/_shared/organizationCustomerSites_test.ts",
   "supabase/functions/_shared/organizationAuthority.ts",
   "supabase/functions/_shared/organizationAuthority_test.ts",
   "supabase/functions/_shared/ownerNotifications.ts",
