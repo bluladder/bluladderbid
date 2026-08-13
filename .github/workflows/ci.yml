@@ -56,6 +56,7 @@ jobs:
           bun run check:klamath-phase-0b
           bun run check:klamath-phase-1a
           bun run check:klamath-phase-1b
+          bun run check:klamath-phase-1c
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
           bun run check:launch-contract
@@ -133,6 +134,7 @@ jobs:
           createdb --host localhost --username postgres voice_retention_lovable_rebuild_rehearsal
           createdb --host localhost --username postgres voice_turn_single_flight_rehearsal
           createdb --host localhost --username postgres voice_escalation_recipient_rehearsal
+          createdb --host localhost --username postgres bluladder_klamath_phase1c_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -162,6 +164,10 @@ jobs:
         env:
           VOICE_ESCALATION_RECIPIENT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_escalation_recipient_rehearsal
         run: bash scripts/rehearse-voice-escalation-recipients-postgres.sh
+      - name: Rehearse inactive BluLadder Klamath Phase 1C foundation
+        env:
+          BLULADDER_KLAMATH_PHASE1C_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1c_rehearsal
+        run: bash scripts/rehearse-bluladder-klamath-phase-1c-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
