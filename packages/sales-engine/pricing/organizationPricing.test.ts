@@ -174,6 +174,36 @@ describe("organization pricing profile", () => {
     });
   });
 
+  it("requires an independently approved Klamath copy instead of DFW fallback", () => {
+    const klamathDraftCopy = profile({
+      id: "klamath-pricing-draft",
+      organizationId: OREGON,
+      status: "draft",
+    });
+
+    expect(
+      resolvePricingProfile(OREGON, [profile(), klamathDraftCopy]),
+    ).toEqual({
+      status: "manual_review",
+      reason: "profile_unapproved",
+    });
+  });
+
+  it("keeps Klamath calculation in manual review until its own profile is approved", () => {
+    let called = false;
+
+    expect(
+      calculateWithOrganizationProfile(OREGON, OREGON, {}, [profile()], () => {
+        called = true;
+        return {};
+      }),
+    ).toEqual({
+      status: "manual_review",
+      reason: "profile_missing",
+    });
+    expect(called).toBe(false);
+  });
+
   it("blocks cross-organization calculation before engine invocation", () => {
     let called = false;
     const result = calculateWithOrganizationProfile(
