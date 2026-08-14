@@ -34,7 +34,9 @@ was never pushed to BluLadder.
 
 This mode does not make JobTread runtime ready. The organization-scoped Grant
 and exact non-sensitive custom-field names now exist, but protected Grant
-storage, protected field bindings, an inactive connector row, prepared-plan
+storage, protected binding storage, an inactive connector row, prepared-plan
 persistence, runtime adoption, deployment, owner-controlled acceptance, and
-final activation review remain separate gates. No Pave response was received
-and no provider read was verified.
+final activation review remain separate gates. One signed-in API Explorer
+preflight read returned 24 fields and uniquely resolved the five required
+bindings. It did not use the new Grant; runtime connector transport remains
+unexecuted.

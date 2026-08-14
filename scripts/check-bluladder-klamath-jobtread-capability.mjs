@@ -33,6 +33,7 @@ for (const flag of [
   "grant_created",
   "webhook_control_available",
   "official_api_explorer_verified",
+  "provider_preflight_read_verified",
   "dormant_transport_prepared",
   "dormant_adapter_prepared",
   "provider_resources_mutated",
@@ -50,8 +51,12 @@ for (const flag of [
   "activation_allowed",
   "customer_traffic_allowed",
   "dfw_fallback_allowed",
+  "provider_preflight_read_used_grant",
 ]) {
   if (evidence?.[flag] !== false) errors.push(`${flag} must remain false`);
+}
+if (evidence?.provider_preflight_custom_field_count !== 24) {
+  errors.push("provider preflight custom-field count must remain 24");
 }
 const approvedMappings = [
   "health",

@@ -7,6 +7,11 @@ The Grant remains unconfigured and unverified; this module creates no
 credential, protected binding, connector, provider request, attempt, hosted
 write, deployment, or activation.
 
+One signed-in API Explorer preflight read returned 24 custom fields and
+uniquely resolved the five exact bindings without using the new Grant. The
+identifiers remain outside repository and hosted configuration, and runtime
+connector transport remains unexecuted.
+
 ## Exact routing
 
 The composition constructs the reviewed read and write sources internally.
@@ -32,7 +37,7 @@ provider state.
 ## Remaining gates
 
 The composition is intentionally unreachable. Real protected context and
-configuration adapters, protected field bindings, protected Grant storage and
+configuration adapters, protected binding storage, protected Grant storage and
 verification, an inactive connector row,
 capacity semantics, a separately reviewed production entry point, deployment,
 owner-controlled provider acceptance, and activation remain blocked. There is

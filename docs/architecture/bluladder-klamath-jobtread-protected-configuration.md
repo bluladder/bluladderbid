@@ -13,7 +13,11 @@ The exact provider organization and field identifiers remain protected and are
 not recorded here. A later protected checkpoint created one organization-scoped
 Grant. Its value is absent from the repository and remains unconfigured and
 unverified because the controlled security boundary stopped transmission
-without a verified Pave response. No webhook was created.
+before hosted secret storage. A signed-in API Explorer preflight then returned
+24 custom fields and uniquely resolved the five exact bindings required by the
+contract. That read did not use the new Grant, and the resolved identifiers
+remain outside the repository and hosted configuration. No runtime connector
+transport executed and no webhook was created.
 
 ## Secret and authority boundary
 
@@ -40,6 +44,7 @@ credential resolver returns it only for the one compiled Klamath reference.
 
 This module is not imported by a production entry point and performs no
 provider request. Protected Grant storage and verification, protected
-environment values, an inactive connector row, provider health/availability acceptance,
+environment values, an inactive connector row, Grant-authenticated provider
+health/availability acceptance,
 runtime deployment, pricing approval, contacts, messaging, telephony, site
 publication, customer traffic, and activation remain separately gated.
