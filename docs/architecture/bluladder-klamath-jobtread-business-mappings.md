@@ -1,6 +1,7 @@
 # BluLadder Klamath JobTread business mappings
 
-Status: **dormant repository contract prepared**. No Grant Key, webhook,
+Status: **dormant repository contract prepared**. The exact non-sensitive
+custom-field names are created, but no Grant Key, protected binding, webhook,
 connector row, provider identifier, provider request, deployment, customer
 record, job, task, activation, or traffic is created or authorized by this
 stage.
@@ -66,7 +67,7 @@ There is no Jobber or DFW fallback for any blocked or failed Klamath mapping.
 This repository contract does not make the adapter reachable. Before any
 provider setup or traffic, a separately reviewed stage must:
 
-1. create the exact JobTread custom fields and record their protected bindings;
+1. record the created JobTread fields' exact protected bindings;
 2. create one organization-scoped Grant Key with least privilege and keep the
    first-wave webhook absent;
 3. insert one inactive Klamath connector row with hashed provider authority;

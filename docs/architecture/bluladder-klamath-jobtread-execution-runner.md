@@ -76,8 +76,9 @@ manual, or Google Calendar fallback.
 This module is deliberately unreachable. Before any provider or customer
 traffic, separate reviewed stages must still:
 
-1. approve and create the exact JobTread custom fields and least-privilege
-   Grant Key while preserving the reviewed first-wave no-webhook mode;
+1. record the created JobTread fields' protected bindings and create the
+   least-privilege Grant Key while preserving the reviewed first-wave
+   no-webhook mode;
 2. insert one inactive Klamath connector row using protected references and
    provider fingerprints;
 3. adopt the prepared dormant composition through protected concrete context

@@ -31,7 +31,7 @@ reconciliation/manual review.
 
 ## Remaining gates
 
-Real protected context/configuration adapters, custom fields, Grant Key,
+Real protected context/configuration adapters, protected field bindings, Grant Key,
 inactive connector row, runtime composition, deployment, owner-controlled
 provider acceptance, and activation remain separate. There is no webhook,
 Jobber fallback, DFW fallback, cancellation automation, invoice handoff, or
