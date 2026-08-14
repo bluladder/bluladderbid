@@ -127,11 +127,11 @@ const typesSha = crypto
   .update(content.types ?? "")
   .digest("hex");
 const expectedTypesSha = [
-  "96881d6ca1b643e27256967eec97b978",
-  "1dd264cbcf938779f03f71bcc85bc7dc",
+  "d97fe4e01586535713b84f3f62e19cc7",
+  "b4fe298d1d2adac502b14d5a53894238",
 ].join("");
 if (typesSha !== expectedTypesSha) {
-  errors.push("Lovable-generated Stage 8A types drifted");
+  errors.push("Lovable-generated hosted types drifted");
 }
 for (const table of [
   "organization_contacts",
@@ -144,6 +144,13 @@ for (const table of [
 ]) {
   requireText("types", `${table}: {`);
 }
+for (const text of [
+  "claim_organization_sms_outbox_send: {",
+  "p_messaging_connector_id: string",
+  "p_organization_id: string",
+  "p_outbound_key: string",
+  "Returns: Json",
+]) requireText("types", text);
 
 for (const text of [
   "BEGIN;",
