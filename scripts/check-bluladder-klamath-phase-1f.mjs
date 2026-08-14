@@ -50,7 +50,7 @@ function requireText(key, text) {
 
 for (
   const text of [
-    "hosted schema applied; fail-closed runtime deployment candidate",
+    "complete; fail-closed runtime deployed",
     "server normalizes",
     "exact canonical DFW hostname",
     "never a missing-authority or first-row fallback",
@@ -179,8 +179,8 @@ requireText("workflow", "Phase 1F portal tenant lineage");
 for (
   const text of [
     "Klamath Phase 1F",
-    "portal tenant lineage",
-    "hosted schema applied",
+    "portal lineage",
+    "hosted schema and reviewed portal runtime deployed",
   ]
 ) requireText("roadmap", text);
 
@@ -202,7 +202,12 @@ if (register) {
       "c1a91dfcbf7a647b70dcc4490b786d3c3d62b5fd65a0735e69d0e15e3db2fa51" ||
     register.provider_execution_migration_materialized !== true ||
     register.generated_types_reconciled !== true ||
-    register.portal_runtime_deployed !== false ||
+    register.portal_runtime_deployed !== true ||
+    register.portal_runtime_deployed_from_main !==
+      "4ed37cff90e35aacfe9ffeb55c666e45f09396b4" ||
+    register.portal_runtime_function_count !== 7 ||
+    register.portal_runtime_boot_verification !==
+      "seven_secret_free_options_200" ||
     register.frontend_published !== false ||
     register.account_lineage_contract_prepared !== true ||
     register.session_lineage_contract_prepared !== true ||
@@ -233,6 +238,8 @@ if (register) {
     "phase_1f_repository_contract",
     "portal_site_authority",
     "portal_schema_application",
+    "portal_runtime_deployment",
+    "tenant_scoped_portal_and_appointments",
   ]);
   const gates = register.gates ?? [];
   if (
@@ -252,5 +259,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1F gate OK: hosted tenant-lineage schema and provider receipt are reconciled while portal deployment, providers, and activation remain blocked.",
+  "BluLadder Klamath Phase 1F gate OK: tenant-lineage schema, provider receipt, and reviewed portal runtime are reconciled while messaging, providers, and activation remain blocked.",
 );
