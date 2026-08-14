@@ -46,7 +46,7 @@ function requireText(key, text) {
 
 for (
   const text of [
-    "hosted migration verified; fail-closed runtime adoption prepared",
+    "hosted migration and fail-closed runtime deployment verified",
     "cannot safely authorize a second organization",
     "global STOP, opt-out, or test-identity gates",
     "parent coverage, orphan and cross-parent conflicts",
@@ -55,6 +55,8 @@ for (
     "record_organization_consent",
     "Hosted execution version `20260814101915`",
     "shared organization-aware boundary",
+    "`4a621bd18ffe8b7823eb4546089f64b8ce695aef`",
+    "Secret-free probes",
     "No connector, credential, sender, call, email, SMS",
   ]
 ) requireText("contract", text);
@@ -144,7 +146,7 @@ try {
 if (register) {
   if (
     register.phase !== "1H" ||
-    register.status !== "runtime_candidate_prepared" ||
+    register.status !== "runtime_deployed_verified" ||
     register.prepared_from_main !==
       "c5ff16e056b09a727cb84d1838e5245e7da43af8" ||
     register.preflight_path !== files.preflight ||
@@ -177,7 +179,16 @@ if (register) {
     register.migration_prepared !== true ||
     register.migration_applied !== true ||
     register.runtime_prepared !== true ||
-    register.runtime_deployed !== false ||
+    register.runtime_deployed !== true ||
+    register.runtime_deployed_from_main !==
+      "4a621bd18ffe8b7823eb4546089f64b8ce695aef" ||
+    register.runtime_deployment_route !== "one_lovable_ai_message" ||
+    JSON.stringify(register.runtime_deployed_functions) !==
+      JSON.stringify(["ai-chat", "staff-reply", "process-sms-queue"]) ||
+    register.runtime_version_ids_available !== false ||
+    register.secret_free_health_probes?.["ai-chat"] !== 503 ||
+    register.secret_free_health_probes?.["staff-reply"] !== 401 ||
+    register.secret_free_health_probes?.["process-sms-queue"] !== 401 ||
     register.activation_allowed !== false ||
     register.customer_traffic_allowed !== false ||
     register.messages_authorized !== false ||
@@ -192,7 +203,7 @@ if (register) {
     consent_lineage_preflight: "passed",
     hosted_consent_evidence: "passed",
     consent_lineage_migration: "passed",
-    consent_runtime_adoption: "prepared",
+    consent_runtime_adoption: "passed",
     controlled_message_acceptance: "blocked",
     customer_traffic_activation: "blocked",
   };
@@ -274,5 +285,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1H gate OK: hosted consent lineage and receipt verified; organization-aware runtime adoption prepared; deployment, messaging, and activation remain blocked.",
+  "BluLadder Klamath Phase 1H gate OK: hosted consent lineage, receipt, and three-function runtime deployment verified; messaging and activation remain blocked.",
 );

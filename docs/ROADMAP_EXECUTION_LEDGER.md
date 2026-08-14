@@ -21,7 +21,7 @@ Last reconciled main: `7c24f57258dd458978f56b0902ff05d3eecba802`
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
           │       └─ Klamath Phase 1G messaging       priority runtime deployed; adoption active
-          │           └─ Klamath Phase 1H consent lineage  hosted migration verified; runtime adoption prepared
+          │           └─ Klamath Phase 1H consent lineage  hosted migration and runtime deployment verified
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -49,7 +49,7 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1E | #8 | Reconcile typed tenant profile to the hosted provisioning identity; activation remains blocked | #114 | merged |
 | Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema and reviewed portal runtime deployed fail closed | #115/#116 + provider receipt | complete |
 | Klamath Phase 1G | #7/#9 | Organization-bound messaging connector, durable outbox, and fail-closed Twilio adapter | #118-#123 + provider receipts; this PR | active |
-| Klamath Phase 1H | #7/#9 | Organization-scoped consent lineage and fail-closed runtime adoption | #131/#132 + provider receipt; this PR | active |
+| Klamath Phase 1H | #7/#9 | Organization-scoped consent lineage and fail-closed runtime adoption | #131-#133 + provider/deployment receipts | complete |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
@@ -118,7 +118,9 @@ provisioning. The provider receipt is reconciled on main. The next narrow
 candidate makes queued checks, staff replies, website chat, and AI consent
 tools use persisted, server-derived organization authority; non-DFW chat and
 the legacy direct staff provider remain disabled until Klamath-owned adapters
-are approved. Deployment and any message remain separately protected actions.
+are approved. The three reviewed runtime functions were deployed from merged
+main `4a621bd18ffe8b7823eb4546089f64b8ce695aef`; secret-free probes reached the
+expected 503/401/401 fail-closed boundaries. No message or activation occurred.
 
 ## Protected-action gates
 

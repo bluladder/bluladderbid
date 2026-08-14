@@ -1,6 +1,6 @@
 # BluLadder Klamath Phase 1H consent lineage preflight
 
-Status: **hosted migration verified; fail-closed runtime adoption prepared**.
+Status: **hosted migration and fail-closed runtime deployment verified**.
 Klamath remains provisioning and may not send customer traffic.
 
 ## Problem boundary
@@ -103,8 +103,14 @@ shared organization-aware boundary:
 
 Focused tests cover exact RPC authority, malformed/missing authority, RPC
 failure, fail-closed reads, caller adoption, and the DFW-only compatibility
-gates. Deployment remains separate and must include only the reviewed changed
-functions after exact-head CI and Secret Scan pass.
+gates. Exact-head CI and Secret Scan passed for merged main
+`4a621bd18ffe8b7823eb4546089f64b8ce695aef`. One bounded Lovable AI action
+deployed only `ai-chat`, `staff-reply`, and `process-sms-queue` from that
+commit, with no source edit or unrelated resource action. Lovable did not
+surface numeric per-function deployment IDs, so the durable source identity is
+the exact merged commit. Secret-free probes then confirmed the expected
+fail-closed boundaries: inactive/unknown-site chat returned 503, and both
+authenticated worker surfaces returned 401.
 
 No connector, credential, sender, call, email, SMS, customer traffic, or
-activation is authorized by this runtime preparation.
+activation was authorized or performed by this runtime deployment.
