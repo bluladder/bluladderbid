@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `9720cc4abb63c4789966c4d110a3f58f3980f5c9`
+Last reconciled main: `4ed37cff90e35aacfe9ffeb55c666e45f09396b4`
 
 ## Dependency graph
 
@@ -19,7 +19,7 @@ Last reconciled main: `9720cc4abb63c4789966c4d110a3f58f3980f5c9`
           │   ├─ 8B server/runtime adoption           active in narrow waves
           │   ├─ Klamath Phase 1D customer sites      complete (PR #113)
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
-          │   └─ Klamath Phase 1F portal lineage      current repository stage
+          │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -45,20 +45,21 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Routing 8B | #8 | Persisted tenant lineage and runtime adoption in narrow fail-closed waves | multiple | active |
 | Klamath Phase 1D | #8 | Database-backed customer-site runtime; deployed with customer traffic blocked | #113 | merged |
 | Klamath Phase 1E | #8 | Reconcile typed tenant profile to the hosted provisioning identity; activation remains blocked | #114 | merged |
-| Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema applied, runtime deployment remains blocked | #115 + provider receipt | active |
+| Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema and reviewed portal runtime deployed fail closed | #115/#116 + provider receipt | complete |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
 | Hardening 11B | #11 | Cross-contract routing-to-intelligence isolation suite | #21 | merged |
 
-## Current stage: Klamath Phase 1F portal tenant lineage
+## Current stage: Klamath Phase 1G messaging/outbox lineage
 
 The Stage 8A compatibility/grant repairs, Phase 1C inactive foundation, Phase
 1D database-backed customer-site runtime, Phase 1E hosted identity
 reconciliation, and Phase 1F portal-lineage schema application are complete.
 The provider execution receipt and generated Supabase types are reconciled.
 
-The Phase 1F portal runtime is not deployed. The Klamath mapping remains
+The Phase 1F portal runtime is deployed from reconciled main and all seven
+reviewed functions passed secret-free boot verification. The Klamath mapping remains
 provisioning; lifecycle, runtime
 routing, publication, customer traffic, territory, services, pricing, contacts,
 and providers remain inactive or absent. Exact-host authority therefore still
@@ -66,8 +67,7 @@ fails closed. No hosted, provider, or customer action is part of this stage.
 
 The database-backed customer-site runtime remains deployed; customer traffic remains blocked.
 
-After this reconciliation, only the reviewed portal-runtime deployment remains
-inside Phase 1F. Messaging/outbox lineage,
+Phase 1F is complete. Messaging/outbox lineage,
 approved operating inputs, JobTread, provider resources, publication,
 controlled acceptance, and activation remain blocked.
 
@@ -90,23 +90,21 @@ are separated in
 
 ## Queued safe stages
 
-The Phase 1F portal runtime is the only active safe deployment
-stage. The following stages remain gated:
+The next safe repository stage is a narrow, fail-closed messaging/outbox
+lineage wave. The following stages remain gated:
 
-1. Reconcile the provider execution receipt and generated types through exact-head
-   checks.
-2. Deploy only the reviewed Phase 1F portal runtime functions and prove the
-   disabled Klamath site still fails closed.
-3. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
+1. Add organization lineage to the durable messaging/outbox boundary without
+   introducing a DFW fallback for Klamath.
+2. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
    waves after each dependency is proven.
-4. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
+3. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
    with organization-keyed uniqueness, composite lineage, and draft-only seeds.
-5. Remaining tenant-owned tables in narrow nullable waves, each with
+4. Remaining tenant-owned tables in narrow nullable waves, each with
    authoritative-write coverage and verification.
-6. Issue #4 read-only importer and later persistence/runtime stages through the
+5. Issue #4 read-only importer and later persistence/runtime stages through the
    Stage 9A connector contract.
-7. JobTread, Twilio, and Vapi provider prerequisites.
-8. Issue #11 whole-system isolation, migration, and release hardening.
+6. JobTread, Twilio, and Vapi provider prerequisites.
+7. Issue #11 whole-system isolation, migration, and release hardening.
 
 ## Validation ledger
 

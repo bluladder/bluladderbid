@@ -161,11 +161,11 @@ if (content.portal?.includes("organization_id")) {
     phase1fRegister?.organization_scoped_portal_reads_prepared !== true ||
     phase1fRegister?.canonical_migration_applied !== true ||
     phase1fRegister?.provider_execution_migration_materialized !== true ||
-    phase1fRegister?.portal_runtime_deployed !== false ||
+    phase1fRegister?.portal_runtime_deployed !== true ||
     phase1fRegister?.activation_allowed !== false
   ) {
     errors.push(
-      "portal tenant-scoping changed without the inactive Phase 1F release gate",
+      "portal tenant-scoping changed without the fail-closed Phase 1F release gate",
     );
   }
 }

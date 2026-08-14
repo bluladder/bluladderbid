@@ -1,9 +1,12 @@
 # BluLadder Klamath Phase 1F portal tenant lineage
 
-Status: **hosted schema applied; fail-closed runtime deployment candidate**.
+Status: **complete; fail-closed runtime deployed**.
 The exact migration passed its aggregate-only hosted preflight and postflight,
-and its provider execution receipt and generated types are reconciled. No
-Phase 1F Edge Function or frontend has been deployed. Klamath remains
+and its provider execution receipt and generated types are reconciled. The
+seven reviewed portal Edge Functions were deployed together from reconciled
+main `4ed37cff90e35aacfe9ffeb55c666e45f09396b4`; secret-free preflight requests
+returned HTTP 200 from every function without customer or provider action. No
+frontend was published. Klamath remains
 provisioning and inactive with no customer, message, credential, or provider
 action.
 
@@ -76,8 +79,10 @@ reviewed policies, zero lineage mismatches, and unchanged DFW fingerprints.
 
 ## Release boundary
 
-Only the reviewed portal Edge Functions may now be considered for a separately
-verified deployment. Frontend publication remains unnecessary. Klamath activation remains blocked
+The reviewed portal Edge Functions are deployed and independently boot-verified.
+Their authentication configuration and secret presence were preserved; the
+deployment produced no repository, schema, data, frontend, or provider change.
+Frontend publication remains unnecessary. Klamath activation remains blocked
 after this phase; messaging/outbox lineage,
 JobTread, provider resources, pricing, contacts, publication, controlled
 acceptance, and explicit customer-traffic authorization still remain.
