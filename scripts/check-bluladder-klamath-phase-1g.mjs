@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -12,6 +13,14 @@ const relative = {
     "supabase/functions/_shared/messagingConnectorContracts.ts",
   tests:
     "supabase/functions/_shared/messagingConnectorContracts_test.ts",
+  migration:
+    "supabase/migrations/20260814070000_bluladder_klamath_phase_1g_additive_messaging_lineage.sql",
+  preflight:
+    "supabase/preflight/bluladder_klamath_phase_1g_additive_messaging_lineage.sql",
+  verification:
+    "supabase/verification/bluladder_klamath_phase_1g_additive_messaging_lineage.sql",
+  rehearsal:
+    "scripts/rehearse-bluladder-klamath-phase-1g-additive-messaging-postgres.sh",
   roadmap: "docs/ROADMAP_EXECUTION_LEDGER.md",
   workflow: ".github/workflows/ci.yml",
 };
@@ -29,11 +38,14 @@ function requireText(key, text) {
 }
 
 for (const text of [
-  "repository contract; hosted and runtime changes blocked",
+  "additive schema candidate; hosted application and runtime changes",
   "Recipient identity, caller ID, browser input, message content",
   "Failure never falls back to DFW",
   "Platform/legal safety suppressions remain global",
   "No schema application may create an active Klamath connector",
+  "134 historical messaging-ledger rows",
+  "28 have a server-owned parent",
+  "106 are legacy unparented rows",
 ]) requireText("contract", text);
 
 for (const text of [
@@ -53,10 +65,74 @@ for (const text of [
   "dispatch guard binds organization, connector, channel, and key",
 ]) requireText("tests", text);
 
+for (const text of [
+  "CREATE TABLE public.organization_messaging_connectors",
+  "ADD COLUMN organization_id uuid",
+  "ADD COLUMN messaging_connector_id uuid",
+  "enforce_sms_message_organization_lineage",
+  "migration unexpectedly created a connector",
+  "historical SMS escaped the DFW boundary",
+]) requireText("migration", text);
+
+for (const text of [
+  "BEGIN TRANSACTION READ ONLY",
+  "prerequisite_table_count",
+  "parent_conflict_count",
+  "non_dfw_parent_count",
+  "klamath_provider_identity_count",
+  "lineage_function_count",
+  "ROLLBACK",
+]) requireText("preflight", text);
+
+for (const text of [
+  "connector_count",
+  "nullable_organization_column_count",
+  "missing_organization_count",
+  "connector_policy_count",
+  "lineage_trigger_count",
+  "anon_execute_count",
+  "klamath_active_count",
+]) requireText("verification", text);
+
+for (const text of [
+  "BLULADDER_KLAMATH_PHASE1G_DATABASE_URL",
+  "server-parent lineage derivation failed",
+  "cross-organization parent lineage was accepted",
+  "cross-channel connector lineage was accepted",
+  "Phase 1G additive messaging lineage rehearsal passed",
+]) requireText("rehearsal", text);
+
 for (const text of ["Phase 1G", "messaging/outbox lineage"]) {
   requireText("roadmap", text);
 }
 requireText("workflow", "check:klamath-phase-1g");
+requireText("workflow", "BLULADDER_KLAMATH_PHASE1G_DATABASE_URL");
+
+const exactArtifacts = {
+  migration: {
+    bytes: 12048,
+    sha256: "5c11e0263527ffa996e2e4f18498b89773f5398933ff68dadbc43bbff2f599d0",
+  },
+  preflight: {
+    bytes: 5119,
+    sha256: "dda9edf3ba5a9bf0e75029a68cd15366ebe09cb7032fb25061a9afcec4ea5806",
+  },
+  verification: {
+    bytes: 3030,
+    sha256: "d6bca7c374bbd9da99b3a5ae2ddca53d3196fd47f5012f9e3ac99c6a9bdf792d",
+  },
+  rehearsal: {
+    bytes: 8452,
+    sha256: "7349da023cb4edf0709d452906150b30e84929146623e1e50dfe78df977e4f72",
+  },
+};
+for (const [key, expected] of Object.entries(exactArtifacts)) {
+  const bytes = fs.readFileSync(path.join(root, relative[key]));
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  if (bytes.length !== expected.bytes || sha256 !== expected.sha256) {
+    errors.push(`${relative[key]} exact artifact drifted`);
+  }
+}
 
 let register;
 try {
@@ -67,10 +143,17 @@ try {
 if (register) {
   if (
     register.phase !== "1G" ||
-    register.status !== "repository_contract_only" ||
+    register.status !== "hosted_preflight_passed_additive_migration_candidate" ||
     register.prepared_from_main !==
-      "0148b95da3a5c878557d788d4486e9a39d5bdc42" ||
+      "13ee37af96ae0a449f48f11feeec37b436c78318" ||
     register.messaging_connector_contract_prepared !== true ||
+    register.additive_migration_prepared !== true ||
+    register.hosted_preflight_passed !== true ||
+    register.hosted_preflight_sms_message_count !== 134 ||
+    register.hosted_preflight_parented_count !== 28 ||
+    register.hosted_preflight_unparented_count !== 106 ||
+    register.hosted_preflight_parent_conflict_count !== 0 ||
+    register.hosted_preflight_non_dfw_parent_count !== 0 ||
     register.hosted_schema_applied !== false ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
@@ -86,9 +169,10 @@ if (register) {
     errors.push("Phase 1G gate identity/count drifted");
   }
   for (const gate of gates) {
-    const expected = gate.id === "phase_1g_connector_contract"
-      ? "ready"
-      : "blocked";
+    const expected = [
+      "phase_1g_connector_contract",
+      "hosted_messaging_preflight",
+    ].includes(gate.id) ? "ready" : "blocked";
     if (gate.status !== expected) errors.push(`gate ${gate.id} must be ${expected}`);
   }
 }
@@ -99,5 +183,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1G gate OK: connector selection is organization-bound and fail closed; hosted schema, providers, messages, and activation remain blocked.",
+  "BluLadder Klamath Phase 1G gate OK: hosted preflight and exact additive migration candidate are reviewed; hosted schema, providers, messages, and activation remain blocked.",
 );
