@@ -18,6 +18,13 @@ const relative = {
     "supabase/functions/customer-verification-request/index.ts",
   portalVerificationTests:
     "supabase/functions/customer-verification-request/outbox_contract_test.ts",
+  queuedConnector:
+    "supabase/functions/_shared/queuedSmsConnector.ts",
+  queuedConnectorTests:
+    "supabase/functions/_shared/queuedSmsConnector_test.ts",
+  queueWorker: "supabase/functions/process-sms-queue/index.ts",
+  queueWorkerTests:
+    "supabase/functions/_shared/queueDelivery_contract_test.ts",
   tests:
     "supabase/functions/_shared/messagingConnectorContracts_test.ts",
   migration:
@@ -318,6 +325,36 @@ for (const text of [
   "portal verification challenge records selected provider evidence",
 ]) requireText("portalVerificationTests", text);
 
+for (const text of [
+  "selectSmsConnector",
+  "messaging_connector_id: selection.connector.id",
+  'eq("send_claim_token", msg.send_claim_token)',
+  'eq("outbox_state", "pending_send")',
+  "guardMessagingDispatch",
+  "connector_lineage_mismatch",
+  "connector_binding_failed",
+]) requireText("queuedConnector", text);
+for (const text of [
+  "binds an unbound claimed SMS",
+  "rejects missing organization",
+  "rejects a persisted connector mismatch",
+  "rejects a stale claim",
+  "rechecks bound organization",
+]) requireText("queuedConnectorTests", text);
+for (const text of [
+  "authorizeQueuedSmsConnector",
+  "dispatchSelectedSmsConnector",
+  "SMS connector blocked",
+  'result.outboxState === "delivery_unknown"',
+]) requireText("queueWorker", text);
+if (/sendCallRailSms|getCallRailConfig/.test(content.queueWorker ?? "")) {
+  errors.push("queued SMS worker bypasses the selected connector adapter");
+}
+for (const text of [
+  "binds and rechecks organization connector before dispatch",
+  "fails closed before provider boundary",
+]) requireText("queueWorkerTests", text);
+
 for (const text of ["Phase 1G", "messaging/outbox lineage"]) {
   requireText("roadmap", text);
 }
@@ -478,6 +515,8 @@ if (register) {
     register.dfw_connector_count !== 1 ||
     register.dfw_connector_runtime_allowlist_prepared !== true ||
     register.portal_verification_writer_adopted !== true ||
+    register.queued_sms_connector_boundary_prepared !== true ||
+    register.queued_sms_connector_boundary_deployed !== false ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
     register.klamath_connector_count !== 0 ||

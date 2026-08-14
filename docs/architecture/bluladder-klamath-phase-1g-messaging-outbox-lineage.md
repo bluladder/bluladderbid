@@ -221,3 +221,24 @@ This change is repository-only. Klamath still has no connector, provider
 credential, sender, or active customer-site authority, so it continues to fail
 closed. DFW dispatch remains on the reviewed CallRail connector. No function is
 deployed and no message is sent by this writer-adoption change.
+
+## Queued-SMS connector boundary candidate
+
+The shared queue worker now selects exactly one active SMS connector from the
+persisted message organization, persists that connector under the current
+durable claim, and rereads the organization/connector/channel/idempotency tuple
+through the same dispatch guard before the provider boundary. An already-bound
+row must match the selected connector. Missing organization authority, a
+missing/inactive/ambiguous connector, a stale claim, or mismatched lineage is a
+permanent fail-closed outcome and makes no provider request.
+
+Immediate outbox sends and queued SMS now share one provider adapter. The exact
+reviewed DFW references still select CallRail, and only the compiled Klamath
+reference plus a valid Messaging Service identity can select Twilio. Transport
+uncertainty remains terminal for automatic redispatch; definitive provider
+rejections retain the existing bounded queue policy. Email queue behavior is
+unchanged.
+
+This worker change is repository-only and undeployed. It creates no connector,
+credential, sender, message, customer traffic, or activation state. Klamath has
+no connector, so a Klamath queue row still fails before provider submission.

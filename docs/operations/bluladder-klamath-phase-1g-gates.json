@@ -48,6 +48,8 @@
   "dfw_connector_count": 1,
   "dfw_connector_runtime_allowlist_prepared": true,
   "portal_verification_writer_adopted": true,
+  "queued_sms_connector_boundary_prepared": true,
+  "queued_sms_connector_boundary_deployed": false,
   "messaging_runtime_deployed": false,
   "dfw_provider_changed": false,
   "klamath_connector_count": 0,

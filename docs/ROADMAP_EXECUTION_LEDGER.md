@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `9433b0013db8c34ca2345605b196933fc1570a1d`
+Last reconciled main: `6cb698ea23034b0bcc87799ae303f8b2bc2bdf64`
 
 ## Dependency graph
 
@@ -79,10 +79,15 @@ compatibility migration was then applied once as provider execution version
 `20260814090619`; its normalized receipt, 161-row ledger, exact connector,
 122 bound SMS rows, 12 intentionally unbound email rows, and unchanged Klamath
 provisioning boundary are independently verified. The first launch-critical
-writer adoption is now prepared: customer-portal verification SMS resolves the
+writer adoption is merged: customer-portal verification SMS resolves the
 organization from exact server-side site authority, claims the scoped outbox,
-and dispatches only through that organization's reviewed connector. The runtime
-change remains undeployed; remaining writers and deployment are separate gates.
+and dispatches only through that organization's reviewed connector. The queued
+SMS worker boundary is now prepared: it resolves exactly one active
+organization connector, persists that binding under the current durable claim,
+reruns the dispatch guard, and uses the same reviewed provider adapter. Missing,
+stale, ambiguous, or cross-tenant authority terminates before provider
+submission. These runtime changes remain undeployed; remaining writers and
+deployment are separate gates.
 
 The Phase 1F portal runtime is deployed from reconciled main and all seven
 reviewed functions passed secret-free boot verification. The Klamath mapping remains
