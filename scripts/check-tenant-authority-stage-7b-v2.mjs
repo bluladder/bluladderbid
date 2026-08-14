@@ -131,6 +131,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Phase 1F: additive, fail-closed customer portal lineage. Hosted application
   // and runtime deployment remain separately gated.
   "supabase/migrations/20260814060000_bluladder_klamath_phase_1f_portal_tenant_lineage.sql",
+  // Lovable-generated execution receipt for the exact Phase 1F portal-lineage
+  // payload. The Phase 1F checker permits only terminal-LF normalization.
+  "supabase/migrations/20260814062249_8cd57ad4-d1ad-47eb-8477-7af1a1401981.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

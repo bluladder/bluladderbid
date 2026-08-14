@@ -100,7 +100,7 @@ const typesSha = crypto
   .digest("hex");
 if (
   typesSha !==
-  "dc9af8e25188f2a8c25d8b3c556ee519c91196e8e3995be0395c4ca61a9e174d"
+  "1c2e27c7adfff81d570aec8603670c253257e703af70d94c28ad0aee955f6d4b"
 ) {
   errors.push("Lovable-generated Phase 1C types drifted");
 }

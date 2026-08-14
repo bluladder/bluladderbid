@@ -159,7 +159,8 @@ requireText("adminFlag", "ORGANIZATION_ADMIN_SURFACES_ENABLED = false");
 if (content.portal?.includes("organization_id")) {
   if (
     phase1fRegister?.organization_scoped_portal_reads_prepared !== true ||
-    phase1fRegister?.canonical_migration_applied !== false ||
+    phase1fRegister?.canonical_migration_applied !== true ||
+    phase1fRegister?.provider_execution_migration_materialized !== true ||
     phase1fRegister?.portal_runtime_deployed !== false ||
     phase1fRegister?.activation_allowed !== false
   ) {
