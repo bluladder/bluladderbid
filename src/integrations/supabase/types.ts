@@ -3862,6 +3862,129 @@ export type Database = {
           },
         ]
       }
+      organization_connector_operation_attempts: {
+        Row: {
+          attempt_number: number
+          completed_at: string | null
+          connector_id: string
+          failure_code: string | null
+          id: string
+          idempotency_key_hash: string
+          operation: string
+          organization_id: string
+          outcome_uncertain: boolean
+          provider_reference_hash: string | null
+          request_fingerprint: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          attempt_number?: number
+          completed_at?: string | null
+          connector_id: string
+          failure_code?: string | null
+          id?: string
+          idempotency_key_hash: string
+          operation: string
+          organization_id: string
+          outcome_uncertain?: boolean
+          provider_reference_hash?: string | null
+          request_fingerprint: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          attempt_number?: number
+          completed_at?: string | null
+          connector_id?: string
+          failure_code?: string | null
+          id?: string
+          idempotency_key_hash?: string
+          operation?: string
+          organization_id?: string
+          outcome_uncertain?: boolean
+          provider_reference_hash?: string | null
+          request_fingerprint?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_connector_operation_attempts_connector_fkey"
+            columns: ["organization_id", "connector_id"]
+            isOneToOne: false
+            referencedRelation: "organization_crm_connectors"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "organization_connector_operation_attempts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_connector_webhook_receipts: {
+        Row: {
+          connector_id: string
+          event_type: string
+          failure_code: string | null
+          id: string
+          occurred_at: string | null
+          organization_id: string
+          payload_fingerprint: string
+          processed_at: string | null
+          provider_event_hash: string
+          received_at: string
+          source_authenticated: boolean
+          status: string
+        }
+        Insert: {
+          connector_id: string
+          event_type: string
+          failure_code?: string | null
+          id?: string
+          occurred_at?: string | null
+          organization_id: string
+          payload_fingerprint: string
+          processed_at?: string | null
+          provider_event_hash: string
+          received_at?: string
+          source_authenticated: boolean
+          status?: string
+        }
+        Update: {
+          connector_id?: string
+          event_type?: string
+          failure_code?: string | null
+          id?: string
+          occurred_at?: string | null
+          organization_id?: string
+          payload_fingerprint?: string
+          processed_at?: string | null
+          provider_event_hash?: string
+          received_at?: string
+          source_authenticated?: boolean
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_connector_webhook_receipts_connector_fkey"
+            columns: ["organization_id", "connector_id"]
+            isOneToOne: false
+            referencedRelation: "organization_crm_connectors"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "organization_connector_webhook_receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_contacts: {
         Row: {
           contact_type: string
@@ -3899,6 +4022,65 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "organization_contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_crm_connectors: {
+        Row: {
+          capabilities: string[]
+          configuration_version: number
+          created_at: string
+          credential_reference: string | null
+          id: string
+          organization_id: string
+          priority: number
+          provider: string
+          provider_organization_fingerprint: string | null
+          runtime_enabled: boolean
+          status: string
+          updated_at: string
+          webhook_enabled: boolean
+          webhook_secret_reference: string | null
+        }
+        Insert: {
+          capabilities?: string[]
+          configuration_version?: number
+          created_at?: string
+          credential_reference?: string | null
+          id?: string
+          organization_id: string
+          priority?: number
+          provider: string
+          provider_organization_fingerprint?: string | null
+          runtime_enabled?: boolean
+          status?: string
+          updated_at?: string
+          webhook_enabled?: boolean
+          webhook_secret_reference?: string | null
+        }
+        Update: {
+          capabilities?: string[]
+          configuration_version?: number
+          created_at?: string
+          credential_reference?: string | null
+          id?: string
+          organization_id?: string
+          priority?: number
+          provider?: string
+          provider_organization_fingerprint?: string | null
+          runtime_enabled?: boolean
+          status?: string
+          updated_at?: string
+          webhook_enabled?: boolean
+          webhook_secret_reference?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_crm_connectors_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
