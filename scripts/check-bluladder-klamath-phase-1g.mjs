@@ -100,6 +100,11 @@ for (const text of [
   "This adapter is repository-only",
   "DFW connector compatibility candidate",
   "The first hosted application attempt rolled back completely",
+  "Priority runtime deployment verification",
+  "exact merged main",
+  "HTTP 405",
+  "HTTP 401",
+  "No authenticated provider traffic",
 ]) requireText("contract", text);
 
 for (const text of [
@@ -459,9 +464,9 @@ try {
 if (register) {
   if (
     register.phase !== "1G" ||
-    register.status !== "dfw_connector_compatibility_applied" ||
+    register.status !== "priority_runtime_deployed" ||
     register.prepared_from_main !==
-      "8c0b441fe677f9bd004c3ce4ad587f845294c136" ||
+      "014517b43d543dec77d29d46877cde9aaf6f53a6" ||
     register.messaging_connector_contract_prepared !== true ||
     register.additive_migration_prepared !== true ||
     register.hosted_preflight_passed !== true ||
@@ -496,9 +501,9 @@ if (register) {
     register.scoped_outbox_payload_sha256 !==
       "2efc6460a6e91ce04705d6de6a3e5cbec66068cd3e1d3b117975decff545ae88" ||
     register.scoped_outbox_postflight_passed !== true ||
-    register.scoped_outbox_runtime_deployed !== false ||
+    register.scoped_outbox_runtime_deployed !== true ||
     register.twilio_adapter_prepared !== true ||
-    register.twilio_adapter_deployed !== false ||
+    register.twilio_adapter_deployed !== true ||
     register.twilio_credentials_present !== false ||
     register.twilio_sender_present !== false ||
     register.dfw_connector_compatibility_migration_prepared !== true ||
@@ -515,9 +520,20 @@ if (register) {
     register.dfw_connector_count !== 1 ||
     register.dfw_connector_runtime_allowlist_prepared !== true ||
     register.portal_verification_writer_adopted !== true ||
+    register.portal_verification_writer_deployed !== true ||
     register.queued_sms_connector_boundary_prepared !== true ||
-    register.queued_sms_connector_boundary_deployed !== false ||
+    register.queued_sms_connector_boundary_deployed !== true ||
     register.messaging_runtime_deployed !== false ||
+    register.runtime_deployment_source_main !==
+      "014517b43d543dec77d29d46877cde9aaf6f53a6" ||
+    register.runtime_deployment_function_count !== 2 ||
+    register.runtime_deployment_lovable_action_count !== 1 ||
+    register.runtime_deployment_source_edited !== false ||
+    register.runtime_deployment_other_function_count !== 0 ||
+    register.runtime_deployment_portal_probe_status !== 405 ||
+    register.runtime_deployment_queue_probe_status !== 401 ||
+    register.runtime_deployment_health_passed !== true ||
+    register.runtime_deployment_provider_traffic !== false ||
     register.dfw_provider_changed !== false ||
     register.klamath_connector_count !== 0 ||
     register.activation_allowed !== false ||
@@ -549,5 +565,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1G gate OK: additive lineage, exact least-privilege repair, scoped transactional outbox, and DFW connector compatibility are hosted and verified while remaining writer adoption, runtime, Klamath providers, messages, and activation remain blocked.",
+  "BluLadder Klamath Phase 1G gate OK: additive lineage, exact least-privilege repair, scoped transactional outbox, DFW connector compatibility, and the two priority runtime deployments are verified while remaining writer adoption, Klamath providers, messages, and activation remain blocked.",
 );
