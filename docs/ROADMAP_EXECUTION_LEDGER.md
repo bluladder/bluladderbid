@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `7c24f57258dd458978f56b0902ff05d3eecba802`
+Last reconciled main: `c3542252c1b8949285577602a2119ff5e0501999`
 
 ## Dependency graph
 
@@ -23,7 +23,9 @@ Last reconciled main: `7c24f57258dd458978f56b0902ff05d3eecba802`
           │       └─ Klamath Phase 1G messaging       priority runtime deployed; adoption active
           │           └─ Klamath Phase 1H consent lineage  hosted migration and runtime deployment verified
           ├─ #9 organization connector contracts
-          │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
+          │   ├─ 9A pure contracts and Jobber seam   complete (PR #18)
+          │   ├─ Klamath JobTread capability seam    complete (PR #136)
+          │   └─ Klamath Phase 1I CRM lineage        repository candidate
           ├─ #10 service catalog and pricing
           │   └─ 10A pure catalog/pricing contracts  complete (PR #19)
           └─ remaining tenant-table rollout          staged by authority path
@@ -50,12 +52,32 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema and reviewed portal runtime deployed fail closed | #115/#116 + provider receipt | complete |
 | Klamath Phase 1G | #7/#9 | Organization-bound messaging connector, durable outbox, and fail-closed Twilio adapter | #118-#123 + provider receipts; this PR | active |
 | Klamath Phase 1H | #7/#9 | Organization-scoped consent lineage and fail-closed runtime adoption | #131-#133 + provider/deployment receipts | complete |
+| Klamath JobTread capability | #135 | Verified provider primitives plus dormant guarded adapter and redacted transport | #136 | complete |
+| Klamath Phase 1I | #137 | Empty organization CRM connector, operation-attempt, and webhook-receipt lineage | this PR | repository candidate |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
 | Hardening 11B | #11 | Cross-contract routing-to-intelligence isolation suite | #21 | merged |
 
-## Current stage: Klamath Phase 1G messaging/outbox lineage
+## Current stage: Klamath Phase 1I dormant CRM connector lineage
+
+The intended JobTread admin account, organization-scoped grant controls,
+custom-webhook controls, and official provider primitives were verified
+read-only. PR #136 records that evidence and adds a dormant JobTread adapter
+plus redacted Pave transport. It creates no grant, webhook, credential, provider
+call, hosted row, runtime adoption, or activation.
+
+Phase 1I is the next repository-only persistence boundary. Its additive
+migration candidate creates three empty organization-owned tables for CRM
+connector configuration, hashed operation idempotency, and authenticated
+webhook receipt idempotency. Composite organization/connector foreign keys,
+least-privilege RLS, protected-reference gates, and sanitized outcome
+constraints fail closed before any runtime or provider action. Hosted preflight
+and migration application remain separately blocked, as do all JobTread
+business mappings, credential/webhook setup, runtime deployment, and customer
+traffic.
+
+## Completed foundation: Klamath Phase 1G messaging/outbox lineage and Phase 1H
 
 The Stage 8A compatibility/grant repairs, Phase 1C inactive foundation, Phase
 1D database-backed customer-site runtime, Phase 1E hosted identity
@@ -141,23 +163,25 @@ are separated in
 
 ## Queued safe stages
 
-The current safe repository stage is the scoped transactional-outbox claim and
-organization-lineage writer candidate for the messaging boundary. Its hosted
-migration and runtime deployment remain separately gated. The following
-stages remain gated:
+The current safe repository stage is the empty CRM connector and idempotency
+lineage candidate. Its hosted preflight and migration application remain
+separately gated. The following stages remain gated:
 
-1. Add organization lineage to the durable messaging/outbox boundary without
-   introducing a DFW fallback for Klamath.
-2. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
+1. Run the exact Phase 1I hosted preflight, then separately authorize the empty
+   additive migration only if the target tables remain absent and Klamath is
+   still provisioning with no customer/provider state.
+2. Approve JobTread business mappings operation by operation before credential,
+   webhook, connector-row, runtime, or provider work.
+3. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
    waves after each dependency is proven.
-3. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
+4. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
    with organization-keyed uniqueness, composite lineage, and draft-only seeds.
-4. Remaining tenant-owned tables in narrow nullable waves, each with
+5. Remaining tenant-owned tables in narrow nullable waves, each with
    authoritative-write coverage and verification.
-5. Issue #4 read-only importer and later persistence/runtime stages through the
+6. Issue #4 read-only importer and later persistence/runtime stages through the
    Stage 9A connector contract.
-6. JobTread, Twilio, and Vapi provider prerequisites.
-7. Issue #11 whole-system isolation, migration, and release hardening.
+7. Twilio and Vapi provider prerequisites.
+8. Issue #11 whole-system isolation, migration, and release hardening.
 
 ## Validation ledger
 
@@ -172,7 +196,7 @@ passing checks.
 - authoritative county/geocoder and normalization rules;
 - governance for territory priority and activation;
 - whether service keys become foreign keys to a canonical service catalog;
-- exact provider capabilities and credential references for JobTread and
-  calendar fallbacks;
+- exact JobTread quote/document, schedule/capacity, booking/job/task,
+  cancellation, invoice, and communications mappings;
 - staged ordering for the remaining tenant-owned authoritative tables;
 - hosted migration provenance gaps identified by Stage 7C.
