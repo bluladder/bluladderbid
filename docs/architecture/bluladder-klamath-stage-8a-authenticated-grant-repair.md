@@ -1,8 +1,9 @@
 # BluLadder Klamath Stage 8A authenticated-grant repair
 
-Status: **repository-only repair candidate**. No migration application,
-deployment, provider action, secret access, call, message, purchase, activation,
-or Lovable credit use is authorized by this artifact.
+Status: **applied and verified**. Hosted execution version `20260814045913` is
+recorded by a provider-generated receipt that differs from the canonical repair
+only by its removed terminal line feed. No deployment, provider action, secret
+access, call, message, purchase, or activation is authorized by this record.
 
 ## Observed hosted state
 
@@ -31,18 +32,18 @@ four Stage 8A tables. It revokes authenticated access and restores only
 `SELECT`, `INSERT`, `UPDATE`, and `DELETE`. It preserves the exact anonymous,
 service-role, RLS, policy, DFW, Oregon-test, and pre-Phase-1C state.
 
-Phase 1C is still unapplied, so its canonical migration is hardened before
+Phase 1C was still unapplied when its canonical migration was hardened before
 first execution: both anonymous and authenticated defaults are revoked before
 the exact role grants are installed. Its atomic postflight and read-only
 verification require the same least-privilege result.
 
-## Future execution order
+## Execution evidence
 
-1. Review and merge the GitHub-only repair PR under separate authorization.
-2. Run the exact read-only hosted preflight for the Stage 8A grant repair.
-3. Apply only the forward grant repair under a new exact authorization.
-4. Run its read-only postflight and verify the new ledger receipt.
-5. Re-run the Phase 1C preflight. Phase 1C remains separately gated.
+The exact read-only preflight passed, the forward repair applied once, and the
+exact postflight confirmed CRUD-only authenticated grants on all four tables.
+Anonymous access remained absent, service-role access remained complete, RLS
+and policy counts stayed exact, and DFW/Oregon fingerprints were unchanged.
+The Phase 1C preflight then passed and its inactive foundation was applied in a
+separate migration-aware action.
 
-Do not combine, reorder, replay, or apply these migrations without the matching
-authorization and clean hosted evidence.
+Do not replay or rewrite these immutable migrations or their execution receipts.

@@ -1,8 +1,10 @@
 # BluLadder Klamath Stage 8A hosted-compatibility repair
 
-Status: **repository-only repair candidate**. Nothing in this repair authorizes
-merge, migration application, deployment, hosted mutation, provider setup,
-credentials, purchases, calls, messages, or Lovable credit use.
+Status: **applied and verified**. Hosted execution version `20260814035656` is
+recorded by a provider-generated receipt that differs from the canonical
+migration only by its removed terminal line feed. Nothing in this record
+authorizes deployment, provider setup, credentials, purchases, calls, messages,
+traffic activation, or additional Lovable credit use.
 
 ## Root cause
 
@@ -29,7 +31,7 @@ The forward compatibility migration:
   state; and
 - remains atomic with short lock and statement timeouts.
 
-The still-unapplied Phase 1C migration is repaired in the same PR to use the
+The then-unapplied Phase 1C migration was repaired in the same PR to use the
 same direct membership policy. It no longer requires or recreates the retired
 helper. Historical Stage 8A source remains byte-for-byte unchanged for ledger
 reconciliation.
@@ -43,7 +45,7 @@ PostgreSQL rehearsal covers hosted-missing application, compatible convergence,
 RLS isolation, collision/partial-state stops, DFW preservation, and atomic
 rollback.
 
-Any hosted application requires a new exact authorization after this draft PR
-passes review and CI. The forward Stage 8A compatibility payload must be
-verified before the separately reviewed Phase 1C payload. Klamath remains
-absent until Phase 1C and remains fully inactive afterward.
+The exact hosted preflight, application, receipt comparison, and postflight all
+passed. The separately reviewed Phase 1C payload was later applied and verified.
+Historical Stage 8A source remains byte-for-byte unchanged. Phase 1C remains
+inactive, and all provider, runtime, publication, and traffic gates remain off.
