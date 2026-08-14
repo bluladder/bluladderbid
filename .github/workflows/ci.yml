@@ -144,6 +144,7 @@ jobs:
           createdb --host localhost --username postgres bluladder_klamath_phase1f_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1g_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1g_grants_rehearsal
+          createdb --host localhost --username postgres bluladder_klamath_phase1g_scoped_outbox_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal

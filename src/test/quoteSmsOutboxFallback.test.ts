@@ -7,21 +7,25 @@ const source = fs.readFileSync(
   "utf8",
 );
 
-describe("quote SMS outbox claim fallback", () => {
-  it("falls back to the base outbox claim only when the quote wrapper is absent", () => {
-    expect(source).toMatch(/if \(\s*claimErr && input\.quoteId &&\s*isMissingFunctionError\(claimErr\)/);
-    expect(source).toMatch(/PGRST202/);
-    expect(source).toMatch(/42883/);
+describe("organization-scoped quote SMS outbox claim", () => {
+  it("requires server-resolved organization and connector authority", () => {
+    expect(source).toMatch(/organizationId: string/);
+    expect(source).toMatch(/from\("organization_messaging_connectors"\)/);
+    expect(source).toMatch(/selectOrganizationMessagingConnector/);
+    expect(source).toMatch(/guardMessagingDispatch/);
   });
 
-  it("reuses the same semantic outbound key so idempotency is unchanged", () => {
-    const fallback = source.slice(source.indexOf("quoteLineageFallback = true"));
-    expect(fallback).toMatch(/p_outbound_key: input\.outboundKey/);
+  it("atomically binds organization, connector, quote, and idempotency lineage", () => {
+    expect(source).toMatch(/"claim_organization_sms_outbox_send"/);
+    expect(source).toMatch(/p_organization_id: input\.organizationId/);
+    expect(source).toMatch(/p_messaging_connector_id: selection\.connector\.id/);
+    expect(source).toMatch(/p_outbound_key: input\.outboundKey/);
+    expect(source).toMatch(/p_quote_id: input\.quoteId \?\? null/);
   });
 
-  it("binds quote lineage conflict-safely after a fallback claim", () => {
-    expect(source).toMatch(/\.update\(\{ quote_id: input\.quoteId \}\)/);
-    expect(source).toMatch(/\.is\("quote_id", null\)/);
-    expect(source).toMatch(/"quote_lineage_conflict"/);
+  it("does not retain the non-atomic legacy fallback", () => {
+    expect(source).not.toMatch(/claim_quote_sms_delivery/);
+    expect(source).not.toMatch(/quoteLineageFallback/);
+    expect(source).not.toMatch(/isMissingFunctionError/);
   });
 });
