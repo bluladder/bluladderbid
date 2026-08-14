@@ -5,8 +5,11 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 migration="$repo_root/supabase/migrations/20260814022314_bluladder_klamath_stage_8a_hosted_compatibility.sql"
+grant_repair="$repo_root/supabase/migrations/20260814041512_bluladder_klamath_stage_8a_authenticated_grants.sql"
 historical_stage8a="$repo_root/supabase/migrations/20260728070000_organization_routing_stage_8a.sql"
 verification="$repo_root/supabase/verification/bluladder_klamath_stage_8a_hosted_compatibility.sql"
+grant_preflight="$repo_root/supabase/preflight/bluladder_klamath_stage_8a_authenticated_grants.sql"
+grant_verification="$repo_root/supabase/verification/bluladder_klamath_stage_8a_authenticated_grants.sql"
 admin_url="${BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL%/*}/postgres"
 
 install_core_fixture() {
@@ -25,6 +28,11 @@ BEGIN
   END IF;
 END
 $roles$;
+
+-- Reproduce the hosted project default that granted all table privileges to
+-- authenticated when Stage 8A created its four tables.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL PRIVILEGES ON TABLES TO authenticated;
 
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE OR REPLACE FUNCTION auth.uid()
@@ -97,6 +105,33 @@ psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X \
   --set=ON_ERROR_STOP=1 --file="$migration"
 psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X \
   --set=ON_ERROR_STOP=1 --file="$verification"
+
+# The original migration is intentionally immutable and reproduces the exact
+# hosted privilege drift before the forward repair runs.
+test "$(psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X -At \
+  --set=ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema='public' AND table_name IN ('organization_settings','organization_contacts','organization_territories','organization_services') AND grantee='authenticated'")" = "28"
+for privilege_name in REFERENCES TRIGGER TRUNCATE; do
+  test "$(psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X -At \
+    --set=ON_ERROR_STOP=1 -c \
+    "SELECT has_table_privilege('authenticated','public.organization_settings','$privilege_name')")" = "t"
+done
+
+psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X \
+  --set=ON_ERROR_STOP=1 --file="$grant_preflight"
+psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X \
+  --set=ON_ERROR_STOP=1 --file="$grant_repair"
+psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X \
+  --set=ON_ERROR_STOP=1 --file="$grant_verification"
+
+test "$(psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X -At \
+  --set=ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema='public' AND table_name IN ('organization_settings','organization_contacts','organization_territories','organization_services') AND grantee='authenticated'")" = "16"
+for privilege_name in REFERENCES TRIGGER TRUNCATE; do
+  test "$(psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X -At \
+    --set=ON_ERROR_STOP=1 -c \
+    "SELECT has_table_privilege('authenticated','public.organization_settings','$privilege_name')")" = "f"
+done
 
 test "$(psql "$BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL" -X -At \
   --set=ON_ERROR_STOP=1 -c \
@@ -193,6 +228,7 @@ DROP POLICY "Members read organization services" ON public.organization_services
 DROP FUNCTION public.is_organization_member(uuid, uuid);
 SQL
 psql "$convergence_url" -X --set=ON_ERROR_STOP=1 --file="$migration"
+psql "$convergence_url" -X --set=ON_ERROR_STOP=1 --file="$grant_repair"
 test "$(psql "$convergence_url" -X -At --set=ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM public.organizations WHERE slug='bluladder-oregon-test'")" = "1"
 test "$(psql "$convergence_url" -X -At --set=ON_ERROR_STOP=1 -c \
@@ -225,4 +261,32 @@ test "$(psql "$rollback_url" -X -At --set=ON_ERROR_STOP=1 -c \
 test "$(psql "$rollback_url" -X -At --set=ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM public.organizations WHERE slug='bluladder-oregon-test'")" = "0"
 
-echo "BluLadder Klamath Stage 8A hosted-compatibility rehearsal passed: hosted-missing application, direct RLS isolation, DFW preservation, collision/partial stops, convergence, and atomic rollback."
+# An injected grant-repair failure preserves the original seven-privilege ACL
+# atomically; no partially narrowed table is committed.
+grant_rollback_db=bluladder_klamath_stage8a_grant_rollback
+psql "$admin_url" -X --set=ON_ERROR_STOP=1 -c "CREATE DATABASE $grant_rollback_db"
+grant_rollback_url="${BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL%/*}/$grant_rollback_db"
+install_core_fixture "$grant_rollback_url"
+psql "$grant_rollback_url" -X --set=ON_ERROR_STOP=1 --file="$migration"
+failed_grant_payload=$(mktemp)
+trap 'rm -f "$failed_payload" "$failed_grant_payload"' EXIT
+awk '
+  /^COMMIT;$/ {
+    print "SELECT 1/0;"
+    print "COMMIT;"
+    next
+  }
+  { print }
+' "$grant_repair" >"$failed_grant_payload"
+if psql "$grant_rollback_url" -X --set=ON_ERROR_STOP=1 --file="$failed_grant_payload"; then
+  echo "injected Stage 8A grant-repair failure unexpectedly committed" >&2
+  exit 1
+fi
+test "$(psql "$grant_rollback_url" -X -At --set=ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema='public' AND table_name IN ('organization_settings','organization_contacts','organization_territories','organization_services') AND grantee='authenticated'")" = "28"
+for privilege_name in REFERENCES TRIGGER TRUNCATE; do
+  test "$(psql "$grant_rollback_url" -X -At --set=ON_ERROR_STOP=1 -c \
+    "SELECT has_table_privilege('authenticated','public.organization_settings','$privilege_name')")" = "t"
+done
+
+echo "BluLadder Klamath Stage 8A authenticated grant repair rehearsal passed: hosted default drift reproduced, exact CRUD restored, direct RLS isolation and DFW/Oregon state preserved, and both migrations roll back atomically."

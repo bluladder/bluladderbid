@@ -1,10 +1,17 @@
 # Tenant-sensitive inventory (Stage 7A)
 
 Status: contract-only baseline at `ebfeae98e7e90dba66d5a0463ca5555790ee51a1`.
-No hosted state was inspected or changed. The machine-readable classification is
+At that baseline, no hosted state was inspected or changed. The machine-readable classification is
 [`tenant-inventory.json`](./tenant-inventory.json), and
 `npm run check:tenant-inventory` detects unclassified generated-schema or edge
 function additions.
+
+The Stage 8A hosted-compatibility application later added four generated table
+definitions: `organization_settings`, `organization_contacts`,
+`organization_territories`, and `organization_services`. They are classified as
+organization-scoped configuration in the machine-readable inventory. The
+counts below remain the immutable Stage 7A baseline rather than a statement of
+current generated-schema totals.
 
 ## Scope and method
 

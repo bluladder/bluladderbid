@@ -25,6 +25,11 @@ BEGIN
 END
 $roles$;
 
+-- Reproduce the Lovable-hosted default that grants REFERENCES, TRIGGER, and
+-- TRUNCATE in addition to CRUD when new public tables are created.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL PRIVILEGES ON TABLES TO authenticated;
+
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE OR REPLACE FUNCTION auth.uid()
 RETURNS uuid LANGUAGE sql STABLE AS $$
@@ -124,6 +129,20 @@ CREATE TABLE public.organization_services (
   UNIQUE (organization_id, service_key)
 );
 
+-- Match the required post-repair Stage 8A ACL before Phase 1C begins.
+REVOKE ALL PRIVILEGES
+  ON TABLE public.organization_settings,
+           public.organization_contacts,
+           public.organization_territories,
+           public.organization_services
+  FROM authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON TABLE public.organization_settings,
+           public.organization_contacts,
+           public.organization_territories,
+           public.organization_services
+  TO authenticated;
+
 INSERT INTO public.organizations (
   id, slug, display_name, status, is_legacy_default
 ) VALUES
@@ -195,6 +214,14 @@ test "$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
 test "$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
   --set=ON_ERROR_STOP=1 -c \
   "SELECT has_table_privilege('anon','public.organization_customer_sites','SELECT')")" = "f"
+test "$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
+  --set=ON_ERROR_STOP=1 -c \
+  "SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema='public' AND table_name IN ('organization_customer_sites','organization_pricing_profiles') AND grantee='authenticated'")" = "8"
+for privilege_name in REFERENCES TRIGGER TRUNCATE; do
+  test "$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
+    --set=ON_ERROR_STOP=1 -c \
+    "SELECT has_table_privilege('authenticated','public.organization_customer_sites','$privilege_name')")" = "f"
+done
 
 dfw_after=$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
   --set=ON_ERROR_STOP=1 -c \
@@ -268,4 +295,4 @@ test "$(psql "$rollback_url" -X -At --set=ON_ERROR_STOP=1 -c \
 test "$(psql "$rollback_url" -X -At --set=ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('organization_customer_sites','organization_pricing_profiles')")" = "0"
 
-echo "BluLadder Klamath Phase 1C PostgreSQL rehearsal passed: exact inactive seed, DFW preservation, RLS denial, activation constraints, collision rollback, and atomic failure rollback."
+echo "BluLadder Klamath Phase 1C PostgreSQL rehearsal passed: exact inactive seed, hosted default REFERENCES/TRIGGER/TRUNCATE grants removed, DFW preservation, RLS denial, activation constraints, collision rollback, and atomic failure rollback."

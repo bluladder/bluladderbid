@@ -115,6 +115,13 @@ const reviewedPostRuntimeMigrations = new Set([
   // Forward compatibility repair for the genuinely unapplied historical
   // Stage 8A payload. It preserves the hardened helper-free tenant boundary.
   "supabase/migrations/20260814022314_bluladder_klamath_stage_8a_hosted_compatibility.sql",
+  // Lovable-generated execution receipt for the exact reviewed Stage 8A
+  // compatibility payload. The hosted-compatibility checker pins both payload
+  // hashes and permits only the observed terminal-LF normalization.
+  "supabase/migrations/20260814035656_f333948e-a5c5-4e5a-9958-b4ed1ee77dc2.sql",
+  // Forward-only least-privilege repair for the authenticated table grants
+  // hydrated by hosted defaults during the Stage 8A application.
+  "supabase/migrations/20260814041512_bluladder_klamath_stage_8a_authenticated_grants.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
