@@ -7,8 +7,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const files = {
   contract:
     "docs/architecture/bluladder-klamath-messaging-compliance-review.md",
+  launchContract:
+    "docs/architecture/bluladder-klamath-launch-input-contract.md",
   template:
     "docs/operations/bluladder-klamath-messaging-compliance-review.template.json",
+  launchTemplate:
+    "docs/operations/bluladder-klamath-launch-inputs.template.json",
   implementation:
     "packages/tenant-config/bluladderKlamathMessagingComplianceReview.ts",
   tests:
@@ -25,10 +29,12 @@ for (const [key, relative] of Object.entries(files)) {
 }
 
 let template;
+let launchTemplate;
 try {
   template = JSON.parse(content.template ?? "{}");
+  launchTemplate = JSON.parse(content.launchTemplate ?? "{}");
 } catch (error) {
-  errors.push(`messaging compliance template is invalid JSON: ${error.message}`);
+  errors.push(`messaging review JSON is invalid: ${error.message}`);
 }
 
 const forbiddenKey =
@@ -132,6 +138,18 @@ if (
   template?.providerUseCaseEligibilityVerified !== false ||
   template?.contractTestsPassed !== false
 ) errors.push("repository review evidence must remain false");
+for (const gate of [
+  "sms_consent_surface_verified",
+  "sms_help_stop_behavior_verified",
+  "privacy_policy_published",
+  "terms_published",
+  "sms_sample_messages_approved",
+  "twilio_campaign_approved",
+]) {
+  if (launchTemplate?.providerReadiness?.[gate] !== false) {
+    errors.push(`launch template ${gate} must remain false`);
+  }
+}
 
 for (const phrase of [
   "eligible_for_twilio_campaign_submission_review",
@@ -153,6 +171,15 @@ for (const phrase of [
   "provider and runtime unchanged",
 ]) {
   if (!content.contract?.includes(phrase)) errors.push(`contract omits ${phrase}`);
+}
+for (const phrase of [
+  "high-level messaging use cases",
+  "carrier-review or legal copy",
+  "before any SMS consent",
+]) {
+  if (!content.launchContract?.includes(phrase)) {
+    errors.push(`launch contract omits ${phrase}`);
+  }
 }
 for (const phrase of [
   "keeps the checked repository template semantically identical to the candidate",
