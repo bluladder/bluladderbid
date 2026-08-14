@@ -127,8 +127,8 @@ const typesSha = crypto
   .update(content.types ?? "")
   .digest("hex");
 const expectedTypesSha = [
-  "1c2e27c7adfff81d570aec8603670c25",
-  "3257e703af70d94c28ad0aee955f6d4b",
+  "96881d6ca1b643e27256967eec97b978",
+  "1dd264cbcf938779f03f71bcc85bc7dc",
 ].join("");
 if (typesSha !== expectedTypesSha) {
   errors.push("Lovable-generated Stage 8A types drifted");
@@ -136,6 +136,7 @@ if (typesSha !== expectedTypesSha) {
 for (const table of [
   "organization_contacts",
   "organization_customer_sites",
+  "organization_messaging_connectors",
   "organization_pricing_profiles",
   "organization_services",
   "organization_settings",
