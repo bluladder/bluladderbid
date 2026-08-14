@@ -100,15 +100,22 @@ const typesSha = crypto
   .digest("hex");
 if (
   typesSha !==
-  "96881d6ca1b643e27256967eec97b9781dd264cbcf938779f03f71bcc85bc7dc"
+  "d97fe4e01586535713b84f3f62e19cc7b4fe298d1d2adac502b14d5a53894238"
 ) {
-  errors.push("Lovable-generated Phase 1C types drifted");
+  errors.push("Lovable-generated hosted types drifted");
 }
 for (const table of [
   "organization_customer_sites",
   "organization_messaging_connectors",
   "organization_pricing_profiles",
 ]) requireText("types", `${table}: {`);
+for (const text of [
+  "claim_organization_sms_outbox_send: {",
+  "p_messaging_connector_id: string",
+  "p_organization_id: string",
+  "p_outbound_key: string",
+  "Returns: Json",
+]) requireText("types", text);
 
 for (const prohibited of [
   /INSERT\s+INTO\s+public\.organization_contacts/i,
@@ -240,7 +247,8 @@ if (register) {
     register.hosted_execution_version !== "20260814050336" ||
     register.execution_receipt !== relative.receipt ||
     register.execution_receipt_sha256 !== receiptSha ||
-    register.generated_types_sha256 !== typesSha
+    register.generated_types_sha256 !==
+      "96881d6ca1b643e27256967eec97b9781dd264cbcf938779f03f71bcc85bc7dc"
   ) errors.push("Phase 1C hosted execution evidence drifted");
   if (
     register.lifecycle_after_application !== "provisioning" ||
@@ -277,5 +285,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1C gate OK: the exact inactive hosted foundation and execution receipt are reconciled, pricing and generated types are exact, and every activation surface remains blocked.",
+  "BluLadder Klamath Phase 1C gate OK: the exact inactive hosted foundation and execution receipt remain reconciled, the additive hosted type lineage is exact, and every activation surface remains blocked.",
 );
