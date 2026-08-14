@@ -33,7 +33,7 @@ row, persists a provider/customer payload, or admits a write capability.
 
 ## Remaining gates
 
-The protected context/configuration adapters, Grant Key, custom fields,
+The protected context/configuration adapters, Grant Key, field bindings,
 inactive connector row, customer and booking write-plan sources, runtime entry
 points, deployment, owner-controlled acceptance, and activation are separate
 future work. JobTread remains server initiated with no webhook.

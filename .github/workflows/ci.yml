@@ -69,6 +69,13 @@ jobs:
           bun run check:klamath-jobtread-execution-runner
           bun run check:klamath-jobtread-phase1i-stores
           bun run check:klamath-jobtread-phase1i-webhook-receipts
+          bun run check:klamath-jobtread-server-initiated
+          bun run check:klamath-jobtread-read-plan
+          bun run check:klamath-jobtread-write-plan
+          bun run check:klamath-jobtread-composition
+          bun run check:klamath-jobtread-protected-configuration
+          bun run check:klamath-launch-input-contract
+          bun run check:klamath-pricing-duration-review
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration

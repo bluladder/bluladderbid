@@ -1,8 +1,9 @@
 # BluLadder Klamath JobTread execution composition
 
 Status: **dormant repository contract prepared**. No production Edge entry
-point imports this module. It creates no credential, connector, custom field,
-provider request, attempt, hosted write, deployment, or activation.
+point imports this module. The exact non-sensitive custom-field names now
+exist, but it creates no credential, protected binding, connector, provider
+request, attempt, hosted write, deployment, or activation.
 
 ## Exact routing
 
@@ -29,7 +30,7 @@ provider state.
 ## Remaining gates
 
 The composition is intentionally unreachable. Real protected context and
-configuration adapters, custom fields, Grant Key, inactive connector row,
+configuration adapters, protected field bindings, Grant Key, inactive connector row,
 capacity semantics, a separately reviewed production entry point, deployment,
 owner-controlled provider acceptance, and activation remain blocked. There is
-no webhook, Jobber fallback, DFW fallback, customer traffic, or provider action.
+no webhook, Jobber fallback, DFW fallback, customer traffic, or provider request.

@@ -56,6 +56,8 @@ for (const flag of [
   "write_idempotency_required",
   "outcome_uncertain_reconciliation_required",
   "schedule_read_is_busy_evidence_only",
+  "custom_fields_created",
+  "provider_resources_mutated",
 ]) {
   if (evidence?.[flag] !== true) errors.push(`${flag} must be true`);
 }
@@ -66,11 +68,10 @@ for (const flag of [
   "runtime_entrypoint_adopted",
   "grant_created",
   "credential_configured",
-  "custom_fields_created",
+  "protected_custom_field_bindings_recorded",
   "webhook_created",
   "connector_row_created",
   "provider_calls_performed",
-  "provider_resources_mutated",
   "hosted_mutation_performed",
   "deployment_performed",
   "activation_allowed",
