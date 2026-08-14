@@ -171,23 +171,25 @@ are separated in
 
 ## Queued safe stages
 
-The current safe repository stage is the empty CRM connector and idempotency
-lineage candidate. Its hosted preflight and migration application remain
-separately gated. The following stages remain gated:
+Phase 1I schema/grants and the first JobTread mapping wave are complete. The
+current safe repository stage is the dormant JobTread execution and
+reconciliation runner. The following stages remain gated:
 
-1. Run the exact Phase 1I hosted preflight, then separately authorize the empty
-   additive migration only if the target tables remain absent and Klamath is
-   still provisioning with no customer/provider state.
-2. Approve JobTread business mappings operation by operation before credential,
-   webhook, connector-row, runtime, or provider work.
-3. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
+1. Merge the runner only after exact-head CI and Secret Scan prove the dormant
+   contract and all existing DFW/tenant gates.
+2. Implement concrete Phase 1I stores, protected plan assembly, webhook
+   authentication/idempotency, and read-only reconciliation without adding a
+   production entry-point import or provider credential.
+3. Obtain owner-approved Klamath business hours, local contacts, and independent
+   pricing/catalog inputs; preserve all runtime and customer-traffic flags off.
+4. Create the exact JobTread fields, least-privilege Grant Key, webhook, and one
+   inactive connector row only in a separately controlled provider window.
+5. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
    waves after each dependency is proven.
-4. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
+6. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
    with organization-keyed uniqueness, composite lineage, and draft-only seeds.
-5. Remaining tenant-owned tables in narrow nullable waves, each with
-   authoritative-write coverage and verification.
-6. Issue #4 read-only importer and later persistence/runtime stages through the
-   Stage 9A connector contract.
+7. Remaining tenant-owned tables and the read-only importer in narrow waves
+   through the Stage 9A connector contract.
 7. Twilio and Vapi provider prerequisites.
 8. Issue #11 whole-system isolation, migration, and release hardening.
 
