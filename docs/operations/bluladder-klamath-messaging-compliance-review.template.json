@@ -14,6 +14,8 @@
         "operator_followup",
         "authentication"
       ],
+      "recommendedUseCaseCategory": "LOW_VOLUME",
+      "recommendationStatus": "pending_provider_eligibility_and_owner_review",
       "hasEmbeddedLinks": true,
       "hasEmbeddedPhoneNumbers": false,
       "keywordOptInSupported": false,
@@ -73,5 +75,6 @@
     "approvedAt": null
   },
   "publicSurfacesVerified": false,
+  "providerUseCaseEligibilityVerified": false,
   "contractTestsPassed": false
 }

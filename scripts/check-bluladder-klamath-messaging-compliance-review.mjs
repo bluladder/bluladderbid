@@ -64,6 +64,9 @@ if (JSON.stringify(candidate?.campaign?.useCases) !== JSON.stringify(exactUseCas
 }
 if (
   candidate?.campaign?.brandName !== "BluLadder Klamath" ||
+  candidate?.campaign?.recommendedUseCaseCategory !== "LOW_VOLUME" ||
+  candidate?.campaign?.recommendationStatus !==
+    "pending_provider_eligibility_and_owner_review" ||
   candidate?.campaign?.hasEmbeddedLinks !== true ||
   candidate?.campaign?.hasEmbeddedPhoneNumbers !== false ||
   candidate?.campaign?.keywordOptInSupported !== false ||
@@ -126,6 +129,7 @@ for (const review of ["ownerApproval", "legalReview"]) {
 }
 if (
   template?.publicSurfacesVerified !== false ||
+  template?.providerUseCaseEligibilityVerified !== false ||
   template?.contractTestsPassed !== false
 ) errors.push("repository review evidence must remain false");
 
@@ -134,6 +138,7 @@ for (const phrase of [
   "activationAllowed: false",
   "candidate_snapshot_mismatch",
   "public_surfaces_not_verified",
+  "provider_use_case_eligibility_not_verified",
   "repository_runtime_boundary_open",
 ]) {
   if (!content.implementation?.includes(phrase)) {

@@ -27,6 +27,10 @@ Twilio or carrier review will approve it.
 
 - The use cases are quote link, booking management, reminders, genuine operator
   follow-up, and authentication only.
+- Twilio documents `LOW_VOLUME` as a lower-throughput mixed-use category and
+  `MIXED` as the standard mixed-use category. `LOW_VOLUME` is recorded only as
+  the launch-cost recommendation; signed-in account eligibility and expected
+  volume must be verified before owner review may adopt it.
 - The five representative messages identify BluLadder Klamath, use bracketed
   variable content, and disclose HELP/STOP. Link-bearing messages declare that
   links are present; embedded phone numbers are not proposed.
@@ -52,7 +56,9 @@ A protected copy of the template may reach only
 2. qualified legal/compliance review of the exact privacy and terms language;
 3. read-only proof that the exact opt-in, privacy, terms, and support surfaces
    are publicly reachable; and
-4. exact contract-test evidence.
+4. signed-in proof that the intended account is eligible for the recommended
+   use-case category; and
+5. exact contract-test evidence.
 
 The evaluator still returns `activationAllowed: false`. Twilio business and
 campaign review, Messaging Service creation, number selection, credentials,

@@ -26,6 +26,8 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE = {
     description:
       "BluLadder Klamath sends customer-requested secure quote and booking-management links, appointment reminders, one-time authentication codes, and genuine operator follow-up to customers who provide their mobile number and consent in the corresponding web or voice flow. Promotional messages are sent only after a separate unchecked marketing opt-in.",
     useCases: KLAMATH_SMS_USE_CASES,
+    recommendedUseCaseCategory: "LOW_VOLUME",
+    recommendationStatus: "pending_provider_eligibility_and_owner_review",
     hasEmbeddedLinks: true,
     hasEmbeddedPhoneNumbers: false,
     keywordOptInSupported: false,
@@ -87,6 +89,7 @@ export interface KlamathMessagingComplianceReviewEnvelope {
     approvedAt: string | null;
   };
   publicSurfacesVerified: boolean;
+  providerUseCaseEligibilityVerified: boolean;
   contractTestsPassed: boolean;
 }
 
@@ -110,6 +113,7 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_TEMPLATE:
       approvedAt: null,
     },
     publicSurfacesVerified: false,
+    providerUseCaseEligibilityVerified: false,
     contractTestsPassed: false,
   };
 
@@ -118,6 +122,7 @@ const TOP_LEVEL_KEYS = new Set([
   "ownerApproval",
   "legalReview",
   "publicSurfacesVerified",
+  "providerUseCaseEligibilityVerified",
   "contractTestsPassed",
 ]);
 const REVIEW_KEYS = new Set(["status", "recordRef", "approvedAt"]);
@@ -212,6 +217,9 @@ export function evaluateKlamathMessagingComplianceReview(
   inspectReview(input.legalReview, "legal", blockers);
   if (input.publicSurfacesVerified !== true) {
     blockers.push("public_surfaces_not_verified");
+  }
+  if (input.providerUseCaseEligibilityVerified !== true) {
+    blockers.push("provider_use_case_eligibility_not_verified");
   }
   if (input.contractTestsPassed !== true) {
     blockers.push("contract_tests_not_verified");

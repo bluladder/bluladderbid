@@ -25,6 +25,7 @@ function approvedFixture(): KlamathMessagingComplianceReviewEnvelope {
       approvedAt: "2026-08-14T16:01:00Z",
     },
     publicSurfacesVerified: true,
+    providerUseCaseEligibilityVerified: true,
     contractTestsPassed: true,
   };
 }
@@ -50,6 +51,7 @@ describe("Klamath messaging compliance review", () => {
         "contract_tests_not_verified",
         "legal_review_missing",
         "owner_review_missing",
+        "provider_use_case_eligibility_not_verified",
         "public_surfaces_not_verified",
       ],
     });
@@ -72,6 +74,11 @@ describe("Klamath messaging compliance review", () => {
       "authentication",
     ]);
     expect(KLAMATH_SMS_SAMPLE_MESSAGES).toHaveLength(5);
+    expect(KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE.campaign)
+      .toMatchObject({
+        recommendedUseCaseCategory: "LOW_VOLUME",
+        recommendationStatus: "pending_provider_eligibility_and_owner_review",
+      });
     for (const message of KLAMATH_SMS_SAMPLE_MESSAGES) {
       expect(message.length).toBeGreaterThanOrEqual(20);
       expect(message.length).toBeLessThanOrEqual(1024);
@@ -108,12 +115,14 @@ describe("Klamath messaging compliance review", () => {
     fixture.ownerApproval.recordRef = "private-chat";
     fixture.legalReview.approvedAt = "tomorrow";
     fixture.publicSurfacesVerified = false;
+    fixture.providerUseCaseEligibilityVerified = false;
     fixture.contractTestsPassed = false;
     expect(evaluateKlamathMessagingComplianceReview(fixture).blockers).toEqual(
       expect.arrayContaining([
         "owner_review_invalid",
         "legal_review_invalid",
         "public_surfaces_not_verified",
+        "provider_use_case_eligibility_not_verified",
         "contract_tests_not_verified",
       ]),
     );
