@@ -308,6 +308,7 @@ const allowedEdgePaths = new Set([
   "supabase/functions/customer-auth-link/index.ts",
   "supabase/functions/customer-verification-confirm/index.ts",
   "supabase/functions/customer-verification-request/index.ts",
+  "supabase/functions/customer-verification-request/outbox_contract_test.ts",
   "supabase/functions/manage-sms-optout/index.ts",
   "supabase/functions/send-sms/index.ts",
   "supabase/functions/escalation-test-notify/index.ts",
