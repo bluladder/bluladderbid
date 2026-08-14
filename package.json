@@ -47,6 +47,7 @@
     "check:klamath-jobtread-protected-configuration": "node scripts/check-bluladder-klamath-jobtread-protected-configuration.mjs",
     "check:klamath-launch-input-contract": "node scripts/check-bluladder-klamath-launch-input-contract.mjs",
     "check:klamath-pricing-duration-review": "node scripts/check-bluladder-klamath-pricing-duration-review.mjs",
+    "check:klamath-messaging-compliance-review": "node scripts/check-bluladder-klamath-messaging-compliance-review.mjs",
     "check:klamath-hosted-compat": "node scripts/check-bluladder-klamath-hosted-compat.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",

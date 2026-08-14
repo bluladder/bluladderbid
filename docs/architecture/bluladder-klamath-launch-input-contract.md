@@ -39,6 +39,11 @@ in GitHub.
   evidence are explicit independent gates. The first-wave JobTread gate is the
   reviewed server-initiated mode with its webhook absent, not an unsigned
   webhook workaround.
+- The high-level messaging use cases approved in issue #151 do not approve
+  exact carrier-review or legal copy. The separately checked messaging
+  compliance template must complete owner, legal, public-surface, and contract
+  review before any SMS consent, HELP/STOP, privacy, terms, or sample-message
+  provider gate may become true.
 - Unknown fields fail closed. Secret-like and provider-identifier-like field
   names receive a distinct blocker.
 - DFW fallback, Klamath runtime routing, publication, pricing runtime, and

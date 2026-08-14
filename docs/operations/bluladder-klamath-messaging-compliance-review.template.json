@@ -1,0 +1,80 @@
+{
+  "candidate": {
+    "schemaVersion": 1,
+    "tenantKey": "bluladder-klamath",
+    "purpose": "messaging_compliance_owner_legal_review",
+    "providerRequirementsReviewedAsOf": "2026-08-14",
+    "campaign": {
+      "brandName": "BluLadder Klamath",
+      "description": "BluLadder Klamath sends customer-requested secure quote and booking-management links, appointment reminders, one-time authentication codes, and genuine operator follow-up to customers who provide their mobile number and consent in the corresponding web or voice flow. Promotional messages are sent only after a separate unchecked marketing opt-in.",
+      "useCases": [
+        "quote_link",
+        "booking_management",
+        "reminder",
+        "operator_followup",
+        "authentication"
+      ],
+      "recommendedUseCaseCategory": "LOW_VOLUME",
+      "recommendationStatus": "pending_provider_eligibility_and_owner_review",
+      "hasEmbeddedLinks": true,
+      "hasEmbeddedPhoneNumbers": false,
+      "keywordOptInSupported": false,
+      "optInKeywords": [],
+      "sampleMessages": [
+        "BluLadder Klamath: Here is the secure quote link you requested: [secure link]. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out.",
+        "BluLadder Klamath: Manage your requested booking securely here: [secure link]. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out.",
+        "BluLadder Klamath reminder: Your scheduled service is on [date] during [arrival window]. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out.",
+        "BluLadder Klamath: A team member is following up on your request. We will respond through the contact method you selected. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out.",
+        "BluLadder Klamath: Your one-time verification code is [code]. It expires in [minutes] minutes. Msg & data rates may apply. Reply HELP for help or STOP to opt out."
+      ]
+    },
+    "consent": {
+      "messageFlow": "Website users enter a mobile number and explicitly request a quote link, booking-management link, reminder, operator follow-up, or authentication code. The adjacent disclosure identifies BluLadder Klamath, says message frequency varies and message and data rates may apply, and explains HELP and STOP. Transactional consent is limited to the requested service. Marketing requires a separate unchecked marketing opt-in. Voice callers may request a one-time link during an inbound call; the assistant confirms the request before tool execution. Consent is not a condition of purchase. Privacy Policy: https://klamath.bluladder.com/privacy. Terms and Conditions: https://klamath.bluladder.com/terms.",
+      "transactionalDisclosure": "By requesting a text from BluLadder Klamath, you agree to receive messages related to your quote, booking, appointment, support request, or authentication. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out. Consent is not a condition of purchase. See Privacy Policy and Terms and Conditions.",
+      "marketingDisclosure": "Send me occasional promotions and offers from BluLadder Klamath by text. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out. Consent is not required to get a quote or book.",
+      "marketingCheckboxDefaultChecked": false,
+      "consentRequiredForPurchase": false,
+      "helpMessage": "BluLadder Klamath: Help is available at https://klamath.bluladder.com/contact. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out.",
+      "optOutMessage": "BluLadder Klamath: You have been opted out and will receive no further messages. Reply START to opt in again."
+    },
+    "publicSurfaces": {
+      "optInUrl": "https://klamath.bluladder.com/",
+      "privacyPolicyUrl": "https://klamath.bluladder.com/privacy",
+      "termsAndConditionsUrl": "https://klamath.bluladder.com/terms",
+      "supportUrl": "https://klamath.bluladder.com/contact",
+      "privacyPolicyRequiredStatements": [
+        "Mobile information will not be shared with third parties or affiliates for marketing or promotional purposes.",
+        "Message frequency varies.",
+        "Message and data rates may apply.",
+        "Reply STOP to opt out and HELP for help."
+      ],
+      "termsRequiredStatements": [
+        "The messaging program is operated by BluLadder Klamath.",
+        "Messages may include requested quote and booking links, reminders, operator follow-up, authentication, and separately opted-in promotions.",
+        "Message frequency varies and message and data rates may apply.",
+        "Reply STOP to opt out and HELP for help.",
+        "Carriers are not liable for delayed or undelivered messages.",
+        "Consent is not a condition of purchase."
+      ]
+    },
+    "sourceImplementationChanged": false,
+    "publicSurfacesPublished": false,
+    "providerCampaignSubmitted": false,
+    "messagingRuntimeEnabled": false,
+    "customerTrafficAllowed": false,
+    "activationAllowed": false
+  },
+  "ownerApproval": {
+    "status": "pending",
+    "recordRef": null,
+    "approvedAt": null
+  },
+  "legalReview": {
+    "status": "pending",
+    "recordRef": null,
+    "approvedAt": null
+  },
+  "publicSurfacesVerified": false,
+  "providerUseCaseEligibilityVerified": false,
+  "contractTestsPassed": false
+}
