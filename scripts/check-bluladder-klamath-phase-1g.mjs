@@ -86,7 +86,7 @@ for (const text of [
   "dedicated API key",
   "This adapter is repository-only",
   "DFW connector compatibility candidate",
-  "This candidate remains unapplied",
+  "The first hosted application attempt rolled back completely",
 ]) requireText("contract", text);
 
 for (const text of [
@@ -222,12 +222,16 @@ for (const text of [
   "Phase 1G messaging connector state is not empty",
   "bluladder-dfw-callrail-production-v1",
   "bluladder-dfw-callrail-sender-v1",
+  "channel = 'sms'",
+  "non_sms_bound_count",
   "Phase 1G migration activated Klamath messaging",
 ]) requireText("dfwConnectorMigration", text);
 
 for (const text of [
   "BEGIN TRANSACTION READ ONLY",
   "exact_dfw_count",
+  "sms_channel_count",
+  "non_sms_channel_count",
   "connector_bound_count",
   "klamath_provider_identity_count",
   "ROLLBACK",
@@ -237,6 +241,7 @@ for (const text of [
   "BEGIN TRANSACTION READ ONLY",
   "exact_dfw_connector_count",
   "unbound_sms_count",
+  "non_sms_bound_count",
   "klamath_connector_count",
   "ROLLBACK",
 ]) requireText("dfwConnectorVerification", text);
@@ -342,20 +347,20 @@ const exactArtifacts = {
     sha256: "f78343cadfa03bac4698e3c265ec38876ec7eab1cde8acd90a4ce2bfac3a4bc6",
   },
   dfwConnectorMigration: {
-    bytes: 5655,
-    sha256: "10915f67feca62d9c027c287161904b8070ece9da0be21f11fb8c5e4717db270",
+    bytes: 5999,
+    sha256: "51135966ec2f31d0fda7615d04b7ba64d248d1b4cf4557d1bd32b4ac52b9873c",
   },
   dfwConnectorPreflight: {
-    bytes: 1598,
-    sha256: "53474c33e713f257f279c61ebdfff5e6d9d8bb3e3e657738888c168c46c0d73c",
+    bytes: 1803,
+    sha256: "20b7daaa791c8f7ce53fa1403f8f2619115897f4dd55f776d8f5ca2ff0a9469a",
   },
   dfwConnectorVerification: {
-    bytes: 1685,
-    sha256: "ac8ada8826d45415b87188e2588ab597d7568cf06eb32a35628b6633b108edbb",
+    bytes: 1950,
+    sha256: "3383a6174bbd99f903b56c532e519fc72192154a37ff88f9de4fd1d8d15cf741",
   },
   dfwConnectorRehearsal: {
-    bytes: 2442,
-    sha256: "52fefb9e65d3c41a1cf853af73aaa0ea072d9189f857d6818a9330430cc79cff",
+    bytes: 2983,
+    sha256: "727894e9064940992341a30b17608765abf2ba62934784f185959ac50ab960b2",
   },
 };
 for (const [key, expected] of Object.entries(exactArtifacts)) {
@@ -375,13 +380,15 @@ try {
 if (register) {
   if (
     register.phase !== "1G" ||
-    register.status !== "dfw_connector_compatibility_prepared" ||
+    register.status !== "dfw_connector_channel_scoped_repair_prepared" ||
     register.prepared_from_main !==
-      "ad628e85f2845e53b98acf8f4bcae246b0f2d8b7" ||
+      "92251313e9f5f9d10491559a9c5e76589fd97ef9" ||
     register.messaging_connector_contract_prepared !== true ||
     register.additive_migration_prepared !== true ||
     register.hosted_preflight_passed !== true ||
     register.hosted_preflight_sms_message_count !== 134 ||
+    register.hosted_preflight_sms_channel_count !== 122 ||
+    register.hosted_preflight_email_channel_count !== 12 ||
     register.hosted_preflight_parented_count !== 28 ||
     register.hosted_preflight_unparented_count !== 106 ||
     register.hosted_preflight_parent_conflict_count !== 0 ||
@@ -417,6 +424,9 @@ if (register) {
     register.twilio_sender_present !== false ||
     register.dfw_connector_compatibility_migration_prepared !== true ||
     register.dfw_connector_compatibility_migration_applied !== false ||
+    register.dfw_connector_compatibility_first_attempt_rolled_back !== true ||
+    register.dfw_connector_compatibility_first_attempt_error !==
+      "connector_channel_mismatch" ||
     register.dfw_connector_count !== 0 ||
     register.dfw_connector_runtime_allowlist_prepared !== true ||
     register.messaging_runtime_deployed !== false ||

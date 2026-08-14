@@ -19,6 +19,17 @@ psql "${psql_args[@]}" <<'SQL'
 DELETE FROM public.sms_messages
 WHERE outbound_idempotency_key = 'phase1g:scoped-outbox:one';
 DELETE FROM public.organization_messaging_connectors;
+
+-- Reproduce the hosted mixed-channel ledger that exposed the original
+-- blanket-backfill defect. Email rows must never bind to an SMS connector.
+UPDATE public.sms_messages
+SET channel = 'email'
+WHERE id IN (
+  SELECT id
+  FROM public.sms_messages
+  ORDER BY id
+  LIMIT 12
+);
 SQL
 
 psql "${psql_args[@]}" \
@@ -46,7 +57,15 @@ BEGIN
   IF (SELECT count(*) FROM public.sms_messages) <> 134
      OR EXISTS (
        SELECT 1 FROM public.sms_messages
-       WHERE messaging_connector_id IS NULL
+       WHERE channel = 'sms'
+         AND messaging_connector_id IS NULL
+     )
+     OR (SELECT count(*) FROM public.sms_messages
+         WHERE channel = 'email') <> 12
+     OR EXISTS (
+       SELECT 1 FROM public.sms_messages
+       WHERE channel = 'email'
+         AND messaging_connector_id IS NOT NULL
      ) THEN
     RAISE EXCEPTION 'DFW connector rehearsal left historical lineage incomplete';
   END IF;

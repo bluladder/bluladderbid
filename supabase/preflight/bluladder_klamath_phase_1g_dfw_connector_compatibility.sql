@@ -14,6 +14,10 @@ SELECT
     AS connector_count,
   (SELECT count(*) FROM public.sms_messages) AS sms_message_count,
   (SELECT count(*) FROM public.sms_messages
+    WHERE channel = 'sms') AS sms_channel_count,
+  (SELECT count(*) FROM public.sms_messages
+    WHERE channel IS DISTINCT FROM 'sms') AS non_sms_channel_count,
+  (SELECT count(*) FROM public.sms_messages
     WHERE organization_id IS DISTINCT FROM
       'b1addf00-0000-4000-8000-000000000001'::uuid)
     AS wrong_sms_organization_count,
