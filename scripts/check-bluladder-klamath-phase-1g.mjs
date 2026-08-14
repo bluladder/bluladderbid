@@ -256,8 +256,8 @@ const exactArtifacts = {
     sha256: "1543d8e3c7c00b11d495a88fb445b050fbfb13d79b98ff7f17f17641f256c1cb",
   },
   scopedRehearsal: {
-    bytes: 4617,
-    sha256: "aacdb637456e0869807805792f6ffd77abba250200bce5fa1846d6aa164725c3",
+    bytes: 6165,
+    sha256: "f78343cadfa03bac4698e3c265ec38876ec7eab1cde8acd90a4ce2bfac3a4bc6",
   },
 };
 for (const [key, expected] of Object.entries(exactArtifacts)) {

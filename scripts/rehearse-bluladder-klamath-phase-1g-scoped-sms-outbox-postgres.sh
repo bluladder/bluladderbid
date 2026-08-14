@@ -12,6 +12,45 @@ psql_args=(
   --set=ON_ERROR_STOP=1
 )
 
+# The additive-lineage rehearsal intentionally models only the columns needed
+# by that migration. Extend its disposable sms_messages fixture to the exact
+# outbox surface used by the scoped claim before applying this later wave.
+psql "${psql_args[@]}" <<'SQL'
+DO $$ BEGIN
+  CREATE TYPE public.sms_status AS ENUM (
+    'pending', 'sent', 'failed', 'cancelled', 'processing', 'accepted', 'inbound'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE public.sms_messages
+  ALTER COLUMN status DROP DEFAULT,
+  ALTER COLUMN status TYPE public.sms_status USING status::public.sms_status,
+  ALTER COLUMN status SET DEFAULT 'pending'::public.sms_status,
+  ADD COLUMN to_number text,
+  ADD COLUMN body text,
+  ADD COLUMN message_kind text NOT NULL DEFAULT 'transactional',
+  ADD COLUMN outbound_idempotency_key text,
+  ADD COLUMN outbox_state text,
+  ADD COLUMN send_claim_token uuid,
+  ADD COLUMN send_claim_at timestamptz,
+  ADD COLUMN provider_message_id text,
+  ADD COLUMN provider_conversation_id text,
+  ADD COLUMN provider_status text,
+  ADD COLUMN provider_response_kind text,
+  ADD COLUMN provider_accepted_at timestamptz,
+  ADD COLUMN provider_dispatched_at timestamptz,
+  ADD COLUMN sent_at timestamptz,
+  ADD COLUMN send_error_code text,
+  ADD COLUMN send_error_at timestamptz,
+  ADD COLUMN error text,
+  ADD COLUMN updated_at timestamptz NOT NULL DEFAULT now();
+
+CREATE UNIQUE INDEX uq_sms_messages_outbound_idempotency_key
+  ON public.sms_messages(outbound_idempotency_key)
+  WHERE outbound_idempotency_key IS NOT NULL;
+SQL
+
 psql "${psql_args[@]}" --file supabase/preflight/bluladder_klamath_phase_1g_scoped_sms_outbox.sql
 
 psql "${psql_args[@]}" --file supabase/migrations/20260814074000_bluladder_klamath_phase_1g_scoped_sms_outbox.sql
