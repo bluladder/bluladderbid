@@ -66,6 +66,7 @@ jobs:
           bun run check:klamath-phase-1i-grants
           bun run check:klamath-jobtread-capability
           bun run check:klamath-jobtread-business-mappings
+          bun run check:klamath-jobtread-execution-runner
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
