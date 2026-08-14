@@ -40,7 +40,20 @@
   "dormant_transport_prepared": true,
   "dormant_adapter_prepared": true,
   "runtime_entrypoint_adopted": false,
-  "business_mappings_approved": [],
+  "business_mapping_contract_prepared": true,
+  "business_mappings_approved": [
+    "health",
+    "customer_sync",
+    "availability_read",
+    "booking_create",
+    "booking_update"
+  ],
+  "business_mappings_blocked": [
+    "quote_sync",
+    "booking_cancel",
+    "invoice_handoff",
+    "communications_handoff"
+  ],
   "provider_calls_performed": false,
   "provider_resources_mutated": false,
   "hosted_mutation_performed": false,

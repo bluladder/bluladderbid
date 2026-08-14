@@ -106,7 +106,8 @@ All of the following remain blocked:
 1. creating or reading a JobTread Grant Key;
 2. creating a JobTread webhook or protected secret;
 3. inserting or activating a Klamath connector row;
-4. approving operation-specific business mappings;
+4. completing the still-blocked quote, cancellation, invoice,
+   communications, case-study, and file/photo business mappings;
 5. adopting the adapter in a runtime entry point;
 6. deploying a function or accepting provider/customer traffic;
 7. publishing the site, purchasing provider resources, sending messages, or
