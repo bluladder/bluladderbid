@@ -52,8 +52,27 @@ for (const flag of [
 ]) {
   if (evidence?.[flag] !== false) errors.push(`${flag} must remain false`);
 }
-if (evidence?.business_mappings_approved?.length !== 0) {
-  errors.push("JobTread business mappings must remain unapproved");
+const approvedMappings = [
+  "health",
+  "customer_sync",
+  "availability_read",
+  "booking_create",
+  "booking_update",
+];
+const blockedMappings = [
+  "quote_sync",
+  "booking_cancel",
+  "invoice_handoff",
+  "communications_handoff",
+];
+if (
+  evidence?.business_mapping_contract_prepared !== true ||
+  JSON.stringify(evidence?.business_mappings_approved) !==
+    JSON.stringify(approvedMappings) ||
+  JSON.stringify(evidence?.business_mappings_blocked) !==
+    JSON.stringify(blockedMappings)
+) {
+  errors.push("JobTread business mapping evidence is not the reviewed subset");
 }
 for (const category of [
   "account",
@@ -118,5 +137,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Klamath JobTread contract OK: provider primitives verified, dormant guarded adapter prepared, credentials/runtime/traffic disabled.",
+  "Klamath JobTread contract OK: provider primitives and bounded dormant mapping wave verified; credentials/runtime/traffic disabled.",
 );
