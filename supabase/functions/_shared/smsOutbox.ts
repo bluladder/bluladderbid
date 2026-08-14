@@ -36,6 +36,10 @@ import {
 
 type SB = any;
 
+export const DFW_CALLRAIL_CREDENTIAL_REFERENCE =
+  "bluladder-dfw-callrail-production-v1";
+export const DFW_CALLRAIL_SENDER_REFERENCE = "bluladder-dfw-callrail-sender-v1";
+
 export type OutboxState =
   | "pending_send"
   | "sending"
@@ -277,8 +281,17 @@ export async function sendOutboxSms(
     newState = "send_failed";
     errText = "provider_adapter_unavailable";
   } else {
-    const callrail = input.callRail ?? getCallRailConfig();
-    if (!callrail) {
+    const approvedCallRail = selection.connector.credentialReference ===
+        DFW_CALLRAIL_CREDENTIAL_REFERENCE &&
+      selection.connector.senderIdentityReference ===
+        DFW_CALLRAIL_SENDER_REFERENCE;
+    const callrail = approvedCallRail
+      ? input.callRail ?? getCallRailConfig()
+      : null;
+    if (!approvedCallRail) {
+      newState = "send_failed";
+      errText = "callrail_connector_unapproved";
+    } else if (!callrail) {
       newState = "send_failed";
       errText = "callrail_config_missing";
     } else {

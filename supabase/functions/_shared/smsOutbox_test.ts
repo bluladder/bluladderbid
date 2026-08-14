@@ -5,7 +5,11 @@ import {
   assert,
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { sendOutboxSms } from "./smsOutbox.ts";
+import {
+  DFW_CALLRAIL_CREDENTIAL_REFERENCE,
+  DFW_CALLRAIL_SENDER_REFERENCE,
+  sendOutboxSms,
+} from "./smsOutbox.ts";
 import {
   KLAMATH_TWILIO_CREDENTIAL_REFERENCE,
   type TwilioSmsConfig,
@@ -37,7 +41,12 @@ function makeSupabase(opts: {
   rpcLog?: any[];
   missingQuoteClaim?: boolean;
   lineageLog?: any[];
-  connectorBehavior?: "active" | "missing" | "inactive" | "twilio";
+  connectorBehavior?:
+    | "active"
+    | "missing"
+    | "inactive"
+    | "twilio"
+    | "unapproved";
 }) {
   const rpcLog = opts.rpcLog ?? [];
   const lineageLog = opts.lineageLog ?? [];
@@ -60,10 +69,14 @@ function makeSupabase(opts: {
                 priority: 10,
                 credential_reference: behavior === "twilio"
                   ? KLAMATH_TWILIO_CREDENTIAL_REFERENCE
-                  : "reviewed-credential-reference",
+                  : behavior === "unapproved"
+                  ? "unapproved-callrail-credential"
+                  : DFW_CALLRAIL_CREDENTIAL_REFERENCE,
                 sender_identity_reference: behavior === "twilio"
                   ? twilio.messagingServiceSid
-                  : "reviewed-sender-reference",
+                  : behavior === "unapproved"
+                  ? "unapproved-callrail-sender"
+                  : DFW_CALLRAIL_SENDER_REFERENCE,
               }],
               error: null,
             }).then(resolve);
@@ -171,8 +184,10 @@ function makeSupabase(opts: {
 
 // Stub global fetch (CallRail) — behavior controlled by a module-level flag.
 let fetchMode: "ok" | "reject" | "throw" | "malformed" = "ok";
+let fetchCount = 0;
 // deno-lint-ignore no-explicit-any
 (globalThis as any).fetch = async (_url: string, _init: any) => {
+  fetchCount += 1;
   if (fetchMode === "throw") throw new Error("network_down");
   if (fetchMode === "reject") {
     return new Response("nope", { status: 500 });
@@ -368,6 +383,32 @@ Deno.test("outbox: missing organization connector blocks before claim", async ()
   assertEquals(r.sent, false);
   assertEquals(r.error, "connector_missing");
   assertEquals(rpcLog.length, 0);
+});
+
+Deno.test("outbox: unapproved CallRail references fail before provider dispatch", async () => {
+  const rpcLog: any[] = [];
+  fetchMode = "ok";
+  fetchCount = 0;
+  const r = await sendOutboxSms(
+    makeSupabase({ connectorBehavior: "unapproved", rpcLog }),
+    {
+      organizationId,
+      outboundKey: "unapproved-callrail",
+      toNumber: "+15551234567",
+      body: "hi",
+      messageKind: "test",
+      callRail,
+    },
+  );
+  assertEquals(r.sent, false);
+  assertEquals(r.outboxState, "send_failed");
+  assertEquals(r.error, "callrail_connector_unapproved");
+  assertEquals(fetchCount, 0);
+  assertEquals(
+    rpcLog.find((x) => x.name === "finalize_sms_outbox_send")?.args
+      ?.p_new_state,
+    "send_failed",
+  );
 });
 
 Deno.test("outbox: Twilio connector without server config records failure without dispatch", async () => {
