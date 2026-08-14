@@ -9,7 +9,9 @@ const enc = new TextEncoder();
 /** SHA-256 hex hash. */
 export async function sha256Hex(input: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", enc.encode(input));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(buf)).map((b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
 }
 
 /** Cryptographically-random 6-digit numeric OTP. */
@@ -50,7 +52,9 @@ const DEFAULT_CONFIG: VerificationConfig = {
   booking_link_ttl_hours: 72,
 };
 
-export async function loadVerificationConfig(supabase: SB): Promise<VerificationConfig> {
+export async function loadVerificationConfig(
+  supabase: SB,
+): Promise<VerificationConfig> {
   try {
     const { data } = await supabase
       .from("customer_verification_config")
@@ -76,18 +80,35 @@ export function clientIp(req: Request): string {
 export async function getActivePortalSession(supabase: SB, rawToken: string) {
   if (!rawToken || rawToken.length < 20) return null;
   const hash = await sha256Hex(rawToken);
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("customer_portal_sessions")
-    .select("id, customer_account_id, last_seen_at, absolute_expires_at, revoked_at")
+    .select(
+      "id, organization_id, customer_account_id, last_seen_at, absolute_expires_at, revoked_at",
+    )
     .eq("session_token_hash", hash)
     .maybeSingle();
-  if (!data || data.revoked_at) return null;
+  if (error || !data || data.revoked_at) return null;
+  if (
+    typeof data.organization_id !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(data.organization_id)
+  ) return null;
   if (new Date(data.absolute_expires_at).getTime() < Date.now()) return null;
   const cfg = await loadVerificationConfig(supabase);
   const idleCutoff = Date.now() - cfg.session_inactivity_seconds * 1000;
   if (new Date(data.last_seen_at).getTime() < idleCutoff) return null;
-  await supabase.from("customer_portal_sessions").update({ last_seen_at: new Date().toISOString() }).eq("id", data.id);
-  return data as { id: string; customer_account_id: string };
+  const { error: refreshError } = await supabase.from(
+    "customer_portal_sessions",
+  )
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq("id", data.id)
+    .eq("organization_id", data.organization_id);
+  if (refreshError) return null;
+  return data as {
+    id: string;
+    organization_id: string;
+    customer_account_id: string;
+  };
 }
 
 export function extractPortalToken(req: Request): string | null {
@@ -99,7 +120,9 @@ export function extractPortalToken(req: Request): string | null {
 }
 
 export function portalCookie(token: string, maxAgeSeconds: number): string {
-  return `bl_portal=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}`;
+  return `bl_portal=${
+    encodeURIComponent(token)
+  }; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}`;
 }
 
 export function clearPortalCookie(): string {

@@ -12,6 +12,8 @@ import {
   type JobberVisitBlockSnapshot,
   projectCustomerPortalBookings,
 } from "../_shared/customerPortalAppointments.ts";
+import { DFW_ORGANIZATION_ID } from "../_shared/organizationRouting.ts";
+import { resolvePortalOrganizationAuthority } from "../_shared/portalOrganizationAuthority.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,12 +41,18 @@ serve(async (req) => {
   if (!user) return json({ error: "unauthorized" }, 401);
 
   const service = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const authority = await resolvePortalOrganizationAuthority(service, req);
+  if (authority.status !== "resolved") {
+    return json({ error: "site_unavailable" }, 403);
+  }
 
-  const { data: account } = await service
+  const { data: account, error: accountError } = await service
     .from("customer_accounts")
-    .select("id, customer_id, verified_phone, verified_email")
+    .select("id, organization_id, customer_id, verified_phone, verified_email")
     .eq("auth_user_id", user.id)
+    .eq("organization_id", authority.organizationId)
     .maybeSingle();
+  if (accountError) return json({ error: "temporarily_unavailable" }, 503);
   if (!account) return json({ error: "not_linked" }, 404);
 
   const orFilters: string[] = [];
@@ -56,8 +64,12 @@ serve(async (req) => {
   }
   let customerIds: string[] = [account.customer_id];
   if (orFilters.length > 0) {
-    const { data: matches } = await service
-      .from("customers").select("id").or(orFilters.join(","));
+    const { data: matches, error: matchesError } = await service
+      .from("customers")
+      .select("id")
+      .eq("organization_id", authority.organizationId)
+      .or(orFilters.join(","));
+    if (matchesError) return json({ error: "temporarily_unavailable" }, 503);
     if (matches?.length) {
       customerIds = Array.from(
         new Set([
@@ -72,12 +84,13 @@ serve(async (req) => {
     service.from("customers").select("first_name, last_name, address").eq(
       "id",
       account.customer_id,
-    ).maybeSingle(),
+    ).eq("organization_id", authority.organizationId).maybeSingle(),
     service.from("quotes")
       .select(
         "id, created_at, total, status, services_json, line_item_snapshot, home_details_json",
       )
       .in("customer_id", customerIds)
+      .eq("organization_id", authority.organizationId)
       .gte(
         "created_at",
         new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
@@ -88,29 +101,39 @@ serve(async (req) => {
         "id, reference_number, scheduled_start, scheduled_end, status, services_json, total, jobber_visit_id, jobber_job_id, home_details_json",
       )
       .in("customer_id", customerIds)
+      .eq("organization_id", authority.organizationId)
       .in("status", ["scheduled", "confirmed", "in_progress"])
       .order("scheduled_start", { ascending: true }).limit(20),
     service.from("bookings")
       .select(
         "id, reference_number, scheduled_start, status, services_json, total, jobber_visit_id, jobber_job_id, home_details_json",
       )
-      .in("customer_id", customerIds).eq("status", "completed")
+      .in("customer_id", customerIds)
+      .eq("organization_id", authority.organizationId)
+      .eq("status", "completed")
       .order("scheduled_start", { ascending: false }).limit(20),
   ]);
 
-  if (quotes.error || upcoming.error || completed.error) {
+  if (
+    customer.error || quotes.error || upcoming.error || completed.error ||
+    !customer.data
+  ) {
     console.error("[customer-portal-data-authed] data load error", {
+      customer: customer.error?.message,
       quotes: quotes.error?.message,
       upcoming: upcoming.error?.message,
       completed: completed.error?.message,
     });
+    return json({ error: "temporarily_unavailable" }, 503);
   }
 
   const bookingRows = [
     ...((upcoming.data ?? []) as BookingRow[]),
     ...((completed.data ?? []) as BookingRow[]),
   ];
-  const busyBlocks = await loadBusyBlocksByVisit(service, bookingRows);
+  const busyBlocks = authority.organizationId === DFW_ORGANIZATION_ID
+    ? await loadBusyBlocksByVisit(service, bookingRows)
+    : [];
   const fallbackAddress = customer.data?.address ?? null;
 
   return json({

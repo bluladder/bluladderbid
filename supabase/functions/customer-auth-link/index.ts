@@ -9,10 +9,12 @@
 //  - writes to customer_auth_link_events for admin audit
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { resolvePortalOrganizationAuthority } from "../_shared/portalOrganizationAuthority.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -26,7 +28,9 @@ function normEmail(e: string | null | undefined): string | null {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
   const auth = req.headers.get("Authorization");
   if (!auth?.startsWith("Bearer ")) {
     return json({ error: "unauthorized" }, 401);
@@ -41,8 +45,14 @@ serve(async (req) => {
   if (uErr || !user) return json({ error: "unauthorized" }, 401);
 
   const authEmail = normEmail(user.email);
-  const provider = (user.app_metadata as { provider?: string } | null)?.provider ?? "unknown";
+  const provider =
+    (user.app_metadata as { provider?: string } | null)?.provider ?? "unknown";
   const service = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const authority = await resolvePortalOrganizationAuthority(service, req);
+  if (authority.status !== "resolved") {
+    return json({ error: "site_unavailable" }, 403);
+  }
+  const organizationId = authority.organizationId;
 
   // The customers table requires a non-null email, and customer_accounts requires
   // either verified_email or verified_phone. If the identity has no email
@@ -50,18 +60,24 @@ serve(async (req) => {
   // hitting a NOT NULL / CHECK violation.
   if (!authEmail) {
     await service.from("customer_auth_link_events").insert({
-      auth_user_id: user.id, auth_email: null, auth_provider: provider,
-      outcome: "error", detail: "auth identity has no email",
+      organization_id: organizationId,
+      auth_user_id: user.id,
+      auth_email: null,
+      auth_provider: provider,
+      outcome: "error",
+      detail: "auth identity has no email",
     });
     return json({ error: "no_email", contact_support: true }, 400);
   }
 
   // Idempotency: already linked → return.
-  const { data: existing } = await service
+  const { data: existing, error: existingError } = await service
     .from("customer_accounts")
     .select("id, customer_id")
     .eq("auth_user_id", user.id)
+    .eq("organization_id", organizationId)
     .maybeSingle();
+  if (existingError) return json({ error: "link_failed" }, 500);
   if (existing) {
     return json({ status: "already_linked", customer_account_id: existing.id });
   }
@@ -70,19 +86,32 @@ serve(async (req) => {
   // access flow. Do not insert a duplicate row with the same verified_email —
   // attach the authenticated identity to that existing immutable customer link.
   if (authEmail) {
-    const { data: existingEmailAccounts } = await service
-      .from("customer_accounts")
-      .select("id, customer_id, auth_user_id")
-      .eq("verified_email", authEmail);
+    const { data: existingEmailAccounts, error: emailAccountsError } =
+      await service
+        .from("customer_accounts")
+        .select("id, customer_id, auth_user_id")
+        .eq("organization_id", organizationId)
+        .eq("verified_email", authEmail);
+    if (emailAccountsError) return json({ error: "link_failed" }, 500);
 
     const emailAccounts = existingEmailAccounts ?? [];
     if (emailAccounts.length === 1) {
-      const emailAccount = emailAccounts[0] as { id: string; customer_id: string; auth_user_id: string | null };
+      const emailAccount = emailAccounts[0] as {
+        id: string;
+        customer_id: string;
+        auth_user_id: string | null;
+      };
       if (emailAccount.auth_user_id && emailAccount.auth_user_id !== user.id) {
         await service.from("customer_auth_link_events").insert({
-          auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
-          outcome: "ambiguous", customer_id: emailAccount.customer_id, matched_count: 1,
-          detail: "verified email is already linked to another auth user; manual review required",
+          organization_id: organizationId,
+          auth_user_id: user.id,
+          auth_email: authEmail,
+          auth_provider: provider,
+          outcome: "ambiguous",
+          customer_id: emailAccount.customer_id,
+          matched_count: 1,
+          detail:
+            "verified email is already linked to another auth user; manual review required",
         });
         return json({ status: "ambiguous", contact_support: true }, 200);
       }
@@ -96,6 +125,7 @@ serve(async (req) => {
           last_verified_at: new Date().toISOString(),
         })
         .eq("id", emailAccount.id)
+        .eq("organization_id", organizationId)
         .select("id")
         .single();
 
@@ -106,55 +136,88 @@ serve(async (req) => {
           .from("customer_accounts")
           .select("id, auth_user_id")
           .eq("id", emailAccount.id)
+          .eq("organization_id", organizationId)
           .maybeSingle();
         if (reread?.auth_user_id === user.id) {
-          return json({ status: "linked_existing", customer_account_id: reread.id });
+          return json({
+            status: "linked_existing",
+            customer_account_id: reread.id,
+          });
         }
         await service.from("customer_auth_link_events").insert({
-          auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
-          outcome: "error", customer_id: emailAccount.customer_id,
-          detail: updateErr?.message ?? "existing email account link update failed",
+          organization_id: organizationId,
+          auth_user_id: user.id,
+          auth_email: authEmail,
+          auth_provider: provider,
+          outcome: "error",
+          customer_id: emailAccount.customer_id,
+          detail: updateErr?.message ??
+            "existing email account link update failed",
         });
         return json({ error: "link_failed" }, 500);
       }
 
       await service.from("customer_auth_link_events").insert({
-        auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
-        outcome: "linked_existing", customer_id: emailAccount.customer_id, matched_count: 1,
+        organization_id: organizationId,
+        auth_user_id: user.id,
+        auth_email: authEmail,
+        auth_provider: provider,
+        outcome: "linked_existing",
+        customer_id: emailAccount.customer_id,
+        matched_count: 1,
         detail: "linked auth user to existing verified email portal account",
       });
-      return json({ status: "linked_existing", customer_account_id: updated.id });
+      return json({
+        status: "linked_existing",
+        customer_account_id: updated.id,
+      });
     }
 
     if (emailAccounts.length > 1) {
       await service.from("customer_auth_link_events").insert({
-        auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
-        outcome: "ambiguous", matched_count: emailAccounts.length,
-        detail: "multiple customer_accounts rows share this verified email; manual review required",
+        organization_id: organizationId,
+        auth_user_id: user.id,
+        auth_email: authEmail,
+        auth_provider: provider,
+        outcome: "ambiguous",
+        matched_count: emailAccounts.length,
+        detail:
+          "multiple customer_accounts rows share this verified email; manual review required",
       });
       return json({ status: "ambiguous", contact_support: true }, 200);
     }
   }
 
   // Deterministic match by normalized email.
-  let outcome: "linked_existing" | "linked_new_account" | "ambiguous" | "error" = "error";
+  let outcome:
+    | "linked_existing"
+    | "linked_new_account"
+    | "ambiguous"
+    | "error" = "error";
   let matched_count = 0;
   let customerId: string | null = null;
 
   if (authEmail) {
-    const { data: matches } = await service
+    const { data: matches, error: matchesError } = await service
       .from("customers")
       .select("id")
+      .eq("organization_id", organizationId)
       .ilike("email", authEmail);
+    if (matchesError) return json({ error: "link_failed" }, 500);
     matched_count = matches?.length ?? 0;
     if (matched_count === 1) {
       customerId = matches![0].id;
       outcome = "linked_existing";
     } else if (matched_count > 1) {
       await service.from("customer_auth_link_events").insert({
-        auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
-        outcome: "ambiguous", matched_count,
-        detail: "multiple customer rows share this email; manual review required",
+        organization_id: organizationId,
+        auth_user_id: user.id,
+        auth_email: authEmail,
+        auth_provider: provider,
+        outcome: "ambiguous",
+        matched_count,
+        detail:
+          "multiple customer rows share this email; manual review required",
       });
       return json({ status: "ambiguous", contact_support: true }, 200);
     }
@@ -164,7 +227,14 @@ serve(async (req) => {
   if (!customerId) {
     const { data: created, error: cErr } = await service
       .from("customers")
-      .insert({ email: authEmail, first_name: null, last_name: null, phone: null, address: null })
+      .insert({
+        organization_id: organizationId,
+        email: authEmail,
+        first_name: null,
+        last_name: null,
+        phone: null,
+        address: null,
+      })
       .select("id")
       .single();
     if (cErr || !created) {
@@ -173,6 +243,7 @@ serve(async (req) => {
       const { data: raced } = await service
         .from("customers")
         .select("id")
+        .eq("organization_id", organizationId)
         .ilike("email", authEmail)
         .limit(1)
         .maybeSingle();
@@ -180,11 +251,15 @@ serve(async (req) => {
         customerId = raced.id;
         outcome = "linked_existing";
       } else {
-      await service.from("customer_auth_link_events").insert({
-        auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
-        outcome: "error", detail: cErr?.message ?? "customer insert failed",
-      });
-      return json({ error: "link_failed" }, 500);
+        await service.from("customer_auth_link_events").insert({
+          organization_id: organizationId,
+          auth_user_id: user.id,
+          auth_email: authEmail,
+          auth_provider: provider,
+          outcome: "error",
+          detail: cErr?.message ?? "customer insert failed",
+        });
+        return json({ error: "link_failed" }, 500);
       }
     } else {
       customerId = created.id;
@@ -195,6 +270,7 @@ serve(async (req) => {
   const { data: acct, error: aErr } = await service
     .from("customer_accounts")
     .insert({
+      organization_id: organizationId,
       customer_id: customerId,
       verified_email: authEmail,
       auth_user_id: user.id,
@@ -210,22 +286,36 @@ serve(async (req) => {
     const { data: racedAcct } = await service
       .from("customer_accounts")
       .select("id, auth_user_id, verified_email")
+      .eq("organization_id", organizationId)
       .or(`auth_user_id.eq.${user.id},verified_email.eq.${authEmail}`)
       .limit(1)
       .maybeSingle();
     if (racedAcct?.id) {
-      return json({ status: "already_linked", customer_account_id: racedAcct.id });
+      return json({
+        status: "already_linked",
+        customer_account_id: racedAcct.id,
+      });
     }
     await service.from("customer_auth_link_events").insert({
-      auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
-      outcome: "error", customer_id: customerId, detail: aErr?.message ?? "account insert failed",
+      organization_id: organizationId,
+      auth_user_id: user.id,
+      auth_email: authEmail,
+      auth_provider: provider,
+      outcome: "error",
+      customer_id: customerId,
+      detail: aErr?.message ?? "account insert failed",
     });
     return json({ error: "link_failed" }, 500);
   }
 
   await service.from("customer_auth_link_events").insert({
-    auth_user_id: user.id, auth_email: authEmail, auth_provider: provider,
-    outcome, customer_id: customerId, matched_count,
+    organization_id: organizationId,
+    auth_user_id: user.id,
+    auth_email: authEmail,
+    auth_provider: provider,
+    outcome,
+    customer_id: customerId,
+    matched_count,
   });
 
   return json({ status: outcome, customer_account_id: acct.id });
@@ -233,6 +323,7 @@ serve(async (req) => {
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
-    status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }

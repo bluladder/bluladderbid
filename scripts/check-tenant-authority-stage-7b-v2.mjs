@@ -128,6 +128,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Lovable-generated receipt for the exact inactive Phase 1C payload, with
   // only the provider's terminal-LF normalization permitted by its checker.
   "supabase/migrations/20260814050336_e5e2c901-cd2c-479c-a5be-71746296fd9b.sql",
+  // Phase 1F: additive, fail-closed customer portal lineage. Hosted application
+  // and runtime deployment remain separately gated.
+  "supabase/migrations/20260814060000_bluladder_klamath_phase_1f_portal_tenant_lineage.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
@@ -252,6 +255,9 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voiceTransferResolver.ts",
   "supabase/functions/_shared/voiceTransferResolver_test.ts",
   "supabase/functions/_shared/conversationContext.ts",
+  "supabase/functions/_shared/customerVerification.ts",
+  "supabase/functions/_shared/portalOrganizationAuthority.ts",
+  "supabase/functions/_shared/portalOrganizationAuthority_test.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation_test.ts",
   "supabase/functions/_shared/workflow/customerResolver.ts",
@@ -268,6 +274,11 @@ const allowedEdgePaths = new Set([
   "supabase/functions/jobber-create-booking/launch_safety_test.ts",
   "supabase/functions/customer-portal-data/index.ts",
   "supabase/functions/customer-portal-data-authed/index.ts",
+  "supabase/functions/customer-access-live-test/index.ts",
+  "supabase/functions/customer-auth-link/index.ts",
+  "supabase/functions/customer-verification-confirm/index.ts",
+  "supabase/functions/customer-verification-request/index.ts",
+  "supabase/functions/manage-sms-optout/index.ts",
   "supabase/functions/send-sms/index.ts",
   "supabase/functions/escalation-test-notify/index.ts",
   "supabase/functions/voice-llm-adapter/index.ts",

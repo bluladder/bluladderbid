@@ -1,8 +1,12 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { normalizePhone, isPhoneOptedOut } from "../_shared/sms.ts";
+import { isPhoneOptedOut, normalizePhone } from "../_shared/sms.ts";
 import { rateLimit, sharedRateLimit } from "../_shared/rateLimit.ts";
-import { extractPortalToken, getActivePortalSession } from "../_shared/customerVerification.ts";
+import {
+  extractPortalToken,
+  getActivePortalSession,
+} from "../_shared/customerVerification.ts";
+import { resolvePortalOrganizationAuthority } from "../_shared/portalOrganizationAuthority.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,10 +28,17 @@ serve(async (req) => {
   // customers by guessing email addresses.
   const rl = rateLimit(req, { limit: 6, windowMs: 60_000 });
   if (!rl.allowed) {
-    return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
-      status: 429,
-      headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" },
-    });
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please try again shortly." }),
+      {
+        status: 429,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Retry-After": "60",
+        },
+      },
+    );
   }
   const shared = await sharedRateLimit(req, {
     key: "manage-sms-optout",
@@ -35,10 +46,17 @@ serve(async (req) => {
     windowMs: 60_000,
   });
   if (!shared.allowed) {
-    return new Response(JSON.stringify({ error: "Too many requests. Please try again shortly." }), {
-      status: 429,
-      headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" },
-    });
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please try again shortly." }),
+      {
+        status: 429,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Retry-After": "60",
+        },
+      },
+    );
   }
 
   try {
@@ -46,24 +64,28 @@ serve(async (req) => {
 
     if (!email || typeof email !== "string") {
       return new Response(JSON.stringify({ error: "Email is required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     if (!["status", "opt_out", "opt_in"].includes(action)) {
       return new Response(JSON.stringify({ error: "Invalid action" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     if (!["sms", "email"].includes(channel)) {
       return new Response(JSON.stringify({ error: "Invalid channel" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return new Response(JSON.stringify({ error: "Invalid email format" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -71,27 +93,41 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    const authority = await resolvePortalOrganizationAuthority(supabase, req);
+    if (authority.status !== "resolved") {
+      return new Response(JSON.stringify({ error: "Site unavailable." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Require a verified portal session for anything except a bare
     // unsubscribe (opt_out). Opt-out stays permissive so recipients can
     // always stop messages, matching STOP-keyword norms; status disclosure
     // and opt_in require proof that the caller owns the address.
     const rawToken = extractPortalToken(req);
-    const session = rawToken ? await getActivePortalSession(supabase, rawToken) : null;
+    const session = rawToken
+      ? await getActivePortalSession(supabase, rawToken)
+      : null;
     let sessionEmailMatches = false;
-    if (session) {
+    if (session?.organization_id === authority.organizationId) {
       const { data: acct } = await supabase
         .from("customer_accounts")
         .select("customer_id")
         .eq("id", session.customer_account_id)
+        .eq("organization_id", authority.organizationId)
         .maybeSingle();
       if (acct?.customer_id) {
         const { data: sessCustomer } = await supabase
           .from("customers")
           .select("email")
           .eq("id", acct.customer_id)
+          .eq("organization_id", authority.organizationId)
           .maybeSingle();
-        if (sessCustomer?.email && sessCustomer.email.toLowerCase() === normalizedEmail) {
+        if (
+          sessCustomer?.email &&
+          sessCustomer.email.toLowerCase() === normalizedEmail
+        ) {
           sessionEmailMatches = true;
         }
       }
@@ -100,13 +136,17 @@ serve(async (req) => {
     if ((action === "status" || action === "opt_in") && !sessionEmailMatches) {
       return new Response(
         JSON.stringify({ error: "Verification required." }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
     const { data: customer } = await supabase
       .from("customers")
       .select("id, phone, email, sms_paused, email_paused")
+      .eq("organization_id", authority.organizationId)
       .eq("email", normalizedEmail)
       .maybeSingle();
 
@@ -121,7 +161,10 @@ serve(async (req) => {
         hasEmail: !!customer?.email,
         phoneLast4: phone ? phone.slice(-4) : undefined,
         emailMasked: customer?.email
-          ? customer.email.replace(/^(.).*(@.*)$/, (_m: string, a: string, b: string) => `${a}***${b}`)
+          ? customer.email.replace(
+            /^(.).*(@.*)$/,
+            (_m: string, a: string, b: string) => `${a}***${b}`,
+          )
           : undefined,
         sms: { optedOut: smsOptedOut },
         email: { paused: !!customer?.email_paused },
@@ -135,58 +178,89 @@ serve(async (req) => {
       // we return a generic shape only when the caller has a verified session
       // (which by definition would match a real customer — so this branch only
       // fires for opt_out).
-      return new Response(JSON.stringify({
-        hasPhone: false, hasEmail: false,
-        sms: { optedOut: false }, email: { paused: false }, optedOut: false,
-      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          hasPhone: false,
+          hasEmail: false,
+          sms: { optedOut: false },
+          email: { paused: false },
+          optedOut: false,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // ---- EMAIL channel ----
     if (channel === "email") {
       if (action === "opt_out") {
-        await supabase.from("customers").update({ email_paused: true }).eq("id", customer.id);
+        await supabase.from("customers").update({ email_paused: true })
+          .eq("id", customer.id)
+          .eq("organization_id", authority.organizationId);
         await supabase.from("sms_messages")
           .update({ status: "cancelled", error: "Email paused (portal)" })
-          .eq("customer_id", customer.id).eq("channel", "email").eq("status", "pending");
+          .eq("customer_id", customer.id).eq("channel", "email").eq(
+            "status",
+            "pending",
+          );
         customer.email_paused = true;
       } else if (action === "opt_in") {
-        await supabase.from("customers").update({ email_paused: false }).eq("id", customer.id);
+        await supabase.from("customers").update({ email_paused: false })
+          .eq("id", customer.id)
+          .eq("organization_id", authority.organizationId);
         customer.email_paused = false;
       }
       return new Response(JSON.stringify(await buildStatus()), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // ---- SMS channel ----
     if (!phone) {
       return new Response(JSON.stringify(await buildStatus()), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (action === "opt_out") {
       await supabase.from("sms_opt_outs").upsert({
-        phone, opted_out: true, source: "customer_portal",
-        reason: "Customer opted out via portal", opted_out_at: nowIso,
+        phone,
+        opted_out: true,
+        source: "customer_portal",
+        reason: "Customer opted out via portal",
+        opted_out_at: nowIso,
       }, { onConflict: "phone" });
       await supabase.from("sms_messages")
         .update({ status: "cancelled", error: "Recipient opted out (portal)" })
         .eq("to_number", phone).eq("status", "pending");
     } else if (action === "opt_in") {
       await supabase.from("sms_opt_outs").upsert({
-        phone, opted_out: false, source: "customer_portal",
-        reason: "Customer opted in via portal", opted_in_at: nowIso,
+        phone,
+        opted_out: false,
+        source: "customer_portal",
+        reason: "Customer opted in via portal",
+        opted_in_at: nowIso,
       }, { onConflict: "phone" });
     }
 
     return new Response(JSON.stringify(await buildStatus()), {
-      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("manage-sms-optout error:", error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+      {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });

@@ -15,6 +15,7 @@ import {
   type JobberVisitBlockSnapshot,
   projectCustomerPortalBookings,
 } from "../_shared/customerPortalAppointments.ts";
+import { DFW_ORGANIZATION_ID } from "../_shared/organizationRouting.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,12 +43,16 @@ serve(async (req) => {
     });
   }
 
-  const { data: account } = await supabase
+  const { data: account, error: accountError } = await supabase
     .from("customer_accounts")
-    .select("customer_id, verified_phone, verified_email")
+    .select("organization_id, customer_id, verified_phone, verified_email")
     .eq("id", session.customer_account_id)
+    .eq("organization_id", session.organization_id)
     .single();
-  if (!account) {
+  if (
+    accountError || !account ||
+    account.organization_id !== session.organization_id
+  ) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -67,10 +72,14 @@ serve(async (req) => {
   }
   let customerIds: string[] = [account.customer_id];
   if (orFilters.length > 0) {
-    const { data: matches } = await supabase
+    const { data: matches, error: matchesError } = await supabase
       .from("customers")
       .select("id")
+      .eq("organization_id", session.organization_id)
       .or(orFilters.join(","));
+    if (matchesError) {
+      return unavailable();
+    }
     if (matches && matches.length > 0) {
       customerIds = Array.from(
         new Set([account.customer_id, ...matches.map((m: any) => m.id)]),
@@ -82,12 +91,15 @@ serve(async (req) => {
   const [customer, quotes, upcoming, completed] = await Promise.all([
     supabase.from("customers")
       .select("first_name, last_name, address")
-      .eq("id", primaryCustomerId).maybeSingle(),
+      .eq("id", primaryCustomerId)
+      .eq("organization_id", session.organization_id)
+      .maybeSingle(),
     supabase.from("quotes")
       .select(
         "id, created_at, total, status, services_json, line_item_snapshot, home_details_json",
       )
       .in("customer_id", customerIds)
+      .eq("organization_id", session.organization_id)
       .gte(
         "created_at",
         new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
@@ -99,6 +111,7 @@ serve(async (req) => {
         "id, reference_number, scheduled_start, scheduled_end, status, services_json, total, jobber_visit_id, jobber_job_id, home_details_json",
       )
       .in("customer_id", customerIds)
+      .eq("organization_id", session.organization_id)
       .in("status", ["scheduled", "confirmed", "in_progress"])
       .order("scheduled_start", { ascending: true })
       .limit(20),
@@ -107,24 +120,32 @@ serve(async (req) => {
         "id, reference_number, scheduled_start, status, services_json, total, jobber_visit_id, jobber_job_id, home_details_json",
       )
       .in("customer_id", customerIds)
+      .eq("organization_id", session.organization_id)
       .eq("status", "completed")
       .order("scheduled_start", { ascending: false })
       .limit(20),
   ]);
 
-  if (quotes.error || upcoming.error || completed.error) {
+  if (
+    customer.error || quotes.error || upcoming.error || completed.error ||
+    !customer.data
+  ) {
     console.error("[customer-portal-data] data load error", {
+      customer: customer.error?.message,
       quotes: quotes.error?.message,
       upcoming: upcoming.error?.message,
       completed: completed.error?.message,
     });
+    return unavailable();
   }
 
   const bookingRows = [
     ...((upcoming.data ?? []) as BookingRow[]),
     ...((completed.data ?? []) as BookingRow[]),
   ];
-  const busyBlocks = await loadBusyBlocksByVisit(supabase, bookingRows);
+  const busyBlocks = session.organization_id === DFW_ORGANIZATION_ID
+    ? await loadBusyBlocksByVisit(supabase, bookingRows)
+    : [];
   const fallbackAddress = customer.data?.address ?? null;
 
   return new Response(
@@ -153,6 +174,13 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     },
   );
+
+  function unavailable() {
+    return new Response(JSON.stringify({ error: "temporarily_unavailable" }), {
+      status: 503,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 });
 
 interface QuoteRow {
