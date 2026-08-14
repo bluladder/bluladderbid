@@ -36,6 +36,8 @@
   "sanitized_outcomes_only": true,
   "runtime_entrypoint_adopted": false,
   "concrete_database_store_implemented": true,
+  "concrete_read_plan_source_implemented": true,
+  "customer_write_plan_source_implemented": false,
   "credential_created": false,
   "credential_value_stored_in_repository": false,
   "custom_fields_created": false,

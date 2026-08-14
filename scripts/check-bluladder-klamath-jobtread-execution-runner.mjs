@@ -65,6 +65,7 @@ for (const flag of [
   "provider_references_persisted_as_hashes_only",
   "sanitized_outcomes_only",
   "concrete_database_store_implemented",
+  "concrete_read_plan_source_implemented",
 ]) {
   if (evidence?.[flag] !== true) errors.push(`${flag} must be true`);
 }
@@ -74,6 +75,7 @@ if (evidence?.mutation_attempt_number !== 1) {
 for (const flag of [
   "mutation_auto_retry_allowed",
   "runtime_entrypoint_adopted",
+  "customer_write_plan_source_implemented",
   "credential_created",
   "credential_value_stored_in_repository",
   "custom_fields_created",
@@ -196,6 +198,8 @@ function walk(directory) {
       full !== path.join(root, paths.tests) &&
       !full.endsWith("jobtreadPhase1IStores.ts") &&
       !full.endsWith("jobtreadPhase1IStores_test.ts") &&
+      !full.endsWith("jobtreadReadPlanSource.ts") &&
+      !full.endsWith("jobtreadReadPlanSource_test.ts") &&
       fs.readFileSync(full, "utf8").includes("jobtreadExecutionRunner")) {
       productionImports.push(path.relative(root, full));
     }
