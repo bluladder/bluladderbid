@@ -1,10 +1,11 @@
 # BluLadder Klamath Phase 1G messaging/outbox lineage
 
 Status: **hosted additive schema, least-privilege repair, and scoped outbox
-claim verified; fail-closed Twilio adapter prepared; remaining runtime writer
-adoption blocked**. This phase defines the organization-owned sender boundary
-required before Klamath can send SMS or email. It does not add a credential,
-sender, provider resource, message, customer traffic, or deployment.
+claim verified; priority portal and queue runtime deployed fail closed;
+remaining runtime writer adoption blocked**. This phase defines the
+organization-owned sender boundary required before Klamath can send SMS or
+email. The priority runtime deployment adds no credential, sender, provider
+resource, message, customer traffic, or activation.
 
 ## Authority contract
 
@@ -217,10 +218,9 @@ the challenge. It no longer calls CallRail directly or inserts a second SMS
 ledger row after dispatch. The existing email verification path remains
 separate but now records the resolved organization on its audit-ledger row.
 
-This change is repository-only. Klamath still has no connector, provider
-credential, sender, or active customer-site authority, so it continues to fail
-closed. DFW dispatch remains on the reviewed CallRail connector. No function is
-deployed and no message is sent by this writer-adoption change.
+Klamath still has no connector, provider credential, sender, or active
+customer-site authority, so it continues to fail closed. DFW dispatch remains
+on the reviewed CallRail connector.
 
 ## Queued-SMS connector boundary candidate
 
@@ -239,6 +239,28 @@ uncertainty remains terminal for automatic redispatch; definitive provider
 rejections retain the existing bounded queue policy. Email queue behavior is
 unchanged.
 
-This worker change is repository-only and undeployed. It creates no connector,
-credential, sender, message, customer traffic, or activation state. Klamath has
-no connector, so a Klamath queue row still fails before provider submission.
+The worker creates no connector, credential, sender, message, customer traffic,
+or activation state. Klamath has no connector, so a Klamath queue row still
+fails before provider submission.
+
+## Priority runtime deployment verification
+
+One bounded Lovable deployment action deployed only
+`customer-verification-request` and `process-sms-queue` from exact merged main
+`014517b43d543dec77d29d46877cde9aaf6f53a6`. Lovable confirmed that it used the
+stored source without an edit and performed no migration, frontend, secret, or
+provider action. The function inventory showed a fresh update only for the two
+named functions.
+
+A secret-free `GET` to the portal-verification function returned HTTP 405 at
+its explicit method boundary. A secret-free `POST` to the queue worker returned
+HTTP 401 before queue access. Queue logs then showed clean runtime boots without
+a bundle, boot, or initialization error. No authenticated provider traffic,
+queue claim, database write, SMS, email, call, connector change, Klamath
+activation, or customer action was performed.
+
+This deployment closes the two reviewed priority runtime gates; it does not
+declare messaging adoption complete. Direct/manual, staff-reply, inbound
+provider, and other legacy writer surfaces remain separate adoption work. The
+Twilio adapter is present in the deployed bundles but remains unreachable for
+Klamath because no Klamath connector, credential, or sender exists.
