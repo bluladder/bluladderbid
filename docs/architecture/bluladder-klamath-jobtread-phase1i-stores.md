@@ -54,7 +54,8 @@ It never resumes, retries, repairs, or contacts JobTread.
 
 The store is deliberately unreachable from production. Separate reviewed work
 must still provide a protected plan source, credential setup, an inactive
-connector row, webhook authentication/receipts, runtime entry-point adoption,
-deployment, controlled provider acceptance, and all Klamath business/contact,
-pricing, messaging, telephony, publication, and customer-traffic approvals.
+connector row, webhook authentication and parsing, runtime entry-point
+adoption, deployment, controlled provider acceptance, and all Klamath
+business/contact, pricing, messaging, telephony, publication, and
+customer-traffic approvals.
 There is no Jobber or DFW fallback.
