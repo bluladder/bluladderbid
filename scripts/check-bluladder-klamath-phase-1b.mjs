@@ -96,12 +96,12 @@ for (const text of [
 ]) requireText("hangupTests", text);
 
 for (const text of [
-  'organizationId: null',
+  "organizationId: BLULADDER_KLAMATH_ORGANIZATION_ID",
   'lifecycle: "provisioning"',
   'activationAllowed: false',
   'customerTrafficAllowed: false',
   'dfwFallbackAllowed: false',
-  'mappingStatus: "unprovisioned"',
+  'mappingStatus: "provisioning"',
   'runtimeRoutingEnabled: false',
   'published: false',
   'numberProvisioned: false',
