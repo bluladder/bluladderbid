@@ -145,7 +145,7 @@ try {
 
 const artifactExpectations = {
   preflight: [3609, "f6f62f515d5021f0d1aea19c001cd88efdf2575acc7d695f35255f1f60140011"],
-  migration: [13535, "0cc3691ba5018f7cf46020b0bb0cc6a83356f9f2b7d95d309da7126ef06f3deb"],
+  migration: [13541, "9ebd804bb45d3fd523f5b38803c0bddfce5450cf874ff8ccb440ce1f8a865b95"],
   verification: [7655, "0ddbd1b88b56aefac16bde2897c0bfe0b15dddc5aff142d6adc4485046f1f668"],
   rehearsal: [8732, "50a66b83e4a558b701801110e6aa863223918573983d45ed763216c73d87a9a1"],
 };

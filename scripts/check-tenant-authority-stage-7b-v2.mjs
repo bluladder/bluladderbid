@@ -158,6 +158,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Lovable-generated receipt for the exact Phase 1H payload, with only
   // terminal-LF normalization permitted by the Phase 1H checker.
   "supabase/migrations/20260814101915_76201d6e-142c-4edc-a852-93d63f5e6114.sql",
+  // Phase 1I: empty organization CRM connector, hashed operation-attempt, and
+  // authenticated webhook-receipt lineage. Hosted application remains gated.
+  "supabase/migrations/20260814113000_bluladder_klamath_phase_1i_crm_connector_lineage.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

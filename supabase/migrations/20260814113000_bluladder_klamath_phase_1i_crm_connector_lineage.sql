@@ -204,7 +204,7 @@ CREATE TABLE public.organization_connector_operation_attempts (
   CONSTRAINT organization_connector_operation_attempts_connector_fkey
     FOREIGN KEY (organization_id, connector_id)
     REFERENCES public.organization_crm_connectors (organization_id, id),
-  CONSTRAINT organization_connector_operation_attempts_status_check CHECK (
+  CONSTRAINT organization_connector_operation_attempts_lifecycle_check CHECK (
     (status = 'started' AND completed_at IS NULL AND failure_code IS NULL)
     OR (
       status = 'succeeded'
@@ -267,7 +267,7 @@ CREATE TABLE public.organization_connector_webhook_receipts (
   CONSTRAINT organization_connector_webhook_receipts_connector_fkey
     FOREIGN KEY (organization_id, connector_id)
     REFERENCES public.organization_crm_connectors (organization_id, id),
-  CONSTRAINT organization_connector_webhook_receipts_status_check CHECK (
+  CONSTRAINT organization_connector_webhook_receipts_lifecycle_check CHECK (
     (status = 'accepted' AND processed_at IS NULL AND failure_code IS NULL)
     OR (
       status IN ('processed', 'ignored')
