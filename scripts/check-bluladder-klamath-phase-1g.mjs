@@ -34,6 +34,8 @@ const relative = {
     "scripts/rehearse-bluladder-klamath-phase-1g-authenticated-grants-postgres.sh",
   scopedMigration:
     "supabase/migrations/20260814074000_bluladder_klamath_phase_1g_scoped_sms_outbox.sql",
+  scopedReceipt:
+    "supabase/migrations/20260814081254_c3fdd8e6-ea9b-4220-a90b-5c1e8409be5d.sql",
   scopedPreflight:
     "supabase/preflight/bluladder_klamath_phase_1g_scoped_sms_outbox.sql",
   scopedVerification:
@@ -57,7 +59,7 @@ function requireText(key, text) {
 }
 
 for (const text of [
-  "hosted additive schema and least-privilege repair verified; runtime",
+  "hosted additive schema, least-privilege repair, and scoped outbox",
   "Recipient identity, caller ID, browser input, message content",
   "Failure never falls back to DFW",
   "Platform/legal safety suppressions remain global",
@@ -67,6 +69,8 @@ for (const text of [
   "106 are legacy unparented rows",
   "version `20260814071137`",
   "version `20260814072713`",
+  "version `20260814081254`",
+  "db0c52f8e729931bc6f60270bae6e3050d4e7a33c6abcc0ecf55cb05e8b3c069",
   "`REFERENCES`, `TRIGGER`, and `TRUNCATE`",
 ]) requireText("contract", text);
 
@@ -169,6 +173,14 @@ for (const text of [
 ]) requireText("scopedMigration", text);
 
 for (const text of [
+  "claim_organization_sms_outbox_send",
+  "connector_authority_invalid",
+  "organization_lineage_mismatch",
+  "GRANT EXECUTE",
+  "Phase 1G scoped outbox migration changed data",
+]) requireText("scopedReceipt", text);
+
+for (const text of [
   "BEGIN TRANSACTION READ ONLY",
   "scoped_claim_count",
   "connector_bound_count",
@@ -247,6 +259,10 @@ const exactArtifacts = {
     bytes: 8965,
     sha256: "549578e4fdd06dff772919f15568df68a907a3e04ccc1fb0e308462cb9274fdd",
   },
+  scopedReceipt: {
+    bytes: 8964,
+    sha256: "2efc6460a6e91ce04705d6de6a3e5cbec66068cd3e1d3b117975decff545ae88",
+  },
   scopedPreflight: {
     bytes: 1420,
     sha256: "9e1e685895f320ff53c07783155a6de44c42570e755b561dc67c30c9fb83a5ef",
@@ -277,9 +293,9 @@ try {
 if (register) {
   if (
     register.phase !== "1G" ||
-    register.status !== "hosted_schema_ready_writer_adoption_candidate" ||
+    register.status !== "hosted_scoped_outbox_ready_writer_adoption_incomplete" ||
     register.prepared_from_main !==
-      "9433b0013db8c34ca2345605b196933fc1570a1d" ||
+      "c80fb964469c8f228e29f4cec11d817908baab83" ||
     register.messaging_connector_contract_prepared !== true ||
     register.additive_migration_prepared !== true ||
     register.hosted_preflight_passed !== true ||
@@ -290,10 +306,10 @@ if (register) {
     register.hosted_preflight_non_dfw_parent_count !== 0 ||
     register.hosted_schema_applied !== true ||
     register.hosted_execution_version !== "20260814071137" ||
-    register.hosted_ledger_count !== 159 ||
-    register.hosted_ledger_tip !== "20260814072713" ||
+    register.hosted_ledger_count !== 160 ||
+    register.hosted_ledger_tip !== "20260814081254" ||
     register.hosted_ledger_fingerprint_sha256 !==
-      "b98e6fcb7ce47a544f22410d1b62a7fbdab90dc99af59518f06302299c24eac2" ||
+      "db0c52f8e729931bc6f60270bae6e3050d4e7a33c6abcc0ecf55cb05e8b3c069" ||
     register.hosted_data_lineage_postflight_passed !== true ||
     register.authenticated_grants_exact !== true ||
     JSON.stringify(register.authenticated_excess_privileges) !==
@@ -306,7 +322,12 @@ if (register) {
       "91e3a76e0c209a2c4e157e866b1b899400bbbf6de66ca7860d8656abc8bc9070" ||
     register.scoped_outbox_migration_prepared !== true ||
     register.scoped_outbox_runtime_prepared !== true ||
-    register.scoped_outbox_hosted_applied !== false ||
+    register.scoped_outbox_hosted_applied !== true ||
+    register.scoped_outbox_execution_version !== "20260814081254" ||
+    register.scoped_outbox_payload_bytes !== 8964 ||
+    register.scoped_outbox_payload_sha256 !==
+      "2efc6460a6e91ce04705d6de6a3e5cbec66068cd3e1d3b117975decff545ae88" ||
+    register.scoped_outbox_postflight_passed !== true ||
     register.scoped_outbox_runtime_deployed !== false ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
@@ -326,6 +347,7 @@ if (register) {
       "phase_1g_connector_contract",
       "hosted_messaging_preflight",
       "messaging_lineage_schema",
+      "organization_scoped_outbox",
     ].includes(gate.id) ? "ready" : "blocked";
     if (gate.status !== expected) errors.push(`gate ${gate.id} must be ${expected}`);
   }
@@ -337,5 +359,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1G gate OK: additive lineage and exact least-privilege repair are hosted and verified while runtime, providers, messages, and activation remain blocked.",
+  "BluLadder Klamath Phase 1G gate OK: additive lineage, exact least-privilege repair, and scoped transactional outbox are hosted and verified while remaining writer adoption, runtime, providers, messages, and activation remain blocked.",
 );
