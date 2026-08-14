@@ -28,8 +28,9 @@ second-tenant boundary only. It performs no hosted or provider action.
       and escalation recipients.
 - [ ] Verify background-job definitions, tenant markers, and relevant uniqueness
       classifications without reading credential-bearing commands.
-- [ ] Verify JobTread account access and the availability of Grant Key/API and
-      webhook controls without creating a key, webhook, customer, job, or task.
+- [x] Verify JobTread account access and the availability of organization-scoped
+      Grant Key/API and webhook controls without creating a key, webhook,
+      customer, job, or task.
 - [ ] Verify whether isolated Klamath Vapi assistant/phone resources exist; do
       not create, edit, call, or attach them.
 - [ ] Use direct read-only controls first. Do not use Lovable AI or credits for
@@ -44,8 +45,11 @@ second-tenant boundary only. It performs no hosted or provider action.
       dependency.
 - [ ] Tenant-scoped portal identity, customer lookup, quotes, bookings, and
       appointment projection.
-- [ ] JobTread capability matrix and adapter for customer/quote synchronization,
-      availability, booking create/update/cancel, health, idempotency, and webhooks.
+- [x] Record the official JobTread capability matrix and prepare a dormant,
+      organization-guarded adapter and redacted Pave transport.
+- [ ] Approve exact customer/quote/schedule/booking field and lifecycle mappings,
+      create the organization-scoped grant and webhook, persist connector and
+      event idempotency state, and adopt the adapter in runtime entry points.
 - [ ] Tenant-scoped messaging sender, consent/suppression, durable outbox,
       notifications, and operator alerts.
 - [ ] Tenant-safe background jobs, schedule mirrors, caches, campaigns, and

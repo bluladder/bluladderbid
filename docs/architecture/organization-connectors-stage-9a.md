@@ -68,22 +68,43 @@ Runtime cutover requires:
 This matrix records only repository evidence and conservative plans. It is not
 a claim that a provider account or API version supports an operation.
 
-| Capability | Jobber current repository evidence | JobTread Stage 9A position | Google Calendar fallback |
-|---|---|---|---|
-| Customer sync | Existing GraphQL client and booking flow perform customer lookup/create | Unknown until official API/account validation | Unsupported |
-| Quote sync | Existing Jobber identifiers and service-request/booking flows; exact mutation parity requires entry-point audit | Unknown until official API/account validation | Unsupported |
-| Availability read | Existing `jobber-availability` and schedule mirror | Unknown until official API/account validation | Free/busy/event reads require capability validation |
-| Booking create | Existing `jobber-create-booking` | Unknown until official API/account validation | Calendar event creation only; not CRM/job/invoice creation |
-| Booking update | Existing management/recovery paths require parity inventory | Unknown until official API/account validation | Event update only after calendar/account validation |
-| Booking cancel | Existing cancellation module and provider flow | Unknown until official API/account validation | Event cancellation only after calendar/account validation |
-| Invoice handoff | No generalized connector contract currently adopted | Unknown until official API/account validation | Unsupported; separate invoicing required |
-| Communications | Existing repository channels are separate from Jobber | Unknown until official API/account validation | Unsupported |
-| Health | Existing connection/test functions | Requires documented API health strategy | Requires OAuth/account and calendar access validation |
+| Capability | Jobber current repository evidence | JobTread provider evidence | Klamath runtime position | Google Calendar fallback |
+|---|---|---|---|---|
+| Customer sync | Existing GraphQL client and booking flow perform customer lookup/create | Official explorer exposes organization-scoped account/customer query, create, update, and delete plus contact/location operations | Provider primitive verified; dormant adapter only until a scoped grant, idempotency ledger, and field mapping are approved | Unsupported |
+| Quote sync | Existing Jobber identifiers and service-request/booking flows; exact mutation parity requires entry-point audit | Document query/create/update/delete and document-recipient operations are exposed | Document-type and lifecycle mapping remain unapproved; fail closed | Unsupported |
+| Availability read | Existing `jobber-availability` and schedule mirror | Job/task/event queries and dated task fields are exposed | Capacity, crew, route, and blackout interpretation remain unapproved; fail closed | Free/busy/event reads require capability validation |
+| Booking create | Existing `jobber-create-booking` | Customer → location → job creation and task creation are exposed | Booking-to-job/task mapping remains unapproved; fail closed | Calendar event creation only; not CRM/job/invoice creation |
+| Booking update | Existing management/recovery paths require parity inventory | Job and task update operations are exposed | Mapping remains unapproved; fail closed | Event update only after calendar/account validation |
+| Booking cancel | Existing cancellation module and provider flow | Task deletion and job/task update operations are exposed | Cancellation semantics remain unapproved; fail closed | Event cancellation only after calendar/account validation |
+| Invoice handoff | No generalized connector contract currently adopted | Document and payment query/write primitives are exposed | Accounting lifecycle mapping remains unapproved; fail closed | Unsupported; separate invoicing required |
+| Communications | Existing repository channels are separate from Jobber | Comment and document-send primitives are exposed | Provider communications remain separate from the approved BluLadder outbox | Unsupported |
+| Health | Existing connection/test functions | API version and current-grant queries are documented | Safe read-only health plan verified; credential/runtime remain absent | Requires OAuth/account and calendar access validation |
 
-JobTread operations remain `unsupported/unknown` until verified against official
-documentation and the actual authorized account. Google Calendar is only a
-potential scheduling fallback; it cannot be treated as a CRM or invoicing
-system.
+The provider surface above was verified read-only against the official API
+explorer and the intended authorized account on 2026-08-14. It is evidence of
+available primitives, not approval of a BluLadder business mapping. The dormant
+JobTread adapter therefore requires an explicit per-operation allow-list and
+returns manual review without a provider call for every unapproved capability.
+Google Calendar is only a potential scheduling fallback; it cannot be treated
+as a CRM or invoicing system.
+
+## JobTread authentication and webhook evidence
+
+- Grants may be restricted to one organization. A grant key is shown once and
+  expires after three months of inactivity. The future runtime must load it
+  from protected server-side secret storage; it must never appear in connector
+  configuration, audit output, logs, errors, fixtures, or client responses.
+- Pave requests use `POST https://api.jobtread.com/pave` with the grant injected
+  into the root query arguments. The repository transport performs no automatic
+  mutation retry and returns only sanitized status codes.
+- Custom webhooks can be restricted to selected lifecycle events. Relevant
+  verified categories are account, contact, job, task, document and recipient,
+  daily log, file, location, form submission, payment, and time entry.
+- A future webhook must authenticate its source, derive organization authority
+  from the server-owned connector record, persist event idempotency, and reject
+  events whose provider organization does not match that record.
+- No grant, webhook, provider call, hosted connector row, secret, deployment, or
+  customer traffic was created by this repository stage.
 
 ## Retry and dead-letter contract
 
@@ -101,11 +122,10 @@ system.
 
 - Exact connector configuration/audit schema belongs to an additive migration
   after the hosted provenance review.
-- JobTread and Google capability claims require official documentation and
-  account-level validation.
+- JobTread business mappings still require operation-by-operation approval even
+  though the underlying provider primitives and account controls are verified.
 - Credential storage and rotation are provider/security decisions outside this
   repository-only stage.
 - Existing Jobber runtime functions need a surface-by-surface parity and
   authoritative-write adoption stage.
 - Oregon connector configuration and traffic remain inactive.
-
