@@ -128,7 +128,7 @@ const artifactExpectations = {
   preflight: [5158, "f88f6c9f32c5df09bbaa53648582ec077344fcaec9e6555e163397bb8e41db66"],
   migration: [9899, "e13e8836c2328ba6b2787333285fd4afdff333f65707425515606ecb85bb4f6b"],
   verification: [6112, "2020f1be9d82bbe3dd4affd68b3d4c3ee703c13f821bb66093bb1ead137b9612"],
-  rehearsal: [2815, "7fed406ffc32873daacd84eb1f6e755af4ff5373eaca66dbd2f59796028f1b6a"],
+  rehearsal: [2800, "cb2c0d1991efc74ef37307b58ebd9567fa8024c7602a16988e13390ff7aaec40"],
 };
 for (const [key, [expectedBytes, expectedSha]] of Object.entries(
   artifactExpectations,
