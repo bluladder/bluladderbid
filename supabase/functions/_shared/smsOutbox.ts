@@ -22,6 +22,11 @@ import {
   getCallRailConfig,
   sendCallRailSms,
 } from "./sms.ts";
+import {
+  guardMessagingDispatch,
+  type OrganizationMessagingConnectorConfig,
+  selectOrganizationMessagingConnector,
+} from "./messagingConnectorContracts.ts";
 
 type SB = any;
 
@@ -43,10 +48,13 @@ export interface OutboxClaim {
   in_progress?: boolean;
   escalated?: boolean;
   provider_message_id?: string | null;
+  provider?: string | null;
   reason?: string;
 }
 
 export interface OutboxSendInput {
+  /** Server-resolved tenant authority. Never derive this from the recipient. */
+  organizationId: string;
   outboundKey: string;
   toNumber: string;
   body: string;
@@ -66,16 +74,48 @@ export interface OutboxSendResult {
   error?: string;
 }
 
-/** True when the backend has no such RPC (PostgREST 404 / Postgres 42883). */
-function isMissingFunctionError(err: {
-  code?: string | null;
-  message?: string | null;
-}): boolean {
-  const code = String(err?.code ?? "");
-  const msg = String(err?.message ?? "").toLowerCase();
-  return code === "PGRST202" || code === "42883" ||
-    msg.includes("could not find the function") ||
-    msg.includes("does not exist");
+async function selectSmsConnector(
+  supabase: SB,
+  organizationId: string,
+): Promise<
+  | { status: "resolved"; connector: OrganizationMessagingConnectorConfig }
+  | { status: "blocked"; reason: string }
+> {
+  const { data, error } = await supabase
+    .from("organization_messaging_connectors")
+    .select(
+      "id, organization_id, channel, provider, status, priority, credential_reference, sender_identity_reference",
+    )
+    .eq("organization_id", organizationId)
+    .eq("channel", "sms");
+  if (error) {
+    return { status: "blocked", reason: "connector_lookup_unavailable" };
+  }
+  const candidates: OrganizationMessagingConnectorConfig[] = (data ?? []).map(
+    (row: Record<string, unknown>) => ({
+      id: String(row.id ?? ""),
+      organizationId: String(row.organization_id ?? ""),
+      channel: row.channel as "sms",
+      provider: row
+        .provider as OrganizationMessagingConnectorConfig["provider"],
+      status: row.status as OrganizationMessagingConnectorConfig["status"],
+      priority: Number(row.priority ?? 0),
+      credentialReference: typeof row.credential_reference === "string"
+        ? row.credential_reference
+        : null,
+      senderIdentityReference: typeof row.sender_identity_reference === "string"
+        ? row.sender_identity_reference
+        : null,
+    }),
+  );
+  const selected = selectOrganizationMessagingConnector(
+    organizationId,
+    "sms",
+    candidates,
+  );
+  return selected.status === "resolved"
+    ? selected
+    : { status: "blocked", reason: selected.code };
 }
 
 /**
@@ -99,46 +139,54 @@ export async function sendOutboxSms(
 ): Promise<OutboxSendResult> {
   const callrail = input.callRail ?? getCallRailConfig();
 
+  const selection = await selectSmsConnector(supabase, input.organizationId);
+  if (selection.status !== "resolved") {
+    return {
+      sent: false,
+      smsMessageId: null,
+      outboxState: null,
+      replay: false,
+      inProgress: false,
+      escalated: false,
+      providerMessageId: null,
+      error: selection.reason,
+    };
+  }
+  const dispatchGuard = guardMessagingDispatch(selection.connector, {
+    organizationId: input.organizationId,
+    connectorId: selection.connector.id,
+    channel: "sms",
+    idempotencyKey: input.outboundKey,
+  });
+  if (dispatchGuard.status !== "authorized") {
+    return {
+      sent: false,
+      smsMessageId: null,
+      outboxState: null,
+      replay: false,
+      inProgress: false,
+      escalated: false,
+      providerMessageId: null,
+      error: dispatchGuard.code,
+    };
+  }
+
   const claimToken = crypto.randomUUID();
-  const claimRpc = input.quoteId
-    ? "claim_quote_sms_delivery"
-    : "claim_sms_outbox_send";
   const claimArgs: Record<string, unknown> = {
+    p_organization_id: input.organizationId,
+    p_messaging_connector_id: selection.connector.id,
     p_outbound_key: input.outboundKey,
     p_claim_token: claimToken,
     p_to_number: input.toNumber,
     p_body: input.body,
     p_message_kind: input.messageKind,
+    p_quote_id: input.quoteId ?? null,
+    p_stale_claim_seconds: 120,
   };
-  if (input.quoteId) claimArgs.p_quote_id = input.quoteId;
-  let { data: claimData, error: claimErr } = await supabase.rpc(
-    claimRpc,
+  const { data: claimData, error: claimErr } = await supabase.rpc(
+    "claim_organization_sms_outbox_send",
     claimArgs,
   );
-  // Compatibility fallback: environments where the quote-specific wrapper
-  // (claim_quote_sms_delivery) has not been provisioned yet must still be able
-  // to deliver a customer-requested quote SMS. The base outbox claim keeps the
-  // same semantic outbound key (so idempotency is unchanged); quote lineage is
-  // then bound with a narrow, conflict-safe update below.
-  let quoteLineageFallback = false;
-  if (
-    claimErr && input.quoteId &&
-    isMissingFunctionError(claimErr)
-  ) {
-    quoteLineageFallback = true;
-    const base = await supabase.rpc("claim_sms_outbox_send", {
-      p_outbound_key: input.outboundKey,
-      p_claim_token: claimToken,
-      p_to_number: input.toNumber,
-      p_body: input.body,
-      p_message_kind: input.messageKind,
-      // PostgREST function resolution requires the complete exposed signature,
-      // even though Postgres itself declares this argument with a default.
-      p_stale_claim_seconds: 120,
-    });
-    claimData = base.data;
-    claimErr = base.error;
-  }
   if (claimErr) {
     return {
       sent: false,
@@ -165,26 +213,6 @@ export async function sendOutboxSms(
     };
   }
 
-  if (quoteLineageFallback && input.quoteId) {
-    const { error: lineageErr } = await supabase
-      .from("sms_messages")
-      .update({ quote_id: input.quoteId })
-      .eq("id", claim.id)
-      .is("quote_id", null);
-    if (lineageErr) {
-      return {
-        sent: false,
-        smsMessageId: claim.id,
-        outboxState: (claim.outbox_state ?? null) as OutboxState | null,
-        replay: false,
-        inProgress: false,
-        escalated: false,
-        providerMessageId: null,
-        error: "quote_lineage_conflict",
-      };
-    }
-  }
-
   // Not the winner — return existing evidence, do NOT call CallRail.
   if (!claim.may_dispatch) {
     const priorAccepted = claim.outbox_state === "provider_accepted" ||
@@ -209,10 +237,14 @@ export async function sendOutboxSms(
   let newState: OutboxState = "delivery_unknown";
   let errText: string | null = null;
 
-  if (!callrail) {
+  if (selection.connector.provider !== "callrail") {
+    newState = "send_failed";
+    errText = "provider_adapter_unavailable";
+  } else if (!callrail) {
     newState = "send_failed";
     errText = "callrail_config_missing";
-  } else {try {
+  } else {
+    try {
       const res = await sendCallRailSms(callrail, input.toNumber, input.body);
       providerMessageId = res.messageId ?? null;
       providerConversationId = res.conversationId ?? null;
@@ -234,7 +266,8 @@ export async function sendOutboxSms(
       // CallRail accepted. Mark delivery_unknown; reconciliation owns it.
       newState = "delivery_unknown";
       errText = `dispatch_threw:${String(e).slice(0, 180)}`;
-    }}
+    }
+  }
 
   const { data: finalized, error: finalizeError } = await supabase.rpc(
     "finalize_sms_outbox_send",

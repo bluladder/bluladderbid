@@ -144,6 +144,7 @@ const reviewedPostRuntimeMigrations = new Set([
   // on the Phase 1G messaging connector registry.
   "supabase/migrations/20260814071600_bluladder_klamath_phase_1g_authenticated_grants.sql",
   "supabase/migrations/20260814072713_83b1f9da-ae78-4e2e-817a-09c40f2388a4.sql",
+  "supabase/migrations/20260814074000_bluladder_klamath_phase_1g_scoped_sms_outbox.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
@@ -167,14 +168,19 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/bookingDuration_test.ts",
   "supabase/functions/_shared/bookingReadiness.ts",
   "supabase/functions/_shared/bookingReadiness_test.ts",
+  "supabase/functions/_shared/callrailEventProcessor.ts",
   "supabase/functions/_shared/deterministicUuid.ts",
   "supabase/functions/_shared/discountCodeValidation.ts",
   "supabase/functions/_shared/discountCodeValidation_test.ts",
   "supabase/functions/_shared/executeSmsBooking.ts",
+  "supabase/functions/_shared/handleConfirmationReply.ts",
+  "supabase/functions/_shared/handleConfirmationReply_expired_test.ts",
   "supabase/functions/_shared/escalation.ts",
   "supabase/functions/_shared/escalation_test.ts",
   "supabase/functions/_shared/escalationDelivery.ts",
   "supabase/functions/_shared/escalationDelivery_test.ts",
+  "supabase/functions/_shared/smsOutbox.ts",
+  "supabase/functions/_shared/smsOutbox_test.ts",
   "supabase/functions/_shared/customerPortalAppointments.ts",
   "supabase/functions/_shared/customerPortalAppointments_test.ts",
   "supabase/functions/_shared/identityAnchor.ts",

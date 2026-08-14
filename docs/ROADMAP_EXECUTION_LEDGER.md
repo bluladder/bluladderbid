@@ -100,8 +100,10 @@ are separated in
 
 ## Queued safe stages
 
-The current safe repository stage is organization-lineage writer adoption for
-the messaging/outbox boundary. The following stages remain gated:
+The current safe repository stage is the scoped transactional-outbox claim and
+organization-lineage writer candidate for the messaging boundary. Its hosted
+migration and runtime deployment remain separately gated. The following
+stages remain gated:
 
 1. Add organization lineage to the durable messaging/outbox boundary without
    introducing a DFW fallback for Klamath.

@@ -351,6 +351,7 @@ export async function processPersistedCallRailEvent(
       // through to the existing slot-selection path.
       try {
         const confirmation = await handleConfirmationReply(supabase, {
+          organizationId: resolved.organizationId ?? "",
           conversationId: resolved.conversationId,
           phone,
           inboundSmsId,

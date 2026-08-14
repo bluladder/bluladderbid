@@ -383,6 +383,7 @@ Deno.test("eligible final hangup sends the exact canonical online-bid link", asy
   });
   assertEquals(res.status, "sent");
   assertEquals(deliver.calls.length, 1);
+  assertEquals(deliver.calls[0].organizationId, DFW_ORGANIZATION_ID);
   assertEquals(deliver.calls[0].toNumber, "+14692150144");
   assertEquals(
     deliver.calls[0].body,

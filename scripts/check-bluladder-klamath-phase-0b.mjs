@@ -25,6 +25,7 @@ const relative = {
     "supabase/functions/_shared/voice/hangupBidLinkFollowup_test.ts",
   portal: "supabase/functions/customer-portal-data/index.ts",
   phase1fRegister: "docs/operations/bluladder-klamath-phase-1f-gates.json",
+  phase1gRegister: "docs/operations/bluladder-klamath-phase-1g-gates.json",
   smsOutbox: "supabase/functions/_shared/smsOutbox.ts",
   autosync: "supabase/functions/jobber-autosync/index.ts",
   adminFlag: "src/lib/organizations/featureFlags.ts",
@@ -70,9 +71,11 @@ for (const text of [
 
 let register;
 let phase1fRegister;
+let phase1gRegister;
 try {
   register = JSON.parse(content.register ?? "{}");
   phase1fRegister = JSON.parse(content.phase1fRegister ?? "{}");
+  phase1gRegister = JSON.parse(content.phase1gRegister ?? "{}");
 } catch (error) {
   errors.push(`gate register is invalid JSON: ${error.message}`);
 }
@@ -174,9 +177,17 @@ if (
     content.smsOutbox ?? "",
   )
 ) {
-  errors.push(
-    "outbox blocker evidence changed; review tenant scoping and gate status",
-  );
+  if (
+    phase1gRegister?.scoped_outbox_migration_prepared !== true ||
+    phase1gRegister?.scoped_outbox_runtime_prepared !== true ||
+    phase1gRegister?.scoped_outbox_hosted_applied !== false ||
+    phase1gRegister?.scoped_outbox_runtime_deployed !== false ||
+    expectedGateStatuses.get("messaging_and_outbox") !== "blocked"
+  ) {
+    errors.push(
+      "outbox tenant-scoping changed without the fail-closed Phase 1G release gate",
+    );
+  }
 }
 if (content.autosync?.includes("organization_id")) {
   errors.push(

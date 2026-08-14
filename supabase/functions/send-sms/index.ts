@@ -337,6 +337,7 @@ serve(async (req) => {
     // ---- Build variable context ----
     let phone: string | null = null;
     let email: string | null = null;
+    let organizationId: string | null = null;
     let firstName = "there";
     let lastName = "";
     const vars: Record<string, string | number> = {};
@@ -345,11 +346,14 @@ serve(async (req) => {
       const { data: bk } = await supabase
         .from("bookings")
         .select(
-          "reference_number, scheduled_start, total, services_json, customer:customers(first_name, last_name, phone, email)",
+          "organization_id, reference_number, scheduled_start, total, services_json, customer:customers(first_name, last_name, phone, email)",
         )
         .eq("id", bookingId)
         .single();
       if (bk) {
+        organizationId = typeof bk.organization_id === "string"
+          ? bk.organization_id
+          : null;
         const cust = bk.customer as {
           first_name?: string;
           last_name?: string;
@@ -373,11 +377,14 @@ serve(async (req) => {
       const { data: q } = await supabase
         .from("quotes")
         .select(
-          "customer_name, customer_phone, customer_email, total, services_json,status,expires_at,superseded_by,converted_booking_id",
+          "organization_id, customer_name, customer_phone, customer_email, total, services_json,status,expires_at,superseded_by,converted_booking_id",
         )
         .eq("id", quoteId)
         .single();
       if (q) {
+        organizationId = typeof q.organization_id === "string"
+          ? q.organization_id
+          : null;
         const notDeliverable =
           !["saved", "emailed", "viewed", "pending"].includes(
             String(q.status),
@@ -422,6 +429,21 @@ serve(async (req) => {
     vars.first_name = firstName;
     vars.last_name = lastName;
     vars.full_name = `${firstName} ${lastName}`.trim();
+
+    if (!organizationId) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          deliveryStatus: "blocked",
+          transactionalSent: false,
+          transactionalError: "organization_authority_missing",
+        }),
+        {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
 
     const toNorm = normalizePhone(phone);
 
@@ -508,6 +530,7 @@ serve(async (req) => {
             toNorm.replace(/\D/g, "")
           }`;
         const result = await sendOutboxSms(supabase, {
+          organizationId,
           outboundKey,
           toNumber: toNorm,
           body: immediateBody,

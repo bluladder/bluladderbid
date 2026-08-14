@@ -11,6 +11,7 @@ const relative = {
   register: "docs/operations/bluladder-klamath-phase-1g-gates.json",
   connector:
     "supabase/functions/_shared/messagingConnectorContracts.ts",
+  outbox: "supabase/functions/_shared/smsOutbox.ts",
   tests:
     "supabase/functions/_shared/messagingConnectorContracts_test.ts",
   migration:
@@ -31,6 +32,14 @@ const relative = {
     "supabase/verification/bluladder_klamath_phase_1g_authenticated_grants.sql",
   grantRehearsal:
     "scripts/rehearse-bluladder-klamath-phase-1g-authenticated-grants-postgres.sh",
+  scopedMigration:
+    "supabase/migrations/20260814074000_bluladder_klamath_phase_1g_scoped_sms_outbox.sql",
+  scopedPreflight:
+    "supabase/preflight/bluladder_klamath_phase_1g_scoped_sms_outbox.sql",
+  scopedVerification:
+    "supabase/verification/bluladder_klamath_phase_1g_scoped_sms_outbox.sql",
+  scopedRehearsal:
+    "scripts/rehearse-bluladder-klamath-phase-1g-scoped-sms-outbox-postgres.sh",
   roadmap: "docs/ROADMAP_EXECUTION_LEDGER.md",
   workflow: ".github/workflows/ci.yml",
 };
@@ -151,12 +160,51 @@ for (const text of [
   "Phase 1G authenticated-grant repair rehearsal passed",
 ]) requireText("grantRehearsal", text);
 
+for (const text of [
+  "claim_organization_sms_outbox_send",
+  "connector_authority_invalid",
+  "organization_lineage_mismatch",
+  "GRANT EXECUTE",
+  "Phase 1G scoped outbox migration changed data",
+]) requireText("scopedMigration", text);
+
+for (const text of [
+  "BEGIN TRANSACTION READ ONLY",
+  "scoped_claim_count",
+  "connector_bound_count",
+  "klamath_provisioning_count",
+  "ROLLBACK",
+]) requireText("scopedPreflight", text);
+
+for (const text of [
+  "scoped_claim_count",
+  "anon_execute",
+  "authenticated_execute",
+  "service_role_execute",
+  "connector_bound_count",
+]) requireText("scopedVerification", text);
+
+for (const text of [
+  "BLULADDER_KLAMATH_PHASE1G_SCOPED_OUTBOX_DATABASE_URL",
+  "scoped outbox omitted durable authority",
+  "cross-connector replay did not fail closed",
+  "inactive organization was allowed to claim dispatch",
+]) requireText("scopedRehearsal", text);
+
+for (const text of [
+  "selectOrganizationMessagingConnector",
+  "guardMessagingDispatch",
+  "claim_organization_sms_outbox_send",
+  "provider_adapter_unavailable",
+]) requireText("outbox", text);
+
 for (const text of ["Phase 1G", "messaging/outbox lineage"]) {
   requireText("roadmap", text);
 }
 requireText("workflow", "check:klamath-phase-1g");
 requireText("workflow", "BLULADDER_KLAMATH_PHASE1G_DATABASE_URL");
 requireText("workflow", "BLULADDER_KLAMATH_PHASE1G_GRANTS_DATABASE_URL");
+requireText("workflow", "BLULADDER_KLAMATH_PHASE1G_SCOPED_OUTBOX_DATABASE_URL");
 
 const exactArtifacts = {
   migration: {
@@ -194,6 +242,22 @@ const exactArtifacts = {
   grantRehearsal: {
     bytes: 2234,
     sha256: "a270d07607deda03b823bd500e7493733910dc5c7dc9314e23de737556654aac",
+  },
+  scopedMigration: {
+    bytes: 8965,
+    sha256: "549578e4fdd06dff772919f15568df68a907a3e04ccc1fb0e308462cb9274fdd",
+  },
+  scopedPreflight: {
+    bytes: 1420,
+    sha256: "9e1e685895f320ff53c07783155a6de44c42570e755b561dc67c30c9fb83a5ef",
+  },
+  scopedVerification: {
+    bytes: 1733,
+    sha256: "1543d8e3c7c00b11d495a88fb445b050fbfb13d79b98ff7f17f17641f256c1cb",
+  },
+  scopedRehearsal: {
+    bytes: 6165,
+    sha256: "f78343cadfa03bac4698e3c265ec38876ec7eab1cde8acd90a4ce2bfac3a4bc6",
   },
 };
 for (const [key, expected] of Object.entries(exactArtifacts)) {
@@ -240,6 +304,10 @@ if (register) {
     register.authenticated_grant_repair_payload_bytes !== 7531 ||
     register.authenticated_grant_repair_payload_sha256 !==
       "91e3a76e0c209a2c4e157e866b1b899400bbbf6de66ca7860d8656abc8bc9070" ||
+    register.scoped_outbox_migration_prepared !== true ||
+    register.scoped_outbox_runtime_prepared !== true ||
+    register.scoped_outbox_hosted_applied !== false ||
+    register.scoped_outbox_runtime_deployed !== false ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
     register.klamath_connector_count !== 0 ||

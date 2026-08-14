@@ -105,3 +105,21 @@ Postflight proves that `authenticated` now has only `SELECT`, `INSERT`,
 no row, policy, function, provider, sender, credential, runtime, or activation
 setting. The hosted schema gate is ready; writer adoption, connector
 configuration, dispatch, and activation remain separately blocked.
+
+## Scoped transactional-outbox writer candidate
+
+`20260814074000_bluladder_klamath_phase_1g_scoped_sms_outbox.sql`
+adds a new claim function without changing the deployed legacy claim
+functions. The new boundary requires a server-resolved organization and one
+active SMS connector before it atomically records organization, connector,
+optional quote, and idempotency lineage. A replay whose organization,
+connector, or quote differs fails closed before provider dispatch.
+
+The runtime candidate resolves exactly one active organization-owned SMS
+connector, checks the pure dispatch guard, and uses only the scoped claim.
+The approved organization comes from the persisted quote or booking, the
+already-resolved voice webhook authority, or the resolved SMS conversation;
+the recipient never selects a tenant. Unsupported providers finalize as
+failed without an outbound request. This code is not deployable until the
+scoped migration is separately applied and the reviewed DFW/Klamath connector
+and adapter gates are satisfied.

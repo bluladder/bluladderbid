@@ -740,6 +740,7 @@ export async function notifyVoiceOperatorFollowup(
     } else {
       const deliverSms = deps.deliverSms ?? sendOutboxSms;
       const result = await deliverSms(supabase, {
+        organizationId: args.organizationId,
         outboundKey:
           `voice_operator_alert:${args.organizationId}:${args.claim.callHash}:human_transfer`,
         toNumber: args.contact.phoneE164,

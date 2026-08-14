@@ -521,6 +521,7 @@ export async function runVoiceHangupBidLinkFollowup(
   const outboundKey = buildBidLinkOutboundKey(ctx.callId as string, phone);
   const deliver = input.deliver ?? sendOutboxSms;
   const result = await deliver(supabase, {
+    organizationId: input.organizationId ?? "",
     outboundKey,
     toNumber: phone,
     body: buildBidLinkMessage(customerSite.baseUrl),
