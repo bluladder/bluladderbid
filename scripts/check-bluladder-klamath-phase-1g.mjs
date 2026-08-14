@@ -23,6 +23,8 @@ const relative = {
     "scripts/rehearse-bluladder-klamath-phase-1g-additive-messaging-postgres.sh",
   grantMigration:
     "supabase/migrations/20260814071600_bluladder_klamath_phase_1g_authenticated_grants.sql",
+  grantReceipt:
+    "supabase/migrations/20260814072713_83b1f9da-ae78-4e2e-817a-09c40f2388a4.sql",
   grantPreflight:
     "supabase/preflight/bluladder_klamath_phase_1g_authenticated_grants.sql",
   grantVerification:
@@ -46,7 +48,7 @@ function requireText(key, text) {
 }
 
 for (const text of [
-  "hosted additive schema applied; least-privilege repair and runtime",
+  "hosted additive schema and least-privilege repair verified; runtime",
   "Recipient identity, caller ID, browser input, message content",
   "Failure never falls back to DFW",
   "Platform/legal safety suppressions remain global",
@@ -55,6 +57,7 @@ for (const text of [
   "28 have a server-owned parent",
   "106 are legacy unparented rows",
   "version `20260814071137`",
+  "version `20260814072713`",
   "`REFERENCES`, `TRIGGER`, and `TRUNCATE`",
 ]) requireText("contract", text);
 
@@ -121,6 +124,12 @@ for (const text of [
 ]) requireText("grantMigration", text);
 
 for (const text of [
+  "REVOKE ALL PRIVILEGES",
+  "GRANT SELECT, INSERT, UPDATE, DELETE",
+  "Phase 1G authenticated role retains excess access",
+]) requireText("grantReceipt", text);
+
+for (const text of [
   "BEGIN TRANSACTION READ ONLY",
   "authenticated_privileges",
   "connector_bound_count",
@@ -170,6 +179,10 @@ const exactArtifacts = {
     bytes: 7532,
     sha256: "5d6ecf9f46217c4a4905415f2e5031f9c30dfaa5c0eb41a8634d6fb21c2ae44a",
   },
+  grantReceipt: {
+    bytes: 7531,
+    sha256: "91e3a76e0c209a2c4e157e866b1b899400bbbf6de66ca7860d8656abc8bc9070",
+  },
   grantPreflight: {
     bytes: 2217,
     sha256: "6a23f29576b6d1d3465a7599e64329cf7f89b9297dd276f42d8708e229a45477",
@@ -200,9 +213,9 @@ try {
 if (register) {
   if (
     register.phase !== "1G" ||
-    register.status !== "hosted_schema_applied_grant_repair_candidate" ||
+    register.status !== "hosted_schema_ready_writer_adoption_candidate" ||
     register.prepared_from_main !==
-      "8bc3caa347ea7bad3cc9a571b732d6c19be24912" ||
+      "9433b0013db8c34ca2345605b196933fc1570a1d" ||
     register.messaging_connector_contract_prepared !== true ||
     register.additive_migration_prepared !== true ||
     register.hosted_preflight_passed !== true ||
@@ -213,12 +226,20 @@ if (register) {
     register.hosted_preflight_non_dfw_parent_count !== 0 ||
     register.hosted_schema_applied !== true ||
     register.hosted_execution_version !== "20260814071137" ||
-    register.hosted_ledger_count !== 158 ||
+    register.hosted_ledger_count !== 159 ||
+    register.hosted_ledger_tip !== "20260814072713" ||
+    register.hosted_ledger_fingerprint_sha256 !==
+      "b98e6fcb7ce47a544f22410d1b62a7fbdab90dc99af59518f06302299c24eac2" ||
     register.hosted_data_lineage_postflight_passed !== true ||
-    register.authenticated_grants_exact !== false ||
+    register.authenticated_grants_exact !== true ||
     JSON.stringify(register.authenticated_excess_privileges) !==
-      JSON.stringify(["REFERENCES", "TRIGGER", "TRUNCATE"]) ||
+      JSON.stringify([]) ||
     register.authenticated_grant_repair_prepared !== true ||
+    register.authenticated_grant_repair_applied !== true ||
+    register.authenticated_grant_repair_execution_version !== "20260814072713" ||
+    register.authenticated_grant_repair_payload_bytes !== 7531 ||
+    register.authenticated_grant_repair_payload_sha256 !==
+      "91e3a76e0c209a2c4e157e866b1b899400bbbf6de66ca7860d8656abc8bc9070" ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
     register.klamath_connector_count !== 0 ||
@@ -236,6 +257,7 @@ if (register) {
     const expected = [
       "phase_1g_connector_contract",
       "hosted_messaging_preflight",
+      "messaging_lineage_schema",
     ].includes(gate.id) ? "ready" : "blocked";
     if (gate.status !== expected) errors.push(`gate ${gate.id} must be ${expected}`);
   }
@@ -247,5 +269,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1G gate OK: additive lineage is hosted and verified; exact least-privilege repair is prepared while runtime, providers, messages, and activation remain blocked.",
+  "BluLadder Klamath Phase 1G gate OK: additive lineage and exact least-privilege repair are hosted and verified while runtime, providers, messages, and activation remain blocked.",
 );

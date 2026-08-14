@@ -143,6 +143,7 @@ const reviewedPostRuntimeMigrations = new Set([
   // Forward-only least-privilege repair for Lovable-hydrated structural grants
   // on the Phase 1G messaging connector registry.
   "supabase/migrations/20260814071600_bluladder_klamath_phase_1g_authenticated_grants.sql",
+  "supabase/migrations/20260814072713_83b1f9da-ae78-4e2e-817a-09c40f2388a4.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
