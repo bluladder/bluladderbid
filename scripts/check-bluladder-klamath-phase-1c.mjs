@@ -100,12 +100,13 @@ const typesSha = crypto
   .digest("hex");
 if (
   typesSha !==
-  "1c2e27c7adfff81d570aec8603670c253257e703af70d94c28ad0aee955f6d4b"
+  "96881d6ca1b643e27256967eec97b9781dd264cbcf938779f03f71bcc85bc7dc"
 ) {
   errors.push("Lovable-generated Phase 1C types drifted");
 }
 for (const table of [
   "organization_customer_sites",
+  "organization_messaging_connectors",
   "organization_pricing_profiles",
 ]) requireText("types", `${table}: {`);
 

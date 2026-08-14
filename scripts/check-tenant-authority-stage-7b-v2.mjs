@@ -137,6 +137,12 @@ const reviewedPostRuntimeMigrations = new Set([
   // Phase 1G: additive messaging connector registry and nullable SMS lineage.
   // It creates no connector, changes no provider, and keeps Klamath inactive.
   "supabase/migrations/20260814070000_bluladder_klamath_phase_1g_additive_messaging_lineage.sql",
+  // Lovable-generated receipt for the exact Phase 1G additive messaging
+  // payload, with only terminal-LF normalization.
+  "supabase/migrations/20260814071137_982fc4c4-f1d6-479d-84f4-26a2a8f845ff.sql",
+  // Forward-only least-privilege repair for Lovable-hydrated structural grants
+  // on the Phase 1G messaging connector registry.
+  "supabase/migrations/20260814071600_bluladder_klamath_phase_1g_authenticated_grants.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

@@ -11,8 +11,9 @@ definitions: `organization_settings`, `organization_contacts`,
 `organization_territories`, and `organization_services`. They are classified as
 organization-scoped configuration in the machine-readable inventory. The
 inactive Phase 1C hosted foundation later added generated definitions for
-`organization_customer_sites` and `organization_pricing_profiles`; both are
-also organization-scoped configuration and remain runtime-disabled. The counts
+`organization_customer_sites` and `organization_pricing_profiles`. Phase 1G
+later added `organization_messaging_connectors`; all three are organization-
+scoped configuration and remain runtime-disabled. The counts
 below remain the immutable Stage 7A baseline rather than a statement of current
 generated-schema totals.
 

@@ -1,10 +1,9 @@
 # BluLadder Klamath Phase 1G messaging/outbox lineage
 
-Status: **additive schema candidate; hosted application and runtime changes
-blocked**. This phase defines the organization-owned sender boundary required
-before Klamath can send SMS or email. It adds a reviewed migration candidate,
-but it does not add a credential, sender, provider resource, message, customer
-traffic, or deployment.
+Status: **hosted additive schema applied; least-privilege repair and runtime
+changes blocked**. This phase defines the organization-owned sender boundary
+required before Klamath can send SMS or email. It does not add a credential,
+sender, provider resource, message, customer traffic, or deployment.
 
 ## Authority contract
 
@@ -76,3 +75,25 @@ window. They do not authorize an unscoped send. The separately reviewed writer
 wave must persist server-derived organization and connector authority, prove
 zero new gaps, and run the dispatch guard before either lineage column can be
 made required or any Klamath provider can be configured.
+
+## Hosted execution and grant-repair gate
+
+The exact canonical payload was applied once by Lovable as provider execution
+version `20260814071137`. The provider receipt is the 12,047-byte canonical
+payload without its terminal line feed; adding that one byte reproduces the
+reviewed 12,048-byte SHA-256 exactly. The ledger advanced from 157 to 158 rows.
+Postflight found 134 DFW rows with complete organization lineage, zero connector
+bindings, zero connector rows, unchanged DFW fingerprints, and Klamath still
+provisioning with zero customers or provider identities.
+
+Lovable's table-creation defaults hydrated three structural privileges for the
+`authenticated` role: `REFERENCES`, `TRIGGER`, and `TRUNCATE`. This is not the
+reviewed CRUD-only contract and keeps the schema gate blocked even though RLS,
+both policies, anonymous denial, service-role access, and trigger-function
+execute denial are intact.
+
+`20260814071600_bluladder_klamath_phase_1g_authenticated_grants.sql` is the
+forward-only repair candidate. It accepts only the exact observed seven-grant,
+zero-connector, 134-row DFW state, revokes the hydrated role grants, and restores
+only `SELECT`, `INSERT`, `UPDATE`, and `DELETE`. It changes no row, policy,
+function, provider, sender, credential, runtime, or activation setting.

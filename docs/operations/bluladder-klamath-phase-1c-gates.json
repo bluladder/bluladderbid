@@ -7,7 +7,7 @@
   "hosted_execution_version": "20260814050336",
   "execution_receipt": "supabase/migrations/20260814050336_e5e2c901-cd2c-479c-a5be-71746296fd9b.sql",
   "execution_receipt_sha256": "b7fb60f90775f7315447e467e31ddc0313806d101274d7918b7885915eca4b7b",
-  "generated_types_sha256": "1c2e27c7adfff81d570aec8603670c253257e703af70d94c28ad0aee955f6d4b",
+  "generated_types_sha256": "96881d6ca1b643e27256967eec97b9781dd264cbcf938779f03f71bcc85bc7dc",
   "canonical_hostname": "klamath.bluladder.com",
   "lifecycle_after_application": "provisioning",
   "migration_prepared": true,
