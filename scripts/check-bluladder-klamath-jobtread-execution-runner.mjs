@@ -64,6 +64,7 @@ for (const flag of [
   "outcome_uncertain_reconciliation_required",
   "provider_references_persisted_as_hashes_only",
   "sanitized_outcomes_only",
+  "concrete_database_store_implemented",
 ]) {
   if (evidence?.[flag] !== true) errors.push(`${flag} must be true`);
 }
@@ -73,7 +74,6 @@ if (evidence?.mutation_attempt_number !== 1) {
 for (const flag of [
   "mutation_auto_retry_allowed",
   "runtime_entrypoint_adopted",
-  "concrete_database_store_implemented",
   "credential_created",
   "credential_value_stored_in_repository",
   "custom_fields_created",
@@ -194,6 +194,8 @@ function walk(directory) {
     else if (entry.isFile() && entry.name.endsWith(".ts") &&
       full !== path.join(root, paths.source) &&
       full !== path.join(root, paths.tests) &&
+      !full.endsWith("jobtreadPhase1IStores.ts") &&
+      !full.endsWith("jobtreadPhase1IStores_test.ts") &&
       fs.readFileSync(full, "utf8").includes("jobtreadExecutionRunner")) {
       productionImports.push(path.relative(root, full));
     }
