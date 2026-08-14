@@ -300,6 +300,11 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/organizationConsent.ts",
   "supabase/functions/_shared/organizationConsent_test.ts",
   "supabase/functions/_shared/organizationConsentRuntime_contract_test.ts",
+  // Dormant Klamath JobTread provider seam. No runtime entry point imports
+  // these files; the adapter remains capability-allowlisted and fail-closed.
+  "supabase/functions/_shared/jobtreadConnectorAdapter.ts",
+  "supabase/functions/_shared/jobtreadConnectorAdapter_test.ts",
+  "supabase/functions/_shared/jobtreadPaveClient.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation_test.ts",
   "supabase/functions/_shared/workflow/customerResolver.ts",
