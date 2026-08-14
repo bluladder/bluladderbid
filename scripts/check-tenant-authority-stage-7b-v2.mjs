@@ -316,6 +316,8 @@ const allowedEdgePaths = new Set([
   // these files; the adapter remains capability-allowlisted and fail-closed.
   "supabase/functions/_shared/jobtreadConnectorAdapter.ts",
   "supabase/functions/_shared/jobtreadConnectorAdapter_test.ts",
+  "supabase/functions/_shared/jobtreadBusinessMappings.ts",
+  "supabase/functions/_shared/jobtreadBusinessMappings_test.ts",
   "supabase/functions/_shared/jobtreadPaveClient.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation_test.ts",
