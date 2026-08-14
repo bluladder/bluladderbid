@@ -137,8 +137,12 @@ for (const [key, phrase] of [
 requireText("publicBooking", "PUBLIC_DFW_COUNTIES");
 requireText("bookingReadiness", "organizationPricingSupported");
 requireText("availability", "provider_connector_unavailable_for_organization");
-requireText("voiceLinks", "resolveOrganizationCustomerSite(");
+requireText("voiceLinks", "await loadOrganizationCustomerSiteRoutes(");
 requireText("customerSites", 'code: "customer_site_unavailable"');
+requireText(
+  "customerSites",
+  "export async function loadOrganizationCustomerSiteRoutes",
+);
 requireText(
   "customerSiteTests",
   "unknown organization never falls back to DFW",

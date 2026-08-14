@@ -1,6 +1,9 @@
 import { CANONICAL_PRODUCTION_APP_URL, getAppUrl } from "./appUrl.ts";
 import { DFW_ORGANIZATION_ID } from "./organizationRouting.ts";
 
+// deno-lint-ignore no-explicit-any
+type SB = any;
+
 export type CustomerSiteMappingStatus =
   | "unprovisioned"
   | "provisioning"
@@ -97,6 +100,105 @@ export function buildDfwCustomerSiteRoute(
     sitePublished: true,
     customerTrafficAllowed: true,
   };
+}
+
+function validOrganizationStatus(
+  value: unknown,
+): value is OrganizationCustomerSiteRoute["organizationStatus"] {
+  return ["planning", "provisioning", "active", "suspended", "archived"]
+    .includes(String(value));
+}
+
+function validMappingStatus(
+  value: unknown,
+): value is CustomerSiteMappingStatus {
+  return ["unprovisioned", "provisioning", "active", "disabled"].includes(
+    String(value),
+  );
+}
+
+/**
+ * Load the exact customer-site rows for one server-resolved organization.
+ *
+ * DFW keeps its reviewed static compatibility record because the live DFW
+ * site predates the tenant table. Every other organization is database-backed
+ * and fails closed on malformed authority, read errors, missing organization
+ * state, malformed rows, or partial evidence. Duplicate valid site rows are
+ * deliberately returned so the pure resolver can classify them as ambiguous.
+ */
+export async function loadOrganizationCustomerSiteRoutes(
+  supabase: SB,
+  organizationId: string,
+  options: { dfwBaseUrl?: string } = {},
+): Promise<OrganizationCustomerSiteRoute[]> {
+  const authority = organizationId.trim().toLowerCase();
+  if (!UUID_PATTERN.test(authority)) return [];
+  if (authority === DFW_ORGANIZATION_ID) {
+    return [buildDfwCustomerSiteRoute(options.dfwBaseUrl ?? getAppUrl())];
+  }
+  if (!supabase || typeof supabase.from !== "function") return [];
+
+  try {
+    const [organizationResult, siteResult] = await Promise.all([
+      supabase.from("organizations")
+        .select("id,status")
+        .eq("id", authority)
+        .limit(2),
+      supabase.from("organization_customer_sites")
+        .select(
+          "tenant_key,organization_id,canonical_hostname,mapping_status,runtime_routing_enabled,site_published,customer_traffic_allowed",
+        )
+        .eq("organization_id", authority)
+        .limit(2),
+    ]);
+    if (organizationResult.error || siteResult.error) return [];
+
+    const organizations = Array.isArray(organizationResult.data)
+      ? organizationResult.data
+      : [];
+    const sites = Array.isArray(siteResult.data) ? siteResult.data : [];
+    if (organizations.length !== 1 || sites.length === 0) return [];
+    const organization = organizations[0] as Record<string, unknown>;
+    if (
+      organization.id !== authority ||
+      !validOrganizationStatus(organization.status)
+    ) return [];
+    const organizationStatus = organization.status;
+
+    const routes: Array<OrganizationCustomerSiteRoute | null> = sites.map(
+      (candidate: unknown) => {
+        const row = candidate && typeof candidate === "object"
+          ? candidate as Record<string, unknown>
+          : {};
+        if (
+          typeof row.tenant_key !== "string" || !row.tenant_key.trim() ||
+          row.organization_id !== authority ||
+          typeof row.canonical_hostname !== "string" ||
+          !validMappingStatus(row.mapping_status) ||
+          typeof row.runtime_routing_enabled !== "boolean" ||
+          typeof row.site_published !== "boolean" ||
+          typeof row.customer_traffic_allowed !== "boolean"
+        ) return null;
+        const canonicalHostname = row.canonical_hostname.trim().toLowerCase();
+        return {
+          tenantKey: row.tenant_key.trim(),
+          organizationId: authority,
+          organizationStatus,
+          canonicalHostname,
+          baseUrl: `https://${canonicalHostname}`,
+          mappingStatus: row.mapping_status,
+          runtimeRoutingEnabled: row.runtime_routing_enabled,
+          sitePublished: row.site_published,
+          customerTrafficAllowed: row.customer_traffic_allowed,
+        } satisfies OrganizationCustomerSiteRoute;
+      },
+    );
+    return routes.every((route) => route !== null)
+      ? routes as OrganizationCustomerSiteRoute[]
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 /**

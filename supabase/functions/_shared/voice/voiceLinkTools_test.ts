@@ -17,6 +17,40 @@ import {
 
 const ORG = DFW_ORGANIZATION_ID;
 const UNROUTED_ORG = "00000000-0000-4000-8000-000000000091";
+const KLAMATH_ORG = "b1addf00-0000-4000-8000-000000000003";
+
+function hostedKlamathSiteClient(active: boolean) {
+  const touched: string[] = [];
+  return {
+    touched,
+    from(table: string) {
+      touched.push(table);
+      const chain = {
+        select: (_columns: string) => chain,
+        eq: (_column: string, _value: unknown) => chain,
+        limit: (_count: number) =>
+          Promise.resolve({
+            data: table === "organizations"
+              ? [{
+                id: KLAMATH_ORG,
+                status: active ? "active" : "provisioning",
+              }]
+              : [{
+                tenant_key: "bluladder-klamath",
+                organization_id: KLAMATH_ORG,
+                canonical_hostname: "klamath.bluladder.com",
+                mapping_status: active ? "active" : "provisioning",
+                runtime_routing_enabled: active,
+                site_published: active,
+                customer_traffic_allowed: active,
+              }],
+            error: null,
+          }),
+      };
+      return chain;
+    },
+  };
+}
 
 function body(
   names: string[],
@@ -105,6 +139,58 @@ Deno.test("voice link tools: duplicate calls share one delivery attempt and exac
     "provider_accepted",
   );
   assertEquals(result.results[0].result.includes("\n"), false);
+});
+
+Deno.test("voice link tools: production runtime loads one active non-DFW customer site", async () => {
+  const supabase = hostedKlamathSiteClient(true);
+  const deliveries: OutboxSendInput[] = [];
+  const result = await handleVoiceLinkToolCalls(
+    supabase,
+    { body: body([VOICE_QUOTE_LINK_TOOL]), organizationId: KLAMATH_ORG },
+    allowedDeps((_client, input) => {
+      deliveries.push(input);
+      return Promise.resolve(acceptedResult());
+    }),
+  );
+  assertEquals(supabase.touched, [
+    "organizations",
+    "organization_customer_sites",
+  ]);
+  assertEquals(deliveries.length, 1);
+  assertEquals(
+    new URL(deliveries[0].body.split(" ").at(-1)!).hostname,
+    "klamath.bluladder.com",
+  );
+  assertEquals(
+    decodedResult(result.results[0].result).status,
+    "provider_accepted",
+  );
+});
+
+Deno.test("voice link tools: inactive hosted Klamath stops before suppression or delivery", async () => {
+  const supabase = hostedKlamathSiteClient(false);
+  let suppressionChecks = 0;
+  let deliveries = 0;
+  const result = await handleVoiceLinkToolCalls(
+    supabase,
+    { body: body([VOICE_QUOTE_LINK_TOOL]), organizationId: KLAMATH_ORG },
+    {
+      ...allowedDeps(() => {
+        deliveries++;
+        return Promise.resolve(acceptedResult());
+      }),
+      suppressionCheck: () => {
+        suppressionChecks++;
+        return Promise.resolve({ suppressed: false, reason: null });
+      },
+    },
+  );
+  assertEquals(suppressionChecks, 0);
+  assertEquals(deliveries, 0);
+  assertEquals(
+    decodedResult(result.results[0].result).status,
+    "invalid_request",
+  );
 });
 
 Deno.test("voice link tools: duplicate booking-management requests send one exact portal link", async () => {
