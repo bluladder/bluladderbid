@@ -27,6 +27,7 @@ export const KLAMATH_PROVIDER_GATE_KEYS = [
   "hosted_foundation_verified",
   "dfw_isolation_verified",
   "site_routing_prepared_and_disabled",
+  "klamath_pricing_and_duration_contracts_verified",
   "jobtread_grant_present",
   "jobtread_credential_present",
   "jobtread_custom_fields_verified",
@@ -135,6 +136,11 @@ export interface KlamathLaunchReadinessResult {
   blockers: readonly string[];
 }
 
+export const KLAMATH_OWNER_APPROVAL_RECORD = Object.freeze({
+  recordRef: "github-issue-151",
+  approvedAt: "2026-08-14T14:33:29Z",
+});
+
 export const KLAMATH_EXPECTED_DRAFT_SNAPSHOT: KlamathLaunchDraftSnapshot = {
   businessHours: {
     timezone: BLULADDER_KLAMATH.businessHours.timezone,
@@ -148,7 +154,9 @@ export const KLAMATH_EXPECTED_DRAFT_SNAPSHOT: KlamathLaunchDraftSnapshot = {
     communities: BLULADDER_KLAMATH.territory.communities,
     operatingBases: BLULADDER_KLAMATH.territory.operatingBases,
     automatedServiceKeys: BLULADDER_KLAMATH.services
-      .filter((service) => service.market === "residential")
+      .filter((service) =>
+        service.market === "residential" && service.availability === "planned"
+      )
       .map((service) => service.serviceKey),
     manualReviewServiceKeys: BLULADDER_KLAMATH.services
       .filter((service) => service.availability === "manual_review")
@@ -195,19 +203,18 @@ export const KLAMATH_EXPECTED_DRAFT_SNAPSHOT: KlamathLaunchDraftSnapshot = {
   },
 };
 
-const pendingApproval = (): KlamathOwnerApproval => ({
-  status: "pending",
-  recordRef: null,
-  approvedAt: null,
+const recordedApproval = (): KlamathOwnerApproval => ({
+  status: "approved",
+  ...KLAMATH_OWNER_APPROVAL_RECORD,
 });
 
 const falseRecord = <K extends string>(keys: readonly K[]): Record<K, boolean> =>
   Object.fromEntries(keys.map((key) => [key, false])) as Record<K, boolean>;
 
 /**
- * Safe repository template. It deliberately contains no protected values or
- * provider identifiers and must remain blocked until evidence is captured
- * through separately controlled production procedures.
+ * Safe repository template. It records only the non-sensitive owner decisions
+ * from issue #151, contains no protected values or provider identifiers, and
+ * remains blocked until separately controlled production evidence is captured.
  */
 export const BLULADDER_KLAMATH_LAUNCH_INPUT_TEMPLATE:
   KlamathLaunchInputEnvelope = {
@@ -216,7 +223,7 @@ export const BLULADDER_KLAMATH_LAUNCH_INPUT_TEMPLATE:
     purpose: "activation_review",
     draftSnapshot: KLAMATH_EXPECTED_DRAFT_SNAPSHOT,
     ownerApprovals: Object.fromEntries(
-      KLAMATH_OWNER_DECISION_KEYS.map((key) => [key, pendingApproval()]),
+      KLAMATH_OWNER_DECISION_KEYS.map((key) => [key, recordedApproval()]),
     ) as Record<KlamathOwnerDecisionKey, KlamathOwnerApproval>,
     protectedConfigurationPresence: falseRecord(
       KLAMATH_PROTECTED_PRESENCE_KEYS,
@@ -372,13 +379,7 @@ export function evaluateKlamathLaunchInputs(
       );
       const actualSection = input.draftSnapshot[section];
       const expectedSection = KLAMATH_EXPECTED_DRAFT_SNAPSHOT[section];
-      const sectionMatches = section === "businessHours" &&
-          isRecord(actualSection) && isRecord(expectedSection)
-        ? sameJson(
-          { ...actualSection, activeDays: expectedSection.activeDays },
-          expectedSection,
-        )
-        : sameJson(actualSection, expectedSection);
+      const sectionMatches = sameJson(actualSection, expectedSection);
       if (!sectionMatches) {
         blockers.push(`draft_snapshot_mismatch:${section}`);
       }

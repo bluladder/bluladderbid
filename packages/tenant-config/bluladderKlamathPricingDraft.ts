@@ -155,8 +155,12 @@ export const BLULADDER_KLAMATH_PRICING_DRAFT: PricingConfig = {
   },
 };
 
-export const BLULADDER_KLAMATH_TRAVEL_DRAFT = Object.freeze({
-  status: "manual_review" as const,
+/**
+ * Owner-approved launch travel policy from GitHub issue #151. The policy is
+ * repository authority only until pricing, routing, and activation gates pass.
+ */
+export const BLULADDER_KLAMATH_TRAVEL_POLICY = Object.freeze({
+  status: "approved" as const,
   includedOneWayMinutes: 45,
   waiveChargeAtSubtotal: 500,
   proposedFlatCharge: 100,

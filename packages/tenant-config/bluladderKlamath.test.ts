@@ -9,7 +9,7 @@ import {
 } from "./bluladderKlamath";
 import {
   BLULADDER_KLAMATH_PRICING_DRAFT,
-  BLULADDER_KLAMATH_TRAVEL_DRAFT,
+  BLULADDER_KLAMATH_TRAVEL_POLICY,
 } from "./bluladderKlamathPricingDraft";
 import {
   resolveTenantSiteAuthority,
@@ -62,8 +62,14 @@ describe("BluLadder Klamath Phase 1A configuration", () => {
     expect(BLULADDER_KLAMATH.businessHours).toMatchObject({
       localOpen: "09:00",
       localClose: "17:00",
-      activeDays: [],
-      status: "owner_confirmation_required",
+      activeDays: [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+      ],
+      status: "approved",
     });
     expect(BLULADDER_KLAMATH.booking.instantConfirmationEnabled).toBe(false);
     expect(BLULADDER_KLAMATH.crm).toMatchObject({
@@ -99,13 +105,25 @@ describe("BluLadder Klamath Phase 1A configuration", () => {
     });
     expect(BLULADDER_KLAMATH_PRICING_DRAFT.window_promo_99?.active)
       .toBe(false);
-    expect(BLULADDER_KLAMATH_TRAVEL_DRAFT).toMatchObject({
-      status: "manual_review",
+    expect(BLULADDER_KLAMATH_TRAVEL_POLICY).toMatchObject({
+      status: "approved",
       includedOneWayMinutes: 45,
       waiveChargeAtSubtotal: 500,
       proposedFlatCharge: 100,
       mileageRate: null,
     });
+  });
+
+  it("keeps later-wave services inactive and under manual review", () => {
+    const laterWave = BLULADDER_KLAMATH.services.filter((service) =>
+      ["solar_panel_cleaning", "christmas_lights"].includes(
+        service.serviceKey,
+      )
+    );
+    expect(laterWave).toHaveLength(2);
+    expect(laterWave.every((service) =>
+      service.status === "inactive" && service.availability === "manual_review"
+    )).toBe(true);
   });
 });
 

@@ -51,11 +51,13 @@ not accept a client organization ID and has no DFW default.
 - Locale: US English, USD, and `America/Los_Angeles`.
 - Planned territory: Klamath and Lake counties, both inactive until hosted
   service-area verification.
-- Planned residential services: window cleaning, gutter cleaning, house
-  washing, and pressure washing/flatwork. Commercial and storefront work stay
-  in manual review.
-- Intended hours: 9:00 AM–5:00 PM Pacific. Active weekdays remain empty pending
-  owner confirmation, so instant confirmation is disabled.
+- Planned first-wave residential services: window cleaning, gutter cleaning,
+  house washing, and pressure washing/flatwork. Solar-panel cleaning,
+  Christmas-light installation, commercial, and storefront work stay in manual
+  review pending exact pricing, duration, and scope approval.
+- Approved hours: 9:00 AM–5:00 PM Pacific, Monday through Friday. Saturday is
+  manual request/review only and Sunday is closed. Instant confirmation remains
+  disabled until the separate runtime and activation gates pass.
 - Booking policy: 48-hour notice, 370-day horizon, 48-hour cancellation notice,
   30-day quote expiry, payment after service, and no deposit.
 - CRM: JobTread only, unverified and credential-free. DFW Jobber fallback is
@@ -73,11 +75,13 @@ instead of importing the DFW fixture or reading live DFW configuration. This
 lets Klamath diverge safely after owner review. The profile is version 1,
 `draft`, and runtime-disabled.
 
-Oregon's no-general-sales-tax planning rule is represented as a zero tax rate.
-The DFW $99 promotion is copied for traceability but disabled. Travel remains
-manual review: 45 included one-way minutes, a proposed $100 flat charge below a
-$500 subtotal, and unresolved mileage governance. None of these draft numbers
-may produce a customer quote until a separately approved pricing phase.
+Oregon's no-general-sales-tax rule is represented as a zero tax rate. The DFW
+$99 promotion is copied for traceability but disabled. The owner-approved
+launch travel policy includes 45 one-way minutes and a $100 flat charge below a
+$500 subtotal, waived at $500 or more; unresolved remote routes remain manual
+review and per-mile calculations remain deferred. The pricing profile and its
+duration policy remain draft and runtime-disabled until their exact independent
+verification gate passes.
 
 ## Remaining release gates
 

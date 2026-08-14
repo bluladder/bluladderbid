@@ -68,9 +68,16 @@ for (const text of [
   'version: "oregon-no-general-sales-tax-2026-08-13"',
   "rate: 0",
   'active: false',
-  'status: "manual_review"',
+  'status: "approved"',
   "mileageRate: null",
 ]) requireText("pricing", text);
+
+for (const text of [
+  'activeDays: ["monday", "tuesday", "wednesday", "thursday", "friday"]',
+  'status: "approved"',
+  'serviceKey: "solar_panel_cleaning"',
+  'serviceKey: "christmas_lights"',
+]) requireText("tenant", text);
 
 for (const text of [
   "blocks the current provisioning Klamath mapping",
