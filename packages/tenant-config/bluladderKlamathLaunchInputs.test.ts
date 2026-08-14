@@ -3,6 +3,7 @@ import {
   BLULADDER_KLAMATH_LAUNCH_INPUT_TEMPLATE,
   evaluateKlamathLaunchInputs,
   KLAMATH_EXPECTED_DRAFT_SNAPSHOT,
+  KLAMATH_OWNER_APPROVAL_RECORD,
   KLAMATH_OWNER_DECISION_KEYS,
   KLAMATH_PROTECTED_PRESENCE_KEYS,
   KLAMATH_PROVIDER_GATE_KEYS,
@@ -16,13 +17,9 @@ function readyFixture(): KlamathLaunchInputEnvelope {
     tenantKey: "bluladder-klamath",
     purpose: "activation_review",
     draftSnapshot: structuredClone(KLAMATH_EXPECTED_DRAFT_SNAPSHOT),
-    ownerApprovals: Object.fromEntries(
-      KLAMATH_OWNER_DECISION_KEYS.map((key) => [key, {
-        status: "approved",
-        recordRef: "github-issue-151",
-        approvedAt: "2026-08-14T14:00:00Z",
-      }]),
-    ) as KlamathLaunchInputEnvelope["ownerApprovals"],
+    ownerApprovals: structuredClone(
+      BLULADDER_KLAMATH_LAUNCH_INPUT_TEMPLATE.ownerApprovals,
+    ),
     protectedConfigurationPresence: Object.fromEntries(
       KLAMATH_PROTECTED_PRESENCE_KEYS.map((key) => [key, true]),
     ) as KlamathLaunchInputEnvelope["protectedConfigurationPresence"],
@@ -33,31 +30,38 @@ function readyFixture(): KlamathLaunchInputEnvelope {
       KLAMATH_RELEASE_GATE_KEYS.map((key) => [key, true]),
     ) as KlamathLaunchInputEnvelope["releaseEvidence"],
   };
-  fixture.draftSnapshot.businessHours.activeDays = [
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-  ];
   return fixture;
 }
 
 describe("Klamath launch-input readiness", () => {
-  it("keeps the repository template blocked without protected values", () => {
+  it("records owner decisions but keeps the template blocked without protected values", () => {
     const result = evaluateKlamathLaunchInputs(
       BLULADDER_KLAMATH_LAUNCH_INPUT_TEMPLATE,
     );
 
     expect(result.status).toBe("blocked");
     expect(result.activationAllowed).toBe(false);
-    expect(result.blockers).toContain("owner_approval_missing:business_hours");
-    expect(result.blockers).toContain("business_hours_active_days_invalid");
+    expect(BLULADDER_KLAMATH_LAUNCH_INPUT_TEMPLATE.ownerApprovals)
+      .toEqual(Object.fromEntries(
+        KLAMATH_OWNER_DECISION_KEYS.map((key) => [key, {
+          status: "approved",
+          ...KLAMATH_OWNER_APPROVAL_RECORD,
+        }]),
+      ));
+    expect(result.blockers).not.toContain(
+      "owner_approval_missing:business_hours",
+    );
+    expect(result.blockers).not.toContain(
+      "business_hours_active_days_invalid",
+    );
     expect(result.blockers).toContain(
       "protected_configuration_missing:public_customer_contact",
     );
     expect(result.blockers).toContain(
       "provider_gate_incomplete:jobtread_grant_present",
+    );
+    expect(result.blockers).toContain(
+      "provider_gate_incomplete:klamath_pricing_and_duration_contracts_verified",
     );
   });
 
@@ -79,6 +83,24 @@ describe("Klamath launch-input readiness", () => {
         "draft_snapshot_mismatch:businessHours",
       ]),
     );
+  });
+
+  it("keeps later-wave services outside automated pricing", () => {
+    expect(KLAMATH_EXPECTED_DRAFT_SNAPSHOT.territoryAndServices)
+      .toMatchObject({
+        automatedServiceKeys: [
+          "window_cleaning",
+          "gutter_cleaning",
+          "house_wash",
+          "pressure_washing",
+        ],
+        manualReviewServiceKeys: [
+          "solar_panel_cleaning",
+          "christmas_lights",
+          "commercial_exterior_cleaning",
+          "storefront_window_cleaning",
+        ],
+      });
   });
 
   it("rejects pricing, provider, and DFW-fallback draft drift", () => {

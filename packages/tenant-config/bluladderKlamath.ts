@@ -1,7 +1,7 @@
 import type { TenantBusinessConfiguration } from "./contracts";
 import {
   BLULADDER_KLAMATH_PRICING_PROFILE_KEY,
-  BLULADDER_KLAMATH_TRAVEL_DRAFT,
+  BLULADDER_KLAMATH_TRAVEL_POLICY,
 } from "./bluladderKlamathPricingDraft";
 import type { TenantSiteAuthorityRecord } from "./siteAuthority";
 
@@ -122,6 +122,24 @@ export const BLULADDER_KLAMATH: TenantBusinessConfiguration = {
       reason: "Requires pricing approval and hosted activation.",
     },
     {
+      serviceKey: "solar_panel_cleaning",
+      displayName: "Solar-Panel Cleaning",
+      market: "residential",
+      availability: "manual_review",
+      status: "inactive",
+      reason:
+        "Exact Klamath pricing, duration, access, and safety scope require separate approval.",
+    },
+    {
+      serviceKey: "christmas_lights",
+      displayName: "Christmas-Light Installation",
+      market: "residential",
+      availability: "manual_review",
+      status: "inactive",
+      reason:
+        "Seasonal pricing, duration, calendar, and scope require separate approval.",
+    },
+    {
       serviceKey: "commercial_exterior_cleaning",
       displayName: "Commercial Exterior Cleaning",
       market: "commercial",
@@ -142,8 +160,8 @@ export const BLULADDER_KLAMATH: TenantBusinessConfiguration = {
     timezone: "America/Los_Angeles",
     localOpen: "09:00",
     localClose: "17:00",
-    activeDays: [],
-    status: "owner_confirmation_required",
+    activeDays: ["monday", "tuesday", "wednesday", "thursday", "friday"],
+    status: "approved",
   },
   booking: {
     minimumNoticeHours: 48,
@@ -181,7 +199,7 @@ export const BLULADDER_KLAMATH: TenantBusinessConfiguration = {
     copiedFrom:
       "dfw-canonical-pricing-snapshot@9fd53d4458996f352e99dd6fbc679c435ee83793",
     taxPolicy: "oregon_no_general_sales_tax",
-    travelPolicyStatus: BLULADDER_KLAMATH_TRAVEL_DRAFT.status,
+    travelPolicyStatus: BLULADDER_KLAMATH_TRAVEL_POLICY.status,
   },
 };
 

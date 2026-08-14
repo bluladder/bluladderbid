@@ -50,12 +50,18 @@ if (template?.tenantKey !== "bluladder-klamath") {
 if (template?.purpose !== "activation_review") {
   errors.push("template purpose must be activation_review");
 }
+const expectedApproval = {
+  status: "approved",
+  recordRef: "github-issue-151",
+  approvedAt: "2026-08-14T14:33:29Z",
+};
 for (const [key, approval] of Object.entries(template?.ownerApprovals ?? {})) {
   if (
-    approval?.status !== "pending" || approval?.recordRef !== null ||
-    approval?.approvedAt !== null
+    approval?.status !== expectedApproval.status ||
+    approval?.recordRef !== expectedApproval.recordRef ||
+    approval?.approvedAt !== expectedApproval.approvedAt
   ) {
-    errors.push(`repository approval ${key} must remain pending and empty`);
+    errors.push(`repository approval ${key} must match issue #151`);
   }
 }
 for (const section of [
@@ -74,6 +80,8 @@ for (const phrase of [
   "sensitive_field_present",
   "repository_activation_boundary_open",
   "dfw_fallback_boundary_open",
+  "KLAMATH_OWNER_APPROVAL_RECORD",
+  "klamath_pricing_and_duration_contracts_verified",
 ]) {
   if (!content.implementation?.includes(phrase)) {
     errors.push(`implementation omits ${phrase}`);
@@ -84,11 +92,16 @@ for (const phrase of [
   "boolean presence",
   "Unknown fields fail closed",
   "explicit signed GO",
+  "Monday through Friday",
+  "Solar-panel",
+  "pricing-and-duration verification gate",
 ]) {
   if (!content.contract?.includes(phrase)) errors.push(`contract omits ${phrase}`);
 }
 for (const phrase of [
   "can reach only a separate activation review",
+  "records owner decisions but keeps the template blocked",
+  "keeps later-wave services outside automated pricing",
   "provider identifiers and secret-like extra fields",
   "unrelated extra fields",
   "activationAllowed).toBe(false)",

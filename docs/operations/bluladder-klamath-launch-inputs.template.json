@@ -7,7 +7,7 @@
       "timezone": "America/Los_Angeles",
       "localOpen": "09:00",
       "localClose": "17:00",
-      "activeDays": [],
+      "activeDays": ["monday", "tuesday", "wednesday", "thursday", "friday"],
       "holidayPolicy": "manual"
     },
     "territoryAndServices": {
@@ -15,13 +15,13 @@
       "communities": ["Klamath Falls", "Lakeview", "Keno", "Bly", "Bonanza", "Chiloquin", "Sprague River", "Malin", "Merrill"],
       "operatingBases": ["Klamath Falls", "Bly"],
       "automatedServiceKeys": ["window_cleaning", "gutter_cleaning", "house_wash", "pressure_washing"],
-      "manualReviewServiceKeys": ["commercial_exterior_cleaning", "storefront_window_cleaning"]
+      "manualReviewServiceKeys": ["solar_panel_cleaning", "christmas_lights", "commercial_exterior_cleaning", "storefront_window_cleaning"]
     },
     "pricingAndBooking": {
       "profileKey": "bluladder-klamath-pricing-draft",
       "profileVersion": 1,
       "taxPolicy": "oregon_no_general_sales_tax",
-      "travelPolicyStatus": "manual_review",
+      "travelPolicyStatus": "approved",
       "includedOneWayTravelMinutes": 45,
       "waiveTravelChargeAtSubtotal": 500,
       "proposedFlatTravelCharge": 100,
@@ -46,12 +46,12 @@
     }
   },
   "ownerApprovals": {
-    "business_hours": { "status": "pending", "recordRef": null, "approvedAt": null },
-    "territory_and_services": { "status": "pending", "recordRef": null, "approvedAt": null },
-    "pricing_and_booking": { "status": "pending", "recordRef": null, "approvedAt": null },
-    "site_and_branding": { "status": "pending", "recordRef": null, "approvedAt": null },
-    "messaging_compliance": { "status": "pending", "recordRef": null, "approvedAt": null },
-    "jobtread_setup": { "status": "pending", "recordRef": null, "approvedAt": null }
+    "business_hours": { "status": "approved", "recordRef": "github-issue-151", "approvedAt": "2026-08-14T14:33:29Z" },
+    "territory_and_services": { "status": "approved", "recordRef": "github-issue-151", "approvedAt": "2026-08-14T14:33:29Z" },
+    "pricing_and_booking": { "status": "approved", "recordRef": "github-issue-151", "approvedAt": "2026-08-14T14:33:29Z" },
+    "site_and_branding": { "status": "approved", "recordRef": "github-issue-151", "approvedAt": "2026-08-14T14:33:29Z" },
+    "messaging_compliance": { "status": "approved", "recordRef": "github-issue-151", "approvedAt": "2026-08-14T14:33:29Z" },
+    "jobtread_setup": { "status": "approved", "recordRef": "github-issue-151", "approvedAt": "2026-08-14T14:33:29Z" }
   },
   "protectedConfigurationPresence": {
     "local_manager": false,
@@ -66,6 +66,7 @@
     "hosted_foundation_verified": false,
     "dfw_isolation_verified": false,
     "site_routing_prepared_and_disabled": false,
+    "klamath_pricing_and_duration_contracts_verified": false,
     "jobtread_grant_present": false,
     "jobtread_credential_present": false,
     "jobtread_custom_fields_verified": false,
