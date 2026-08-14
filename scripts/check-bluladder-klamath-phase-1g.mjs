@@ -46,6 +46,8 @@ const relative = {
     "scripts/rehearse-bluladder-klamath-phase-1g-scoped-sms-outbox-postgres.sh",
   dfwConnectorMigration:
     "supabase/migrations/20260814085000_bluladder_klamath_phase_1g_dfw_connector_compatibility.sql",
+  dfwConnectorReceipt:
+    "supabase/migrations/20260814090619_8c3ae55b-db39-4ff8-ba3c-ad87f135b7b0.sql",
   dfwConnectorPreflight:
     "supabase/preflight/bluladder_klamath_phase_1g_dfw_connector_compatibility.sql",
   dfwConnectorVerification:
@@ -228,6 +230,22 @@ for (const text of [
 ]) requireText("dfwConnectorMigration", text);
 
 for (const text of [
+  "Phase 1G messaging connector state is not empty",
+  "bluladder-dfw-callrail-production-v1",
+  "bluladder-dfw-callrail-sender-v1",
+  "channel = 'sms'",
+  "non_sms_bound_count",
+  "Phase 1G migration activated Klamath messaging",
+]) requireText("dfwConnectorReceipt", text);
+
+if (`${content.dfwConnectorReceipt ?? ""}\n` !==
+    (content.dfwConnectorMigration ?? "")) {
+  errors.push(
+    "Lovable DFW connector receipt is not the terminal-LF-normalized canonical payload",
+  );
+}
+
+for (const text of [
   "BEGIN TRANSACTION READ ONLY",
   "exact_dfw_count",
   "sms_channel_count",
@@ -350,6 +368,10 @@ const exactArtifacts = {
     bytes: 5999,
     sha256: "51135966ec2f31d0fda7615d04b7ba64d248d1b4cf4557d1bd32b4ac52b9873c",
   },
+  dfwConnectorReceipt: {
+    bytes: 5998,
+    sha256: "5fe5d76758117e460f878609a605353efefbcdf2e59da8ca7e40bc724905472b",
+  },
   dfwConnectorPreflight: {
     bytes: 1803,
     sha256: "20b7daaa791c8f7ce53fa1403f8f2619115897f4dd55f776d8f5ca2ff0a9469a",
@@ -380,9 +402,9 @@ try {
 if (register) {
   if (
     register.phase !== "1G" ||
-    register.status !== "dfw_connector_channel_scoped_repair_prepared" ||
+    register.status !== "dfw_connector_compatibility_applied" ||
     register.prepared_from_main !==
-      "92251313e9f5f9d10491559a9c5e76589fd97ef9" ||
+      "8c0b441fe677f9bd004c3ce4ad587f845294c136" ||
     register.messaging_connector_contract_prepared !== true ||
     register.additive_migration_prepared !== true ||
     register.hosted_preflight_passed !== true ||
@@ -395,10 +417,10 @@ if (register) {
     register.hosted_preflight_non_dfw_parent_count !== 0 ||
     register.hosted_schema_applied !== true ||
     register.hosted_execution_version !== "20260814071137" ||
-    register.hosted_ledger_count !== 160 ||
-    register.hosted_ledger_tip !== "20260814081254" ||
+    register.hosted_ledger_count !== 161 ||
+    register.hosted_ledger_tip !== "20260814090619" ||
     register.hosted_ledger_fingerprint_sha256 !==
-      "db0c52f8e729931bc6f60270bae6e3050d4e7a33c6abcc0ecf55cb05e8b3c069" ||
+      "4ee6082deeaeb43f4e8fd200052a8f992391a50969d40ef0c41bf3f95ef4cfe7" ||
     register.hosted_data_lineage_postflight_passed !== true ||
     register.authenticated_grants_exact !== true ||
     JSON.stringify(register.authenticated_excess_privileges) !==
@@ -423,11 +445,17 @@ if (register) {
     register.twilio_credentials_present !== false ||
     register.twilio_sender_present !== false ||
     register.dfw_connector_compatibility_migration_prepared !== true ||
-    register.dfw_connector_compatibility_migration_applied !== false ||
+    register.dfw_connector_compatibility_migration_applied !== true ||
+    register.dfw_connector_compatibility_execution_version !==
+      "20260814090619" ||
+    register.dfw_connector_compatibility_payload_bytes !== 5998 ||
+    register.dfw_connector_compatibility_payload_sha256 !==
+      "5fe5d76758117e460f878609a605353efefbcdf2e59da8ca7e40bc724905472b" ||
+    register.dfw_connector_compatibility_postflight_passed !== true ||
     register.dfw_connector_compatibility_first_attempt_rolled_back !== true ||
     register.dfw_connector_compatibility_first_attempt_error !==
       "connector_channel_mismatch" ||
-    register.dfw_connector_count !== 0 ||
+    register.dfw_connector_count !== 1 ||
     register.dfw_connector_runtime_allowlist_prepared !== true ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
@@ -449,6 +477,7 @@ if (register) {
       "messaging_lineage_schema",
       "organization_scoped_outbox",
       "twilio_adapter",
+      "dfw_connector_compatibility",
     ].includes(gate.id) ? "ready" : "blocked";
     if (gate.status !== expected) errors.push(`gate ${gate.id} must be ${expected}`);
   }
@@ -460,5 +489,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1G gate OK: additive lineage, exact least-privilege repair, and scoped transactional outbox are hosted and verified while remaining writer adoption, runtime, providers, messages, and activation remain blocked.",
+  "BluLadder Klamath Phase 1G gate OK: additive lineage, exact least-privilege repair, scoped transactional outbox, and DFW connector compatibility are hosted and verified while remaining writer adoption, runtime, Klamath providers, messages, and activation remain blocked.",
 );
