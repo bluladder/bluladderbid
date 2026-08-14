@@ -68,6 +68,7 @@ for (const flag of [
   "concrete_read_plan_source_implemented",
   "customer_write_plan_source_implemented",
   "dormant_composition_implemented",
+  "credential_created",
   "custom_fields_created",
   "provider_resources_mutated",
 ]) {
@@ -79,7 +80,8 @@ if (evidence?.mutation_attempt_number !== 1) {
 for (const flag of [
   "mutation_auto_retry_allowed",
   "runtime_entrypoint_adopted",
-  "credential_created",
+  "credential_configured",
+  "credential_verified",
   "credential_value_stored_in_repository",
   "protected_custom_field_bindings_recorded",
   "webhook_created",

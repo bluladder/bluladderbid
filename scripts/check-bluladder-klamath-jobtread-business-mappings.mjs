@@ -56,6 +56,7 @@ for (const flag of [
   "write_idempotency_required",
   "outcome_uncertain_reconciliation_required",
   "schedule_read_is_busy_evidence_only",
+  "grant_created",
   "custom_fields_created",
   "provider_resources_mutated",
 ]) {
@@ -66,8 +67,8 @@ for (const flag of [
   "booking_job_schedule_published",
   "provider_notifications_enabled",
   "runtime_entrypoint_adopted",
-  "grant_created",
   "credential_configured",
+  "credential_verified",
   "protected_custom_field_bindings_recorded",
   "webhook_created",
   "connector_row_created",

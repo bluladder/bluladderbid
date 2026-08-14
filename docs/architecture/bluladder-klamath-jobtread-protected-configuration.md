@@ -10,7 +10,10 @@ text fields now exist with the exact names `BluLadder Customer Reference`,
 `BluLadder Location Reference`, and `BluLadder Booking Reference`. The existing
 Customer Contact `Phone` and `Email` fields are the reviewed contact bindings.
 The exact provider organization and field identifiers remain protected and are
-not recorded here. No webhook or Grant Key was created during that checkpoint.
+not recorded here. A later protected checkpoint created one organization-scoped
+Grant. Its value is absent from the repository and remains unconfigured and
+unverified because the controlled security boundary stopped transmission
+without a verified Pave response. No webhook was created.
 
 ## Secret and authority boundary
 
@@ -36,7 +39,7 @@ credential resolver returns it only for the one compiled Klamath reference.
 ## Still blocked
 
 This module is not imported by a production entry point and performs no
-provider request. The organization-scoped Grant Key, protected environment
-values, inactive connector row, provider health/availability acceptance,
+provider request. Protected Grant storage and verification, protected
+environment values, an inactive connector row, provider health/availability acceptance,
 runtime deployment, pricing approval, contacts, messaging, telephony, site
 publication, customer traffic, and activation remain separately gated.

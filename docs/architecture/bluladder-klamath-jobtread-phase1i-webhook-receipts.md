@@ -1,8 +1,10 @@
 # BluLadder Klamath JobTread Phase 1I webhook receipts
 
-Status: **dormant repository contract prepared**. This adapter creates no
-webhook, authentication secret, connector, credential, provider request,
-customer action, deployment, activation, or traffic.
+Status: **dormant repository contract prepared**. A later protected checkpoint
+created one organization-scoped Grant, but it remains unconfigured and
+unverified. This adapter creates no webhook, authentication secret, connector,
+credential, provider request, customer action, deployment, activation, or
+traffic.
 No production Edge entry point imports it.
 
 ## Input and storage boundary
@@ -50,7 +52,7 @@ and timestamps. It cannot retry, resume, repair, or contact JobTread.
 
 The store is deliberately unreachable. Separate reviewed work must still
 implement webhook authentication before claim, authenticated event parsing,
-protected plan persistence, provider credential and webhook setup, one
+protected plan persistence, protected credential storage/verification, one
 inactive connector row, runtime entry-point adoption, deployment, controlled
 acceptance, and every Klamath business, pricing, messaging, telephony,
 publication, and customer-traffic approval. There is no Jobber or DFW fallback.

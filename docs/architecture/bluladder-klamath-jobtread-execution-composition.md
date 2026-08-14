@@ -2,8 +2,10 @@
 
 Status: **dormant repository contract prepared**. No production Edge entry
 point imports this module. The exact non-sensitive custom-field names now
-exist, but it creates no credential, protected binding, connector, provider
-request, attempt, hosted write, deployment, or activation.
+exist and a later protected checkpoint created one organization-scoped Grant.
+The Grant remains unconfigured and unverified; this module creates no
+credential, protected binding, connector, provider request, attempt, hosted
+write, deployment, or activation.
 
 ## Exact routing
 
@@ -30,7 +32,8 @@ provider state.
 ## Remaining gates
 
 The composition is intentionally unreachable. Real protected context and
-configuration adapters, protected field bindings, Grant Key, inactive connector row,
+configuration adapters, protected field bindings, protected Grant storage and
+verification, an inactive connector row,
 capacity semantics, a separately reviewed production entry point, deployment,
 owner-controlled provider acceptance, and activation remain blocked. There is
 no webhook, Jobber fallback, DFW fallback, customer traffic, or provider request.

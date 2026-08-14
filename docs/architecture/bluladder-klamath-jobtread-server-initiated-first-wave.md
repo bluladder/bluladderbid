@@ -32,7 +32,9 @@ change in both systems. Live availability reads remain mandatory so an
 unplanned JobTread task can block a conflicting booking even though its payload
 was never pushed to BluLadder.
 
-This mode does not make JobTread runtime ready. Protected Grant Key creation,
-custom-field setup, an inactive connector row, prepared-plan persistence,
-runtime adoption, deployment, owner-controlled acceptance, and final
-activation review remain separate gates.
+This mode does not make JobTread runtime ready. The organization-scoped Grant
+and exact non-sensitive custom-field names now exist, but protected Grant
+storage, protected field bindings, an inactive connector row, prepared-plan
+persistence, runtime adoption, deployment, owner-controlled acceptance, and
+final activation review remain separate gates. No Pave response was received
+and no provider read was verified.
