@@ -147,6 +147,7 @@ jobs:
           createdb --host localhost --username postgres bluladder_klamath_phase1g_grants_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1g_scoped_outbox_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1g_dfw_connector_rehearsal
+          createdb --host localhost --username postgres bluladder_klamath_phase1h_consent_lineage_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -204,6 +205,10 @@ jobs:
         env:
           BLULADDER_KLAMATH_PHASE1G_DFW_CONNECTOR_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1g_dfw_connector_rehearsal
         run: bash scripts/rehearse-bluladder-klamath-phase-1g-dfw-connector-postgres.sh
+      - name: Rehearse BluLadder Klamath Phase 1H consent lineage
+        env:
+          BLULADDER_KLAMATH_PHASE1H_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1h_consent_lineage_rehearsal
+        run: bash scripts/rehearse-bluladder-klamath-phase-1h-consent-lineage-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
