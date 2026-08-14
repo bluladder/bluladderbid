@@ -1,8 +1,8 @@
 # BluLadder Klamath Phase 1I CRM connector lineage
 
-Status: **repository migration candidate only**. The hosted preflight has not
-run, the migration has not been applied, and no connector, credential, webhook,
-provider call, deployment, customer traffic, or activation is authorized.
+Status: **hosted additive schema verified; authenticated grant repair
+required**. No connector, credential, webhook, provider call, deployment,
+customer traffic, or activation is authorized.
 
 ## Purpose
 
@@ -67,18 +67,41 @@ ledgers. Membership predicates use indexed organization/user lineage and cache
 - disposable PostgreSQL rehearsal:
   `scripts/rehearse-bluladder-klamath-phase-1i-crm-connector-postgres.sh`.
 
-The preflight requires the exact active DFW default, one provisioning Klamath
+The preflight required the exact active DFW default, one provisioning Klamath
 organization, zero Klamath customer traffic and provider identities, all six
 prerequisite tables, and complete absence of the three target tables. The
-postflight proves exact RLS, policy, grant, index, empty-table, DFW, and inactive
-Klamath state. Both SQL inspections are bounded read-only transactions that
-roll back.
+postflight reports exact RLS, policy, grant, index, empty-table, DFW, and
+inactive Klamath state so every hosted difference is explicit. Both SQL
+inspections are bounded read-only transactions that roll back.
+
+## Hosted application and grant repair
+
+The exact preflight passed against the Lovable-hosted database from merged main
+`e57401240c6661b0aba82859a9793a14e3e6ec42`. Lovable applied the canonical
+migration once as hosted execution version `20260814113042`; its one stored
+statement is the 13,540-byte canonical payload without the terminal line feed.
+Adding that byte reproduces the reviewed 13,541-byte SHA-256 exactly. The
+migration ledger advanced from 162 to 163 rows.
+
+Independent postflight proved three empty RLS-enabled tables, exact policy and
+index counts, anonymous denial, complete service-role access, unchanged DFW
+authority, and provisioning Klamath with zero memberships, customers,
+conversations, bookings, provider identities, connectors, operation attempts,
+or webhook receipts.
+
+Lovable's table-creation defaults also hydrated `REFERENCES`, `TRIGGER`, and
+`TRUNCATE` for `authenticated` on all three tables. RLS still denies audit
+writes because the audit tables have only SELECT policies, but the direct grant
+surface is broader than the reviewed least-privilege contract. The separate
+forward-only grant repair accepts only that exact state, narrows connector
+configuration to CRUD and both audit tables to SELECT, and otherwise changes
+nothing.
 
 ## Separately gated work
 
-After exact-head CI and Secret Scan, a separately authorized hosted preflight
-must run unchanged. Migration application remains a separate owner action.
-Even after application, all of the following remain blocked:
+The additive migration is applied. The authenticated-grant repair must pass
+exact-head CI and Secret Scan, then requires a separately controlled hosted
+application and read-only verification. All of the following remain blocked:
 
 1. creating or reading a JobTread Grant Key;
 2. creating a JobTread webhook or protected secret;
