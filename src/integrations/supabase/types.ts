@@ -1843,6 +1843,7 @@ export type Database = {
           language_shown: string | null
           metadata: Json
           opt_out_source: string | null
+          organization_id: string
           phone: string | null
           revoked_at: string | null
           session_id: string | null
@@ -1864,6 +1865,7 @@ export type Database = {
           language_shown?: string | null
           metadata?: Json
           opt_out_source?: string | null
+          organization_id: string
           phone?: string | null
           revoked_at?: string | null
           session_id?: string | null
@@ -1885,6 +1887,7 @@ export type Database = {
           language_shown?: string | null
           metadata?: Json
           opt_out_source?: string | null
+          organization_id?: string
           phone?: string | null
           revoked_at?: string | null
           session_id?: string | null
@@ -1921,6 +1924,13 @@ export type Database = {
             referencedRelation: "customers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "communication_consent_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       communication_consent_events: {
@@ -1928,13 +1938,14 @@ export type Database = {
           action: string
           actor_id: string | null
           channel: Database["public"]["Enums"]["consent_channel"] | null
-          consent_id: string | null
+          consent_id: string
           consent_type: Database["public"]["Enums"]["consent_type"] | null
           created_at: string
           email: string | null
           id: string
           language_shown: string | null
           metadata: Json
+          organization_id: string
           phone: string | null
           source: string | null
           status: Database["public"]["Enums"]["consent_status"] | null
@@ -1943,13 +1954,14 @@ export type Database = {
           action: string
           actor_id?: string | null
           channel?: Database["public"]["Enums"]["consent_channel"] | null
-          consent_id?: string | null
+          consent_id: string
           consent_type?: Database["public"]["Enums"]["consent_type"] | null
           created_at?: string
           email?: string | null
           id?: string
           language_shown?: string | null
           metadata?: Json
+          organization_id: string
           phone?: string | null
           source?: string | null
           status?: Database["public"]["Enums"]["consent_status"] | null
@@ -1958,23 +1970,31 @@ export type Database = {
           action?: string
           actor_id?: string | null
           channel?: Database["public"]["Enums"]["consent_channel"] | null
-          consent_id?: string | null
+          consent_id?: string
           consent_type?: Database["public"]["Enums"]["consent_type"] | null
           created_at?: string
           email?: string | null
           id?: string
           language_shown?: string | null
           metadata?: Json
+          organization_id?: string
           phone?: string | null
           source?: string | null
           status?: Database["public"]["Enums"]["consent_status"] | null
         }
         Relationships: [
           {
-            foreignKeyName: "communication_consent_events_consent_id_fkey"
-            columns: ["consent_id"]
+            foreignKeyName: "communication_consent_events_organization_consent_fkey"
+            columns: ["organization_id", "consent_id"]
             isOneToOne: false
             referencedRelation: "communication_consent"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "communication_consent_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -7078,6 +7098,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      consent_allows_for_organization: {
+        Args: {
+          p_channel: Database["public"]["Enums"]["consent_channel"]
+          p_email?: string
+          p_organization_id: string
+          p_phone?: string
+          p_required: Database["public"]["Enums"]["consent_type"]
+        }
+        Returns: boolean
+      }
       consume_customer_access_test_auth: {
         Args: { p_idempotency_key: string; p_test_type: string }
         Returns: Json
@@ -7221,6 +7251,25 @@ export type Database = {
       record_live_jobber_authorization_result: {
         Args: { p_email: string; p_result: Json }
         Returns: undefined
+      }
+      record_organization_consent: {
+        Args: {
+          p_actor_id?: string
+          p_booking_id?: string
+          p_channel: Database["public"]["Enums"]["consent_channel"]
+          p_consent_type: Database["public"]["Enums"]["consent_type"]
+          p_conversation_id?: string
+          p_customer_id?: string
+          p_email?: string
+          p_language_shown?: string
+          p_metadata?: Json
+          p_organization_id: string
+          p_phone?: string
+          p_session_id?: string
+          p_source?: string
+          p_status: Database["public"]["Enums"]["consent_status"]
+        }
+        Returns: string
       }
       release_autosync_lock: {
         Args: { p_error?: string; p_holder_id: string; p_status?: string }
