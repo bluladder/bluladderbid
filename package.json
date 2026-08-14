@@ -42,6 +42,7 @@
     "check:klamath-jobtread-phase1i-webhook-receipts": "node scripts/check-bluladder-klamath-jobtread-phase1i-webhook-receipts.mjs",
     "check:klamath-jobtread-server-initiated": "node scripts/check-bluladder-klamath-jobtread-server-initiated.mjs",
     "check:klamath-jobtread-read-plan": "node scripts/check-bluladder-klamath-jobtread-read-plan.mjs",
+    "check:klamath-jobtread-write-plan": "node scripts/check-bluladder-klamath-jobtread-write-plan.mjs",
     "check:klamath-launch-input-contract": "node scripts/check-bluladder-klamath-launch-input-contract.mjs",
     "check:klamath-hosted-compat": "node scripts/check-bluladder-klamath-hosted-compat.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
