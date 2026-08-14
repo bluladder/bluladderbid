@@ -152,6 +152,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Lovable-generated receipt for the exact DFW connector payload, with only
   // terminal-LF normalization permitted by the Phase 1G checker.
   "supabase/migrations/20260814090619_8c3ae55b-db39-4ff8-ba3c-ad87f135b7b0.sql",
+  // Phase 1H: organization-scoped consent and audit lineage. Hosted
+  // application and all Klamath runtime adoption remain separately gated.
+  "supabase/migrations/20260814102000_bluladder_klamath_phase_1h_organization_consent_lineage.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

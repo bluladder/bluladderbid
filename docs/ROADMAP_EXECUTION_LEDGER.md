@@ -21,7 +21,7 @@ Last reconciled main: `7c24f57258dd458978f56b0902ff05d3eecba802`
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
           │       └─ Klamath Phase 1G messaging       priority runtime deployed; adoption active
-          │           └─ Klamath Phase 1H consent lineage  read-only hosted preflight prepared
+          │           └─ Klamath Phase 1H consent lineage  hosted preflight passed; migration candidate prepared
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -108,11 +108,13 @@ Phase 1F is complete. Messaging/outbox lineage,
 approved operating inputs, JobTread, provider resources, publication,
 controlled acceptance, and activation remain blocked.
 
-The next repository gate is Phase 1H consent lineage. Its exact read-only
-hosted preflight is prepared to measure consent/event parent authority,
-organization-scoped identity collisions, RLS, and Klamath absence before any
-migration is designed. Running the preflight, applying a migration, changing a
-runtime, or sending a message remain separately protected actions.
+The Phase 1H consent-lineage hosted preflight passed unchanged and rolled back
+without writes. It found seven unparented DFW-era consent rows, twenty valid
+audit events, zero parent conflicts or orphans, zero projected identity
+collisions, and zero Klamath consent/customer traffic. The exact fail-closed
+organization-lineage migration candidate and disposable PostgreSQL rehearsal
+are now prepared. Applying that migration, changing a runtime, or sending a
+message remain separately protected actions.
 
 ## Protected-action gates
 
