@@ -13,12 +13,15 @@ const files = {
     "supabase/preflight/bluladder_klamath_phase_1i_crm_connector_lineage.sql",
   migration:
     "supabase/migrations/20260814113000_bluladder_klamath_phase_1i_crm_connector_lineage.sql",
+  receipt:
+    "supabase/migrations/20260814113042_6b2ca260-f192-47db-a9de-28674a5843e0.sql",
   verification:
     "supabase/verification/bluladder_klamath_phase_1i_crm_connector_lineage.sql",
   rehearsal:
     "scripts/rehearse-bluladder-klamath-phase-1i-crm-connector-postgres.sh",
   capability:
     "docs/operations/bluladder-klamath-jobtread-capability-gates.json",
+  types: "src/integrations/supabase/types.ts",
   package: "package.json",
   workflow: ".github/workflows/ci.yml",
   roadmap: "docs/ROADMAP_EXECUTION_LEDGER.md",
@@ -40,7 +43,7 @@ function requireText(key, text) {
 
 for (
   const text of [
-    "repository migration candidate only",
+    "hosted additive schema verified",
     "organization_crm_connectors",
     "organization_connector_operation_attempts",
     "organization_connector_webhook_receipts",
@@ -167,10 +170,26 @@ for (const [key, [expectedBytes, expectedSha]] of Object.entries(
   }
 }
 
+if (
+  !(content.migration ?? "").endsWith("\n") ||
+  content.receipt !== (content.migration ?? "").slice(0, -1) ||
+  Buffer.byteLength(content.receipt ?? "") !== 13540 ||
+  createHash("sha256").update(content.receipt ?? "").digest("hex") !==
+    "8d6752dd11393ac1dce26af491499b3f0a8a29713d9eb0b42225b46a7ddc86ea"
+) {
+  errors.push("Phase 1I Lovable receipt does not match canonical terminal-LF normalization");
+}
+
+for (const table of [
+  "organization_crm_connectors",
+  "organization_connector_operation_attempts",
+  "organization_connector_webhook_receipts",
+]) requireText("types", table);
+
 if (register) {
   if (
     register.phase !== "1I" ||
-    register.status !== "repository_migration_prepared" ||
+    register.status !== "hosted_migration_applied_grant_repair_required" ||
     register.prepared_from_main !==
       "c3542252c1b8949285577602a2119ff5e0501999" ||
     register.preflight_path !== files.preflight ||
@@ -179,8 +198,17 @@ if (register) {
     register.rehearsal_path !== files.rehearsal ||
     register.preflight_read_only !== true ||
     register.migration_prepared !== true ||
-    register.hosted_preflight_run !== false ||
-    register.migration_applied !== false ||
+    register.hosted_preflight_run !== true ||
+    register.migration_applied !== true ||
+    register.hosted_receipt_present !== true ||
+    register.hosted_execution_version !== "20260814113042" ||
+    register.hosted_ledger_count !== 163 ||
+    register.hosted_ledger_fingerprint !==
+      "7c3c773c03c2f8dd822d3a987cf7e7b5d7c02c6d9d5c3f3ded4e1ff20184dc66" ||
+    register.hosted_statement_bytes !== 13540 ||
+    register.hosted_statement_sha256 !==
+      "8d6752dd11393ac1dce26af491499b3f0a8a29713d9eb0b42225b46a7ddc86ea" ||
+    register.authenticated_grant_repair_required !== true ||
     register.runtime_prepared !== false ||
     register.runtime_deployed !== false ||
     register.activation_allowed !== false ||
@@ -211,8 +239,9 @@ if (register) {
   const expectedGates = new Map([
     ["jobtread_provider_capability", "passed"],
     ["connector_lineage_repository_candidate", "passed"],
-    ["hosted_read_only_preflight", "blocked"],
-    ["connector_lineage_migration", "blocked"],
+    ["hosted_read_only_preflight", "passed"],
+    ["connector_lineage_migration", "passed"],
+    ["authenticated_grant_repair", "blocked"],
     ["jobtread_business_mapping", "blocked"],
     ["credential_and_webhook", "blocked"],
     ["runtime_adoption_and_deployment", "blocked"],
@@ -253,8 +282,8 @@ requireText("package", '"check:klamath-phase-1i"');
 requireText("workflow", "bun run check:klamath-phase-1i");
 requireText("workflow", "Rehearse BluLadder Klamath Phase 1I CRM connector lineage");
 requireText("roadmap", "Klamath Phase 1I dormant CRM connector lineage");
-requireText("roadmap", "Hosted preflight");
-requireText("roadmap", "and migration application remain separately blocked");
+requireText("roadmap", "Lovable-hydrated authenticated privileges");
+requireText("roadmap", "forward-only grant repair is active");
 
 if (errors.length) {
   console.error(errors.map((error) => `- ${error}`).join("\n"));
@@ -262,5 +291,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1I gate OK: empty CRM connector, hashed operation, and authenticated webhook lineage are prepared while hosted/provider/runtime/traffic actions remain blocked.",
+  "BluLadder Klamath Phase 1I gate OK: hosted CRM lineage remains empty and inactive while the authenticated-grant repair and all provider/runtime/traffic actions remain blocked.",
 );
