@@ -21,7 +21,7 @@ Last reconciled main: `7c24f57258dd458978f56b0902ff05d3eecba802`
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
           │       └─ Klamath Phase 1G messaging       priority runtime deployed; adoption active
-          │           └─ Klamath Phase 1H consent lineage  hosted preflight passed; migration candidate prepared
+          │           └─ Klamath Phase 1H consent lineage  hosted migration verified; runtime adoption prepared
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -49,7 +49,7 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1E | #8 | Reconcile typed tenant profile to the hosted provisioning identity; activation remains blocked | #114 | merged |
 | Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema and reviewed portal runtime deployed fail closed | #115/#116 + provider receipt | complete |
 | Klamath Phase 1G | #7/#9 | Organization-bound messaging connector, durable outbox, and fail-closed Twilio adapter | #118-#123 + provider receipts; this PR | active |
-| Klamath Phase 1H | #7/#9 | Read-only hosted consent-lineage and collision preflight | this PR | prepared |
+| Klamath Phase 1H | #7/#9 | Organization-scoped consent lineage and fail-closed runtime adoption | #131/#132 + provider receipt; this PR | active |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
@@ -109,12 +109,16 @@ approved operating inputs, JobTread, provider resources, publication,
 controlled acceptance, and activation remain blocked.
 
 The Phase 1H consent-lineage hosted preflight passed unchanged and rolled back
-without writes. It found seven unparented DFW-era consent rows, twenty valid
-audit events, zero parent conflicts or orphans, zero projected identity
-collisions, and zero Klamath consent/customer traffic. The exact fail-closed
-organization-lineage migration candidate and disposable PostgreSQL rehearsal
-are now prepared. Applying that migration, changing a runtime, or sending a
-message remain separately protected actions.
+without writes. Its exact organization-lineage migration then passed the
+disposable PostgreSQL rehearsal, exact-head CI, and Secret Scan and was applied
+once as hosted execution version `20260814101915`. The ledger advanced from 161
+to 162; all seven DFW-era consent rows and twenty audit events now carry exact
+DFW lineage with zero conflicts or orphans, while Klamath remains empty and
+provisioning. The provider receipt is reconciled on main. The next narrow
+candidate makes queued checks, staff replies, website chat, and AI consent
+tools use persisted, server-derived organization authority; non-DFW chat and
+the legacy direct staff provider remain disabled until Klamath-owned adapters
+are approved. Deployment and any message remain separately protected actions.
 
 ## Protected-action gates
 

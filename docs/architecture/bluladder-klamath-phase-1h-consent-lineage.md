@@ -1,6 +1,6 @@
 # BluLadder Klamath Phase 1H consent lineage preflight
 
-Status: **hosted preflight passed; fail-closed migration candidate prepared**.
+Status: **hosted migration verified; fail-closed runtime adoption prepared**.
 Klamath remains provisioning and may not send customer traffic.
 
 ## Problem boundary
@@ -74,13 +74,37 @@ RLS preserves reviewed DFW admin access and scopes non-DFW access to active
 organization memberships. The migration creates no consent decision, customer,
 provider, connector, credential, message, call, or activation surface.
 
-## Fail-closed next step
+## Hosted application
 
-The migration must pass the disposable PostgreSQL rehearsal, exact-head CI, and
-Secret Scan before hosted application is separately approved. After hosted
-verification, every Klamath-capable runtime caller must pass persisted,
-server-derived organization authority. Missing, ambiguous, or conflicting
-authority must fail before a consent write or provider action.
+The migration passed its disposable PostgreSQL rehearsal, exact-head CI, and
+Secret Scan, then was applied once through Lovable's migration-aware boundary.
+Hosted execution version `20260814101915` advanced the ledger from 161 to 162.
+The provider-generated receipt is byte-identical to the canonical migration
+except for its omitted final newline. Postflight proved required lineage on all
+seven consent rows and twenty audit events, zero cross-tenant or orphaned
+state, service-role-only organization helper execution, exact RLS/policy and
+trigger contracts, and unchanged DFW and inactive Klamath state.
 
-No hosted migration, connector, credential, sender, deployment, call, email,
-SMS, customer traffic, or activation is authorized by this preparation.
+## Fail-closed runtime adoption
+
+The runtime candidate replaces tenant-capable legacy consent calls with one
+shared organization-aware boundary:
+
+- queued consent checks use the message's durable `organization_id` and deny
+  missing, malformed, or failed authority;
+- staff replies load the conversation's persisted organization before consent
+  or provider work and keep the legacy direct provider path explicitly DFW-only;
+- website chat resolves organization authority from the exact server-side site
+  mapping, scopes conversation reads/writes to that organization, and keeps
+  non-DFW chat disabled until Klamath pricing, knowledge, and provider adapters
+  are independently approved;
+- AI consent tools call `record_organization_consent` and cannot report a saved
+  decision after missing authority or a rejected RPC.
+
+Focused tests cover exact RPC authority, malformed/missing authority, RPC
+failure, fail-closed reads, caller adoption, and the DFW-only compatibility
+gates. Deployment remains separate and must include only the reviewed changed
+functions after exact-head CI and Secret Scan pass.
+
+No connector, credential, sender, call, email, SMS, customer traffic, or
+activation is authorized by this runtime preparation.

@@ -18,17 +18,22 @@
 //    conversation timeline and returned with a correlation id for diagnostics.
 // ============================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getBearer, verifyAdmin, isServiceRoleToken } from "../_shared/auth.ts";
+import { getBearer, isServiceRoleToken, verifyAdmin } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { getPhoneByPurpose } from "../_shared/phoneConfig.ts";
 import { sendEmail } from "../_shared/emailConfig.ts";
 import {
-  getCallRailConfig,
-  sendCallRailSms,
-  normalizePhone,
-  isPhoneOptedOut,
   type CallRailConfig,
+  getCallRailConfig,
+  isPhoneOptedOut,
+  normalizePhone,
+  sendCallRailSms,
 } from "../_shared/sms.ts";
+import {
+  normalizeConsentOrganizationId,
+  recordOrganizationConsent,
+} from "../_shared/organizationConsent.ts";
+import { DFW_ORGANIZATION_ID } from "../_shared/organizationRouting.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,7 +45,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 function json(body: unknown, status = 200, correlationId?: string) {
-  const headers: Record<string, string> = { ...corsHeaders, "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    ...corsHeaders,
+    "Content-Type": "application/json",
+  };
   if (correlationId) headers["x-correlation-id"] = correlationId;
   return new Response(JSON.stringify(body), { status, headers });
 }
@@ -48,80 +56,250 @@ function json(body: unknown, status = 200, correlationId?: string) {
 const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
+  return s.replace(
+    /[&<>]/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string),
+  );
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
 
   const correlationId = crypto.randomUUID();
 
   // ---- Auth: operations-admin session or internal service-role only. ----
   const token = getBearer(req);
   const isService = isServiceRoleToken(token);
-  const adminId = isService ? "service" : await verifyAdmin(token, "operations_admin");
+  const adminId = isService
+    ? "service"
+    : await verifyAdmin(token, "operations_admin");
   if (!adminId) {
-    return json({ ok: false, errorCode: "unauthorized_session", message: "Your session expired. Please sign in again.", correlationId }, 401, correlationId);
+    return json(
+      {
+        ok: false,
+        errorCode: "unauthorized_session",
+        message: "Your session expired. Please sign in again.",
+        correlationId,
+      },
+      401,
+      correlationId,
+    );
   }
 
   let body: Record<string, unknown>;
-  try { body = await req.json(); } catch { return json({ ok: false, errorCode: "invalid_request", message: "Invalid request.", correlationId }, 400, correlationId); }
+  try {
+    body = await req.json();
+  } catch {
+    return json(
+      {
+        ok: false,
+        errorCode: "invalid_request",
+        message: "Invalid request.",
+        correlationId,
+      },
+      400,
+      correlationId,
+    );
+  }
 
   const conversationId = String(body?.conversationId || "");
   const channel = body?.channel === "email" ? "email" : "sms";
   const message = String(body?.message || "").trim().slice(0, 2000);
-  const subject = String(body?.subject || "BluLadder — a reply to your request").slice(0, 200);
+  const subject = String(body?.subject || "BluLadder — a reply to your request")
+    .slice(0, 200);
   // Operations-admin opt-in to send ONE real reply despite test suppression.
   const useTestAuthorization = body?.useTestAuthorization === true;
   if (!conversationId || !message) {
-    return json({ ok: false, errorCode: "invalid_request", message: "A conversation and a message are required.", correlationId }, 400, correlationId);
+    return json(
+      {
+        ok: false,
+        errorCode: "invalid_request",
+        message: "A conversation and a message are required.",
+        correlationId,
+      },
+      400,
+      correlationId,
+    );
   }
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+  const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
 
   const { data: convo } = await supabase
     .from("chat_conversations")
-    .select("id, prospect_name, prospect_email, prospect_phone, staff_takeover_at, conversation_state")
+    .select(
+      "id, organization_id, prospect_name, prospect_email, prospect_phone, staff_takeover_at, conversation_state",
+    )
     .eq("id", conversationId)
     .maybeSingle();
   if (!convo) {
-    return json({ ok: false, errorCode: "conversation_not_found", message: "This conversation no longer exists.", correlationId }, 404, correlationId);
+    return json(
+      {
+        ok: false,
+        errorCode: "conversation_not_found",
+        message: "This conversation no longer exists.",
+        correlationId,
+      },
+      404,
+      correlationId,
+    );
   }
 
   // Eligibility: a customer-visible staff reply is only for a taken-over
   // conversation (a human is handling it). Non-service callers must be in takeover.
-  const inTakeover = !!convo.staff_takeover_at || convo.conversation_state === "staff_takeover";
+  const inTakeover = !!convo.staff_takeover_at ||
+    convo.conversation_state === "staff_takeover";
   if (!isService && !inTakeover) {
-    return json({ ok: false, errorCode: "not_eligible", message: "This conversation is not eligible for a staff reply. Take over the conversation first.", correlationId }, 403, correlationId);
+    return json(
+      {
+        ok: false,
+        errorCode: "not_eligible",
+        message:
+          "This conversation is not eligible for a staff reply. Take over the conversation first.",
+        correlationId,
+      },
+      403,
+      correlationId,
+    );
+  }
+
+  const organizationId = normalizeConsentOrganizationId(
+    convo.organization_id,
+  );
+  if (!organizationId) {
+    return json(
+      {
+        ok: false,
+        errorCode: "tenant_authority_required",
+        message:
+          "The organization for this conversation could not be verified.",
+        correlationId,
+      },
+      409,
+      correlationId,
+    );
+  }
+  // This legacy direct-provider reply path is reviewed only for DFW. A future
+  // Klamath staff-reply path must use its own organization connector and
+  // branded email boundary; it must never inherit DFW's providers.
+  if (organizationId !== DFW_ORGANIZATION_ID) {
+    return json(
+      {
+        ok: false,
+        errorCode: "tenant_channel_unavailable",
+        message:
+          "Customer-visible staff replies are not enabled for this organization.",
+        correlationId,
+      },
+      503,
+      correlationId,
+    );
   }
 
   // Resolve + normalize the recipient for the chosen channel.
-  const rawTo = channel === "sms" ? (convo.prospect_phone || "") : (convo.prospect_email || "");
+  const rawTo = channel === "sms"
+    ? (convo.prospect_phone || "")
+    : (convo.prospect_email || "");
   if (!rawTo) {
-    return json({ ok: false, errorCode: "no_contact", message: `No customer ${channel === "sms" ? "phone number" : "email address"} on file.`, correlationId }, 400, correlationId);
+    return json(
+      {
+        ok: false,
+        errorCode: "no_contact",
+        message: `No customer ${
+          channel === "sms" ? "phone number" : "email address"
+        } on file.`,
+        correlationId,
+      },
+      400,
+      correlationId,
+    );
   }
-  const to = channel === "sms" ? (normalizePhone(rawTo) || "") : rawTo.toLowerCase().trim();
+  const to = channel === "sms"
+    ? (normalizePhone(rawTo) || "")
+    : rawTo.toLowerCase().trim();
   if (channel === "sms" && !to) {
-    return json({ ok: false, errorCode: "invalid_recipient", message: "The customer phone number on file is not a valid US/Canada number.", correlationId }, 400, correlationId);
+    return json(
+      {
+        ok: false,
+        errorCode: "invalid_recipient",
+        message:
+          "The customer phone number on file is not a valid US/Canada number.",
+        correlationId,
+      },
+      400,
+      correlationId,
+    );
   }
   if (channel === "email" && !isValidEmail(to)) {
-    return json({ ok: false, errorCode: "invalid_recipient", message: "The customer email address on file is not valid.", correlationId }, 400, correlationId);
+    return json(
+      {
+        ok: false,
+        errorCode: "invalid_recipient",
+        message: "The customer email address on file is not valid.",
+        correlationId,
+      },
+      400,
+      correlationId,
+    );
   }
 
   // Requested human follow-up consent for the chosen channel — NOT marketing.
   try {
-    await supabase.rpc("record_consent", {
-      p_channel: channel, p_consent_type: "requested_follow_up", p_status: "granted",
-      p_email: channel === "email" ? to : null, p_phone: channel === "sms" ? to : null,
-      p_language_shown: "A BluLadder team member is replying to your request.",
-      p_source: "staff_takeover_reply", p_conversation_id: conversationId,
+    await recordOrganizationConsent(supabase, organizationId, {
+      channel,
+      consentType: "requested_follow_up",
+      status: "granted",
+      email: channel === "email" ? to : null,
+      phone: channel === "sms" ? to : null,
+      languageShown: "A BluLadder team member is replying to your request.",
+      source: "staff_takeover_reply",
+      conversationId,
     });
-  } catch (e) { console.error(`[staff-reply ${correlationId}] record_consent failed:`, e); }
+  } catch {
+    return json(
+      {
+        ok: false,
+        errorCode: "consent_write_failed",
+        message:
+          "The reply was not sent because consent could not be recorded.",
+        correlationId,
+      },
+      503,
+      correlationId,
+    );
+  }
 
   // Genuine SMS opt-out always blocks (independent of test suppression).
   if (channel === "sms" && await isPhoneOptedOut(supabase, to)) {
-    await recordTimeline(supabase, conversationId, channel, to, message, "opted_out", "recipient opted out", adminId, correlationId, false);
-    return json({ ok: false, status: "opted_out", errorCode: "opted_out", deliveryState: "opted_out", channel, to, message: "SMS could not be sent: the recipient has opted out of texts.", correlationId }, 200, correlationId);
+    await recordTimeline(
+      supabase,
+      conversationId,
+      channel,
+      to,
+      message,
+      "opted_out",
+      "recipient opted out",
+      adminId,
+      correlationId,
+      false,
+    );
+    return json(
+      {
+        ok: false,
+        status: "opted_out",
+        errorCode: "opted_out",
+        deliveryState: "opted_out",
+        channel,
+        to,
+        message: "SMS could not be sent: the recipient has opted out of texts.",
+        correlationId,
+      },
+      200,
+      correlationId,
+    );
   }
   // NOTE: email unsubscribe (marketing) does NOT block an explicitly requested
   // service reply — this is a requested_follow_up transactional response.
@@ -139,24 +317,53 @@ Deno.serve(async (req) => {
   if (suppression.suppressed) {
     let authorizedId: string | null = null;
     if (useTestAuthorization && !isService) {
-      const { data: consumed } = await supabase.rpc("consume_staff_test_reply_auth", {
-        p_conversation_id: conversationId, p_channel: channel,
-      });
+      const { data: consumed } = await supabase.rpc(
+        "consume_staff_test_reply_auth",
+        {
+          p_conversation_id: conversationId,
+          p_channel: channel,
+        },
+      );
       authorizedId = (consumed as string | null) ?? null;
     }
     if (!authorizedId) {
       // Suppressed → record a "would have sent" entry in the timeline.
-      await recordTimeline(supabase, conversationId, channel, to, message, "suppressed", suppression.reason ?? "suppressed", adminId, correlationId, false);
-      return json({
-        ok: false, status: "suppressed", errorCode: "suppressed", deliveryState: "suppressed",
-        channel, to, reason: suppression.reason,
-        wouldHaveSent: true,
-        message: `Not sent — this recipient is protected by test suppression (${suppression.reason ?? "suppressed"}). Recorded as "would have sent". An operations admin can authorize one real test reply.`,
+      await recordTimeline(
+        supabase,
+        conversationId,
+        channel,
+        to,
+        message,
+        "suppressed",
+        suppression.reason ?? "suppressed",
+        adminId,
         correlationId,
-      }, 200, correlationId);
+        false,
+      );
+      return json(
+        {
+          ok: false,
+          status: "suppressed",
+          errorCode: "suppressed",
+          deliveryState: "suppressed",
+          channel,
+          to,
+          reason: suppression.reason,
+          wouldHaveSent: true,
+          message:
+            `Not sent — this recipient is protected by test suppression (${
+              suppression.reason ?? "suppressed"
+            }). Recorded as "would have sent". An operations admin can authorize one real test reply.`,
+          correlationId,
+        },
+        200,
+        correlationId,
+      );
     }
     // else: an authorization was consumed — fall through and actually send once.
-    console.log(`[staff-reply ${correlationId}] test suppression overridden by single-use auth ${authorizedId}`);
+    console.log(
+      `[staff-reply ${correlationId}] test suppression overridden by single-use auth ${authorizedId}`,
+    );
   }
 
   // ---- Deliver ----
@@ -173,12 +380,40 @@ Deno.serve(async (req) => {
   if (channel === "sms") {
     const base = getCallRailConfig();
     if (!base) {
-      await recordTimeline(supabase, conversationId, channel, to, message, "failed", "callrail not configured", adminId, correlationId, false);
-      return json({ ok: false, status: "failed", errorCode: "provider_not_configured", deliveryState: "delivery_failed", channel, to, message: "SMS could not be sent: the messaging provider is not configured.", correlationId }, 200, correlationId);
+      await recordTimeline(
+        supabase,
+        conversationId,
+        channel,
+        to,
+        message,
+        "failed",
+        "callrail not configured",
+        adminId,
+        correlationId,
+        false,
+      );
+      return json(
+        {
+          ok: false,
+          status: "failed",
+          errorCode: "provider_not_configured",
+          deliveryState: "delivery_failed",
+          channel,
+          to,
+          message:
+            "SMS could not be sent: the messaging provider is not configured.",
+          correlationId,
+        },
+        200,
+        correlationId,
+      );
     }
     // Send FROM the approved BluLadder app number (purpose=app_ai).
     const appPhone = await getPhoneByPurpose(supabase, "app_ai");
-    const config: CallRailConfig = { ...base, senderNumber: appPhone.e164 || base.senderNumber };
+    const config: CallRailConfig = {
+      ...base,
+      senderNumber: appPhone.e164 || base.senderNumber,
+    };
     const result = await sendCallRailSms(config, to, message);
     if (result.ok) {
       deliveryState = "accepted";
@@ -187,8 +422,14 @@ Deno.serve(async (req) => {
       // Persist to the SMS ledger for parity with other outbound texts.
       const acceptedAt = new Date().toISOString();
       await supabase.from("sms_messages").insert({
-        to_number: to, body: message, message_kind: "staff_reply", status: "accepted",
-        sent_at: acceptedAt, callrail_message_id: providerMessageId, attempts: 1,
+        organization_id: organizationId,
+        to_number: to,
+        body: message,
+        message_kind: "staff_reply",
+        status: "accepted",
+        sent_at: acceptedAt,
+        callrail_message_id: providerMessageId,
+        attempts: 1,
         provider: "callrail",
         provider_conversation_id: result.conversationId ?? null,
         provider_message_id: providerMessageId,
@@ -201,11 +442,16 @@ Deno.serve(async (req) => {
       providerStatus = "rejected";
       errorCode = "provider_rejected";
       userMessage = "SMS could not be sent: the provider rejected the message.";
-      console.error(`[staff-reply ${correlationId}] CallRail send failed: ${result.error}`);
+      console.error(
+        `[staff-reply ${correlationId}] CallRail send failed: ${result.error}`,
+      );
     }
   } else {
     // Customer-visible email via the SINGLE centralized sender (no hard-coded From).
-    const html = `<div style="font-family:system-ui,sans-serif;font-size:15px;white-space:pre-wrap">${escapeHtml(message)}</div>`;
+    const html =
+      `<div style="font-family:system-ui,sans-serif;font-size:15px;white-space:pre-wrap">${
+        escapeHtml(message)
+      }</div>`;
     const res = await sendEmail({ to, subject, html });
     fromAddress = res.from;
     replyToAddress = res.replyTo;
@@ -215,37 +461,61 @@ Deno.serve(async (req) => {
       providerMessageId = res.providerMessageId;
     } else {
       deliveryState = "delivery_failed";
-      providerStatus = res.failure?.reachedProvider ? `rejected_${res.httpStatus ?? "?"}` : "not_attempted";
+      providerStatus = res.failure?.reachedProvider
+        ? `rejected_${res.httpStatus ?? "?"}`
+        : "not_attempted";
       errorCode = res.failure?.category ?? "provider_rejected";
       failureCategory = res.failure?.category ?? "provider_rejected";
       retryable = res.failure?.retryable ?? false;
-      userMessage = `Email not sent: ${res.failure?.message ?? "the email provider rejected the request."}`;
-      console.error(`[staff-reply ${correlationId}] email failed [${errorCode}] status=${res.httpStatus} reached=${res.failure?.reachedProvider}`);
+      userMessage = `Email not sent: ${
+        res.failure?.message ?? "the email provider rejected the request."
+      }`;
+      console.error(
+        `[staff-reply ${correlationId}] email failed [${errorCode}] status=${res.httpStatus} reached=${res.failure?.reachedProvider}`,
+      );
     }
   }
 
   // Record the outbound reply in the conversation timeline (staff, not AI),
   // including whether the provider actually accepted it.
-  await recordTimeline(supabase, conversationId, channel, to, message, deliveryState, providerStatus ?? "", adminId, correlationId, false, providerMessageId);
-  await supabase.from("chat_conversations").update({ last_activity_at: new Date().toISOString() }).eq("id", conversationId);
-
-  const ok = deliveryState === "accepted";
-  return json({
-    ok,
-    status: ok ? "accepted" : "failed",
-    deliveryState,
+  await recordTimeline(
+    supabase,
+    conversationId,
     channel,
     to,
-    from: fromAddress,
-    replyTo: replyToAddress,
-    providerMessageId,
-    providerStatus,
-    errorCode,
-    failureCategory,
-    retryable,
-    message: userMessage,
+    message,
+    deliveryState,
+    providerStatus ?? "",
+    adminId,
     correlationId,
-  }, 200, correlationId);
+    false,
+    providerMessageId,
+  );
+  await supabase.from("chat_conversations").update({
+    last_activity_at: new Date().toISOString(),
+  }).eq("id", conversationId);
+
+  const ok = deliveryState === "accepted";
+  return json(
+    {
+      ok,
+      status: ok ? "accepted" : "failed",
+      deliveryState,
+      channel,
+      to,
+      from: fromAddress,
+      replyTo: replyToAddress,
+      providerMessageId,
+      providerStatus,
+      errorCode,
+      failureCategory,
+      retryable,
+      message: userMessage,
+      correlationId,
+    },
+    200,
+    correlationId,
+  );
 });
 
 // deno-lint-ignore no-explicit-any
@@ -267,9 +537,24 @@ async function recordTimeline(
     role: "staff",
     content,
     tool_name: "staff_reply",
-    tool_result: { channel, to, deliveryState, delivered, providerResponse, providerMessageId, adminId, correlationId },
+    tool_result: {
+      channel,
+      to,
+      deliveryState,
+      delivered,
+      providerResponse,
+      providerMessageId,
+      adminId,
+      correlationId,
+    },
   });
   // supabase-js does NOT throw on a DB error; surface it so a failed audit
   // write can never again silently disappear (the role-constraint defect).
-  if (error) console.error(`[staff-reply ${correlationId}] timeline insert failed: ${error.message ?? error}`);
+  if (error) {
+    console.error(
+      `[staff-reply ${correlationId}] timeline insert failed: ${
+        error.message ?? error
+      }`,
+    );
+  }
 }
