@@ -63,6 +63,7 @@ jobs:
           bun run check:klamath-phase-1g
           bun run check:klamath-phase-1h
           bun run check:klamath-phase-1i
+          bun run check:klamath-phase-1i-grants
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
@@ -150,6 +151,7 @@ jobs:
           createdb --host localhost --username postgres bluladder_klamath_phase1g_dfw_connector_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1h_consent_lineage_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1i_crm_connector_rehearsal
+          createdb --host localhost --username postgres bluladder_klamath_phase1i_grants_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -215,6 +217,10 @@ jobs:
         env:
           BLULADDER_KLAMATH_PHASE1I_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1i_crm_connector_rehearsal
         run: bash scripts/rehearse-bluladder-klamath-phase-1i-crm-connector-postgres.sh
+      - name: Rehearse BluLadder Klamath Phase 1I authenticated grants
+        env:
+          BLULADDER_KLAMATH_PHASE1I_GRANTS_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1i_grants_rehearsal
+        run: bash scripts/rehearse-bluladder-klamath-phase-1i-authenticated-grants-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard

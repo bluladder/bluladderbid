@@ -25,7 +25,7 @@ Last reconciled main: `c3542252c1b8949285577602a2119ff5e0501999`
           ├─ #9 organization connector contracts
           │   ├─ 9A pure contracts and Jobber seam   complete (PR #18)
           │   ├─ Klamath JobTread capability seam    complete (PR #136)
-          │   └─ Klamath Phase 1I CRM lineage        repository candidate
+          │   └─ Klamath Phase 1I CRM lineage        hosted schema; grant repair active
           ├─ #10 service catalog and pricing
           │   └─ 10A pure catalog/pricing contracts  complete (PR #19)
           └─ remaining tenant-table rollout          staged by authority path
@@ -53,7 +53,7 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1G | #7/#9 | Organization-bound messaging connector, durable outbox, and fail-closed Twilio adapter | #118-#123 + provider receipts; this PR | active |
 | Klamath Phase 1H | #7/#9 | Organization-scoped consent lineage and fail-closed runtime adoption | #131-#133 + provider/deployment receipts | complete |
 | Klamath JobTread capability | #135 | Verified provider primitives plus dormant guarded adapter and redacted transport | #136 | complete |
-| Klamath Phase 1I | #137 | Empty organization CRM connector, operation-attempt, and webhook-receipt lineage | this PR | repository candidate |
+| Klamath Phase 1I | #137/#139 | Empty organization CRM connector, operation-attempt, and webhook-receipt lineage | #138 + provider receipt; grant-repair PR | active |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
@@ -67,15 +67,16 @@ read-only. PR #136 records that evidence and adds a dormant JobTread adapter
 plus redacted Pave transport. It creates no grant, webhook, credential, provider
 call, hosted row, runtime adoption, or activation.
 
-Phase 1I is the next repository-only persistence boundary. Its additive
-migration candidate creates three empty organization-owned tables for CRM
+Phase 1I is the next persistence boundary. Its applied additive migration
+creates three empty organization-owned tables for CRM
 connector configuration, hashed operation idempotency, and authenticated
 webhook receipt idempotency. Composite organization/connector foreign keys,
 least-privilege RLS, protected-reference gates, and sanitized outcome
-constraints fail closed before any runtime or provider action. Hosted preflight
-and migration application remain separately blocked, as do all JobTread
-business mappings, credential/webhook setup, runtime deployment, and customer
-traffic.
+constraints fail closed before any runtime or provider action. Hosted
+postflight found Lovable-hydrated authenticated privileges broader than the
+reviewed table grants, so a narrow forward-only grant repair is active. All
+JobTread business mappings, credential/webhook setup, runtime deployment, and
+customer traffic remain blocked.
 
 ## Completed foundation: Klamath Phase 1G messaging/outbox lineage and Phase 1H
 

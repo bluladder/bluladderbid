@@ -34,6 +34,7 @@
     "check:klamath-phase-1g": "node scripts/check-bluladder-klamath-phase-1g.mjs",
     "check:klamath-phase-1h": "node scripts/check-bluladder-klamath-phase-1h.mjs",
     "check:klamath-phase-1i": "node scripts/check-bluladder-klamath-phase-1i.mjs",
+    "check:klamath-phase-1i-grants": "node scripts/check-bluladder-klamath-phase-1i-authenticated-grants.mjs",
     "check:klamath-jobtread-capability": "node scripts/check-bluladder-klamath-jobtread-capability.mjs",
     "check:klamath-hosted-compat": "node scripts/check-bluladder-klamath-hosted-compat.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
