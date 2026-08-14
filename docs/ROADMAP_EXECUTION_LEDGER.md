@@ -78,8 +78,11 @@ back on mixed SMS/email historical rows. The corrected SMS-channel-only
 compatibility migration was then applied once as provider execution version
 `20260814090619`; its normalized receipt, 161-row ledger, exact connector,
 122 bound SMS rows, 12 intentionally unbound email rows, and unchanged Klamath
-provisioning boundary are independently verified. Remaining writer adoption
-and runtime deployment remain separate gates.
+provisioning boundary are independently verified. The first launch-critical
+writer adoption is now prepared: customer-portal verification SMS resolves the
+organization from exact server-side site authority, claims the scoped outbox,
+and dispatches only through that organization's reviewed connector. The runtime
+change remains undeployed; remaining writers and deployment are separate gates.
 
 The Phase 1F portal runtime is deployed from reconciled main and all seven
 reviewed functions passed secret-free boot verification. The Klamath mapping remains

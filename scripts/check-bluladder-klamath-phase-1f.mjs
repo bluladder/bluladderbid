@@ -24,6 +24,8 @@ const relative = {
     "supabase/functions/_shared/portalOrganizationAuthority_test.ts",
   sessions: "supabase/functions/_shared/customerVerification.ts",
   otpRequest: "supabase/functions/customer-verification-request/index.ts",
+  otpRequestOutboxContract:
+    "supabase/functions/customer-verification-request/outbox_contract_test.ts",
   otpConfirm: "supabase/functions/customer-verification-confirm/index.ts",
   authLink: "supabase/functions/customer-auth-link/index.ts",
   portal: "supabase/functions/customer-portal-data/index.ts",
@@ -153,6 +155,21 @@ for (
 for (
   const key of ["otpRequest", "otpConfirm", "authLink"]
 ) requireText(key, "organization_id");
+for (
+  const text of [
+    "sendOutboxSms",
+    "outboundKey: `customer_verification:${challenge.id}`",
+    "organization_id: organizationId",
+    "provider: result.provider ?? null",
+  ]
+) requireText("otpRequest", text);
+for (
+  const text of [
+    "portal verification SMS uses server-scoped connector outbox",
+    "sendCallRailSms|getCallRailConfig",
+    "ledgerInserts.length, 1",
+  ]
+) requireText("otpRequestOutboxContract", text);
 for (
   const key of ["portal", "authedPortal"]
 ) {

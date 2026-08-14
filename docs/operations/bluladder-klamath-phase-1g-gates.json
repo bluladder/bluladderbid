@@ -47,6 +47,7 @@
   "dfw_connector_compatibility_first_attempt_error": "connector_channel_mismatch",
   "dfw_connector_count": 1,
   "dfw_connector_runtime_allowlist_prepared": true,
+  "portal_verification_writer_adopted": true,
   "messaging_runtime_deployed": false,
   "dfw_provider_changed": false,
   "klamath_connector_count": 0,

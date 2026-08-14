@@ -4,12 +4,8 @@
 // information about whether the phone number matches an existing customer.
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import {
-  getCallRailConfig,
-  isPhoneOptedOut,
-  normalizePhone,
-  sendCallRailSms,
-} from "../_shared/sms.ts";
+import { isPhoneOptedOut, normalizePhone } from "../_shared/sms.ts";
+import { sendOutboxSms } from "../_shared/smsOutbox.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import { sendEmail } from "../_shared/emailConfig.ts";
 import { normalizeEmailAddr } from "../_shared/emailSuppression.ts";
@@ -154,7 +150,7 @@ serve(async (req) => {
         max_attempts: cfg.max_attempts,
         ip_hash: ipHash,
         channel: phone ? "sms" : "email",
-        provider: phone ? "callrail" : "resend",
+        provider: phone ? null : "resend",
         delivery_status: "queued",
         usable_until: usableUntil,
         recipient_hint: emailHash,
@@ -209,6 +205,7 @@ serve(async (req) => {
             : "delivery_failed"),
       }).eq("id", challenge.id);
       await supabase.from("sms_messages").insert({
+        organization_id: organizationId,
         channel: "email",
         to_email: email,
         subject: EMAIL_SUBJECT,
@@ -229,53 +226,40 @@ serve(async (req) => {
       });
       return respond();
     }
-
-    const config = getCallRailConfig();
-    if (!config) {
-      await supabase.from("customer_verification_challenges")
-        .update({ delivery_status: "provider_rejected" })
-        .eq("id", challenge.id);
-      return respond();
-    }
+    if (!phone) return respond();
 
     const smsBody =
       `Your BluLadder verification code is ${otp}. It expires in ${
         Math.round(cfg.otp_ttl_seconds / 60)
       } minutes. Do not share this code.`;
-    const result = await sendCallRailSms(config, phone, smsBody);
-    const acceptedAt = result.ok ? new Date().toISOString() : null;
-    const providerStatus = result.providerMessageStatus ??
-      (result.ok ? "accepted" : "rejected");
-    const smsDeliveryStatus = result.ok && providerStatus !== "failed"
+    const result = await sendOutboxSms(supabase, {
+      organizationId,
+      outboundKey: `customer_verification:${challenge.id}`,
+      toNumber: phone,
+      body: smsBody,
+      messageKind: "verification",
+    });
+    const acceptedAt = result.sent ? new Date().toISOString() : null;
+    const providerStatus = result.outboxState ??
+      (result.inProgress ? "sending" : "rejected");
+    const smsDeliveryStatus = result.sent
       ? "accepted"
+      : result.inProgress
+      ? "queued"
+      : result.outboxState === "delivery_unknown"
+      ? "delivery_unknown"
       : "delivery_failed";
     await supabase.from("customer_verification_challenges").update({
-      callrail_message_id: result.messageId ?? null,
-      provider_conversation_id: result.conversationId ?? null,
-      provider_message_id: result.messageId ?? null,
+      callrail_message_id: result.provider === "callrail"
+        ? result.providerMessageId
+        : null,
+      provider: result.provider ?? null,
+      provider_message_id: result.providerMessageId,
       provider_status: providerStatus,
-      provider_response_kind: result.providerResponseKind ?? null,
+      provider_response_kind: result.outboxState,
       provider_accepted_at: acceptedAt,
       delivery_status: smsDeliveryStatus,
     }).eq("id", challenge.id);
-
-    // Also record in sms_messages for the operator audit trail.
-    await supabase.from("sms_messages").insert({
-      to_number: phone,
-      body: smsBody,
-      message_kind: "verification",
-      status: result.ok ? "accepted" : "failed",
-      sent_at: acceptedAt,
-      callrail_message_id: result.messageId ?? null,
-      provider: "callrail",
-      provider_conversation_id: result.conversationId ?? null,
-      provider_message_id: result.messageId ?? null,
-      provider_status: providerStatus,
-      provider_response_kind: result.providerResponseKind ?? null,
-      provider_accepted_at: acceptedAt,
-      error: result.ok ? null : (result.error ?? "send failed"),
-      attempts: 1,
-    });
 
     return respond();
   } catch (_err) {

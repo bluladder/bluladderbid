@@ -382,6 +382,7 @@ Deno.test("outbox: missing organization connector blocks before claim", async ()
   );
   assertEquals(r.sent, false);
   assertEquals(r.error, "connector_missing");
+  assertEquals(r.provider, null);
   assertEquals(rpcLog.length, 0);
 });
 
@@ -403,6 +404,7 @@ Deno.test("outbox: unapproved CallRail references fail before provider dispatch"
   assertEquals(r.sent, false);
   assertEquals(r.outboxState, "send_failed");
   assertEquals(r.error, "callrail_connector_unapproved");
+  assertEquals(r.provider, "callrail");
   assertEquals(fetchCount, 0);
   assertEquals(
     rpcLog.find((x) => x.name === "finalize_sms_outbox_send")?.args
@@ -451,6 +453,7 @@ Deno.test("outbox: reviewed Twilio connector dispatches and finalizes accepted",
   );
   assertEquals(r.sent, true);
   assertEquals(r.outboxState, "provider_accepted");
+  assertEquals(r.provider, "twilio");
   assertEquals(r.providerMessageId, `SM${"3".repeat(32)}`);
   const finalized = rpcLog.find((x) => x.name === "finalize_sms_outbox_send");
   assertEquals(finalized?.args?.p_new_state, "provider_accepted");

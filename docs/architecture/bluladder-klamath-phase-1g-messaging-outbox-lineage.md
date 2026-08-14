@@ -206,3 +206,18 @@ email-channel rows remain unbound, no other connector exists, and the Klamath
 organization remains provisioning with no connector or active state. The
 operation created no provider resource, secret, sender, customer traffic, or
 message. Writer adoption and runtime deployment remain separately blocked.
+
+## Portal verification writer candidate
+
+The customer-portal verification SMS path is the first launch-critical writer
+to adopt the scoped outbox. It keeps the existing exact-origin, server-side
+organization resolver as its authority, uses the durable challenge identifier
+as its idempotency key, and records the connector-selected provider outcome on
+the challenge. It no longer calls CallRail directly or inserts a second SMS
+ledger row after dispatch. The existing email verification path remains
+separate but now records the resolved organization on its audit-ledger row.
+
+This change is repository-only. Klamath still has no connector, provider
+credential, sender, or active customer-site authority, so it continues to fail
+closed. DFW dispatch remains on the reviewed CallRail connector. No function is
+deployed and no message is sent by this writer-adoption change.
