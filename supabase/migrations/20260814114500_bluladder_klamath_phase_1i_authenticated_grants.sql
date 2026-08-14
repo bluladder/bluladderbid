@@ -231,11 +231,11 @@ BEGIN
       'organization_crm_connectors',
       'organization_connector_operation_attempts',
       'organization_connector_webhook_receipts'
-    ]) AS target_tables(target_table)
+    ]) AS target_tables(checked_table)
     CROSS JOIN unnest(ARRAY['REFERENCES', 'TRIGGER', 'TRUNCATE'])
       AS privileges(privilege_name)
     WHERE has_table_privilege(
-      'authenticated', format('public.%I', target_table), privilege_name
+      'authenticated', format('public.%I', checked_table), privilege_name
     )
   ) THEN
     RAISE EXCEPTION 'Phase 1I authenticated role retains excess privileges';
