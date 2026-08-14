@@ -1,15 +1,16 @@
 # BluLadder Klamath Phase 1C inactive hosted-foundation contract
 
-Status: **repository-only migration candidate**. The migration has not been
-applied and this phase does not authorize merge, deployment, hosted mutation,
-provider setup, credentials, purchases, calls, messages, customer traffic, or
-Lovable credit use.
+Status: **applied inactive hosted foundation**. Hosted execution version:
+`20260814050336`. The committed execution receipt is the canonical migration
+with only its terminal line feed removed, and the generated Supabase types now
+include exactly the two Phase 1C tables. This status does not authorize
+deployment, provider setup, credentials, purchases, calls, messages, customer
+traffic, or additional Lovable credit use.
 
 ## Outcome
 
-Phase 1C prepares one transactional, fail-closed migration candidate for the
-future hosted Klamath foundation. If separately approved and applied later, it
-will create only:
+Phase 1C applied one transactional, fail-closed migration for the hosted
+Klamath foundation. It created only:
 
 - one `provisioning`, non-default BluLadder Klamath organization;
 - organization settings for the approved brand, Pacific timezone, US locale,
@@ -41,7 +42,7 @@ uses direct active-membership and active-organization predicates. It does not
 recreate or depend on the retired public `SECURITY DEFINER` membership helper.
 There is no DFW fallback and the DFW organization is not updated.
 
-Before first application, the migration revokes table defaults from both
+During application, the migration revoked table defaults from both
 `anon` and `authenticated`, then restores only CRUD privileges for
 `authenticated` under RLS and full server access for `service_role`. This
 prevents hosted default privileges from retaining `REFERENCES`, `TRIGGER`, or
@@ -63,14 +64,14 @@ reviewed Stage 8A grant repair.
 - `scripts/check-bluladder-klamath-phase-1c.mjs` machine-checks the repository
   boundary and pricing-snapshot parity.
 
-## Future application boundary
+## Hosted evidence and activation boundary
 
-Application requires a new explicit authorization naming the exact migration,
-current hosted preflight evidence, backup/PITR status, operator, and rollback
-reviewer. A successful application would still leave Klamath unable to receive
-traffic. Generated Supabase types, runtime reads, contact/provider resources,
-JobTread integration, messaging registration, deployment, testing, and final
-activation remain later, separately approved phases.
+The exact preflight and postflight passed against the hosted database. The
+ledger contains one correlated provider-generated execution row, and the DFW
+organization and resolution fingerprints remained unchanged. Klamath remains
+unable to receive traffic: runtime reads, contact/provider resources, JobTread
+integration, messaging registration, deployment, testing, and final activation
+remain later phases. Activation remains separately gated.
 
 Rollback is forward-safe: stop later rollout and prepare a reviewed corrective
 migration. Do not delete the organization, erase lineage, rewrite migration

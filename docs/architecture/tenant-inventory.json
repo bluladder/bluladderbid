@@ -75,6 +75,8 @@
       "lead_source_definitions",
       "message_templates",
       "organization_contacts",
+      "organization_customer_sites",
+      "organization_pricing_profiles",
       "organization_services",
       "organization_settings",
       "organization_territories",

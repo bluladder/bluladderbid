@@ -8,6 +8,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const relative = {
   migration:
     "supabase/migrations/20260813223348_bluladder_klamath_phase_1c_inactive_foundation.sql",
+  receipt:
+    "supabase/migrations/20260814050336_e5e2c901-cd2c-479c-a5be-71746296fd9b.sql",
   preflight: "supabase/preflight/bluladder_klamath_phase_1c.sql",
   verification: "supabase/verification/bluladder_klamath_phase_1c.sql",
   contract:
@@ -15,6 +17,7 @@ const relative = {
   register: "docs/operations/bluladder-klamath-phase-1c-gates.json",
   pricing: "packages/tenant-config/bluladderKlamathPricingDraft.ts",
   rehearsal: "scripts/rehearse-bluladder-klamath-phase-1c-postgres.sh",
+  types: "src/integrations/supabase/types.ts",
 };
 
 const content = {};
@@ -74,6 +77,37 @@ function strippedSql(key) {
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/'(?:''|[^'])*'/g, "''");
 }
+
+const receiptSha = crypto
+  .createHash("sha256")
+  .update(content.receipt ?? "")
+  .digest("hex");
+if (
+  receiptSha !==
+  "b7fb60f90775f7315447e467e31ddc0313806d101274d7918b7885915eca4b7b"
+) {
+  errors.push("Lovable Phase 1C execution receipt drifted");
+}
+if (`${content.receipt ?? ""}\n` !== (content.migration ?? "")) {
+  errors.push(
+    "Lovable Phase 1C receipt is not the terminal-LF-normalized canonical payload",
+  );
+}
+
+const typesSha = crypto
+  .createHash("sha256")
+  .update(content.types ?? "")
+  .digest("hex");
+if (
+  typesSha !==
+  "dc9af8e25188f2a8c25d8b3c556ee519c91196e8e3995be0395c4ca61a9e174d"
+) {
+  errors.push("Lovable-generated Phase 1C types drifted");
+}
+for (const table of [
+  "organization_customer_sites",
+  "organization_pricing_profiles",
+]) requireText("types", `${table}: {`);
 
 for (const prohibited of [
   /INSERT\s+INTO\s+public\.organization_contacts/i,
@@ -160,11 +194,12 @@ for (const key of ["preflight", "verification"]) {
 }
 
 for (const text of [
-  "repository-only migration candidate",
+  "applied inactive hosted foundation",
+  "`20260814050336`",
   "one `provisioning`, non-default BluLadder Klamath organization",
   "runtime routing off, publication off, and customer traffic off",
   "creates no membership, contact destination, JobTread mapping",
-  "Application requires a new explicit authorization",
+  "Activation remains separately gated",
 ]) requireText("contract", text);
 
 let register;
@@ -184,8 +219,6 @@ if (register) {
   ) errors.push("Phase 1C repository identity drifted");
 
   const requiredFalse = [
-    "migration_applied",
-    "hosted_organization_provisioned",
     "activation_allowed",
     "customer_traffic_allowed",
     "runtime_routing_enabled",
@@ -200,6 +233,14 @@ if (register) {
   for (const key of requiredFalse) {
     if (register[key] !== false) errors.push(`${key} must remain false`);
   }
+  if (
+    register.migration_applied !== true ||
+    register.hosted_organization_provisioned !== true ||
+    register.hosted_execution_version !== "20260814050336" ||
+    register.execution_receipt !== relative.receipt ||
+    register.execution_receipt_sha256 !== receiptSha ||
+    register.generated_types_sha256 !== typesSha
+  ) errors.push("Phase 1C hosted execution evidence drifted");
   if (
     register.lifecycle_after_application !== "provisioning" ||
     register.pricing_status !== "draft" ||
@@ -235,5 +276,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1C gate OK: inactive hosted foundation is prepared, pricing is exact, verification is read-only, and every live action remains blocked.",
+  "BluLadder Klamath Phase 1C gate OK: the exact inactive hosted foundation and execution receipt are reconciled, pricing and generated types are exact, and every activation surface remains blocked.",
 );

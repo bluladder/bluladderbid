@@ -108,9 +108,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // recipient table. The migration aborts rather than guessing once any
   // active non-DFW organization exists.
   "supabase/migrations/20260810150000_voice_escalation_recipients_tenant_scope.sql",
-  // Phase 1C: reviewed inactive Klamath foundation candidate. This migration
-  // provisions no members, provider mappings, runtime routing, published site,
-  // customer traffic, or enabled pricing, and remains unapplied in this PR.
+  // Phase 1C: reviewed inactive Klamath foundation. This migration provisions
+  // no members, provider mappings, runtime routing, published site, customer
+  // traffic, or enabled pricing.
   "supabase/migrations/20260813223348_bluladder_klamath_phase_1c_inactive_foundation.sql",
   // Forward compatibility repair for the genuinely unapplied historical
   // Stage 8A payload. It preserves the hardened helper-free tenant boundary.
@@ -122,6 +122,12 @@ const reviewedPostRuntimeMigrations = new Set([
   // Forward-only least-privilege repair for the authenticated table grants
   // hydrated by hosted defaults during the Stage 8A application.
   "supabase/migrations/20260814041512_bluladder_klamath_stage_8a_authenticated_grants.sql",
+  // Lovable-generated receipt for the exact grant-repair payload, with only
+  // the provider's terminal-LF normalization permitted by the hosted checker.
+  "supabase/migrations/20260814045913_a2d7679c-4504-469d-87a5-f6c21edbfa97.sql",
+  // Lovable-generated receipt for the exact inactive Phase 1C payload, with
+  // only the provider's terminal-LF normalization permitted by its checker.
+  "supabase/migrations/20260814050336_e5e2c901-cd2c-479c-a5be-71746296fd9b.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

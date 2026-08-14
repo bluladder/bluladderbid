@@ -14,8 +14,12 @@ const relative = {
     "supabase/migrations/20260814035656_f333948e-a5c5-4e5a-9958-b4ed1ee77dc2.sql",
   grantRepair:
     "supabase/migrations/20260814041512_bluladder_klamath_stage_8a_authenticated_grants.sql",
+  grantReceipt:
+    "supabase/migrations/20260814045913_a2d7679c-4504-469d-87a5-f6c21edbfa97.sql",
   phase1c:
     "supabase/migrations/20260813223348_bluladder_klamath_phase_1c_inactive_foundation.sql",
+  phase1cReceipt:
+    "supabase/migrations/20260814050336_e5e2c901-cd2c-479c-a5be-71746296fd9b.sql",
   preflight:
     "supabase/preflight/bluladder_klamath_stage_8a_hosted_compatibility.sql",
   verification:
@@ -90,19 +94,49 @@ if (`${content.receipt ?? ""}\n` !== (content.migration ?? "")) {
   errors.push("Lovable receipt is not the terminal-LF-normalized canonical payload");
 }
 
+for (const [receiptKey, canonicalKey, expectedSha, label] of [
+  [
+    "grantReceipt",
+    "grantRepair",
+    "59ebbf2dd7a10ee8ccb4fa378f83181906186a610e904b14121b1943f8954ebc",
+    "Stage 8A authenticated-grant repair",
+  ],
+  [
+    "phase1cReceipt",
+    "phase1c",
+    "b7fb60f90775f7315447e467e31ddc0313806d101274d7918b7885915eca4b7b",
+    "Phase 1C inactive-foundation",
+  ],
+]) {
+  const actualSha = crypto
+    .createHash("sha256")
+    .update(content[receiptKey] ?? "")
+    .digest("hex");
+  if (actualSha !== expectedSha) {
+    errors.push(`Lovable ${label} execution receipt drifted`);
+  }
+  if (`${content[receiptKey] ?? ""}\n` !== (content[canonicalKey] ?? "")) {
+    errors.push(
+      `Lovable ${label} receipt is not the terminal-LF-normalized canonical payload`,
+    );
+  }
+}
+
 const typesSha = crypto
   .createHash("sha256")
   .update(content.types ?? "")
   .digest("hex");
 const expectedTypesSha = [
-  "c5615ad778686f8d27095f99c428b006",
-  "7b4921f79543ae3c0225f977f6d091b5",
+  "dc9af8e25188f2a8c25d8b3c556ee519",
+  "c91196e8e3995be0395c4ca61a9e174d",
 ].join("");
 if (typesSha !== expectedTypesSha) {
   errors.push("Lovable-generated Stage 8A types drifted");
 }
 for (const table of [
   "organization_contacts",
+  "organization_customer_sites",
+  "organization_pricing_profiles",
   "organization_services",
   "organization_settings",
   "organization_territories",
@@ -209,16 +243,16 @@ for (const key of [
 }
 
 for (const text of [
-  "Recreating the helper would undo the hardening",
+  "Hosted execution version `20260814035656`",
   "Historical Stage 8A source remains byte-for-byte unchanged",
-  "Any hosted application requires a new exact authorization",
+  "all provider, runtime, publication, and traffic gates remain off",
 ]) requireText("contract", text);
 
 for (const text of [
   "Those generated artifacts are authoritative evidence",
   "canonical applied migration also remains immutable",
   "revokes authenticated access and restores only",
-  "Phase 1C remains separately gated",
+  "Hosted execution version `20260814045913`",
 ]) requireText("grantContract", text);
 
 for (const text of [
@@ -254,5 +288,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath hosted compatibility gate OK: applied artifacts and Lovable receipts are reconciled, the authenticated-role repair is least-privilege, Phase 1C is hardened, and all hosted actions remain separately gated.",
+  "BluLadder Klamath hosted compatibility gate OK: all three applied artifacts and Lovable receipts are reconciled, generated types are exact, tenant grants are least-privilege, and every activation surface remains gated.",
 );
