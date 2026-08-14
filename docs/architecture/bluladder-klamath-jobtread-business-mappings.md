@@ -67,10 +67,11 @@ This repository contract does not make the adapter reachable. Before any
 provider setup or traffic, a separately reviewed stage must:
 
 1. create the exact JobTread custom fields and record their protected bindings;
-2. create one organization-scoped Grant Key and webhook with least privilege;
+2. create one organization-scoped Grant Key with least privilege and keep the
+   first-wave webhook absent;
 3. insert one inactive Klamath connector row with hashed provider authority;
 4. adopt the now-prepared dormant operation-attempt runner only after concrete
-   stores, webhook authentication/idempotency, and reconciliation reads pass
+   stores, the server-initiated ingress policy, and reconciliation reads pass
    separate review;
 5. prove availability/capacity semantics and a cancellation lifecycle;
 6. deploy only the exact runtime functions and run owner-controlled acceptance;

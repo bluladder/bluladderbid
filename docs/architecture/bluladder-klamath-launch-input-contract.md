@@ -27,7 +27,9 @@ restricted external location, not in GitHub.
   email addresses, provider identifiers, URLs, credentials, tokens, headers,
   and customer data are not accepted.
 - JobTread, Twilio, Vapi, hosted, deployment, CI, Secret Scan, and controlled-QA
-  evidence are explicit independent gates.
+  evidence are explicit independent gates. The first-wave JobTread gate is the
+  reviewed server-initiated mode with its webhook absent, not an unsigned
+  webhook workaround.
 - Unknown fields fail closed. Secret-like and provider-identifier-like field
   names receive a distinct blocker.
 - DFW fallback, Klamath runtime routing, publication, pricing runtime, and
