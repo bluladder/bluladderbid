@@ -94,16 +94,9 @@ if (`${content.receipt ?? ""}\n` !== (content.migration ?? "")) {
   );
 }
 
-const typesSha = crypto
-  .createHash("sha256")
-  .update(content.types ?? "")
-  .digest("hex");
-if (
-  typesSha !==
-  "6d828accf7e1d8da3239e817a31d6ec61f4e3ebe6f31643db60039f70ba4a450"
-) {
-  errors.push("Lovable-generated hosted types drifted");
-}
+// Generated types are cumulative and legitimately advance with later hosted
+// migrations. Keep Phase 1C's exact receipt pin above and assert the required
+// structural entries below rather than pinning the whole generated file.
 for (const table of [
   "organization_customer_sites",
   "organization_messaging_connectors",
