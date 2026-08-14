@@ -112,12 +112,12 @@ describe("Klamath launch-input readiness", () => {
 
   it("rejects every incomplete provider and release gate", () => {
     const fixture = readyFixture();
-    fixture.providerReadiness.jobtread_webhook_authentication_verified = false;
+    fixture.providerReadiness.jobtread_server_initiated_mode_verified = false;
     fixture.providerReadiness.twilio_campaign_approved = false;
     fixture.releaseEvidence.controlled_qa_passed = false;
     expect(evaluateKlamathLaunchInputs(fixture).blockers).toEqual(
       expect.arrayContaining([
-        "provider_gate_incomplete:jobtread_webhook_authentication_verified",
+        "provider_gate_incomplete:jobtread_server_initiated_mode_verified",
         "provider_gate_incomplete:twilio_campaign_approved",
         "release_gate_incomplete:controlled_qa_passed",
       ]),

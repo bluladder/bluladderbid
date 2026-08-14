@@ -76,12 +76,12 @@ manual, or Google Calendar fallback.
 This module is deliberately unreachable. Before any provider or customer
 traffic, separate reviewed stages must still:
 
-1. approve and create the exact JobTread custom fields, least-privilege Grant
-   Key, and authenticated webhook;
+1. approve and create the exact JobTread custom fields and least-privilege
+   Grant Key while preserving the reviewed first-wave no-webhook mode;
 2. insert one inactive Klamath connector row using protected references and
    provider fingerprints;
 3. review the concrete dormant Phase 1I stores, then implement protected plan
-   persistence plus webhook authentication and receipt processing;
+   persistence; authenticated webhook receipt processing remains future-only;
 4. prove capacity, crew, route, blackout, and cancellation semantics;
 5. adopt the runner in only the exact organization-owned runtime entry points;
 6. deploy and run owner-controlled provider acceptance; and
