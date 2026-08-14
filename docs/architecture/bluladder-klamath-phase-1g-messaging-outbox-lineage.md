@@ -166,3 +166,23 @@ This adapter is repository-only. No Twilio resource, API key, Messaging Service,
 phone number, sender, connector row, secret, deployment, or message was created.
 It must not be deployed until the DFW connector compatibility row and the
 separately reviewed inactive Klamath connector/provider prerequisites exist.
+
+## DFW connector compatibility candidate
+
+Before the tenant-aware outbox can be deployed, the already-live DFW CallRail
+boundary must be represented by exactly one organization-owned connector. The
+prepared compatibility migration stops unless the connector table is empty,
+all existing SMS ledger rows remain DFW-owned and unbound, the exact active DFW
+legacy default is present, and Klamath remains provisioning with no active
+organization state.
+
+The migration inserts one deterministic active DFW SMS connector using only the
+two compiled non-secret CallRail references and backfills the existing DFW SMS
+ledger to that connector. It creates no Klamath connector and changes no secret,
+provider resource, sender, runtime, queue, customer traffic, or message. The
+runtime separately refuses any CallRail connector whose two references differ
+from those exact compiled values, before making a provider request.
+
+This candidate remains unapplied. Its read-only preflight, transactional
+collision stops, read-only postflight, and disposable PostgreSQL rehearsal must
+pass before a separately authorized hosted application.

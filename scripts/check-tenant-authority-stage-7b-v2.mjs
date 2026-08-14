@@ -146,6 +146,9 @@ const reviewedPostRuntimeMigrations = new Set([
   "supabase/migrations/20260814072713_83b1f9da-ae78-4e2e-817a-09c40f2388a4.sql",
   "supabase/migrations/20260814074000_bluladder_klamath_phase_1g_scoped_sms_outbox.sql",
   "supabase/migrations/20260814081254_c3fdd8e6-ea9b-4220-a90b-5c1e8409be5d.sql",
+  // Phase 1G: one exact DFW compatibility connector and bounded historical
+  // ledger binding. Klamath remains provisioning without a connector.
+  "supabase/migrations/20260814085000_bluladder_klamath_phase_1g_dfw_connector_compatibility.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

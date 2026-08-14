@@ -20,7 +20,7 @@ Last reconciled main: `9433b0013db8c34ca2345605b196933fc1570a1d`
           │   ├─ Klamath Phase 1D customer sites      complete (PR #113)
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
-          │       └─ Klamath Phase 1G messaging       scoped outbox hosted; Twilio adapter prepared
+          │       └─ Klamath Phase 1G messaging       DFW connector compatibility prepared
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -73,7 +73,9 @@ unchanged Klamath provisioning boundary are independently verified. Remaining
 writer adoption and runtime deployment remain separate gates. A repository-only
 Twilio adapter now requires an allowlisted connector reference, dedicated API
 key, and Messaging Service identity; provider setup, deployment, messaging, and
-activation remain blocked.
+activation remain blocked. The exact DFW connector compatibility row, historical
+ledger backfill, read-only pre/postflight, and disposable rehearsal are prepared
+but remain unapplied.
 
 The Phase 1F portal runtime is deployed from reconciled main and all seven
 reviewed functions passed secret-free boot verification. The Klamath mapping remains

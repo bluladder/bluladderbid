@@ -44,6 +44,14 @@ const relative = {
     "supabase/verification/bluladder_klamath_phase_1g_scoped_sms_outbox.sql",
   scopedRehearsal:
     "scripts/rehearse-bluladder-klamath-phase-1g-scoped-sms-outbox-postgres.sh",
+  dfwConnectorMigration:
+    "supabase/migrations/20260814085000_bluladder_klamath_phase_1g_dfw_connector_compatibility.sql",
+  dfwConnectorPreflight:
+    "supabase/preflight/bluladder_klamath_phase_1g_dfw_connector_compatibility.sql",
+  dfwConnectorVerification:
+    "supabase/verification/bluladder_klamath_phase_1g_dfw_connector_compatibility.sql",
+  dfwConnectorRehearsal:
+    "scripts/rehearse-bluladder-klamath-phase-1g-dfw-connector-postgres.sh",
   roadmap: "docs/ROADMAP_EXECUTION_LEDGER.md",
   workflow: ".github/workflows/ci.yml",
 };
@@ -77,6 +85,8 @@ for (const text of [
   "Fail-closed Twilio adapter candidate",
   "dedicated API key",
   "This adapter is repository-only",
+  "DFW connector compatibility candidate",
+  "This candidate remains unapplied",
 ]) requireText("contract", text);
 
 for (const text of [
@@ -209,10 +219,42 @@ for (const text of [
 ]) requireText("scopedRehearsal", text);
 
 for (const text of [
+  "Phase 1G messaging connector state is not empty",
+  "bluladder-dfw-callrail-production-v1",
+  "bluladder-dfw-callrail-sender-v1",
+  "Phase 1G migration activated Klamath messaging",
+]) requireText("dfwConnectorMigration", text);
+
+for (const text of [
+  "BEGIN TRANSACTION READ ONLY",
+  "exact_dfw_count",
+  "connector_bound_count",
+  "klamath_provider_identity_count",
+  "ROLLBACK",
+]) requireText("dfwConnectorPreflight", text);
+
+for (const text of [
+  "BEGIN TRANSACTION READ ONLY",
+  "exact_dfw_connector_count",
+  "unbound_sms_count",
+  "klamath_connector_count",
+  "ROLLBACK",
+]) requireText("dfwConnectorVerification", text);
+
+for (const text of [
+  "BLULADDER_KLAMATH_PHASE1G_DFW_CONNECTOR_DATABASE_URL",
+  "DFW connector rehearsal left historical lineage incomplete",
+  "DFW connector compatibility rehearsal passed",
+]) requireText("dfwConnectorRehearsal", text);
+
+for (const text of [
   "selectOrganizationMessagingConnector",
   "guardMessagingDispatch",
   "claim_organization_sms_outbox_send",
   "provider_adapter_unavailable",
+  "DFW_CALLRAIL_CREDENTIAL_REFERENCE",
+  "DFW_CALLRAIL_SENDER_REFERENCE",
+  "callrail_connector_unapproved",
 ]) requireText("outbox", text);
 
 for (const text of [
@@ -240,6 +282,7 @@ requireText("workflow", "check:klamath-phase-1g");
 requireText("workflow", "BLULADDER_KLAMATH_PHASE1G_DATABASE_URL");
 requireText("workflow", "BLULADDER_KLAMATH_PHASE1G_GRANTS_DATABASE_URL");
 requireText("workflow", "BLULADDER_KLAMATH_PHASE1G_SCOPED_OUTBOX_DATABASE_URL");
+requireText("workflow", "BLULADDER_KLAMATH_PHASE1G_DFW_CONNECTOR_DATABASE_URL");
 
 const exactArtifacts = {
   migration: {
@@ -298,6 +341,22 @@ const exactArtifacts = {
     bytes: 6165,
     sha256: "f78343cadfa03bac4698e3c265ec38876ec7eab1cde8acd90a4ce2bfac3a4bc6",
   },
+  dfwConnectorMigration: {
+    bytes: 5655,
+    sha256: "10915f67feca62d9c027c287161904b8070ece9da0be21f11fb8c5e4717db270",
+  },
+  dfwConnectorPreflight: {
+    bytes: 1598,
+    sha256: "53474c33e713f257f279c61ebdfff5e6d9d8bb3e3e657738888c168c46c0d73c",
+  },
+  dfwConnectorVerification: {
+    bytes: 1685,
+    sha256: "ac8ada8826d45415b87188e2588ab597d7568cf06eb32a35628b6633b108edbb",
+  },
+  dfwConnectorRehearsal: {
+    bytes: 2442,
+    sha256: "52fefb9e65d3c41a1cf853af73aaa0ea072d9189f857d6818a9330430cc79cff",
+  },
 };
 for (const [key, expected] of Object.entries(exactArtifacts)) {
   const bytes = fs.readFileSync(path.join(root, relative[key]));
@@ -316,9 +375,9 @@ try {
 if (register) {
   if (
     register.phase !== "1G" ||
-    register.status !== "hosted_scoped_outbox_ready_twilio_adapter_prepared" ||
+    register.status !== "dfw_connector_compatibility_prepared" ||
     register.prepared_from_main !==
-      "f5497d4a426701460c95eb2bfbe9421092e1922c" ||
+      "ad628e85f2845e53b98acf8f4bcae246b0f2d8b7" ||
     register.messaging_connector_contract_prepared !== true ||
     register.additive_migration_prepared !== true ||
     register.hosted_preflight_passed !== true ||
@@ -356,6 +415,10 @@ if (register) {
     register.twilio_adapter_deployed !== false ||
     register.twilio_credentials_present !== false ||
     register.twilio_sender_present !== false ||
+    register.dfw_connector_compatibility_migration_prepared !== true ||
+    register.dfw_connector_compatibility_migration_applied !== false ||
+    register.dfw_connector_count !== 0 ||
+    register.dfw_connector_runtime_allowlist_prepared !== true ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
     register.klamath_connector_count !== 0 ||
@@ -366,7 +429,7 @@ if (register) {
   ) errors.push("Phase 1G repository contract drifted");
 
   const gates = register.gates ?? [];
-  if (gates.length !== 10 || new Set(gates.map((gate) => gate.id)).size !== 10) {
+  if (gates.length !== 11 || new Set(gates.map((gate) => gate.id)).size !== 11) {
     errors.push("Phase 1G gate identity/count drifted");
   }
   for (const gate of gates) {
