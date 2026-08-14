@@ -393,6 +393,7 @@ export async function handleVoiceLinkToolCalls(
   const link = buildVoiceCustomerLink(toolName, customerSite.baseUrl);
   const deliver = deps.deliver ?? sendOutboxSms;
   const result = await deliver(supabase, {
+    organizationId: input.organizationId,
     // Intentionally the same identity used by the final-event generic link.
     // The first accepted link purpose wins for this call and destination.
     outboundKey: buildVoiceCallLinkOutboundKey(callId, phone),

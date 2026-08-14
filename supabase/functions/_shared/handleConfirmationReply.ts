@@ -42,6 +42,8 @@ import {
 type SB = any;
 
 export interface HandleConfirmationInput {
+  /** Server-resolved conversation organization. */
+  organizationId: string;
   conversationId: string;
   phone: string;
   inboundSmsId: string;
@@ -273,6 +275,7 @@ export async function handleConfirmationReply(
       ? `booking_confirmation:${execution.ledger_id}`
       : `booking_confirmation_pres:${row.id}`;
     const outbox = await sendOutboxSms(supabase, {
+      organizationId: input.organizationId,
       outboundKey,
       toNumber: input.phone,
       body: confirmationSmsBody(execution, timezone),

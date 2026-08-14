@@ -47,6 +47,7 @@ function heldRow(expiresAt: string): Row {
 Deno.test("6B.1 — expired hold + YES → hold_expired action, presentation returned", async () => {
   const { supabase } = makeStub(heldRow("2020-01-01T00:00:00Z"));
   const res = await handleConfirmationReply(supabase, {
+    organizationId: "11111111-1111-4111-8111-111111111111",
     conversationId: "conv-1",
     phone: "+14695550100",
     inboundSmsId: "in-1",
@@ -61,6 +62,7 @@ Deno.test("6B.1 — expired hold + YES → hold_expired action, presentation ret
 Deno.test("6B.1 — expired hold + NO → hold_expired action, no fresh availability trigger", async () => {
   const { supabase } = makeStub(heldRow("2020-01-01T00:00:00Z"));
   const res = await handleConfirmationReply(supabase, {
+    organizationId: "11111111-1111-4111-8111-111111111111",
     conversationId: "conv-1",
     phone: "+14695550100",
     inboundSmsId: "in-2",
@@ -73,6 +75,7 @@ Deno.test("6B.1 — expired hold + NO → hold_expired action, no fresh availabi
 Deno.test("6B.1 — expired hold + unclear → falls through to orchestrator", async () => {
   const { supabase } = makeStub(heldRow("2020-01-01T00:00:00Z"));
   const res = await handleConfirmationReply(supabase, {
+    organizationId: "11111111-1111-4111-8111-111111111111",
     conversationId: "conv-1",
     phone: "+14695550100",
     inboundSmsId: "in-3",

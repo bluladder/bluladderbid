@@ -18,6 +18,8 @@ const callRail = {
   companyId: "c",
   senderNumber: "+14697472877",
 };
+const organizationId = "11111111-1111-4111-8111-111111111111";
+const connectorId = "22222222-2222-4222-8222-222222222222";
 
 function makeSupabase(opts: {
   existing?: any | null;
@@ -25,13 +27,40 @@ function makeSupabase(opts: {
   rpcLog?: any[];
   missingQuoteClaim?: boolean;
   lineageLog?: any[];
+  connectorBehavior?: "active" | "missing" | "inactive" | "twilio";
 }) {
   const rpcLog = opts.rpcLog ?? [];
   const lineageLog = opts.lineageLog ?? [];
   return {
-    // Minimal PostgREST chain used by the quote-lineage fallback:
-    //   .from("sms_messages").update({...}).eq("id", …).is("quote_id", null)
     from(table: string) {
+      if (table === "organization_messaging_connectors") {
+        const chain: any = {
+          eq() {
+            return chain;
+          },
+          then(resolve: (value: unknown) => unknown) {
+            const behavior = opts.connectorBehavior ?? "active";
+            return Promise.resolve({
+              data: behavior === "missing" ? [] : [{
+                id: connectorId,
+                organization_id: organizationId,
+                channel: "sms",
+                provider: behavior === "twilio" ? "twilio" : "callrail",
+                status: behavior === "inactive" ? "inactive" : "active",
+                priority: 10,
+                credential_reference: "reviewed-credential-reference",
+                sender_identity_reference: "reviewed-sender-reference",
+              }],
+              error: null,
+            }).then(resolve);
+          },
+        };
+        return {
+          select() {
+            return chain;
+          },
+        };
+      }
       return {
         update(values: any) {
           const filters: Record<string, unknown> = {};
@@ -57,11 +86,12 @@ function makeSupabase(opts: {
           data: null,
           error: {
             code: "PGRST202",
-            message: "Could not find the function public.claim_quote_sms_delivery",
+            message:
+              "Could not find the function public.claim_quote_sms_delivery",
           },
         };
       }
-      if (name === "claim_sms_outbox_send") {
+      if (name === "claim_organization_sms_outbox_send") {
         switch (opts.claimBehavior ?? "new") {
           case "new":
             return {
@@ -157,6 +187,7 @@ Deno.test("outbox #14: crash before dispatch → next call re-claims and dispatc
   fetchMode = "ok";
   const sb = makeSupabase({ claimBehavior: "escalated", rpcLog });
   const r = await sendOutboxSms(sb, {
+    organizationId,
     outboundKey: "k1",
     toNumber: "+15551234567",
     body: "hi",
@@ -175,6 +206,7 @@ Deno.test("outbox #15: crash after provider acceptance → replay does NOT redis
   fetchMode = "ok";
   const sb = makeSupabase({ claimBehavior: "replay", rpcLog });
   const r = await sendOutboxSms(sb, {
+    organizationId,
     outboundKey: "k1",
     toNumber: "+15551234567",
     body: "hi",
@@ -193,6 +225,7 @@ Deno.test("outbox #16: duplicate confirmation request in-flight → sees in_prog
   fetchMode = "ok";
   const sb = makeSupabase({ claimBehavior: "in_progress", rpcLog });
   const r = await sendOutboxSms(sb, {
+    organizationId,
     outboundKey: "k1",
     toNumber: "+15551234567",
     body: "hi",
@@ -209,6 +242,7 @@ Deno.test("outbox #17: provider rejection finalizes to send_failed; caller does 
   fetchMode = "reject";
   const sb = makeSupabase({ claimBehavior: "new", rpcLog });
   const r = await sendOutboxSms(sb, {
+    organizationId,
     outboundKey: "k1",
     toNumber: "+15551234567",
     body: "hi",
@@ -232,6 +266,7 @@ Deno.test("outbox: missing provider config is durably finalized", async () => {
     const r = await sendOutboxSms(
       makeSupabase({ claimBehavior: "new", rpcLog }),
       {
+        organizationId,
         outboundKey: "k-config",
         toNumber: "+15551234567",
         body: "hi",
@@ -251,13 +286,13 @@ Deno.test("outbox: missing provider config is durably finalized", async () => {
   }
 });
 
-Deno.test("outbox: quote claim fallback supplies the complete base RPC signature", async () => {
+Deno.test("outbox: scoped quote claim binds organization and connector atomically", async () => {
   const rpcLog: any[] = [];
-  const lineageLog: any[] = [];
   fetchMode = "ok";
   const r = await sendOutboxSms(
-    makeSupabase({ missingQuoteClaim: true, rpcLog, lineageLog }),
+    makeSupabase({ rpcLog }),
     {
+      organizationId,
       outboundKey: "quote_delivery:sms:q1:15551234567",
       toNumber: "+15551234567",
       body: "Your bid is ready",
@@ -268,14 +303,13 @@ Deno.test("outbox: quote claim fallback supplies the complete base RPC signature
   );
 
   assertEquals(r.sent, true);
-  const fallback = rpcLog.find((x) => x.name === "claim_sms_outbox_send");
-  assertEquals(fallback?.args?.p_stale_claim_seconds, 120);
-  // Quote lineage is stitched back on the claimed row, and only when it is
-  // still unattributed.
-  assertEquals(lineageLog.length, 1);
-  assertEquals(lineageLog[0].table, "sms_messages");
-  assertEquals(lineageLog[0].values, { quote_id: "q1" });
-  assertEquals(lineageLog[0].filters, { id: "sms-1", quote_id: null });
+  const claim = rpcLog.find((x) =>
+    x.name === "claim_organization_sms_outbox_send"
+  );
+  assertEquals(claim?.args?.p_organization_id, organizationId);
+  assertEquals(claim?.args?.p_messaging_connector_id, connectorId);
+  assertEquals(claim?.args?.p_quote_id, "q1");
+  assertEquals(claim?.args?.p_stale_claim_seconds, 120);
 });
 
 Deno.test("outbox: network failure finalizes to delivery_unknown (no re-send)", async () => {
@@ -283,6 +317,7 @@ Deno.test("outbox: network failure finalizes to delivery_unknown (no re-send)", 
   fetchMode = "throw";
   const sb = makeSupabase({ claimBehavior: "new", rpcLog });
   const r = await sendOutboxSms(sb, {
+    organizationId,
     outboundKey: "k1",
     toNumber: "+15551234567",
     body: "hi",
@@ -295,6 +330,48 @@ Deno.test("outbox: network failure finalizes to delivery_unknown (no re-send)", 
   assertEquals(r.sent, false);
   const fin = rpcLog.find((x) => x.name === "finalize_sms_outbox_send");
   assertEquals(fin?.args.p_new_state, "delivery_unknown");
+});
+
+Deno.test("outbox: missing organization connector blocks before claim", async () => {
+  const rpcLog: any[] = [];
+  const r = await sendOutboxSms(
+    makeSupabase({ connectorBehavior: "missing", rpcLog }),
+    {
+      organizationId,
+      outboundKey: "missing-connector",
+      toNumber: "+15551234567",
+      body: "hi",
+      messageKind: "test",
+      callRail,
+    },
+  );
+  assertEquals(r.sent, false);
+  assertEquals(r.error, "connector_missing");
+  assertEquals(rpcLog.length, 0);
+});
+
+Deno.test("outbox: unsupported connector provider records failure without dispatch", async () => {
+  const rpcLog: any[] = [];
+  fetchMode = "ok";
+  const r = await sendOutboxSms(
+    makeSupabase({ connectorBehavior: "twilio", rpcLog }),
+    {
+      organizationId,
+      outboundKey: "twilio-not-yet-adapted",
+      toNumber: "+15551234567",
+      body: "hi",
+      messageKind: "test",
+      callRail,
+    },
+  );
+  assertEquals(r.sent, false);
+  assertEquals(r.outboxState, "send_failed");
+  assertEquals(r.error, "provider_adapter_unavailable");
+  assertEquals(
+    rpcLog.find((x) => x.name === "finalize_sms_outbox_send")?.args
+      ?.p_new_state,
+    "send_failed",
+  );
 });
 
 Deno.test("timezone #20: property timezone renders in local zone", () => {

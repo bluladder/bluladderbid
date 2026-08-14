@@ -193,6 +193,10 @@ jobs:
         env:
           BLULADDER_KLAMATH_PHASE1G_GRANTS_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1g_grants_rehearsal
         run: bash scripts/rehearse-bluladder-klamath-phase-1g-authenticated-grants-postgres.sh
+      - name: Rehearse BluLadder Klamath Phase 1G scoped SMS outbox
+        env:
+          BLULADDER_KLAMATH_PHASE1G_SCOPED_OUTBOX_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1g_scoped_outbox_rehearsal
+        run: bash scripts/rehearse-bluladder-klamath-phase-1g-scoped-sms-outbox-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard
