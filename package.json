@@ -38,6 +38,7 @@
     "check:klamath-jobtread-capability": "node scripts/check-bluladder-klamath-jobtread-capability.mjs",
     "check:klamath-jobtread-business-mappings": "node scripts/check-bluladder-klamath-jobtread-business-mappings.mjs",
     "check:klamath-jobtread-execution-runner": "node scripts/check-bluladder-klamath-jobtread-execution-runner.mjs",
+    "check:klamath-jobtread-phase1i-stores": "node scripts/check-bluladder-klamath-jobtread-phase1i-stores.mjs",
     "check:klamath-hosted-compat": "node scripts/check-bluladder-klamath-hosted-compat.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",

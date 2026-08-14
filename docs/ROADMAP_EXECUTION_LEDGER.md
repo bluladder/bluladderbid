@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `071eedc331306e8aafa99cc0e028f6e3419c1d58`
+Last reconciled main: `0d41d0d70a4aae263ab11220ac1c71fc49951443`
 
 ## Dependency graph
 
@@ -27,7 +27,8 @@ Last reconciled main: `071eedc331306e8aafa99cc0e028f6e3419c1d58`
           │   ├─ Klamath JobTread capability seam    complete (PR #136)
           │   ├─ Klamath Phase 1I CRM lineage        hosted schema and grants verified
           │   ├─ Klamath JobTread mappings           first dormant wave complete (PR #144)
-          │   └─ Klamath JobTread runner             dormant execution/reconciliation active (#145)
+          │   ├─ Klamath JobTread runner             dormant execution/reconciliation complete (PR #146)
+          │   └─ Klamath JobTread Phase 1I stores    dormant concrete adapters active (#147)
           ├─ #10 service catalog and pricing
           │   └─ 10A pure catalog/pricing contracts  complete (PR #19)
           └─ remaining tenant-table rollout          staged by authority path
@@ -56,7 +57,8 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1H | #7/#9 | Organization-scoped consent lineage and fail-closed runtime adoption | #131-#133 + provider/deployment receipts | complete |
 | Klamath JobTread capability | #135 | Verified provider primitives plus dormant guarded adapter and redacted transport | #136 | complete |
 | Klamath JobTread mappings | #143 | Dormant exact customer, schedule-read, and job/task planning with blocked ambiguous lifecycles | #144 | complete |
-| Klamath JobTread runner | #145 | Dormant protected-plan execution, hashed attempt lineage, response validation, and uncertain-outcome reconciliation | active PR | active |
+| Klamath JobTread runner | #145 | Dormant protected-plan execution, hashed attempt lineage, response validation, and uncertain-outcome reconciliation | #146 | complete |
+| Klamath JobTread Phase 1I stores | #147 | Dormant exact connector lookup, attempt-one ownership, started-only terminal transitions, and read-only reconciliation | active PR | active |
 | Klamath Phase 1I | #137/#139/#141 | Empty organization CRM connector, operation-attempt, and webhook-receipt lineage | #138/#140 + provider receipts | hosted schema complete |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
@@ -80,10 +82,12 @@ constraints fail closed before any runtime or provider action. Hosted
 postflight found Lovable-hydrated authenticated privileges broader than the
 reviewed table grants. A narrow forward-only repair is now applied and verified:
 connector configuration has CRUD, both audit tables have SELECT only, and all
-tables remain empty. The first JobTread business mappings are merged, and a
-dormant injected execution/reconciliation runner is now under review. Concrete
-stores, credential/webhook setup, runtime deployment, and customer traffic
-remain blocked.
+tables remain empty. The first JobTread business mappings and dormant injected
+execution/reconciliation runner are merged. Exact Phase 1I connector and
+attempt stores are now under review; they fail closed under ambiguous inserts
+and remain unreachable from production. Protected-plan persistence,
+credential/webhook setup, runtime deployment, and customer traffic remain
+blocked.
 
 ## Completed foundation: Klamath Phase 1G messaging/outbox lineage and Phase 1H
 
@@ -171,13 +175,13 @@ are separated in
 
 ## Queued safe stages
 
-Phase 1I schema/grants and the first JobTread mapping wave are complete. The
-current safe repository stage is the dormant JobTread execution and
-reconciliation runner. The following stages remain gated:
+Phase 1I schema/grants, the first JobTread mapping wave, and the dormant
+execution runner are complete. The current safe repository stage is the exact
+Phase 1I store boundary. The following stages remain gated:
 
-1. Merge the runner only after exact-head CI and Secret Scan prove the dormant
-   contract and all existing DFW/tenant gates.
-2. Implement concrete Phase 1I stores, protected plan assembly, webhook
+1. Merge the Phase 1I stores only after exact-head CI and Secret Scan prove the
+   dormant contract and all existing DFW/tenant gates.
+2. Implement protected plan assembly, webhook
    authentication/idempotency, and read-only reconciliation without adding a
    production entry-point import or provider credential.
 3. Obtain owner-approved Klamath business hours, local contacts, and independent

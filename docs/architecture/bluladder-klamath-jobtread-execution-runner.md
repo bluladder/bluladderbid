@@ -80,8 +80,8 @@ traffic, separate reviewed stages must still:
    Key, and authenticated webhook;
 2. insert one inactive Klamath connector row using protected references and
    provider fingerprints;
-3. implement the concrete Phase 1I stores plus webhook authentication,
-   receipt processing, and read-only reconciliation;
+3. review the concrete dormant Phase 1I stores, then implement protected plan
+   persistence plus webhook authentication and receipt processing;
 4. prove capacity, crew, route, blackout, and cancellation semantics;
 5. adopt the runner in only the exact organization-owned runtime entry points;
 6. deploy and run owner-controlled provider acceptance; and
