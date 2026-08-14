@@ -2241,6 +2241,7 @@ export type Database = {
           created_at: string
           id: string
           notes: string | null
+          organization_id: string
           resolved_at: string | null
           resolved_by: string | null
           resolved_customer_id: string | null
@@ -2254,6 +2255,7 @@ export type Database = {
           created_at?: string
           id?: string
           notes?: string | null
+          organization_id: string
           resolved_at?: string | null
           resolved_by?: string | null
           resolved_customer_id?: string | null
@@ -2267,6 +2269,7 @@ export type Database = {
           created_at?: string
           id?: string
           notes?: string | null
+          organization_id?: string
           resolved_at?: string | null
           resolved_by?: string | null
           resolved_customer_id?: string | null
@@ -2276,6 +2279,13 @@ export type Database = {
           verified_phone?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "customer_account_match_issues_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "customer_account_match_issues_resolved_customer_id_fkey"
             columns: ["resolved_customer_id"]
@@ -2294,6 +2304,7 @@ export type Database = {
           customer_id: string
           id: string
           last_verified_at: string
+          organization_id: string
           updated_at: string
           verified_email: string | null
           verified_phone: string | null
@@ -2306,6 +2317,7 @@ export type Database = {
           customer_id: string
           id?: string
           last_verified_at?: string
+          organization_id: string
           updated_at?: string
           verified_email?: string | null
           verified_phone?: string | null
@@ -2318,6 +2330,7 @@ export type Database = {
           customer_id?: string
           id?: string
           last_verified_at?: string
+          organization_id?: string
           updated_at?: string
           verified_email?: string | null
           verified_phone?: string | null
@@ -2328,6 +2341,20 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_accounts_organization_customer_fkey"
+            columns: ["organization_id", "customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "customer_accounts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -2342,6 +2369,7 @@ export type Database = {
           detail: string | null
           id: string
           matched_count: number | null
+          organization_id: string
           outcome: string
         }
         Insert: {
@@ -2353,6 +2381,7 @@ export type Database = {
           detail?: string | null
           id?: string
           matched_count?: number | null
+          organization_id: string
           outcome: string
         }
         Update: {
@@ -2364,9 +2393,18 @@ export type Database = {
           detail?: string | null
           id?: string
           matched_count?: number | null
+          organization_id?: string
           outcome?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "customer_auth_link_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       customer_portal_sessions: {
         Row: {
@@ -2376,6 +2414,7 @@ export type Database = {
           id: string
           ip_hash: string | null
           last_seen_at: string
+          organization_id: string
           revoked_at: string | null
           session_token_hash: string
           user_agent_hash: string | null
@@ -2387,6 +2426,7 @@ export type Database = {
           id?: string
           ip_hash?: string | null
           last_seen_at?: string
+          organization_id: string
           revoked_at?: string | null
           session_token_hash: string
           user_agent_hash?: string | null
@@ -2398,6 +2438,7 @@ export type Database = {
           id?: string
           ip_hash?: string | null
           last_seen_at?: string
+          organization_id?: string
           revoked_at?: string | null
           session_token_hash?: string
           user_agent_hash?: string | null
@@ -2408,6 +2449,20 @@ export type Database = {
             columns: ["customer_account_id"]
             isOneToOne: false
             referencedRelation: "customer_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_portal_sessions_organization_account_fkey"
+            columns: ["organization_id", "customer_account_id"]
+            isOneToOne: false
+            referencedRelation: "customer_accounts"
+            referencedColumns: ["organization_id", "id"]
+          },
+          {
+            foreignKeyName: "customer_portal_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -2478,6 +2533,7 @@ export type Database = {
           id: string
           ip_hash: string | null
           max_attempts: number
+          organization_id: string
           otp_hash: string
           phone_hash: string | null
           provider: string | null
@@ -2503,6 +2559,7 @@ export type Database = {
           id?: string
           ip_hash?: string | null
           max_attempts?: number
+          organization_id: string
           otp_hash: string
           phone_hash?: string | null
           provider?: string | null
@@ -2528,6 +2585,7 @@ export type Database = {
           id?: string
           ip_hash?: string | null
           max_attempts?: number
+          organization_id?: string
           otp_hash?: string
           phone_hash?: string | null
           provider?: string | null
@@ -2542,7 +2600,15 @@ export type Database = {
           usable_until?: string | null
           verified_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "customer_verification_challenges_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       customer_verification_config: {
         Row: {
