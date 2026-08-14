@@ -130,7 +130,7 @@ for (const text of [
 for (const text of [
   "collision unexpectedly passed",
   "partial Stage 8A table state unexpectedly passed",
-  "SET ROLE authenticated",
+  "request.jwt.claim.sub",
   "historical_stage8a",
   "injected Stage 8A compatibility failure unexpectedly committed",
 ]) requireText("rehearsal", text);
