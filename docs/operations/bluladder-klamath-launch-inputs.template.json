@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "tenantKey": "bluladder-klamath",
+  "purpose": "activation_review",
+  "draftSnapshot": {
+    "businessHours": {
+      "timezone": "America/Los_Angeles",
+      "localOpen": "09:00",
+      "localClose": "17:00",
+      "activeDays": [],
+      "holidayPolicy": "manual"
+    },
+    "territoryAndServices": {
+      "countyKeys": ["or-klamath-county", "or-lake-county"],
+      "communities": ["Klamath Falls", "Lakeview", "Keno", "Bly", "Bonanza", "Chiloquin", "Sprague River", "Malin", "Merrill"],
+      "operatingBases": ["Klamath Falls", "Bly"],
+      "automatedServiceKeys": ["window_cleaning", "gutter_cleaning", "house_wash", "pressure_washing"],
+      "manualReviewServiceKeys": ["commercial_exterior_cleaning", "storefront_window_cleaning"]
+    },
+    "pricingAndBooking": {
+      "profileKey": "bluladder-klamath-pricing-draft",
+      "profileVersion": 1,
+      "taxPolicy": "oregon_no_general_sales_tax",
+      "travelPolicyStatus": "manual_review",
+      "includedOneWayTravelMinutes": 45,
+      "waiveTravelChargeAtSubtotal": 500,
+      "proposedFlatTravelCharge": 100,
+      "mileageRate": null,
+      "promotion99Enabled": false,
+      "minimumNoticeHours": 48,
+      "cancellationNoticeHours": 48,
+      "quoteExpiryDays": 30,
+      "horizonDays": 370,
+      "paymentTiming": "after_service",
+      "depositRequired": false
+    },
+    "siteAndMessaging": {
+      "canonicalHostname": "klamath.bluladder.com",
+      "publicName": "BluLadder Klamath",
+      "smsUseCases": ["quote_link", "booking_management", "reminder", "operator_followup", "authentication"]
+    },
+    "jobtread": {
+      "provider": "jobtread",
+      "approvedCapabilities": ["health", "customer_sync", "availability_read", "booking_create", "booking_update"],
+      "dfwJobberFallbackAllowed": false
+    }
+  },
+  "ownerApprovals": {
+    "business_hours": { "status": "pending", "recordRef": null, "approvedAt": null },
+    "territory_and_services": { "status": "pending", "recordRef": null, "approvedAt": null },
+    "pricing_and_booking": { "status": "pending", "recordRef": null, "approvedAt": null },
+    "site_and_branding": { "status": "pending", "recordRef": null, "approvedAt": null },
+    "messaging_compliance": { "status": "pending", "recordRef": null, "approvedAt": null },
+    "jobtread_setup": { "status": "pending", "recordRef": null, "approvedAt": null }
+  },
+  "protectedConfigurationPresence": {
+    "local_manager": false,
+    "public_customer_contact": false,
+    "sms_sender_owner": false,
+    "voice_transfer_recipient": false,
+    "sms_alert_recipient": false,
+    "email_alert_recipient": false,
+    "jobtread_admin_owner": false
+  },
+  "providerReadiness": {
+    "hosted_foundation_verified": false,
+    "dfw_isolation_verified": false,
+    "site_routing_prepared_and_disabled": false,
+    "jobtread_grant_present": false,
+    "jobtread_credential_present": false,
+    "jobtread_custom_fields_verified": false,
+    "jobtread_webhook_authentication_verified": false,
+    "jobtread_webhook_configured": false,
+    "jobtread_connector_inactive_verified": false,
+    "twilio_business_profile_approved": false,
+    "sms_consent_surface_verified": false,
+    "sms_help_stop_behavior_verified": false,
+    "privacy_policy_published": false,
+    "terms_published": false,
+    "sms_sample_messages_approved": false,
+    "twilio_campaign_approved": false,
+    "twilio_number_provisioned": false,
+    "twilio_messaging_service_verified": false,
+    "vapi_assistant_verified": false,
+    "vapi_phone_binding_verified": false,
+    "runtime_deployments_verified": false
+  },
+  "releaseEvidence": {
+    "repository_sha_verified": false,
+    "exact_head_ci_passed": false,
+    "secret_scan_passed": false,
+    "hosted_postflights_passed": false,
+    "controlled_qa_passed": false,
+    "rollback_plan_reviewed": false
+  }
+}
