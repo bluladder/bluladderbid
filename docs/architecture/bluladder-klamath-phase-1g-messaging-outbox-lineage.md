@@ -177,12 +177,19 @@ legacy default is present, and Klamath remains provisioning with no active
 organization state.
 
 The migration inserts one deterministic active DFW SMS connector using only the
-two compiled non-secret CallRail references and backfills the existing DFW SMS
-ledger to that connector. It creates no Klamath connector and changes no secret,
-provider resource, sender, runtime, queue, customer traffic, or message. The
-runtime separately refuses any CallRail connector whose two references differ
-from those exact compiled values, before making a provider request.
+two compiled non-secret CallRail references and backfills only existing
+DFW-owned rows whose channel is exactly `sms`. Existing non-SMS rows remain
+unbound. It creates no Klamath connector and changes no secret, provider
+resource, sender, runtime, queue, customer traffic, or message. The runtime
+separately refuses any CallRail connector whose two references differ from
+those exact compiled values, before making a provider request.
 
-This candidate remains unapplied. Its read-only preflight, transactional
-collision stops, read-only postflight, and disposable PostgreSQL rehearsal must
-pass before a separately authorized hosted application.
+The first hosted application attempt rolled back completely when the original
+blanket backfill encountered 12 legacy email-channel rows and the connector
+lineage trigger correctly rejected an SMS-connector mismatch. The corrected
+artifact scopes both backfill and completeness checks to the 122 SMS-channel
+rows, separately requires every non-SMS row to remain unbound, and reproduces
+the mixed-channel hosted shape in disposable PostgreSQL CI. This corrected
+candidate remains unapplied. Its read-only preflight, transactional collision
+stops, read-only postflight, and disposable rehearsal must pass before another
+separately reviewed hosted application.

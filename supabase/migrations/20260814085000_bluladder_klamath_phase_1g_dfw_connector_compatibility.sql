@@ -107,6 +107,7 @@ UPDATE public.sms_messages
 SET messaging_connector_id =
   'b1addf10-0000-4000-8000-000000000001'::uuid
 WHERE organization_id = 'b1addf00-0000-4000-8000-000000000001'::uuid
+  AND channel = 'sms'
   AND messaging_connector_id IS NULL;
 
 DO $phase1g_dfw_postflight$
@@ -115,6 +116,7 @@ DECLARE
   unexpected_connector_count integer;
   unbound_sms_count integer;
   wrong_sms_connector_count integer;
+  non_sms_bound_count integer;
   klamath_connector_count integer;
   klamath_active_count integer;
 BEGIN
@@ -137,13 +139,24 @@ BEGIN
 
   SELECT count(*) INTO unbound_sms_count
   FROM public.sms_messages
-  WHERE messaging_connector_id IS NULL;
+  WHERE channel = 'sms'
+    AND messaging_connector_id IS NULL;
   SELECT count(*) INTO wrong_sms_connector_count
   FROM public.sms_messages
-  WHERE organization_id <> 'b1addf00-0000-4000-8000-000000000001'::uuid
-     OR messaging_connector_id <>
-       'b1addf10-0000-4000-8000-000000000001'::uuid;
-  IF unbound_sms_count <> 0 OR wrong_sms_connector_count <> 0 THEN
+  WHERE channel = 'sms'
+    AND (
+      organization_id IS DISTINCT FROM
+        'b1addf00-0000-4000-8000-000000000001'::uuid
+      OR messaging_connector_id IS DISTINCT FROM
+        'b1addf10-0000-4000-8000-000000000001'::uuid
+    );
+  SELECT count(*) INTO non_sms_bound_count
+  FROM public.sms_messages
+  WHERE channel IS DISTINCT FROM 'sms'
+    AND messaging_connector_id IS NOT NULL;
+  IF unbound_sms_count <> 0
+     OR wrong_sms_connector_count <> 0
+     OR non_sms_bound_count <> 0 THEN
     RAISE EXCEPTION 'Phase 1G DFW historical connector lineage failed';
   END IF;
 

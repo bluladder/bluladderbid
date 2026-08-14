@@ -73,9 +73,11 @@ unchanged Klamath provisioning boundary are independently verified. Remaining
 writer adoption and runtime deployment remain separate gates. A repository-only
 Twilio adapter now requires an allowlisted connector reference, dedicated API
 key, and Messaging Service identity; provider setup, deployment, messaging, and
-activation remain blocked. The exact DFW connector compatibility row, historical
-ledger backfill, read-only pre/postflight, and disposable rehearsal are prepared
-but remain unapplied.
+activation remain blocked. The first DFW connector application attempt rolled
+back on mixed SMS/email historical rows. The corrected compatibility row,
+SMS-channel-only backfill, non-SMS preservation checks, read-only
+pre/postflight, and mixed-channel disposable rehearsal are prepared but remain
+unapplied.
 
 The Phase 1F portal runtime is deployed from reconciled main and all seven
 reviewed functions passed secret-free boot verification. The Klamath mapping remains

@@ -16,12 +16,20 @@ SELECT
     AS unexpected_connector_count,
   (SELECT count(*) FROM public.sms_messages) AS sms_message_count,
   (SELECT count(*) FROM public.sms_messages
-    WHERE messaging_connector_id IS NULL) AS unbound_sms_count,
+    WHERE channel = 'sms'
+      AND messaging_connector_id IS NULL) AS unbound_sms_count,
   (SELECT count(*) FROM public.sms_messages
-    WHERE organization_id <> 'b1addf00-0000-4000-8000-000000000001'::uuid
-       OR messaging_connector_id <>
-         'b1addf10-0000-4000-8000-000000000001'::uuid)
+    WHERE channel = 'sms'
+      AND (
+        organization_id IS DISTINCT FROM
+          'b1addf00-0000-4000-8000-000000000001'::uuid
+        OR messaging_connector_id IS DISTINCT FROM
+          'b1addf10-0000-4000-8000-000000000001'::uuid
+      ))
     AS wrong_sms_connector_count,
+  (SELECT count(*) FROM public.sms_messages
+    WHERE channel IS DISTINCT FROM 'sms'
+      AND messaging_connector_id IS NOT NULL) AS non_sms_bound_count,
   (SELECT count(*) FROM public.organization_messaging_connectors connector
     JOIN public.organizations organization
       ON organization.id = connector.organization_id
