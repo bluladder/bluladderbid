@@ -3776,6 +3776,50 @@ export type Database = {
           },
         ]
       }
+      organization_contacts: {
+        Row: {
+          contact_type: string
+          created_at: string
+          destination: string
+          id: string
+          label: string
+          organization_id: string
+          priority: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          contact_type: string
+          created_at?: string
+          destination: string
+          id?: string
+          label: string
+          organization_id: string
+          priority?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          contact_type?: string
+          created_at?: string
+          destination?: string
+          id?: string
+          label?: string
+          organization_id?: string
+          priority?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_memberships: {
         Row: {
           created_at: string
@@ -3845,6 +3889,156 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "organization_resolution_keys_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_services: {
+        Row: {
+          availability: string
+          created_at: string
+          id: string
+          organization_id: string
+          reason: string | null
+          service_key: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          availability?: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          reason?: string | null
+          service_key: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          availability?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          reason?: string | null
+          service_key?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_services_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_settings: {
+        Row: {
+          branding: Json
+          business_hours: Json
+          created_at: string
+          currency_code: string
+          legal_name: string | null
+          locale: string
+          organization_id: string
+          public_name: string
+          service_availability_message: string | null
+          tax_settings: Json
+          timezone: string
+          updated_at: string
+        }
+        Insert: {
+          branding?: Json
+          business_hours?: Json
+          created_at?: string
+          currency_code?: string
+          legal_name?: string | null
+          locale?: string
+          organization_id: string
+          public_name: string
+          service_availability_message?: string | null
+          tax_settings?: Json
+          timezone?: string
+          updated_at?: string
+        }
+        Update: {
+          branding?: Json
+          business_hours?: Json
+          created_at?: string
+          currency_code?: string
+          legal_name?: string | null
+          locale?: string
+          organization_id?: string
+          public_name?: string
+          service_availability_message?: string | null
+          tax_settings?: Json
+          timezone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_territories: {
+        Row: {
+          city_name: string | null
+          country_code: string
+          county_name: string | null
+          created_at: string
+          effect: string
+          id: string
+          name: string
+          organization_id: string
+          postal_code: string | null
+          priority: number
+          state_code: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          city_name?: string | null
+          country_code?: string
+          county_name?: string | null
+          created_at?: string
+          effect: string
+          id?: string
+          name: string
+          organization_id: string
+          postal_code?: string | null
+          priority?: number
+          state_code?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          city_name?: string | null
+          country_code?: string
+          county_name?: string | null
+          created_at?: string
+          effect?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          postal_code?: string | null
+          priority?: number
+          state_code?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_territories_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
