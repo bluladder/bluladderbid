@@ -6966,6 +6966,20 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_organization_sms_outbox_send: {
+        Args: {
+          p_body: string
+          p_claim_token: string
+          p_message_kind: string
+          p_messaging_connector_id: string
+          p_organization_id: string
+          p_outbound_key: string
+          p_quote_id?: string
+          p_stale_claim_seconds?: number
+          p_to_number: string
+        }
+        Returns: Json
+      }
       claim_sms_booking_execution: {
         Args: {
           p_claim_source?: string
