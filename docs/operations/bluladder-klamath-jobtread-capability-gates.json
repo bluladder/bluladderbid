@@ -11,6 +11,9 @@
   "webhook_control_available": true,
   "webhook_created": false,
   "official_api_explorer_verified": true,
+  "provider_preflight_read_verified": true,
+  "provider_preflight_read_used_grant": false,
+  "provider_preflight_custom_field_count": 24,
   "verified_provider_primitives": [
     "account_customer_query_create_update_delete",
     "contact_and_location_query_create_update_delete",

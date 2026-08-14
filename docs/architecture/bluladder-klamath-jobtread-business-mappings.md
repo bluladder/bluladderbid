@@ -3,8 +3,13 @@
 Status: **dormant repository contract prepared**. The exact non-sensitive
 custom-field names and one organization-scoped Grant now exist. The Grant is
 not configured or verified, and no protected binding, webhook, connector row,
-provider identifier, successful Pave request, deployment, customer record,
+provider identifier in repository or hosted configuration, runtime Pave request,
+deployment, customer record,
 job, task, activation, or traffic exists.
+
+One signed-in API Explorer preflight read returned 24 custom fields and uniquely
+resolved the five exact provider bindings. It did not use the new Grant and did
+not make this mapping runtime-reachable.
 
 ## Authority boundary
 
@@ -69,7 +74,8 @@ provider setup or traffic, a separately reviewed stage must:
 
 1. store and verify the created organization-scoped Grant only through the
    protected secret boundary while keeping the first-wave webhook absent;
-2. record the created JobTread fields' exact protected bindings;
+2. store the already-resolved exact JobTread bindings through the protected
+   hosted boundary;
 3. insert one inactive Klamath connector row with hashed provider authority;
 4. adopt the now-prepared dormant operation-attempt runner only after concrete
    stores, the server-initiated ingress policy, and reconciliation reads pass

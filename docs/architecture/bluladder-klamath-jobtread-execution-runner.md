@@ -2,6 +2,9 @@
 
 Status: **dormant repository contract prepared**. A later protected checkpoint
 created one organization-scoped Grant, but it is not configured or verified.
+One signed-in API Explorer preflight read uniquely resolved the five protected
+bindings without using that Grant; those identifiers are absent from repository
+and hosted configuration.
 This stage creates no Grant, connector row, webhook, custom field, provider
 request, customer record, job, task, deployment, activation, or customer
 traffic. No production Edge entry point imports the runner.
@@ -77,8 +80,8 @@ manual, or Google Calendar fallback.
 This module is deliberately unreachable. Before any provider or customer
 traffic, separate reviewed stages must still:
 
-1. store and verify the created organization-scoped Grant and record the
-   created fields' protected bindings while preserving the reviewed first-wave
+1. store and verify the created organization-scoped Grant and store the
+   already-resolved protected bindings while preserving the reviewed first-wave
    no-webhook mode;
 2. insert one inactive Klamath connector row using protected references and
    provider fingerprints;

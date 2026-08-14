@@ -70,6 +70,8 @@ for (const flag of [
   "dormant_composition_implemented",
   "credential_created",
   "custom_fields_created",
+  "protected_custom_field_bindings_resolved",
+  "provider_preflight_read_verified",
   "provider_resources_mutated",
 ]) {
   if (evidence?.[flag] !== true) errors.push(`${flag} must be true`);
@@ -92,6 +94,7 @@ for (const flag of [
   "activation_allowed",
   "customer_traffic_allowed",
   "jobber_or_dfw_fallback_allowed",
+  "provider_preflight_read_used_grant",
 ]) {
   if (evidence?.[flag] !== false) errors.push(`${flag} must remain false`);
 }

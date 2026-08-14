@@ -108,7 +108,9 @@ as a CRM or invoicing system.
   checkpoint: it has not been deposited into hosted secret storage or verified
   by a Pave call. No Grant value or provider identifier is stored in the
   repository. No webhook, hosted connector row, deployment, or customer traffic
-  exists. No Pave response was received and no provider read was verified.
+  exists. One signed-in API Explorer preflight read returned 24 custom fields
+  and uniquely resolved the five required protected bindings. That read did not
+  use the new Grant; runtime connector transport remains unexecuted.
 
 ## Retry and dead-letter contract
 

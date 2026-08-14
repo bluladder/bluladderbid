@@ -11,6 +11,8 @@ const files = {
     "supabase/functions/_shared/jobtreadKlamathProtectedConfiguration_test.ts",
   contract:
     "docs/architecture/bluladder-klamath-jobtread-protected-configuration.md",
+  evidence:
+    "docs/operations/bluladder-klamath-jobtread-protected-configuration-gates.json",
   composition: "supabase/functions/_shared/jobtreadExecutionComposition.ts",
 };
 const contents = {};
@@ -19,6 +21,41 @@ for (const [key, relative] of Object.entries(files)) {
   const full = path.join(root, relative);
   if (!fs.existsSync(full)) errors.push(`missing ${relative}`);
   else contents[key] = fs.readFileSync(full, "utf8");
+}
+
+let evidence;
+try {
+  evidence = JSON.parse(contents.evidence ?? "{}");
+} catch (error) {
+  errors.push(`invalid protected-configuration evidence: ${error.message}`);
+}
+const exactEvidence = {
+  status: "protected_bindings_resolved_credential_unconfigured",
+  provider_account_uniquely_matched: true,
+  grant_created: true,
+  grant_configured: false,
+  grant_verified: false,
+  custom_fields_created: true,
+  api_explorer_session_read_verified: true,
+  api_explorer_session_read_used_grant: false,
+  api_explorer_custom_field_count: 24,
+  exact_protected_bindings_resolved: true,
+  protected_binding_count: 5,
+  protected_bindings_unique: true,
+  protected_values_stored_in_repository: false,
+  protected_values_stored_in_hosted_secret: false,
+  webhook_created: false,
+  connector_row_created: false,
+  runtime_provider_calls_performed: false,
+  provider_resources_mutated: true,
+  hosted_mutation_performed: false,
+  deployment_performed: false,
+  activation_allowed: false,
+  customer_traffic_allowed: false,
+  dfw_fallback_allowed: false,
+};
+for (const [key, value] of Object.entries(exactEvidence)) {
+  if (evidence?.[key] !== value) errors.push(`evidence ${key} drifted`);
 }
 
 for (const phrase of [
@@ -52,6 +89,9 @@ for (const phrase of [
 for (const phrase of [
   "runtime and traffic disabled",
   "controlled security boundary stopped transmission",
+  "24 custom fields",
+  "five exact bindings",
+  "did not use the new Grant",
   "lowercase SHA-256",
   "not imported by a production entry point",
 ]) {
@@ -71,5 +111,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Klamath JobTread protected configuration OK: exact environment and field contract prepared; provider runtime and traffic remain disabled.",
+  "Klamath JobTread protected configuration OK: five bindings resolved by a read-only admin-session preflight; Grant, hosted configuration, provider runtime, and traffic remain disabled.",
 );
