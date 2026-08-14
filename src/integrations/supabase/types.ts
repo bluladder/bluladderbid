@@ -3971,6 +3971,53 @@ export type Database = {
           },
         ]
       }
+      organization_messaging_connectors: {
+        Row: {
+          channel: string
+          created_at: string
+          credential_reference: string | null
+          id: string
+          organization_id: string
+          priority: number
+          provider: string
+          sender_identity_reference: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          credential_reference?: string | null
+          id?: string
+          organization_id: string
+          priority?: number
+          provider: string
+          sender_identity_reference?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          credential_reference?: string | null
+          id?: string
+          organization_id?: string
+          priority?: number
+          provider?: string
+          sender_identity_reference?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_messaging_connectors_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_pricing_profiles: {
         Row: {
           config_snapshot: Json
@@ -5960,7 +6007,9 @@ export type Database = {
           id: string
           max_attempts: number
           message_kind: string
+          messaging_connector_id: string | null
           next_retry_at: string | null
+          organization_id: string | null
           outbound_idempotency_key: string | null
           outbox_state: string | null
           provider: string | null
@@ -6000,7 +6049,9 @@ export type Database = {
           id?: string
           max_attempts?: number
           message_kind?: string
+          messaging_connector_id?: string | null
           next_retry_at?: string | null
+          organization_id?: string | null
           outbound_idempotency_key?: string | null
           outbox_state?: string | null
           provider?: string | null
@@ -6040,7 +6091,9 @@ export type Database = {
           id?: string
           max_attempts?: number
           message_kind?: string
+          messaging_connector_id?: string | null
           next_retry_at?: string | null
+          organization_id?: string | null
           outbound_idempotency_key?: string | null
           outbox_state?: string | null
           provider?: string | null
@@ -6092,6 +6145,20 @@ export type Database = {
             columns: ["campaign_step_id"]
             isOneToOne: false
             referencedRelation: "sms_campaign_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_messaging_connector_id_fkey"
+            columns: ["messaging_connector_id"]
+            isOneToOne: false
+            referencedRelation: "organization_messaging_connectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -6865,7 +6932,9 @@ export type Database = {
           id: string
           max_attempts: number
           message_kind: string
+          messaging_connector_id: string | null
           next_retry_at: string | null
+          organization_id: string | null
           outbound_idempotency_key: string | null
           outbox_state: string | null
           provider: string | null
