@@ -1,0 +1,34 @@
+{
+  "phase": "1H",
+  "status": "read_only_preflight_prepared",
+  "prepared_from_main": "7c24f57258dd458978f56b0902ff05d3eecba802",
+  "preflight_path": "supabase/preflight/bluladder_klamath_phase_1h_consent_lineage.sql",
+  "preflight_bytes": 10235,
+  "preflight_sha256": "36af87ed6805086b671c9ede90e09554f4f2dff408b6c0fae4cfd0a157fb8100",
+  "preflight_read_only": true,
+  "hosted_preflight_run": false,
+  "migration_prepared": false,
+  "migration_applied": false,
+  "runtime_prepared": false,
+  "runtime_deployed": false,
+  "activation_allowed": false,
+  "customer_traffic_allowed": false,
+  "messages_authorized": false,
+  "authorized_actions": {
+    "apply_migration": false,
+    "deploy_edge_functions": false,
+    "configure_providers": false,
+    "create_credentials": false,
+    "send_messages": false,
+    "place_calls": false,
+    "activate_customer_traffic": false
+  },
+  "gates": [
+    { "id": "consent_lineage_preflight", "status": "ready" },
+    { "id": "hosted_consent_evidence", "status": "blocked" },
+    { "id": "consent_lineage_migration", "status": "blocked" },
+    { "id": "consent_runtime_adoption", "status": "blocked" },
+    { "id": "controlled_message_acceptance", "status": "blocked" },
+    { "id": "customer_traffic_activation", "status": "blocked" }
+  ]
+}

@@ -61,6 +61,7 @@ jobs:
           bun run check:klamath-phase-1e
           bun run check:klamath-phase-1f
           bun run check:klamath-phase-1g
+          bun run check:klamath-phase-1h
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
