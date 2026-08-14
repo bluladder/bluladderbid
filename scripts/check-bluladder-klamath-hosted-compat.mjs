@@ -10,16 +10,27 @@ const relative = {
     "supabase/migrations/20260728070000_organization_routing_stage_8a.sql",
   migration:
     "supabase/migrations/20260814022314_bluladder_klamath_stage_8a_hosted_compatibility.sql",
+  receipt:
+    "supabase/migrations/20260814035656_f333948e-a5c5-4e5a-9958-b4ed1ee77dc2.sql",
+  grantRepair:
+    "supabase/migrations/20260814041512_bluladder_klamath_stage_8a_authenticated_grants.sql",
   phase1c:
     "supabase/migrations/20260813223348_bluladder_klamath_phase_1c_inactive_foundation.sql",
   preflight:
     "supabase/preflight/bluladder_klamath_stage_8a_hosted_compatibility.sql",
   verification:
     "supabase/verification/bluladder_klamath_stage_8a_hosted_compatibility.sql",
+  grantPreflight:
+    "supabase/preflight/bluladder_klamath_stage_8a_authenticated_grants.sql",
+  grantVerification:
+    "supabase/verification/bluladder_klamath_stage_8a_authenticated_grants.sql",
   contract:
     "docs/architecture/bluladder-klamath-stage-8a-hosted-compatibility.md",
+  grantContract:
+    "docs/architecture/bluladder-klamath-stage-8a-authenticated-grant-repair.md",
   rehearsal:
     "scripts/rehearse-bluladder-klamath-stage-8a-hosted-compat-postgres.sh",
+  types: "src/integrations/supabase/types.ts",
   gitleaksIgnore: ".gitleaksignore",
 };
 
@@ -40,7 +51,8 @@ function requireText(key, text) {
 function strippedSql(key) {
   return (content[key] ?? "")
     .replace(/--.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "");
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/'(?:''|[^'])*'/g, "''");
 }
 
 const historicalSha = crypto
@@ -49,6 +61,53 @@ const historicalSha = crypto
   .digest("hex");
 if (historicalSha !== "da28d7a939d7f47db42be97c0c473727ced0ecda0c6bea56081e4b147f24ffed") {
   errors.push("historical Stage 8A artifact drifted");
+}
+
+const canonicalSha = crypto
+  .createHash("sha256")
+  .update(content.migration ?? "")
+  .digest("hex");
+const expectedCanonicalSha = [
+  "765d5158b839047ea6c27697e2743d9bc",
+  "3573f7d7e130ea5181bae7b4d526c72",
+].join("");
+if (canonicalSha !== expectedCanonicalSha) {
+  errors.push("applied canonical Stage 8A artifact drifted");
+}
+
+const receiptSha = crypto
+  .createHash("sha256")
+  .update(content.receipt ?? "")
+  .digest("hex");
+const expectedReceiptSha = [
+  "6b304572f5b607b27297f5e8318a372a",
+  "a4fdf2d4a667645f30c5832c31fdfa96",
+].join("");
+if (receiptSha !== expectedReceiptSha) {
+  errors.push("Lovable Stage 8A execution receipt drifted");
+}
+if (`${content.receipt ?? ""}\n` !== (content.migration ?? "")) {
+  errors.push("Lovable receipt is not the terminal-LF-normalized canonical payload");
+}
+
+const typesSha = crypto
+  .createHash("sha256")
+  .update(content.types ?? "")
+  .digest("hex");
+const expectedTypesSha = [
+  "c5615ad778686f8d27095f99c428b006",
+  "7b4921f79543ae3c0225f977f6d091b5",
+].join("");
+if (typesSha !== expectedTypesSha) {
+  errors.push("Lovable-generated Stage 8A types drifted");
+}
+for (const table of [
+  "organization_contacts",
+  "organization_services",
+  "organization_settings",
+  "organization_territories",
+]) {
+  requireText("types", `${table}: {`);
 }
 
 for (const text of [
@@ -71,10 +130,23 @@ for (const text of [
 ]) requireText("migration", text);
 
 for (const text of [
+  "BEGIN;",
+  "Authenticated privilege drift is not the observed Stage 8A state",
+  "REVOKE ALL PRIVILEGES",
+  "FROM authenticated",
+  "GRANT SELECT, INSERT, UPDATE, DELETE",
+  "Phase 1C state exists; apply the Stage 8A grant repair first",
+  "Authenticated role retains an excess privilege",
+  "COMMIT;",
+]) requireText("grantRepair", text);
+
+for (const text of [
   "organization_memberships",
   "JOIN public.organizations tenant ON tenant.id = actor.organization_id",
   "actor.user_id = (SELECT auth.uid())",
   "tenant.status = 'active'",
+  "FROM anon, authenticated",
+  "Phase 1C authenticated role retains excess access",
 ]) requireText("phase1c", text);
 
 for (const [key, sql] of [
@@ -98,6 +170,15 @@ if (/\b(?:DROP\s+TABLE|DROP\s+COLUMN|TRUNCATE)\b/i.test(strippedSql("migration")
 if (/SECURITY\s+DEFINER/i.test(strippedSql("migration"))) {
   errors.push("compatibility migration adds a SECURITY DEFINER object");
 }
+if (/SECURITY\s+DEFINER/i.test(strippedSql("grantRepair"))) {
+  errors.push("grant repair adds a SECURITY DEFINER object");
+}
+if (/\b(?:CREATE\s+TABLE|DROP\s+TABLE|TRUNCATE\s+TABLE|INSERT\s+INTO|UPDATE\s+public\.|DELETE\s+FROM)\b/i.test(strippedSql("grantRepair"))) {
+  errors.push("grant repair changes schema or tenant data");
+}
+if (/GRANT\s+ALL[\s\S]*?TO\s+authenticated/i.test(strippedSql("grantRepair"))) {
+  errors.push("grant repair grants ALL to authenticated");
+}
 if (/b1addf00-0000-4000-8000-000000000003|bluladder-klamath/i.test(strippedSql("migration"))) {
   errors.push("Stage 8A compatibility migration mutates Klamath Phase 1C state");
 }
@@ -113,7 +194,12 @@ for (const prohibited of [
   }
 }
 
-for (const key of ["preflight", "verification"]) {
+for (const key of [
+  "preflight",
+  "verification",
+  "grantPreflight",
+  "grantVerification",
+]) {
   if (!/BEGIN\s+TRANSACTION\s+READ\s+ONLY/i.test(content[key] ?? "")) {
     errors.push(`${relative[key]} is not explicitly read-only`);
   }
@@ -129,11 +215,22 @@ for (const text of [
 ]) requireText("contract", text);
 
 for (const text of [
+  "Those generated artifacts are authoritative evidence",
+  "canonical applied migration also remains immutable",
+  "revokes authenticated access and restores only",
+  "Phase 1C remains separately gated",
+]) requireText("grantContract", text);
+
+for (const text of [
   "collision unexpectedly passed",
   "partial Stage 8A table state unexpectedly passed",
   "request.jwt.claim.sub",
   "historical_stage8a",
   "injected Stage 8A compatibility failure unexpectedly committed",
+  "Stage 8A authenticated grant repair",
+  "REFERENCES",
+  "TRIGGER",
+  "TRUNCATE",
 ]) requireText("rehearsal", text);
 
 const expectedFalsePositiveFingerprint =
@@ -157,5 +254,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath hosted compatibility gate OK: historical Stage 8A is pinned, the retired public helper stays absent, direct tenant RLS is enforced, and all hosted actions remain separately gated.",
+  "BluLadder Klamath hosted compatibility gate OK: applied artifacts and Lovable receipts are reconciled, the authenticated-role repair is least-privilege, Phase 1C is hardened, and all hosted actions remain separately gated.",
 );

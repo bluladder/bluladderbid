@@ -102,4 +102,37 @@ WHERE n.nspname = 'public'
 GROUP BY c.relname, c.relrowsecurity
 ORDER BY c.relname;
 
+-- Authenticated must have exactly CRUD, anonymous none, and service role all.
+SELECT
+  grantee,
+  table_name,
+  array_agg(privilege_type::text ORDER BY privilege_type::text) AS privileges
+FROM information_schema.role_table_grants
+WHERE table_schema = 'public'
+  AND table_name IN (
+    'organization_customer_sites',
+    'organization_pricing_profiles'
+  )
+  AND grantee IN ('anon', 'authenticated', 'service_role')
+GROUP BY grantee, table_name
+ORDER BY grantee, table_name;
+
+-- All six rows must report false.
+SELECT
+  target_table,
+  privilege_name,
+  has_table_privilege(
+    'authenticated',
+    format('public.%I', target_table),
+    privilege_name
+  ) AS retained
+FROM unnest(ARRAY[
+  'organization_customer_sites',
+  'organization_pricing_profiles'
+]) AS target_tables(target_table)
+CROSS JOIN unnest(ARRAY[
+  'REFERENCES', 'TRIGGER', 'TRUNCATE'
+]) AS privileges(privilege_name)
+ORDER BY target_table, privilege_name;
+
 ROLLBACK;

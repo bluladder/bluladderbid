@@ -25,6 +25,10 @@ IN SHARE ROW EXCLUSIVE MODE;
 DO $phase1c_preflight$
 DECLARE
   required_table text;
+  current_privileges text[];
+  expected_crud_privileges constant text[] := ARRAY[
+    'DELETE', 'INSERT', 'SELECT', 'UPDATE'
+  ];
 BEGIN
   FOREACH required_table IN ARRAY ARRAY[
     'organizations',
@@ -38,6 +42,30 @@ BEGIN
   LOOP
     IF to_regclass('public.' || required_table) IS NULL THEN
       RAISE EXCEPTION 'Phase 1C prerequisite table is missing: %',
+        required_table;
+    END IF;
+  END LOOP;
+
+  FOREACH required_table IN ARRAY ARRAY[
+    'organization_settings',
+    'organization_contacts',
+    'organization_territories',
+    'organization_services'
+  ]
+  LOOP
+    SELECT COALESCE(
+      array_agg(privilege_type::text ORDER BY privilege_type::text),
+      ARRAY[]::text[]
+    )
+    INTO current_privileges
+    FROM information_schema.role_table_grants
+    WHERE table_schema = 'public'
+      AND table_name = required_table
+      AND grantee = 'authenticated';
+
+    IF current_privileges <> expected_crud_privileges THEN
+      RAISE EXCEPTION
+        'Stage 8A authenticated grant repair prerequisite is not exact on %',
         required_table;
     END IF;
   END LOOP;
@@ -251,7 +279,7 @@ CREATE POLICY "Admins manage organization pricing profiles"
 REVOKE ALL
   ON public.organization_customer_sites,
      public.organization_pricing_profiles
-  FROM anon;
+  FROM anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON public.organization_customer_sites,
      public.organization_pricing_profiles
@@ -562,5 +590,81 @@ BEGIN
   END IF;
 END
 $phase1c_postflight$;
+
+DO $phase1c_privilege_postflight$
+DECLARE
+  target_table text;
+  current_privileges text[];
+  expected_crud_privileges constant text[] := ARRAY[
+    'DELETE', 'INSERT', 'SELECT', 'UPDATE'
+  ];
+  expected_all_privileges constant text[] := ARRAY[
+    'DELETE', 'INSERT', 'REFERENCES', 'SELECT', 'TRIGGER', 'TRUNCATE', 'UPDATE'
+  ];
+BEGIN
+  FOREACH target_table IN ARRAY ARRAY[
+    'organization_customer_sites',
+    'organization_pricing_profiles'
+  ]
+  LOOP
+    SELECT COALESCE(
+      array_agg(privilege_type::text ORDER BY privilege_type::text),
+      ARRAY[]::text[]
+    )
+    INTO current_privileges
+    FROM information_schema.role_table_grants
+    WHERE table_schema = 'public'
+      AND table_name = target_table
+      AND grantee = 'authenticated';
+
+    IF current_privileges <> expected_crud_privileges THEN
+      RAISE EXCEPTION 'Phase 1C authenticated privileges are not exact on %',
+        target_table;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM unnest(ARRAY['REFERENCES', 'TRIGGER', 'TRUNCATE'])
+        AS privileges(privilege_name)
+      WHERE has_table_privilege(
+        'authenticated',
+        format('public.%I', target_table),
+        privilege_name
+      )
+    ) THEN
+      RAISE EXCEPTION 'Phase 1C authenticated role retains excess access on %',
+        target_table;
+    END IF;
+
+    SELECT COALESCE(
+      array_agg(privilege_type::text ORDER BY privilege_type::text),
+      ARRAY[]::text[]
+    )
+    INTO current_privileges
+    FROM information_schema.role_table_grants
+    WHERE table_schema = 'public'
+      AND table_name = target_table
+      AND grantee = 'anon';
+
+    IF current_privileges <> ARRAY[]::text[] THEN
+      RAISE EXCEPTION 'Phase 1C anonymous access is not empty on %', target_table;
+    END IF;
+
+    SELECT COALESCE(
+      array_agg(privilege_type::text ORDER BY privilege_type::text),
+      ARRAY[]::text[]
+    )
+    INTO current_privileges
+    FROM information_schema.role_table_grants
+    WHERE table_schema = 'public'
+      AND table_name = target_table
+      AND grantee = 'service_role';
+
+    IF current_privileges <> expected_all_privileges THEN
+      RAISE EXCEPTION 'Phase 1C service-role access changed on %', target_table;
+    END IF;
+  END LOOP;
+END
+$phase1c_privilege_postflight$;
 
 COMMIT;

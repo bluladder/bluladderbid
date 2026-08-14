@@ -35,6 +35,7 @@ for (const text of [
   "BEGIN;",
   "LOCK TABLE",
   "Phase 1C target tables already exist; inspect before retry",
+  "Stage 8A authenticated grant repair prerequisite is not exact",
   "CREATE TABLE public.organization_customer_sites",
   "CREATE TABLE public.organization_pricing_profiles",
   "ALTER TABLE public.organization_customer_sites ENABLE ROW LEVEL SECURITY",
@@ -42,7 +43,9 @@ for (const text of [
   "JOIN public.organizations tenant ON tenant.id = actor.organization_id",
   "actor.user_id = (SELECT auth.uid())",
   "tenant.status = 'active'",
-  "FROM anon",
+  "FROM anon, authenticated",
+  "DO $phase1c_privilege_postflight$",
+  "Phase 1C authenticated role retains excess access",
   "organization_customer_sites_activation_check",
   "organization_customer_sites_traffic_check",
   "organization_pricing_profiles_runtime_check",
@@ -65,6 +68,13 @@ if (/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.is_organization_member/i.te
   errors.push("Phase 1C recreates the retired public membership helper");
 }
 
+function strippedSql(key) {
+  return (content[key] ?? "")
+    .replace(/--.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/'(?:''|[^'])*'/g, "''");
+}
+
 for (const prohibited of [
   /INSERT\s+INTO\s+public\.organization_contacts/i,
   /INSERT\s+INTO\s+public\.organization_memberships/i,
@@ -72,7 +82,7 @@ for (const prohibited of [
   /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
   /\b(?:TRUNCATE|DROP\s+TABLE|DROP\s+COLUMN)\b/i,
 ]) {
-  if (prohibited.test(content.migration ?? "")) {
+  if (prohibited.test(strippedSql("migration"))) {
     errors.push(`migration contains prohibited pattern: ${prohibited}`);
   }
 }
@@ -140,11 +150,6 @@ try {
   errors.push(`could not verify pricing parity: ${error.message}`);
 }
 
-function strippedSql(key) {
-  return (content[key] ?? "")
-    .replace(/--.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "");
-}
 for (const key of ["preflight", "verification"]) {
   if (!/BEGIN\s+TRANSACTION\s+READ\s+ONLY/i.test(content[key] ?? "")) {
     errors.push(`${relative[key]} is not explicitly read-only`);
@@ -212,7 +217,17 @@ for (const text of [
   "customer_traffic_allowed = true",
   "runtime_enabled = true",
   "SET ROLE authenticated",
+  "REFERENCES",
+  "TRIGGER",
+  "TRUNCATE",
 ]) requireText("rehearsal", text);
+
+for (const text of [
+  "Authenticated must have exactly CRUD",
+  "REFERENCES",
+  "TRIGGER",
+  "TRUNCATE",
+]) requireText("verification", text);
 
 if (errors.length) {
   console.error(errors.join("\n"));

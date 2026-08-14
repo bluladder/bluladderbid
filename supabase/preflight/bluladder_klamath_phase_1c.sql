@@ -14,8 +14,26 @@ FROM unnest(ARRAY[
   'organization_territories',
   'organization_services',
   'organization_resolution_keys'
-]) AS required_table
+]) AS required_tables(required_table)
 ORDER BY required_table;
+
+-- Each Stage 8A table must show exactly authenticated CRUD privileges. Any
+-- REFERENCES, TRIGGER, or TRUNCATE result blocks Phase 1C.
+SELECT
+  table_name,
+  array_agg(privilege_type::text ORDER BY privilege_type::text)
+    AS authenticated_privileges
+FROM information_schema.role_table_grants
+WHERE table_schema = 'public'
+  AND table_name IN (
+    'organization_settings',
+    'organization_contacts',
+    'organization_territories',
+    'organization_services'
+  )
+  AND grantee = 'authenticated'
+GROUP BY table_name
+ORDER BY table_name;
 
 -- Must return false. Hardened hosted RLS uses direct membership predicates and
 -- intentionally does not expose the former public SECURITY DEFINER helper.

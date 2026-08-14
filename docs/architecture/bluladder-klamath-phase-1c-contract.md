@@ -41,6 +41,16 @@ uses direct active-membership and active-organization predicates. It does not
 recreate or depend on the retired public `SECURITY DEFINER` membership helper.
 There is no DFW fallback and the DFW organization is not updated.
 
+Before first application, the migration revokes table defaults from both
+`anon` and `authenticated`, then restores only CRUD privileges for
+`authenticated` under RLS and full server access for `service_role`. This
+prevents hosted default privileges from retaining `REFERENCES`, `TRIGGER`, or
+`TRUNCATE` on the two Phase 1C tables.
+
+The Phase 1C preflight also requires the four Stage 8A tables to expose exactly
+authenticated CRUD privileges, so Phase 1C cannot run ahead of the separately
+reviewed Stage 8A grant repair.
+
 ## Repository verification
 
 - `supabase/preflight/bluladder_klamath_phase_1c.sql` is a read-only hosted
