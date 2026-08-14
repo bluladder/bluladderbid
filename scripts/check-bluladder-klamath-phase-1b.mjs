@@ -67,7 +67,7 @@ for (const text of [
 
 for (const text of [
   "resolveOrganizationCustomerSite(",
-  "buildDfwCustomerSiteRoute(deps.appUrl ?? getAppUrl())",
+  "await loadOrganizationCustomerSiteRoutes(",
   "customerSite.baseUrl",
   "Do not send a text, disclose another location's website, or claim success.",
 ]) requireText("voiceLinks", text);

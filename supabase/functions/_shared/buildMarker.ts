@@ -6,7 +6,7 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-realtime-link-mvp.7-control-url-compatibility";
+export const BUILD_ID = "voice-realtime-link-mvp.8-tenant-site-runtime";
 export const BUILD_FEATURES = {
   // Issue #91/#96 — native OpenAI Realtime provider target plus three exact,
   // no-argument customer-link and human-transfer tools on the authenticated
@@ -37,6 +37,10 @@ export const BUILD_FEATURES = {
   // Preserve that HTTPS Vapi-owned capability URL exactly instead of
   // reconstructing a legacy /call/.../control management path.
   voiceRealtimeVapiControlUrlCompatibility: true,
+  // Klamath Phase 1D — customer-link tools load the exact site record for the
+  // server-resolved organization. DFW keeps its exact compatibility route;
+  // every inactive, missing, malformed, or ambiguous tenant fails closed.
+  voiceRealtimeTenantCustomerSiteRuntime: true,
   voiceEarlyQuote: true,
   voiceAddressFreeRoughQuote: true,
   voiceBookingDryRun: true,

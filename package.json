@@ -28,6 +28,7 @@
     "check:klamath-phase-1a": "node scripts/check-bluladder-klamath-phase-1a.mjs",
     "check:klamath-phase-1b": "node scripts/check-bluladder-klamath-phase-1b.mjs",
     "check:klamath-phase-1c": "node scripts/check-bluladder-klamath-phase-1c.mjs",
+    "check:klamath-phase-1d": "node scripts/check-bluladder-klamath-phase-1d.mjs",
     "check:klamath-hosted-compat": "node scripts/check-bluladder-klamath-hosted-compat.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",

@@ -15,7 +15,7 @@
 
 import { getAppUrl } from "../appUrl.ts";
 import {
-  buildDfwCustomerSiteRoute,
+  loadOrganizationCustomerSiteRoutes,
   type OrganizationCustomerSiteRoute,
   resolveOrganizationCustomerSite,
 } from "../organizationCustomerSites.ts";
@@ -92,7 +92,7 @@ export interface VoiceLinkToolDeps {
   suppressionCheck?: typeof checkSuppression;
   phoneOptOutCheck?: typeof checkPhoneOptOut;
   customerPauseCheck?: typeof getCustomerPause;
-  /** Test/next-tenant injection only. Production currently has one exact DFW route. */
+  /** Test injection only. Production loads the resolved tenant route. */
   customerSiteRoutes?: readonly OrganizationCustomerSiteRoute[];
   appUrl?: string;
 }
@@ -323,11 +323,15 @@ export async function handleVoiceLinkToolCalls(
   }
   const toolName = requestedName as VoiceLinkToolName;
 
+  const customerSiteRoutes = deps.customerSiteRoutes ??
+    await loadOrganizationCustomerSiteRoutes(
+      supabase,
+      input.organizationId,
+      { dfwBaseUrl: deps.appUrl ?? getAppUrl() },
+    );
   const customerSite = resolveOrganizationCustomerSite(
     input.organizationId,
-    deps.customerSiteRoutes ?? [
-      buildDfwCustomerSiteRoute(deps.appUrl ?? getAppUrl()),
-    ],
+    customerSiteRoutes,
   );
   if (customerSite.status !== "resolved") {
     return sameResult(calls, {

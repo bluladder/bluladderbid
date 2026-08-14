@@ -27,7 +27,7 @@
 
 import { getAppUrl } from "../appUrl.ts";
 import {
-  buildDfwCustomerSiteRoute,
+  loadOrganizationCustomerSiteRoutes,
   type OrganizationCustomerSiteRoute,
   resolveOrganizationCustomerSite,
 } from "../organizationCustomerSites.ts";
@@ -267,7 +267,7 @@ export interface HangupFollowupInput {
   deliver?: typeof sendOutboxSms;
   /** Server-derived organization authority for scoped reads/writes. */
   organizationId?: string | null;
-  /** Test/next-tenant injection only. Production currently has one exact DFW route. */
+  /** Test injection only. Production loads the resolved tenant route. */
   customerSiteRoutes?: readonly OrganizationCustomerSiteRoute[];
   /** Exact DFW compatibility override used only after organization resolution. */
   appUrl?: string;
@@ -404,11 +404,15 @@ export async function runVoiceHangupBidLinkFollowup(
   }
   const phone = phoneE164 as string;
 
+  const customerSiteRoutes = input.customerSiteRoutes ??
+    await loadOrganizationCustomerSiteRoutes(
+      supabase,
+      input.organizationId ?? "",
+      { dfwBaseUrl: input.appUrl ?? getAppUrl() },
+    );
   const customerSite = resolveOrganizationCustomerSite(
     input.organizationId ?? "",
-    input.customerSiteRoutes ?? [
-      buildDfwCustomerSiteRoute(input.appUrl ?? getAppUrl()),
-    ],
+    customerSiteRoutes,
   );
   if (customerSite.status !== "resolved") {
     return { status: "failed", detail: "customer_site_unavailable" };

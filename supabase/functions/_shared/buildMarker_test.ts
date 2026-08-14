@@ -46,7 +46,7 @@ Deno.test("BUILD marker exposes the 6.7 voice remediation flags", () => {
 Deno.test("BUILD marker exposes the Realtime link MVP and inherited repair flags", () => {
   assertEquals(
     BUILD_ID,
-    "voice-realtime-link-mvp.7-control-url-compatibility",
+    "voice-realtime-link-mvp.8-tenant-site-runtime",
   );
   assertEquals(BUILD_FEATURES.voiceRealtimeLinkMvp, true);
   assertEquals(BUILD_FEATURES.voiceRealtimeNativeAudio, true);
@@ -67,6 +67,7 @@ Deno.test("BUILD marker exposes the Realtime link MVP and inherited repair flags
     BUILD_FEATURES.voiceRealtimeVapiControlUrlCompatibility,
     true,
   );
+  assertEquals(BUILD_FEATURES.voiceRealtimeTenantCustomerSiteRuntime, true);
   assertEquals(BUILD_FEATURES.voiceControllerDeferredSse, true);
   assertEquals(
     BUILD_FEATURES.voiceControllerBoundedFlushAcknowledgement,
