@@ -34,3 +34,10 @@ id = "generic-api-key"
   regexes = [
     '''Run full authoritative validation, secret scan, Oregon/campaign guards; hash outputs''',
   ]
+
+  [[rules.allowlists]]
+  description = "Historical PR #110 JavaScript rehearsal-marker false positive"
+  regexTarget = "line"
+  regexes = [
+    '''^\s*"SET ROLE authenticated",\s*$''',
+  ]
