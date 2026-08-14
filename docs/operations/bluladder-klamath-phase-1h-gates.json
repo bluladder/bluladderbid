@@ -1,6 +1,6 @@
 {
   "phase": "1H",
-  "status": "runtime_candidate_prepared",
+  "status": "runtime_deployed_verified",
   "prepared_from_main": "c5ff16e056b09a727cb84d1838e5245e7da43af8",
   "preflight_path": "supabase/preflight/bluladder_klamath_phase_1h_consent_lineage.sql",
   "preflight_bytes": 10235,
@@ -38,7 +38,20 @@
   "migration_prepared": true,
   "migration_applied": true,
   "runtime_prepared": true,
-  "runtime_deployed": false,
+  "runtime_deployed": true,
+  "runtime_deployed_from_main": "4a621bd18ffe8b7823eb4546089f64b8ce695aef",
+  "runtime_deployment_route": "one_lovable_ai_message",
+  "runtime_deployed_functions": [
+    "ai-chat",
+    "staff-reply",
+    "process-sms-queue"
+  ],
+  "runtime_version_ids_available": false,
+  "secret_free_health_probes": {
+    "ai-chat": 503,
+    "staff-reply": 401,
+    "process-sms-queue": 401
+  },
   "activation_allowed": false,
   "customer_traffic_allowed": false,
   "messages_authorized": false,
@@ -55,7 +68,7 @@
     { "id": "consent_lineage_preflight", "status": "passed" },
     { "id": "hosted_consent_evidence", "status": "passed" },
     { "id": "consent_lineage_migration", "status": "passed" },
-    { "id": "consent_runtime_adoption", "status": "prepared" },
+    { "id": "consent_runtime_adoption", "status": "passed" },
     { "id": "controlled_message_acceptance", "status": "blocked" },
     { "id": "customer_traffic_activation", "status": "blocked" }
   ]
