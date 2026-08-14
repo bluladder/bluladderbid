@@ -7,21 +7,22 @@
 // test_type ∈ {"sms_otp", "email_otp", "booking_link_sms"}
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { verifyAdmin, getBearer } from "../_shared/auth.ts";
+import { getBearer, verifyAdmin } from "../_shared/auth.ts";
 import {
   getCallRailConfig,
-  sendCallRailSms,
   normalizePhone,
+  sendCallRailSms,
 } from "../_shared/sms.ts";
 import { getAppUrl } from "../_shared/appUrl.ts";
 import { sendEmail } from "../_shared/emailConfig.ts";
 import { normalizeEmailAddr } from "../_shared/emailSuppression.ts";
 import {
-  sha256Hex,
   generateOtp,
   generateSessionToken,
   loadVerificationConfig,
+  sha256Hex,
 } from "../_shared/customerVerification.ts";
+import { DFW_ORGANIZATION_ID } from "../_shared/organizationRouting.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,7 +89,10 @@ serve(async (req) => {
     { p_test_type: testType, p_idempotency_key: idempotencyKey },
   );
 
-  if (consumeErr || !consumed || (consumed as { status?: string }).status !== "authorized") {
+  if (
+    consumeErr || !consumed ||
+    (consumed as { status?: string }).status !== "authorized"
+  ) {
     return new Response(
       JSON.stringify({ error: "not_authorized_or_expired" }),
       {
@@ -125,11 +129,14 @@ serve(async (req) => {
         const expiresAt = new Date(
           now + cfg.otp_ttl_seconds * 1000,
         ).toISOString();
-        const usableUntil = new Date(now + (cfg.otp_ttl_seconds + 20 * 60) * 1000).toISOString();
+        const usableUntil = new Date(
+          now + (cfg.otp_ttl_seconds + 20 * 60) * 1000,
+        ).toISOString();
 
         const { data: challenge } = await supabase
           .from("customer_verification_challenges")
           .insert({
+            organization_id: DFW_ORGANIZATION_ID,
             phone_hash: phoneHash,
             otp_hash: otpHash,
             expires_at: expiresAt,
@@ -145,7 +152,11 @@ serve(async (req) => {
 
         const callRail = getCallRailConfig();
         if (!callRail) {
-          result = { ...result, error: "callrail_not_configured", challenge_id: challenge?.id };
+          result = {
+            ...result,
+            error: "callrail_not_configured",
+            challenge_id: challenge?.id,
+          };
         } else {
           const smsBody =
             `Your BluLadder verification code is ${otp}. It expires in ${
@@ -158,7 +169,8 @@ serve(async (req) => {
               callrail_message_id: send.messageId ?? null,
               provider_conversation_id: send.conversationId ?? null,
               provider_message_id: send.messageId ?? null,
-              provider_status: send.providerMessageStatus ?? (send.ok ? "accepted" : "rejected"),
+              provider_status: send.providerMessageStatus ??
+                (send.ok ? "accepted" : "rejected"),
               provider_response_kind: send.providerResponseKind ?? null,
               provider_accepted_at: send.ok ? new Date().toISOString() : null,
               delivery_status: send.ok ? "accepted" : "delivery_failed",
@@ -186,11 +198,15 @@ serve(async (req) => {
         const otpHash = await sha256Hex(otp);
         const emailHash = await sha256Hex(email);
         const now = Date.now();
-        const expiresAt = new Date(now + cfg.otp_ttl_seconds * 1000).toISOString();
-        const usableUntil = new Date(now + (cfg.otp_ttl_seconds + 20 * 60) * 1000).toISOString();
+        const expiresAt = new Date(now + cfg.otp_ttl_seconds * 1000)
+          .toISOString();
+        const usableUntil = new Date(
+          now + (cfg.otp_ttl_seconds + 20 * 60) * 1000,
+        ).toISOString();
         const { data: challenge } = await supabase
           .from("customer_verification_challenges")
           .insert({
+            organization_id: DFW_ORGANIZATION_ID,
             phone_hash: null,
             otp_hash: otpHash,
             expires_at: expiresAt,
@@ -204,11 +220,18 @@ serve(async (req) => {
           })
           .select("id, correlation_id")
           .single();
-        const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6;font-size:16px;"><p>Your BluLadder verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:16px 0;">${otp}</p><p>This code expires shortly. Do not share it.</p></div>`;
-        const send = await sendEmail({ to: email, subject: "Your BluLadder verification code", html });
+        const html =
+          `<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6;font-size:16px;"><p>Your BluLadder verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:16px 0;">${otp}</p><p>This code expires shortly. Do not share it.</p></div>`;
+        const send = await sendEmail({
+          to: email,
+          subject: "Your BluLadder verification code",
+          html,
+        });
         await supabase.from("customer_verification_challenges").update({
           provider_message_id: send.providerMessageId ?? null,
-          provider_status: send.ok ? "accepted" : (send.failure?.category ?? "rejected"),
+          provider_status: send.ok
+            ? "accepted"
+            : (send.failure?.category ?? "rejected"),
           provider_response_kind: send.failure?.category ?? "email",
           provider_accepted_at: send.ok ? new Date().toISOString() : null,
           delivery_status: send.ok ? "accepted" : "delivery_failed",
@@ -220,7 +243,9 @@ serve(async (req) => {
           challenge_correlation_id: challenge?.correlation_id ?? null,
           provider_message_id: send.providerMessageId ?? null,
           delivery_status: send.ok ? "accepted" : "delivery_failed",
-          error: send.ok ? null : sanitizeError(send.failure?.message ?? "send_failed"),
+          error: send.ok
+            ? null
+            : sanitizeError(send.failure?.message ?? "send_failed"),
         };
       }
     } else if (testType === "booking_link_sms") {
@@ -270,7 +295,9 @@ serve(async (req) => {
               provider_conversation_id: send.conversationId ?? null,
               provider_message_id: send.messageId ?? null,
               delivery_status: send.ok ? "accepted" : "delivery_failed",
-              error: send.ok ? null : sanitizeError(send.error ?? "send_failed"),
+              error: send.ok
+                ? null
+                : sanitizeError(send.error ?? "send_failed"),
             };
           }
         }

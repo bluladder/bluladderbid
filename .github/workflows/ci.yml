@@ -59,6 +59,7 @@ jobs:
           bun run check:klamath-phase-1c
           bun run check:klamath-phase-1d
           bun run check:klamath-phase-1e
+          bun run check:klamath-phase-1f
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
@@ -139,6 +140,7 @@ jobs:
           createdb --host localhost --username postgres voice_escalation_recipient_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1c_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_stage8a_compat_rehearsal
+          createdb --host localhost --username postgres bluladder_klamath_phase1f_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -176,6 +178,10 @@ jobs:
         env:
           BLULADDER_KLAMATH_STAGE8A_COMPAT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_stage8a_compat_rehearsal
         run: bash scripts/rehearse-bluladder-klamath-stage-8a-hosted-compat-postgres.sh
+      - name: Rehearse BluLadder Klamath Phase 1F portal tenant lineage
+        env:
+          BLULADDER_KLAMATH_PHASE1F_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1f_rehearsal
+        run: bash scripts/rehearse-bluladder-klamath-phase-1f-portal-lineage-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard

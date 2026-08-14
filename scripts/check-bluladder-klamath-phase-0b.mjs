@@ -24,6 +24,7 @@ const relative = {
   hangupTests:
     "supabase/functions/_shared/voice/hangupBidLinkFollowup_test.ts",
   portal: "supabase/functions/customer-portal-data/index.ts",
+  phase1fRegister: "docs/operations/bluladder-klamath-phase-1f-gates.json",
   smsOutbox: "supabase/functions/_shared/smsOutbox.ts",
   autosync: "supabase/functions/jobber-autosync/index.ts",
   adminFlag: "src/lib/organizations/featureFlags.ts",
@@ -68,8 +69,10 @@ for (const text of [
   requireText("handoff", text);
 
 let register;
+let phase1fRegister;
 try {
   register = JSON.parse(content.register ?? "{}");
+  phase1fRegister = JSON.parse(content.phase1fRegister ?? "{}");
 } catch (error) {
   errors.push(`gate register is invalid JSON: ${error.message}`);
 }
@@ -154,9 +157,16 @@ requireText(
 );
 requireText("adminFlag", "ORGANIZATION_ADMIN_SURFACES_ENABLED = false");
 if (content.portal?.includes("organization_id")) {
-  errors.push(
-    "portal blocker evidence changed; review tenant scoping and gate status",
-  );
+  if (
+    phase1fRegister?.organization_scoped_portal_reads_prepared !== true ||
+    phase1fRegister?.canonical_migration_applied !== false ||
+    phase1fRegister?.portal_runtime_deployed !== false ||
+    phase1fRegister?.activation_allowed !== false
+  ) {
+    errors.push(
+      "portal tenant-scoping changed without the inactive Phase 1F release gate",
+    );
+  }
 }
 if (
   /interface OutboxSendInput[\s\S]{0,500}organizationId/.test(
