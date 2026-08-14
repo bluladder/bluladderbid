@@ -14,6 +14,8 @@ const files = {
     "supabase/preflight/bluladder_klamath_phase_1i_authenticated_grants.sql",
   migration:
     "supabase/migrations/20260814114500_bluladder_klamath_phase_1i_authenticated_grants.sql",
+  receipt:
+    "supabase/migrations/20260814120308_dedb44f7-f5c6-4621-9387-e88691c6969b.sql",
   verification:
     "supabase/verification/bluladder_klamath_phase_1i_authenticated_grants.sql",
   rehearsal:
@@ -36,7 +38,7 @@ function requireText(key, text) {
 }
 
 for (const text of [
-  "forward-only repair prepared",
+  "hosted repair applied and independently verified",
   "Lovable-hosted table creation hydrated all seven table privileges",
   "organization_crm_connectors` to `SELECT`, `INSERT`, `UPDATE`, and `DELETE",
   "organization_connector_operation_attempts` to `SELECT` only",
@@ -127,7 +129,7 @@ try {
 const artifactExpectations = {
   preflight: [5158, "f88f6c9f32c5df09bbaa53648582ec077344fcaec9e6555e163397bb8e41db66"],
   migration: [9901, "07e051b649047263c94e11709a30e01360f15616eca2b5c9da183a6ea3b0ee82"],
-  verification: [6112, "2020f1be9d82bbe3dd4affd68b3d4c3ee703c13f821bb66093bb1ead137b9612"],
+  verification: [6132, "9e156bbff17b5700c1d7c8c2c8b2ef3cb657b8f42805e9709d913ee71c29b7ab"],
   rehearsal: [2800, "cb2c0d1991efc74ef37307b58ebd9567fa8024c7602a16988e13390ff7aaec40"],
 };
 for (const [key, [expectedBytes, expectedSha]] of Object.entries(
@@ -147,12 +149,21 @@ for (const [key, [expectedBytes, expectedSha]] of Object.entries(
   }
 }
 
+if (
+  !(content.migration ?? "").endsWith("\n") ||
+  content.receipt !== (content.migration ?? "").slice(0, -1) ||
+  Buffer.byteLength(content.receipt ?? "") !== 9900 ||
+  createHash("sha256").update(content.receipt ?? "").digest("hex") !==
+    "83958eb709524e1a4e8b53db1c166e9e0fc8e87b3936abed2776153a8c5364ce"
+) errors.push("Phase 1I grant receipt is not the canonical terminal-LF normalization");
+
 if (register) {
   if (
     register.phase !== "1I-authenticated-grants" ||
-    register.status !== "repository_repair_prepared" ||
+    register.status !== "hosted_repair_applied_and_verified" ||
     register.prepared_from_main !== "0975d457327fbfccf3f802e6d06d1f301719c3a7" ||
     register.issue !== 139 ||
+    register.reconciliation_issue !== 141 ||
     register.preflight_path !== files.preflight ||
     register.migration_path !== files.migration ||
     register.verification_path !== files.verification ||
@@ -161,6 +172,14 @@ if (register) {
     register.verification_read_only !== true ||
     register.hosted_execution_version_before_repair !== "20260814113042" ||
     register.hosted_ledger_count_before_repair !== 163 ||
+    register.hosted_execution_version !== "20260814120308" ||
+    register.hosted_ledger_count !== 164 ||
+    register.hosted_ledger_fingerprint !==
+      "ee68da23b599f4c9d18c5013ef9510680d8d0818cba5850000f13f248b242b8b" ||
+    register.hosted_statement_bytes !== 9900 ||
+    register.hosted_statement_sha256 !==
+      "83958eb709524e1a4e8b53db1c166e9e0fc8e87b3936abed2776153a8c5364ce" ||
+    register.receipt_path !== files.receipt ||
     register.rows_changed !== false ||
     register.policies_changed !== false ||
     register.anonymous_access_changed !== false ||
@@ -184,11 +203,11 @@ if (register) {
 
   const expectedGates = new Map([
     ["hosted_observed_state", "passed"],
-    ["repository_repair", "prepared"],
-    ["exact_head_ci", "blocked"],
-    ["secret_scan", "blocked"],
-    ["hosted_repair_application", "blocked"],
-    ["hosted_postflight", "blocked"],
+    ["repository_repair", "passed"],
+    ["exact_head_ci", "passed"],
+    ["secret_scan", "passed"],
+    ["hosted_repair_application", "passed"],
+    ["hosted_postflight", "passed"],
     ["jobtread_provider_setup", "blocked"],
     ["runtime_adoption", "blocked"],
     ["customer_traffic_activation", "blocked"],
@@ -208,7 +227,7 @@ if (register) {
 requireText("package", '"check:klamath-phase-1i-grants"');
 requireText("workflow", "bun run check:klamath-phase-1i-grants");
 requireText("workflow", "Rehearse BluLadder Klamath Phase 1I authenticated grants");
-requireText("roadmap", "forward-only grant repair is active");
+requireText("roadmap", "forward-only repair is now applied and verified");
 
 if (errors.length) {
   console.error(errors.map((error) => `- ${error}`).join("\n"));
@@ -216,5 +235,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1I grant gate OK: a fail-closed connector-CRUD/audit-SELECT repair is prepared while provider/runtime/traffic actions remain blocked.",
+  "BluLadder Klamath Phase 1I grant gate OK: hosted connector CRUD and audit SELECT are verified while provider/runtime/traffic actions remain blocked.",
 );
