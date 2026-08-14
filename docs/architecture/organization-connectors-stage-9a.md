@@ -70,11 +70,11 @@ a claim that a provider account or API version supports an operation.
 
 | Capability | Jobber current repository evidence | JobTread provider evidence | Klamath runtime position | Google Calendar fallback |
 |---|---|---|---|---|
-| Customer sync | Existing GraphQL client and booking flow perform customer lookup/create | Official explorer exposes organization-scoped account/customer query, create, update, and delete plus contact/location operations | Dormant exact account/contact/location mapping prepared; custom fields, grant, runtime, and acceptance remain blocked | Unsupported |
+| Customer sync | Existing GraphQL client and booking flow perform customer lookup/create | Official explorer exposes organization-scoped account/customer query, create, update, and delete plus contact/location operations | Dormant exact mapping and single-attempt response-validating runner prepared; custom fields, grant, concrete stores, runtime, and acceptance remain blocked | Unsupported |
 | Quote sync | Existing Jobber identifiers and service-request/booking flows; exact mutation parity requires entry-point audit | Document query/create/update/delete and document-recipient operations are exposed | Document-type and lifecycle mapping remain unapproved; fail closed | Unsupported |
-| Availability read | Existing `jobber-availability` and schedule mirror | Job/task/event queries and dated task fields are exposed | Dormant bounded job-task busy-evidence read prepared; capacity, crew, route, and blackout interpretation still fail closed | Free/busy/event reads require capability validation |
-| Booking create | Existing `jobber-create-booking` | Customer → location → job creation and task creation are exposed | Dormant one-job/one-task mapping prepared; provider setup, reconciliation runner, capacity proof, and runtime remain blocked | Calendar event creation only; not CRM/job/invoice creation |
-| Booking update | Existing management/recovery paths require parity inventory | Job and task update operations are exposed | Dormant task-only schedule update prepared; provider setup and runtime remain blocked | Event update only after calendar/account validation |
+| Availability read | Existing `jobber-availability` and schedule mirror | Job/task/event queries and dated task fields are exposed | Dormant bounded busy-evidence plan and response-validating runner prepared; capacity, crew, route, and blackout interpretation still fail closed | Free/busy/event reads require capability validation |
+| Booking create | Existing `jobber-create-booking` | Customer → location → job creation and task creation are exposed | Dormant one-job/one-task mapping and single-attempt runner prepared; provider setup, concrete stores, capacity proof, and runtime remain blocked | Calendar event creation only; not CRM/job/invoice creation |
+| Booking update | Existing management/recovery paths require parity inventory | Job and task update operations are exposed | Dormant task-only schedule update and lineage-validating runner prepared; provider setup, concrete stores, and runtime remain blocked | Event update only after calendar/account validation |
 | Booking cancel | Existing cancellation module and provider flow | Task deletion and job/task update operations are exposed | Cancellation semantics remain unapproved; fail closed | Event cancellation only after calendar/account validation |
 | Invoice handoff | No generalized connector contract currently adopted | Document and payment query/write primitives are exposed | Accounting lifecycle mapping remains unapproved; fail closed | Unsupported; separate invoicing required |
 | Communications | Existing repository channels are separate from Jobber | Comment and document-send primitives are exposed | Provider communications remain separate from the approved BluLadder outbox | Unsupported |
@@ -126,6 +126,10 @@ as a CRM or invoicing system.
   `bluladder-klamath-jobtread-business-mappings.md`. Quote, cancellation,
   invoice, communications, case-study, file, and photo lifecycles remain
   unapproved and fail closed.
+- The dormant execution/reconciliation seam is reviewed in
+  `bluladder-klamath-jobtread-execution-runner.md`. It has only injected
+  storage, secret, plan, and transport ports and is not imported by a runtime
+  entry point.
 - Credential storage and rotation are provider/security decisions outside this
   repository-only stage.
 - Existing Jobber runtime functions need a surface-by-surface parity and

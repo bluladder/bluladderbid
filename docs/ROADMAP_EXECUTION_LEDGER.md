@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `c3542252c1b8949285577602a2119ff5e0501999`
+Last reconciled main: `071eedc331306e8aafa99cc0e028f6e3419c1d58`
 
 ## Dependency graph
 
@@ -26,7 +26,8 @@ Last reconciled main: `c3542252c1b8949285577602a2119ff5e0501999`
           │   ├─ 9A pure contracts and Jobber seam   complete (PR #18)
           │   ├─ Klamath JobTread capability seam    complete (PR #136)
           │   ├─ Klamath Phase 1I CRM lineage        hosted schema and grants verified
-          │   └─ Klamath JobTread mappings           first dormant wave prepared (#143)
+          │   ├─ Klamath JobTread mappings           first dormant wave complete (PR #144)
+          │   └─ Klamath JobTread runner             dormant execution/reconciliation active (#145)
           ├─ #10 service catalog and pricing
           │   └─ 10A pure catalog/pricing contracts  complete (PR #19)
           └─ remaining tenant-table rollout          staged by authority path
@@ -54,7 +55,8 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1G | #7/#9 | Organization-bound messaging connector, durable outbox, and fail-closed Twilio adapter | #118-#123 + provider receipts; this PR | active |
 | Klamath Phase 1H | #7/#9 | Organization-scoped consent lineage and fail-closed runtime adoption | #131-#133 + provider/deployment receipts | complete |
 | Klamath JobTread capability | #135 | Verified provider primitives plus dormant guarded adapter and redacted transport | #136 | complete |
-| Klamath JobTread mappings | #143 | Dormant exact customer, schedule-read, and job/task planning with blocked ambiguous lifecycles | active PR | active |
+| Klamath JobTread mappings | #143 | Dormant exact customer, schedule-read, and job/task planning with blocked ambiguous lifecycles | #144 | complete |
+| Klamath JobTread runner | #145 | Dormant protected-plan execution, hashed attempt lineage, response validation, and uncertain-outcome reconciliation | active PR | active |
 | Klamath Phase 1I | #137/#139/#141 | Empty organization CRM connector, operation-attempt, and webhook-receipt lineage | #138/#140 + provider receipts | hosted schema complete |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
@@ -78,8 +80,10 @@ constraints fail closed before any runtime or provider action. Hosted
 postflight found Lovable-hydrated authenticated privileges broader than the
 reviewed table grants. A narrow forward-only repair is now applied and verified:
 connector configuration has CRUD, both audit tables have SELECT only, and all
-tables remain empty. JobTread business mappings, credential/webhook setup,
-runtime deployment, and customer traffic remain blocked.
+tables remain empty. The first JobTread business mappings are merged, and a
+dormant injected execution/reconciliation runner is now under review. Concrete
+stores, credential/webhook setup, runtime deployment, and customer traffic
+remain blocked.
 
 ## Completed foundation: Klamath Phase 1G messaging/outbox lineage and Phase 1H
 
@@ -167,23 +171,25 @@ are separated in
 
 ## Queued safe stages
 
-The current safe repository stage is the empty CRM connector and idempotency
-lineage candidate. Its hosted preflight and migration application remain
-separately gated. The following stages remain gated:
+Phase 1I schema/grants and the first JobTread mapping wave are complete. The
+current safe repository stage is the dormant JobTread execution and
+reconciliation runner. The following stages remain gated:
 
-1. Run the exact Phase 1I hosted preflight, then separately authorize the empty
-   additive migration only if the target tables remain absent and Klamath is
-   still provisioning with no customer/provider state.
-2. Approve JobTread business mappings operation by operation before credential,
-   webhook, connector-row, runtime, or provider work.
-3. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
+1. Merge the runner only after exact-head CI and Secret Scan prove the dormant
+   contract and all existing DFW/tenant gates.
+2. Implement concrete Phase 1I stores, protected plan assembly, webhook
+   authentication/idempotency, and read-only reconciliation without adding a
+   production entry-point import or provider credential.
+3. Obtain owner-approved Klamath business hours, local contacts, and independent
+   pricing/catalog inputs; preserve all runtime and customer-traffic flags off.
+4. Create the exact JobTread fields, least-privilege Grant Key, webhook, and one
+   inactive connector row only in a separately controlled provider window.
+5. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
    waves after each dependency is proven.
-4. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
+6. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
    with organization-keyed uniqueness, composite lineage, and draft-only seeds.
-5. Remaining tenant-owned tables in narrow nullable waves, each with
-   authoritative-write coverage and verification.
-6. Issue #4 read-only importer and later persistence/runtime stages through the
-   Stage 9A connector contract.
+7. Remaining tenant-owned tables and the read-only importer in narrow waves
+   through the Stage 9A connector contract.
 7. Twilio and Vapi provider prerequisites.
 8. Issue #11 whole-system isolation, migration, and release hardening.
 

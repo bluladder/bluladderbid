@@ -69,8 +69,9 @@ provider setup or traffic, a separately reviewed stage must:
 1. create the exact JobTread custom fields and record their protected bindings;
 2. create one organization-scoped Grant Key and webhook with least privilege;
 3. insert one inactive Klamath connector row with hashed provider authority;
-4. implement the operation-attempt runner, response validators, uniqueness
-   checks, webhook authentication/idempotency, and reconciliation reads;
+4. adopt the now-prepared dormant operation-attempt runner only after concrete
+   stores, webhook authentication/idempotency, and reconciliation reads pass
+   separate review;
 5. prove availability/capacity semantics and a cancellation lifecycle;
 6. deploy only the exact runtime functions and run owner-controlled acceptance;
 7. activate the connector and customer traffic only after every other Klamath
