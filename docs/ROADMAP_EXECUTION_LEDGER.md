@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `014517b43d543dec77d29d46877cde9aaf6f53a6`
+Last reconciled main: `7c24f57258dd458978f56b0902ff05d3eecba802`
 
 ## Dependency graph
 
@@ -21,6 +21,7 @@ Last reconciled main: `014517b43d543dec77d29d46877cde9aaf6f53a6`
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
           │       └─ Klamath Phase 1G messaging       priority runtime deployed; adoption active
+          │           └─ Klamath Phase 1H consent lineage  read-only hosted preflight prepared
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -48,6 +49,7 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1E | #8 | Reconcile typed tenant profile to the hosted provisioning identity; activation remains blocked | #114 | merged |
 | Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema and reviewed portal runtime deployed fail closed | #115/#116 + provider receipt | complete |
 | Klamath Phase 1G | #7/#9 | Organization-bound messaging connector, durable outbox, and fail-closed Twilio adapter | #118-#123 + provider receipts; this PR | active |
+| Klamath Phase 1H | #7/#9 | Read-only hosted consent-lineage and collision preflight | this PR | prepared |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
@@ -105,6 +107,12 @@ The database-backed customer-site runtime remains deployed; customer traffic rem
 Phase 1F is complete. Messaging/outbox lineage,
 approved operating inputs, JobTread, provider resources, publication,
 controlled acceptance, and activation remain blocked.
+
+The next repository gate is Phase 1H consent lineage. Its exact read-only
+hosted preflight is prepared to measure consent/event parent authority,
+organization-scoped identity collisions, RLS, and Klamath absence before any
+migration is designed. Running the preflight, applying a migration, changing a
+runtime, or sending a message remain separately protected actions.
 
 ## Protected-action gates
 
