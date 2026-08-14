@@ -1,7 +1,7 @@
 # BluLadder Klamath Phase 1G messaging/outbox lineage
 
-Status: **hosted additive schema applied; least-privilege repair and runtime
-changes blocked**. This phase defines the organization-owned sender boundary
+Status: **hosted additive schema and least-privilege repair verified; runtime
+writer adoption blocked**. This phase defines the organization-owned sender boundary
 required before Klamath can send SMS or email. It does not add a credential,
 sender, provider resource, message, customer traffic, or deployment.
 
@@ -76,7 +76,7 @@ wave must persist server-derived organization and connector authority, prove
 zero new gaps, and run the dispatch guard before either lineage column can be
 made required or any Klamath provider can be configured.
 
-## Hosted execution and grant-repair gate
+## Hosted execution and grant-repair verification
 
 The exact canonical payload was applied once by Lovable as provider execution
 version `20260814071137`. The provider receipt is the 12,047-byte canonical
@@ -92,8 +92,16 @@ reviewed CRUD-only contract and keeps the schema gate blocked even though RLS,
 both policies, anonymous denial, service-role access, and trigger-function
 execute denial are intact.
 
-`20260814071600_bluladder_klamath_phase_1g_authenticated_grants.sql` is the
-forward-only repair candidate. It accepts only the exact observed seven-grant,
-zero-connector, 134-row DFW state, revokes the hydrated role grants, and restores
-only `SELECT`, `INSERT`, `UPDATE`, and `DELETE`. It changes no row, policy,
-function, provider, sender, credential, runtime, or activation setting.
+`20260814071600_bluladder_klamath_phase_1g_authenticated_grants.sql` was
+applied once as provider execution version `20260814072713`. The single stored
+statement is the 7,531-byte canonical payload without its terminal line feed;
+adding that one byte reproduces the reviewed 7,532-byte SHA-256 exactly. The
+ledger advanced from 158 to 159 rows with ordered fingerprint
+`b98e6fcb7ce47a544f22410d1b62a7fbdab90dc99af59518f06302299c24eac2`.
+
+Postflight proves that `authenticated` now has only `SELECT`, `INSERT`,
+`UPDATE`, and `DELETE`; anonymous access remains absent and
+`service_role` retains the expected seven privileges. The operation changed
+no row, policy, function, provider, sender, credential, runtime, or activation
+setting. The hosted schema gate is ready; writer adoption, connector
+configuration, dispatch, and activation remain separately blocked.

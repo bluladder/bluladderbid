@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `8bc3caa347ea7bad3cc9a571b732d6c19be24912`
+Last reconciled main: `9433b0013db8c34ca2345605b196933fc1570a1d`
 
 ## Dependency graph
 
@@ -20,7 +20,7 @@ Last reconciled main: `8bc3caa347ea7bad3cc9a571b732d6c19be24912`
           │   ├─ Klamath Phase 1D customer sites      complete (PR #113)
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
-          │       └─ Klamath Phase 1G messaging       schema applied; grant repair pending
+          │       └─ Klamath Phase 1G messaging       schema ready; writer adoption pending
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -62,9 +62,11 @@ The provider execution receipt and generated Supabase types are reconciled.
 The Phase 1G pure connector contract is merged. A read-only hosted messaging
 preflight passed and the additive organization-lineage migration was applied
 once with a provider-generated receipt. Its data/RLS/lineage postflight passed,
-but Lovable hydrated three excess authenticated table privileges. A forward-only
-least-privilege repair candidate is now protected by a disposable PostgreSQL
-rehearsal; runtime writer adoption remains a separate gate.
+and Lovable's three hydrated excess authenticated table privileges were removed
+by one forward-only provider execution. The canonical receipt, ledger
+advancement, CRUD-only authenticated access, anonymous denial, full
+service-role access, zero connectors, and unchanged 134-row DFW lineage are
+verified; runtime writer adoption remains a separate gate.
 
 The Phase 1F portal runtime is deployed from reconciled main and all seven
 reviewed functions passed secret-free boot verification. The Klamath mapping remains
@@ -98,9 +100,8 @@ are separated in
 
 ## Queued safe stages
 
-The current safe repository stage is the narrow, forward-only authenticated
-grant repair for the messaging connector table. The following stages remain
-gated:
+The current safe repository stage is organization-lineage writer adoption for
+the messaging/outbox boundary. The following stages remain gated:
 
 1. Add organization lineage to the durable messaging/outbox boundary without
    introducing a DFW fallback for Klamath.
