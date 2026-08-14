@@ -3820,6 +3820,53 @@ export type Database = {
           },
         ]
       }
+      organization_customer_sites: {
+        Row: {
+          canonical_hostname: string
+          created_at: string
+          customer_traffic_allowed: boolean
+          id: string
+          mapping_status: string
+          organization_id: string
+          runtime_routing_enabled: boolean
+          site_published: boolean
+          tenant_key: string
+          updated_at: string
+        }
+        Insert: {
+          canonical_hostname: string
+          created_at?: string
+          customer_traffic_allowed?: boolean
+          id: string
+          mapping_status?: string
+          organization_id: string
+          runtime_routing_enabled?: boolean
+          site_published?: boolean
+          tenant_key: string
+          updated_at?: string
+        }
+        Update: {
+          canonical_hostname?: string
+          created_at?: string
+          customer_traffic_allowed?: boolean
+          id?: string
+          mapping_status?: string
+          organization_id?: string
+          runtime_routing_enabled?: boolean
+          site_published?: boolean
+          tenant_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_customer_sites_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organization_memberships: {
         Row: {
           created_at: string
@@ -3851,6 +3898,59 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "organization_memberships_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_pricing_profiles: {
+        Row: {
+          config_snapshot: Json
+          copied_from: string | null
+          created_at: string
+          currency_code: string
+          id: string
+          organization_id: string
+          profile_key: string
+          runtime_enabled: boolean
+          status: string
+          tax_policy: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          config_snapshot: Json
+          copied_from?: string | null
+          created_at?: string
+          currency_code?: string
+          id: string
+          organization_id: string
+          profile_key: string
+          runtime_enabled?: boolean
+          status?: string
+          tax_policy: string
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          config_snapshot?: Json
+          copied_from?: string | null
+          created_at?: string
+          currency_code?: string
+          id?: string
+          organization_id?: string
+          profile_key?: string
+          runtime_enabled?: boolean
+          status?: string
+          tax_policy?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_pricing_profiles_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
