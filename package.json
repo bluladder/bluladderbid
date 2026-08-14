@@ -45,6 +45,7 @@
     "check:klamath-jobtread-write-plan": "node scripts/check-bluladder-klamath-jobtread-write-plan.mjs",
     "check:klamath-jobtread-composition": "node scripts/check-bluladder-klamath-jobtread-execution-composition.mjs",
     "check:klamath-launch-input-contract": "node scripts/check-bluladder-klamath-launch-input-contract.mjs",
+    "check:klamath-pricing-duration-review": "node scripts/check-bluladder-klamath-pricing-duration-review.mjs",
     "check:klamath-hosted-compat": "node scripts/check-bluladder-klamath-hosted-compat.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",
