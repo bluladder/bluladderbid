@@ -167,6 +167,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Forward-only least-privilege repair for Lovable-hydrated structural grants
   // on the Phase 1I connector and audit tables.
   "supabase/migrations/20260814114500_bluladder_klamath_phase_1i_authenticated_grants.sql",
+  // Lovable-generated receipt for the exact Phase 1I grant repair, with only
+  // terminal-LF normalization permitted by the Phase 1I grant checker.
+  "supabase/migrations/20260814120308_dedb44f7-f5c6-4621-9387-e88691c6969b.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

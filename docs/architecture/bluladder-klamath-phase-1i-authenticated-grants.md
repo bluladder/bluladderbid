@@ -1,6 +1,6 @@
 # BluLadder Klamath Phase 1I authenticated grants
 
-Status: **forward-only repair prepared; hosted application blocked**.
+Status: **hosted repair applied and independently verified**.
 
 ## Observed hosted state
 
@@ -40,8 +40,17 @@ zero excess authenticated privileges, and every other count unchanged.
 
 The disposable PostgreSQL rehearsal first applies the Phase 1I schema, then
 reproduces Lovable's three excess privileges on every target table before
-running the exact repair and postflight. Exact-head CI and Secret Scan are
-required before a separate hosted application.
+running the exact repair and postflight. Exact-head CI #584 and Secret Scan
+#1166 passed on the Git tree merged as
+`178776d64484c34d5f289f48dff463a4c86cdf18`.
+
+Lovable applied the repair once as hosted execution version `20260814120308`.
+The single stored statement is the 9,900-byte canonical payload without its
+terminal line feed; adding that byte reproduces the reviewed 9,901-byte
+SHA-256. The ledger advanced from 163 to 164 rows. Independent postflight
+proved connector CRUD, audit SELECT, zero excess or anonymous grants, complete
+service-role access, exact RLS/policies, zero target rows, unchanged DFW
+authority, and provisioning Klamath with no customer or provider state.
 
 JobTread business mappings, connector insertion, credential or webhook setup,
 runtime adoption, provider traffic, and customer activation remain separately

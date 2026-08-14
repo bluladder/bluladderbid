@@ -44,7 +44,7 @@ WITH authenticated_grants AS (
     AND grantee IN ('anon', 'service_role')
 ), security_state AS (
   SELECT
-    count(*) FILTER (WHERE relation.relrowsecurity)
+    count(DISTINCT relation.oid) FILTER (WHERE relation.relrowsecurity)
       AS rls_enabled_table_count,
     count(policy.policyname) FILTER (
       WHERE relation.relname = 'organization_crm_connectors'

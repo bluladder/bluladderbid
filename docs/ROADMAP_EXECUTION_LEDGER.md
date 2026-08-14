@@ -25,7 +25,7 @@ Last reconciled main: `c3542252c1b8949285577602a2119ff5e0501999`
           ├─ #9 organization connector contracts
           │   ├─ 9A pure contracts and Jobber seam   complete (PR #18)
           │   ├─ Klamath JobTread capability seam    complete (PR #136)
-          │   └─ Klamath Phase 1I CRM lineage        hosted schema; grant repair active
+          │   └─ Klamath Phase 1I CRM lineage        hosted schema and grants verified
           ├─ #10 service catalog and pricing
           │   └─ 10A pure catalog/pricing contracts  complete (PR #19)
           └─ remaining tenant-table rollout          staged by authority path
@@ -53,7 +53,7 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1G | #7/#9 | Organization-bound messaging connector, durable outbox, and fail-closed Twilio adapter | #118-#123 + provider receipts; this PR | active |
 | Klamath Phase 1H | #7/#9 | Organization-scoped consent lineage and fail-closed runtime adoption | #131-#133 + provider/deployment receipts | complete |
 | Klamath JobTread capability | #135 | Verified provider primitives plus dormant guarded adapter and redacted transport | #136 | complete |
-| Klamath Phase 1I | #137/#139 | Empty organization CRM connector, operation-attempt, and webhook-receipt lineage | #138 + provider receipt; grant-repair PR | active |
+| Klamath Phase 1I | #137/#139/#141 | Empty organization CRM connector, operation-attempt, and webhook-receipt lineage | #138/#140 + provider receipts | hosted schema complete |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
@@ -74,9 +74,10 @@ webhook receipt idempotency. Composite organization/connector foreign keys,
 least-privilege RLS, protected-reference gates, and sanitized outcome
 constraints fail closed before any runtime or provider action. Hosted
 postflight found Lovable-hydrated authenticated privileges broader than the
-reviewed table grants, so a narrow forward-only grant repair is active. All
-JobTread business mappings, credential/webhook setup, runtime deployment, and
-customer traffic remain blocked.
+reviewed table grants. A narrow forward-only repair is now applied and verified:
+connector configuration has CRUD, both audit tables have SELECT only, and all
+tables remain empty. JobTread business mappings, credential/webhook setup,
+runtime deployment, and customer traffic remain blocked.
 
 ## Completed foundation: Klamath Phase 1G messaging/outbox lineage and Phase 1H
 

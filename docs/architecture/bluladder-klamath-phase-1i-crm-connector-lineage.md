@@ -1,8 +1,8 @@
 # BluLadder Klamath Phase 1I CRM connector lineage
 
-Status: **hosted additive schema verified; authenticated grant repair
-required**. No connector, credential, webhook, provider call, deployment,
-customer traffic, or activation is authorized.
+Status: **hosted additive schema and least-privilege grants verified**. No
+connector, credential, webhook, provider call, deployment, customer traffic,
+or activation is authorized.
 
 ## Purpose
 
@@ -95,13 +95,13 @@ writes because the audit tables have only SELECT policies, but the direct grant
 surface is broader than the reviewed least-privilege contract. The separate
 forward-only grant repair accepts only that exact state, narrows connector
 configuration to CRUD and both audit tables to SELECT, and otherwise changes
-nothing.
+nothing. It was applied once as execution version `20260814120308`; independent
+postflight proved the exact grant contract and unchanged empty/inactive state.
 
 ## Separately gated work
 
-The additive migration is applied. The authenticated-grant repair must pass
-exact-head CI and Secret Scan, then requires a separately controlled hosted
-application and read-only verification. All of the following remain blocked:
+The additive migration and authenticated-grant repair are applied and verified.
+All of the following remain blocked:
 
 1. creating or reading a JobTread Grant Key;
 2. creating a JobTread webhook or protected secret;

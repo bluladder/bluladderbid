@@ -43,7 +43,7 @@ function requireText(key, text) {
 
 for (
   const text of [
-    "hosted additive schema verified",
+    "hosted additive schema and least-privilege grants verified",
     "organization_crm_connectors",
     "organization_connector_operation_attempts",
     "organization_connector_webhook_receipts",
@@ -189,7 +189,7 @@ for (const table of [
 if (register) {
   if (
     register.phase !== "1I" ||
-    register.status !== "hosted_migration_applied_grant_repair_required" ||
+    register.status !== "hosted_schema_and_grants_verified" ||
     register.prepared_from_main !==
       "c3542252c1b8949285577602a2119ff5e0501999" ||
     register.preflight_path !== files.preflight ||
@@ -208,7 +208,11 @@ if (register) {
     register.hosted_statement_bytes !== 13540 ||
     register.hosted_statement_sha256 !==
       "8d6752dd11393ac1dce26af491499b3f0a8a29713d9eb0b42225b46a7ddc86ea" ||
-    register.authenticated_grant_repair_required !== true ||
+    register.authenticated_grant_repair_required !== false ||
+    register.authenticated_grant_repair_execution_version !== "20260814120308" ||
+    register.hosted_ledger_count_after_grant_repair !== 164 ||
+    register.hosted_ledger_fingerprint_after_grant_repair !==
+      "ee68da23b599f4c9d18c5013ef9510680d8d0818cba5850000f13f248b242b8b" ||
     register.runtime_prepared !== false ||
     register.runtime_deployed !== false ||
     register.activation_allowed !== false ||
@@ -241,7 +245,7 @@ if (register) {
     ["connector_lineage_repository_candidate", "passed"],
     ["hosted_read_only_preflight", "passed"],
     ["connector_lineage_migration", "passed"],
-    ["authenticated_grant_repair", "blocked"],
+    ["authenticated_grant_repair", "passed"],
     ["jobtread_business_mapping", "blocked"],
     ["credential_and_webhook", "blocked"],
     ["runtime_adoption_and_deployment", "blocked"],
@@ -283,7 +287,7 @@ requireText("workflow", "bun run check:klamath-phase-1i");
 requireText("workflow", "Rehearse BluLadder Klamath Phase 1I CRM connector lineage");
 requireText("roadmap", "Klamath Phase 1I dormant CRM connector lineage");
 requireText("roadmap", "Lovable-hydrated authenticated privileges");
-requireText("roadmap", "forward-only grant repair is active");
+requireText("roadmap", "forward-only repair is now applied and verified");
 
 if (errors.length) {
   console.error(errors.map((error) => `- ${error}`).join("\n"));
@@ -291,5 +295,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1I gate OK: hosted CRM lineage remains empty and inactive while the authenticated-grant repair and all provider/runtime/traffic actions remain blocked.",
+  "BluLadder Klamath Phase 1I gate OK: hosted CRM lineage and least-privilege grants are verified while all provider/runtime/traffic actions remain blocked.",
 );
