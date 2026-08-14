@@ -26,6 +26,8 @@ const relative = {
   portal: "supabase/functions/customer-portal-data/index.ts",
   phase1fRegister: "docs/operations/bluladder-klamath-phase-1f-gates.json",
   phase1gRegister: "docs/operations/bluladder-klamath-phase-1g-gates.json",
+  jobtreadRegister:
+    "docs/operations/bluladder-klamath-jobtread-capability-gates.json",
   smsOutbox: "supabase/functions/_shared/smsOutbox.ts",
   autosync: "supabase/functions/jobber-autosync/index.ts",
   adminFlag: "src/lib/organizations/featureFlags.ts",
@@ -72,10 +74,12 @@ for (const text of [
 let register;
 let phase1fRegister;
 let phase1gRegister;
+let jobtreadRegister;
 try {
   register = JSON.parse(content.register ?? "{}");
   phase1fRegister = JSON.parse(content.phase1fRegister ?? "{}");
   phase1gRegister = JSON.parse(content.phase1gRegister ?? "{}");
+  jobtreadRegister = JSON.parse(content.jobtreadRegister ?? "{}");
 } catch (error) {
   errors.push(`gate register is invalid JSON: ${error.message}`);
 }
@@ -209,9 +213,22 @@ if (
     path.join(root, "supabase/functions/_shared/jobtreadConnectorAdapter.ts"),
   )
 ) {
-  errors.push(
-    "JobTread adapter now exists; re-audit capabilities before changing the gate",
-  );
+  if (
+    jobtreadRegister?.provider_account_uniquely_matched !== true ||
+    jobtreadRegister?.official_api_explorer_verified !== true ||
+    jobtreadRegister?.dormant_adapter_prepared !== true ||
+    jobtreadRegister?.grant_created !== false ||
+    jobtreadRegister?.credential_configured !== false ||
+    jobtreadRegister?.webhook_created !== false ||
+    jobtreadRegister?.runtime_entrypoint_adopted !== false ||
+    jobtreadRegister?.activation_allowed !== false ||
+    jobtreadRegister?.customer_traffic_allowed !== false ||
+    expectedGateStatuses.get("jobtread_connector") !== "blocked"
+  ) {
+    errors.push(
+      "JobTread adapter exists without the verified dormant fail-closed gate",
+    );
+  }
 }
 
 try {

@@ -8,6 +8,11 @@ const files = {
   contract: "supabase/functions/_shared/connectorContracts.ts",
   selection: "supabase/functions/_shared/organizationConnector.ts",
   adapter: "supabase/functions/_shared/jobberConnectorAdapter.ts",
+  jobtreadAdapter:
+    "supabase/functions/_shared/jobtreadConnectorAdapter.ts",
+  jobtreadClient: "supabase/functions/_shared/jobtreadPaveClient.ts",
+  jobtreadTests:
+    "supabase/functions/_shared/jobtreadConnectorAdapter_test.ts",
   tests: "supabase/functions/_shared/organizationConnector_test.ts",
   docs: "docs/architecture/organization-connectors-stage-9a.md",
 };
@@ -68,11 +73,22 @@ if (/Deno\.test\.ignore|\.skip\(/.test(contents.tests ?? "")) {
 if (!contents.adapter?.includes("guardConnectorRequest")) {
   errors.push("Jobber adapter lacks lineage/idempotency guard");
 }
+if (!contents.jobtreadAdapter?.includes("guardConnectorRequest")) {
+  errors.push("JobTread adapter lacks lineage/idempotency guard");
+}
+if (!contents.jobtreadAdapter?.includes("supportedCapabilities")) {
+  errors.push("JobTread adapter lacks explicit capability approval");
+}
+if (!contents.jobtreadClient?.includes("containsGrantKey")) {
+  errors.push("JobTread transport lacks caller grant-injection defense");
+}
+if (/Deno\.test\.ignore|\.skip\(/.test(contents.jobtreadTests ?? "")) {
+  errors.push("JobTread connector tests may not be skipped");
+}
 
 if (errors.length) {
   console.error(errors.join("\n"));
   process.exit(1);
 }
 
-console.log("Organization connector contract OK: 9 capabilities, fail-closed selection, guarded Jobber seam.");
-
+console.log("Organization connector contract OK: 9 capabilities, fail-closed selection, guarded Jobber and dormant JobTread seams.");
