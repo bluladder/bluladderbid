@@ -154,6 +154,7 @@
       "claim_callrail_event_for_replay",
       "claim_due_callrail_retries",
       "claim_due_sms",
+      "claim_organization_sms_outbox_send",
       "claim_sms_booking_execution",
       "claim_sms_outbox_send",
       "claim_sms_reconciliation_execution",

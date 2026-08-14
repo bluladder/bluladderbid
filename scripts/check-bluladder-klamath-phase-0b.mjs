@@ -180,7 +180,8 @@ if (
   if (
     phase1gRegister?.scoped_outbox_migration_prepared !== true ||
     phase1gRegister?.scoped_outbox_runtime_prepared !== true ||
-    phase1gRegister?.scoped_outbox_hosted_applied !== false ||
+    phase1gRegister?.scoped_outbox_hosted_applied !== true ||
+    phase1gRegister?.scoped_outbox_postflight_passed !== true ||
     phase1gRegister?.scoped_outbox_runtime_deployed !== false ||
     expectedGateStatuses.get("messaging_and_outbox") !== "blocked"
   ) {

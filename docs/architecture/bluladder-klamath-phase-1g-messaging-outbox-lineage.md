@@ -1,7 +1,7 @@
 # BluLadder Klamath Phase 1G messaging/outbox lineage
 
-Status: **hosted additive schema and least-privilege repair verified; runtime
-writer adoption blocked**. This phase defines the organization-owned sender boundary
+Status: **hosted additive schema, least-privilege repair, and scoped outbox
+claim verified; remaining runtime writer adoption blocked**. This phase defines the organization-owned sender boundary
 required before Klamath can send SMS or email. It does not add a credential,
 sender, provider resource, message, customer traffic, or deployment.
 
@@ -120,6 +120,24 @@ connector, checks the pure dispatch guard, and uses only the scoped claim.
 The approved organization comes from the persisted quote or booking, the
 already-resolved voice webhook authority, or the resolved SMS conversation;
 the recipient never selects a tenant. Unsupported providers finalize as
-failed without an outbound request. This code is not deployable until the
-scoped migration is separately applied and the reviewed DFW/Klamath connector
-and adapter gates are satisfied.
+failed without an outbound request. The scoped migration is now applied and
+independently verified. This runtime code remains undeployed until the reviewed
+DFW/Klamath connector, adapter, and remaining writer-adoption gates are
+satisfied.
+
+## Hosted scoped-outbox verification
+
+`20260814074000_bluladder_klamath_phase_1g_scoped_sms_outbox.sql` was applied
+once as provider execution version `20260814081254`. The single stored statement
+is the 8,964-byte canonical payload without its terminal line feed; adding that
+one byte reproduces the reviewed 8,965-byte SHA-256 exactly. The ledger advanced
+from 159 to 160 rows with ordered fingerprint
+`db0c52f8e729931bc6f60270bae6e3050d4e7a33c6abcc0ecf55cb05e8b3c069`.
+
+Postflight proves the scoped claim exists, only `service_role` may execute it,
+and anonymous/authenticated execution remains denied. The operation changed no
+connector or SMS row: all 134 historical rows remain DFW-owned with zero
+connector bindings, and Klamath remains provisioning with no active connector.
+The hosted transactional boundary is ready; remaining writer adoption, provider
+configuration, runtime deployment, controlled messaging, and activation remain
+separately blocked.
