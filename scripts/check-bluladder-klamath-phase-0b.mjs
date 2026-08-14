@@ -182,7 +182,16 @@ if (
     phase1gRegister?.scoped_outbox_runtime_prepared !== true ||
     phase1gRegister?.scoped_outbox_hosted_applied !== true ||
     phase1gRegister?.scoped_outbox_postflight_passed !== true ||
-    phase1gRegister?.scoped_outbox_runtime_deployed !== false ||
+    phase1gRegister?.scoped_outbox_runtime_deployed !== true ||
+    phase1gRegister?.portal_verification_writer_deployed !== true ||
+    phase1gRegister?.queued_sms_connector_boundary_deployed !== true ||
+    phase1gRegister?.runtime_deployment_source_main !==
+      "014517b43d543dec77d29d46877cde9aaf6f53a6" ||
+    phase1gRegister?.runtime_deployment_provider_traffic !== false ||
+    phase1gRegister?.messaging_runtime_deployed !== false ||
+    phase1gRegister?.activation_allowed !== false ||
+    phase1gRegister?.customer_traffic_allowed !== false ||
+    phase1gRegister?.messages_authorized !== false ||
     expectedGateStatuses.get("messaging_and_outbox") !== "blocked"
   ) {
     errors.push(
