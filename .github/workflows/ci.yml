@@ -68,6 +68,7 @@ jobs:
           bun run check:klamath-jobtread-business-mappings
           bun run check:klamath-jobtread-execution-runner
           bun run check:klamath-jobtread-phase1i-stores
+          bun run check:klamath-jobtread-phase1i-webhook-receipts
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
