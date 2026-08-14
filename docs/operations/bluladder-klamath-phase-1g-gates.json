@@ -1,0 +1,34 @@
+{
+  "phase": "1G",
+  "status": "repository_contract_only",
+  "prepared_from_main": "0148b95da3a5c878557d788d4486e9a39d5bdc42",
+  "messaging_connector_contract_prepared": true,
+  "hosted_schema_applied": false,
+  "messaging_runtime_deployed": false,
+  "dfw_provider_changed": false,
+  "klamath_connector_count": 0,
+  "activation_allowed": false,
+  "customer_traffic_allowed": false,
+  "messages_authorized": false,
+  "authorized_actions": {
+    "apply_migration": false,
+    "deploy_edge_functions": false,
+    "configure_providers": false,
+    "create_credentials": false,
+    "purchase_number": false,
+    "send_messages": false,
+    "place_calls": false,
+    "activate_customer_traffic": false
+  },
+  "gates": [
+    { "id": "phase_1g_connector_contract", "status": "ready" },
+    { "id": "hosted_messaging_preflight", "status": "blocked" },
+    { "id": "messaging_lineage_schema", "status": "blocked" },
+    { "id": "messaging_writer_adoption", "status": "blocked" },
+    { "id": "organization_scoped_outbox", "status": "blocked" },
+    { "id": "twilio_business_registration", "status": "blocked" },
+    { "id": "twilio_sender_and_credentials", "status": "blocked" },
+    { "id": "controlled_message_acceptance", "status": "blocked" },
+    { "id": "customer_traffic_activation", "status": "blocked" }
+  ]
+}

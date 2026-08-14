@@ -20,6 +20,7 @@ Last reconciled main: `4ed37cff90e35aacfe9ffeb55c666e45f09396b4`
           │   ├─ Klamath Phase 1D customer sites      complete (PR #113)
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
+          │       └─ Klamath Phase 1G messaging       active repository contract
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -46,6 +47,7 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1D | #8 | Database-backed customer-site runtime; deployed with customer traffic blocked | #113 | merged |
 | Klamath Phase 1E | #8 | Reconcile typed tenant profile to the hosted provisioning identity; activation remains blocked | #114 | merged |
 | Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema and reviewed portal runtime deployed fail closed | #115/#116 + provider receipt | complete |
+| Klamath Phase 1G | #7/#9 | Organization-bound messaging connector and durable outbox lineage | this PR | active |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
