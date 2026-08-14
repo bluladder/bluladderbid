@@ -606,6 +606,7 @@ Deno.test("human transfer: failed transfer queues one bounded operator SMS and e
   assertEquals(sms.length, 1);
   assertEquals(emails.length, 1);
   assertEquals(emailAttempts.length, 1);
+  assertEquals(sms[0].organizationId, ORG);
   assertEquals(sms[0].messageKind, "voice_operator_alert");
   assert(sms[0].outboundKey.includes(ORG));
   assert(sms[0].outboundKey.includes("a".repeat(64)));
