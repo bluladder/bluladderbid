@@ -1,9 +1,10 @@
 # BluLadder Klamath Phase 1G messaging/outbox lineage
 
-Status: **repository contract; hosted and runtime changes blocked**. This phase
-defines the organization-owned sender boundary required before Klamath can send
-SMS or email. It does not add a credential, sender, provider resource, database
-column, migration, message, customer traffic, or deployment.
+Status: **additive schema candidate; hosted application and runtime changes
+blocked**. This phase defines the organization-owned sender boundary required
+before Klamath can send SMS or email. It adds a reviewed migration candidate,
+but it does not add a credential, sender, provider resource, message, customer
+traffic, or deployment.
 
 ## Authority contract
 
@@ -52,3 +53,26 @@ customer; neither can weaken the other.
 No schema application may create an active Klamath connector or enable a
 sender. No runtime may dispatch a Klamath message until all five steps and the
 separate activation gates are complete.
+
+## Hosted evidence and additive migration candidate
+
+The read-only hosted preflight observed seven prerequisite tables, one exact
+active DFW legacy default, one provisioning Klamath organization, zero Klamath
+customers, zero Klamath provider identities, and no target table or lineage
+column. Of 134 historical messaging-ledger rows, 28 have a server-owned parent,
+106 are legacy unparented rows, and none has conflicting or non-DFW parent
+authority.
+
+`20260814070000_bluladder_klamath_phase_1g_additive_messaging_lineage.sql`
+therefore uses bounded stop gates to create the inactive connector registry,
+add nullable organization and connector lineage to `sms_messages`, and backfill
+only the reviewed historical rows to DFW. The migration creates no connector
+row and changes no provider or queue behavior. A trigger derives organization
+authority from server-owned customer, quote, or booking parents and rejects
+parent, connector-organization, and connector-channel mismatches.
+
+Nullable columns are intentional only for the short staged writer-adoption
+window. They do not authorize an unscoped send. The separately reviewed writer
+wave must persist server-derived organization and connector authority, prove
+zero new gaps, and run the dispatch guard before either lineage column can be
+made required or any Klamath provider can be configured.

@@ -134,6 +134,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Lovable-generated execution receipt for the exact Phase 1F portal-lineage
   // payload. The Phase 1F checker permits only terminal-LF normalization.
   "supabase/migrations/20260814062249_8cd57ad4-d1ad-47eb-8477-7af1a1401981.sql",
+  // Phase 1G: additive messaging connector registry and nullable SMS lineage.
+  // It creates no connector, changes no provider, and keeps Klamath inactive.
+  "supabase/migrations/20260814070000_bluladder_klamath_phase_1g_additive_messaging_lineage.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
