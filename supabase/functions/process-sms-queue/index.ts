@@ -28,6 +28,7 @@ import {
 } from "../_shared/queueDelivery.ts";
 import { dispatchSelectedSmsConnector } from "../_shared/smsOutbox.ts";
 import { authorizeQueuedSmsConnector } from "../_shared/queuedSmsConnector.ts";
+import { organizationConsentAllows } from "../_shared/organizationConsent.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -387,13 +388,31 @@ serve(async (req) => {
         continue;
       }
       const required = camp.required_consent ?? "transactional";
+      if (
+        !["transactional", "requested_follow_up", "marketing"].includes(
+          required,
+        )
+      ) {
+        await updateClaimedMessage(
+          supabase,
+          msg,
+          transition("cancelled", {
+            error: "Campaign has an unsupported consent requirement",
+          }),
+        );
+        continue;
+      }
       if (required !== "transactional") {
-        const { data: allowed } = await supabase.rpc("consent_allows", {
-          p_channel: msg.channel === "email" ? "email" : "sms",
-          p_required: required,
-          p_email: (msg.to_email as string) ?? enr.email ?? null,
-          p_phone: (msg.to_number as string) ?? enr.phone ?? null,
-        });
+        const allowed = await organizationConsentAllows(
+          supabase,
+          msg.organization_id,
+          {
+            channel: msg.channel === "email" ? "email" : "sms",
+            required: required as "requested_follow_up" | "marketing",
+            email: (msg.to_email as string) ?? enr.email ?? null,
+            phone: (msg.to_number as string) ?? enr.phone ?? null,
+          },
+        );
         if (!allowed) {
           await updateClaimedMessage(
             supabase,

@@ -11,28 +11,41 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runOrchestrator } from "../_shared/aiOrchestrator.ts";
 import { rateLimit } from "../_shared/rateLimit.ts";
 import { emitCampaignEvent } from "../_shared/campaignEmitter.ts";
+import { resolvePortalOrganizationAuthority } from "../_shared/portalOrganizationAuthority.ts";
+import { recordOrganizationConsent } from "../_shared/organizationConsent.ts";
+import { DFW_ORGANIZATION_ID } from "../_shared/organizationRouting.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 const MAX_MESSAGE_LEN = 2000;
 const MAX_MESSAGES_PER_CONVO = 200;
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
 
   const rl = rateLimit(req, { limit: 20, windowMs: 60000 });
-  if (!rl.allowed) return json({ error: "Too many messages, please slow down." }, 429);
+  if (!rl.allowed) {
+    return json({ error: "Too many messages, please slow down." }, 429);
+  }
 
   try {
     const body = await req.json().catch(() => null);
-    if (!body || typeof body !== "object") return json({ error: "Invalid request" }, 400);
+    if (!body || typeof body !== "object") {
+      return json({ error: "Invalid request" }, 400);
+    }
 
     const sessionToken = String((body as any).sessionToken || "").slice(0, 100);
     const rawMessage = (body as any).message;
@@ -58,19 +71,48 @@ Deno.serve(async (req) => {
       { auth: { persistSession: false } },
     );
 
+    const authority = await resolvePortalOrganizationAuthority(supabase, req);
+    if (authority.status !== "resolved") {
+      const unavailable = authority.code === "customer_site_unavailable" ||
+        authority.code === "organization_inactive";
+      return json({
+        error: unavailable
+          ? "Chat is not available for this site yet."
+          : "This site could not be verified.",
+      }, unavailable ? 503 : 403);
+    }
+    const organizationId = authority.organizationId;
+    // Until Klamath's own pricing, services, knowledge, and provider adapters
+    // are independently approved, an active hostname alone must not inherit
+    // the DFW orchestrator. This is an explicit launch gate, not a fallback.
+    if (organizationId !== DFW_ORGANIZATION_ID) {
+      return json(
+        { error: "Chat is not enabled for this organization yet." },
+        503,
+      );
+    }
+
     let { data: convo } = await supabase
       .from("chat_conversations")
-      .select("id, session_token")
+      .select("id, session_token, organization_id")
       .eq("session_token", sessionToken)
+      .eq("organization_id", organizationId)
       .maybeSingle();
 
     if (!convo) {
       const { data: created, error } = await supabase
         .from("chat_conversations")
-        .insert({ session_token: sessionToken, channel: "web", campaign_status: "chat_lead_created" })
-        .select("id, session_token")
+        .insert({
+          organization_id: organizationId,
+          session_token: sessionToken,
+          channel: "web",
+          campaign_status: "chat_lead_created",
+        })
+        .select("id, session_token, organization_id")
         .single();
-      if (error || !created) return json({ error: "Could not start chat" }, 500);
+      if (error || !created) {
+        return json({ error: "Could not start chat" }, 500);
+      }
       convo = created;
     }
 
@@ -84,31 +126,57 @@ Deno.serve(async (req) => {
 
     const history = (msgRows ?? [])
       .filter((m) => typeof m.content === "string" && m.content.length > 0)
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string }));
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content as string,
+      }));
 
     if (history.length >= MAX_MESSAGES_PER_CONVO) {
-      return json({ error: "This conversation is quite long — let me connect you with the team.", conversationEnded: true }, 200);
+      return json({
+        error:
+          "This conversation is quite long — let me connect you with the team.",
+        conversationEnded: true,
+      }, 200);
     }
 
-    await supabase.from("chat_messages").insert({ conversation_id: convo.id, role: "user", content: message });
+    await supabase.from("chat_messages").insert({
+      conversation_id: convo.id,
+      role: "user",
+      content: message,
+    });
 
     const result = await runOrchestrator({
-      supabase, conversationId: convo.id, sessionToken, channel: "web", history, userMessage: message,
+      supabase,
+      conversationId: convo.id,
+      sessionToken,
+      organizationId,
+      channel: "web",
+      history,
+      userMessage: message,
     });
 
     const aiMetadata = {
-      retrieved_knowledge_keys: Array.isArray((result as any).retrievedKnowledgeKeys)
-        ? (result as any).retrievedKnowledgeKeys : [],
+      retrieved_knowledge_keys:
+        Array.isArray((result as any).retrievedKnowledgeKeys)
+          ? (result as any).retrievedKnowledgeKeys
+          : [],
       state: result.state ?? null,
       channel: "web" as const,
     };
     const { data: insertedAssistant } = await supabase
       .from("chat_messages")
-      .insert({ conversation_id: convo.id, role: "assistant", content: result.reply, ai_metadata: aiMetadata })
+      .insert({
+        conversation_id: convo.id,
+        role: "assistant",
+        content: result.reply,
+        ai_metadata: aiMetadata,
+      })
       .select("id")
       .single();
     const assistantMessageId = insertedAssistant?.id ?? null;
-    await supabase.from("chat_conversations").update({ last_activity_at: new Date().toISOString() }).eq("id", convo.id);
+    await supabase.from("chat_conversations").update({
+      last_activity_at: new Date().toISOString(),
+    }).eq("id", convo.id).eq("organization_id", organizationId);
 
     // chat_lead_created — emitted ONCE per conversation, only after the chat has
     // captured usable contact info (email or phone). Idempotency is keyed on the
@@ -116,8 +184,11 @@ Deno.serve(async (req) => {
     try {
       const { data: lead } = await supabase
         .from("chat_conversations")
-        .select("prospect_email, prospect_phone, services_discussed, service_area_status, booking_status")
+        .select(
+          "prospect_email, prospect_phone, services_discussed, service_area_status, booking_status",
+        )
         .eq("id", convo.id)
+        .eq("organization_id", organizationId)
         .maybeSingle();
       if (lead && (lead.prospect_email || lead.prospect_phone)) {
         await emitCampaignEvent({
@@ -129,7 +200,9 @@ Deno.serve(async (req) => {
           source: "ai_chat",
           metadata: {
             lead_source: "ai_chat",
-            service_types: Array.isArray(lead.services_discussed) ? lead.services_discussed : [],
+            service_types: Array.isArray(lead.services_discussed)
+              ? lead.services_discussed
+              : [],
             service_area_status: lead.service_area_status ?? null,
             quote_status: lead.booking_status ?? null,
           },
@@ -147,38 +220,62 @@ Deno.serve(async (req) => {
         .from("chat_conversations")
         .select("prospect_email, prospect_phone, marketing_consent")
         .eq("id", convo.id)
+        .eq("organization_id", organizationId)
         .maybeSingle();
-      await supabase.from("chat_conversations").update({ marketing_consent: true }).eq("id", convo.id);
-      const lang = consentLanguage || "Send me occasional promotions and offers from BluLadder.";
+      const lang = consentLanguage ||
+        "Send me occasional promotions and offers from BluLadder.";
       try {
         if (c?.prospect_email) {
-          await supabase.rpc("record_consent", {
-            p_channel: "email", p_consent_type: "marketing", p_status: "granted",
-            p_email: c.prospect_email, p_language_shown: lang, p_source: "chat_checkbox",
-            p_conversation_id: convo.id, p_session_id: sessionToken,
+          await recordOrganizationConsent(supabase, organizationId, {
+            channel: "email",
+            consentType: "marketing",
+            status: "granted",
+            email: c.prospect_email,
+            languageShown: lang,
+            source: "chat_checkbox",
+            conversationId: convo.id,
+            sessionId: sessionToken,
           });
           await emitCampaignEvent({
             eventName: "consent_granted",
             idempotencyKey: `consent_granted:marketing:email:${convo.id}`,
-            email: c.prospect_email, conversationId: convo.id, source: "chat_checkbox",
-            subject: "marketing email", metadata: { consent_type: "marketing", channel: "email" },
+            email: c.prospect_email,
+            conversationId: convo.id,
+            source: "chat_checkbox",
+            subject: "marketing email",
+            metadata: { consent_type: "marketing", channel: "email" },
           });
         }
         if (c?.prospect_phone) {
-          await supabase.rpc("record_consent", {
-            p_channel: "sms", p_consent_type: "marketing", p_status: "granted",
-            p_phone: c.prospect_phone, p_language_shown: lang, p_source: "chat_checkbox",
-            p_conversation_id: convo.id, p_session_id: sessionToken,
+          await recordOrganizationConsent(supabase, organizationId, {
+            channel: "sms",
+            consentType: "marketing",
+            status: "granted",
+            phone: c.prospect_phone,
+            languageShown: lang,
+            source: "chat_checkbox",
+            conversationId: convo.id,
+            sessionId: sessionToken,
           });
           await emitCampaignEvent({
             eventName: "consent_granted",
             idempotencyKey: `consent_granted:marketing:sms:${convo.id}`,
-            phone: c.prospect_phone, conversationId: convo.id, source: "chat_checkbox",
-            subject: "marketing sms", metadata: { consent_type: "marketing", channel: "sms" },
+            phone: c.prospect_phone,
+            conversationId: convo.id,
+            source: "chat_checkbox",
+            subject: "marketing sms",
+            metadata: { consent_type: "marketing", channel: "sms" },
           });
         }
-      } catch (e) {
-        console.error("marketing consent record failed:", e);
+        await supabase.from("chat_conversations")
+          .update({ marketing_consent: true })
+          .eq("id", convo.id)
+          .eq("organization_id", organizationId);
+      } catch {
+        console.error("marketing consent record failed");
+        return json({
+          error: "Your consent choice could not be saved. Please try again.",
+        }, 503);
       }
     }
 

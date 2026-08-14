@@ -100,7 +100,7 @@ const typesSha = crypto
   .digest("hex");
 if (
   typesSha !==
-  "d97fe4e01586535713b84f3f62e19cc7b4fe298d1d2adac502b14d5a53894238"
+  "6d828accf7e1d8da3239e817a31d6ec61f4e3ebe6f31643db60039f70ba4a450"
 ) {
   errors.push("Lovable-generated hosted types drifted");
 }
@@ -115,6 +115,8 @@ for (const text of [
   "p_organization_id: string",
   "p_outbound_key: string",
   "Returns: Json",
+  "consent_allows_for_organization: {",
+  "record_organization_consent: {",
 ]) requireText("types", text);
 
 for (const prohibited of [

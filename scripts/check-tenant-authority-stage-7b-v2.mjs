@@ -155,6 +155,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Phase 1H: organization-scoped consent and audit lineage. Hosted
   // application and all Klamath runtime adoption remain separately gated.
   "supabase/migrations/20260814102000_bluladder_klamath_phase_1h_organization_consent_lineage.sql",
+  // Lovable-generated receipt for the exact Phase 1H payload, with only
+  // terminal-LF normalization permitted by the Phase 1H checker.
+  "supabase/migrations/20260814101915_76201d6e-142c-4edc-a852-93d63f5e6114.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
@@ -294,6 +297,9 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/twilioSms_test.ts",
   "supabase/functions/_shared/portalOrganizationAuthority.ts",
   "supabase/functions/_shared/portalOrganizationAuthority_test.ts",
+  "supabase/functions/_shared/organizationConsent.ts",
+  "supabase/functions/_shared/organizationConsent_test.ts",
+  "supabase/functions/_shared/organizationConsentRuntime_contract_test.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation_test.ts",
   "supabase/functions/_shared/workflow/customerResolver.ts",
@@ -315,7 +321,9 @@ const allowedEdgePaths = new Set([
   "supabase/functions/customer-verification-confirm/index.ts",
   "supabase/functions/customer-verification-request/index.ts",
   "supabase/functions/customer-verification-request/outbox_contract_test.ts",
+  "supabase/functions/ai-chat/index.ts",
   "supabase/functions/process-sms-queue/index.ts",
+  "supabase/functions/staff-reply/index.ts",
   "supabase/functions/manage-sms-optout/index.ts",
   "supabase/functions/send-sms/index.ts",
   "supabase/functions/escalation-test-notify/index.ts",

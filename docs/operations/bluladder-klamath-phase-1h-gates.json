@@ -1,6 +1,6 @@
 {
   "phase": "1H",
-  "status": "migration_candidate_prepared",
+  "status": "runtime_candidate_prepared",
   "prepared_from_main": "c5ff16e056b09a727cb84d1838e5245e7da43af8",
   "preflight_path": "supabase/preflight/bluladder_klamath_phase_1h_consent_lineage.sql",
   "preflight_bytes": 10235,
@@ -23,6 +23,12 @@
   "migration_path": "supabase/migrations/20260814102000_bluladder_klamath_phase_1h_organization_consent_lineage.sql",
   "migration_bytes": 24847,
   "migration_sha256": "0dfec1d3fbf665e88093bc365e41862d38736ee70dc7d1a527bc52dfb234e110",
+  "hosted_execution_version": "20260814101915",
+  "hosted_receipt_path": "supabase/migrations/20260814101915_76201d6e-142c-4edc-a852-93d63f5e6114.sql",
+  "hosted_receipt_bytes": 24846,
+  "hosted_receipt_sha256": "98dea2b17cad8bacfa40ccce84839d4dae81f40ec8234d23d0a1ec0b8feac1b7",
+  "hosted_receipt_main": "80e7e16814ab865dd3c8f020d2f75cfacf5b14ce",
+  "hosted_ledger_count": 162,
   "verification_path": "supabase/verification/bluladder_klamath_phase_1h_organization_consent_lineage.sql",
   "verification_bytes": 5903,
   "verification_sha256": "c96a8efd09952bd91e1b4985e4f284dd903bff9100efd81dc064584f810e0bfe",
@@ -30,8 +36,8 @@
   "rehearsal_bytes": 12126,
   "rehearsal_sha256": "6f2a2285c8af864e03af15772bb3586be7200dc9e347a199a14cec7e3f29adbb",
   "migration_prepared": true,
-  "migration_applied": false,
-  "runtime_prepared": false,
+  "migration_applied": true,
+  "runtime_prepared": true,
   "runtime_deployed": false,
   "activation_allowed": false,
   "customer_traffic_allowed": false,
@@ -48,8 +54,8 @@
   "gates": [
     { "id": "consent_lineage_preflight", "status": "passed" },
     { "id": "hosted_consent_evidence", "status": "passed" },
-    { "id": "consent_lineage_migration", "status": "ready" },
-    { "id": "consent_runtime_adoption", "status": "blocked" },
+    { "id": "consent_lineage_migration", "status": "passed" },
+    { "id": "consent_runtime_adoption", "status": "prepared" },
     { "id": "controlled_message_acceptance", "status": "blocked" },
     { "id": "customer_traffic_activation", "status": "blocked" }
   ]

@@ -47,6 +47,10 @@ import {
   type CanonicalVoiceBookingContract,
   canonicalVoiceBookingResultMatches,
 } from "./voiceBookingAdapter.ts";
+import {
+  normalizeConsentOrganizationId,
+  recordOrganizationConsent,
+} from "./organizationConsent.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -189,7 +193,7 @@ function validVoiceOrganizationId(ctx: ToolContext): string | null {
 }
 
 function scopeConversationQuery(query: any, ctx: ToolContext): any {
-  const organizationId = validVoiceOrganizationId(ctx);
+  const organizationId = normalizeConsentOrganizationId(ctx.organizationId);
   return organizationId ? query.eq("organization_id", organizationId) : query;
 }
 
@@ -1949,8 +1953,9 @@ async function escalateTool(ctx: ToolContext, args: Record<string, unknown>) {
 }
 
 // ---------------------------------------------------------------------------
-// Consent helpers. Consent is stored through the canonical consent service
-// (record_consent), NOT only inside the chat transcript.
+// Consent helpers. Consent is stored through the organization-scoped canonical
+// service, NOT only inside the chat transcript. Missing tenant authority or a
+// rejected write fails closed before the tool reports success.
 // ---------------------------------------------------------------------------
 async function recordConsent(
   ctx: ToolContext,
@@ -1964,22 +1969,22 @@ async function recordConsent(
     source: string;
   },
 ) {
-  try {
-    await ctx.supabase.rpc("record_consent", {
-      p_channel: o.channel,
-      p_consent_type: o.consentType,
-      p_status: o.granted ? "granted" : "revoked",
-      p_email: o.email ?? null,
-      p_phone: o.phone ?? null,
-      p_language_shown: o.languageShown,
-      p_source: o.source,
-      p_conversation_id: ctx.conversationId,
-      p_session_id: ctx.sessionToken,
-      p_metadata: { channel_ui: ctx.channel },
-    });
-  } catch (e) {
-    console.error("record_consent failed:", e);
-  }
+  await recordOrganizationConsent(
+    ctx.supabase,
+    ctx.organizationId,
+    {
+      channel: o.channel,
+      consentType: o.consentType,
+      status: o.granted ? "granted" : "revoked",
+      email: o.email ?? null,
+      phone: o.phone ?? null,
+      languageShown: o.languageShown,
+      source: o.source,
+      conversationId: ctx.conversationId,
+      sessionId: ctx.sessionToken,
+      metadata: { channel_ui: ctx.channel },
+    },
+  );
 }
 
 async function emitCampaignEvent(
@@ -2041,15 +2046,23 @@ async function recordConsentTool(
     return { status: "error", message: "Email required for email consent." };
   }
 
-  await recordConsent(ctx, {
-    channel,
-    consentType,
-    granted,
-    email,
-    phone,
-    languageShown,
-    source: "chat_explicit",
-  });
+  try {
+    await recordConsent(ctx, {
+      channel,
+      consentType,
+      granted,
+      email,
+      phone,
+      languageShown,
+      source: "chat_explicit",
+    });
+  } catch {
+    return {
+      status: "consent_write_failed",
+      message:
+        "I couldn't safely save that consent choice, so I did not treat it as recorded.",
+    };
+  }
 
   if (consentType === "marketing") {
     let consentUpdate = ctx.supabase.from("chat_conversations").update({

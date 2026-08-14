@@ -12,6 +12,8 @@ const files = {
     "supabase/preflight/bluladder_klamath_phase_1h_consent_lineage.sql",
   migration:
     "supabase/migrations/20260814102000_bluladder_klamath_phase_1h_organization_consent_lineage.sql",
+  receipt:
+    "supabase/migrations/20260814101915_76201d6e-142c-4edc-a852-93d63f5e6114.sql",
   verification:
     "supabase/verification/bluladder_klamath_phase_1h_organization_consent_lineage.sql",
   rehearsal:
@@ -19,6 +21,13 @@ const files = {
   package: "package.json",
   workflow: ".github/workflows/ci.yml",
   roadmap: "docs/ROADMAP_EXECUTION_LEDGER.md",
+  consentRuntime: "supabase/functions/_shared/organizationConsent.ts",
+  runtimeContract:
+    "supabase/functions/_shared/organizationConsentRuntime_contract_test.ts",
+  queue: "supabase/functions/process-sms-queue/index.ts",
+  staffReply: "supabase/functions/staff-reply/index.ts",
+  aiChat: "supabase/functions/ai-chat/index.ts",
+  aiTools: "supabase/functions/_shared/aiTools.ts",
 };
 const content = {};
 const errors = [];
@@ -37,15 +46,16 @@ function requireText(key, text) {
 
 for (
   const text of [
-    "hosted preflight passed; fail-closed migration candidate prepared",
+    "hosted migration verified; fail-closed runtime adoption prepared",
     "cannot safely authorize a second organization",
     "global STOP, opt-out, or test-identity gates",
     "parent coverage, orphan and cross-parent conflicts",
-    "Missing, ambiguous",
     "seven consent rows and twenty consent-event rows",
     "It is not a runtime `coalesce` or cross-tenant fallback",
     "record_organization_consent",
-    "No hosted migration, connector, credential, sender, deployment",
+    "Hosted execution version `20260814101915`",
+    "shared organization-aware boundary",
+    "No connector, credential, sender, call, email, SMS",
   ]
 ) requireText("contract", text);
 
@@ -134,7 +144,7 @@ try {
 if (register) {
   if (
     register.phase !== "1H" ||
-    register.status !== "migration_candidate_prepared" ||
+    register.status !== "runtime_candidate_prepared" ||
     register.prepared_from_main !==
       "c5ff16e056b09a727cb84d1838e5245e7da43af8" ||
     register.preflight_path !== files.preflight ||
@@ -148,6 +158,14 @@ if (register) {
     register.migration_bytes !== 24847 ||
     register.migration_sha256 !==
       "0dfec1d3fbf665e88093bc365e41862d38736ee70dc7d1a527bc52dfb234e110" ||
+    register.hosted_execution_version !== "20260814101915" ||
+    register.hosted_receipt_path !== files.receipt ||
+    register.hosted_receipt_bytes !== 24846 ||
+    register.hosted_receipt_sha256 !==
+      "98dea2b17cad8bacfa40ccce84839d4dae81f40ec8234d23d0a1ec0b8feac1b7" ||
+    register.hosted_receipt_main !==
+      "80e7e16814ab865dd3c8f020d2f75cfacf5b14ce" ||
+    register.hosted_ledger_count !== 162 ||
     register.verification_path !== files.verification ||
     register.verification_bytes !== 5903 ||
     register.verification_sha256 !==
@@ -157,8 +175,8 @@ if (register) {
     register.rehearsal_sha256 !==
       "6f2a2285c8af864e03af15772bb3586be7200dc9e347a199a14cec7e3f29adbb" ||
     register.migration_prepared !== true ||
-    register.migration_applied !== false ||
-    register.runtime_prepared !== false ||
+    register.migration_applied !== true ||
+    register.runtime_prepared !== true ||
     register.runtime_deployed !== false ||
     register.activation_allowed !== false ||
     register.customer_traffic_allowed !== false ||
@@ -173,8 +191,8 @@ if (register) {
   const expectedGates = {
     consent_lineage_preflight: "passed",
     hosted_consent_evidence: "passed",
-    consent_lineage_migration: "ready",
-    consent_runtime_adoption: "blocked",
+    consent_lineage_migration: "passed",
+    consent_runtime_adoption: "prepared",
     controlled_message_acceptance: "blocked",
     customer_traffic_activation: "blocked",
   };
@@ -185,6 +203,28 @@ if (register) {
     }
   }
 }
+
+if ((content.receipt ?? "") + "\n" !== content.migration) {
+  errors.push(
+    "Phase 1H hosted receipt must equal the canonical migration except for its final newline",
+  );
+}
+
+for (const text of [
+  "record_organization_consent",
+  "consent_allows_for_organization",
+  "consent_organization_authority_required",
+  "organization_consent_write_failed",
+]) requireText("consentRuntime", text);
+
+requireText("queue", "organizationConsentAllows");
+requireText("queue", "msg.organization_id");
+requireText("staffReply", "recordOrganizationConsent");
+requireText("staffReply", "tenant_channel_unavailable");
+requireText("aiChat", "resolvePortalOrganizationAuthority");
+requireText("aiChat", "recordOrganizationConsent");
+requireText("aiTools", "recordOrganizationConsent");
+requireText("runtimeContract", "tenant-capable consent callers");
 
 for (
   const [key, expectedBytes, expectedSha] of [
@@ -234,5 +274,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1H gate OK: hosted preflight passed and exact consent-lineage migration candidate prepared; hosted application, runtime, messaging, and activation remain blocked.",
+  "BluLadder Klamath Phase 1H gate OK: hosted consent lineage and receipt verified; organization-aware runtime adoption prepared; deployment, messaging, and activation remain blocked.",
 );
