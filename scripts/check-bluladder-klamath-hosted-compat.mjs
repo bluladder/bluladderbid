@@ -127,8 +127,8 @@ const typesSha = crypto
   .update(content.types ?? "")
   .digest("hex");
 const expectedTypesSha = [
-  "dc9af8e25188f2a8c25d8b3c556ee519",
-  "c91196e8e3995be0395c4ca61a9e174d",
+  "1c2e27c7adfff81d570aec8603670c25",
+  "3257e703af70d94c28ad0aee955f6d4b",
 ].join("");
 if (typesSha !== expectedTypesSha) {
   errors.push("Lovable-generated Stage 8A types drifted");

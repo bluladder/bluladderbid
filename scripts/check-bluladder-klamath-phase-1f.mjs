@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,8 @@ const relative = {
   register: "docs/operations/bluladder-klamath-phase-1f-gates.json",
   migration:
     "supabase/migrations/20260814060000_bluladder_klamath_phase_1f_portal_tenant_lineage.sql",
+  executionMigration:
+    "supabase/migrations/20260814062249_8cd57ad4-d1ad-47eb-8477-7af1a1401981.sql",
   preflight:
     "supabase/preflight/bluladder_klamath_phase_1f_portal_tenant_lineage.sql",
   postflight:
@@ -26,6 +29,7 @@ const relative = {
   portal: "supabase/functions/customer-portal-data/index.ts",
   authedPortal: "supabase/functions/customer-portal-data-authed/index.ts",
   preferences: "supabase/functions/manage-sms-optout/index.ts",
+  generatedTypes: "src/integrations/supabase/types.ts",
   roadmap: "docs/ROADMAP_EXECUTION_LEDGER.md",
   workflow: ".github/workflows/ci.yml",
 };
@@ -46,7 +50,7 @@ function requireText(key, text) {
 
 for (
   const text of [
-    "repository-only, fail-closed migration and runtime candidate",
+    "hosted schema applied; fail-closed runtime deployment candidate",
     "server normalizes",
     "exact canonical DFW hostname",
     "never a missing-authority or first-row fallback",
@@ -72,6 +76,22 @@ for (
     "Tenant members view portal sessions",
   ]
 ) requireText("migration", text);
+
+const canonicalBytes = Buffer.from(content.migration ?? "", "utf8");
+const executionBytes = Buffer.from(content.executionMigration ?? "", "utf8");
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+if (
+  canonicalBytes.length !== 16196 ||
+  sha256(canonicalBytes) !==
+    "7eccb8242968b40602ea95b992949a28c6866a3a87a1d9756fdc7ab510b90a87" ||
+  executionBytes.length !== 16195 ||
+  sha256(executionBytes) !==
+    "c1a91dfcbf7a647b70dcc4490b786d3c3d62b5fd65a0735e69d0e15e3db2fa51" ||
+  !canonicalBytes.subarray(0, canonicalBytes.length - 1).equals(executionBytes) ||
+  canonicalBytes.at(-1) !== 0x0a
+) {
+  errors.push("Phase 1F canonical/provider execution payload drifted");
+}
 
 for (
   const text of [
@@ -146,12 +166,21 @@ for (
   ]
 ) requireText("sessions", text);
 
+for (
+  const text of [
+    "customer_accounts_organization_customer_fkey",
+    "customer_portal_sessions_organization_account_fkey",
+    "customer_verification_challenges_organization_id_fkey",
+    "customer_auth_link_events_organization_id_fkey",
+  ]
+) requireText("generatedTypes", text);
+
 requireText("workflow", "Phase 1F portal tenant lineage");
 for (
   const text of [
     "Klamath Phase 1F",
     "portal tenant lineage",
-    "migration remains unapplied",
+    "hosted schema applied",
   ]
 ) requireText("roadmap", text);
 
@@ -165,9 +194,14 @@ if (register) {
   if (
     register.phase !== "1F" ||
     register.prepared_from_main !==
-      "da7ddaa5b42e333acf6175c14aa99487d02a421f" ||
+      "66db5a9e0ff2bbdd53219209efc6132fbaff4e2f" ||
     register.canonical_migration_version !== "20260814060000" ||
-    register.canonical_migration_applied !== false ||
+    register.canonical_migration_applied !== true ||
+    register.hosted_execution_version !== "20260814062249" ||
+    register.hosted_execution_payload_sha256 !==
+      "c1a91dfcbf7a647b70dcc4490b786d3c3d62b5fd65a0735e69d0e15e3db2fa51" ||
+    register.provider_execution_migration_materialized !== true ||
+    register.generated_types_reconciled !== true ||
     register.portal_runtime_deployed !== false ||
     register.frontend_published !== false ||
     register.account_lineage_contract_prepared !== true ||
@@ -198,6 +232,7 @@ if (register) {
     "hosted_organization_identity",
     "phase_1f_repository_contract",
     "portal_site_authority",
+    "portal_schema_application",
   ]);
   const gates = register.gates ?? [];
   if (
@@ -217,5 +252,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath Phase 1F gate OK: portal identity and reads have exact tenant-lineage contracts while hosted schema, deployment, providers, and activation remain blocked.",
+  "BluLadder Klamath Phase 1F gate OK: hosted tenant-lineage schema and provider receipt are reconciled while portal deployment, providers, and activation remain blocked.",
 );

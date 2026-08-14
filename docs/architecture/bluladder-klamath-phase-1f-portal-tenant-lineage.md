@@ -1,10 +1,11 @@
 # BluLadder Klamath Phase 1F portal tenant lineage
 
-Status: **repository-only, fail-closed migration and runtime candidate**. This
-phase prepares organization authority for customer portal identity and reads.
-It does not apply the migration, deploy an Edge Function or frontend, activate
-Klamath, create a customer, send a message, access a credential, or configure a
-provider.
+Status: **hosted schema applied; fail-closed runtime deployment candidate**.
+The exact migration passed its aggregate-only hosted preflight and postflight,
+and its provider execution receipt and generated types are reconciled. No
+Phase 1F Edge Function or frontend has been deployed. Klamath remains
+provisioning and inactive with no customer, message, credential, or provider
+action.
 
 ## Problem closed by this phase
 
@@ -62,12 +63,21 @@ composite foreign keys then prevent future mismatch. Tenant-aware RLS preserves
 legacy DFW administrator visibility while requiring active organization
 membership for other tenants.
 
+## Hosted application evidence
+
+The canonical payload was applied once as hosted execution version
+`20260814062249`. The stored 16,195-byte statement matches the exact canonical
+16,196-byte file after the provider's sole terminal-line-feed normalization;
+its SHA-256 is
+`c1a91dfcbf7a647b70dcc4490b786d3c3d62b5fd65a0735e69d0e15e3db2fa51`.
+Postflight proved five required organization columns and foreign keys, two
+composite lineage keys, two enforcement triggers, five RLS-enabled tables, six
+reviewed policies, zero lineage mismatches, and unchanged DFW fingerprints.
+
 ## Release boundary
 
-The migration must pass its exact read-only hosted preflight, disposable
-PostgreSQL rehearsal, exact-head CI, and Secret Scan before a separate hosted
-application decision. Runtime functions and the frontend must not deploy until
-the schema migration is verified. Klamath activation remains blocked after
-this phase; messaging/outbox lineage, JobTread, provider resources, pricing,
-contacts, publication, controlled acceptance, and explicit customer-traffic
-authorization still remain.
+Only the reviewed portal Edge Functions may now be considered for a separately
+verified deployment. Frontend publication remains unnecessary. Klamath activation remains blocked
+after this phase; messaging/outbox lineage,
+JobTread, provider resources, pricing, contacts, publication, controlled
+acceptance, and explicit customer-traffic authorization still remain.

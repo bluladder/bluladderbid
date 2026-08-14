@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `da7ddaa5b42e333acf6175c14aa99487d02a421f`
+Last reconciled main: `9720cc4abb63c4789966c4d110a3f58f3980f5c9`
 
 ## Dependency graph
 
@@ -45,7 +45,7 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Routing 8B | #8 | Persisted tenant lineage and runtime adoption in narrow fail-closed waves | multiple | active |
 | Klamath Phase 1D | #8 | Database-backed customer-site runtime; deployed with customer traffic blocked | #113 | merged |
 | Klamath Phase 1E | #8 | Reconcile typed tenant profile to the hosted provisioning identity; activation remains blocked | #114 | merged |
-| Klamath Phase 1F | #8 | Portal tenant lineage, exact site authority, and organization-scoped reads; migration remains unapplied | this PR | active |
+| Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema applied, runtime deployment remains blocked | #115 + provider receipt | active |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
@@ -54,22 +54,20 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 ## Current stage: Klamath Phase 1F portal tenant lineage
 
 The Stage 8A compatibility/grant repairs, Phase 1C inactive foundation, Phase
-1D database-backed customer-site runtime, and Phase 1E hosted identity
-reconciliation are complete. The current safe repository wave prepares
-required organization lineage for portal accounts, sessions, challenges, and
-audit records; exact site-origin authority; and organization-scoped customer,
-quote, booking, and appointment reads.
+1D database-backed customer-site runtime, Phase 1E hosted identity
+reconciliation, and Phase 1F portal-lineage schema application are complete.
+The provider execution receipt and generated Supabase types are reconciled.
 
-The canonical Phase 1F migration remains unapplied and the portal runtime is
-not deployed. The Klamath mapping remains provisioning; lifecycle, runtime
+The Phase 1F portal runtime is not deployed. The Klamath mapping remains
+provisioning; lifecycle, runtime
 routing, publication, customer traffic, territory, services, pricing, contacts,
 and providers remain inactive or absent. Exact-host authority therefore still
 fails closed. No hosted, provider, or customer action is part of this stage.
 
 The database-backed customer-site runtime remains deployed; customer traffic remains blocked.
 
-After this repository wave, hosted portal-lineage application and runtime
-deployment still require separate fail-closed gates. Messaging/outbox lineage,
+After this reconciliation, only the reviewed portal-runtime deployment remains
+inside Phase 1F. Messaging/outbox lineage,
 approved operating inputs, JobTread, provider resources, publication,
 controlled acceptance, and activation remain blocked.
 
@@ -92,12 +90,13 @@ are separated in
 
 ## Queued safe stages
 
-The Phase 1F portal tenant-lineage candidate is the only active safe repository
+The Phase 1F portal runtime is the only active safe deployment
 stage. The following stages remain gated:
 
-1. Complete Phase 1F exact-head checks and merge without a hosted mutation.
-2. Separately preflight and apply only the exact Phase 1F migration, then deploy
-   only its reviewed portal runtime functions.
+1. Reconcile the provider execution receipt and generated types through exact-head
+   checks.
+2. Deploy only the reviewed Phase 1F portal runtime functions and prove the
+   disabled Klamath site still fails closed.
 3. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
    waves after each dependency is proven.
 4. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,
