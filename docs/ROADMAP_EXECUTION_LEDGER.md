@@ -74,10 +74,12 @@ writer adoption and runtime deployment remain separate gates. A repository-only
 Twilio adapter now requires an allowlisted connector reference, dedicated API
 key, and Messaging Service identity; provider setup, deployment, messaging, and
 activation remain blocked. The first DFW connector application attempt rolled
-back on mixed SMS/email historical rows. The corrected compatibility row,
-SMS-channel-only backfill, non-SMS preservation checks, read-only
-pre/postflight, and mixed-channel disposable rehearsal are prepared but remain
-unapplied.
+back on mixed SMS/email historical rows. The corrected SMS-channel-only
+compatibility migration was then applied once as provider execution version
+`20260814090619`; its normalized receipt, 161-row ledger, exact connector,
+122 bound SMS rows, 12 intentionally unbound email rows, and unchanged Klamath
+provisioning boundary are independently verified. Remaining writer adoption
+and runtime deployment remain separate gates.
 
 The Phase 1F portal runtime is deployed from reconciled main and all seven
 reviewed functions passed secret-free boot verification. The Klamath mapping remains

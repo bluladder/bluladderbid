@@ -189,7 +189,20 @@ blanket backfill encountered 12 legacy email-channel rows and the connector
 lineage trigger correctly rejected an SMS-connector mismatch. The corrected
 artifact scopes both backfill and completeness checks to the 122 SMS-channel
 rows, separately requires every non-SMS row to remain unbound, and reproduces
-the mixed-channel hosted shape in disposable PostgreSQL CI. This corrected
-candidate remains unapplied. Its read-only preflight, transactional collision
-stops, read-only postflight, and disposable rehearsal must pass before another
-separately reviewed hosted application.
+the mixed-channel hosted shape in disposable PostgreSQL CI.
+
+## Hosted DFW connector verification
+
+The corrected artifact was applied once as provider execution version
+`20260814090619`. The single stored statement is the 5,998-byte canonical
+payload without its terminal line feed; adding that one byte reproduces the
+reviewed 5,999-byte SHA-256 exactly. The ledger advanced from 160 to 161 rows
+with ordered fingerprint
+`4ee6082deeaeb43f4e8fd200052a8f992391a50969d40ef0c41bf3f95ef4cfe7`.
+
+Independent postflight proves that exactly one reviewed DFW CallRail SMS
+connector exists, all 122 historical SMS-channel rows are bound to it, all 12
+email-channel rows remain unbound, no other connector exists, and the Klamath
+organization remains provisioning with no connector or active state. The
+operation created no provider resource, secret, sender, customer traffic, or
+message. Writer adoption and runtime deployment remain separately blocked.

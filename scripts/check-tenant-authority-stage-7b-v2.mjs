@@ -149,6 +149,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Phase 1G: one exact DFW compatibility connector and bounded historical
   // ledger binding. Klamath remains provisioning without a connector.
   "supabase/migrations/20260814085000_bluladder_klamath_phase_1g_dfw_connector_compatibility.sql",
+  // Lovable-generated receipt for the exact DFW connector payload, with only
+  // terminal-LF normalization permitted by the Phase 1G checker.
+  "supabase/migrations/20260814090619_8c3ae55b-db39-4ff8-ba3c-ad87f135b7b0.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
