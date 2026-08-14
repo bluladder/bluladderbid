@@ -12,6 +12,8 @@ const relative = {
   connector:
     "supabase/functions/_shared/messagingConnectorContracts.ts",
   outbox: "supabase/functions/_shared/smsOutbox.ts",
+  twilio: "supabase/functions/_shared/twilioSms.ts",
+  twilioTests: "supabase/functions/_shared/twilioSms_test.ts",
   tests:
     "supabase/functions/_shared/messagingConnectorContracts_test.ts",
   migration:
@@ -72,6 +74,9 @@ for (const text of [
   "version `20260814081254`",
   "db0c52f8e729931bc6f60270bae6e3050d4e7a33c6abcc0ecf55cb05e8b3c069",
   "`REFERENCES`, `TRIGGER`, and `TRUNCATE`",
+  "Fail-closed Twilio adapter candidate",
+  "dedicated API key",
+  "This adapter is repository-only",
 ]) requireText("contract", text);
 
 for (const text of [
@@ -210,6 +215,24 @@ for (const text of [
   "provider_adapter_unavailable",
 ]) requireText("outbox", text);
 
+for (const text of [
+  "bluladder-klamath-twilio-production-v1",
+  "TWILIO_KLAMATH_ACCOUNT_SID",
+  "TWILIO_KLAMATH_API_KEY_SID",
+  "TWILIO_KLAMATH_API_KEY_SECRET",
+  "MessagingServiceSid",
+  "twilio_transport_uncertain",
+  "provider_ambiguous",
+]) requireText("twilio", text);
+
+for (const text of [
+  "resolves only the reviewed connector reference",
+  "uses a Messaging Service and sanitized SMS body",
+  "HTTP rejection is sanitized and terminal",
+  "malformed success is delivery-ambiguous",
+  "transport failure is delivery-ambiguous",
+]) requireText("twilioTests", text);
+
 for (const text of ["Phase 1G", "messaging/outbox lineage"]) {
   requireText("roadmap", text);
 }
@@ -293,9 +316,9 @@ try {
 if (register) {
   if (
     register.phase !== "1G" ||
-    register.status !== "hosted_scoped_outbox_ready_writer_adoption_incomplete" ||
+    register.status !== "hosted_scoped_outbox_ready_twilio_adapter_prepared" ||
     register.prepared_from_main !==
-      "c80fb964469c8f228e29f4cec11d817908baab83" ||
+      "f5497d4a426701460c95eb2bfbe9421092e1922c" ||
     register.messaging_connector_contract_prepared !== true ||
     register.additive_migration_prepared !== true ||
     register.hosted_preflight_passed !== true ||
@@ -329,6 +352,10 @@ if (register) {
       "2efc6460a6e91ce04705d6de6a3e5cbec66068cd3e1d3b117975decff545ae88" ||
     register.scoped_outbox_postflight_passed !== true ||
     register.scoped_outbox_runtime_deployed !== false ||
+    register.twilio_adapter_prepared !== true ||
+    register.twilio_adapter_deployed !== false ||
+    register.twilio_credentials_present !== false ||
+    register.twilio_sender_present !== false ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
     register.klamath_connector_count !== 0 ||
@@ -339,7 +366,7 @@ if (register) {
   ) errors.push("Phase 1G repository contract drifted");
 
   const gates = register.gates ?? [];
-  if (gates.length !== 9 || new Set(gates.map((gate) => gate.id)).size !== 9) {
+  if (gates.length !== 10 || new Set(gates.map((gate) => gate.id)).size !== 10) {
     errors.push("Phase 1G gate identity/count drifted");
   }
   for (const gate of gates) {
@@ -348,6 +375,7 @@ if (register) {
       "hosted_messaging_preflight",
       "messaging_lineage_schema",
       "organization_scoped_outbox",
+      "twilio_adapter",
     ].includes(gate.id) ? "ready" : "blocked";
     if (gate.status !== expected) errors.push(`gate ${gate.id} must be ${expected}`);
   }

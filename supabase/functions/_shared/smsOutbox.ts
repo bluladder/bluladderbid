@@ -12,8 +12,9 @@
 // hard failure, or crash mid-flight — leaves durable evidence keyed by
 // `outbound_idempotency_key`.
 //
-// Only used at the `booking_confirmation:{ledger_id}` boundary. All other
-// autonomous sends continue to use `sendAutonomousCallRailSms`.
+// The Phase 1G organization-scoped boundary extends this state machine to
+// reviewed organization connectors. Legacy deployed paths remain unchanged
+// until their separately gated runtime wave.
 // ============================================================================
 // deno-lint-ignore-file no-explicit-any
 
@@ -27,6 +28,11 @@ import {
   type OrganizationMessagingConnectorConfig,
   selectOrganizationMessagingConnector,
 } from "./messagingConnectorContracts.ts";
+import {
+  resolveTwilioSmsConfig,
+  sendTwilioSms,
+  type TwilioSmsConfig,
+} from "./twilioSms.ts";
 
 type SB = any;
 
@@ -61,6 +67,7 @@ export interface OutboxSendInput {
   messageKind: string;
   quoteId?: string;
   callRail?: CallRailConfig | null;
+  twilio?: TwilioSmsConfig | null;
 }
 
 export interface OutboxSendResult {
@@ -124,7 +131,7 @@ async function selectSmsConnector(
  * 1. `claim_sms_outbox_send` atomically records intent (state = 'sending')
  *    OR returns existing evidence for the same outbound key.
  * 2. If the claim declares us winner (`may_dispatch=true, is_new=true`) we
- *    call CallRail exactly once.
+ *    call the selected reviewed provider adapter exactly once.
  * 3. `finalize_sms_outbox_send` transitions the row to the terminal state,
  *    guarded by the claim token so a stale worker cannot overwrite a
  *    successor's outcome.
@@ -137,8 +144,6 @@ export async function sendOutboxSms(
   supabase: SB,
   input: OutboxSendInput,
 ): Promise<OutboxSendResult> {
-  const callrail = input.callRail ?? getCallRailConfig();
-
   const selection = await selectSmsConnector(supabase, input.organizationId);
   if (selection.status !== "resolved") {
     return {
@@ -213,7 +218,7 @@ export async function sendOutboxSms(
     };
   }
 
-  // Not the winner — return existing evidence, do NOT call CallRail.
+  // Not the winner — return existing evidence; do not call any provider.
   if (!claim.may_dispatch) {
     const priorAccepted = claim.outbox_state === "provider_accepted" ||
       claim.status === "sent";
@@ -228,8 +233,8 @@ export async function sendOutboxSms(
     };
   }
 
-  // Winner — dispatch to CallRail exactly once. Everything from this point
-  // must finalize the row (success, failure, or unknown).
+  // Winner — dispatch through the selected adapter exactly once. Everything
+  // from this point must finalize the row (success, failure, or unknown).
   let providerMessageId: string | null = null;
   let providerConversationId: string | null = null;
   let providerStatus: string | null = null;
@@ -237,35 +242,69 @@ export async function sendOutboxSms(
   let newState: OutboxState = "delivery_unknown";
   let errText: string | null = null;
 
-  if (selection.connector.provider !== "callrail") {
+  if (selection.connector.provider === "twilio") {
+    const twilio = input.twilio ?? resolveTwilioSmsConfig(
+      selection.connector.credentialReference,
+      selection.connector.senderIdentityReference,
+    );
+    if (!twilio) {
+      newState = "send_failed";
+      errText = "twilio_config_missing";
+    } else {
+      try {
+        const res = await sendTwilioSms(twilio, input.toNumber, input.body);
+        providerMessageId = res.messageId ?? null;
+        providerStatus = res.providerMessageStatus ?? null;
+        providerResponseKind = res.providerResponseKind ?? null;
+        if (res.ok) {
+          newState = "provider_accepted";
+        } else if (
+          res.providerResponseKind === "transport_uncertain" ||
+          res.providerResponseKind === "provider_ambiguous"
+        ) {
+          newState = "delivery_unknown";
+          errText = res.error ?? "provider_ambiguous_response";
+        } else {
+          newState = "send_failed";
+          errText = res.error ?? "twilio_send_failed";
+        }
+      } catch {
+        newState = "delivery_unknown";
+        errText = "twilio_dispatch_uncertain";
+      }
+    }
+  } else if (selection.connector.provider !== "callrail") {
     newState = "send_failed";
     errText = "provider_adapter_unavailable";
-  } else if (!callrail) {
-    newState = "send_failed";
-    errText = "callrail_config_missing";
   } else {
-    try {
-      const res = await sendCallRailSms(callrail, input.toNumber, input.body);
-      providerMessageId = res.messageId ?? null;
-      providerConversationId = res.conversationId ?? null;
-      providerStatus = res.providerMessageStatus ?? null;
-      providerResponseKind = res.providerResponseKind ?? null;
-      if (res.ok) {
-        newState = "provider_accepted";
-      } else if (
-        res.error && res.providerResponseKind !== "transport_uncertain"
-      ) {
-        newState = "send_failed";
-        errText = res.error;
-      } else {
+    const callrail = input.callRail ?? getCallRailConfig();
+    if (!callrail) {
+      newState = "send_failed";
+      errText = "callrail_config_missing";
+    } else {
+      try {
+        const res = await sendCallRailSms(callrail, input.toNumber, input.body);
+        providerMessageId = res.messageId ?? null;
+        providerConversationId = res.conversationId ?? null;
+        providerStatus = res.providerMessageStatus ?? null;
+        providerResponseKind = res.providerResponseKind ?? null;
+        if (res.ok) {
+          newState = "provider_accepted";
+        } else if (
+          res.error && res.providerResponseKind !== "transport_uncertain"
+        ) {
+          newState = "send_failed";
+          errText = res.error;
+        } else {
+          newState = "delivery_unknown";
+          errText = res.error ?? "provider_ambiguous_response";
+        }
+      } catch (e) {
+        // Thrown after possibly-successful dispatch. We CANNOT know whether
+        // CallRail accepted. Mark delivery_unknown; reconciliation owns it.
         newState = "delivery_unknown";
-        errText = res.error ?? "provider_ambiguous_response";
+        errText = `dispatch_threw:${String(e).slice(0, 180)}`;
       }
-    } catch (e) {
-      // Thrown after possibly-successful dispatch. We CANNOT know whether
-      // CallRail accepted. Mark delivery_unknown; reconciliation owns it.
-      newState = "delivery_unknown";
-      errText = `dispatch_threw:${String(e).slice(0, 180)}`;
     }
   }
 
