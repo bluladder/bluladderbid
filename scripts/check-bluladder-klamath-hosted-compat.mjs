@@ -20,6 +20,7 @@ const relative = {
     "docs/architecture/bluladder-klamath-stage-8a-hosted-compatibility.md",
   rehearsal:
     "scripts/rehearse-bluladder-klamath-stage-8a-hosted-compat-postgres.sh",
+  gitleaksIgnore: ".gitleaksignore",
 };
 
 const content = {};
@@ -134,6 +135,21 @@ for (const text of [
   "historical_stage8a",
   "injected Stage 8A compatibility failure unexpectedly committed",
 ]) requireText("rehearsal", text);
+
+const expectedFalsePositiveFingerprint =
+  "a04271a80504914f472b8129fb4a78fc857b6e92:" +
+  "scripts/check-bluladder-klamath-hosted-compat.mjs:" +
+  "generic-api-key:133";
+const ignoredFingerprints = (content.gitleaksIgnore ?? "")
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter(Boolean);
+if (
+  ignoredFingerprints.length !== 1 ||
+  ignoredFingerprints[0] !== expectedFalsePositiveFingerprint
+) {
+  errors.push("Gitleaks exception is not the one exact historical fingerprint");
+}
 
 if (errors.length) {
   console.error(errors.join("\n"));
