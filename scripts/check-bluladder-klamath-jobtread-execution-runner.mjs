@@ -67,6 +67,7 @@ for (const flag of [
   "concrete_database_store_implemented",
   "concrete_read_plan_source_implemented",
   "customer_write_plan_source_implemented",
+  "dormant_composition_implemented",
 ]) {
   if (evidence?.[flag] !== true) errors.push(`${flag} must be true`);
 }
@@ -202,6 +203,8 @@ function walk(directory) {
       !full.endsWith("jobtreadReadPlanSource_test.ts") &&
       !full.endsWith("jobtreadWritePlanSource.ts") &&
       !full.endsWith("jobtreadWritePlanSource_test.ts") &&
+      !full.endsWith("jobtreadExecutionComposition.ts") &&
+      !full.endsWith("jobtreadExecutionComposition_test.ts") &&
       fs.readFileSync(full, "utf8").includes("jobtreadExecutionRunner")) {
       productionImports.push(path.relative(root, full));
     }
