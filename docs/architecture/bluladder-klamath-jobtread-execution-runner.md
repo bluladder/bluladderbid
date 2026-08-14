@@ -80,9 +80,9 @@ traffic, separate reviewed stages must still:
    Grant Key while preserving the reviewed first-wave no-webhook mode;
 2. insert one inactive Klamath connector row using protected references and
    provider fingerprints;
-3. adopt the prepared read/write plan sources through protected concrete
-   context and configuration adapters; authenticated webhook receipt processing
-   remains future-only;
+3. adopt the prepared dormant composition through protected concrete context
+   and configuration adapters; authenticated webhook receipt processing remains
+   future-only;
 4. prove capacity, crew, route, blackout, and cancellation semantics;
 5. adopt the runner in only the exact organization-owned runtime entry points;
 6. deploy and run owner-controlled provider acceptance; and

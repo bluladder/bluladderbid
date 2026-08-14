@@ -326,6 +326,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/jobtreadReadPlanSource_test.ts",
   "supabase/functions/_shared/jobtreadWritePlanSource.ts",
   "supabase/functions/_shared/jobtreadWritePlanSource_test.ts",
+  "supabase/functions/_shared/jobtreadExecutionComposition.ts",
+  "supabase/functions/_shared/jobtreadExecutionComposition_test.ts",
   "supabase/functions/_shared/jobtreadPhase1IStores.ts",
   "supabase/functions/_shared/jobtreadPhase1IStores_test.ts",
   "supabase/functions/_shared/jobtreadPhase1IWebhookReceipts.ts",
