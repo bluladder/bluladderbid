@@ -259,6 +259,8 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voiceTransferResolver_test.ts",
   "supabase/functions/_shared/conversationContext.ts",
   "supabase/functions/_shared/customerVerification.ts",
+  "supabase/functions/_shared/messagingConnectorContracts.ts",
+  "supabase/functions/_shared/messagingConnectorContracts_test.ts",
   "supabase/functions/_shared/portalOrganizationAuthority.ts",
   "supabase/functions/_shared/portalOrganizationAuthority_test.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation.ts",
