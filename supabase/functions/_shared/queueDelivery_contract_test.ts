@@ -6,6 +6,9 @@ import {
 const processor = await Deno.readTextFile(
   new URL("../process-sms-queue/index.ts", import.meta.url),
 );
+const queuedConnector = await Deno.readTextFile(
+  new URL("./queuedSmsConnector.ts", import.meta.url),
+);
 const migration = await Deno.readTextFile(
   new URL(
     "../../migrations/20260729235016_launch_recurring_recovery.sql",
@@ -43,6 +46,43 @@ Deno.test("worker finalization is claim-token compare-and-set", () => {
     processor.includes('from("sms_messages").update('),
     false,
   );
+});
+
+Deno.test("queued SMS binds and rechecks organization connector before dispatch", () => {
+  assert(processor.includes("authorizeQueuedSmsConnector"));
+  assert(queuedConnector.includes("selectSmsConnector"));
+  assert(
+    queuedConnector.includes(
+      "messaging_connector_id: selection.connector.id",
+    ),
+  );
+  assert(
+    queuedConnector.includes('eq("send_claim_token", msg.send_claim_token)'),
+  );
+  assert(queuedConnector.includes('eq("outbox_state", "pending_send")'));
+  assert(queuedConnector.includes("guardMessagingDispatch"));
+  assert(processor.includes("dispatchSelectedSmsConnector"));
+  assertEquals(processor.includes("sendCallRailSms"), false);
+  assertEquals(processor.includes("getCallRailConfig"), false);
+
+  const bind = queuedConnector.indexOf(
+    "messaging_connector_id: selection.connector.id",
+  );
+  const authorize = processor.lastIndexOf(
+    "authorizeQueuedSmsConnector(supabase, msg)",
+  );
+  const begin = processor.lastIndexOf("beginProviderSubmission(supabase, msg)");
+  const dispatch = processor.lastIndexOf("dispatchSelectedSmsConnector(");
+  assert(bind >= 0 && authorize >= 0 && begin > authorize && dispatch > begin);
+});
+
+Deno.test("unscoped or mismatched queued SMS fails closed before provider boundary", () => {
+  assert(queuedConnector.includes('reason: "organization_missing"'));
+  assert(queuedConnector.includes('reason: "connector_lineage_mismatch"'));
+  assert(queuedConnector.includes('reason: "connector_binding_failed"'));
+  const blocked = processor.indexOf("SMS connector blocked");
+  assert(blocked >= 0);
+  assert(processor.slice(blocked, blocked + 180).includes("true,"));
 });
 
 Deno.test("unknown delivery requires explicit service-role reconciliation", () => {

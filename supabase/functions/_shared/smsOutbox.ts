@@ -87,7 +87,7 @@ export interface OutboxSendResult {
   error?: string;
 }
 
-async function selectSmsConnector(
+export async function selectSmsConnector(
   supabase: SB,
   organizationId: string,
 ): Promise<
@@ -129,6 +129,144 @@ async function selectSmsConnector(
   return selected.status === "resolved"
     ? selected
     : { status: "blocked", reason: selected.code };
+}
+
+export interface SmsConnectorDispatchInput {
+  toNumber: string;
+  body: string;
+  callRail?: CallRailConfig | null;
+  twilio?: TwilioSmsConfig | null;
+}
+
+export interface SmsConnectorDispatchResult {
+  provider: MessagingProvider;
+  outboxState: Extract<
+    OutboxState,
+    "provider_accepted" | "send_failed" | "delivery_unknown"
+  >;
+  providerMessageId: string | null;
+  providerConversationId: string | null;
+  providerStatus: string | null;
+  providerHttpStatus: number | null;
+  providerResponseKind: string | null;
+  error: string | null;
+  permanentFailure: boolean;
+}
+
+/**
+ * Dispatch through one already-selected, organization-owned SMS connector.
+ *
+ * Selection and the durable claim remain the caller's responsibility. Keeping
+ * the provider adapter here gives immediate and queued sends one exact
+ * allowlist/configuration boundary without creating a second provider path.
+ */
+export async function dispatchSelectedSmsConnector(
+  connector: OrganizationMessagingConnectorConfig,
+  input: SmsConnectorDispatchInput,
+): Promise<SmsConnectorDispatchResult> {
+  let providerMessageId: string | null = null;
+  let providerConversationId: string | null = null;
+  let providerStatus: string | null = null;
+  let providerHttpStatus: number | null = null;
+  let providerResponseKind: string | null = null;
+  let outboxState: SmsConnectorDispatchResult["outboxState"] =
+    "delivery_unknown";
+  let error: string | null = null;
+  let permanentFailure = false;
+
+  if (connector.provider === "twilio") {
+    const twilio = input.twilio ?? resolveTwilioSmsConfig(
+      connector.credentialReference,
+      connector.senderIdentityReference,
+    );
+    if (!twilio) {
+      outboxState = "send_failed";
+      error = "twilio_config_missing";
+      permanentFailure = true;
+    } else {
+      try {
+        const res = await sendTwilioSms(twilio, input.toNumber, input.body);
+        providerMessageId = res.messageId ?? null;
+        providerStatus = res.providerMessageStatus ?? null;
+        providerHttpStatus = res.providerStatus ?? null;
+        providerResponseKind = res.providerResponseKind ?? null;
+        if (res.ok) {
+          outboxState = "provider_accepted";
+        } else if (
+          res.providerResponseKind === "transport_uncertain" ||
+          res.providerResponseKind === "provider_ambiguous"
+        ) {
+          outboxState = "delivery_unknown";
+          error = res.error ?? "provider_ambiguous_response";
+        } else {
+          outboxState = "send_failed";
+          error = res.error ?? "twilio_send_failed";
+        }
+      } catch {
+        outboxState = "delivery_unknown";
+        error = "twilio_dispatch_uncertain";
+      }
+    }
+  } else if (connector.provider !== "callrail") {
+    outboxState = "send_failed";
+    error = "provider_adapter_unavailable";
+    permanentFailure = true;
+  } else {
+    const approvedCallRail = connector.credentialReference ===
+        DFW_CALLRAIL_CREDENTIAL_REFERENCE &&
+      connector.senderIdentityReference === DFW_CALLRAIL_SENDER_REFERENCE;
+    const callrail = approvedCallRail
+      ? input.callRail ?? getCallRailConfig()
+      : null;
+    if (!approvedCallRail) {
+      outboxState = "send_failed";
+      error = "callrail_connector_unapproved";
+      permanentFailure = true;
+    } else if (!callrail) {
+      outboxState = "send_failed";
+      error = "callrail_config_missing";
+      permanentFailure = true;
+    } else {
+      try {
+        const res = await sendCallRailSms(
+          callrail,
+          input.toNumber,
+          input.body,
+        );
+        providerMessageId = res.messageId ?? null;
+        providerConversationId = res.conversationId ?? null;
+        providerStatus = res.providerMessageStatus ?? null;
+        providerHttpStatus = res.providerStatus ?? null;
+        providerResponseKind = res.providerResponseKind ?? null;
+        if (res.ok) {
+          outboxState = "provider_accepted";
+        } else if (
+          res.error && res.providerResponseKind !== "transport_uncertain"
+        ) {
+          outboxState = "send_failed";
+          error = res.error;
+        } else {
+          outboxState = "delivery_unknown";
+          error = res.error ?? "provider_ambiguous_response";
+        }
+      } catch {
+        outboxState = "delivery_unknown";
+        error = "callrail_dispatch_uncertain";
+      }
+    }
+  }
+
+  return {
+    provider: connector.provider,
+    outboxState,
+    providerMessageId,
+    providerConversationId,
+    providerStatus,
+    providerHttpStatus,
+    providerResponseKind,
+    error,
+    permanentFailure,
+  };
 }
 
 /**
@@ -246,99 +384,24 @@ export async function sendOutboxSms(
 
   // Winner — dispatch through the selected adapter exactly once. Everything
   // from this point must finalize the row (success, failure, or unknown).
-  let providerMessageId: string | null = null;
-  let providerConversationId: string | null = null;
-  let providerStatus: string | null = null;
-  let providerResponseKind: string | null = null;
-  let newState: OutboxState = "delivery_unknown";
-  let errText: string | null = null;
-
-  if (selection.connector.provider === "twilio") {
-    const twilio = input.twilio ?? resolveTwilioSmsConfig(
-      selection.connector.credentialReference,
-      selection.connector.senderIdentityReference,
-    );
-    if (!twilio) {
-      newState = "send_failed";
-      errText = "twilio_config_missing";
-    } else {
-      try {
-        const res = await sendTwilioSms(twilio, input.toNumber, input.body);
-        providerMessageId = res.messageId ?? null;
-        providerStatus = res.providerMessageStatus ?? null;
-        providerResponseKind = res.providerResponseKind ?? null;
-        if (res.ok) {
-          newState = "provider_accepted";
-        } else if (
-          res.providerResponseKind === "transport_uncertain" ||
-          res.providerResponseKind === "provider_ambiguous"
-        ) {
-          newState = "delivery_unknown";
-          errText = res.error ?? "provider_ambiguous_response";
-        } else {
-          newState = "send_failed";
-          errText = res.error ?? "twilio_send_failed";
-        }
-      } catch {
-        newState = "delivery_unknown";
-        errText = "twilio_dispatch_uncertain";
-      }
-    }
-  } else if (selection.connector.provider !== "callrail") {
-    newState = "send_failed";
-    errText = "provider_adapter_unavailable";
-  } else {
-    const approvedCallRail = selection.connector.credentialReference ===
-        DFW_CALLRAIL_CREDENTIAL_REFERENCE &&
-      selection.connector.senderIdentityReference ===
-        DFW_CALLRAIL_SENDER_REFERENCE;
-    const callrail = approvedCallRail
-      ? input.callRail ?? getCallRailConfig()
-      : null;
-    if (!approvedCallRail) {
-      newState = "send_failed";
-      errText = "callrail_connector_unapproved";
-    } else if (!callrail) {
-      newState = "send_failed";
-      errText = "callrail_config_missing";
-    } else {
-      try {
-        const res = await sendCallRailSms(callrail, input.toNumber, input.body);
-        providerMessageId = res.messageId ?? null;
-        providerConversationId = res.conversationId ?? null;
-        providerStatus = res.providerMessageStatus ?? null;
-        providerResponseKind = res.providerResponseKind ?? null;
-        if (res.ok) {
-          newState = "provider_accepted";
-        } else if (
-          res.error && res.providerResponseKind !== "transport_uncertain"
-        ) {
-          newState = "send_failed";
-          errText = res.error;
-        } else {
-          newState = "delivery_unknown";
-          errText = res.error ?? "provider_ambiguous_response";
-        }
-      } catch (e) {
-        // Thrown after possibly-successful dispatch. We CANNOT know whether
-        // CallRail accepted. Mark delivery_unknown; reconciliation owns it.
-        newState = "delivery_unknown";
-        errText = `dispatch_threw:${String(e).slice(0, 180)}`;
-      }
-    }
-  }
+  const dispatch = await dispatchSelectedSmsConnector(selection.connector, {
+    toNumber: input.toNumber,
+    body: input.body,
+    callRail: input.callRail,
+    twilio: input.twilio,
+  });
 
   const { data: finalized, error: finalizeError } = await supabase.rpc(
     "finalize_sms_outbox_send",
     {
       p_sms_message_id: claim.id,
       p_claim_token: claimToken,
-      p_new_state: newState,
-      p_provider_message_id: providerMessageId,
-      p_provider_conversation_id: providerConversationId,
-      p_provider_status: providerStatus,
-      p_provider_response_kind: providerResponseKind,
-      p_error: errText,
+      p_new_state: dispatch.outboxState,
+      p_provider_message_id: dispatch.providerMessageId,
+      p_provider_conversation_id: dispatch.providerConversationId,
+      p_provider_status: dispatch.providerStatus,
+      p_provider_response_kind: dispatch.providerResponseKind,
+      p_error: dispatch.error,
     },
   );
   if (finalizeError || !finalized?.ok) {
@@ -350,20 +413,22 @@ export async function sendOutboxSms(
       replay: false,
       inProgress: false,
       escalated: true,
-      providerMessageId,
+      providerMessageId: dispatch.providerMessageId,
       error: "delivery_finalization_uncertain",
     };
   }
 
   return {
-    sent: newState === "provider_accepted",
+    sent: dispatch.outboxState === "provider_accepted",
     provider: selection.connector.provider,
     smsMessageId: claim.id,
-    outboxState: newState,
+    outboxState: dispatch.outboxState,
     replay: false,
     inProgress: false,
     escalated: false,
-    providerMessageId,
-    error: newState === "provider_accepted" ? undefined : errText ?? undefined,
+    providerMessageId: dispatch.providerMessageId,
+    error: dispatch.outboxState === "provider_accepted"
+      ? undefined
+      : dispatch.error ?? undefined,
   };
 }

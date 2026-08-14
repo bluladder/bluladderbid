@@ -1,11 +1,7 @@
+// deno-lint-ignore-file no-explicit-any
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import {
-  checkPhoneOptOut,
-  getCallRailConfig,
-  getCustomerPause,
-  sendCallRailSms,
-} from "../_shared/sms.ts";
+import { checkPhoneOptOut, getCustomerPause } from "../_shared/sms.ts";
 import { requireAdminOrService } from "../_shared/auth.ts";
 import { checkSuppression } from "../_shared/suppression.ts";
 import {
@@ -30,12 +26,17 @@ import {
   queueOutcomePatch,
   smsFailureOutcome,
 } from "../_shared/queueDelivery.ts";
+import { dispatchSelectedSmsConnector } from "../_shared/smsOutbox.ts";
+import { authorizeQueuedSmsConnector } from "../_shared/queuedSmsConnector.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
+
+type Supa = any;
+type QueueMessage = Record<string, any>;
 
 // Exponential-ish backoff (in minutes) applied before each retry, indexed by
 // the attempt number that just failed (1st failure -> 5 min, 2nd -> 30 min, ...).
@@ -91,8 +92,8 @@ function transition(
 }
 
 async function updateClaimedMessage(
-  supabase: ReturnType<typeof createClient>,
-  msg: Record<string, unknown>,
+  supabase: Supa,
+  msg: QueueMessage,
   next: QueueTransition,
   expectedState = "pending_send",
 ): Promise<boolean> {
@@ -108,8 +109,8 @@ async function updateClaimedMessage(
 }
 
 async function beginProviderSubmission(
-  supabase: ReturnType<typeof createClient>,
-  msg: Record<string, unknown>,
+  supabase: Supa,
+  msg: QueueMessage,
 ): Promise<boolean> {
   const { data, error } = await supabase.rpc(
     "begin_queued_communication_submission",
@@ -144,8 +145,6 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-
-  const config = getCallRailConfig();
 
   // Global launch controls: delivery kill-switch. When on, don't claim or
   // send any queued campaign messages. Rows stay 'pending' and will send
@@ -586,14 +585,15 @@ serve(async (req) => {
       );
       continue;
     }
-    if (!config) {
+    const connector = await authorizeQueuedSmsConnector(supabase, msg);
+    if (connector.status !== "authorized") {
       await updateClaimedMessage(
         supabase,
         msg,
         failureUpdate(
           msg.attempts,
           msg.max_attempts,
-          "CallRail not configured",
+          `SMS connector blocked (${connector.reason})`,
           true,
         ),
       );
@@ -604,14 +604,14 @@ serve(async (req) => {
       failed++;
       continue;
     }
-    const result = await sendCallRailSms(
-      config,
-      msg.to_number as string,
-      msg.body as string,
-    );
-    if (result.ok) {
+    const result = await dispatchSelectedSmsConnector(connector.connector, {
+      toNumber: msg.to_number as string,
+      body: msg.body as string,
+    });
+    if (result.outboxState === "provider_accepted") {
       const acceptedAt = new Date().toISOString();
-      const acceptedOutcome = result.messageId || result.conversationId
+      const acceptedOutcome = result.providerMessageId ||
+          result.providerConversationId
         ? "accepted"
         : "uncertain";
       const recorded = await updateClaimedMessage(
@@ -619,11 +619,13 @@ serve(async (req) => {
         msg,
         transition(acceptedOutcome, {
           sent_at: acceptedAt,
-          callrail_message_id: result.messageId ?? null,
-          provider: "callrail",
-          provider_conversation_id: result.conversationId ?? null,
-          provider_message_id: result.messageId ?? null,
-          provider_status: result.providerMessageStatus ?? "accepted",
+          callrail_message_id: result.provider === "callrail"
+            ? result.providerMessageId
+            : null,
+          provider: result.provider,
+          provider_conversation_id: result.providerConversationId,
+          provider_message_id: result.providerMessageId,
+          provider_status: result.providerStatus ?? "accepted",
           provider_response_kind: result.providerResponseKind ?? null,
           provider_accepted_at: acceptedAt,
           attempts: (msg.attempts ?? 0) + 1,
@@ -635,17 +637,37 @@ serve(async (req) => {
       );
       if (recorded && acceptedOutcome === "accepted") sent++;
       else failed++;
+    } else if (result.outboxState === "delivery_unknown") {
+      await updateClaimedMessage(
+        supabase,
+        msg,
+        transition("uncertain", {
+          error: result.error ?? "provider result uncertain",
+          attempts: (msg.attempts ?? 0) + 1,
+          provider: result.provider,
+          provider_message_id: result.providerMessageId,
+          provider_conversation_id: result.providerConversationId,
+          provider_status: result.providerStatus,
+          provider_response_kind: result.providerResponseKind,
+          send_error_code: "sms_provider_result_uncertain",
+          send_error_at: new Date().toISOString(),
+        }),
+        "sending",
+      );
+      failed++;
     } else {
       const attempts = (msg.attempts ?? 0) + 1;
       const maxAttempts = msg.max_attempts && msg.max_attempts > 0
         ? msg.max_attempts
         : 3;
-      const outcome = smsFailureOutcome({
-        providerResponseKind: result.providerResponseKind,
-        providerStatus: result.providerStatus,
-        attempts,
-        maxAttempts,
-      });
+      const outcome = result.permanentFailure
+        ? "terminal_failure"
+        : smsFailureOutcome({
+          providerResponseKind: result.providerResponseKind,
+          providerStatus: result.providerHttpStatus,
+          attempts,
+          maxAttempts,
+        });
       const retryAt = outcome === "retry_pending"
         ? nextRetryIso(attempts)
         : null;
@@ -657,6 +679,10 @@ serve(async (req) => {
           attempts,
           send_at: retryAt ?? msg.send_at,
           next_retry_at: retryAt,
+          provider: result.provider,
+          provider_message_id: result.providerMessageId,
+          provider_conversation_id: result.providerConversationId,
+          provider_status: result.providerStatus,
           provider_response_kind: result.providerResponseKind ?? null,
           send_error_code: outcome === "uncertain"
             ? "sms_provider_result_uncertain"
