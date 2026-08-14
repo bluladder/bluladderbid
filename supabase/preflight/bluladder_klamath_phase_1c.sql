@@ -4,10 +4,11 @@
 
 BEGIN TRANSACTION READ ONLY;
 
--- Must return six rows, each with present=true.
+-- Must return seven rows, each with present=true.
 SELECT required_table, to_regclass('public.' || required_table) IS NOT NULL AS present
 FROM unnest(ARRAY[
   'organizations',
+  'organization_memberships',
   'organization_settings',
   'organization_contacts',
   'organization_territories',
@@ -15,6 +16,11 @@ FROM unnest(ARRAY[
   'organization_resolution_keys'
 ]) AS required_table
 ORDER BY required_table;
+
+-- Must return false. Hardened hosted RLS uses direct membership predicates and
+-- intentionally does not expose the former public SECURITY DEFINER helper.
+SELECT to_regprocedure('public.is_organization_member(uuid,uuid)') IS NOT NULL
+  AS obsolete_public_membership_helper_present;
 
 -- Must return false before first application.
 SELECT

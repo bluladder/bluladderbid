@@ -28,17 +28,18 @@ record, message, provider request, background job, or active business rule.
 
 ## Stop gates and isolation
 
-The migration locks only the six existing tenant-foundation tables for its
-short transaction and aborts before writing if a prerequisite table/function
-is absent, either new target table already exists, the planned organization ID
-or slug is occupied, or the canonical hostname hash is already mapped.
+The migration locks only the seven existing tenant-foundation tables for its
+short transaction and aborts before writing if a prerequisite table is absent,
+either new target table already exists, the planned organization ID or slug is
+occupied, or the canonical hostname hash is already mapped.
 
 Database constraints prevent a provisioning site from enabling runtime
 routing, publication, or customer traffic. Draft pricing cannot be runtime
 enabled. The exact hostname is unique and rejects unsafe/non-normalized host
 shapes. RLS exposes neither new table to anonymous users; authenticated access
-still requires the existing active organization-membership authority. There is
-no DFW fallback and the DFW organization is not updated.
+uses direct active-membership and active-organization predicates. It does not
+recreate or depend on the retired public `SECURITY DEFINER` membership helper.
+There is no DFW fallback and the DFW organization is not updated.
 
 ## Repository verification
 

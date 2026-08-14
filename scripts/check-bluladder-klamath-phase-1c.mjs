@@ -39,6 +39,10 @@ for (const text of [
   "CREATE TABLE public.organization_pricing_profiles",
   "ALTER TABLE public.organization_customer_sites ENABLE ROW LEVEL SECURITY",
   "ALTER TABLE public.organization_pricing_profiles ENABLE ROW LEVEL SECURITY",
+  "JOIN public.organizations tenant ON tenant.id = actor.organization_id",
+  "actor.user_id = (SELECT auth.uid())",
+  "tenant.status = 'active'",
+  "FROM anon",
   "organization_customer_sites_activation_check",
   "organization_customer_sites_traffic_check",
   "organization_pricing_profiles_runtime_check",
@@ -53,6 +57,13 @@ for (const text of [
   "$klamath_pricing$",
   "COMMIT;",
 ]) requireText("migration", text);
+
+if (/USING\s*\(\s*public\.is_organization_member\s*\(/i.test(content.migration ?? "")) {
+  errors.push("Phase 1C still calls the retired public membership helper");
+}
+if (/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.is_organization_member/i.test(content.migration ?? "")) {
+  errors.push("Phase 1C recreates the retired public membership helper");
+}
 
 for (const prohibited of [
   /INSERT\s+INTO\s+public\.organization_contacts/i,

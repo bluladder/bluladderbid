@@ -112,6 +112,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // provisions no members, provider mappings, runtime routing, published site,
   // customer traffic, or enabled pricing, and remains unapplied in this PR.
   "supabase/migrations/20260813223348_bluladder_klamath_phase_1c_inactive_foundation.sql",
+  // Forward compatibility repair for the genuinely unapplied historical
+  // Stage 8A payload. It preserves the hardened helper-free tenant boundary.
+  "supabase/migrations/20260814022314_bluladder_klamath_stage_8a_hosted_compatibility.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

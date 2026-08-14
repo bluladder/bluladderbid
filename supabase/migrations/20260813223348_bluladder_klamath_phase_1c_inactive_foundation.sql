@@ -14,6 +14,7 @@ SET LOCAL statement_timeout = '30s';
 -- this transaction.
 LOCK TABLE
   public.organizations,
+  public.organization_memberships,
   public.organization_settings,
   public.organization_contacts,
   public.organization_territories,
@@ -27,6 +28,7 @@ DECLARE
 BEGIN
   FOREACH required_table IN ARRAY ARRAY[
     'organizations',
+    'organization_memberships',
     'organization_settings',
     'organization_contacts',
     'organization_territories',
@@ -39,10 +41,6 @@ BEGIN
         required_table;
     END IF;
   END LOOP;
-
-  IF to_regprocedure('public.is_organization_member(uuid,uuid)') IS NULL THEN
-    RAISE EXCEPTION 'Phase 1C tenant membership authority is missing';
-  END IF;
 
   IF to_regclass('public.organization_customer_sites') IS NOT NULL
      OR to_regclass('public.organization_pricing_profiles') IS NOT NULL THEN
@@ -178,7 +176,17 @@ ALTER TABLE public.organization_pricing_profiles ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Members read organization customer sites"
   ON public.organization_customer_sites FOR SELECT TO authenticated
-  USING (public.is_organization_member(organization_id));
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.organization_memberships actor
+      JOIN public.organizations tenant ON tenant.id = actor.organization_id
+      WHERE actor.organization_id = organization_customer_sites.organization_id
+        AND actor.user_id = (SELECT auth.uid())
+        AND actor.status = 'active'
+        AND tenant.status = 'active'
+    )
+  );
 
 CREATE POLICY "Admins manage organization customer sites"
   ON public.organization_customer_sites FOR ALL TO authenticated
@@ -205,7 +213,17 @@ CREATE POLICY "Admins manage organization customer sites"
 
 CREATE POLICY "Members read organization pricing profiles"
   ON public.organization_pricing_profiles FOR SELECT TO authenticated
-  USING (public.is_organization_member(organization_id));
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.organization_memberships actor
+      JOIN public.organizations tenant ON tenant.id = actor.organization_id
+      WHERE actor.organization_id = organization_pricing_profiles.organization_id
+        AND actor.user_id = (SELECT auth.uid())
+        AND actor.status = 'active'
+        AND tenant.status = 'active'
+    )
+  );
 
 CREATE POLICY "Admins manage organization pricing profiles"
   ON public.organization_pricing_profiles FOR ALL TO authenticated
@@ -230,6 +248,10 @@ CREATE POLICY "Admins manage organization pricing profiles"
     )
   );
 
+REVOKE ALL
+  ON public.organization_customer_sites,
+     public.organization_pricing_profiles
+  FROM anon;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON public.organization_customer_sites,
      public.organization_pricing_profiles

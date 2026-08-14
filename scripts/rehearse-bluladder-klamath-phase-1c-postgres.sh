@@ -27,7 +27,9 @@ $roles$;
 
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE OR REPLACE FUNCTION auth.uid()
-RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+RETURNS uuid LANGUAGE sql STABLE AS $$
+  SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+$$;
 
 CREATE TABLE public.organizations (
   id uuid PRIMARY KEY,
@@ -122,16 +124,6 @@ CREATE TABLE public.organization_services (
   UNIQUE (organization_id, service_key)
 );
 
-CREATE OR REPLACE FUNCTION public.is_organization_member(
-  _organization_id uuid,
-  _user_id uuid DEFAULT auth.uid()
-) RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
-AS $$ SELECT false $$;
-REVOKE ALL ON FUNCTION public.is_organization_member(uuid, uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.is_organization_member(uuid, uuid)
-  TO authenticated, service_role;
-
 INSERT INTO public.organizations (
   id, slug, display_name, status, is_legacy_default
 ) VALUES
@@ -172,6 +164,10 @@ SQL
 
 install_fixture "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL"
 
+test "$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
+  --set=ON_ERROR_STOP=1 -c \
+  "SELECT to_regprocedure('public.is_organization_member(uuid,uuid)') IS NULL")" = "t"
+
 dfw_before=$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
   --set=ON_ERROR_STOP=1 -c \
   "SELECT md5(row_to_json(o)::text) FROM public.organizations o WHERE id='b1addf00-0000-4000-8000-000000000001'")
@@ -196,6 +192,9 @@ test "$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
 test "$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
   --set=ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM public.organization_memberships WHERE organization_id='b1addf00-0000-4000-8000-000000000003'")" = "0"
+test "$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
+  --set=ON_ERROR_STOP=1 -c \
+  "SELECT has_table_privilege('anon','public.organization_customer_sites','SELECT')")" = "f"
 
 dfw_after=$(psql "$BLULADDER_KLAMATH_PHASE1C_DATABASE_URL" -X -At \
   --set=ON_ERROR_STOP=1 -c \
