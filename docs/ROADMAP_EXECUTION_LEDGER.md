@@ -20,7 +20,7 @@ Last reconciled main: `9433b0013db8c34ca2345605b196933fc1570a1d`
           │   ├─ Klamath Phase 1D customer sites      complete (PR #113)
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
-          │       └─ Klamath Phase 1G messaging       scoped outbox hosted; writer adoption pending
+          │       └─ Klamath Phase 1G messaging       scoped outbox hosted; Twilio adapter prepared
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -47,7 +47,7 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Klamath Phase 1D | #8 | Database-backed customer-site runtime; deployed with customer traffic blocked | #113 | merged |
 | Klamath Phase 1E | #8 | Reconcile typed tenant profile to the hosted provisioning identity; activation remains blocked | #114 | merged |
 | Klamath Phase 1F | #8 | Portal tenant lineage and exact site authority; hosted schema and reviewed portal runtime deployed fail closed | #115/#116 + provider receipt | complete |
-| Klamath Phase 1G | #7/#9 | Organization-bound messaging connector and durable outbox lineage | #118-#122 + provider receipts | active |
+| Klamath Phase 1G | #7/#9 | Organization-bound messaging connector, durable outbox, and fail-closed Twilio adapter | #118-#123 + provider receipts; this PR | active |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
@@ -70,7 +70,10 @@ verified. The organization-scoped transactional outbox claim was then applied
 once as provider execution version `20260814081254`; its normalized receipt,
 service-role-only execution grants, 160-row ledger, zero data changes, and
 unchanged Klamath provisioning boundary are independently verified. Remaining
-writer adoption and runtime deployment remain separate gates.
+writer adoption and runtime deployment remain separate gates. A repository-only
+Twilio adapter now requires an allowlisted connector reference, dedicated API
+key, and Messaging Service identity; provider setup, deployment, messaging, and
+activation remain blocked.
 
 The Phase 1F portal runtime is deployed from reconciled main and all seven
 reviewed functions passed secret-free boot verification. The Klamath mapping remains

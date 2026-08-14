@@ -1,7 +1,8 @@
 # BluLadder Klamath Phase 1G messaging/outbox lineage
 
 Status: **hosted additive schema, least-privilege repair, and scoped outbox
-claim verified; remaining runtime writer adoption blocked**. This phase defines the organization-owned sender boundary
+claim verified; fail-closed Twilio adapter prepared; remaining runtime writer
+adoption blocked**. This phase defines the organization-owned sender boundary
 required before Klamath can send SMS or email. It does not add a credential,
 sender, provider resource, message, customer traffic, or deployment.
 
@@ -141,3 +142,27 @@ connector bindings, and Klamath remains provisioning with no active connector.
 The hosted transactional boundary is ready; remaining writer adoption, provider
 configuration, runtime deployment, controlled messaging, and activation remain
 separately blocked.
+
+## Fail-closed Twilio adapter candidate
+
+The prepared adapter accepts only the compiled non-secret credential reference
+`bluladder-klamath-twilio-production-v1` and a syntactically valid Twilio
+Messaging Service identity. Runtime authentication requires a dedicated API key
+SID and secret from server-side environment storage; it never uses a database
+credential value or a model-supplied sender. Requests pass
+`MessagingServiceSid` instead of a raw `From` number so the future registered
+sender pool remains the sole sender authority.
+
+The adapter normalizes the recipient, reuses the existing Markdown scrub and
+SMS length bound, and returns content-free error categories. It never persists
+or logs a provider response body. A valid provider message SID is required for
+acceptance; unreadable success responses and transport failures become
+`delivery_unknown`, which forbids automatic redispatch. HTTP rejection becomes
+`send_failed`. The organization-scoped outbox selects the Twilio adapter only
+for an exact reviewed connector and preserves the DFW CallRail path for an exact
+DFW connector.
+
+This adapter is repository-only. No Twilio resource, API key, Messaging Service,
+phone number, sender, connector row, secret, deployment, or message was created.
+It must not be deployed until the DFW connector compatibility row and the
+separately reviewed inactive Klamath connector/provider prerequisites exist.

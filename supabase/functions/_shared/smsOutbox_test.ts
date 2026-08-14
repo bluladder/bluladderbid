@@ -7,6 +7,10 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { sendOutboxSms } from "./smsOutbox.ts";
 import {
+  KLAMATH_TWILIO_CREDENTIAL_REFERENCE,
+  type TwilioSmsConfig,
+} from "./twilioSms.ts";
+import {
   BLULADDER_DEFAULT_TIMEZONE,
   formatBookingWhen,
   resolveBookingTimezone,
@@ -20,6 +24,12 @@ const callRail = {
 };
 const organizationId = "11111111-1111-4111-8111-111111111111";
 const connectorId = "22222222-2222-4222-8222-222222222222";
+const twilio: TwilioSmsConfig = {
+  accountSid: `AC${"1".repeat(32)}`,
+  apiKeySid: `SK${"4".repeat(32)}`,
+  apiKeySecret: "test-key-secret",
+  messagingServiceSid: `MG${"2".repeat(32)}`,
+};
 
 function makeSupabase(opts: {
   existing?: any | null;
@@ -48,8 +58,12 @@ function makeSupabase(opts: {
                 provider: behavior === "twilio" ? "twilio" : "callrail",
                 status: behavior === "inactive" ? "inactive" : "active",
                 priority: 10,
-                credential_reference: "reviewed-credential-reference",
-                sender_identity_reference: "reviewed-sender-reference",
+                credential_reference: behavior === "twilio"
+                  ? KLAMATH_TWILIO_CREDENTIAL_REFERENCE
+                  : "reviewed-credential-reference",
+                sender_identity_reference: behavior === "twilio"
+                  ? twilio.messagingServiceSid
+                  : "reviewed-sender-reference",
               }],
               error: null,
             }).then(resolve);
@@ -165,6 +179,12 @@ let fetchMode: "ok" | "reject" | "throw" | "malformed" = "ok";
   }
   if (fetchMode === "malformed") {
     return new Response("not-json", { status: 200 });
+  }
+  if (_url.includes("api.twilio.com")) {
+    return new Response(
+      JSON.stringify({ sid: `SM${"3".repeat(32)}`, status: "queued" }),
+      { status: 201 },
+    );
   }
   return new Response(
     JSON.stringify({
@@ -350,14 +370,14 @@ Deno.test("outbox: missing organization connector blocks before claim", async ()
   assertEquals(rpcLog.length, 0);
 });
 
-Deno.test("outbox: unsupported connector provider records failure without dispatch", async () => {
+Deno.test("outbox: Twilio connector without server config records failure without dispatch", async () => {
   const rpcLog: any[] = [];
   fetchMode = "ok";
   const r = await sendOutboxSms(
     makeSupabase({ connectorBehavior: "twilio", rpcLog }),
     {
       organizationId,
-      outboundKey: "twilio-not-yet-adapted",
+      outboundKey: "twilio-config-missing",
       toNumber: "+15551234567",
       body: "hi",
       messageKind: "test",
@@ -366,12 +386,34 @@ Deno.test("outbox: unsupported connector provider records failure without dispat
   );
   assertEquals(r.sent, false);
   assertEquals(r.outboxState, "send_failed");
-  assertEquals(r.error, "provider_adapter_unavailable");
+  assertEquals(r.error, "twilio_config_missing");
   assertEquals(
     rpcLog.find((x) => x.name === "finalize_sms_outbox_send")?.args
       ?.p_new_state,
     "send_failed",
   );
+});
+
+Deno.test("outbox: reviewed Twilio connector dispatches and finalizes accepted", async () => {
+  const rpcLog: any[] = [];
+  fetchMode = "ok";
+  const r = await sendOutboxSms(
+    makeSupabase({ connectorBehavior: "twilio", rpcLog }),
+    {
+      organizationId,
+      outboundKey: "twilio-reviewed-adapter",
+      toNumber: "+15551234567",
+      body: "Your secure link is ready",
+      messageKind: "transactional",
+      twilio,
+    },
+  );
+  assertEquals(r.sent, true);
+  assertEquals(r.outboxState, "provider_accepted");
+  assertEquals(r.providerMessageId, `SM${"3".repeat(32)}`);
+  const finalized = rpcLog.find((x) => x.name === "finalize_sms_outbox_send");
+  assertEquals(finalized?.args?.p_new_state, "provider_accepted");
+  assertEquals(finalized?.args?.p_provider_status, "queued");
 });
 
 Deno.test("timezone #20: property timezone renders in local zone", () => {
