@@ -6,6 +6,8 @@ import {
 import type { TenantSiteAuthorityRecord } from "./siteAuthority";
 
 export const BLULADDER_KLAMATH_TENANT_KEY = "bluladder-klamath";
+export const BLULADDER_KLAMATH_ORGANIZATION_ID =
+  "b1addf00-0000-4000-8000-000000000003";
 export const BLULADDER_KLAMATH_CANONICAL_HOSTNAME =
   "klamath.bluladder.com";
 
@@ -27,7 +29,7 @@ export const BLULADDER_KLAMATH: TenantBusinessConfiguration = {
   schemaVersion: 1,
   tenantKey: BLULADDER_KLAMATH_TENANT_KEY,
   customerFacingName: "BluLadder Klamath",
-  organizationId: null,
+  organizationId: BLULADDER_KLAMATH_ORGANIZATION_ID,
   lifecycle: "provisioning",
   activationAllowed: false,
   customerTrafficAllowed: false,
@@ -35,7 +37,7 @@ export const BLULADDER_KLAMATH: TenantBusinessConfiguration = {
   site: {
     canonicalHostname: BLULADDER_KLAMATH_CANONICAL_HOSTNAME,
     aliases: [],
-    mappingStatus: "unprovisioned",
+    mappingStatus: "provisioning",
     runtimeRoutingEnabled: false,
     published: false,
   },

@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `8551b86253a227767359887995fbe1e21d1937be`
+Last reconciled main: `d1c2cd4f2fa1760d4ad353836f3eb07495f647b7`
 
 ## Dependency graph
 
@@ -17,7 +17,8 @@ Last reconciled main: `8551b86253a227767359887995fbe1e21d1937be`
           ├─ #8 organization routing
           │   ├─ 8A schema and pure routing          complete (PR #17)
           │   ├─ 8B server/runtime adoption           active in narrow waves
-          │   └─ Klamath Phase 1D customer sites      current repository stage
+          │   ├─ Klamath Phase 1D customer sites      complete (PR #113)
+          │   └─ Klamath Phase 1E hosted identity     current repository stage
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -41,27 +42,31 @@ Oregon provisioning remains inactive until every upstream gate is proven.
 | Tenant 7C | #7 | Read-only hosted preflight and controlled migration runbook | #16 | merged |
 | Routing 8A | #8 | Settings, contacts, territories, services, pure fail-closed routing | #17 | merged |
 | Routing 8B | #8 | Persisted tenant lineage and runtime adoption in narrow fail-closed waves | multiple | active |
-| Klamath Phase 1D | #8 | Database-backed customer-site runtime; customer traffic remains blocked | this PR | active |
+| Klamath Phase 1D | #8 | Database-backed customer-site runtime; deployed with customer traffic blocked | #113 | merged |
+| Klamath Phase 1E | #8 | Reconcile typed tenant profile to the hosted provisioning identity; activation remains blocked | this PR | active |
 | Connectors 9A | #9 | Pure contracts, fail-closed selection, Jobber parity seam | #18 | merged |
 | Pricing 10A | #10 | Pure service catalog, versioned pricing, exact DFW parity | #19 | merged |
 | Intelligence 4A | #4 | Pure tenant-safe features, recommendations, bounded learning | #20 | merged |
 | Hardening 11B | #11 | Cross-contract routing-to-intelligence isolation suite | #21 | merged |
 
-## Current stage: Klamath Phase 1D inactive customer-site runtime
+## Current stage: Klamath Phase 1E hosted provisioning identity
 
-The Stage 8A compatibility/grant repairs and Phase 1C inactive Klamath
-foundation are applied, receipt-reconciled, and verified. The current safe
-repository wave connects the already server-resolved organization to its exact
-customer-site row for the voice link and post-call link paths.
+The Stage 8A compatibility/grant repairs, Phase 1C inactive foundation, and
+Phase 1D database-backed customer-site runtime are applied, reconciled,
+deployed, and verified. The current safe repository wave replaces the stale
+Phase 1A null/unprovisioned placeholders with the exact hosted provisioning
+identity.
 
-DFW retains its exact compatibility URL. Klamath loads its hosted row but still
-fails closed because lifecycle, mapping, runtime routing, publication, and
-customer traffic remain disabled. No provider or customer action is part of
-this stage.
+The mapping remains provisioning; lifecycle, runtime routing, publication,
+customer traffic, territory, services, pricing, contacts, and providers remain
+inactive or absent. Exact-host authority therefore still fails closed. No
+hosted, provider, or customer action is part of this stage.
+
+The database-backed customer-site runtime remains deployed; customer traffic remains blocked.
 
 After this wave, tenant-scoped portal/appointment reads, messaging/outbox
-lineage, JobTread, provider resources, deployment, controlled acceptance, and
-activation remain blocked.
+lineage, approved operating inputs, JobTread, provider resources, publication,
+controlled acceptance, and activation remain blocked.
 
 ## Protected-action gates
 
@@ -69,7 +74,7 @@ The following remain prohibited and are not implied by a green repository PR:
 
 1. Apply an additional migration or rewrite the reconciled hosted ledger.
 2. Backfill or constrain additional hosted `organization_id` values.
-3. Deploy the Phase 1D runtime or publish the Klamath site.
+3. Publish the Klamath site or deploy an unrelated runtime.
 4. Configure provider credentials or organization connector references.
 5. Activate Oregon territory, services, contacts, pricing, connectors, or
    customer traffic.
@@ -82,10 +87,10 @@ are separated in
 
 ## Queued safe stages
 
-The Phase 1D database-backed customer-site runtime is the only active safe
-repository stage. The following stages remain gated:
+The Phase 1E hosted-identity reconciliation is the only active safe repository
+stage. The following stages remain gated:
 
-1. Complete the Phase 1D checks and merge without deploying it.
+1. Complete the Phase 1E checks and merge without a deployment.
 2. Continue Stage 8B persisted-lineage/runtime adoption in narrow tenant-safe
    waves after each dependency is proven.
 3. Issue #4 Stage 4B additive persistence design after hosted tenant evidence,

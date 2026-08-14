@@ -39,13 +39,13 @@ for (const text of [
 
 for (const text of [
   'customerFacingName: "BluLadder Klamath"',
-  'organizationId: null',
+  "organizationId: BLULADDER_KLAMATH_ORGANIZATION_ID",
   'lifecycle: "provisioning"',
   'activationAllowed: false',
   'customerTrafficAllowed: false',
   'dfwFallbackAllowed: false',
   'canonicalHostname: BLULADDER_KLAMATH_CANONICAL_HOSTNAME',
-  'mappingStatus: "unprovisioned"',
+  'mappingStatus: "provisioning"',
   'runtimeRoutingEnabled: false',
   'published: false',
   'provider: "jobtread"',
@@ -73,7 +73,7 @@ for (const text of [
 ]) requireText("pricing", text);
 
 for (const text of [
-  "blocks the current unprovisioned Klamath mapping",
+  "blocks the current provisioning Klamath mapping",
   "resolves one exact active server-supplied mapping",
   "does not accept aliases, paths, or an Oregon fallback hostname",
   "fails closed for ambiguous, inactive, or runtime-disabled mappings",

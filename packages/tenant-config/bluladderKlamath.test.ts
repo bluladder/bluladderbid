@@ -3,6 +3,7 @@ import { LIVE_CONFIG } from "../../src/lib/pricing/__fixtures__/liveConfig";
 import {
   BLULADDER_KLAMATH,
   BLULADDER_KLAMATH_CANONICAL_HOSTNAME,
+  BLULADDER_KLAMATH_ORGANIZATION_ID,
   BLULADDER_KLAMATH_SITE_AUTHORITY,
   BLULADDER_KLAMATH_TENANT_KEY,
 } from "./bluladderKlamath";
@@ -35,7 +36,7 @@ describe("BluLadder Klamath Phase 1A configuration", () => {
     expect(BLULADDER_KLAMATH).toMatchObject({
       tenantKey: BLULADDER_KLAMATH_TENANT_KEY,
       customerFacingName: "BluLadder Klamath",
-      organizationId: null,
+      organizationId: BLULADDER_KLAMATH_ORGANIZATION_ID,
       lifecycle: "provisioning",
       activationAllowed: false,
       customerTrafficAllowed: false,
@@ -43,7 +44,7 @@ describe("BluLadder Klamath Phase 1A configuration", () => {
       site: {
         canonicalHostname: "klamath.bluladder.com",
         aliases: [],
-        mappingStatus: "unprovisioned",
+        mappingStatus: "provisioning",
         runtimeRoutingEnabled: false,
         published: false,
       },
@@ -109,7 +110,7 @@ describe("BluLadder Klamath Phase 1A configuration", () => {
 });
 
 describe("tenant site authority", () => {
-  it("blocks the current unprovisioned Klamath mapping", () => {
+  it("blocks the current provisioning Klamath mapping", () => {
     expect(resolveTenantSiteAuthority(
       BLULADDER_KLAMATH_CANONICAL_HOSTNAME,
       [BLULADDER_KLAMATH_SITE_AUTHORITY],
