@@ -15,7 +15,7 @@ psql_args=(
 # Reproduce the exact Lovable-hosted privilege hydration observed after the
 # canonical Phase 1I migration. No row or policy is changed.
 psql "${psql_args[@]}" <<'SQL'
-GRANT REFERENCES, TRIGGER, TRUNCATE
+GRANT ALL PRIVILEGES
   ON TABLE public.organization_crm_connectors,
            public.organization_connector_operation_attempts,
            public.organization_connector_webhook_receipts
