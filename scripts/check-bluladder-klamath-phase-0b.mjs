@@ -217,8 +217,9 @@ if (
     jobtreadRegister?.provider_account_uniquely_matched !== true ||
     jobtreadRegister?.official_api_explorer_verified !== true ||
     jobtreadRegister?.dormant_adapter_prepared !== true ||
-    jobtreadRegister?.grant_created !== false ||
+    jobtreadRegister?.grant_created !== true ||
     jobtreadRegister?.credential_configured !== false ||
+    jobtreadRegister?.credential_verified !== false ||
     jobtreadRegister?.webhook_created !== false ||
     jobtreadRegister?.runtime_entrypoint_adopted !== false ||
     jobtreadRegister?.activation_allowed !== false ||

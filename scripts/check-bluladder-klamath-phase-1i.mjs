@@ -276,7 +276,9 @@ if (
   capability?.provider_account_uniquely_matched !== true ||
   capability?.dormant_adapter_prepared !== true ||
   capability?.runtime_entrypoint_adopted !== false ||
-  capability?.grant_created !== false ||
+  capability?.grant_created !== true ||
+  capability?.credential_configured !== false ||
+  capability?.credential_verified !== false ||
   capability?.webhook_created !== false
 ) {
   errors.push("Phase 1I requires the verified, dormant JobTread baseline");

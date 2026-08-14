@@ -49,6 +49,8 @@ for (const flag of [
   "provider_references_persisted_as_hashes_only",
   "reconciliation_read_only",
   "postgrest_errors_redacted",
+  "credential_created",
+  "provider_resources_mutated",
 ]) {
   if (evidence?.[flag] !== true) errors.push(`${flag} must be true`);
 }
@@ -59,12 +61,12 @@ for (const flag of [
   "ambiguous_insert_grants_ownership",
   "runtime_entrypoint_adopted",
   "protected_plan_source_implemented",
-  "credential_created",
+  "credential_configured",
+  "credential_verified",
   "credential_value_stored_in_repository",
   "webhook_created",
   "connector_row_created",
   "provider_calls_performed",
-  "provider_resources_mutated",
   "hosted_mutation_performed",
   "deployment_performed",
   "activation_allowed",

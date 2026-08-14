@@ -30,20 +30,21 @@ try {
 for (const flag of [
   "provider_account_uniquely_matched",
   "organization_scoped_grant_control_available",
+  "grant_created",
   "webhook_control_available",
   "official_api_explorer_verified",
   "dormant_transport_prepared",
   "dormant_adapter_prepared",
+  "provider_resources_mutated",
 ]) {
   if (evidence?.[flag] !== true) errors.push(`${flag} must be true`);
 }
 for (const flag of [
-  "grant_created",
   "credential_configured",
+  "credential_verified",
   "webhook_created",
   "runtime_entrypoint_adopted",
   "provider_calls_performed",
-  "provider_resources_mutated",
   "hosted_mutation_performed",
   "deployment_performed",
   "activation_allowed",
@@ -89,7 +90,7 @@ for (const category of [
 }
 for (const phrase of [
   "explicit per-operation allow-list",
-  "No grant, webhook, provider call",
+  "Grant exists only as an unconfigured provider",
   "performs no automatic",
   "server-owned connector record",
 ]) {

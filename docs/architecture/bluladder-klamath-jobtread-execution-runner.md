@@ -1,9 +1,10 @@
 # BluLadder Klamath JobTread execution and reconciliation runner
 
-Status: **dormant repository contract prepared**. This stage creates no Grant
-Key, connector row, webhook, custom field, provider request, customer record,
-job, task, deployment, activation, or customer traffic. No production Edge
-entry point imports the runner.
+Status: **dormant repository contract prepared**. A later protected checkpoint
+created one organization-scoped Grant, but it is not configured or verified.
+This stage creates no Grant, connector row, webhook, custom field, provider
+request, customer record, job, task, deployment, activation, or customer
+traffic. No production Edge entry point imports the runner.
 
 ## Trust boundary
 
@@ -76,8 +77,8 @@ manual, or Google Calendar fallback.
 This module is deliberately unreachable. Before any provider or customer
 traffic, separate reviewed stages must still:
 
-1. record the created JobTread fields' protected bindings and create the
-   least-privilege Grant Key while preserving the reviewed first-wave
+1. store and verify the created organization-scoped Grant and record the
+   created fields' protected bindings while preserving the reviewed first-wave
    no-webhook mode;
 2. insert one inactive Klamath connector row using protected references and
    provider fingerprints;

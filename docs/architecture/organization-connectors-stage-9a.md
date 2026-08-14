@@ -103,8 +103,12 @@ as a CRM or invoicing system.
 - A future webhook must authenticate its source, derive organization authority
   from the server-owned connector record, persist event idempotency, and reject
   events whose provider organization does not match that record.
-- No grant, webhook, provider call, hosted connector row, secret, deployment, or
-  customer traffic was created by this repository stage.
+- One later protected provider checkpoint created the intended
+  organization-scoped Grant. The Grant exists only as an unconfigured provider
+  checkpoint: it has not been deposited into hosted secret storage or verified
+  by a Pave call. No Grant value or provider identifier is stored in the
+  repository. No webhook, hosted connector row, deployment, or customer traffic
+  exists. No Pave response was received and no provider read was verified.
 
 ## Retry and dead-letter contract
 
