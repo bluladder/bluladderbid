@@ -4,7 +4,7 @@ This file is the recoverable source of truth for repository-level roadmap
 execution. Update it in every roadmap PR that changes dependency status,
 contracts, validation gates, migrations, or protected-action readiness.
 
-Last reconciled main: `6cb698ea23034b0bcc87799ae303f8b2bc2bdf64`
+Last reconciled main: `014517b43d543dec77d29d46877cde9aaf6f53a6`
 
 ## Dependency graph
 
@@ -20,7 +20,7 @@ Last reconciled main: `6cb698ea23034b0bcc87799ae303f8b2bc2bdf64`
           │   ├─ Klamath Phase 1D customer sites      complete (PR #113)
           │   ├─ Klamath Phase 1E hosted identity     complete (PR #114)
           │   └─ Klamath Phase 1F portal lineage      complete (PR #115/#116 + deployment)
-          │       └─ Klamath Phase 1G messaging       DFW connector compatibility prepared
+          │       └─ Klamath Phase 1G messaging       priority runtime deployed; adoption active
           ├─ #9 organization connector contracts
           │   └─ 9A pure contracts and Jobber seam   complete (PR #18)
           ├─ #10 service catalog and pricing
@@ -86,8 +86,12 @@ SMS worker boundary is now prepared: it resolves exactly one active
 organization connector, persists that binding under the current durable claim,
 reruns the dispatch guard, and uses the same reviewed provider adapter. Missing,
 stale, ambiguous, or cross-tenant authority terminates before provider
-submission. These runtime changes remain undeployed; remaining writers and
-deployment are separate gates.
+submission. Both reviewed functions were deployed together from merged main
+`014517b43d543dec77d29d46877cde9aaf6f53a6`. Secret-free probes reached their
+405 method and 401 authentication boundaries, and queue logs showed clean
+boots. No provider traffic or customer action occurred. Direct/manual,
+staff-reply, inbound-provider, and other legacy writer surfaces remain separate
+adoption gates.
 
 The Phase 1F portal runtime is deployed from reconciled main and all seven
 reviewed functions passed secret-free boot verification. The Klamath mapping remains
