@@ -25,6 +25,7 @@ import {
 } from "./sms.ts";
 import {
   guardMessagingDispatch,
+  type MessagingProvider,
   type OrganizationMessagingConnectorConfig,
   selectOrganizationMessagingConnector,
 } from "./messagingConnectorContracts.ts";
@@ -76,6 +77,7 @@ export interface OutboxSendInput {
 
 export interface OutboxSendResult {
   sent: boolean;
+  provider?: MessagingProvider | null;
   smsMessageId: string | null;
   outboxState: OutboxState | null;
   replay: boolean;
@@ -152,6 +154,7 @@ export async function sendOutboxSms(
   if (selection.status !== "resolved") {
     return {
       sent: false,
+      provider: null,
       smsMessageId: null,
       outboxState: null,
       replay: false,
@@ -170,6 +173,7 @@ export async function sendOutboxSms(
   if (dispatchGuard.status !== "authorized") {
     return {
       sent: false,
+      provider: selection.connector.provider,
       smsMessageId: null,
       outboxState: null,
       replay: false,
@@ -199,6 +203,7 @@ export async function sendOutboxSms(
   if (claimErr) {
     return {
       sent: false,
+      provider: selection.connector.provider,
       smsMessageId: null,
       outboxState: null,
       replay: false,
@@ -212,6 +217,7 @@ export async function sendOutboxSms(
   if (!claim.ok || !claim.id) {
     return {
       sent: false,
+      provider: selection.connector.provider,
       smsMessageId: null,
       outboxState: null,
       replay: false,
@@ -228,6 +234,7 @@ export async function sendOutboxSms(
       claim.status === "sent";
     return {
       sent: priorAccepted,
+      provider: selection.connector.provider,
       smsMessageId: claim.id,
       outboxState: (claim.outbox_state ?? null) as OutboxState | null,
       replay: claim.replay === true,
@@ -337,6 +344,7 @@ export async function sendOutboxSms(
   if (finalizeError || !finalized?.ok) {
     return {
       sent: false,
+      provider: selection.connector.provider,
       smsMessageId: claim.id,
       outboxState: "delivery_unknown",
       replay: false,
@@ -349,6 +357,7 @@ export async function sendOutboxSms(
 
   return {
     sent: newState === "provider_accepted",
+    provider: selection.connector.provider,
     smsMessageId: claim.id,
     outboxState: newState,
     replay: false,

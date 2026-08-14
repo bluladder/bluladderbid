@@ -14,6 +14,10 @@ const relative = {
   outbox: "supabase/functions/_shared/smsOutbox.ts",
   twilio: "supabase/functions/_shared/twilioSms.ts",
   twilioTests: "supabase/functions/_shared/twilioSms_test.ts",
+  portalVerification:
+    "supabase/functions/customer-verification-request/index.ts",
+  portalVerificationTests:
+    "supabase/functions/customer-verification-request/outbox_contract_test.ts",
   tests:
     "supabase/functions/_shared/messagingConnectorContracts_test.ts",
   migration:
@@ -298,6 +302,22 @@ for (const text of [
   "transport failure is delivery-ambiguous",
 ]) requireText("twilioTests", text);
 
+for (const text of [
+  "resolvePortalOrganizationAuthority",
+  "sendOutboxSms",
+  "outboundKey: `customer_verification:${challenge.id}`",
+  "organizationId,",
+  "provider: result.provider ?? null",
+]) requireText("portalVerification", text);
+if (/sendCallRailSms|getCallRailConfig/.test(content.portalVerification ?? "")) {
+  errors.push("portal verification bypasses the organization-scoped outbox");
+}
+for (const text of [
+  "portal verification SMS uses server-scoped connector outbox",
+  "portal verification keeps one organization-owned email ledger write",
+  "portal verification challenge records selected provider evidence",
+]) requireText("portalVerificationTests", text);
+
 for (const text of ["Phase 1G", "messaging/outbox lineage"]) {
   requireText("roadmap", text);
 }
@@ -457,6 +477,7 @@ if (register) {
       "connector_channel_mismatch" ||
     register.dfw_connector_count !== 1 ||
     register.dfw_connector_runtime_allowlist_prepared !== true ||
+    register.portal_verification_writer_adopted !== true ||
     register.messaging_runtime_deployed !== false ||
     register.dfw_provider_changed !== false ||
     register.klamath_connector_count !== 0 ||
