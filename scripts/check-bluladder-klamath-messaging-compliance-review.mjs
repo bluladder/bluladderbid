@@ -186,6 +186,7 @@ for (const phrase of [
   "keeps the repository template blocked",
   "separate Twilio campaign-submission review",
   "requires a separate unchecked marketing opt-in",
+  "does not let owner and legal evidence substitute for each other",
   "leaves publication, provider submission, runtime, and activation closed",
 ]) {
   if (!content.tests?.includes(phrase)) errors.push(`tests omit ${phrase}`);

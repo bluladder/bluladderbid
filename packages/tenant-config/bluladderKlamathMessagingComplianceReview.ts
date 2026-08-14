@@ -186,11 +186,12 @@ function inspectReview(
     blockers.push(`${label}_review_missing`);
     return;
   }
+  const validRecordRef = label === "owner"
+    ? /^(?:github-issue-\d+|owner-approval-\d{4}-\d{2}-\d{2})$/
+    : /^legal-review-\d{4}-\d{2}-\d{2}$/;
   if (
     typeof value.recordRef !== "string" ||
-    !/^(?:github-issue-\d+|owner-approval-\d{4}-\d{2}-\d{2}|legal-review-\d{4}-\d{2}-\d{2})$/.test(
-      value.recordRef,
-    ) ||
+    !validRecordRef.test(value.recordRef) ||
     typeof value.approvedAt !== "string" ||
     !validUtcTimestamp(value.approvedAt)
   ) blockers.push(`${label}_review_invalid`);

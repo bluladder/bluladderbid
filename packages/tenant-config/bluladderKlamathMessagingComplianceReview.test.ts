@@ -128,6 +128,15 @@ describe("Klamath messaging compliance review", () => {
     );
   });
 
+  it("does not let owner and legal evidence substitute for each other", () => {
+    const fixture = approvedFixture();
+    fixture.ownerApproval.recordRef = "legal-review-2026-08-14";
+    fixture.legalReview.recordRef = "github-issue-151";
+    expect(evaluateKlamathMessagingComplianceReview(fixture).blockers).toEqual(
+      expect.arrayContaining(["owner_review_invalid", "legal_review_invalid"]),
+    );
+  });
+
   it("rejects sensitive or unrelated evidence fields", () => {
     const fixture = approvedFixture() as unknown as Record<string, unknown>;
     fixture.activateNow = true;
