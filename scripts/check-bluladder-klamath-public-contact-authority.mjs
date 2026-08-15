@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const files = {
   migration: "supabase/migrations/20260815031340_bluladder_klamath_public_contact_authority.sql",
+  executionMigration: "supabase/migrations/20260815033840_ce894663-db30-45f4-90e8-817ae229615f.sql",
   preflight: "supabase/preflight/bluladder_klamath_public_contact_authority.sql",
   postflight: "supabase/verification/bluladder_klamath_public_contact_authority.sql",
   resolver: "supabase/functions/_shared/publicContactPublicationAuthority.ts",
@@ -21,6 +22,7 @@ const files = {
   inventory: "docs/architecture/tenant-inventory.json",
   contract: "docs/architecture/bluladder-klamath-public-contact-authority.md",
   gates: "docs/operations/bluladder-klamath-public-contact-authority-gates.json",
+  evidence: "docs/operations/bluladder-klamath-public-contact-hosted-evidence.json",
   roadmap: "docs/ROADMAP_EXECUTION_LEDGER.md",
   package: "package.json",
   ci: ".github/workflows/ci.yml",
@@ -28,6 +30,7 @@ const files = {
 };
 const expectedArtifacts = {
   migration: [6570, "28a240ed2dc29577c5a0fdb66deca8a6c76abe09be0e4b0a4b361a6009d17de2"],
+  executionMigration: [6569, "9d2cff0184f14c664c7bd93d43295df298ded15b0b954e3cdb3a249e76d6f86e"],
   preflight: [2956, "5feb692ac5c53f4fb64e0c46d1c937ce8794b631d6c133bab313c7e9ada5d3b2"],
   postflight: [5101, "7ce5ec31ecef11eac93229b2649a295f01499316c69740f9328ecb8d4b2f8625"],
 };
@@ -52,6 +55,10 @@ for (const [key, [bytes, sha256]] of Object.entries(expectedArtifacts)) {
   if (crypto.createHash("sha256").update(value).digest("hex") !== sha256) {
     errors.push(`${files[key]} SHA-256 drifted`);
   }
+}
+
+if (content.executionMigration !== content.migration?.replace(/\n$/, "")) {
+  errors.push("Lovable execution receipt differs beyond terminal-LF normalization");
 }
 
 for (const text of [
@@ -207,8 +214,10 @@ requireText("inventory", '"organization_public_contacts"');
 requireText("contract", "separate");
 requireText("contract", "`organization_public_contacts` table");
 requireText("contract", "No contact is seeded");
-requireText("contract", "does not authorize that action");
-requireText("roadmap", "Klamath public-contact authority candidate");
+requireText("contract", "schema applied and resolver deployed");
+requireText("contract", "terminal-LF normalization");
+requireText("roadmap", "Klamath public-contact authority");
+requireText("roadmap", "terminal-LF-normalized execution receipt");
 requireText("package", '"check:klamath-public-contact-authority"');
 requireText("ci", "bun run check:klamath-public-contact-authority");
 requireText("ci", "bluladder_klamath_public_contact_rehearsal");
@@ -250,15 +259,24 @@ if (gates) {
     "hosted_preflight_passed",
     "migration_applied",
     "postflight_passed",
+    "function_deployed",
+  ]) {
+    if (gates[key] !== true) {
+      errors.push(`${key} must be true after hosted reconciliation`);
+    }
+  }
+  for (const key of [
     "owner_contact_approved",
     "contact_verified",
-    "function_deployed",
     "frontend_published",
     "site_published",
     "customer_traffic_allowed",
     "activation_allowed",
   ]) {
     if (gates[key] !== false) errors.push(`${key} must remain false`);
+  }
+  if (gates.hosted_evidence !== files.evidence) {
+    errors.push("public-contact hosted evidence path drifted");
   }
   if (Object.values(gates.authorized_actions ?? {}).some(Boolean)) {
     errors.push("public-contact gate authorizes a protected action");
@@ -269,12 +287,56 @@ if (gates) {
     "server_contact_resolver",
     "missing_and_ambiguous_denial",
     "dfw_contact_leak_denial",
+    "parent_pr_merge",
+    "hosted_migration_preflight",
+    "migration_application",
+    "function_deployment",
   ]);
-  if ((gates.gates ?? []).length !== 16) errors.push("public-contact gate count drifted");
+  if ((gates.gates ?? []).length !== 17) {
+    errors.push("public-contact gate count drifted");
+  }
   for (const gate of gates.gates ?? []) {
     const expected = ready.has(gate.id) ? "ready" : "blocked";
     if (gate.status !== expected) errors.push(`gate ${gate.id} must be ${expected}`);
   }
+}
+
+let evidence;
+try {
+  evidence = JSON.parse(content.evidence ?? "{}");
+} catch (error) {
+  errors.push(`hosted evidence JSON is invalid: ${error.message}`);
+}
+if (evidence) {
+  if (
+    evidence.schema_version !== 1 ||
+    evidence.reviewed_source_main !== "0cc830219520acb2f38a07fd4cf41cc2b8329aca" ||
+    evidence.lovable_execution_receipt_main !== "1c412e630d32791a3d0f2fc1b68d1da61256f104" ||
+    evidence.execution_receipt?.path !== files.executionMigration ||
+    evidence.execution_receipt?.bytes !== 6569 ||
+    evidence.execution_receipt?.sha256 !==
+      expectedArtifacts.executionMigration[1] ||
+    evidence.execution_receipt?.normalization !== "canonical_payload_without_terminal_lf" ||
+    evidence.ledger_before?.count !== 164 ||
+    evidence.ledger_after?.count !== 165 ||
+    evidence.ledger_after?.tip !== "20260815033840" ||
+    evidence.postflight?.public_contacts !== 0 ||
+    evidence.postflight?.published_contacts !== 0 ||
+    evidence.postflight?.rls_enabled_tables !== 1 ||
+    evidence.postflight?.policies !== 2 ||
+    evidence.postflight?.anonymous_grants !== 0 ||
+    evidence.edge_function?.slug !== "public-site-bootstrap" ||
+    evidence.edge_function?.deployed !== true ||
+    evidence.edge_function?.secret_free_get_status !== 405 ||
+    evidence.edge_function?.canonical_dfw_origin_post_status !== 200 ||
+    evidence.edge_function?.inactive_klamath_origin_post_status !== 404 ||
+    evidence.frontend_published !== false ||
+    evidence.public_contact_rows_created !== 0 ||
+    evidence.site_published !== false ||
+    evidence.customer_traffic_allowed !== false ||
+    evidence.provider_actions !== false ||
+    evidence.calls_or_messages !== false
+  ) errors.push("public-contact hosted evidence drifted");
 }
 
 if (errors.length) {
@@ -283,5 +345,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath public-contact authority gate OK: empty additive schema, exact tenant RLS, no anonymous access, fail-closed publication proof, no internal-contact fallback, and all hosted/public actions blocked.",
+  "BluLadder Klamath public-contact authority gate OK: exact hosted receipt, empty additive schema, tenant RLS, no anonymous access, fail-closed publication proof, and public/customer activation blocked.",
 );

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "public_contact_authority_hosted_reconciliation",
+  "reviewed_source_main": "0cc830219520acb2f38a07fd4cf41cc2b8329aca",
+  "lovable_execution_receipt_main": "1c412e630d32791a3d0f2fc1b68d1da61256f104",
+  "canonical_migration": {
+    "path": "supabase/migrations/20260815031340_bluladder_klamath_public_contact_authority.sql",
+    "bytes": 6570,
+    "sha256": "28a240ed2dc29577c5a0fdb66deca8a6c76abe09be0e4b0a4b361a6009d17de2"
+  },
+  "execution_receipt": {
+    "path": "supabase/migrations/20260815033840_ce894663-db30-45f4-90e8-817ae229615f.sql",
+    "bytes": 6569,
+    "sha256": "9d2cff0184f14c664c7bd93d43295df298ded15b0b954e3cdb3a249e76d6f86e",
+    "normalization": "canonical_payload_without_terminal_lf",
+    "stored_statement_count": 1
+  },
+  "ledger_before": {
+    "count": 164,
+    "tip": "20260814120308",
+    "ordered_sha256": "ee68da23b599f4c9d18c5013ef9510680d8d0818cba5850000f13f248b242b8b"
+  },
+  "ledger_after": {
+    "count": 165,
+    "tip": "20260815033840",
+    "ordered_sha256": "78a3a8823e4baf9a78dc241a86f115658201a4f4939f480ecde3b45a465a0fd3"
+  },
+  "preflight": {
+    "prerequisite_tables": 4,
+    "target_tables": 0,
+    "exact_dfw_default": 1,
+    "unexpected_legacy_defaults": 0,
+    "exact_klamath_provisioning": 1,
+    "exact_inactive_site": 1,
+    "klamath_internal_contacts": 0,
+    "klamath_memberships": 0
+  },
+  "postflight": {
+    "target_tables": 1,
+    "rls_enabled_tables": 1,
+    "policies": 2,
+    "anonymous_grants": 0,
+    "authenticated_grants": 4,
+    "service_role_grants": 7,
+    "indexes": 2,
+    "columns": 13,
+    "public_contacts": 0,
+    "published_contacts": 0
+  },
+  "dfw_baseline": {
+    "organization": "1:a30b79cebb46dd94696ab0a6fa7d073f85055380b227f0fef4db528a6744d4c7",
+    "settings": "1:3b38cb0fb5ff1f376bdc5c0beee661531591a225e942fc3f62bf5567eed1aaca",
+    "territories": "0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "services": "0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "resolution_keys": "4:f6525777a630a88531b34145ed85491edf4fd444a7d768b98ac125af406d8ef3"
+  },
+  "edge_function": {
+    "slug": "public-site-bootstrap",
+    "deployed": true,
+    "verify_jwt": false,
+    "secret_free_get_status": 405,
+    "canonical_dfw_origin_post_status": 200,
+    "inactive_klamath_origin_post_status": 404
+  },
+  "lovable_ai_messages": 1,
+  "frontend_published": false,
+  "public_contact_rows_created": 0,
+  "site_published": false,
+  "customer_traffic_allowed": false,
+  "provider_actions": false,
+  "calls_or_messages": false
+}

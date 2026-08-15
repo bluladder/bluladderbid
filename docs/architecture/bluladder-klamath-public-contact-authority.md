@@ -1,8 +1,10 @@
 # BluLadder Klamath public contact publication authority
 
-Status: **repository-only, dormant, stacked on draft PR #177**. The migration
-is not applied, no contact value exists, no function/frontend bundle from this
-stack is deployed, and all publication and customer-traffic gates remain
+Status: **schema applied and resolver deployed; publication still dormant**.
+The reviewed migration is recorded once in the hosted ledger through its
+Lovable-generated execution receipt, the `public-site-bootstrap` function is
+deployed, and read-only postflight passed. No public contact value exists, the
+frontend and site are unpublished, and all customer-traffic gates remain
 closed.
 
 ## Purpose
@@ -57,24 +59,25 @@ The additive migration:
 - neither changes nor activates any organization, site, provider, customer,
   pricing, territory, service, connector, contact, or traffic state.
 
-The repository includes unchanged read-only preflight and postflight SQL. A
-future hosted application requires separate authorization, exact migration-
-ledger reconciliation, a transactionally applied migration, postflight, and
-unchanged DFW/Klamath fingerprints. This PR does not authorize that action.
+The repository includes unchanged read-only preflight and postflight SQL. The
+authorized hosted application used the exact reviewed payload with only the
+provider's terminal-LF normalization. The ledger advanced once, postflight
+proved the exact grants/RLS/policies and zero rows, and all captured DFW
+fingerprints remained unchanged. The sanitized record is
+`docs/operations/bluladder-klamath-public-contact-hosted-evidence.json`.
 
 ## Remaining gates
 
-1. Draft PR #177 must be reviewed and merged first, then this stack must be
-   rebased/retargeted and independently reviewed.
-2. Exact owner-approved Klamath phone/email content and channel choice are
+1. Exact owner-approved Klamath phone/email content and channel choice are
    still missing.
-3. Contact ownership and reachability must be verified without exposing the
+2. Contact ownership and reachability must be verified without exposing the
    value in review artifacts.
-4. The migration, function, and frontend require separately authorized hosted
-   application/deployment only after exact-head checks and migration preflight.
-5. Legal/compliance copy, DNS/TLS, site lifecycle, public acceptance, and all
+3. The frontend remains unpublished and requires separate exact-head release
+   authorization after contact and compliance approval.
+4. Legal/compliance copy, DNS/TLS, site lifecycle, public acceptance, and all
    customer-runtime activation gates remain separate and blocked.
 
-No hosted mutation, deployment, DNS action, provider change, credential
-action, purchase, call, message, customer traffic, or Lovable credit is part of
-this repository stage.
+The completed hosted action created only the empty table/ledger receipt and
+deployed only the fail-closed bootstrap function. It did not publish the
+frontend, modify DNS/providers/credentials, purchase anything, create a public
+contact, call, message, or allow customer traffic.

@@ -1,9 +1,10 @@
 # BluLadder Klamath public-site bootstrap and compliance boundary
 
-Status: **repository-only, inactive, unpublished candidate**. No Edge Function
-or frontend bundle from this work is deployed, the Klamath hostname does not
-resolve publicly, and every hosted publication/customer-traffic gate remains
-closed.
+Status: **fail-closed Edge Function deployed; frontend and site unpublished**.
+The exact `public-site-bootstrap` function is active and returns unavailable
+for the inactive Klamath origin while preserving the canonical DFW path. The
+frontend bundle is not published, the Klamath hostname does not resolve
+publicly, and every publication/customer-traffic gate remains closed.
 
 ## Purpose
 
@@ -53,19 +54,20 @@ DFW, or preview fallback for Klamath.
 
 ## Remaining release gates
 
-Before any part of this candidate is deployed or published, separate review
-must prove:
+Before any public presentation is published, separate review must prove:
 
 1. exact owner approval of the messaging and compliance copy;
 2. qualified legal/compliance review;
-3. separately authorized application of the organization-scoped public contact
-   schema plus one protected, owner-approved, verified value;
+3. one protected, owner-approved, verified public contact value in the already
+   applied organization-scoped authority;
 4. exact hosted lifecycle, mapping, routing, and publication mutations;
 5. DNS/TLS ownership for the canonical hostname;
-6. deployment of only the reviewed function/frontend commits;
+6. publication of only the reviewed frontend commit (the function deployment
+   is complete);
 7. secret-free and browser acceptance of all blocked/allowed paths; and
 8. a later tenant-aware customer-runtime release before quote traffic.
 
-This work does not deploy, publish, mutate hosted data, modify DNS, enable
-customer traffic, activate pricing, create a provider resource, access a
-secret, purchase anything, call, message, or consume Lovable credits.
+The completed hosted step applied only the empty public-contact schema and
+deployed only this function. It did not publish the frontend, modify DNS,
+enable customer traffic, activate pricing, create a provider resource, access
+a secret, purchase anything, call, or message.
