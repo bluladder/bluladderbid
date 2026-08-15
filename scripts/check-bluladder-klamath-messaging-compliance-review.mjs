@@ -60,7 +60,7 @@ if (
   candidate?.schemaVersion !== 1 ||
   candidate?.tenantKey !== "bluladder-klamath" ||
   candidate?.purpose !== "messaging_compliance_owner_legal_review" ||
-  candidate?.providerRequirementsReviewedAsOf !== "2026-08-14"
+  candidate?.providerRequirementsReviewedAsOf !== "2026-08-15"
 ) errors.push("messaging compliance candidate identity drifted");
 
 const exactUseCases = [
@@ -101,6 +101,7 @@ if (!Array.isArray(samples) || samples.length !== 5) {
 
 for (const phrase of [
   "separate unchecked marketing opt-in",
+  "not part of this launch campaign",
   "Consent is not a condition of purchase",
   "Message frequency varies",
   "Msg & data rates may apply",
@@ -108,6 +109,18 @@ for (const phrase of [
 ]) {
   if (!JSON.stringify(candidate?.consent).includes(phrase)) {
     errors.push(`consent candidate omits ${phrase}`);
+  }
+}
+for (const phrase of [
+  "text messaging opt-in data",
+  "messaging consent",
+  "share, sell, rent, transfer",
+  "https://klamath.bluladder.com/contact",
+  "Privacy Policy: https://klamath.bluladder.com/privacy",
+  "Marketing and promotional messages are outside this launch program",
+]) {
+  if (!JSON.stringify(candidate?.publicSurfaces).includes(phrase)) {
+    errors.push(`public-surface candidate omits ${phrase}`);
   }
 }
 for (const url of [

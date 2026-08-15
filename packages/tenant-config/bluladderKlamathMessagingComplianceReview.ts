@@ -20,11 +20,11 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE = {
   schemaVersion: 1,
   tenantKey: "bluladder-klamath",
   purpose: "messaging_compliance_owner_legal_review",
-  providerRequirementsReviewedAsOf: "2026-08-14",
+  providerRequirementsReviewedAsOf: "2026-08-15",
   campaign: {
     brandName: "BluLadder Klamath",
     description:
-      "BluLadder Klamath sends customer-requested secure quote and booking-management links, appointment reminders, one-time authentication codes, and genuine operator follow-up to customers who provide their mobile number and consent in the corresponding web or voice flow. Promotional messages are sent only after a separate unchecked marketing opt-in.",
+      "BluLadder Klamath sends customer-requested secure quote and booking-management links, appointment reminders, one-time authentication codes, and genuine operator follow-up to customers who provide their mobile number and consent in the corresponding web or voice flow. Marketing and promotional messages are outside this launch campaign.",
     useCases: KLAMATH_SMS_USE_CASES,
     recommendedUseCaseCategory: "LOW_VOLUME",
     recommendationStatus:
@@ -37,11 +37,11 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE = {
   },
   consent: {
     messageFlow:
-      "Website users enter a mobile number and explicitly request a quote link, booking-management link, reminder, operator follow-up, or authentication code. The adjacent disclosure identifies BluLadder Klamath, says message frequency varies and message and data rates may apply, and explains HELP and STOP. Transactional consent is limited to the requested service. Marketing requires a separate unchecked marketing opt-in. Voice callers may request a one-time link during an inbound call; the assistant confirms the request before tool execution. Consent is not a condition of purchase. Privacy Policy: https://klamath.bluladder.com/privacy. Terms and Conditions: https://klamath.bluladder.com/terms.",
+      "Website users enter a mobile number and explicitly request a quote link, booking-management link, reminder, operator follow-up, or authentication code. The adjacent disclosure identifies BluLadder Klamath, says message frequency varies and message and data rates may apply, and explains HELP and STOP. Transactional consent is limited to the requested service. Voice callers may request a one-time link during an inbound call; the assistant confirms the request before tool execution. Consent is not a condition of purchase. Privacy Policy: https://klamath.bluladder.com/privacy. Terms and Conditions: https://klamath.bluladder.com/terms.",
     transactionalDisclosure:
       "By requesting a text from BluLadder Klamath, you agree to receive messages related to your quote, booking, appointment, support request, or authentication. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out. Consent is not a condition of purchase. See Privacy Policy and Terms and Conditions.",
-    marketingDisclosure:
-      "Send me occasional promotions and offers from BluLadder Klamath by text. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out. Consent is not required to get a quote or book.",
+    futureMarketingBoundary:
+      "Marketing and promotional messages are not part of this launch campaign. Any future marketing campaign requires a separate unchecked marketing opt-in plus separate owner, legal, carrier, and release approval.",
     marketingCheckboxDefaultChecked: false,
     consentRequiredForPurchase: false,
     helpMessage:
@@ -55,16 +55,18 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE = {
     termsAndConditionsUrl: "https://klamath.bluladder.com/terms",
     supportUrl: "https://klamath.bluladder.com/contact",
     privacyPolicyRequiredStatements: [
-      "Mobile information will not be shared with third parties or affiliates for marketing or promotional purposes.",
+      "We do not share, sell, rent, transfer, or otherwise provide mobile phone numbers, text messaging opt-in data, or messaging consent to third parties, affiliates, or lead generators for marketing or promotional purposes.",
       "Message frequency varies.",
       "Message and data rates may apply.",
       "Reply STOP to opt out and HELP for help.",
     ],
     termsRequiredStatements: [
       "The messaging program is operated by BluLadder Klamath.",
-      "Messages may include requested quote and booking links, reminders, operator follow-up, authentication, and separately opted-in promotions.",
+      "Messages may include requested quote and booking links, reminders, operator follow-up, and authentication. Marketing and promotional messages are outside this launch program.",
       "Message frequency varies and message and data rates may apply.",
       "Reply STOP to opt out and HELP for help.",
+      "For customer support, reply HELP or visit https://klamath.bluladder.com/contact.",
+      "Privacy Policy: https://klamath.bluladder.com/privacy.",
       "Carriers are not liable for delayed or undelivered messages.",
       "Consent is not a condition of purchase.",
     ],

@@ -93,8 +93,10 @@ describe("Klamath messaging compliance review", () => {
         marketingCheckboxDefaultChecked: false,
         consentRequiredForPurchase: false,
       });
-    expect(KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE.consent.messageFlow)
+    expect(KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE.consent.futureMarketingBoundary)
       .toContain("separate unchecked marketing opt-in");
+    expect(KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE.campaign.description)
+      .toContain("Marketing and promotional messages are outside this launch campaign");
   });
 
   it("rejects candidate copy, URL, or use-case drift", () => {

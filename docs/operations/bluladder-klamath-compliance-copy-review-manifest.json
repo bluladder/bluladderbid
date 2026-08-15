@@ -5,13 +5,13 @@
   "candidate_bundle": {
     "algorithm": "sha256",
     "serialization": "newline_joined_path_bytes_sha256",
-    "sha256": "32b3f999041c10b880c67da1f3a15cc9fded204fc145478adebcf73181788e66"
+    "sha256": "a75c691ac8c83155b5762ed2e14a5b2acff6d819fd2bbedb244bf0d3ccd88aa0"
   },
   "artifacts": [
     {
       "path": "src/lib/publicSite/klamathComplianceCopy.ts",
-      "bytes": 2014,
-      "sha256": "6c235954d74f92c8e981f52f65b8c2a1bbcefa6c23555b79920efa0f9fcaf8e5",
+      "bytes": 2305,
+      "sha256": "d010a4706645fec2213eb32ee5b8a31774477400236a412dfbbd349d672d670c",
       "review_scope": "rendered_privacy_and_terms_copy"
     },
     {
@@ -22,8 +22,8 @@
     },
     {
       "path": "docs/operations/bluladder-klamath-messaging-compliance-review.template.json",
-      "bytes": 5473,
-      "sha256": "51634daa8a3172200fcc9780430eaef3c2414a49a5b3a9f0703c8b568841038f",
+      "bytes": 5705,
+      "sha256": "ff934891d7a4aaaf1d1935e87b7c656500bdce73c55af12203090afd95a59865",
       "review_scope": "opt_in_help_stop_campaign_and_public_surface_copy"
     }
   ],
