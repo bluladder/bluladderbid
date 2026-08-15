@@ -33,13 +33,13 @@ function requireText(key, text) {
 }
 
 for (const text of [
-  "repository-only, inactive, unpublished candidate",
+  "fail-closed Edge Function deployed; frontend and site unpublished",
   "there is no first-row,",
   "DFW, or preview fallback for Klamath",
   "customerRuntimeReady` is hard-false",
   "internal escalation and",
   "notification contacts are never eligible",
-  "does not deploy, publish, mutate hosted data"
+  "did not publish the frontend"
 ]) requireText("contract", text);
 
 for (const text of [
@@ -159,13 +159,15 @@ if (gates) {
     "owner_copy_approved",
     "legal_review_passed",
     "hostname_resolves",
-    "function_deployed",
     "frontend_published",
     "site_published",
     "customer_traffic_allowed",
-    "activation_allowed"
+    "activation_allowed",
   ]) {
     if (gates[key] !== false) errors.push(`${key} must remain false`);
+  }
+  if (gates.function_deployed !== true) {
+    errors.push("function_deployed must be true after hosted reconciliation");
   }
   if (Object.values(gates.authorized_actions ?? {}).some(Boolean)) {
     errors.push("public-site gate authorizes a protected action");
@@ -176,9 +178,11 @@ if (gates) {
     "exact_dfw_compatibility",
     "unknown_host_denial",
     "compliance_only_route_denial",
-    "dfw_contact_leak_denial"
+    "dfw_contact_leak_denial",
+    "public_contact_authority",
+    "function_deployment",
   ]);
-  const expectedGateCount = 14;
+  const expectedGateCount = 15;
   if ((gates.gates ?? []).length !== expectedGateCount) {
     errors.push("public-site gate count drifted");
   }

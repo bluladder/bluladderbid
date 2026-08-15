@@ -173,6 +173,10 @@ const reviewedPostRuntimeMigrations = new Set([
   // Issue #178: empty public-contact publication authority. It seeds no
   // values and keeps all hosted/public actions separately gated.
   "supabase/migrations/20260815031340_bluladder_klamath_public_contact_authority.sql",
+  // Lovable-generated execution receipt for the exact public-contact payload.
+  // The public-contact checker permits only the observed terminal-LF
+  // normalization and pins the hosted ledger/postflight evidence.
+  "supabase/migrations/20260815033840_ce894663-db30-45f4-90e8-817ae229615f.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

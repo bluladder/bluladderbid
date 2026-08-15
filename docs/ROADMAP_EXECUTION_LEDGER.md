@@ -219,16 +219,18 @@ migration verification, `git diff --check`, GitHub CI, and secret scan.
 Warnings and unavailable hosted checks must be reported separately from
 passing checks.
 
-### Klamath public-contact authority candidate
+### Klamath public-contact authority
 
-Issue #178 prepares a separate organization-scoped public-contact table and
-fail-closed server resolver, stacked on the public-site bootstrap candidate.
-It seeds no contact value and treats every internal escalation/notification
-destination as ineligible for public display. Missing schema/rows, draft or
-invalid evidence, ambiguity, and cross-tenant data keep the public contact page
-unavailable. Migration application, exact owner-approved contact content,
-reachability verification, deployment, publication, DNS, and activation remain
-separately gated.
+Issue #178 added a separate organization-scoped public-contact table and
+fail-closed server resolver. The exact empty migration was applied once through
+Lovable's native migration mechanism and reconciled to its provider-generated
+terminal-LF-normalized execution receipt. Read-only postflight proved exact
+RLS, policies, grants, indexes, columns, zero public-contact rows, preserved DFW
+fingerprints, and inactive Klamath state. Only `public-site-bootstrap` was
+deployed; secret-free checks returned 200 for the exact DFW origin, 404 for the
+inactive Klamath origin, and 405 for an unsupported method. Exact owner-approved
+contact content, reachability verification, legal/compliance approval, frontend
+publication, DNS, site publication, and activation remain separately gated.
 
 ## Open architecture decisions
 
