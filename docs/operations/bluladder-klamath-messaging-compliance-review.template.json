@@ -6,7 +6,7 @@
     "providerRequirementsReviewedAsOf": "2026-08-15",
     "campaign": {
       "brandName": "BluLadder Klamath",
-      "description": "BluLadder Klamath sends customer-requested secure quote and booking-management links, appointment reminders, one-time authentication codes, and genuine operator follow-up to customers who provide their mobile number and consent in the corresponding web or voice flow. Marketing and promotional messages are outside this launch campaign.",
+      "description": "BluLadder Klamath sends customer-requested secure quote and booking-management links, appointment reminders, one-time authentication codes, and genuine operator follow-up to customers who provide their mobile number and give verbal consent by explicitly requesting and confirming the corresponding message during an inbound service conversation. Marketing and promotional messages are outside this launch campaign.",
       "useCases": [
         "quote_link",
         "booking_management",

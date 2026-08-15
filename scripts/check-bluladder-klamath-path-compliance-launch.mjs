@@ -9,6 +9,7 @@ const files = {
   surface: "src/lib/publicSite/klamathPublicSurface.ts",
   surfaceTests: "src/lib/publicSite/klamathPublicSurface.test.ts",
   page: "src/pages/KlamathCompliancePage.tsx",
+  index: "index.html",
   copy: "src/lib/publicSite/klamathComplianceCopy.ts",
   template: "docs/operations/bluladder-klamath-messaging-compliance-review.template.json",
   manifest: "docs/operations/bluladder-klamath-compliance-copy-review-manifest.json",
@@ -27,11 +28,12 @@ function requireText(key, fragment) {
 }
 
 for (const fragment of [
-  "implementation prepared",
-  "Owner approval cannot substitute for qualified review",
+  "owner-authorized for direct Twilio/TCR vetting",
+  "Twilio/TCR carrier vetting as the external",
+  "A separate legal review is not a release gate",
   "bid.bluladder.com/klamath",
   "does not enable Klamath customer traffic",
-  "existing DFW application",
+  "DFW application and gains no Klamath authority",
   "do not prompt Lovable AI",
   "approved `$15` campaign vetting charge",
   "Do not reconnect or make `klamath.bluladder.com` primary",
@@ -56,12 +58,16 @@ for (const fragment of [
 for (const fragment of [
   "Text messaging consent",
   "KLAMATH_OPT_IN_COPY",
-  "Support is not published yet",
+  "Text messaging support",
   "pathPrefix = ''",
 ]) requireText("page", fragment);
 for (const forbidden of ["<form", "<input", "supabase.functions", "customer-portal"]) {
   if (content.page?.includes(forbidden)) errors.push(`${files.page} contains ${forbidden}`);
 }
+for (const fragment of [
+  'pathname === "/klamath"',
+  'pathname.indexOf("/klamath/") === 0',
+]) requireText("index", fragment);
 
 const exactUrls = [
   "https://bid.bluladder.com/klamath",
@@ -99,7 +105,7 @@ if (
   manifest?.owner_review?.status !== "pending" ||
   manifest?.qualified_legal_compliance_review?.status !== "pending" ||
   manifest?.production_action_authorized !== false
-) errors.push("immutable path bundle is not waiting for both exact reviews");
+) errors.push("immutable artifact manifest must remain a mutation-free template");
 
 if (errors.length) {
   console.error("Klamath path compliance launch contract failed:\n");
@@ -108,6 +114,5 @@ if (errors.length) {
 }
 
 console.log(
-  "Klamath path compliance launch contract passed (exact paths only; DFW and all runtimes preserved; reviews and campaign submission remain gated).",
+  "Klamath path compliance launch contract passed (exact paths only; DFW and all runtimes preserved; public verification and Twilio/TCR submission remain gated).",
 );
-

@@ -132,11 +132,12 @@ function ContactContent({ contacts }: { contacts: PublishedPublicContact[] }) {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Contact</h1>
       <section className={sectionClass}>
-        <h2 className="text-xl font-semibold">Support is not published yet</h2>
+        <h2 className="text-xl font-semibold">Text messaging support</h2>
         <p className="text-muted-foreground">
-          BluLadder Klamath is still preparing its public support channel. No request form, phone
-          number, email address, quote, booking, message, or customer action is available on this
-          page until the organization-scoped public contact is separately reviewed and published.
+          For help with a BluLadder Klamath text message, reply HELP to that message. To stop
+          messages, reply STOP. Message frequency varies and message and data rates may apply.
+          A separate public phone or email support channel is not published yet. This page does
+          not accept requests, collect information, or enable customer traffic.
         </p>
       </section>
     </div>

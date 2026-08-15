@@ -1,11 +1,13 @@
 # BluLadder Klamath messaging compliance review contract
 
-Status: **path-based public-surface candidate; owner, legal, and public-surface
-review pending; provider and runtime unchanged**. This package cannot by itself publish a page,
+Status: **owner-authorized path-based public-surface candidate; public-surface
+and Twilio/TCR review pending; provider and runtime unchanged**. This package cannot by itself publish a page,
 register a campaign, provision a number, send a message, enable customer
 traffic, or activate Klamath.
 
-The owner, legal, and public-surface review gates remain independent.
+Issue #151 records the owner's direction to use Twilio/TCR carrier vetting as
+the external review step. No separate legal review is claimed or required by
+this release contract.
 
 ## Purpose
 
@@ -13,8 +15,8 @@ Issue #151 approves the five intended SMS use cases at a business-policy level,
 but exact public opt-in, privacy, terms, HELP/STOP, and representative campaign
 copy still need bounded review. The safe template is
 `docs/operations/bluladder-klamath-messaging-compliance-review.template.json`.
-It freezes one exact candidate while leaving owner approval, legal review,
-public-surface verification, and contract-test evidence pending.
+It freezes one exact candidate while leaving public-surface verification,
+carrier vetting, and contract-test evidence pending.
 
 The requirements were reconciled on 2026-08-15 against Twilio's official
 [business-information and campaign requirements](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/collect-business-info),
@@ -32,7 +34,7 @@ Twilio or carrier review will approve it.
 - Twilio documents `LOW_VOLUME` as a lower-throughput mixed-use category and
   `MIXED` as the standard mixed-use category. `LOW_VOLUME` is recorded only as
   the launch-cost recommendation. Signed-in eligibility is now verified;
-  expected volume and owner review remain pending before adoption.
+  expected volume and the signed-in campaign form remain pending before adoption.
 - The five representative messages identify BluLadder Klamath, use bracketed
   variable content, and disclose HELP/STOP. Link-bearing messages declare that
   links are present; embedded phone numbers are not proposed.
@@ -51,7 +53,7 @@ Twilio or carrier review will approve it.
   carrier, and no-condition-of-purchase statements.
 - Marketing and promotional messages are outside the approved launch campaign.
   Any future marketing campaign remains behind a separate unchecked opt-in and
-  separate owner, legal, carrier, and release approval.
+  separate owner, carrier, and release approval.
 - Exact future URLs use the Klamath-only `/klamath` path boundary on the
   existing primary site. This avoids the hosting provider's cross-domain
   redirect while leaving every existing DFW route unchanged. They are
@@ -68,7 +70,7 @@ The existing approved campaign is not a Klamath shortcut: its branding,
 opt-in origin, privacy/terms origins, consent copy, and assigned sender region
 do not match this exact candidate. Repository evidence therefore authorizes no
 reuse. A separately reviewed Klamath campaign path remains required after the
-owner, legal, and public-surface gates pass. The sanitized provider snapshot is
+owner-directed public-surface gates pass. The sanitized provider snapshot is
 `docs/operations/bluladder-klamath-twilio-readiness.json`; it contains no
 provider identifier, phone digits, credential, message, or customer data.
 
@@ -77,13 +79,12 @@ provider identifier, phone digits, credential, message, or customer data.
 A protected copy of the template may reach only
 `eligible_for_twilio_campaign_submission_review` after:
 
-1. bounded owner approval of the exact campaign and consent copy;
-2. qualified legal/compliance review of the exact privacy and terms language;
-3. read-only proof that the exact opt-in, privacy, terms, and support surfaces
+1. bounded owner direction for the exact campaign and consent copy;
+2. read-only proof that the exact opt-in, privacy, terms, and support surfaces
    are publicly reachable; and
-4. signed-in proof that the intended business boundary is eligible for the
+3. signed-in proof that the intended business boundary is eligible for the
    recommended use-case category (completed read-only on 2026-08-15); and
-5. exact contract-test evidence.
+4. exact contract-test evidence.
 
 The evaluator still returns `activationAllowed: false`. Twilio business and
 campaign review, Messaging Service creation, number selection, credentials,

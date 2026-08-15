@@ -32,6 +32,8 @@
       (function () {
         var pixelId = "%VITE_META_PIXEL_ID%";
         if (!pixelId || pixelId.indexOf("VITE_META_PIXEL_ID") !== -1) return;
+        var pathname = window.location && window.location.pathname || "/";
+        if (pathname === "/klamath" || pathname.indexOf("/klamath/") === 0) return;
         try {
           if (window.localStorage.getItem("bluladder_meta_tracking_consent") === "denied") return;
         } catch (_) {

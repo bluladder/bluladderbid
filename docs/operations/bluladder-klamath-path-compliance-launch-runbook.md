@@ -1,7 +1,7 @@
 # BluLadder Klamath path-based compliance release
 
-Status: **implementation prepared; immutable owner and qualified review gates
-remain open**.
+Status: **owner-authorized for direct Twilio/TCR vetting after guarded
+publication**.
 
 This is the forward-only alternative to the unsupported shared-project custom
 domain configuration. It exposes only these public presentation routes on the
@@ -21,13 +21,13 @@ CRM, pricing, quote, booking, portal, or provider runtime.
 1. Require a clean branch based on live `main` and a single scoped PR.
 2. Recompute every artifact size, SHA-256, and the canonical bundle digest in
    `docs/operations/bluladder-klamath-compliance-copy-review-manifest.json`.
-3. Record owner approval naming that exact new bundle digest.
-4. Record a separate qualified legal/compliance review naming the same digest.
-   Owner approval cannot substitute for qualified review.
-5. Require exact-head CI and Secret Scan before merge.
+3. Record the exact candidate digest and the owner's bounded release direction.
+4. Require exact-head CI and Secret Scan before merge.
 
-Hard stop: the earlier custom-host bundle approval does not approve the new
-path URLs or the new truthful verbal-consent explanation.
+Issue #151 records the owner's direction to reconcile the pages to Twilio's
+published requirements and use Twilio/TCR carrier vetting as the external
+review step. A separate legal review is not a release gate. This does not claim
+that legal review occurred or guarantee carrier approval.
 
 ## 2. Preserve the shared production boundary
 
@@ -35,11 +35,11 @@ path URLs or the new truthful verbal-consent explanation.
 2. The three exact compliance subpaths render only privacy, terms, and contact.
 3. Every neighboring path, including `/klamath/services`,
    `/klamath/quote/*`, and `/klamath/customer-portal`, stays in the existing
-   existing DFW application and gains no Klamath authority.
+   DFW application and gains no Klamath authority.
 4. The path pages use immutable repository presentation data only. They do not
    call the public-site bootstrap, accept form input, or write hosted data.
-5. The contact page stays visibly unavailable until the separately reviewed
-   Klamath contact channels have reachability and publication evidence.
+5. The contact page gives only HELP and STOP instructions. It exposes no phone
+   or email destination, accepts no request, and writes no customer data.
 
 ## 3. Publish and verify the frontend
 
@@ -58,10 +58,8 @@ The approved `$15` campaign vetting charge and `$1.50/month` low-volume charge
 authorize those fees only after the carrier-submission gates pass. Do not
 submit or charge while any of these remain open:
 
-- immutable owner approval for the new bundle;
-- qualified legal/compliance review for the same bundle;
 - public HTTPS verification of all four paths;
-- a truthful support/reachability path suitable for the campaign; and
+- a truthful verbal-opt-in explanation and HELP/STOP support path; and
 - exact signed-in provider form review showing no unrelated change.
 
 Campaign submission does not authorize a phone-number purchase, Messaging

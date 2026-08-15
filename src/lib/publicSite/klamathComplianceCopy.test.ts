@@ -100,6 +100,22 @@ describe('Klamath compliance-only copy contract', () => {
       KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS[3],
       { selector: 'strong' },
     )).toBeInTheDocument();
+    cleanup();
+
+    const contactPage = render(KlamathCompliancePage({
+      route: '/contact',
+      pathPrefix: '/klamath',
+      publicName: 'BluLadder Klamath',
+      tagline: 'Next Level Clean',
+      publicContactReady: false,
+      publicContacts: [],
+    }));
+    expect(contactPage.getByRole('heading', { name: 'Text messaging support' }))
+      .toBeInTheDocument();
+    expect(contactPage.container.textContent).toContain('reply HELP');
+    expect(contactPage.container.textContent).toContain('reply STOP');
+    expect(contactPage.container.querySelector('form')).toBeNull();
+    expect(contactPage.container.querySelector('input')).toBeNull();
   });
 
   it('does not convert exact copy alignment into owner or legal approval', () => {

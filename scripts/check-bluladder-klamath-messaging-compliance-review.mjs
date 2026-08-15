@@ -225,7 +225,8 @@ for (const phrase of [
   }
 }
 for (const phrase of [
-  "owner, legal, and public-surface review",
+  "Twilio/TCR review pending",
+  "No separate legal review is claimed",
   "Signed-in provider readiness reconciliation",
   "existing approved campaign is not a Klamath shortcut",
   "representative campaign",
@@ -272,5 +273,5 @@ if (errors.length) {
 }
 
 console.log(
-  "Klamath messaging compliance review OK: exact owner/legal candidate prepared; public surfaces, provider submission, runtime, traffic, and activation remain disabled.",
+  "Klamath messaging compliance review OK: exact carrier-vetting candidate prepared; public surfaces, provider submission, runtime, traffic, and activation remain disabled.",
 );
