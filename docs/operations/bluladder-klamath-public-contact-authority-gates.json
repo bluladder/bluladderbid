@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "organization_scoped_public_contact_publication_authority",
+  "stacked_on": "2bcc8e422abdcaf5a98ba96fe53a9534ad74a854",
+  "issue": 178,
+  "migration": {
+    "path": "supabase/migrations/20260815031340_bluladder_klamath_public_contact_authority.sql",
+    "bytes": 6570,
+    "sha256": "28a240ed2dc29577c5a0fdb66deca8a6c76abe09be0e4b0a4b361a6009d17de2"
+  },
+  "preflight": {
+    "path": "supabase/preflight/bluladder_klamath_public_contact_authority.sql",
+    "bytes": 2956,
+    "sha256": "5feb692ac5c53f4fb64e0c46d1c937ce8794b631d6c133bab313c7e9ada5d3b2"
+  },
+  "postflight": {
+    "path": "supabase/verification/bluladder_klamath_public_contact_authority.sql",
+    "bytes": 5101,
+    "sha256": "7ce5ec31ecef11eac93229b2649a295f01499316c69740f9328ecb8d4b2f8625"
+  },
+  "repository_implementation_ready": true,
+  "separate_internal_and_public_contacts": true,
+  "zero_seeded_public_contacts": true,
+  "exact_dfw_compatibility": true,
+  "server_authoritative_resolution": true,
+  "anonymous_access_denied": true,
+  "hosted_preflight_passed": false,
+  "migration_applied": false,
+  "postflight_passed": false,
+  "owner_contact_approved": false,
+  "contact_verified": false,
+  "function_deployed": false,
+  "frontend_published": false,
+  "site_published": false,
+  "customer_traffic_allowed": false,
+  "activation_allowed": false,
+  "authorized_actions": {
+    "merge": false,
+    "migration_apply": false,
+    "hosted_data_mutation": false,
+    "deploy": false,
+    "dns_change": false,
+    "frontend_publish": false,
+    "provider_change": false,
+    "credential_action": false,
+    "purchase": false,
+    "call_or_message": false,
+    "lovable_credit": false
+  },
+  "gates": [
+    { "id": "separate_public_contact_schema", "status": "ready" },
+    { "id": "least_privilege_rls", "status": "ready" },
+    { "id": "server_contact_resolver", "status": "ready" },
+    { "id": "missing_and_ambiguous_denial", "status": "ready" },
+    { "id": "dfw_contact_leak_denial", "status": "ready" },
+    { "id": "parent_pr_merge", "status": "blocked" },
+    { "id": "hosted_migration_preflight", "status": "blocked" },
+    { "id": "owner_contact_approval", "status": "blocked" },
+    { "id": "contact_reachability_verification", "status": "blocked" },
+    { "id": "migration_application", "status": "blocked" },
+    { "id": "function_and_frontend_deployment", "status": "blocked" },
+    { "id": "legal_compliance_review", "status": "blocked" },
+    { "id": "dns_and_tls", "status": "blocked" },
+    { "id": "public_acceptance", "status": "blocked" },
+    { "id": "customer_runtime", "status": "blocked" },
+    { "id": "activation", "status": "blocked" }
+  ]
+}

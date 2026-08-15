@@ -219,6 +219,17 @@ migration verification, `git diff --check`, GitHub CI, and secret scan.
 Warnings and unavailable hosted checks must be reported separately from
 passing checks.
 
+### Klamath public-contact authority candidate
+
+Issue #178 prepares a separate organization-scoped public-contact table and
+fail-closed server resolver, stacked on the public-site bootstrap candidate.
+It seeds no contact value and treats every internal escalation/notification
+destination as ineligible for public display. Missing schema/rows, draft or
+invalid evidence, ambiguity, and cross-tenant data keep the public contact page
+unavailable. Migration application, exact owner-approved contact content,
+reachability verification, deployment, publication, DNS, and activation remain
+separately gated.
+
 ## Open architecture decisions
 
 - authoritative county/geocoder and normalization rules;

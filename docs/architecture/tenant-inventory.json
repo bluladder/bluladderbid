@@ -79,6 +79,7 @@
     "organization_customer_sites",
       "organization_messaging_connectors",
       "organization_pricing_profiles",
+      "organization_public_contacts",
       "organization_services",
       "organization_settings",
       "organization_territories",

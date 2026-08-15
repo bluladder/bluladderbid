@@ -1,10 +1,15 @@
-import type { KlamathComplianceRoute } from '@/lib/publicSite/klamathPublicSurface';
+import {
+  type KlamathComplianceRoute,
+  type PublishedPublicContact,
+  publicContactHref,
+} from '@/lib/publicSite/klamathPublicSurface';
 
 interface KlamathCompliancePageProps {
   route: KlamathComplianceRoute;
   publicName: string;
   tagline: string;
-  publicContactReady: false;
+  publicContactReady: boolean;
+  publicContacts: PublishedPublicContact[];
 }
 
 const shellClass = 'mx-auto w-full max-w-3xl px-6 py-10 sm:py-14';
@@ -70,7 +75,26 @@ function TermsContent() {
   );
 }
 
-function ContactContent() {
+function ContactContent({ contacts }: { contacts: PublishedPublicContact[] }) {
+  if (contacts.length > 0) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold tracking-tight">Contact</h1>
+        <section className={sectionClass}>
+          <h2 className="text-xl font-semibold">Contact BluLadder Klamath</h2>
+          <ul className="space-y-3">
+            {contacts.map((contact) => (
+              <li key={contact.channel}>
+                <a className="font-medium text-primary underline-offset-4 hover:underline" href={publicContactHref(contact)}>
+                  {contact.label}: {contact.value}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Contact</h1>
@@ -90,6 +114,7 @@ export function KlamathCompliancePage({
   route,
   publicName,
   tagline,
+  publicContacts,
 }: KlamathCompliancePageProps) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -109,7 +134,7 @@ export function KlamathCompliancePage({
       <main className={shellClass}>
         {route === '/privacy' ? <PrivacyContent /> : null}
         {route === '/terms' ? <TermsContent /> : null}
-        {route === '/contact' ? <ContactContent /> : null}
+        {route === '/contact' ? <ContactContent contacts={publicContacts} /> : null}
       </main>
       <footer className="border-t border-border">
         <p className="mx-auto w-full max-w-5xl px-6 py-8 text-center text-xs text-muted-foreground">

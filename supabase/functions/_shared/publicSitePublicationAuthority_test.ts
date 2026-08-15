@@ -92,6 +92,8 @@ Deno.test("public site publication authority preserves exact DFW compatibility w
       publicName: "BluLadder",
       tagline: "Next Level Clean",
       accessMode: "customer",
+      publicContactReady: false,
+      publicContacts: [],
       source: "exact_dfw_compatibility",
     },
   );
@@ -116,12 +118,15 @@ Deno.test("published Klamath site with customer traffic disabled resolves compli
     publicName: "BluLadder Klamath",
     tagline: "Next Level Clean",
     accessMode: "compliance_only",
+    publicContactReady: false,
+    publicContacts: [],
     source: "published_customer_site",
   });
   assertEquals(fake.reads.map((read) => read.table), [
     "organization_customer_sites",
     "organizations",
     "organization_settings",
+    "organization_public_contacts",
   ]);
 });
 
@@ -141,8 +146,43 @@ Deno.test("customer traffic flag changes classification but does not grant front
   assertEquals(result.status, "resolved");
   if (result.status === "resolved") {
     assertEquals(result.accessMode, "customer");
-    assertFalse("contact" in result);
+    assertEquals(result.publicContactReady, false);
+    assertEquals(result.publicContacts, []);
     assertFalse("provider" in result);
+  }
+});
+
+Deno.test("published Klamath site returns only separately approved public contacts", async () => {
+  const fake = fakeSupabase({
+    organization_customer_sites: [publishedSite],
+    organizations: [activeOrganization],
+    organization_settings: [settings],
+    organization_public_contacts: [{
+      organization_id: organizationId,
+      channel: "email",
+      label: "Email support",
+      destination: "support@example.com",
+      status: "published",
+      owner_approved_at: "2026-08-15T00:00:00.000Z",
+      owner_approval_reference_hash: "a".repeat(64),
+      verified_at: "2026-08-15T00:01:00.000Z",
+      published_at: "2026-08-15T00:02:00.000Z",
+      configuration_version: 1,
+    }],
+  });
+  const result = await resolvePublicSitePublicationAuthority(
+    fake.client,
+    request("https://klamath.bluladder.com"),
+  );
+  assertEquals(result.status, "resolved");
+  if (result.status === "resolved") {
+    assertEquals(result.publicContactReady, true);
+    assertEquals(result.publicContacts, [{
+      channel: "email",
+      label: "Email support",
+      value: "support@example.com",
+    }]);
+    assertFalse("owner_approval_reference_hash" in result);
   }
 });
 

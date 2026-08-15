@@ -38,10 +38,11 @@ future tenant-aware runtime release is reviewed.
 
 The privacy and terms pages contain the existing candidate statements from the
 messaging-compliance review. They are not claims of owner, legal, carrier, or
-publication approval. The contact page exposes no DFW or protected value and
-contains no form, link, call, email, or messaging action. `publicContactReady`
-is hard-false because the current organization contact schema does not define
-an owner-approved public display contact.
+publication approval. The contact page exposes no DFW or protected value while
+`publicContactReady` is false. The stacked public-contact authority candidate
+can make that flag true only for a separately verified, owner-approved,
+published row in the dedicated public-contact table; internal escalation and
+notification contacts are never eligible.
 
 ## DFW and preview compatibility
 
@@ -57,7 +58,8 @@ must prove:
 
 1. exact owner approval of the messaging and compliance copy;
 2. qualified legal/compliance review;
-3. an organization-scoped public contact schema and protected value;
+3. separately authorized application of the organization-scoped public contact
+   schema plus one protected, owner-approved, verified value;
 4. exact hosted lifecycle, mapping, routing, and publication mutations;
 5. DNS/TLS ownership for the canonical hostname;
 6. deployment of only the reviewed function/frontend commits;

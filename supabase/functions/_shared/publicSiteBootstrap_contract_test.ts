@@ -20,7 +20,8 @@ Deno.test("public site bootstrap delegates hostname authority and returns public
       '"/privacy"',
       '"/terms"',
       '"/contact"',
-      "publicContactReady: false",
+      "publicContactReady: authority.publicContactReady",
+      "publicContacts: authority.publicContacts",
     ]
   ) {
     assertStringIncludes(source, fragment);
