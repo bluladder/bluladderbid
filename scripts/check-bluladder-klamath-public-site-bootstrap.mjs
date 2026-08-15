@@ -120,8 +120,8 @@ requireText("roadmap", "Klamath public-site bootstrap candidate");
 for (const text of [
   "KLAMATH_PRIVACY_COPY",
   "KLAMATH_TERMS_COPY",
-  "No request form, phone",
-  "number, email address, quote, booking, message, or customer action is available"
+  "For help with a BluLadder Klamath text message, reply HELP",
+  "A separate public phone or email support channel is not published yet"
 ]) requireText("page", text);
 
 let messagingTemplate;

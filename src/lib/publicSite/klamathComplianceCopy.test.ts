@@ -6,6 +6,7 @@ import { KlamathCompliancePage } from '@/pages/KlamathCompliancePage';
 import {
   KLAMATH_MESSAGING_PRIVACY_REQUIRED_STATEMENTS,
   KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS,
+  KLAMATH_OPT_IN_COPY,
   KLAMATH_PRIVACY_COPY,
   KLAMATH_TERMS_COPY,
 } from './klamathComplianceCopy';
@@ -65,6 +66,26 @@ describe('Klamath compliance-only copy contract', () => {
     }
     cleanup();
 
+    const optInPage = render(KlamathCompliancePage({
+      route: '/opt-in',
+      pathPrefix: '/klamath',
+      publicName: 'BluLadder Klamath',
+      tagline: 'Next Level Clean',
+      publicContactReady: false,
+      publicContacts: [],
+    }));
+    expect(optInPage.getByRole('heading', { name: 'Text messaging consent' }))
+      .toBeInTheDocument();
+    expect(optInPage.container.textContent).toContain('does not collect a mobile number');
+    for (const statement of Object.values(KLAMATH_OPT_IN_COPY)) {
+      expect(optInPage.container.textContent).toContain(statement);
+    }
+    expect(optInPage.getByRole('link', { name: 'Privacy' })).toHaveAttribute(
+      'href',
+      '/klamath/privacy',
+    );
+    cleanup();
+
     const termsPage = render(KlamathCompliancePage({
       route: '/terms',
       publicName: 'BluLadder Klamath',
@@ -79,6 +100,22 @@ describe('Klamath compliance-only copy contract', () => {
       KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS[3],
       { selector: 'strong' },
     )).toBeInTheDocument();
+    cleanup();
+
+    const contactPage = render(KlamathCompliancePage({
+      route: '/contact',
+      pathPrefix: '/klamath',
+      publicName: 'BluLadder Klamath',
+      tagline: 'Next Level Clean',
+      publicContactReady: false,
+      publicContacts: [],
+    }));
+    expect(contactPage.getByRole('heading', { name: 'Text messaging support' }))
+      .toBeInTheDocument();
+    expect(contactPage.container.textContent).toContain('reply HELP');
+    expect(contactPage.container.textContent).toContain('reply STOP');
+    expect(contactPage.container.querySelector('form')).toBeNull();
+    expect(contactPage.container.querySelector('input')).toBeNull();
   });
 
   it('does not convert exact copy alignment into owner or legal approval', () => {

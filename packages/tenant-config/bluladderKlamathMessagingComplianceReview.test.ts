@@ -158,7 +158,7 @@ describe("Klamath messaging compliance review", () => {
     expect(BLULADDER_KLAMATH.customerTrafficAllowed).toBe(false);
     expect(BLULADDER_KLAMATH.activationAllowed).toBe(false);
     expect(KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE).toMatchObject({
-      sourceImplementationChanged: false,
+      sourceImplementationChanged: true,
       publicSurfacesPublished: false,
       providerCampaignSubmitted: false,
       messagingRuntimeEnabled: false,

@@ -115,8 +115,8 @@ for (const phrase of [
   "text messaging opt-in data",
   "messaging consent",
   "share, sell, rent, transfer",
-  "https://klamath.bluladder.com/contact",
-  "Privacy Policy: https://klamath.bluladder.com/privacy",
+  "https://bid.bluladder.com/klamath/contact",
+  "Privacy Policy: https://bid.bluladder.com/klamath/privacy",
   "Marketing and promotional messages are outside this launch program",
 ]) {
   if (!JSON.stringify(candidate?.publicSurfaces).includes(phrase)) {
@@ -124,18 +124,20 @@ for (const phrase of [
   }
 }
 for (const url of [
-  "https://klamath.bluladder.com/",
-  "https://klamath.bluladder.com/privacy",
-  "https://klamath.bluladder.com/terms",
-  "https://klamath.bluladder.com/contact",
+  "https://bid.bluladder.com/klamath",
+  "https://bid.bluladder.com/klamath/privacy",
+  "https://bid.bluladder.com/klamath/terms",
+  "https://bid.bluladder.com/klamath/contact",
 ]) {
   if (!JSON.stringify(candidate?.publicSurfaces).includes(url)) {
     errors.push(`public-surface candidate omits ${url}`);
   }
 }
 
+if (candidate?.sourceImplementationChanged !== true) {
+  errors.push("sourceImplementationChanged must record the path-based implementation");
+}
 for (const flag of [
-  "sourceImplementationChanged",
   "publicSurfacesPublished",
   "providerCampaignSubmitted",
   "messagingRuntimeEnabled",
@@ -223,7 +225,8 @@ for (const phrase of [
   }
 }
 for (const phrase of [
-  "owner, legal, and public-surface review",
+  "Twilio/TCR review pending",
+  "No separate legal review is claimed",
   "Signed-in provider readiness reconciliation",
   "existing approved campaign is not a Klamath shortcut",
   "representative campaign",
@@ -270,5 +273,5 @@ if (errors.length) {
 }
 
 console.log(
-  "Klamath messaging compliance review OK: exact owner/legal candidate prepared; public surfaces, provider submission, runtime, traffic, and activation remain disabled.",
+  "Klamath messaging compliance review OK: exact carrier-vetting candidate prepared; public surfaces, provider submission, runtime, traffic, and activation remain disabled.",
 );

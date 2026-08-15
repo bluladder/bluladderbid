@@ -1,16 +1,18 @@
 import {
-  type KlamathComplianceRoute,
+  type KlamathCompliancePageRoute,
   type PublishedPublicContact,
   publicContactHref,
 } from '@/lib/publicSite/klamathPublicSurface';
 import {
   KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS,
+  KLAMATH_OPT_IN_COPY,
   KLAMATH_PRIVACY_COPY,
   KLAMATH_TERMS_COPY,
 } from '@/lib/publicSite/klamathComplianceCopy';
 
 interface KlamathCompliancePageProps {
-  route: KlamathComplianceRoute;
+  route: KlamathCompliancePageRoute;
+  pathPrefix?: '' | '/klamath';
   publicName: string;
   tagline: string;
   publicContactReady: boolean;
@@ -19,6 +21,32 @@ interface KlamathCompliancePageProps {
 
 const shellClass = 'mx-auto w-full max-w-3xl px-6 py-10 sm:py-14';
 const sectionClass = 'space-y-3 rounded-xl border border-border bg-card p-6 shadow-sm';
+
+function OptInContent() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold tracking-tight">Text messaging consent</h1>
+      <section className={sectionClass}>
+        <h2 className="text-xl font-semibold">How BluLadder Klamath obtains consent</h2>
+        <p className="text-muted-foreground">
+          {KLAMATH_OPT_IN_COPY.howConsentIsObtained}
+        </p>
+      </section>
+      <section className={sectionClass}>
+        <h2 className="text-xl font-semibold">Transactional messaging disclosure</h2>
+        <p className="text-muted-foreground">
+          {KLAMATH_OPT_IN_COPY.transactionalDisclosure}
+        </p>
+      </section>
+      <section className={sectionClass}>
+        <h2 className="text-xl font-semibold">No marketing opt-in</h2>
+        <p className="text-muted-foreground">
+          {KLAMATH_OPT_IN_COPY.marketingBoundary}
+        </p>
+      </section>
+    </div>
+  );
+}
 
 function PrivacyContent() {
   return (
@@ -104,11 +132,12 @@ function ContactContent({ contacts }: { contacts: PublishedPublicContact[] }) {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Contact</h1>
       <section className={sectionClass}>
-        <h2 className="text-xl font-semibold">Support is not published yet</h2>
+        <h2 className="text-xl font-semibold">Text messaging support</h2>
         <p className="text-muted-foreground">
-          BluLadder Klamath is still preparing its public support channel. No request form, phone
-          number, email address, quote, booking, message, or customer action is available on this
-          page until the organization-scoped public contact is separately reviewed and published.
+          For help with a BluLadder Klamath text message, reply HELP to that message. To stop
+          messages, reply STOP. Message frequency varies and message and data rates may apply.
+          A separate public phone or email support channel is not published yet. This page does
+          not accept requests, collect information, or enable customer traffic.
         </p>
       </section>
     </div>
@@ -117,26 +146,30 @@ function ContactContent({ contacts }: { contacts: PublishedPublicContact[] }) {
 
 export function KlamathCompliancePage({
   route,
+  pathPrefix = '',
   publicName,
   tagline,
   publicContacts,
 }: KlamathCompliancePageProps) {
+  const pageHref = (page: '' | '/privacy' | '/terms' | '/contact') =>
+    page === '' ? pathPrefix || '/privacy' : `${pathPrefix}${page}`;
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-4">
-          <a href="/privacy" className="flex flex-col leading-none">
+          <a href={pageHref('')} className="flex flex-col leading-none">
             <span className="font-display text-xl font-bold text-primary">{publicName}</span>
             <span className="text-xs text-muted-foreground">{tagline}</span>
           </a>
           <nav className="flex gap-4 text-sm" aria-label="Compliance pages">
-            <a className="hover:text-primary" href="/privacy">Privacy</a>
-            <a className="hover:text-primary" href="/terms">Terms</a>
-            <a className="hover:text-primary" href="/contact">Contact</a>
+            <a className="hover:text-primary" href={pageHref('/privacy')}>Privacy</a>
+            <a className="hover:text-primary" href={pageHref('/terms')}>Terms</a>
+            <a className="hover:text-primary" href={pageHref('/contact')}>Contact</a>
           </nav>
         </div>
       </header>
       <main className={shellClass}>
+        {route === '/opt-in' ? <OptInContent /> : null}
         {route === '/privacy' ? <PrivacyContent /> : null}
         {route === '/terms' ? <TermsContent /> : null}
         {route === '/contact' ? <ContactContent contacts={publicContacts} /> : null}

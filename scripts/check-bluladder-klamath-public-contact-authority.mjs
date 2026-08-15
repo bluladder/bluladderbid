@@ -194,7 +194,8 @@ for (const text of [
 for (const text of [
   "publicContactHref(contact)",
   "contacts.length > 0",
-  "Support is not published yet",
+  "Text messaging support",
+  "A separate public phone or email support channel is not published yet",
 ]) requireText("page", text);
 for (const forbidden of [
   "PRIMARY_PUBLIC_PHONE",

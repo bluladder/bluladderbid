@@ -1,8 +1,10 @@
 export const KLAMATH_PUBLIC_HOSTNAME = 'klamath.bluladder.com';
 export const DFW_PUBLIC_HOSTNAME = 'bid.bluladder.com';
+export const KLAMATH_PUBLIC_PATH_PREFIX = '/klamath';
 
 export const KLAMATH_COMPLIANCE_ROUTES = ['/privacy', '/terms', '/contact'] as const;
 export type KlamathComplianceRoute = (typeof KLAMATH_COMPLIANCE_ROUTES)[number];
+export type KlamathCompliancePageRoute = KlamathComplianceRoute | '/opt-in';
 
 export interface PublishedPublicContact {
   channel: 'phone' | 'sms' | 'email';
@@ -28,7 +30,8 @@ export type PublicSurfaceDecision =
   | { mode: 'blocked'; reason: 'unknown_host' | 'site_unavailable' | 'route_unavailable' }
   | {
     mode: 'klamath_compliance';
-    route: KlamathComplianceRoute;
+    route: KlamathCompliancePageRoute;
+    pathPrefix: '' | typeof KLAMATH_PUBLIC_PATH_PREFIX;
     publicName: string;
     tagline: string;
     publicContactReady: boolean;
@@ -42,6 +45,16 @@ function normalizedHostname(hostname: string): string {
 function normalizedPathname(pathname: string): string {
   const path = pathname.trim() || '/';
   return path !== '/' ? path.replace(/\/+$/, '') : path;
+}
+
+function pathBasedComplianceRoute(pathname: string): KlamathCompliancePageRoute | null {
+  const path = normalizedPathname(pathname);
+  if (path === KLAMATH_PUBLIC_PATH_PREFIX) return '/opt-in';
+  if (!path.startsWith(`${KLAMATH_PUBLIC_PATH_PREFIX}/`)) return null;
+  const route = path.slice(KLAMATH_PUBLIC_PATH_PREFIX.length);
+  return KLAMATH_COMPLIANCE_ROUTES.includes(route as KlamathComplianceRoute)
+    ? route as KlamathComplianceRoute
+    : null;
 }
 
 function isDevelopmentPreview(hostname: string): boolean {
@@ -111,10 +124,10 @@ export function publicContactHref(contact: PublishedPublicContact): string {
 }
 
 /**
- * Keep the already-live DFW app unchanged, allow local/Lovable development,
- * and fail closed for every other host. Klamath can render only the exact
- * compliance routes after a server-authoritative bootstrap. Even a future
- * `customer` accessMode cannot enable the customer runtime in this release.
+ * Keep every already-live DFW customer route unchanged, reserve only the exact
+ * `/klamath` presentation boundary, allow local/Lovable development, and fail
+ * closed for every other host. The future custom Klamath host still requires a
+ * server-authoritative bootstrap. Neither path can enable customer runtime.
  */
 export function decidePublicSurface(
   hostname: string,
@@ -122,7 +135,19 @@ export function decidePublicSurface(
   bootstrap: PublicSiteBootstrap | null,
 ): PublicSurfaceDecision {
   const host = normalizedHostname(hostname);
-  if (host === DFW_PUBLIC_HOSTNAME) return { mode: 'existing_dfw' };
+  if (host === DFW_PUBLIC_HOSTNAME) {
+    const route = pathBasedComplianceRoute(pathname);
+    if (!route) return { mode: 'existing_dfw' };
+    return {
+      mode: 'klamath_compliance',
+      route,
+      pathPrefix: KLAMATH_PUBLIC_PATH_PREFIX,
+      publicName: 'BluLadder Klamath',
+      tagline: 'Next Level Clean',
+      publicContactReady: false,
+      publicContacts: [],
+    };
+  }
   if (isDevelopmentPreview(host)) return { mode: 'development_preview' };
   if (host !== KLAMATH_PUBLIC_HOSTNAME) {
     return { mode: 'blocked', reason: 'unknown_host' };
@@ -136,6 +161,7 @@ export function decidePublicSurface(
   return {
     mode: 'klamath_compliance',
     route: path as KlamathComplianceRoute,
+    pathPrefix: '',
     publicName: bootstrap.publicName,
     tagline: bootstrap.tagline,
     publicContactReady: bootstrap.publicContactReady,
