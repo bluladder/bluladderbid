@@ -23,6 +23,7 @@ Legend:
 
 | Function | Auth | Rate limit | Notes |
 |----------|------|------------|-------|
+| `public-site-bootstrap` | public | mem (30/min) | Read-only exact-origin publication authority; returns no identifiers, contacts, providers, or customer data. |
 | `customer-lookup` | public | mem (12/min) + shared (30/min) | Always returns generic response; no existence signal. |
 | `manage-sms-optout` | public + portal cookie | mem (6/min) + shared (20/min) | Portal session required for state changes; unauth callers get generic 200. |
 | `customer-verification-request` | public | identity (per-phone + per-IP challenge table) | Silent throttle in `customer_verification_challenges`; response is always generic. |

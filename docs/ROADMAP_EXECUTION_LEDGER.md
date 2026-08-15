@@ -202,6 +202,17 @@ gated:
 
 ## Validation ledger
 
+### Klamath public-site bootstrap candidate
+
+The repository now prepares an exact-host, server-authoritative public-site
+bootstrap for the future Klamath hostname. DFW production and local preview
+paths remain unchanged. Klamath can render only the privacy, terms, and contact
+read-only routes after a separately reviewed published-site state; every quote,
+booking, portal, chat, messaging, contact-write, pricing, and customer-runtime
+path remains blocked. The candidate is not deployed or published, the public
+contact and legal/owner reviews remain incomplete, DNS remains absent, and no
+hosted or provider mutation occurred.
+
 Every stage must run all applicable repository contract checks, ESLint,
 TypeScript, Vitest, relevant Deno tests, focused tests, production build,
 migration verification, `git diff --check`, GitHub CI, and secret scan.

@@ -19,6 +19,7 @@ import AuthCallback from "./pages/AuthCallback";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import ChatWidget from "./components/chat/ChatWidget";
+import { PublicSiteBoundary } from "./components/public-site/PublicSiteBoundary";
 
 const queryClient = new QueryClient();
 
@@ -28,32 +29,34 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="/admin/jobber" element={<Admin initialTab="integrations" />} />
-          <Route path="/admin/knowledge" element={<KnowledgeBaseAdmin />} />
-          <Route path="/admin/lead-sources" element={<LeadSourcesAdmin />} />
-          <Route path="/services" element={<Services />} />
-          <Route path="/plan-builder" element={<PlanBuilder />} />
-          <Route path="/quote/:id" element={<QuoteView />} />
-          <Route path="/quote/:id/book" element={<QuoteBookingView />} />
-          <Route path="/customer-portal" element={<MyAppointments />} />
-          <Route path="/my-appointments" element={<MyAppointments />} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/confirm-change" element={<ConfirmChange />} />
-          <Route path="/preferences" element={<MessagePreferences />} />
-          <Route path="/window-cleaning" element={<ServiceLanding />} />
-          <Route path="/gutter-cleaning" element={<ServiceLanding />} />
-          <Route path="/house-wash" element={<ServiceLanding />} />
-          <Route path="/roof-cleaning" element={<ServiceLanding />} />
-          <Route path="/driveway-cleaning" element={<ServiceLanding />} />
-          <Route path="/pressure-washing" element={<ServiceLanding />} />
-          <Route path="/:service" element={<ServiceLanding />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        <ChatWidget />
+        <PublicSiteBoundary>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/admin" element={<Admin />} />
+            <Route path="/admin/jobber" element={<Admin initialTab="integrations" />} />
+            <Route path="/admin/knowledge" element={<KnowledgeBaseAdmin />} />
+            <Route path="/admin/lead-sources" element={<LeadSourcesAdmin />} />
+            <Route path="/services" element={<Services />} />
+            <Route path="/plan-builder" element={<PlanBuilder />} />
+            <Route path="/quote/:id" element={<QuoteView />} />
+            <Route path="/quote/:id/book" element={<QuoteBookingView />} />
+            <Route path="/customer-portal" element={<MyAppointments />} />
+            <Route path="/my-appointments" element={<MyAppointments />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/confirm-change" element={<ConfirmChange />} />
+            <Route path="/preferences" element={<MessagePreferences />} />
+            <Route path="/window-cleaning" element={<ServiceLanding />} />
+            <Route path="/gutter-cleaning" element={<ServiceLanding />} />
+            <Route path="/house-wash" element={<ServiceLanding />} />
+            <Route path="/roof-cleaning" element={<ServiceLanding />} />
+            <Route path="/driveway-cleaning" element={<ServiceLanding />} />
+            <Route path="/pressure-washing" element={<ServiceLanding />} />
+            <Route path="/:service" element={<ServiceLanding />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+          <ChatWidget />
+        </PublicSiteBoundary>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
