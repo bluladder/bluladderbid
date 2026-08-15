@@ -60,7 +60,16 @@ for (const flag of [
   "custom_fields_created",
   "protected_custom_field_bindings_resolved",
   "provider_preflight_read_verified",
+  "provider_preflight_read_used_grant",
+  "runtime_entrypoint_adopted",
+  "credential_configured",
+  "credential_verified",
+  "protected_custom_field_bindings_recorded",
+  "connector_row_created",
+  "provider_calls_performed",
   "provider_resources_mutated",
+  "hosted_mutation_performed",
+  "deployment_performed",
 ]) {
   if (evidence?.[flag] !== true) errors.push(`${flag} must be true`);
 }
@@ -68,22 +77,22 @@ for (const flag of [
   "mutation_auto_retry_allowed",
   "booking_job_schedule_published",
   "provider_notifications_enabled",
-  "runtime_entrypoint_adopted",
-  "credential_configured",
-  "credential_verified",
-  "protected_custom_field_bindings_recorded",
   "webhook_created",
-  "connector_row_created",
-  "provider_calls_performed",
-  "hosted_mutation_performed",
-  "deployment_performed",
+  "runtime_provider_calls_performed",
   "activation_allowed",
   "customer_traffic_allowed",
   "dfw_fallback_allowed",
-  "provider_preflight_read_used_grant",
 ]) {
   if (evidence?.[flag] !== false) errors.push(`${flag} must remain false`);
 }
+if (
+  evidence?.status !==
+    "protected_configuration_and_inactive_connector_verified" ||
+  evidence?.connector_exact_inactive_count !== 1 ||
+  evidence?.connector_activation_surface_count !== 0 ||
+  evidence?.connector_webhook_reference_count !== 0 ||
+  evidence?.runtime_flag_present !== false
+) errors.push("inactive hosted connector receipt drifted");
 
 for (const operation of [
   "currentGrant",
@@ -154,7 +163,9 @@ for (const phrase of [
   "quote_sync",
   "booking_cancel",
   "outcome-uncertain",
-  "does not make the adapter reachable",
+  "mapping is not runtime-reachable",
+  "Grant-authenticated Pave preflight",
+  "runtime-disabled",
 ]) {
   if (!contents.docs?.includes(phrase)) {
     errors.push(`mapping documentation omits: ${phrase}`);
@@ -173,5 +184,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Klamath JobTread business mappings OK: exact dormant subset prepared; credentials, provider writes, runtime, and traffic remain disabled.",
+  "Klamath JobTread business mappings OK: protected configuration and one inactive connector are verified; provider writes, runtime, and traffic remain disabled.",
 );

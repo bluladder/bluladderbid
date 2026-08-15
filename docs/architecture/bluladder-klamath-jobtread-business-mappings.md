@@ -1,15 +1,17 @@
 # BluLadder Klamath JobTread business mappings
 
-Status: **dormant repository contract prepared**. The exact non-sensitive
-custom-field names and one organization-scoped Grant now exist. The Grant is
-not configured or verified, and no protected binding, webhook, connector row,
-provider identifier in repository or hosted configuration, runtime Pave request,
-deployment, customer record,
-job, task, activation, or traffic exists.
+Status: **protected configuration and one inactive connector verified**. The
+exact non-sensitive custom-field names and one organization-scoped Grant exist.
+The Grant and five bindings are present only in the protected hosted boundary;
+no provider identifier is stored in the repository.
 
-One signed-in API Explorer preflight read returned 24 custom fields and uniquely
-resolved the five exact provider bindings. It did not use the new Grant and did
-not make this mapping runtime-reachable.
+One bounded Grant-authenticated Pave preflight returned HTTP 200, resolved the
+intended organization membership, and returned 24 custom fields with pagination
+exhausted. The later read-only hosted reconciliation verified exactly one
+inactive, runtime-disabled, webhook-disabled connector with the compiled
+credential reference, five approved capabilities, configuration version, and
+lowercase SHA-256 provider-authority fingerprint. The runtime flag remains
+absent, so this mapping is not runtime-reachable.
 
 ## Authority boundary
 
@@ -69,18 +71,14 @@ There is no Jobber or DFW fallback for any blocked or failed Klamath mapping.
 
 ## Remaining activation gates
 
-This repository contract does not make the adapter reachable. Before any
-provider setup or traffic, a separately reviewed stage must:
+The deployed read boundary remains unreachable while its runtime flag is absent
+and the connector is inactive. Before any runtime provider traffic, a separately
+reviewed stage must:
 
-1. store and verify the created organization-scoped Grant only through the
-   protected secret boundary while keeping the first-wave webhook absent;
-2. store the already-resolved exact JobTread bindings through the protected
-   hosted boundary;
-3. insert one inactive Klamath connector row with hashed provider authority;
-4. adopt the now-prepared dormant operation-attempt runner only after concrete
+1. adopt the now-prepared dormant operation-attempt runner only after concrete
    stores, the server-initiated ingress policy, and reconciliation reads pass
    separate review;
-5. prove availability/capacity semantics and a cancellation lifecycle;
-6. deploy only the exact runtime functions and run owner-controlled acceptance;
-7. activate the connector and customer traffic only after every other Klamath
+2. prove availability/capacity semantics and a cancellation lifecycle;
+3. run bounded owner-controlled health and availability acceptance;
+4. activate the connector and customer traffic only after every other Klamath
    pricing, contact, messaging, site, and provider gate passes.

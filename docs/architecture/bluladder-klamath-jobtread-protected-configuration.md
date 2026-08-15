@@ -1,7 +1,7 @@
 # BluLadder Klamath JobTread protected configuration
 
-Status: **exact protected resolver adopted by the bounded read runtime;
-deployment and traffic disabled**.
+Status: **protected configuration verified; deployed read runtime remains
+fail-closed and traffic-disabled**.
 
 ## Provider checkpoint
 
@@ -12,13 +12,13 @@ text fields now exist with the exact names `BluLadder Customer Reference`,
 Customer Contact `Phone` and `Email` fields are the reviewed contact bindings.
 The exact provider organization and field identifiers remain protected and are
 not recorded here. A later protected checkpoint created one organization-scoped
-Grant. Its value is absent from the repository and remains unconfigured and
-unverified because the controlled security boundary stopped transmission
-before hosted secret storage. A signed-in API Explorer preflight then returned
-24 custom fields and uniquely resolved the five exact bindings required by the
-contract. That read did not use the new Grant, and the resolved identifiers
-remain outside the repository and hosted configuration. No runtime connector
-transport executed and no webhook was created.
+Grant. Its value is absent from the repository and is present only in the
+protected hosted secret boundary. One bounded Grant-authenticated Pave read
+returned HTTP 200, resolved exactly one intended organization membership, and
+returned 24 custom fields with pagination exhausted. All five bindings matched
+their reviewed name, type, and target contracts exactly once. No protected
+value was inspected during the later presence reconciliation, no runtime
+connector transport executed, and no webhook was created.
 
 ## Secret and authority boundary
 
@@ -41,13 +41,20 @@ Read and write configurations are deliberately separate because the read plan
 accepts no field bindings. Neither configuration contains the Grant Key. The
 credential resolver returns it only for the one compiled Klamath reference.
 
+## Hosted configuration receipt
+
+All seven required Klamath-only JobTread secret names are present exactly once;
+values remain hidden. Exactly one connector row matches the compiled credential
+reference, five approved capabilities, configuration version, and lowercase
+SHA-256 organization fingerprint. It is inactive, runtime-disabled,
+webhook-disabled, and has no webhook-secret reference. The runtime activation
+flag remains absent.
+
 ## Still blocked
 
-This module is imported only by the repository-adopted Klamath admin/service
-read entry point, which remains undeployed and stopped by two runtime gates.
-This repository change performs no provider request. Protected Grant storage
-and verification, protected
-environment values, an inactive connector row, Grant-authenticated provider
-health/availability acceptance,
-runtime deployment, pricing approval, contacts, messaging, telephony, site
-publication, customer traffic, and activation remain separately gated.
+This module is imported only by the deployed Klamath admin/service read entry
+point, which remains stopped by both runtime gates. No runtime provider request
+or customer/provider mutation was made by this reconciliation. Controlled
+health/availability acceptance, pricing approval, contacts, messaging,
+telephony, site publication, customer traffic, and activation remain
+separately gated.

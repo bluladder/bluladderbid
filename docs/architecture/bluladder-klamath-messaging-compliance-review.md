@@ -1,7 +1,7 @@
 # BluLadder Klamath messaging compliance review contract
 
-Status: **owner-authorized path-based public-surface candidate; public-surface
-and Twilio/TCR review pending; provider and runtime unchanged**. This package cannot by itself publish a page,
+Status: **owner-approved path-based public surface published; bounded Klamath
+campaign submitted for Twilio/TCR review; sender and runtime remain disabled**. This package cannot by itself publish a page,
 register a campaign, provision a number, send a message, enable customer
 traffic, or activate Klamath.
 
@@ -87,14 +87,28 @@ A protected copy of the template may reach only
 4. exact contract-test evidence.
 
 The evaluator still returns `activationAllowed: false`. Twilio business and
-campaign review, Messaging Service creation, number selection, credentials,
+campaign approval, number selection, sender assignment, credentials,
 connector insertion, deployment, controlled QA, and the final signed launch
 review remain independent gates.
+
+## Release reconciliation
+
+The owner-approved canonical bundle was merged through PR #188 at
+`436837df91b0cfad6ad7f72506c088f313110db2`. Exact-head CI and Secret Scan
+passed, the four exact path surfaces were published and verified, and the DFW
+boundary remained unchanged. A separate Klamath Messaging Service and bounded
+campaign were then created and submitted. The sanitized provider state is
+`in_review`; carrier approval is not claimed.
+
+No Klamath number was selected, reserved, purchased, or assigned. No message or
+call was sent, and messaging runtime, customer traffic, and tenant activation
+remain disabled. The release receipt records provider-resource presence and
+status only and contains no provider identifier, phone digits, or credential.
 
 ## Current production safety
 
 This package adds only a fail-closed path-based compliance presentation. Klamath remains
-provisioning, unpublished, runtime-routing-disabled, messaging-runtime-disabled,
+provisioning, runtime-routing-disabled, messaging-runtime-disabled,
 customer-traffic-disabled, and unable to activate. No Twilio resource,
-credential, sender, Messaging Service, A2P campaign, phone number, message,
-call, hosted row, deployment, or Lovable action is created.
+credential, sender assignment, phone number, message, call, hosted row, or
+provider runtime is created by the repository package.

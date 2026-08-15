@@ -162,7 +162,8 @@ if (
 if (
   providerReadiness?.schema_version !== 1 ||
   providerReadiness?.tenant_key !== "bluladder-klamath" ||
-  providerReadiness?.evidence_class !== "signed_in_read_only_provider_console" ||
+  providerReadiness?.evidence_class !==
+    "signed_in_provider_and_public_release_reconciliation" ||
   providerReadiness?.intended_business_boundary_uniquely_matched !== true ||
   providerReadiness?.business_boundary_active !== true ||
   providerReadiness?.compliance_profile_approved !== true ||
@@ -173,6 +174,22 @@ if (
   providerReadiness?.existing_campaign_matches_klamath !== false ||
   providerReadiness?.existing_campaign_reuse_authorized !== false ||
   providerReadiness?.separate_klamath_campaign_review_required !== true ||
+  providerReadiness?.reviewed_candidate_bundle_sha256 !==
+    "d92af2ca7ddcbf381386780d7770158667cfe301e52a66cc41acbcb0cc7e878d" ||
+  providerReadiness?.owner_copy_approved !== true ||
+  providerReadiness?.separate_legal_review_claimed !== false ||
+  providerReadiness?.public_release?.source_main_sha !==
+    "436837df91b0cfad6ad7f72506c088f313110db2" ||
+  providerReadiness?.public_release?.source_pr !== 188 ||
+  providerReadiness?.public_release?.exact_head_ci_passed !== true ||
+  providerReadiness?.public_release?.exact_head_secret_scan_passed !== true ||
+  providerReadiness?.public_release?.exact_path_count !== 4 ||
+  providerReadiness?.public_release?.public_surfaces_published !== true ||
+  providerReadiness?.public_release?.public_surfaces_verified !== true ||
+  providerReadiness?.public_release?.dfw_regression_passed !== true ||
+  providerReadiness?.public_release?.customer_input_present !== false ||
+  providerReadiness?.public_release?.customer_data_created !== false ||
+  providerReadiness?.public_release?.lovable_ai_messages_used !== 0 ||
   providerReadiness?.suitable_local_inventory?.area_code_541_voice_sms_mms !== true ||
   providerReadiness?.suitable_local_inventory?.area_code_458_voice_sms_mms !== true ||
   providerReadiness?.suitable_local_inventory?.klamath_local_option_observed !== true ||
@@ -180,9 +197,13 @@ if (
   providerReadiness?.number_selected !== false ||
   providerReadiness?.number_reserved !== false ||
   providerReadiness?.number_purchased !== false ||
-  providerReadiness?.campaign_submitted !== false ||
-  providerReadiness?.messaging_service_changed !== false ||
-  providerReadiness?.provider_mutation_performed !== false ||
+  providerReadiness?.number_assigned_to_campaign !== false ||
+  providerReadiness?.campaign_submitted !== true ||
+  providerReadiness?.campaign_status !== "in_review" ||
+  providerReadiness?.campaign_approved !== false ||
+  providerReadiness?.messaging_service_created !== true ||
+  providerReadiness?.sender_assignment_changed !== false ||
+  providerReadiness?.provider_mutation_performed !== true ||
   providerReadiness?.call_or_message_performed !== false ||
   providerReadiness?.contains_provider_identifiers !== false ||
   providerReadiness?.contains_phone_digits !== false ||
@@ -225,14 +246,15 @@ for (const phrase of [
   }
 }
 for (const phrase of [
-  "Twilio/TCR review pending",
+  "campaign submitted for Twilio/TCR review",
   "No separate legal review is claimed",
   "Signed-in provider readiness reconciliation",
   "existing approved campaign is not a Klamath shortcut",
   "representative campaign",
   "eligible_for_twilio_campaign_submission_review",
   "activationAllowed: false",
-  "provider and runtime unchanged",
+  "sender and runtime remain disabled",
+  "carrier approval is not claimed",
 ]) {
   if (!content.contract?.includes(phrase)) errors.push(`contract omits ${phrase}`);
 }
@@ -273,5 +295,5 @@ if (errors.length) {
 }
 
 console.log(
-  "Klamath messaging compliance review OK: exact carrier-vetting candidate prepared; public surfaces, provider submission, runtime, traffic, and activation remain disabled.",
+  "Klamath messaging compliance review OK: exact public surfaces are published and the bounded carrier campaign is in review; sender assignment, runtime, traffic, and activation remain disabled.",
 );
