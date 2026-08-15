@@ -4273,62 +4273,6 @@ export type Database = {
           },
         ]
       }
-      organization_public_contacts: {
-        Row: {
-          channel: string
-          configuration_version: number
-          created_at: string
-          destination: string
-          id: string
-          label: string
-          organization_id: string
-          owner_approval_reference_hash: string | null
-          owner_approved_at: string | null
-          published_at: string | null
-          status: string
-          updated_at: string
-          verified_at: string | null
-        }
-        Insert: {
-          channel: string
-          configuration_version?: number
-          created_at?: string
-          destination: string
-          id?: string
-          label: string
-          organization_id: string
-          owner_approval_reference_hash?: string | null
-          owner_approved_at?: string | null
-          published_at?: string | null
-          status?: string
-          updated_at?: string
-          verified_at?: string | null
-        }
-        Update: {
-          channel?: string
-          configuration_version?: number
-          created_at?: string
-          destination?: string
-          id?: string
-          label?: string
-          organization_id?: string
-          owner_approval_reference_hash?: string | null
-          owner_approved_at?: string | null
-          published_at?: string | null
-          status?: string
-          updated_at?: string
-          verified_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "organization_public_contacts_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       organization_resolution_keys: {
         Row: {
           created_at: string
