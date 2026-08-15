@@ -1,11 +1,16 @@
 # BluLadder Klamath protected JobTread read runtime
 
-Status: **repository adopted, deployment and provider execution not performed**.
+Status: **hosted, active, and fail-closed; provider execution not performed**.
 
 Issue #169 adopts the reviewed JobTread connector store, protected Klamath
 configuration, read-plan source, execution runner, and Pave client behind one
 production-shaped Edge Function. The boundary permits only `health` and
 `availability_read`. It cannot construct or transmit a mutation.
+
+Issue #172 records the bounded hosted deployment from merged main SHA
+`194da6197854fe738e20152363cf28498d59d9b3`. Exactly one Lovable AI deployment
+message targeted only `jobtread-klamath-read-runtime`; no source, configuration,
+secret, database, frontend, provider, or unrelated function was changed.
 
 ## Two independent runtime stops
 
@@ -41,10 +46,19 @@ returns sanitized error categories. The execution runner validates the exact
 query, organization fingerprint, response structure, and lineage before the
 handler returns only the step, record count, and pagination presence.
 
+## Hosted deployment receipt
+
+The hosted inventory shows the function active with one deployment and
+`verify_jwt = false` preserved for the in-code admin/service authorization
+boundary. `JOBTREAD_KLAMATH_READ_RUNTIME_ENABLED` remains absent. A secret-free
+unauthenticated POST returned HTTP 401, and the function log showed one clean
+39 ms boot with no deployment, bundle, or runtime-initialization error. The
+provider did not expose a separate immutable deployment version.
+
 ## Still blocked
 
-No function is deployed, no runtime flag or connector is enabled, no provider
-request is made, and no customer, booking, message, call, webhook, or hosted
-record is created by this repository change. Customer and booking writes need a
-separately reviewed server-owned orchestration boundary and are not accepted by
-this endpoint. DFW and Jobber fallback remain prohibited.
+The function is deployed, but neither the runtime flag nor the staged connector
+is enabled. No provider request is made, and no customer, booking, message,
+call, webhook, or hosted record is created by the deployment verification.
+Customer and booking writes need a separately reviewed server-owned
+orchestration boundary and are not accepted by this endpoint. DFW and Jobber fallback remain prohibited.

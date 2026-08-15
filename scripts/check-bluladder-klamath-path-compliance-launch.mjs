@@ -114,5 +114,5 @@ if (errors.length) {
 }
 
 console.log(
-  "Klamath path compliance launch contract passed (exact paths only; DFW and all runtimes preserved; public verification and Twilio/TCR submission remain gated).",
+  "Klamath path compliance candidate contract passed (exact paths only; DFW and all runtimes preserved; production status is tracked in the separate provider release receipt).",
 );

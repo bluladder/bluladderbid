@@ -41,9 +41,12 @@ const exact = {
   provider_transport_executed: false,
   operation_attempt_created: false,
   customer_payload_persisted: false,
-  deployment_performed: false,
-  hosted_mutation_performed: false,
+  deployment_performed: true,
+  hosted_mutation_performed: true,
   provider_calls_performed: false,
+  runtime_flag_present: false,
+  connector_active: false,
+  connector_runtime_enabled: false,
   activation_allowed: false,
   customer_traffic_allowed: false,
   dfw_fallback_allowed: false,
@@ -133,5 +136,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Klamath JobTread read-plan source OK: exact server-owned health/availability reads are reachable only through the inactive bounded runtime; writes and deployment remain absent.",
+  "Klamath JobTread read-plan source OK: exact server-owned health/availability reads are deployed but stopped by an absent flag and inactive connector; writes and traffic remain disabled.",
 );

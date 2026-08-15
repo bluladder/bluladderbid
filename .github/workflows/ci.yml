@@ -75,6 +75,7 @@ jobs:
           bun run check:klamath-jobtread-composition
           bun run check:klamath-jobtread-protected-configuration
           bun run check:klamath-jobtread-read-runtime
+          bun run check:klamath-routing-acceptance-matrix
           bun run check:klamath-launch-input-contract
           bun run check:klamath-pricing-duration-review
           bun run check:klamath-messaging-compliance-review

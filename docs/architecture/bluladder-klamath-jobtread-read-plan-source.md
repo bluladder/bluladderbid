@@ -1,9 +1,8 @@
 # BluLadder Klamath JobTread protected read-plan source
 
-Status: **bounded read runtime adopted in the repository; inactive and
-undeployed**. The source is imported only by the Klamath admin/service read
+Status: **bounded read runtime deployed; inactive and fail-closed**. The source is imported only by the Klamath admin/service read
 boundary and performs no provider request until both runtime gates pass. This
-repository change performs no secret resolution, hosted write, deployment,
+receipt performs no secret resolution, hosted write, provider request,
 customer operation, or activation.
 
 ## Purpose and authority
@@ -35,8 +34,10 @@ row, persists a provider/customer payload, or admits a write capability.
 
 ## Remaining gates
 
-The protected context/configuration adapters, Grant Key, field bindings,
-inactive connector row, customer and booking write-plan sources, deployment,
-owner-controlled acceptance, and activation are separate future work. The
-bounded read entry point remains undeployed and disabled.
+The protected context/configuration adapters, Grant Key, field bindings, and
+one exact inactive connector are configured. The bounded read entry point is
+deployed, but the activation flag remains absent and the connector remains
+inactive/runtime-disabled. Customer and booking write activation,
+owner-controlled health/availability acceptance, and final activation remain
+separate future work. The endpoint remains disabled.
 JobTread remains server initiated with no webhook.
