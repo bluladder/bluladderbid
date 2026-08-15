@@ -6,7 +6,7 @@
  * qualified legal/compliance gates are recorded as complete.
  */
 export const KLAMATH_MESSAGING_PRIVACY_REQUIRED_STATEMENTS = [
-  'Mobile information will not be shared with third parties or affiliates for marketing or promotional purposes.',
+  'We do not share, sell, rent, transfer, or otherwise provide mobile phone numbers, text messaging opt-in data, or messaging consent to third parties, affiliates, or lead generators for marketing or promotional purposes.',
   'Message frequency varies.',
   'Message and data rates may apply.',
   'Reply STOP to opt out and HELP for help.',
@@ -14,9 +14,11 @@ export const KLAMATH_MESSAGING_PRIVACY_REQUIRED_STATEMENTS = [
 
 export const KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS = [
   'The messaging program is operated by BluLadder Klamath.',
-  'Messages may include requested quote and booking links, reminders, operator follow-up, authentication, and separately opted-in promotions.',
+  'Messages may include requested quote and booking links, reminders, operator follow-up, and authentication. Marketing and promotional messages are outside this launch program.',
   'Message frequency varies and message and data rates may apply.',
   'Reply STOP to opt out and HELP for help.',
+  'For customer support, reply HELP or visit https://klamath.bluladder.com/contact.',
+  'Privacy Policy: https://klamath.bluladder.com/privacy.',
   'Carriers are not liable for delayed or undelivered messages.',
   'Consent is not a condition of purchase.',
 ] as const;
@@ -31,6 +33,6 @@ export const KLAMATH_PRIVACY_COPY = {
 
 export const KLAMATH_TERMS_COPY = {
   messagingProgram: KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS.slice(0, 2).join(' '),
-  frequencyAndCarrierTerms: KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS.slice(2, 5).join(' '),
-  consent: `${KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS[5]} Transactional consent applies only to the quote, booking, reminder, support, or authentication service requested.`,
+  frequencyAndCarrierTerms: KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS.slice(2, 7).join(' '),
+  consent: `${KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS[7]} Transactional consent applies only to the quote, booking, reminder, support, or authentication service requested.`,
 } as const;

@@ -14,7 +14,7 @@ copy still need bounded review. The safe template is
 It freezes one exact candidate while leaving owner approval, legal review,
 public-surface verification, and contract-test evidence pending.
 
-The requirements were reconciled on 2026-08-14 against Twilio's official
+The requirements were reconciled on 2026-08-15 against Twilio's official
 [business-information and campaign requirements](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/collect-business-info),
 [campaign-registration quickstart](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc/quickstart),
 and [consent guidance](https://help.twilio.com/articles/26147853183259-How-to-collect-customer-consent-in-A2P-10DLC-campaigns).
@@ -40,10 +40,15 @@ Twilio or carrier review will approve it.
 - The message-flow description covers both a visible website request and an
   inbound caller's explicit request for a one-time link. Any future production
   surface must match this description exactly or the package must be revised.
-- The privacy candidate includes mobile-information non-sharing, frequency,
-  rates, and HELP/STOP statements. The terms candidate includes the program,
-  message categories, frequency/rates, HELP/STOP, carrier, and
-  no-condition-of-purchase statements.
+- The privacy candidate explicitly protects mobile numbers, messaging opt-in
+  data, and consent from sharing, sale, rent, transfer, or other provision for
+  third-party marketing. It also includes frequency, rates, and HELP/STOP
+  statements. The terms candidate includes the program, approved launch
+  message categories, frequency/rates, HELP/STOP, support and privacy links,
+  carrier, and no-condition-of-purchase statements.
+- Marketing and promotional messages are outside the approved launch campaign.
+  Any future marketing campaign remains behind a separate unchecked opt-in and
+  separate owner, legal, carrier, and release approval.
 - Exact future URLs use the already-approved canonical Klamath hostname. They
   are candidates, not claims that those pages are published.
 
