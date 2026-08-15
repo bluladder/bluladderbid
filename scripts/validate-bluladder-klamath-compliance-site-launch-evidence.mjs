@@ -13,6 +13,8 @@ const template = JSON.parse(fs.readFileSync(templatePath, "utf8"));
 const forbiddenKey = /^(?:secret|token|password|api_?key|grant_?key|headers?|provider_?id|account_?id|phone_?number|email_?address|webhook_?url|tool_?url|destination)$/i;
 const protectedValuePatterns = [
   /\+[1-9][0-9]{7,14}/,
+  /(?:\([0-9]{3}\)|\b[0-9]{3})[-.\s][0-9]{3}[-.\s][0-9]{4}\b/,
+  /\b[^\s@]+@[^\s@]+\.[^\s@]+\b/,
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i,
 ];
 
@@ -273,6 +275,7 @@ function runSelfTest() {
     (value) => { value.browser_acceptance.customer_routes_denied = false; },
     (value) => { value.later_provider_releases.vapi_changed = true; },
     (value) => { value.production_actions.calls_placed = 1; },
+    (value) => { value.reviews.exact_owner_copy_review.record_ref = "review@example.invalid"; },
     (value) => { value.unexpected = false; },
     (value) => { value.unexpected = { secret: "prohibited" }; },
   ];
