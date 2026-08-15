@@ -5,6 +5,7 @@ import {
   KLAMATH_FIRST_WAVE_AUTOMATED_SERVICE_KEYS,
   KLAMATH_MANUAL_REVIEW_SERVICE_KEYS,
   KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE,
+  KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT,
   KLAMATH_PRICING_DURATION_REVIEW_TEMPLATE,
   type KlamathPricingDurationReviewEnvelope,
 } from "./bluladderKlamathPricingDurationReview";
@@ -12,6 +13,9 @@ import {
 function approvedFixture(): KlamathPricingDurationReviewEnvelope {
   return {
     candidate: structuredClone(KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE),
+    candidateFingerprint: structuredClone(
+      KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT,
+    ),
     ownerApproval: {
       status: "approved",
       recordRef: "github-issue-151",
@@ -38,6 +42,20 @@ describe("Klamath pricing and duration review", () => {
       activationAllowed: false,
       blockers: [],
     });
+  });
+
+  it("binds owner approval to the canonical candidate fingerprint", () => {
+    expect(KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT).toEqual({
+      algorithm: "sha256",
+      serialization: "canonical_json_sorted_keys_pretty_2_trailing_newline",
+      sha256:
+        "d69f072d0510393304cc382ec0140c385a7d8bb2302b6ccdab7592149e1e21a4",
+    });
+    const fixture = approvedFixture();
+    fixture.candidateFingerprint.sha256 = "0".repeat(64);
+    expect(evaluateKlamathPricingDurationReview(fixture).blockers).toContain(
+      "candidate_fingerprint_mismatch",
+    );
   });
 
   it("binds the exact first wave and manual-review boundary", () => {

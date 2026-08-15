@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -45,6 +46,7 @@ function inspect(value, pathLabel = "$") {
 inspect(template);
 
 const candidate = template?.candidate;
+const candidateFingerprint = template?.candidateFingerprint;
 if (
   candidate?.tenantKey !== "bluladder-klamath" ||
   candidate?.purpose !== "pricing_duration_owner_review" ||
@@ -75,6 +77,28 @@ if (
   candidate?.pricingRuntimeEnabled !== false ||
   candidate?.activationAllowed !== false
 ) errors.push("candidate runtime boundary must remain closed");
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalize(value[key])]),
+  );
+}
+const canonicalCandidate = `${JSON.stringify(canonicalize(candidate), null, 2)}\n`;
+const candidateSha256 = crypto
+  .createHash("sha256")
+  .update(canonicalCandidate)
+  .digest("hex");
+if (
+  candidateFingerprint?.algorithm !== "sha256" ||
+  candidateFingerprint?.serialization !==
+    "canonical_json_sorted_keys_pretty_2_trailing_newline" ||
+  candidateFingerprint?.sha256 !== candidateSha256 ||
+  candidateSha256 !==
+    "d69f072d0510393304cc382ec0140c385a7d8bb2302b6ccdab7592149e1e21a4"
+) errors.push("pricing-duration candidate fingerprint drifted");
 if (
   template?.ownerApproval?.status !== "pending" ||
   template?.ownerApproval?.recordRef !== null ||

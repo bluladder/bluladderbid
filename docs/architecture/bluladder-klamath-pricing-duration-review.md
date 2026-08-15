@@ -16,6 +16,12 @@ The safe template is
 contains no customer, contact, credential, or provider value. Its owner
 approval is pending and its contract-test evidence is false by design.
 
+The template binds the exact candidate to SHA-256
+`d69f072d0510393304cc382ec0140c385a7d8bb2302b6ccdab7592149e1e21a4`,
+computed from canonical JSON with recursively sorted object keys, two-space
+indentation, and one trailing newline. CI recomputes this fingerprint, so a
+bounded owner approval can name the digest without approving a drifting copy.
+
 ## Exact candidate boundary
 
 - Automated candidate services are limited to residential window cleaning,
@@ -39,3 +45,7 @@ the exact pricing/duration contract suite passes. The evaluator can return only
 `eligible_for_pricing_duration_gate`; it always returns
 `activationAllowed: false`. Provider setup, deployment, controlled QA, and the
 final signed activation review remain separate gates.
+
+The exact approval phrase for this candidate is:
+
+`APPROVE KLAMATH PRICING CANDIDATE d69f072d0510393304cc382ec0140c385a7d8bb2302b6ccdab7592149e1e21a4`

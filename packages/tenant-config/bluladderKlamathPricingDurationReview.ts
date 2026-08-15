@@ -46,8 +46,16 @@ export const KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE = {
   activationAllowed: false,
 } as const;
 
+export const KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT = {
+  algorithm: "sha256",
+  serialization: "canonical_json_sorted_keys_pretty_2_trailing_newline",
+  sha256: "d69f072d0510393304cc382ec0140c385a7d8bb2302b6ccdab7592149e1e21a4",
+} as const;
+
 export interface KlamathPricingDurationReviewEnvelope {
   candidate: typeof KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE;
+  candidateFingerprint:
+    typeof KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT;
   ownerApproval: {
     status: "pending" | "approved";
     recordRef: string | null;
@@ -65,6 +73,8 @@ export interface KlamathPricingDurationReviewResult {
 export const KLAMATH_PRICING_DURATION_REVIEW_TEMPLATE:
   KlamathPricingDurationReviewEnvelope = {
     candidate: KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE,
+    candidateFingerprint:
+      KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT,
     ownerApproval: {
       status: "pending",
       recordRef: null,
@@ -75,9 +85,11 @@ export const KLAMATH_PRICING_DURATION_REVIEW_TEMPLATE:
 
 const TOP_LEVEL_KEYS = new Set([
   "candidate",
+  "candidateFingerprint",
   "ownerApproval",
   "contractTestsPassed",
 ]);
+const FINGERPRINT_KEYS = new Set(["algorithm", "serialization", "sha256"]);
 const APPROVAL_KEYS = new Set(["status", "recordRef", "approvedAt"]);
 const SENSITIVE_FIELD_PATTERN =
   /(?:secret|token|password|api.?key|grant.?key|header|provider.?id|account.?id|phone.?number|email.?address|webhook.?url|tool.?url)/i;
@@ -142,6 +154,21 @@ export function evaluateKlamathPricingDurationReview(
 
   if (!sameJson(input.candidate, KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE)) {
     blockers.push("candidate_snapshot_mismatch");
+  }
+
+  inspectFields(
+    input.candidateFingerprint,
+    FINGERPRINT_KEYS,
+    "$.candidateFingerprint",
+    blockers,
+  );
+  if (
+    !sameJson(
+      input.candidateFingerprint,
+      KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT,
+    )
+  ) {
+    blockers.push("candidate_fingerprint_mismatch");
   }
 
   inspectFields(input.ownerApproval, APPROVAL_KEYS, "$.ownerApproval", blockers);
