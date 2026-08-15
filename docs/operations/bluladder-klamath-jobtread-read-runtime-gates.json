@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "issue": 169,
+  "base_main_sha": "bf5189a72ddd807d39a1be12229e416d41d39b8e",
+  "approved_capabilities": [
+    "health",
+    "availability_read"
+  ],
+  "blocked_capabilities": [
+    "customer_sync",
+    "quote_sync",
+    "booking_create",
+    "booking_update",
+    "booking_cancel",
+    "invoice_handoff",
+    "communications_handoff"
+  ],
+  "compiled_organization_authority": true,
+  "request_organization_selectable": false,
+  "admin_or_internal_service_only": true,
+  "runtime_flag_required": true,
+  "runtime_flag_enabled": false,
+  "active_runtime_connector_required": true,
+  "connector_active": false,
+  "connector_runtime_enabled": false,
+  "provider_mutation_allowed": false,
+  "raw_provider_response_returned": false,
+  "credential_or_provider_identifier_returned": false,
+  "request_context_persisted": false,
+  "jobtread_webhook_present": false,
+  "dfw_fallback_allowed": false,
+  "jobber_fallback_allowed": false,
+  "deployment_performed": false,
+  "provider_request_performed_by_release": false,
+  "hosted_mutation_performed_by_release": false,
+  "customer_traffic_allowed": false,
+  "activation_allowed": false
+}

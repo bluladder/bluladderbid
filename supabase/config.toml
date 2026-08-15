@@ -117,6 +117,11 @@ verify_jwt = false
 [functions.voice-vapi-events]
 verify_jwt = false
 
+# Operations-admin or internal-service only; the handler verifies authority in
+# code before reading the bounded request body.
+[functions.jobtread-klamath-read-runtime]
+verify_jwt = false
+
 # Phase 6B.2 reconciliation runner. Authenticated in-code via the
 # service-role Bearer/apikey header; leave verify_jwt disabled so the
 # platform scheduler can invoke it without a Supabase session.

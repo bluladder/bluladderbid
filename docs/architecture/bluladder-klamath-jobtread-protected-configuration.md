@@ -1,6 +1,7 @@
 # BluLadder Klamath JobTread protected configuration
 
-Status: **exact protected resolver prepared; runtime and traffic disabled**.
+Status: **exact protected resolver adopted by the bounded read runtime;
+deployment and traffic disabled**.
 
 ## Provider checkpoint
 
@@ -42,8 +43,10 @@ credential resolver returns it only for the one compiled Klamath reference.
 
 ## Still blocked
 
-This module is not imported by a production entry point and performs no
-provider request. Protected Grant storage and verification, protected
+This module is imported only by the repository-adopted Klamath admin/service
+read entry point, which remains undeployed and stopped by two runtime gates.
+This repository change performs no provider request. Protected Grant storage
+and verification, protected
 environment values, an inactive connector row, Grant-authenticated provider
 health/availability acceptance,
 runtime deployment, pricing approval, contacts, messaging, telephony, site

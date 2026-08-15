@@ -1,13 +1,15 @@
 # BluLadder Klamath JobTread execution and reconciliation runner
 
-Status: **dormant repository contract prepared**. A later protected checkpoint
+Status: **bounded read runtime adopted in the repository; inactive and undeployed**. A later protected checkpoint
 created one organization-scoped Grant, but it is not configured or verified.
 One signed-in API Explorer preflight read uniquely resolved the five protected
 bindings without using that Grant; those identifiers are absent from repository
 and hosted configuration.
 This stage creates no Grant, connector row, webhook, custom field, provider
 request, customer record, job, task, deployment, activation, or customer
-traffic. No production Edge entry point imports the runner.
+traffic. One admin/service-only Edge entry point now imports the runner for
+bounded health and availability reads, but it remains stopped by a dedicated
+runtime flag and the inactive connector gate.
 
 ## Trust boundary
 
@@ -50,8 +52,8 @@ server-side uncertainty, malformed mutation success, response-lineage drift,
 or failure to complete the success audit remains outcome-uncertain and requires
 reconciliation. Only a validated provider reference digest may be stored.
 
-Reads do not create operation-attempt rows. A future entry point may implement
-bounded read retry, but this dormant runner itself makes one transport call.
+Reads do not create operation-attempt rows. The repository-adopted read entry
+point makes at most one transport call and does not implement a retry loop.
 
 ## Response validation
 
@@ -77,8 +79,9 @@ manual, or Google Calendar fallback.
 
 ## Remaining activation gates
 
-This module is deliberately unreachable. Before any provider or customer
-traffic, separate reviewed stages must still:
+The bounded read runtime remains inactive and there is no deployed Edge
+entry point. Before any provider or customer traffic, separate reviewed stages
+must still:
 
 1. store and verify the created organization-scoped Grant and store the
    already-resolved protected bindings while preserving the reviewed first-wave
@@ -89,7 +92,8 @@ traffic, separate reviewed stages must still:
    and configuration adapters; authenticated webhook receipt processing remains
    future-only;
 4. prove capacity, crew, route, blackout, and cancellation semantics;
-5. adopt the runner in only the exact organization-owned runtime entry points;
-6. deploy and run owner-controlled provider acceptance; and
-7. activate the connector only after pricing, contacts, messaging, site,
+5. review and merge the organization-owned bounded read runtime;
+6. deploy it disabled and run owner-controlled provider acceptance only after
+   separately authorizing the flag and connector gates; and
+7. activate customer traffic only after pricing, contacts, messaging, site,
    telephony, and every customer-traffic launch gate passes.

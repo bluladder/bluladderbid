@@ -14,6 +14,7 @@
   "exact_protected_bindings_resolved": true,
   "protected_binding_count": 5,
   "protected_bindings_unique": true,
+  "bounded_read_runtime_repository_adopted": true,
   "protected_values_stored_in_repository": false,
   "protected_values_stored_in_hosted_secret": false,
   "webhook_created": false,

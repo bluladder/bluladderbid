@@ -74,6 +74,7 @@ jobs:
           bun run check:klamath-jobtread-write-plan
           bun run check:klamath-jobtread-composition
           bun run check:klamath-jobtread-protected-configuration
+          bun run check:klamath-jobtread-read-runtime
           bun run check:klamath-launch-input-contract
           bun run check:klamath-pricing-duration-review
           bun run check:klamath-messaging-compliance-review
@@ -117,7 +118,7 @@ jobs:
         continue-on-error: true
 
       - name: Deno tests
-        run: deno test --allow-all supabase/functions/_shared
+        run: deno test --allow-all supabase/functions/_shared supabase/functions/jobtread-klamath-read-runtime/handler_test.ts
 
   stage-7b-postgres-rehearsal:
     name: Stage 7B disposable PostgreSQL rehearsal
