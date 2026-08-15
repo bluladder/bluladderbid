@@ -35,6 +35,12 @@ WITH organization_state AS (
     AND runtime_routing_enabled = true
     AND site_published = true
     AND customer_traffic_allowed = false
+), settings_state AS (
+  SELECT count(*) AS exact_public_settings_count
+  FROM public.organization_settings
+  WHERE organization_id = 'b1addf00-0000-4000-8000-000000000003'::uuid
+    AND public_name = 'BluLadder Klamath'
+    AND branding ->> 'tagline' = 'Next Level Clean'
 ), resolution_state AS (
   SELECT
     count(*) FILTER (
@@ -135,6 +141,7 @@ SELECT jsonb_build_object(
   'exact_klamath_active_count', organization_state.exact_klamath_active_count,
   'exact_compliance_only_site_count',
     site_state.exact_compliance_only_site_count,
+  'exact_public_settings_count', settings_state.exact_public_settings_count,
   'exact_disabled_hostname_count',
     resolution_state.exact_disabled_hostname_count,
   'unexpected_resolution_key_count',
@@ -167,7 +174,7 @@ SELECT jsonb_build_object(
     inactive_state.active_messaging_connector_count,
   'messaging_connector_count', inactive_state.messaging_connector_count
 ) AS klamath_compliance_site_activation_postflight
-FROM organization_state, site_state, resolution_state, contact_state,
+FROM organization_state, site_state, settings_state, resolution_state, contact_state,
   inactive_state;
 
 ROLLBACK;

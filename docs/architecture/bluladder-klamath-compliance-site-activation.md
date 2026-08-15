@@ -1,9 +1,10 @@
 # BluLadder Klamath compliance-site activation contract
 
-This repository package prepares read-only gates for a future, separately
-authorized compliance-only public-site switch. It does not contain a migration,
-deployment payload, DNS change, provider change, contact destination, or hosted
-mutation.
+This repository package prepares read-only gates and one fail-closed migration
+for a future, separately authorized compliance-only public-site switch. The
+migration is review material only: this package does not apply it and contains
+no deployment payload, DNS change, provider change, contact destination, or
+hosted mutation.
 
 ## Boundary
 
@@ -37,14 +38,18 @@ not required by this contract.
 3. Under a separate authorization, insert only the approved call and text
    public contacts, prove reachability, and publish those two rows with durable
    approval evidence.
-4. Configure the custom domain, DNS, and TLS without exposing customer runtime.
-5. Publish the exact reviewed frontend and prove both compliance routes and the
-   opt-in/help surface from the custom origin.
+4. Publish the exact reviewed frontend while the Klamath hostname is still
+   disconnected and prove the existing DFW host remains unchanged. This avoids
+   exposing an older frontend at the new hostname during DNS setup.
+5. Configure the custom domain, DNS, and TLS. The Klamath origin must remain
+   unavailable because its lifecycle is still inactive.
 6. Run the repository preflight unchanged. All expected counts must match.
-7. Only then author and review one narrow lifecycle change that advances the
-   organization and customer-site lifecycle described above. That change is
-   intentionally absent from this package and requires separate approval.
-8. Run the repository postflight unchanged and complete browser acceptance.
+7. Under a separate production authorization, review and apply only
+   `20260815103000_bluladder_klamath_compliance_site_activation.sql`. It changes
+   exactly the Klamath organization and customer-site lifecycle; the migration
+   itself rechecks every inactive provider and customer-runtime boundary.
+8. Run the repository postflight unchanged, prove the three compliance routes
+   from the custom origin, and complete browser acceptance.
 9. Submit any Klamath-specific messaging campaign only after its referenced
    public surfaces are live and exact.
 10. Treat customer traffic and every provider runtime as separate later
