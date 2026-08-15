@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "split_public_call_and_text_hosted_reconciliation",
+  "reviewed_source_main": "08b28360cd7cbbda3e36143c0be385c08ee3ab86",
+  "lovable_execution_receipt_main": "52b21539d38e9434f15ed849a7f68adadcfde481",
+  "canonical_migration": {
+    "path": "supabase/migrations/20260815040824_bluladder_klamath_split_public_contact_channels.sql",
+    "bytes": 4134,
+    "sha256": "2e116934a1cdedfe69fff28575a9223f95c882493e661f26e3cd955230b128f1"
+  },
+  "execution_receipt": {
+    "path": "supabase/migrations/20260815043425_c06733ab-38c1-46e2-8003-4e23b1234cb1.sql",
+    "bytes": 4133,
+    "sha256": "013f465ae46a6c119d52220ae14067c2bbe620fc4e27ffea538be52babd7fd54",
+    "normalization": "canonical_payload_without_terminal_lf",
+    "stored_statement_count": 1
+  },
+  "ledger_before": {
+    "count": 165,
+    "tip": "20260815033840",
+    "ordered_sha256": "78a3a8823e4baf9a78dc241a86f115658201a4f4939f480ecde3b45a465a0fd3"
+  },
+  "ledger_after": {
+    "count": 166,
+    "tip": "20260815043425",
+    "ordered_sha256": "5547fcde7712d1ac8d34de24d7061e8c39ef1545d3f321db63031280bc3d67a3"
+  },
+  "preflight": {
+    "target_tables": 1,
+    "rls_enabled_tables": 1,
+    "public_contacts": 0,
+    "published_contacts": 0,
+    "current_channel_constraints": 1,
+    "current_destination_constraints": 1,
+    "policies": 2,
+    "exact_dfw_default": 1,
+    "unexpected_legacy_defaults": 0,
+    "exact_klamath_provisioning": 1,
+    "exact_inactive_site": 1
+  },
+  "postflight": {
+    "target_tables": 1,
+    "rls_enabled_tables": 1,
+    "public_contacts": 0,
+    "published_contacts": 0,
+    "split_channel_constraints": 1,
+    "split_destination_constraints": 1,
+    "policies": 2,
+    "exact_view_policies": 1,
+    "exact_manage_policies": 1,
+    "anonymous_grants": 0,
+    "authenticated_grants": 4,
+    "service_role_grants": 7,
+    "exact_dfw_default": 1,
+    "unexpected_legacy_defaults": 0,
+    "exact_klamath_provisioning": 1,
+    "exact_inactive_site": 1
+  },
+  "dfw_baseline": {
+    "organization": "1:a30b79cebb46dd94696ab0a6fa7d073f85055380b227f0fef4db528a6744d4c7",
+    "settings": "1:3b38cb0fb5ff1f376bdc5c0beee661531591a225e942fc3f62bf5567eed1aaca",
+    "territories": "0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "services": "0:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "resolution_keys": "4:f6525777a630a88531b34145ed85491edf4fd444a7d768b98ac125af406d8ef3"
+  },
+  "edge_function": {
+    "slug": "public-site-bootstrap",
+    "deployed": true,
+    "active": true,
+    "verify_jwt": false,
+    "secret_free_get_status": 405,
+    "clean_boot": true,
+    "boot_error_count": 0,
+    "other_functions_deployed": 0
+  },
+  "lovable_ai_messages": 1,
+  "repository_changes_from_lovable": "execution_receipt_only",
+  "frontend_published": false,
+  "public_contact_rows_created": 0,
+  "site_published": false,
+  "customer_traffic_allowed": false,
+  "provider_actions": false,
+  "calls_or_messages": false
+}

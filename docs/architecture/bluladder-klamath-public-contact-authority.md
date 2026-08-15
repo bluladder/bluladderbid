@@ -1,6 +1,6 @@
 # BluLadder Klamath public contact publication authority
 
-Status: **foundational schema applied; split call/text candidate prepared;
+Status: **foundational schema applied; split call/text contract applied;
 publication still dormant**.
 The reviewed migration is recorded once in the hosted ledger through its
 Lovable-generated execution receipt, the `public-site-bootstrap` function is
@@ -64,12 +64,15 @@ The additive migration:
 - neither changes nor activates any organization, site, provider, customer,
   pricing, territory, service, connector, contact, or traffic state.
 
-The split-channel candidate changes only the two existing contact constraints:
+The applied split-channel migration changes only the two existing contact constraints:
 `phone`, `sms`, and `email` become the complete channel set, and both `phone`
 and `sms` require normalized E.164 destinations. It creates no contact row,
 preserves the existing unique published-channel index, RLS, policies, and
 grants, and revalidates the exact DFW and inactive Klamath boundaries before
-DDL. Its hosted application and resolver deployment remain separately gated.
+DDL. Lovable applied the exact reviewed payload with only terminal-LF
+normalization, the ledger advanced once, read-only postflight passed, and only
+`public-site-bootstrap` was redeployed. The sanitized split release record is
+`docs/operations/bluladder-klamath-split-public-contact-hosted-evidence.json`.
 
 The repository includes unchanged read-only preflight and postflight SQL. The
 authorized hosted application used the exact reviewed payload with only the

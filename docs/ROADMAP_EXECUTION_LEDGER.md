@@ -234,12 +234,14 @@ publication, DNS, site publication, and activation remain separately gated.
 
 The owner subsequently approved distinct public call and text destinations.
 Because the applied table could represent only `phone` and `email`, the
-forward-only split-channel candidate adds an explicit `sms` channel and updates
-the fail-closed resolver/client contract. It contains no destination value,
-creates no row, preserves the DFW and inactive Klamath boundaries, and requires
-exact-head review, hosted preflight, isolated migration application, resolver
-deployment, reachability verification, and publication approval as separate
-gates.
+forward-only split-channel release adds an explicit `sms` channel and updates
+the fail-closed resolver/client contract. Lovable applied its exact reviewed
+payload with only terminal-LF normalization, the ledger advanced once,
+read-only postflight passed, and only `public-site-bootstrap` was redeployed.
+It contains no destination value, created no row, preserved the DFW and
+inactive Klamath boundaries, and leaves reachability verification, independent
+legal/compliance review, DNS, frontend/site publication, and activation as
+separate blocked gates.
 
 ## Open architecture decisions
 

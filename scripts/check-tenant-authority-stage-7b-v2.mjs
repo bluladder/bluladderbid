@@ -181,6 +181,10 @@ const reviewedPostRuntimeMigrations = new Set([
   // forward-only constraint repair adds an explicit SMS channel, creates no
   // rows, and keeps every publication and traffic gate closed.
   "supabase/migrations/20260815040824_bluladder_klamath_split_public_contact_channels.sql",
+  // Lovable-generated execution receipt for the exact split call/text payload.
+  // The split-contact checker permits only the observed terminal-LF
+  // normalization and pins the hosted ledger/postflight evidence.
+  "supabase/migrations/20260815043425_c06733ab-38c1-46e2-8003-4e23b1234cb1.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
