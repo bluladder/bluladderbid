@@ -58,3 +58,8 @@ not required by this contract.
 Any mismatch fails closed. Do not repair data, infer contact approval, reuse an
 unrelated messaging campaign, activate the hostname resolution key, or broaden
 the lifecycle change.
+
+The operator must execute the sequence in
+`docs/operations/bluladder-klamath-compliance-site-launch-runbook.md` and record
+only sanitized evidence in
+`docs/operations/bluladder-klamath-compliance-site-launch-evidence.template.json`.
