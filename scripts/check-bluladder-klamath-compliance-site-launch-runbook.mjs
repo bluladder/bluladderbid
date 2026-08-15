@@ -18,6 +18,8 @@ const files = {
     "docs/operations/bluladder-klamath-compliance-site-activation-gates.json",
   contract:
     "docs/architecture/bluladder-klamath-compliance-site-activation.md",
+  evidenceValidator:
+    "scripts/validate-bluladder-klamath-compliance-site-launch-evidence.mjs",
   package: "package.json",
 };
 
@@ -60,6 +62,7 @@ for (const text of [
   "customer traffic false",
   "Lovable AI, edit source",
   "existing approved campaign is not",
+  files.evidenceValidator,
 ]) requireText("runbook", text);
 
 let evidence;
@@ -223,6 +226,17 @@ if (
 requireText("contract", files.runbook);
 requireText("contract", files.evidence);
 requireText("package", '"check:klamath-compliance-site-launch-runbook"');
+requireText("package", '"check:klamath-compliance-site-launch-evidence"');
+for (const text of [
+  "validateCompletedEvidence",
+  "candidate_bundle_sha256",
+  "customer_traffic_allowed",
+  "provider_runtimes_enabled",
+  "customer_routes_denied",
+  "later_provider_releases",
+  "production_actions",
+  "--self-test",
+]) requireText("evidenceValidator", text);
 
 if (errors.length) {
   console.error("Klamath compliance-site launch runbook failed:\n");

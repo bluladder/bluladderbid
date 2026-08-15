@@ -151,4 +151,14 @@ controlled acceptance evidence.
 
 Complete every launch-window result in
 `docs/operations/bluladder-klamath-compliance-site-launch-evidence.template.json`.
-The template must stay fail-closed until the real evidence exists.
+The template must stay fail-closed until the real evidence exists. Before
+declaring the compliance-site release complete, save a sanitized copy outside
+the template path and require:
+
+`node scripts/validate-bluladder-klamath-compliance-site-launch-evidence.mjs <evidence.json>`
+
+The validator rejects incomplete reviews, mismatched release/copy/migration
+identities, unverified contacts, missing DNS/TLS/browser evidence, more than one
+migration receipt, DFW drift, customer traffic, provider-runtime activation,
+calls/messages/customer rows, later provider releases, and protected-value
+shapes.

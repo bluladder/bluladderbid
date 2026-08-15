@@ -67,3 +67,7 @@ Owner and qualified review must both bind to the immutable candidate identified
 by
 `docs/operations/bluladder-klamath-compliance-copy-review-manifest.json`; a
 mutable branch, screenshot, or URL is not sufficient review evidence.
+The completed sanitized launch record must pass
+`scripts/validate-bluladder-klamath-compliance-site-launch-evidence.mjs`; the
+validator is evidence validation only and does not authorize or perform a
+hosted, provider, DNS, frontend, contact, call, or message action.
