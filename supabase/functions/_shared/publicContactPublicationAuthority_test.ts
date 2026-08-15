@@ -38,13 +38,19 @@ function fake(data: unknown[], error: unknown = null) {
   };
 }
 
-Deno.test("public contacts resolve reviewed phone and email without provenance", async () => {
+Deno.test("public contacts resolve reviewed call, text, and email without provenance", async () => {
   const provider = fake([
     {
       ...base,
       channel: "email",
       label: "Email support",
       destination: "support@example.com",
+    },
+    {
+      ...base,
+      channel: "sms",
+      label: "Text support",
+      destination: "+15415550102",
     },
     {
       ...base,
@@ -59,6 +65,7 @@ Deno.test("public contacts resolve reviewed phone and email without provenance",
       status: "resolved",
       contacts: [
         { channel: "phone", label: "Call support", value: "+15415550100" },
+        { channel: "sms", label: "Text support", value: "+15415550102" },
         {
           channel: "email",
           label: "Email support",
@@ -111,6 +118,19 @@ Deno.test("public contacts reject duplicate channels and cross-organization rows
     ),
     { status: "blocked", code: "contact_ambiguous" },
   );
+  const sms = {
+    ...base,
+    channel: "sms",
+    label: "Text support",
+    destination: "+15415550102",
+  };
+  assertEquals(
+    await resolvePublishedPublicContacts(
+      fake([sms, { ...sms, destination: "+15415550103" }]).client,
+      organizationId,
+    ),
+    { status: "blocked", code: "contact_ambiguous" },
+  );
   assertEquals(
     await resolvePublishedPublicContacts(
       fake([{
@@ -138,6 +158,7 @@ Deno.test("public contacts reject draft, malformed, unverified, and unapproved r
       { ...valid, owner_approval_reference_hash: "not-a-hash" },
       { ...valid, published_at: "2026-08-14T23:00:00.000Z" },
       { ...valid, label: "  Email support  " },
+      { ...valid, channel: "sms", destination: "5415550102" },
     ]
   ) {
     assertEquals(

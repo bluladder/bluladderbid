@@ -5,7 +5,7 @@ export const KLAMATH_COMPLIANCE_ROUTES = ['/privacy', '/terms', '/contact'] as c
 export type KlamathComplianceRoute = (typeof KLAMATH_COMPLIANCE_ROUTES)[number];
 
 export interface PublishedPublicContact {
-  channel: 'phone' | 'email';
+  channel: 'phone' | 'sms' | 'email';
   label: string;
   value: string;
 }
@@ -81,7 +81,7 @@ function validLabel(value: unknown): value is string {
 }
 
 function parsePublicContacts(value: unknown): PublishedPublicContact[] | null {
-  if (!Array.isArray(value) || value.length > 2) return null;
+  if (!Array.isArray(value) || value.length > 3) return null;
   const contacts: PublishedPublicContact[] = [];
   const channels = new Set<string>();
   for (const candidate of value) {
@@ -90,6 +90,8 @@ function parsePublicContacts(value: unknown): PublishedPublicContact[] | null {
     if (!validLabel(contact.label) || typeof contact.value !== 'string') return null;
     if (contact.channel === 'phone' && /^\+[1-9][0-9]{7,14}$/.test(contact.value)) {
       contacts.push({ channel: 'phone', label: contact.label, value: contact.value });
+    } else if (contact.channel === 'sms' && /^\+[1-9][0-9]{7,14}$/.test(contact.value)) {
+      contacts.push({ channel: 'sms', label: contact.label, value: contact.value });
     } else if (
       contact.channel === 'email' && contact.value === contact.value.toLowerCase() &&
       contact.value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.value)
@@ -103,7 +105,9 @@ function parsePublicContacts(value: unknown): PublishedPublicContact[] | null {
 }
 
 export function publicContactHref(contact: PublishedPublicContact): string {
-  return contact.channel === 'phone' ? `tel:${contact.value}` : `mailto:${contact.value}`;
+  if (contact.channel === 'phone') return `tel:${contact.value}`;
+  if (contact.channel === 'sms') return `sms:${contact.value}`;
+  return `mailto:${contact.value}`;
 }
 
 /**
