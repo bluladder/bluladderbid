@@ -15,7 +15,7 @@
         "authentication"
       ],
       "recommendedUseCaseCategory": "LOW_VOLUME",
-      "recommendationStatus": "pending_provider_eligibility_and_owner_review",
+      "recommendationStatus": "provider_eligibility_verified_owner_and_public_surface_review_pending",
       "hasEmbeddedLinks": true,
       "hasEmbeddedPhoneNumbers": false,
       "keywordOptInSupported": false,
@@ -75,6 +75,6 @@
     "approvedAt": null
   },
   "publicSurfacesVerified": false,
-  "providerUseCaseEligibilityVerified": false,
+  "providerUseCaseEligibilityVerified": true,
   "contractTestsPassed": false
 }

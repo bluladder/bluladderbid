@@ -29,8 +29,8 @@ Twilio or carrier review will approve it.
   follow-up, and authentication only.
 - Twilio documents `LOW_VOLUME` as a lower-throughput mixed-use category and
   `MIXED` as the standard mixed-use category. `LOW_VOLUME` is recorded only as
-  the launch-cost recommendation; signed-in account eligibility and expected
-  volume must be verified before owner review may adopt it.
+  the launch-cost recommendation. Signed-in eligibility is now verified;
+  expected volume and owner review remain pending before adoption.
 - The five representative messages identify BluLadder Klamath, use bracketed
   variable content, and disclose HELP/STOP. Link-bearing messages declare that
   links are present; embedded phone numbers are not proposed.
@@ -47,6 +47,21 @@ Twilio or carrier review will approve it.
 - Exact future URLs use the already-approved canonical Klamath hostname. They
   are candidates, not claims that those pages are published.
 
+## Signed-in provider readiness reconciliation
+
+A read-only signed-in inspection on 2026-08-15 uniquely matched the intended
+business boundary and confirmed an approved compliance profile, approved
+low-volume-standard brand, and eligibility for the recommended low-volume use
+case. Suitable Oregon local voice/SMS/MMS inventory was also present.
+
+The existing approved campaign is not a Klamath shortcut: its branding,
+opt-in origin, privacy/terms origins, consent copy, and assigned sender region
+do not match this exact candidate. Repository evidence therefore authorizes no
+reuse. A separately reviewed Klamath campaign path remains required after the
+owner, legal, and public-surface gates pass. The sanitized provider snapshot is
+`docs/operations/bluladder-klamath-twilio-readiness.json`; it contains no
+provider identifier, phone digits, credential, message, or customer data.
+
 ## Review and provider boundary
 
 A protected copy of the template may reach only
@@ -56,8 +71,8 @@ A protected copy of the template may reach only
 2. qualified legal/compliance review of the exact privacy and terms language;
 3. read-only proof that the exact opt-in, privacy, terms, and support surfaces
    are publicly reachable; and
-4. signed-in proof that the intended account is eligible for the recommended
-   use-case category; and
+4. signed-in proof that the intended business boundary is eligible for the
+   recommended use-case category (completed read-only on 2026-08-15); and
 5. exact contract-test evidence.
 
 The evaluator still returns `activationAllowed: false`. Twilio business and
