@@ -75,6 +75,10 @@ describe('Klamath compliance-only copy contract', () => {
     for (const statement of KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS) {
       expect(termsPage.container.textContent).toContain(statement);
     }
+    expect(termsPage.getByText(
+      KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS[3],
+      { selector: 'strong' },
+    )).toBeInTheDocument();
   });
 
   it('does not convert exact copy alignment into owner or legal approval', () => {

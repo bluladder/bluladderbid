@@ -13,7 +13,7 @@
   },
   "reviews": {
     "candidate_manifest_path": "docs/operations/bluladder-klamath-compliance-copy-review-manifest.json",
-    "candidate_bundle_sha256": "a75c691ac8c83155b5762ed2e14a5b2acff6d819fd2bbedb244bf0d3ccd88aa0",
+    "candidate_bundle_sha256": "5ecfeae4fffe08f108e64949b2e896624b448b502cfac86ca7f5e37868b406ba",
     "exact_owner_copy_review": {
       "status": "pending",
       "record_ref": null,

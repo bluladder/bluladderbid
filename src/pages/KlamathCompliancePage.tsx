@@ -4,6 +4,7 @@ import {
   publicContactHref,
 } from '@/lib/publicSite/klamathPublicSurface';
 import {
+  KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS,
   KLAMATH_PRIVACY_COPY,
   KLAMATH_TERMS_COPY,
 } from '@/lib/publicSite/klamathComplianceCopy';
@@ -46,6 +47,10 @@ function PrivacyContent() {
 }
 
 function TermsContent() {
+  const helpAndOptOutStatement = KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS[3];
+  const [frequencyPrefix, frequencySuffix] =
+    KLAMATH_TERMS_COPY.frequencyAndCarrierTerms.split(helpAndOptOutStatement);
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">Terms and Conditions</h1>
@@ -58,7 +63,11 @@ function TermsContent() {
       <section className={sectionClass}>
         <h2 className="text-xl font-semibold">Frequency and carrier terms</h2>
         <p className="text-muted-foreground">
-          {KLAMATH_TERMS_COPY.frequencyAndCarrierTerms}
+          {frequencyPrefix}
+          <strong className="font-semibold text-foreground">
+            {helpAndOptOutStatement}
+          </strong>
+          {frequencySuffix}
         </p>
       </section>
       <section className={sectionClass}>

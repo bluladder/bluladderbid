@@ -5,7 +5,7 @@
   "candidate_bundle": {
     "algorithm": "sha256",
     "serialization": "newline_joined_path_bytes_sha256",
-    "sha256": "a75c691ac8c83155b5762ed2e14a5b2acff6d819fd2bbedb244bf0d3ccd88aa0"
+    "sha256": "5ecfeae4fffe08f108e64949b2e896624b448b502cfac86ca7f5e37868b406ba"
   },
   "artifacts": [
     {
@@ -16,8 +16,8 @@
     },
     {
       "path": "src/pages/KlamathCompliancePage.tsx",
-      "bytes": 5173,
-      "sha256": "fec1b2772b7da55474ab8dc4652d5eb7e997f9bc93d945ffefa6449f05ed6b37",
+      "bytes": 5544,
+      "sha256": "9b96a60c755ee0bebc9bc2d037489ff077925f5659d888a5753616944afe5ad3",
       "review_scope": "compliance_page_headings_contact_labels_and_unavailable_copy"
     },
     {
