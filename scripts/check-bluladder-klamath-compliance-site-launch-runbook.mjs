@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -237,6 +238,15 @@ for (const text of [
   "production_actions",
   "--self-test",
 ]) requireText("evidenceValidator", text);
+
+const validatorSelfTest = spawnSync(
+  process.execPath,
+  [path.join(root, files.evidenceValidator), "--self-test"],
+  { encoding: "utf8" },
+);
+if (validatorSelfTest.status !== 0) {
+  errors.push("launch-evidence validator self-test failed");
+}
 
 if (errors.length) {
   console.error("Klamath compliance-site launch runbook failed:\n");
