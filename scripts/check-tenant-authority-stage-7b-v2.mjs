@@ -335,6 +335,14 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/jobtreadPhase1IWebhookReceipts.ts",
   "supabase/functions/_shared/jobtreadPhase1IWebhookReceipts_test.ts",
   "supabase/functions/_shared/jobtreadPaveClient.ts",
+  // Issue #169: protected Klamath read-runtime entry point and its direct
+  // contract tests. The runtime remains exact-flag gated, organization-bound,
+  // and incapable of provider writes; deployment and activation are separate.
+  "supabase/functions/_shared/jobtreadKlamathReadRuntime.ts",
+  "supabase/functions/_shared/jobtreadKlamathReadRuntime_test.ts",
+  "supabase/functions/jobtread-klamath-read-runtime/handler.ts",
+  "supabase/functions/jobtread-klamath-read-runtime/handler_test.ts",
+  "supabase/functions/jobtread-klamath-read-runtime/index.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation_test.ts",
   "supabase/functions/_shared/workflow/customerResolver.ts",

@@ -42,6 +42,7 @@ const exactEvidence = {
   exact_protected_bindings_resolved: true,
   protected_binding_count: 5,
   protected_bindings_unique: true,
+  bounded_read_runtime_repository_adopted: true,
   protected_values_stored_in_repository: false,
   protected_values_stored_in_hosted_secret: false,
   webhook_created: false,
@@ -58,52 +59,68 @@ for (const [key, value] of Object.entries(exactEvidence)) {
   if (evidence?.[key] !== value) errors.push(`evidence ${key} drifted`);
 }
 
-for (const phrase of [
-  "bluladder-klamath-jobtread-production-v1",
-  "JOBTREAD_KLAMATH_GRANT_KEY",
-  "JOBTREAD_KLAMATH_PROVIDER_ORGANIZATION_ID",
-  "JOBTREAD_KLAMATH_CUSTOMER_REFERENCE_FIELD_ID",
-  "JOBTREAD_KLAMATH_CONTACT_PHONE_FIELD_ID",
-  "JOBTREAD_KLAMATH_CONTACT_EMAIL_FIELD_ID",
-  "JOBTREAD_KLAMATH_LOCATION_REFERENCE_FIELD_ID",
-  "JOBTREAD_KLAMATH_BOOKING_REFERENCE_FIELD_ID",
-  "BluLadder Customer Reference",
-  "BluLadder Location Reference",
-  "BluLadder Booking Reference",
-  "providerOrganizationFingerprint",
-  "new Set(Object.values(normalizedBindings)).size !== 5",
-]) {
+for (
+  const phrase of [
+    "bluladder-klamath-jobtread-production-v1",
+    "JOBTREAD_KLAMATH_GRANT_KEY",
+    "JOBTREAD_KLAMATH_PROVIDER_ORGANIZATION_ID",
+    "JOBTREAD_KLAMATH_CUSTOMER_REFERENCE_FIELD_ID",
+    "JOBTREAD_KLAMATH_CONTACT_PHONE_FIELD_ID",
+    "JOBTREAD_KLAMATH_CONTACT_EMAIL_FIELD_ID",
+    "JOBTREAD_KLAMATH_LOCATION_REFERENCE_FIELD_ID",
+    "JOBTREAD_KLAMATH_BOOKING_REFERENCE_FIELD_ID",
+    "BluLadder Customer Reference",
+    "BluLadder Location Reference",
+    "BluLadder Booking Reference",
+    "providerOrganizationFingerprint",
+    "new Set(Object.values(normalizedBindings)).size !== 5",
+  ]
+) {
   if (!contents.implementation?.includes(phrase)) {
     errors.push(`protected configuration omits ${phrase}`);
   }
 }
-for (const phrase of [
-  "exact non-secret configuration",
-  "another organization or reference",
-  "missing, duplicate, or malformed authority",
-  "preserves exact secret and rejects unsafe forms",
-  "custom-field contract is exact and non-sensitive",
-]) {
+for (
+  const phrase of [
+    "exact non-secret configuration",
+    "another organization or reference",
+    "missing, duplicate, or malformed authority",
+    "preserves exact secret and rejects unsafe forms",
+    "custom-field contract is exact and non-sensitive",
+  ]
+) {
   if (!contents.tests?.includes(phrase)) errors.push(`tests omit ${phrase}`);
 }
-for (const phrase of [
-  "runtime and traffic disabled",
-  "controlled security boundary stopped transmission",
-  "24 custom fields",
-  "five exact bindings",
-  "did not use the new Grant",
-  "lowercase SHA-256",
-  "not imported by a production entry point",
-]) {
-  if (!contents.contract?.includes(phrase)) errors.push(`contract omits ${phrase}`);
+for (
+  const phrase of [
+    "deployment and traffic disabled",
+    "controlled security boundary stopped transmission",
+    "24 custom fields",
+    "five exact bindings",
+    "did not use the new Grant",
+    "lowercase SHA-256",
+    "imported only by the repository-adopted Klamath admin/service",
+  ]
+) {
+  if (!contents.contract?.includes(phrase)) {
+    errors.push(`contract omits ${phrase}`);
+  }
 }
-if (!contents.composition?.includes("No production Edge entry point imports this factory")) {
+if (
+  !contents.composition?.includes(
+    "No production Edge entry point imports this factory",
+  )
+) {
   errors.push("dormant execution boundary drifted");
 }
-if (/Deno\.env\.get\(["']JOBTREAD_KLAMATH_GRANT_KEY["']\)/.test(
-  contents.implementation ?? "",
-)) {
-  errors.push("implementation bypasses the injected protected environment reader");
+if (
+  /Deno\.env\.get\(["']JOBTREAD_KLAMATH_GRANT_KEY["']\)/.test(
+    contents.implementation ?? "",
+  )
+) {
+  errors.push(
+    "implementation bypasses the injected protected environment reader",
+  );
 }
 
 if (errors.length) {
@@ -111,5 +128,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Klamath JobTread protected configuration OK: five bindings resolved by a read-only admin-session preflight; Grant, hosted configuration, provider runtime, and traffic remain disabled.",
+  "Klamath JobTread protected configuration OK: exact secret-safe resolvers are reachable only through the inactive bounded read runtime; deployment and traffic remain disabled.",
 );

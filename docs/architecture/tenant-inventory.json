@@ -217,7 +217,7 @@
     ]
   },
   "runtime": {
-    "edgeFunctionCount": 62,
+    "edgeFunctionCount": 63,
     "sharedModuleCount": 90,
     "runtimeReferencedTableCount": 90,
     "frontendMutationFileCount": 41,

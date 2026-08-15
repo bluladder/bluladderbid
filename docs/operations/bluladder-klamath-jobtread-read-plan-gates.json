@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "issue": 156,
-  "status": "dormant_repository_contract_prepared",
+  "status": "bounded_read_runtime_repository_adopted_inactive",
   "approved_capabilities": ["health", "availability_read"],
   "write_capabilities_allowed": false,
   "caller_provider_authority_allowed": false,
@@ -17,7 +17,7 @@
   "provider_transport_executed": false,
   "operation_attempt_created": false,
   "customer_payload_persisted": false,
-  "production_imported": false,
+  "production_imported": true,
   "deployment_performed": false,
   "hosted_mutation_performed": false,
   "provider_calls_performed": false,

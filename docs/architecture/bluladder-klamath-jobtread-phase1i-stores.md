@@ -1,10 +1,11 @@
 # BluLadder Klamath JobTread Phase 1I stores
 
-Status: **dormant repository contract prepared**. A later protected checkpoint
+Status: **bounded read runtime adopted in the repository; inactive and undeployed**. A later protected checkpoint
 created one organization-scoped Grant, but it remains unconfigured and
 unverified. These adapters create no connector, credential, webhook, customer,
-JobTread record, deployment, activation, or provider request.
-No production Edge entry point imports them.
+JobTread record, deployment, activation, or provider request. One
+admin/service-only repository entry point now imports the connector lookup for
+bounded reads; mutation-attempt methods remain unreachable on that path.
 
 ## Exact persistence boundary
 
@@ -54,10 +55,10 @@ It never resumes, retries, repairs, or contacts JobTread.
 
 ## Remaining activation gates
 
-The store is deliberately unreachable from production. Separate reviewed work
-must still provide protected credential storage/verification, an inactive
-connector row, webhook authentication and parsing, runtime entry-point
-adoption, deployment, controlled provider acceptance, and all Klamath
+The bounded read runtime remains inactive and there is no deployed Edge entry
+point. Separate reviewed work must still complete protected credential and
+inactive connector verification, deployment, controlled provider acceptance,
+and all Klamath
 business/contact, pricing, messaging, telephony, publication, and
 customer-traffic approvals.
 There is no Jobber or DFW fallback.
