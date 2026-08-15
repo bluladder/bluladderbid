@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "issue": 156,
-  "status": "bounded_read_runtime_repository_adopted_inactive",
+  "status": "bounded_read_runtime_deployed_fail_closed",
   "approved_capabilities": ["health", "availability_read"],
   "write_capabilities_allowed": false,
   "caller_provider_authority_allowed": false,
@@ -18,9 +18,12 @@
   "operation_attempt_created": false,
   "customer_payload_persisted": false,
   "production_imported": true,
-  "deployment_performed": false,
-  "hosted_mutation_performed": false,
+  "deployment_performed": true,
+  "hosted_mutation_performed": true,
   "provider_calls_performed": false,
+  "runtime_flag_present": false,
+  "connector_active": false,
+  "connector_runtime_enabled": false,
   "activation_allowed": false,
   "customer_traffic_allowed": false,
   "dfw_fallback_allowed": false

@@ -30,27 +30,33 @@ try {
   errors.push(`invalid protected-configuration evidence: ${error.message}`);
 }
 const exactEvidence = {
-  status: "protected_bindings_resolved_credential_unconfigured",
+  status: "protected_configuration_and_inactive_connector_verified",
   provider_account_uniquely_matched: true,
   grant_created: true,
-  grant_configured: false,
-  grant_verified: false,
+  grant_configured: true,
+  grant_verified: true,
   custom_fields_created: true,
   api_explorer_session_read_verified: true,
-  api_explorer_session_read_used_grant: false,
+  api_explorer_session_read_used_grant: true,
   api_explorer_custom_field_count: 24,
   exact_protected_bindings_resolved: true,
   protected_binding_count: 5,
   protected_bindings_unique: true,
   bounded_read_runtime_repository_adopted: true,
   protected_values_stored_in_repository: false,
-  protected_values_stored_in_hosted_secret: false,
+  protected_values_stored_in_hosted_secret: true,
+  hosted_secret_presence_count: 7,
+  hosted_secret_values_inspected: false,
   webhook_created: false,
-  connector_row_created: false,
+  connector_row_created: true,
+  connector_exact_inactive_count: 1,
+  connector_activation_surface_count: 0,
+  connector_webhook_reference_count: 0,
+  runtime_flag_present: false,
   runtime_provider_calls_performed: false,
   provider_resources_mutated: true,
-  hosted_mutation_performed: false,
-  deployment_performed: false,
+  hosted_mutation_performed: true,
+  deployment_performed: true,
   activation_allowed: false,
   customer_traffic_allowed: false,
   dfw_fallback_allowed: false,
@@ -93,13 +99,13 @@ for (
 }
 for (
   const phrase of [
-    "deployment and traffic disabled",
-    "controlled security boundary stopped transmission",
+    "deployed read runtime remains",
+    "protected hosted secret boundary",
     "24 custom fields",
-    "five exact bindings",
-    "did not use the new Grant",
+    "All five bindings matched",
+    "Grant-authenticated Pave read",
     "lowercase SHA-256",
-    "imported only by the repository-adopted Klamath admin/service",
+    "inactive, runtime-disabled",
   ]
 ) {
   if (!contents.contract?.includes(phrase)) {
@@ -128,5 +134,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Klamath JobTread protected configuration OK: exact secret-safe resolvers are reachable only through the inactive bounded read runtime; deployment and traffic remain disabled.",
+  "Klamath JobTread protected configuration OK: exact hosted secrets and inactive connector are verified; the deployed read runtime remains dual-gated and traffic-disabled.",
 );
