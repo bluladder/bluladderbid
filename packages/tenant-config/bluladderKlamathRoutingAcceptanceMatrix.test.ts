@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
 import { describe, expect, it } from "vitest";
 import { BLULADDER_KLAMATH } from "./bluladderKlamath";
 
@@ -39,9 +41,9 @@ type RoutingAcceptanceMatrix = {
   scenarios: MatrixScenario[];
 };
 
-const matrix = JSON.parse(fs.readFileSync(new URL(
-  "../../docs/operations/bluladder-klamath-dfw-routing-acceptance-matrix.json",
-  import.meta.url,
+const matrix = JSON.parse(fs.readFileSync(path.resolve(
+  process.cwd(),
+  "docs/operations/bluladder-klamath-dfw-routing-acceptance-matrix.json",
 ), "utf8")) as RoutingAcceptanceMatrix;
 
 const byId = (id: string) => {
