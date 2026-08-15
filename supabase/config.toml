@@ -122,6 +122,12 @@ verify_jwt = false
 [functions.jobtread-klamath-read-runtime]
 verify_jwt = false
 
+# Public, read-only hostname bootstrap. Organization authority and publication
+# gates are enforced in-code; the response contains public presentation fields
+# only and never grants customer-runtime authority.
+[functions.public-site-bootstrap]
+verify_jwt = false
+
 # Phase 6B.2 reconciliation runner. Authenticated in-code via the
 # service-role Bearer/apikey header; leave verify_jwt disabled so the
 # platform scheduler can invoke it without a Supabase session.
