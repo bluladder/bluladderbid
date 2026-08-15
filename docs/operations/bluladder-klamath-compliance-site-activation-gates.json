@@ -12,6 +12,7 @@
   "repository_postflight_ready": true,
   "launch_runbook_ready": true,
   "launch_evidence_template_ready": true,
+  "copy_review_manifest_ready": true,
   "activation_migration_prepared": true,
   "activation_migration_application_authorized": false,
   "hosted_preflight_passed": false,

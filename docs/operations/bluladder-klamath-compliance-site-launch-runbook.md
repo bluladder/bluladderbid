@@ -27,11 +27,18 @@ different migration payload.
 
 ## 2. Close the review gates
 
-1. Record exact owner approval for the bound privacy, terms, opt-in, HELP, STOP,
-   and public-contact copy.
-2. Record a separate qualified legal/compliance review for the same immutable
-   candidate. Owner approval cannot substitute for qualified review.
-3. Keep both review references non-sensitive and independently auditable.
+1. Recompute and require every artifact byte count, SHA-256, and the canonical
+   candidate-bundle SHA-256 in
+   `docs/operations/bluladder-klamath-compliance-copy-review-manifest.json`.
+   This binds the review to the exact rendered privacy, terms, opt-in, HELP,
+   STOP, page-heading, and public-contact rendering candidate without storing
+   either protected contact value.
+2. Record exact owner approval for that candidate bundle. The approval record
+   must name the candidate-bundle SHA-256, not merely a branch, PR, screenshot,
+   or mutable URL.
+3. Record a separate qualified legal/compliance review for the same immutable
+   candidate bundle. Owner approval cannot substitute for qualified review.
+4. Keep both review references non-sensitive and independently auditable.
 
 Hard stop: do not infer either approval from general launch authorization,
 provider eligibility, an older campaign, or a previous copy revision.

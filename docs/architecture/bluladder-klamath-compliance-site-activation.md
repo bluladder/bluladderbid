@@ -63,3 +63,7 @@ The operator must execute the sequence in
 `docs/operations/bluladder-klamath-compliance-site-launch-runbook.md` and record
 only sanitized evidence in
 `docs/operations/bluladder-klamath-compliance-site-launch-evidence.template.json`.
+Owner and qualified review must both bind to the immutable candidate identified
+by
+`docs/operations/bluladder-klamath-compliance-copy-review-manifest.json`; a
+mutable branch, screenshot, or URL is not sufficient review evidence.

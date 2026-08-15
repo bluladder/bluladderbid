@@ -10,6 +10,8 @@ const files = {
     "docs/operations/bluladder-klamath-compliance-site-launch-runbook.md",
   evidence:
     "docs/operations/bluladder-klamath-compliance-site-launch-evidence.template.json",
+  reviewManifest:
+    "docs/operations/bluladder-klamath-compliance-copy-review-manifest.json",
   migration:
     "supabase/migrations/20260815103000_bluladder_klamath_compliance_site_activation.sql",
   gates:
@@ -43,6 +45,8 @@ for (const text of [
   "Run postflight and browser acceptance",
   "Keep later provider releases separate",
   "Owner approval cannot substitute for qualified review",
+  "candidate-bundle SHA-256",
+  files.reviewManifest,
   "one `phone` channel and one `sms` channel",
   "Connecting the Klamath hostname",
   "no conflicting `AAAA` record",
@@ -60,11 +64,65 @@ for (const text of [
 
 let evidence;
 let gates;
+let reviewManifest;
 try {
   evidence = JSON.parse(content.evidence ?? "{}");
   gates = JSON.parse(content.gates ?? "{}");
+  reviewManifest = JSON.parse(content.reviewManifest ?? "{}");
 } catch (error) {
   errors.push(`launch JSON is invalid: ${error.message}`);
+}
+
+const expectedReviewArtifacts = [
+  "src/lib/publicSite/klamathComplianceCopy.ts",
+  "src/pages/KlamathCompliancePage.tsx",
+  "docs/operations/bluladder-klamath-messaging-compliance-review.template.json",
+];
+const reviewArtifactLines = [];
+if (
+  reviewManifest?.schema_version !== 1 ||
+  reviewManifest?.tenant_key !== "bluladder-klamath" ||
+  reviewManifest?.purpose !== "immutable_compliance_copy_review_candidate" ||
+  reviewManifest?.candidate_bundle?.algorithm !== "sha256" ||
+  reviewManifest?.candidate_bundle?.serialization !==
+    "newline_joined_path_bytes_sha256" ||
+  JSON.stringify(reviewManifest?.public_contact_boundary?.required_channels) !==
+    JSON.stringify(["phone", "sms"]) ||
+  reviewManifest?.public_contact_boundary?.protected_values_included !== false ||
+  reviewManifest?.public_contact_boundary?.reachability_evidence_included !== false ||
+  reviewManifest?.production_action_authorized !== false
+) errors.push("copy-review manifest identity or fail-closed boundary drifted");
+if (
+  reviewManifest?.owner_review?.status !== "pending" ||
+  reviewManifest?.owner_review?.record_ref !== null ||
+  reviewManifest?.owner_review?.reviewed_at !== null ||
+  reviewManifest?.qualified_legal_compliance_review?.status !== "pending" ||
+  reviewManifest?.qualified_legal_compliance_review?.record_ref !== null ||
+  reviewManifest?.qualified_legal_compliance_review?.reviewed_at !== null
+) errors.push("copy-review manifest must remain an unapproved candidate");
+if (
+  JSON.stringify((reviewManifest?.artifacts ?? []).map(({ path }) => path)) !==
+  JSON.stringify(expectedReviewArtifacts)
+) errors.push("copy-review artifact set or order drifted");
+for (const artifact of reviewManifest?.artifacts ?? []) {
+  const absolute = path.join(root, artifact.path ?? "");
+  if (!expectedReviewArtifacts.includes(artifact.path) || !fs.existsSync(absolute)) {
+    errors.push(`copy-review artifact is missing or unapproved: ${artifact.path}`);
+    continue;
+  }
+  const buffer = fs.readFileSync(absolute);
+  const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+  if (artifact.bytes !== buffer.length || artifact.sha256 !== sha256) {
+    errors.push(`copy-review artifact identity drifted: ${artifact.path}`);
+  }
+  reviewArtifactLines.push(`${artifact.path}:${buffer.length}:${sha256}`);
+}
+const reviewBundleSha256 = crypto
+  .createHash("sha256")
+  .update(reviewArtifactLines.join("\n"))
+  .digest("hex");
+if (reviewManifest?.candidate_bundle?.sha256 !== reviewBundleSha256) {
+  errors.push("copy-review candidate bundle fingerprint drifted");
 }
 
 const forbiddenKey = /^(?:secret|token|password|api_?key|grant_?key|headers?|provider_?id|account_?id|phone_?number|email_?address|webhook_?url|tool_?url|destination)$/i;
@@ -95,7 +153,15 @@ if (
   evidence?.release?.migration_sha256 !== migrationSha256
 ) errors.push("launch evidence release identity or pending state drifted");
 
-for (const review of Object.values(evidence?.reviews ?? {})) {
+if (
+  evidence?.reviews?.candidate_manifest_path !== files.reviewManifest ||
+  evidence?.reviews?.candidate_bundle_sha256 !== reviewBundleSha256
+) errors.push("launch evidence is not bound to the immutable copy-review candidate");
+
+for (const review of [
+  evidence?.reviews?.exact_owner_copy_review,
+  evidence?.reviews?.qualified_legal_compliance_review,
+]) {
   if (
     review?.status !== "pending" ||
     review?.record_ref !== null ||
@@ -149,6 +215,7 @@ for (const value of Object.values(evidence?.later_provider_releases ?? {})) {
 if (
   gates?.launch_runbook_ready !== true ||
   gates?.launch_evidence_template_ready !== true ||
+  gates?.copy_review_manifest_ready !== true ||
   gates?.activation_migration_application_authorized !== false ||
   gates?.activation_allowed !== false
 ) errors.push("activation gate does not bind the fail-closed launch package");
