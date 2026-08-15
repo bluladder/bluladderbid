@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decidePublicSurface,
   parsePublicSiteBootstrap,
+  publicContactHref,
   type PublicSiteBootstrap,
 } from './klamathPublicSurface';
 
@@ -93,6 +94,7 @@ describe('Klamath public surface boundary', () => {
       publicContactReady: true,
       publicContacts: [
         { channel: 'phone' as const, label: 'Call support', value: '+15415550100' },
+        { channel: 'sms' as const, label: 'Text support', value: '+15415550102' },
         { channel: 'email' as const, label: 'Email support', value: 'support@example.com' },
       ],
     };
@@ -102,12 +104,22 @@ describe('Klamath public surface boundary', () => {
       publicContactReady: true,
       publicContacts: published.publicContacts,
     });
+    expect(published.publicContacts.map(publicContactHref)).toEqual([
+      'tel:+15415550100',
+      'sms:+15415550102',
+      'mailto:support@example.com',
+    ]);
     for (const contacts of [
       [{ channel: 'email', label: 'Email', value: 'UPPER@example.com' }],
       [{ channel: 'phone', label: ' Phone ', value: '+15415550100' }],
+      [{ channel: 'sms', label: 'Text', value: '5415550102' }],
       [
         { channel: 'phone', label: 'One', value: '+15415550100' },
         { channel: 'phone', label: 'Two', value: '+15415550101' },
+      ],
+      [
+        { channel: 'sms', label: 'One', value: '+15415550102' },
+        { channel: 'sms', label: 'Two', value: '+15415550103' },
       ],
     ]) {
       expect(parsePublicSiteBootstrap({ ...published, publicContacts: contacts })).toBeNull();

@@ -177,6 +177,10 @@ const reviewedPostRuntimeMigrations = new Set([
   // The public-contact checker permits only the observed terminal-LF
   // normalization and pins the hosted ledger/postflight evidence.
   "supabase/migrations/20260815033840_ce894663-db30-45f4-90e8-817ae229615f.sql",
+  // Owner-approved public call and text destinations are distinct. This
+  // forward-only constraint repair adds an explicit SMS channel, creates no
+  // rows, and keeps every publication and traffic gate closed.
+  "supabase/migrations/20260815040824_bluladder_klamath_split_public_contact_channels.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

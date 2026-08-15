@@ -232,6 +232,15 @@ inactive Klamath origin, and 405 for an unsupported method. Exact owner-approved
 contact content, reachability verification, legal/compliance approval, frontend
 publication, DNS, site publication, and activation remain separately gated.
 
+The owner subsequently approved distinct public call and text destinations.
+Because the applied table could represent only `phone` and `email`, the
+forward-only split-channel candidate adds an explicit `sms` channel and updates
+the fail-closed resolver/client contract. It contains no destination value,
+creates no row, preserves the DFW and inactive Klamath boundaries, and requires
+exact-head review, hosted preflight, isolated migration application, resolver
+deployment, reachability verification, and publication approval as separate
+gates.
+
 ## Open architecture decisions
 
 - authoritative county/geocoder and normalization rules;

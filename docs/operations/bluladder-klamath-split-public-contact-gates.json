@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "distinct_public_call_and_text_channels",
+  "prepared_from_main": "95be0e77d22481ed5001bbb34af497dafe30f092",
+  "issue": 151,
+  "migration": {
+    "path": "supabase/migrations/20260815040824_bluladder_klamath_split_public_contact_channels.sql",
+    "bytes": 4134,
+    "sha256": "2e116934a1cdedfe69fff28575a9223f95c882493e661f26e3cd955230b128f1"
+  },
+  "preflight": {
+    "path": "supabase/preflight/bluladder_klamath_split_public_contact_channels.sql",
+    "bytes": 3735,
+    "sha256": "ba178667f46994843df4924b89ae8a7e56d583f07b8008a6ea074448b7e2021c"
+  },
+  "postflight": {
+    "path": "supabase/verification/bluladder_klamath_split_public_contact_channels.sql",
+    "bytes": 4757,
+    "sha256": "e3e911b04094ff812286b6097702f575ee50b728eac9b28ef0cd54082fefe415"
+  },
+  "owner_approval_reference_sha256": "bda7cfd4df98e11adca544c31fde3746d49d6ea0712fc2440c09469ef5a94a86",
+  "repository_implementation_ready": true,
+  "owner_contact_approved": true,
+  "destinations_embedded_in_repository": false,
+  "distinct_call_and_text_channels": true,
+  "zero_seeded_public_contacts": true,
+  "exact_dfw_compatibility": true,
+  "inactive_klamath_boundary": true,
+  "hosted_preflight_passed": false,
+  "migration_applied": false,
+  "postflight_passed": false,
+  "contact_verified": false,
+  "resolver_deployed": false,
+  "frontend_published": false,
+  "site_published": false,
+  "customer_traffic_allowed": false,
+  "activation_allowed": false,
+  "authorized_actions": {
+    "merge": false,
+    "migration_apply": false,
+    "hosted_data_mutation": false,
+    "deploy": false,
+    "dns_change": false,
+    "frontend_publish": false,
+    "provider_change": false,
+    "credential_action": false,
+    "purchase": false,
+    "call_or_message": false,
+    "lovable_credit": false
+  },
+  "gates": [
+    { "id": "owner_contact_approval", "status": "ready" },
+    { "id": "distinct_call_and_text_contract", "status": "ready" },
+    { "id": "repository_review", "status": "ready" },
+    { "id": "exact_head_ci", "status": "blocked" },
+    { "id": "merge", "status": "blocked" },
+    { "id": "hosted_preflight", "status": "blocked" },
+    { "id": "migration_application", "status": "blocked" },
+    { "id": "resolver_deployment", "status": "blocked" },
+    { "id": "contact_reachability_verification", "status": "blocked" },
+    { "id": "legal_compliance_review", "status": "blocked" },
+    { "id": "dns_and_tls", "status": "blocked" },
+    { "id": "frontend_publication", "status": "blocked" },
+    { "id": "customer_runtime", "status": "blocked" },
+    { "id": "activation", "status": "blocked" }
+  ]
+}

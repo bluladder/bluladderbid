@@ -137,7 +137,7 @@ for (const text of [
   '.from("organization_public_contacts")',
   '.eq("organization_id", normalizedOrganizationId)',
   '.eq("status", "published")',
-  ".limit(3)",
+  ".limit(4)",
   "contact_missing",
   "contact_ambiguous",
   "contact_invalid",
@@ -148,7 +148,7 @@ if (content.resolver?.includes('.from("organization_contacts")') ||
   errors.push("public resolver reads internal contacts or uses wildcard selection");
 }
 for (const text of [
-  "resolve reviewed phone and email without provenance",
+  "resolve reviewed call, text, and email without provenance",
   "fail closed when missing or unavailable",
   "reject duplicate channels and cross-organization rows",
   "reject draft, malformed, unverified, and unapproved rows",
@@ -214,7 +214,7 @@ requireText("inventory", '"organization_public_contacts"');
 requireText("contract", "separate");
 requireText("contract", "`organization_public_contacts` table");
 requireText("contract", "No contact is seeded");
-requireText("contract", "schema applied and resolver deployed");
+requireText("contract", "foundational schema applied");
 requireText("contract", "terminal-LF normalization");
 requireText("roadmap", "Klamath public-contact authority");
 requireText("roadmap", "terminal-LF-normalized execution receipt");

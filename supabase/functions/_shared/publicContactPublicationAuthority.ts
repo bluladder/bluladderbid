@@ -8,7 +8,7 @@ const E164_PATTERN = /^\+[1-9][0-9]{7,14}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface PublishedPublicContact {
-  channel: "phone" | "email";
+  channel: "phone" | "sms" | "email";
   label: string;
   value: string;
 }
@@ -67,6 +67,9 @@ function normalizeRow(
   if (row.channel === "phone" && E164_PATTERN.test(row.destination)) {
     return { channel: "phone", label, value: row.destination };
   }
+  if (row.channel === "sms" && E164_PATTERN.test(row.destination)) {
+    return { channel: "sms", label, value: row.destination };
+  }
   if (
     row.channel === "email" &&
     row.destination === row.destination.toLowerCase() &&
@@ -103,13 +106,13 @@ export async function resolvePublishedPublicContacts(
       )
       .eq("organization_id", normalizedOrganizationId)
       .eq("status", "published")
-      .limit(3);
+      .limit(4);
     if (error) return { status: "blocked", code: "contact_unavailable" };
     const rows = Array.isArray(data) ? data : [];
     if (rows.length === 0) {
       return { status: "blocked", code: "contact_missing" };
     }
-    if (rows.length > 2) {
+    if (rows.length > 3) {
       return { status: "blocked", code: "contact_ambiguous" };
     }
 
@@ -127,8 +130,8 @@ export async function resolvePublishedPublicContacts(
       return { status: "blocked", code: "contact_ambiguous" };
     }
     resolved.sort((left, right) =>
-      ["phone", "email"].indexOf(left.channel) -
-      ["phone", "email"].indexOf(right.channel)
+      ["phone", "sms", "email"].indexOf(left.channel) -
+      ["phone", "sms", "email"].indexOf(right.channel)
     );
     return { status: "resolved", contacts: resolved };
   } catch {
