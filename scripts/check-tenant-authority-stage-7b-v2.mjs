@@ -343,6 +343,13 @@ const allowedEdgePaths = new Set([
   "supabase/functions/jobtread-klamath-read-runtime/handler.ts",
   "supabase/functions/jobtread-klamath-read-runtime/handler_test.ts",
   "supabase/functions/jobtread-klamath-read-runtime/index.ts",
+  // Issue #176: exact-host public bootstrap and contract tests. This surface
+  // is read-only, memory-rate-limited, returns no private identifiers, and
+  // cannot authorize Klamath customer runtime or publication by itself.
+  "supabase/functions/_shared/publicSiteBootstrap_contract_test.ts",
+  "supabase/functions/_shared/publicSitePublicationAuthority.ts",
+  "supabase/functions/_shared/publicSitePublicationAuthority_test.ts",
+  "supabase/functions/public-site-bootstrap/index.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation.ts",
   "supabase/functions/_shared/workflow/callerIdConfirmation_test.ts",
   "supabase/functions/_shared/workflow/customerResolver.ts",
