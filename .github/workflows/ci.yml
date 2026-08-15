@@ -81,6 +81,7 @@ jobs:
           bun run check:klamath-public-site-bootstrap
           bun run check:klamath-public-contact-authority
           bun run check:klamath-split-public-contact
+          bun run check:klamath-compliance-site-activation
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration

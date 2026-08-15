@@ -52,6 +52,7 @@
     "check:klamath-public-site-bootstrap": "node scripts/check-bluladder-klamath-public-site-bootstrap.mjs",
     "check:klamath-public-contact-authority": "node scripts/check-bluladder-klamath-public-contact-authority.mjs",
     "check:klamath-split-public-contact": "node scripts/check-bluladder-klamath-split-public-contact.mjs",
+    "check:klamath-compliance-site-activation": "node scripts/check-bluladder-klamath-compliance-site-activation.mjs",
     "check:klamath-hosted-compat": "node scripts/check-bluladder-klamath-hosted-compat.mjs",
     "check:customer-intelligence": "node scripts/check-customer-intelligence.mjs",
     "check:tenant-isolation-integration": "node scripts/check-tenant-isolation-integration.mjs",
