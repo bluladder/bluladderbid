@@ -37,7 +37,8 @@ for (const text of [
   "there is no first-row,",
   "DFW, or preview fallback for Klamath",
   "customerRuntimeReady` is hard-false",
-  "contains no form, link, call, email, or messaging action",
+  "internal escalation and",
+  "notification contacts are never eligible",
   "does not deploy, publish, mutate hosted data"
 ]) requireText("contract", text);
 
@@ -64,7 +65,8 @@ for (const text of [
   "resolvePublicSitePublicationAuthority",
   'rateLimit(req, { limit: 30, windowMs: 60_000 })',
   'customerRuntimeReady: false',
-  'publicContactReady: false',
+  'publicContactReady: authority.publicContactReady',
+  'publicContacts: authority.publicContacts',
   'complianceRoutes: ["/privacy", "/terms", "/contact"]'
 ]) requireText("function", text);
 for (const forbidden of [
@@ -82,7 +84,8 @@ for (const text of [
   "DFW_PUBLIC_HOSTNAME",
   "parsePublicSiteBootstrap",
   "customerRuntimeReady: false",
-  "publicContactReady: false",
+  "publicContactReady: boolean",
+  "publicContacts: PublishedPublicContact[]",
   "route_unavailable",
   "unknown_host"
 ]) requireText("client", text);
@@ -193,5 +196,5 @@ if (errors.length) {
 }
 
 console.log(
-  "BluLadder Klamath public-site bootstrap gate OK: exact DFW behavior is preserved, Klamath compliance routes require server publication authority, and customer/contact runtime remains fail-closed."
+  "BluLadder Klamath public-site bootstrap gate OK: exact DFW behavior is preserved, Klamath compliance routes require server publication authority, customer runtime remains fail-closed, and public contact output requires dedicated publication authority."
 );

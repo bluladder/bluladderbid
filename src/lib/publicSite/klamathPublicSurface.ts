@@ -4,6 +4,12 @@ export const DFW_PUBLIC_HOSTNAME = 'bid.bluladder.com';
 export const KLAMATH_COMPLIANCE_ROUTES = ['/privacy', '/terms', '/contact'] as const;
 export type KlamathComplianceRoute = (typeof KLAMATH_COMPLIANCE_ROUTES)[number];
 
+export interface PublishedPublicContact {
+  channel: 'phone' | 'email';
+  label: string;
+  value: string;
+}
+
 export interface PublicSiteBootstrap {
   status: 'resolved';
   tenantKey: string;
@@ -12,7 +18,8 @@ export interface PublicSiteBootstrap {
   accessMode: 'customer' | 'compliance_only';
   complianceRoutes: KlamathComplianceRoute[];
   customerRuntimeReady: false;
-  publicContactReady: false;
+  publicContactReady: boolean;
+  publicContacts: PublishedPublicContact[];
 }
 
 export type PublicSurfaceDecision =
@@ -24,7 +31,8 @@ export type PublicSurfaceDecision =
     route: KlamathComplianceRoute;
     publicName: string;
     tagline: string;
-    publicContactReady: false;
+    publicContactReady: boolean;
+    publicContacts: PublishedPublicContact[];
   };
 
 function normalizedHostname(hostname: string): string {
@@ -45,6 +53,7 @@ export function parsePublicSiteBootstrap(value: unknown): PublicSiteBootstrap | 
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const routes = record.complianceRoutes;
+  const contacts = parsePublicContacts(record.publicContacts);
   if (
     record.status !== 'resolved' ||
     record.tenantKey !== 'bluladder-klamath' ||
@@ -52,13 +61,49 @@ export function parsePublicSiteBootstrap(value: unknown): PublicSiteBootstrap | 
     record.tagline !== 'Next Level Clean' ||
     (record.accessMode !== 'customer' && record.accessMode !== 'compliance_only') ||
     record.customerRuntimeReady !== false ||
-    record.publicContactReady !== false ||
+    typeof record.publicContactReady !== 'boolean' ||
+    contacts === null ||
+    (record.publicContactReady ? contacts.length === 0 : contacts.length !== 0) ||
     !Array.isArray(routes) || routes.length !== KLAMATH_COMPLIANCE_ROUTES.length ||
     !KLAMATH_COMPLIANCE_ROUTES.every((route, index) => routes[index] === route)
   ) {
     return null;
   }
-  return record as unknown as PublicSiteBootstrap;
+  return { ...record, publicContacts: contacts } as unknown as PublicSiteBootstrap;
+}
+
+function validLabel(value: unknown): value is string {
+  return typeof value === 'string' && value === value.trim() && value.length > 0 &&
+    value.length <= 80 && ![...value].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    });
+}
+
+function parsePublicContacts(value: unknown): PublishedPublicContact[] | null {
+  if (!Array.isArray(value) || value.length > 2) return null;
+  const contacts: PublishedPublicContact[] = [];
+  const channels = new Set<string>();
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+    const contact = candidate as Record<string, unknown>;
+    if (!validLabel(contact.label) || typeof contact.value !== 'string') return null;
+    if (contact.channel === 'phone' && /^\+[1-9][0-9]{7,14}$/.test(contact.value)) {
+      contacts.push({ channel: 'phone', label: contact.label, value: contact.value });
+    } else if (
+      contact.channel === 'email' && contact.value === contact.value.toLowerCase() &&
+      contact.value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.value)
+    ) {
+      contacts.push({ channel: 'email', label: contact.label, value: contact.value });
+    } else return null;
+    if (channels.has(String(contact.channel))) return null;
+    channels.add(String(contact.channel));
+  }
+  return contacts;
+}
+
+export function publicContactHref(contact: PublishedPublicContact): string {
+  return contact.channel === 'phone' ? `tel:${contact.value}` : `mailto:${contact.value}`;
 }
 
 /**
@@ -90,5 +135,6 @@ export function decidePublicSurface(
     publicName: bootstrap.publicName,
     tagline: bootstrap.tagline,
     publicContactReady: bootstrap.publicContactReady,
+    publicContacts: bootstrap.publicContacts,
   };
 }

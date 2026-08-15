@@ -16,6 +16,9 @@ later added `organization_messaging_connectors`. Phase 1I added
 `organization_crm_connectors` as organization-scoped configuration plus
 `organization_connector_operation_attempts` and
 `organization_connector_webhook_receipts` as organization-owned audit tables.
+The repository-only public-contact authority candidate adds
+`organization_public_contacts` as organization-scoped configuration while
+seeding no contact values.
 Every connector remains runtime-disabled. The counts
 below remain the immutable Stage 7A baseline rather than a statement of current
 generated-schema totals.

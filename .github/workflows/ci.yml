@@ -79,6 +79,7 @@ jobs:
           bun run check:klamath-pricing-duration-review
           bun run check:klamath-messaging-compliance-review
           bun run check:klamath-public-site-bootstrap
+          bun run check:klamath-public-contact-authority
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
@@ -167,6 +168,7 @@ jobs:
           createdb --host localhost --username postgres bluladder_klamath_phase1h_consent_lineage_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1i_crm_connector_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_phase1i_grants_rehearsal
+          createdb --host localhost --username postgres bluladder_klamath_public_contact_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -236,6 +238,10 @@ jobs:
         env:
           BLULADDER_KLAMATH_PHASE1I_GRANTS_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_phase1i_grants_rehearsal
         run: bash scripts/rehearse-bluladder-klamath-phase-1i-authenticated-grants-postgres.sh
+      - name: Rehearse BluLadder Klamath public contact authority
+        env:
+          BLULADDER_KLAMATH_PUBLIC_CONTACT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_public_contact_rehearsal
+        run: bash scripts/rehearse-bluladder-klamath-public-contact-authority-postgres.sh
 
   campaigns-inactive-guard:
     name: Campaigns inactive guard

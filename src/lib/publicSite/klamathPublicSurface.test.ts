@@ -14,6 +14,7 @@ const bootstrap: PublicSiteBootstrap = {
   complianceRoutes: ['/privacy', '/terms', '/contact'],
   customerRuntimeReady: false,
   publicContactReady: false,
+  publicContacts: [],
 };
 
 describe('Klamath public surface boundary', () => {
@@ -49,6 +50,7 @@ describe('Klamath public surface boundary', () => {
         publicName: 'BluLadder Klamath',
         tagline: 'Next Level Clean',
         publicContactReady: false,
+        publicContacts: [],
       });
     },
   );
@@ -79,8 +81,36 @@ describe('Klamath public surface boundary', () => {
       { ...bootstrap, complianceRoutes: ['/terms', '/privacy', '/contact'] },
       { ...bootstrap, customerRuntimeReady: true },
       { ...bootstrap, publicContactReady: true },
+      { ...bootstrap, publicContacts: [{ channel: 'phone', label: 'Phone', value: 'not-e164' }] },
     ]) {
       expect(parsePublicSiteBootstrap(value)).toBeNull();
+    }
+  });
+
+  it('accepts only normalized unique reviewed contact payloads', () => {
+    const published = {
+      ...bootstrap,
+      publicContactReady: true,
+      publicContacts: [
+        { channel: 'phone' as const, label: 'Call support', value: '+15415550100' },
+        { channel: 'email' as const, label: 'Email support', value: 'support@example.com' },
+      ],
+    };
+    expect(parsePublicSiteBootstrap(published)).toEqual(published);
+    expect(decidePublicSurface('klamath.bluladder.com', '/contact', published)).toMatchObject({
+      mode: 'klamath_compliance',
+      publicContactReady: true,
+      publicContacts: published.publicContacts,
+    });
+    for (const contacts of [
+      [{ channel: 'email', label: 'Email', value: 'UPPER@example.com' }],
+      [{ channel: 'phone', label: ' Phone ', value: '+15415550100' }],
+      [
+        { channel: 'phone', label: 'One', value: '+15415550100' },
+        { channel: 'phone', label: 'Two', value: '+15415550101' },
+      ],
+    ]) {
+      expect(parsePublicSiteBootstrap({ ...published, publicContacts: contacts })).toBeNull();
     }
   });
 });

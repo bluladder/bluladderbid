@@ -56,9 +56,8 @@ serve(async (req) => {
       tagline: authority.tagline,
       accessMode: authority.accessMode,
       complianceRoutes: ["/privacy", "/terms", "/contact"],
-      // No existing organization contact type is approved for public display.
-      // A later schema/configuration release must establish that authority.
-      publicContactReady: false,
+      publicContactReady: authority.publicContactReady,
+      publicContacts: authority.publicContacts,
       // A separate reviewed release must adopt tenant-aware quote, booking,
       // portal, chat, contact-write, pricing, and provider runtimes. The public
       // bootstrap can never activate them by itself.

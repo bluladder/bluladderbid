@@ -170,6 +170,9 @@ const reviewedPostRuntimeMigrations = new Set([
   // Lovable-generated receipt for the exact Phase 1I grant repair, with only
   // terminal-LF normalization permitted by the Phase 1I grant checker.
   "supabase/migrations/20260814120308_dedb44f7-f5c6-4621-9387-e88691c6969b.sql",
+  // Issue #178: empty public-contact publication authority. It seeds no
+  // values and keeps all hosted/public actions separately gated.
+  "supabase/migrations/20260815031340_bluladder_klamath_public_contact_authority.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)
@@ -347,6 +350,8 @@ const allowedEdgePaths = new Set([
   // is read-only, memory-rate-limited, returns no private identifiers, and
   // cannot authorize Klamath customer runtime or publication by itself.
   "supabase/functions/_shared/publicSiteBootstrap_contract_test.ts",
+  "supabase/functions/_shared/publicContactPublicationAuthority.ts",
+  "supabase/functions/_shared/publicContactPublicationAuthority_test.ts",
   "supabase/functions/_shared/publicSitePublicationAuthority.ts",
   "supabase/functions/_shared/publicSitePublicationAuthority_test.ts",
   "supabase/functions/public-site-bootstrap/index.ts",

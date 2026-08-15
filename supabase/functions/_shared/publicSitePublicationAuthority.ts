@@ -1,5 +1,9 @@
 import { CANONICAL_PRODUCTION_APP_URL } from "./appUrl.ts";
 import { DFW_ORGANIZATION_ID } from "./organizationRouting.ts";
+import {
+  type PublishedPublicContact,
+  resolvePublishedPublicContacts,
+} from "./publicContactPublicationAuthority.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -15,6 +19,8 @@ export type PublicSitePublicationAuthority =
     publicName: string;
     tagline: string;
     accessMode: PublicSiteAccessMode;
+    publicContactReady: boolean;
+    publicContacts: PublishedPublicContact[];
     source: "exact_dfw_compatibility" | "published_customer_site";
   }
   | {
@@ -99,6 +105,8 @@ export async function resolvePublicSitePublicationAuthority(
       publicName: "BluLadder",
       tagline: "Next Level Clean",
       accessMode: "customer",
+      publicContactReady: false,
+      publicContacts: [],
       source: "exact_dfw_compatibility",
     };
   }
@@ -180,6 +188,11 @@ export async function resolvePublicSitePublicationAuthority(
       return { status: "blocked", code: "settings_unavailable" };
     }
 
+    const contactAuthority = await resolvePublishedPublicContacts(
+      supabase,
+      organizationId,
+    );
+
     return {
       status: "resolved",
       organizationId,
@@ -190,6 +203,10 @@ export async function resolvePublicSitePublicationAuthority(
       accessMode: site.customer_traffic_allowed
         ? "customer"
         : "compliance_only",
+      publicContactReady: contactAuthority.status === "resolved",
+      publicContacts: contactAuthority.status === "resolved"
+        ? contactAuthority.contacts
+        : [],
       source: "published_customer_site",
     };
   } catch {
