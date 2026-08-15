@@ -11,6 +11,7 @@ Deno.test("public site bootstrap delegates hostname authority and returns public
   for (
     const fragment of [
       "resolvePublicSitePublicationAuthority",
+      "rateLimit(req, { limit: 30, windowMs: 60_000 })",
       "tenantKey: authority.tenantKey",
       "publicName: authority.publicName",
       "tagline: authority.tagline",

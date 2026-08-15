@@ -62,6 +62,7 @@ for (const text of [
 
 for (const text of [
   "resolvePublicSitePublicationAuthority",
+  'rateLimit(req, { limit: 30, windowMs: 60_000 })',
   'customerRuntimeReady: false',
   'publicContactReady: false',
   'complianceRoutes: ["/privacy", "/terms", "/contact"]'

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolvePublicSitePublicationAuthority } from "../_shared/publicSitePublicationAuthority.ts";
+import { rateLimit } from "../_shared/rateLimit.ts";
 
 const allowHeaders = "authorization, x-client-info, apikey, content-type";
 
@@ -23,6 +24,14 @@ serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ status: "unavailable" }), {
       status: 405,
+      headers: headers(null),
+    });
+  }
+
+  const limiter = rateLimit(req, { limit: 30, windowMs: 60_000 });
+  if (!limiter.allowed) {
+    return new Response(JSON.stringify({ status: "unavailable" }), {
+      status: 429,
       headers: headers(null),
     });
   }
