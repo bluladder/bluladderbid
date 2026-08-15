@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 1,
+  "contract": "bluladder-klamath-dfw-routing-acceptance-matrix",
+  "issue": 162,
+  "status": "repository_only",
+  "activationAuthorized": false,
+  "providerTrafficPerformed": false,
+  "customerMutationPerformed": false,
+  "categories": [
+    "address_authoritative_routing",
+    "organization_isolation",
+    "provider_isolation",
+    "missing_address",
+    "rerouting",
+    "idempotency",
+    "manual_review_services"
+  ],
+  "tenantContracts": {
+    "bluladder-dfw": {
+      "provider": "jobber",
+      "legacyDefault": true
+    },
+    "bluladder-klamath": {
+      "provider": "jobtread",
+      "legacyDefault": false,
+      "lifecycle": "provisioning",
+      "customerTrafficAllowed": false,
+      "dfwFallbackAllowed": false
+    }
+  },
+  "approvedKlamathInputs": {
+    "activeDays": [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday"
+    ],
+    "automatedServiceKeys": [
+      "window_cleaning",
+      "gutter_cleaning",
+      "house_wash",
+      "pressure_washing"
+    ],
+    "manualReviewServiceKeys": [
+      "solar_panel_cleaning",
+      "christmas_lights",
+      "commercial_exterior_cleaning",
+      "storefront_window_cleaning"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "dfw_address_selects_dfw_jobber",
+      "categories": [
+        "address_authoritative_routing",
+        "organization_isolation",
+        "provider_isolation"
+      ],
+      "phase": "current",
+      "addressAuthority": "dfw",
+      "priorOrganization": null,
+      "requestedProvider": null,
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "resolved",
+        "organization": "bluladder-dfw",
+        "provider": "jobber",
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "authoritative_address"
+      }
+    },
+    {
+      "id": "klamath_address_blocks_while_provisioning",
+      "categories": [
+        "address_authoritative_routing",
+        "organization_isolation"
+      ],
+      "phase": "current",
+      "addressAuthority": "klamath",
+      "priorOrganization": null,
+      "requestedProvider": null,
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "blocked",
+        "organization": "bluladder-klamath",
+        "provider": null,
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "organization_inactive"
+      }
+    },
+    {
+      "id": "klamath_address_selects_jobtread_after_separate_activation",
+      "categories": [
+        "address_authoritative_routing",
+        "organization_isolation",
+        "provider_isolation"
+      ],
+      "phase": "future_acceptance",
+      "addressAuthority": "klamath",
+      "priorOrganization": null,
+      "requestedProvider": null,
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "resolved_after_activation",
+        "organization": "bluladder-klamath",
+        "provider": "jobtread",
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "authoritative_address_and_separate_activation"
+      }
+    },
+    {
+      "id": "missing_address_fails_closed",
+      "categories": [
+        "missing_address",
+        "address_authoritative_routing"
+      ],
+      "phase": "current",
+      "addressAuthority": "missing",
+      "priorOrganization": null,
+      "requestedProvider": null,
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "blocked",
+        "organization": null,
+        "provider": null,
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "address_required"
+      }
+    },
+    {
+      "id": "address_and_prior_organization_conflict_blocks",
+      "categories": [
+        "address_authoritative_routing",
+        "organization_isolation",
+        "rerouting"
+      ],
+      "phase": "current",
+      "addressAuthority": "klamath",
+      "priorOrganization": "bluladder-dfw",
+      "requestedProvider": null,
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "blocked",
+        "organization": null,
+        "provider": null,
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "authority_conflict_requires_reresolution"
+      }
+    },
+    {
+      "id": "corrected_address_discards_stale_tenant_and_provider",
+      "categories": [
+        "address_authoritative_routing",
+        "organization_isolation",
+        "provider_isolation",
+        "rerouting",
+        "idempotency"
+      ],
+      "phase": "future_acceptance",
+      "addressAuthority": "klamath",
+      "priorOrganization": "bluladder-dfw",
+      "requestedProvider": "jobber",
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "reresolve_after_activation",
+        "organization": "bluladder-klamath",
+        "provider": "jobtread",
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "corrected_address_requires_fresh_authority_and_idempotency_scope"
+      }
+    },
+    {
+      "id": "klamath_jobber_provider_mismatch_blocks",
+      "categories": [
+        "organization_isolation",
+        "provider_isolation"
+      ],
+      "phase": "future_acceptance",
+      "addressAuthority": "klamath",
+      "priorOrganization": "bluladder-klamath",
+      "requestedProvider": "jobber",
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "blocked",
+        "organization": "bluladder-klamath",
+        "provider": null,
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "provider_organization_mismatch"
+      }
+    },
+    {
+      "id": "dfw_jobtread_provider_mismatch_blocks",
+      "categories": [
+        "organization_isolation",
+        "provider_isolation"
+      ],
+      "phase": "current",
+      "addressAuthority": "dfw",
+      "priorOrganization": "bluladder-dfw",
+      "requestedProvider": "jobtread",
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "blocked",
+        "organization": "bluladder-dfw",
+        "provider": null,
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "provider_organization_mismatch"
+      }
+    },
+    {
+      "id": "same_tenant_semantic_replay_is_idempotent",
+      "categories": [
+        "organization_isolation",
+        "idempotency"
+      ],
+      "phase": "future_acceptance",
+      "addressAuthority": "klamath",
+      "priorOrganization": "bluladder-klamath",
+      "requestedProvider": "jobtread",
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "idempotent_replay_after_activation",
+        "organization": "bluladder-klamath",
+        "provider": "jobtread",
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "organization_capability_operation_and_fingerprint_match"
+      }
+    },
+    {
+      "id": "same_external_key_is_not_shared_across_tenants",
+      "categories": [
+        "organization_isolation",
+        "provider_isolation",
+        "idempotency"
+      ],
+      "phase": "future_acceptance",
+      "addressAuthority": "klamath",
+      "priorOrganization": "bluladder-dfw",
+      "requestedProvider": "jobtread",
+      "serviceKey": "window_cleaning",
+      "expected": {
+        "decision": "new_tenant_scope_after_activation",
+        "organization": "bluladder-klamath",
+        "provider": "jobtread",
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "idempotency_is_organization_scoped"
+      }
+    },
+    {
+      "id": "manual_review_services_never_enter_automation",
+      "categories": [
+        "organization_isolation",
+        "provider_isolation",
+        "manual_review_services"
+      ],
+      "phase": "future_acceptance",
+      "addressAuthority": "klamath",
+      "priorOrganization": "bluladder-klamath",
+      "requestedProvider": "jobtread",
+      "serviceKey": "manual_review_set",
+      "expected": {
+        "decision": "manual_review",
+        "organization": "bluladder-klamath",
+        "provider": null,
+        "dfwFallbackUsed": false,
+        "staleContextPreserved": false,
+        "providerExecutionAllowedByThisContract": false,
+        "reason": "service_not_approved_for_automation"
+      }
+    }
+  ]
+}
