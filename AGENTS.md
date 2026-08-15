@@ -113,3 +113,18 @@ Every implementation report must include:
 - production or migration actions not taken
 
 The lead engineer remains responsible for ensuring the GitHub handoff is real and independently verifiable.
+
+## BluLadder Product Design Director
+
+For customer-facing visual design, UX, conversion, accessibility, mobile, or design QA work:
+
+1. Use the custom agent `BluLadder Product Design Director`.
+2. Invoke `$bluladder-product-design-review`.
+3. Read `docs/design-system/product-profile.md`.
+4. State exactly one mode: Audit, Design Director, Implementation, or Verification.
+
+Audit and Design Director modes are read-only. Implementation requires explicit approved scope and must preserve all pricing, eligibility, scheduling, booking, authentication, authorization, organization, Jobber, Supabase, provider, analytics, and server-side business behavior. Verification does not edit product code.
+
+Treat BluLadder BID as the guided quoting and booking product. Maintain shared brand language with the public website without importing website page structures or creating a shared runtime dependency.
+
+Run `npm run check:design-governance` for changes to the agent, Skill, design governance, or product profile.

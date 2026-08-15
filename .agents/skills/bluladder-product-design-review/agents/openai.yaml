@@ -1,0 +1,7 @@
+interface:
+  display_name: "BluLadder Product Design Director"
+  short_description: "Premium UX, conversion, accessibility, and design QA"
+  default_prompt: "Use $bluladder-product-design-review in Audit mode for the current BluLadder product and return evidence-backed findings without editing code."
+
+policy:
+  allow_implicit_invocation: true
