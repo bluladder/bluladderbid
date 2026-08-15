@@ -3,6 +3,10 @@ import {
   type PublishedPublicContact,
   publicContactHref,
 } from '@/lib/publicSite/klamathPublicSurface';
+import {
+  KLAMATH_PRIVACY_COPY,
+  KLAMATH_TERMS_COPY,
+} from '@/lib/publicSite/klamathComplianceCopy';
 
 interface KlamathCompliancePageProps {
   route: KlamathComplianceRoute;
@@ -22,23 +26,19 @@ function PrivacyContent() {
       <section className={sectionClass}>
         <h2 className="text-xl font-semibold">Information we use</h2>
         <p className="text-muted-foreground">
-          We use information you provide to prepare requested quotes, manage requested bookings,
-          provide service reminders, respond to support requests, and protect account access.
+          {KLAMATH_PRIVACY_COPY.informationUse}
         </p>
       </section>
       <section className={sectionClass}>
         <h2 className="text-xl font-semibold">Mobile information</h2>
         <p className="text-muted-foreground">
-          Mobile information will not be shared with third parties or affiliates for marketing or
-          promotional purposes. Message frequency varies. Message and data rates may apply. Reply
-          STOP to opt out and HELP for help.
+          {KLAMATH_PRIVACY_COPY.mobileInformation}
         </p>
       </section>
       <section className={sectionClass}>
         <h2 className="text-xl font-semibold">Your choices</h2>
         <p className="text-muted-foreground">
-          Transactional messages are limited to the service you request. Marketing messages require
-          a separate, unchecked opt-in and are not a condition of purchase.
+          {KLAMATH_PRIVACY_COPY.choices}
         </p>
       </section>
     </div>
@@ -52,23 +52,19 @@ function TermsContent() {
       <section className={sectionClass}>
         <h2 className="text-xl font-semibold">Messaging program</h2>
         <p className="text-muted-foreground">
-          The messaging program is operated by BluLadder Klamath. Messages may include requested
-          quote and booking links, reminders, operator follow-up, authentication, and separately
-          opted-in promotions.
+          {KLAMATH_TERMS_COPY.messagingProgram}
         </p>
       </section>
       <section className={sectionClass}>
         <h2 className="text-xl font-semibold">Frequency and carrier terms</h2>
         <p className="text-muted-foreground">
-          Message frequency varies and message and data rates may apply. Reply STOP to opt out and
-          HELP for help. Carriers are not liable for delayed or undelivered messages.
+          {KLAMATH_TERMS_COPY.frequencyAndCarrierTerms}
         </p>
       </section>
       <section className={sectionClass}>
         <h2 className="text-xl font-semibold">Consent</h2>
         <p className="text-muted-foreground">
-          Consent to receive messages is not a condition of purchase. Transactional consent applies
-          only to the quote, booking, reminder, support, or authentication service requested.
+          {KLAMATH_TERMS_COPY.consent}
         </p>
       </section>
     </div>

@@ -15,6 +15,10 @@ const relative = {
   clientTests: "src/lib/publicSite/klamathPublicSurface.test.ts",
   boundary: "src/components/public-site/PublicSiteBoundary.tsx",
   page: "src/pages/KlamathCompliancePage.tsx",
+  copy: "src/lib/publicSite/klamathComplianceCopy.ts",
+  copyTests: "src/lib/publicSite/klamathComplianceCopy.test.ts",
+  messagingTemplate:
+    "docs/operations/bluladder-klamath-messaging-compliance-review.template.json",
   app: "src/App.tsx",
   config: "supabase/config.toml",
   roadmap: "docs/ROADMAP_EXECUTION_LEDGER.md"
@@ -114,11 +118,29 @@ requireText("config", "verify_jwt = false");
 requireText("roadmap", "Klamath public-site bootstrap candidate");
 
 for (const text of [
-  "Mobile information will not be shared with third parties or affiliates for marketing or",
-  "Consent to receive messages is not a condition of purchase",
+  "KLAMATH_PRIVACY_COPY",
+  "KLAMATH_TERMS_COPY",
   "No request form, phone",
   "number, email address, quote, booking, message, or customer action is available"
 ]) requireText("page", text);
+
+let messagingTemplate;
+try {
+  messagingTemplate = JSON.parse(content.messagingTemplate ?? "{}");
+} catch (error) {
+  errors.push(`messaging template JSON is invalid: ${error.message}`);
+}
+for (const statement of [
+  ...(messagingTemplate?.candidate?.publicSurfaces
+    ?.privacyPolicyRequiredStatements ?? []),
+  ...(messagingTemplate?.candidate?.publicSurfaces?.termsRequiredStatements ?? []),
+]) requireText("copy", statement);
+for (const text of [
+  "renders the exact privacy and terms statements frozen for carrier review",
+  "includes every frozen statement exactly once in the assembled paragraphs",
+  "renders every frozen statement through the public compliance page",
+  "does not convert exact copy alignment into owner or legal approval",
+]) requireText("copyTests", text);
 for (const forbidden of [
   "PRIMARY_PUBLIC_PHONE",
   "SUPPORT_EMAIL",
@@ -146,7 +168,8 @@ if (gates) {
     gates.repository_implementation_ready !== true ||
     gates.exact_dfw_compatibility !== true ||
     gates.unknown_host_blocked !== true ||
-    gates.server_authoritative_bootstrap !== true
+    gates.server_authoritative_bootstrap !== true ||
+    gates.candidate_copy_bound_to_rendered_surface !== true
   ) errors.push("public-site bootstrap repository identity drifted");
 
   const expectedRoutes = ["/privacy", "/terms", "/contact"];
@@ -179,10 +202,11 @@ if (gates) {
     "unknown_host_denial",
     "compliance_only_route_denial",
     "dfw_contact_leak_denial",
+    "candidate_copy_binding",
     "public_contact_authority",
     "function_deployment",
   ]);
-  const expectedGateCount = 15;
+  const expectedGateCount = 16;
   if ((gates.gates ?? []).length !== expectedGateCount) {
     errors.push("public-site gate count drifted");
   }

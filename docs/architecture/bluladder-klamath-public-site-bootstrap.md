@@ -45,6 +45,12 @@ can make that flag true only for a separately verified, owner-approved,
 published row in the dedicated public-contact table; internal escalation and
 notification contacts are never eligible.
 
+The rendered privacy and terms paragraphs now consume one exact copy module.
+A focused test compares that module with the frozen messaging-compliance review
+template and requires every carrier-review statement exactly once. This closes
+repository copy drift only; it deliberately leaves owner approval, qualified
+legal/compliance review, public verification, and carrier approval pending.
+
 ## DFW and preview compatibility
 
 The exact DFW production hostname continues to render the existing application
