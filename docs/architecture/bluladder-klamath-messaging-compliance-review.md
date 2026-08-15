@@ -1,9 +1,11 @@
 # BluLadder Klamath messaging compliance review contract
 
-Status: **repository-only candidate; owner, legal, and public-surface review
-pending; provider and runtime unchanged**. This package cannot publish a page,
+Status: **path-based public-surface candidate; owner, legal, and public-surface
+review pending; provider and runtime unchanged**. This package cannot by itself publish a page,
 register a campaign, provision a number, send a message, enable customer
 traffic, or activate Klamath.
+
+The owner, legal, and public-surface review gates remain independent.
 
 ## Purpose
 
@@ -37,9 +39,10 @@ Twilio or carrier review will approve it.
 - A transactional request is limited to the requested service interaction.
   Promotional messages require a separate unchecked opt-in and are not a
   condition of purchase.
-- The message-flow description covers both a visible website request and an
-  inbound caller's explicit request for a one-time link. Any future production
-  surface must match this description exactly or the package must be revised.
+- The message-flow description truthfully covers an inbound caller's explicit
+  request and confirmation before a text is sent. The launch has no website
+  opt-in form. Any future production surface must match this description
+  exactly or the package must be revised.
 - The privacy candidate explicitly protects mobile numbers, messaging opt-in
   data, and consent from sharing, sale, rent, transfer, or other provision for
   third-party marketing. It also includes frequency, rates, and HELP/STOP
@@ -49,8 +52,10 @@ Twilio or carrier review will approve it.
 - Marketing and promotional messages are outside the approved launch campaign.
   Any future marketing campaign remains behind a separate unchecked opt-in and
   separate owner, legal, carrier, and release approval.
-- Exact future URLs use the already-approved canonical Klamath hostname. They
-  are candidates, not claims that those pages are published.
+- Exact future URLs use the Klamath-only `/klamath` path boundary on the
+  existing primary site. This avoids the hosting provider's cross-domain
+  redirect while leaving every existing DFW route unchanged. They are
+  candidates, not claims that those pages are published.
 
 ## Signed-in provider readiness reconciliation
 
@@ -87,7 +92,7 @@ review remain independent gates.
 
 ## Current production safety
 
-This package changes no source implementation or public page. Klamath remains
+This package adds only a fail-closed path-based compliance presentation. Klamath remains
 provisioning, unpublished, runtime-routing-disabled, messaging-runtime-disabled,
 customer-traffic-disabled, and unable to activate. No Twilio resource,
 credential, sender, Messaging Service, A2P campaign, phone number, message,

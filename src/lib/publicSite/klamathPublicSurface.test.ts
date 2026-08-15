@@ -31,6 +31,31 @@ describe('Klamath public surface boundary', () => {
     });
   });
 
+  it.each([
+    ['/klamath', '/opt-in'],
+    ['/klamath/privacy', '/privacy'],
+    ['/klamath/terms/', '/terms'],
+    ['/klamath/contact', '/contact'],
+  ] as const)('exposes only the exact Klamath compliance path %s on the DFW host', (path, route) => {
+    expect(decidePublicSurface('bid.bluladder.com', path, null)).toEqual({
+      mode: 'klamath_compliance',
+      route,
+      pathPrefix: '/klamath',
+      publicName: 'BluLadder Klamath',
+      tagline: 'Next Level Clean',
+      publicContactReady: false,
+      publicContacts: [],
+    });
+  });
+
+  it('does not let neighboring or customer-action paths escape into the Klamath surface', () => {
+    for (const path of ['/klamathish', '/klamath/services', '/klamath/quote/example']) {
+      expect(decidePublicSurface('bid.bluladder.com', path, null)).toEqual({
+        mode: 'existing_dfw',
+      });
+    }
+  });
+
   it('blocks unknown hosts and Klamath without server authority', () => {
     expect(decidePublicSurface('other.example.com', '/', null)).toEqual({
       mode: 'blocked',
@@ -48,6 +73,7 @@ describe('Klamath public surface boundary', () => {
       expect(decidePublicSurface('klamath.bluladder.com', route, bootstrap)).toEqual({
         mode: 'klamath_compliance',
         route,
+        pathPrefix: '',
         publicName: 'BluLadder Klamath',
         tagline: 'Next Level Clean',
         publicContactReady: false,

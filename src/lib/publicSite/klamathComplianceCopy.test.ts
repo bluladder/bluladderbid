@@ -6,6 +6,7 @@ import { KlamathCompliancePage } from '@/pages/KlamathCompliancePage';
 import {
   KLAMATH_MESSAGING_PRIVACY_REQUIRED_STATEMENTS,
   KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS,
+  KLAMATH_OPT_IN_COPY,
   KLAMATH_PRIVACY_COPY,
   KLAMATH_TERMS_COPY,
 } from './klamathComplianceCopy';
@@ -63,6 +64,26 @@ describe('Klamath compliance-only copy contract', () => {
     for (const statement of KLAMATH_MESSAGING_PRIVACY_REQUIRED_STATEMENTS) {
       expect(privacyPage.container.textContent).toContain(statement);
     }
+    cleanup();
+
+    const optInPage = render(KlamathCompliancePage({
+      route: '/opt-in',
+      pathPrefix: '/klamath',
+      publicName: 'BluLadder Klamath',
+      tagline: 'Next Level Clean',
+      publicContactReady: false,
+      publicContacts: [],
+    }));
+    expect(optInPage.getByRole('heading', { name: 'Text messaging consent' }))
+      .toBeInTheDocument();
+    expect(optInPage.container.textContent).toContain('does not collect a mobile number');
+    for (const statement of Object.values(KLAMATH_OPT_IN_COPY)) {
+      expect(optInPage.container.textContent).toContain(statement);
+    }
+    expect(optInPage.getByRole('link', { name: 'Privacy' })).toHaveAttribute(
+      'href',
+      '/klamath/privacy',
+    );
     cleanup();
 
     const termsPage = render(KlamathCompliancePage({

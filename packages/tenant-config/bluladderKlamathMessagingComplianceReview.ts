@@ -37,7 +37,7 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE = {
   },
   consent: {
     messageFlow:
-      "Website users enter a mobile number and explicitly request a quote link, booking-management link, reminder, operator follow-up, or authentication code. The adjacent disclosure identifies BluLadder Klamath, says message frequency varies and message and data rates may apply, and explains HELP and STOP. Transactional consent is limited to the requested service. Voice callers may request a one-time link during an inbound call; the assistant confirms the request before tool execution. Consent is not a condition of purchase. Privacy Policy: https://klamath.bluladder.com/privacy. Terms and Conditions: https://klamath.bluladder.com/terms.",
+      "During an inbound service conversation, a caller provides a mobile number and explicitly requests a quote link, booking-management link, reminder, operator follow-up, or authentication message. The receptionist confirms the requested message and mobile number before sending anything. The public consent page identifies BluLadder Klamath, says message frequency varies and message and data rates may apply, and explains HELP and STOP. Transactional consent is limited to the requested service. Consent is not a condition of purchase. This launch has no website opt-in form. Privacy Policy: https://bid.bluladder.com/klamath/privacy. Terms and Conditions: https://bid.bluladder.com/klamath/terms.",
     transactionalDisclosure:
       "By requesting a text from BluLadder Klamath, you agree to receive messages related to your quote, booking, appointment, support request, or authentication. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out. Consent is not a condition of purchase. See Privacy Policy and Terms and Conditions.",
     futureMarketingBoundary:
@@ -45,15 +45,15 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE = {
     marketingCheckboxDefaultChecked: false,
     consentRequiredForPurchase: false,
     helpMessage:
-      "BluLadder Klamath: Help is available at https://klamath.bluladder.com/contact. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out.",
+      "BluLadder Klamath: Help is available at https://bid.bluladder.com/klamath/contact. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out.",
     optOutMessage:
       "BluLadder Klamath: You have been opted out and will receive no further messages. Reply START to opt in again.",
   },
   publicSurfaces: {
-    optInUrl: "https://klamath.bluladder.com/",
-    privacyPolicyUrl: "https://klamath.bluladder.com/privacy",
-    termsAndConditionsUrl: "https://klamath.bluladder.com/terms",
-    supportUrl: "https://klamath.bluladder.com/contact",
+    optInUrl: "https://bid.bluladder.com/klamath",
+    privacyPolicyUrl: "https://bid.bluladder.com/klamath/privacy",
+    termsAndConditionsUrl: "https://bid.bluladder.com/klamath/terms",
+    supportUrl: "https://bid.bluladder.com/klamath/contact",
     privacyPolicyRequiredStatements: [
       "We do not share, sell, rent, transfer, or otherwise provide mobile phone numbers, text messaging opt-in data, or messaging consent to third parties, affiliates, or lead generators for marketing or promotional purposes.",
       "Message frequency varies.",
@@ -65,13 +65,13 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE = {
       "Messages may include requested quote and booking links, reminders, operator follow-up, and authentication. Marketing and promotional messages are outside this launch program.",
       "Message frequency varies and message and data rates may apply.",
       "Reply STOP to opt out and HELP for help.",
-      "For customer support, reply HELP or visit https://klamath.bluladder.com/contact.",
-      "Privacy Policy: https://klamath.bluladder.com/privacy.",
+      "For customer support, reply HELP or visit https://bid.bluladder.com/klamath/contact.",
+      "Privacy Policy: https://bid.bluladder.com/klamath/privacy.",
       "Carriers are not liable for delayed or undelivered messages.",
       "Consent is not a condition of purchase.",
     ],
   },
-  sourceImplementationChanged: false,
+  sourceImplementationChanged: true,
   publicSurfacesPublished: false,
   providerCampaignSubmitted: false,
   messagingRuntimeEnabled: false,

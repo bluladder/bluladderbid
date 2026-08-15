@@ -12,13 +12,22 @@ export const KLAMATH_MESSAGING_PRIVACY_REQUIRED_STATEMENTS = [
   'Reply STOP to opt out and HELP for help.',
 ] as const;
 
+export const KLAMATH_OPT_IN_COPY = {
+  howConsentIsObtained:
+    'During an inbound service conversation, a caller may explicitly request a quote link, booking-management link, reminder, operator follow-up, or authentication message. The receptionist confirms the requested message and mobile number before sending anything.',
+  transactionalDisclosure:
+    'By explicitly requesting a text from BluLadder Klamath, you agree to receive messages related only to your quote, booking, appointment, support request, or authentication. Message frequency varies. Message and data rates may apply. Reply HELP for help or STOP to opt out. Consent is not a condition of purchase.',
+  marketingBoundary:
+    'Marketing and promotional messages are not part of this launch program. This page does not collect a mobile number or enable customer traffic.',
+} as const;
+
 export const KLAMATH_MESSAGING_TERMS_REQUIRED_STATEMENTS = [
   'The messaging program is operated by BluLadder Klamath.',
   'Messages may include requested quote and booking links, reminders, operator follow-up, and authentication. Marketing and promotional messages are outside this launch program.',
   'Message frequency varies and message and data rates may apply.',
   'Reply STOP to opt out and HELP for help.',
-  'For customer support, reply HELP or visit https://klamath.bluladder.com/contact.',
-  'Privacy Policy: https://klamath.bluladder.com/privacy.',
+  'For customer support, reply HELP or visit https://bid.bluladder.com/klamath/contact.',
+  'Privacy Policy: https://bid.bluladder.com/klamath/privacy.',
   'Carriers are not liable for delayed or undelivered messages.',
   'Consent is not a condition of purchase.',
 ] as const;
