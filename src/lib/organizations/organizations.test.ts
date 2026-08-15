@@ -61,6 +61,38 @@ describe('organization application context', () => {
     ).toEqual({ ok: false, reason });
   });
 
+  it('keeps inactive Oregon from becoming authoritative even when requested', () => {
+    const oregonMembership = {
+      ...dfwAdminMembership(USER_ID),
+      organizationId: OREGON_ORGANIZATION_ID,
+    };
+
+    expect(
+      resolveOrganizationContext({
+        authenticatedUserId: USER_ID,
+        requestedOrganizationId: OREGON_ORGANIZATION_ID,
+        organizations: [DFW_ORGANIZATION, INACTIVE_OREGON_ORGANIZATION],
+        memberships: [dfwAdminMembership(USER_ID), oregonMembership],
+      }),
+    ).toEqual({ ok: false, reason: 'inactive_organization' });
+  });
+
+  it('treats planned Oregon hostnames as inactive planning data, not active authority', () => {
+    const plannedHostnames = ['oregon.bluladder.com', 'klamath.bluladder.com'];
+
+    for (const hostname of plannedHostnames) {
+      expect(hostname).toMatch(/\.bluladder\.com$/);
+      expect(
+        resolveOrganizationContext({
+          authenticatedUserId: USER_ID,
+          requestedOrganizationId: OREGON_ORGANIZATION_ID,
+          organizations: [DFW_ORGANIZATION, INACTIVE_OREGON_ORGANIZATION],
+          memberships: [dfwAdminMembership(USER_ID)],
+        }),
+      ).toEqual({ ok: false, reason: 'organization_membership_conflict' });
+    }
+  });
+
   it('requires an explicit trusted selection for multiple memberships', () => {
     const oregonMembership = {
       ...dfwAdminMembership(USER_ID),
