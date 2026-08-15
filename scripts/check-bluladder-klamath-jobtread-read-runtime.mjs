@@ -36,6 +36,7 @@ const exact = {
   admin_or_internal_service_only: true,
   runtime_flag_required: true,
   runtime_flag_enabled: false,
+  runtime_flag_present: false,
   active_runtime_connector_required: true,
   connector_active: false,
   connector_runtime_enabled: false,
@@ -46,15 +47,36 @@ const exact = {
   jobtread_webhook_present: false,
   dfw_fallback_allowed: false,
   jobber_fallback_allowed: false,
-  deployment_performed: false,
+  deployment_performed: true,
+  hosted_function_active: true,
+  hosted_deployment_count: 1,
+  provider_version_exposed: false,
+  verify_jwt: false,
+  in_code_authorization_required: true,
+  unauthenticated_post_status: 401,
+  boot_status: "clean",
+  boot_time_ms: 39,
+  lovable_ai_messages_used: 1,
+  lovable_credits_consumed: "not_exposed",
+  only_target_function_deployed: true,
+  unrelated_function_deployments: false,
   provider_request_performed_by_release: false,
-  hosted_mutation_performed_by_release: false,
+  hosted_mutation_performed_by_release: true,
   customer_traffic_allowed: false,
   activation_allowed: false,
 };
 for (const [key, value] of Object.entries(exact)) {
   if (register?.[key] !== value) errors.push(`register ${key} drifted`);
 }
+if (register?.deployment_receipt_issue !== 172) {
+  errors.push("deployment receipt issue drifted");
+}
+if (
+  register?.deployment_source_sha !==
+    "194da6197854fe738e20152363cf28498d59d9b3" ||
+  register?.deployment_route !== "lovable_ai_single_function" ||
+  register?.deployment_verified_at !== "2026-08-15T02:23:09Z"
+) errors.push("deployment receipt identity drifted");
 if (
   JSON.stringify(register?.approved_capabilities) !==
     JSON.stringify(["health", "availability_read"])
@@ -140,7 +162,10 @@ for (
   const phrase of [
     "Two independent runtime stops",
     "cannot construct or transmit a mutation",
-    "No function is deployed",
+    "The function is deployed",
+    "secret-free",
+    "returned HTTP 401",
+    "one clean\n39 ms boot",
     "DFW and Jobber fallback remain prohibited",
   ]
 ) {
@@ -159,5 +184,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(
-  "Klamath JobTread read runtime OK: admin/service-only, dual-gated, read-only, undeployed, and inactive.",
+  "Klamath JobTread read runtime OK: admin/service-only, hosted, dual-gated, read-only, and inactive.",
 );

@@ -1,7 +1,11 @@
 {
   "version": 1,
   "issue": 169,
+  "deployment_receipt_issue": 172,
   "base_main_sha": "bf5189a72ddd807d39a1be12229e416d41d39b8e",
+  "deployment_source_sha": "194da6197854fe738e20152363cf28498d59d9b3",
+  "deployment_route": "lovable_ai_single_function",
+  "deployment_verified_at": "2026-08-15T02:23:09Z",
   "approved_capabilities": [
     "health",
     "availability_read"
@@ -20,6 +24,7 @@
   "admin_or_internal_service_only": true,
   "runtime_flag_required": true,
   "runtime_flag_enabled": false,
+  "runtime_flag_present": false,
   "active_runtime_connector_required": true,
   "connector_active": false,
   "connector_runtime_enabled": false,
@@ -30,9 +35,21 @@
   "jobtread_webhook_present": false,
   "dfw_fallback_allowed": false,
   "jobber_fallback_allowed": false,
-  "deployment_performed": false,
+  "deployment_performed": true,
+  "hosted_function_active": true,
+  "hosted_deployment_count": 1,
+  "provider_version_exposed": false,
+  "verify_jwt": false,
+  "in_code_authorization_required": true,
+  "unauthenticated_post_status": 401,
+  "boot_status": "clean",
+  "boot_time_ms": 39,
+  "lovable_ai_messages_used": 1,
+  "lovable_credits_consumed": "not_exposed",
+  "only_target_function_deployed": true,
+  "unrelated_function_deployments": false,
   "provider_request_performed_by_release": false,
-  "hosted_mutation_performed_by_release": false,
+  "hosted_mutation_performed_by_release": true,
   "customer_traffic_allowed": false,
   "activation_allowed": false
 }
