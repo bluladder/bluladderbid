@@ -185,6 +185,10 @@ const reviewedPostRuntimeMigrations = new Set([
   // The split-contact checker permits only the observed terminal-LF
   // normalization and pins the hosted ledger/postflight evidence.
   "supabase/migrations/20260815043425_c06733ab-38c1-46e2-8003-4e23b1234cb1.sql",
+  // Issue #151: review-only, fail-closed Klamath compliance-site lifecycle
+  // switch. Its own checker pins the payload and permits only the organization
+  // and customer-site updates while every customer/provider runtime stays off.
+  "supabase/migrations/20260815103000_bluladder_klamath_compliance_site_activation.sql",
 ]);
 const unexpectedMigrationPaths = changedMigrationPaths.filter((path) =>
   !reviewedPostRuntimeMigrations.has(path)

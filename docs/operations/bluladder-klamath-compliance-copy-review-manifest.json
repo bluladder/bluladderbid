@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "immutable_compliance_copy_review_candidate",
+  "candidate_bundle": {
+    "algorithm": "sha256",
+    "serialization": "newline_joined_path_bytes_sha256",
+    "sha256": "32b3f999041c10b880c67da1f3a15cc9fded204fc145478adebcf73181788e66"
+  },
+  "artifacts": [
+    {
+      "path": "src/lib/publicSite/klamathComplianceCopy.ts",
+      "bytes": 2014,
+      "sha256": "6c235954d74f92c8e981f52f65b8c2a1bbcefa6c23555b79920efa0f9fcaf8e5",
+      "review_scope": "rendered_privacy_and_terms_copy"
+    },
+    {
+      "path": "src/pages/KlamathCompliancePage.tsx",
+      "bytes": 5173,
+      "sha256": "fec1b2772b7da55474ab8dc4652d5eb7e997f9bc93d945ffefa6449f05ed6b37",
+      "review_scope": "compliance_page_headings_contact_labels_and_unavailable_copy"
+    },
+    {
+      "path": "docs/operations/bluladder-klamath-messaging-compliance-review.template.json",
+      "bytes": 5473,
+      "sha256": "51634daa8a3172200fcc9780430eaef3c2414a49a5b3a9f0703c8b568841038f",
+      "review_scope": "opt_in_help_stop_campaign_and_public_surface_copy"
+    }
+  ],
+  "public_contact_boundary": {
+    "required_channels": [
+      "phone",
+      "sms"
+    ],
+    "required_rendering": "approved_label_colon_space_verified_value",
+    "protected_values_included": false,
+    "reachability_evidence_included": false
+  },
+  "owner_review": {
+    "status": "pending",
+    "record_ref": null,
+    "reviewed_at": null
+  },
+  "qualified_legal_compliance_review": {
+    "status": "pending",
+    "record_ref": null,
+    "reviewed_at": null
+  },
+  "production_action_authorized": false
+}

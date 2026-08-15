@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "compliance_site_launch_window_evidence",
+  "release": {
+    "main_sha": null,
+    "pr_186_merged": false,
+    "exact_head_ci_passed": false,
+    "secret_scan_passed": false,
+    "migration_path": "supabase/migrations/20260815103000_bluladder_klamath_compliance_site_activation.sql",
+    "migration_bytes": 9939,
+    "migration_sha256": "8743e66464403d67973180146c82ea82df2360d793fe737a1846900c0568c3a8"
+  },
+  "reviews": {
+    "candidate_manifest_path": "docs/operations/bluladder-klamath-compliance-copy-review-manifest.json",
+    "candidate_bundle_sha256": "32b3f999041c10b880c67da1f3a15cc9fded204fc145478adebcf73181788e66",
+    "exact_owner_copy_review": {
+      "status": "pending",
+      "record_ref": null,
+      "reviewed_at": null
+    },
+    "qualified_legal_compliance_review": {
+      "status": "pending",
+      "record_ref": null,
+      "reviewed_at": null
+    }
+  },
+  "public_contacts": {
+    "exact_channel_count": 2,
+    "distinct_destination_count": 2,
+    "call_reachability": "unverified",
+    "text_reachability": "unverified",
+    "evidence_fingerprints_present": false,
+    "published_count": 0
+  },
+  "frontend": {
+    "lovable_sync_sha": null,
+    "published": false,
+    "dfw_regression_passed": false,
+    "unknown_host_denial_passed": false,
+    "lovable_ai_messages_used": 0
+  },
+  "domain": {
+    "connected": false,
+    "dns_verified": false,
+    "conflicting_aaaa_absent": false,
+    "tls_verified": false,
+    "pre_activation_unavailable_surface_verified": false
+  },
+  "hosted_preflight": {
+    "passed": false,
+    "dfw_fingerprints_unchanged": false,
+    "unexpected_drift": "not_checked"
+  },
+  "migration_application": {
+    "separately_authorized": false,
+    "applied": false,
+    "ledger_entry_count": 0,
+    "only_reviewed_migration_applied": false
+  },
+  "postflight": {
+    "passed": false,
+    "compliance_only_site_count": 0,
+    "customer_traffic_allowed": false,
+    "provider_runtimes_enabled": 0,
+    "dfw_fingerprints_unchanged": false
+  },
+  "browser_acceptance": {
+    "privacy_exact": false,
+    "terms_exact": false,
+    "contact_exact": false,
+    "customer_routes_denied": false,
+    "dfw_unchanged": false
+  },
+  "later_provider_releases": {
+    "klamath_campaign_submitted": false,
+    "number_purchased": false,
+    "messaging_service_changed": false,
+    "vapi_changed": false,
+    "jobtread_runtime_enabled": false
+  },
+  "production_actions": {
+    "calls_placed": 0,
+    "messages_sent": 0,
+    "customer_data_created": 0,
+    "customer_runtime_enabled": false
+  },
+  "launch_complete": false
+}
