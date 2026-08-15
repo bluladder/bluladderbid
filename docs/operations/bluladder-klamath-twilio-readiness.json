@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "observed_at": "2026-08-15T05:11:11Z",
+  "evidence_class": "signed_in_read_only_provider_console",
+  "intended_business_boundary_uniquely_matched": true,
+  "business_boundary_active": true,
+  "compliance_profile_approved": true,
+  "brand_approved": true,
+  "brand_volume_class": "low_volume_standard",
+  "recommended_use_case_category_eligible": true,
+  "approved_existing_campaign_present": true,
+  "existing_campaign_matches_klamath": false,
+  "existing_campaign_mismatch_categories": [
+    "public_branding",
+    "opt_in_origin",
+    "privacy_terms_origins",
+    "consent_copy",
+    "assigned_sender_region"
+  ],
+  "existing_campaign_reuse_authorized": false,
+  "separate_klamath_campaign_review_required": true,
+  "suitable_local_inventory": {
+    "area_code_541_voice_sms_mms": true,
+    "area_code_458_voice_sms_mms": true,
+    "klamath_local_option_observed": true,
+    "recommended_area_code": "458",
+    "recurring_price_category": "standard_local"
+  },
+  "number_selected": false,
+  "number_reserved": false,
+  "number_purchased": false,
+  "campaign_submitted": false,
+  "messaging_service_changed": false,
+  "provider_mutation_performed": false,
+  "call_or_message_performed": false,
+  "contains_provider_identifiers": false,
+  "contains_phone_digits": false,
+  "contains_credentials": false
+}

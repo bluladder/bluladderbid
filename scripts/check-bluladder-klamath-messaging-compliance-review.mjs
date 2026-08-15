@@ -13,6 +13,8 @@ const files = {
     "docs/operations/bluladder-klamath-messaging-compliance-review.template.json",
   launchTemplate:
     "docs/operations/bluladder-klamath-launch-inputs.template.json",
+  providerReadiness:
+    "docs/operations/bluladder-klamath-twilio-readiness.json",
   implementation:
     "packages/tenant-config/bluladderKlamathMessagingComplianceReview.ts",
   tests:
@@ -30,9 +32,11 @@ for (const [key, relative] of Object.entries(files)) {
 
 let template;
 let launchTemplate;
+let providerReadiness;
 try {
   template = JSON.parse(content.template ?? "{}");
   launchTemplate = JSON.parse(content.launchTemplate ?? "{}");
+  providerReadiness = JSON.parse(content.providerReadiness ?? "{}");
 } catch (error) {
   errors.push(`messaging review JSON is invalid: ${error.message}`);
 }
@@ -49,6 +53,7 @@ function inspect(value, pathLabel = "$") {
   }
 }
 inspect(template);
+inspect(providerReadiness);
 
 const candidate = template?.candidate;
 if (
@@ -72,7 +77,7 @@ if (
   candidate?.campaign?.brandName !== "BluLadder Klamath" ||
   candidate?.campaign?.recommendedUseCaseCategory !== "LOW_VOLUME" ||
   candidate?.campaign?.recommendationStatus !==
-    "pending_provider_eligibility_and_owner_review" ||
+    "provider_eligibility_verified_owner_and_public_surface_review_pending" ||
   candidate?.campaign?.hasEmbeddedLinks !== true ||
   candidate?.campaign?.hasEmbeddedPhoneNumbers !== false ||
   candidate?.campaign?.keywordOptInSupported !== false ||
@@ -135,9 +140,50 @@ for (const review of ["ownerApproval", "legalReview"]) {
 }
 if (
   template?.publicSurfacesVerified !== false ||
-  template?.providerUseCaseEligibilityVerified !== false ||
+  template?.providerUseCaseEligibilityVerified !== true ||
   template?.contractTestsPassed !== false
-) errors.push("repository review evidence must remain false");
+) errors.push("repository review evidence drifted");
+
+if (
+  providerReadiness?.schema_version !== 1 ||
+  providerReadiness?.tenant_key !== "bluladder-klamath" ||
+  providerReadiness?.evidence_class !== "signed_in_read_only_provider_console" ||
+  providerReadiness?.intended_business_boundary_uniquely_matched !== true ||
+  providerReadiness?.business_boundary_active !== true ||
+  providerReadiness?.compliance_profile_approved !== true ||
+  providerReadiness?.brand_approved !== true ||
+  providerReadiness?.brand_volume_class !== "low_volume_standard" ||
+  providerReadiness?.recommended_use_case_category_eligible !== true ||
+  providerReadiness?.approved_existing_campaign_present !== true ||
+  providerReadiness?.existing_campaign_matches_klamath !== false ||
+  providerReadiness?.existing_campaign_reuse_authorized !== false ||
+  providerReadiness?.separate_klamath_campaign_review_required !== true ||
+  providerReadiness?.suitable_local_inventory?.area_code_541_voice_sms_mms !== true ||
+  providerReadiness?.suitable_local_inventory?.area_code_458_voice_sms_mms !== true ||
+  providerReadiness?.suitable_local_inventory?.klamath_local_option_observed !== true ||
+  providerReadiness?.suitable_local_inventory?.recommended_area_code !== "458" ||
+  providerReadiness?.number_selected !== false ||
+  providerReadiness?.number_reserved !== false ||
+  providerReadiness?.number_purchased !== false ||
+  providerReadiness?.campaign_submitted !== false ||
+  providerReadiness?.messaging_service_changed !== false ||
+  providerReadiness?.provider_mutation_performed !== false ||
+  providerReadiness?.call_or_message_performed !== false ||
+  providerReadiness?.contains_provider_identifiers !== false ||
+  providerReadiness?.contains_phone_digits !== false ||
+  providerReadiness?.contains_credentials !== false
+) errors.push("sanitized signed-in provider readiness evidence drifted");
+const expectedMismatchCategories = [
+  "public_branding",
+  "opt_in_origin",
+  "privacy_terms_origins",
+  "consent_copy",
+  "assigned_sender_region",
+];
+if (
+  JSON.stringify(providerReadiness?.existing_campaign_mismatch_categories) !==
+    JSON.stringify(expectedMismatchCategories)
+) errors.push("existing campaign mismatch evidence drifted");
 for (const gate of [
   "sms_consent_surface_verified",
   "sms_help_stop_behavior_verified",
@@ -165,6 +211,8 @@ for (const phrase of [
 }
 for (const phrase of [
   "owner, legal, and public-surface review",
+  "Signed-in provider readiness reconciliation",
+  "existing approved campaign is not a Klamath shortcut",
   "representative campaign",
   "eligible_for_twilio_campaign_submission_review",
   "activationAllowed: false",

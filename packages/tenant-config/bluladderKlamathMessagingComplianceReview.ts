@@ -27,7 +27,8 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE = {
       "BluLadder Klamath sends customer-requested secure quote and booking-management links, appointment reminders, one-time authentication codes, and genuine operator follow-up to customers who provide their mobile number and consent in the corresponding web or voice flow. Promotional messages are sent only after a separate unchecked marketing opt-in.",
     useCases: KLAMATH_SMS_USE_CASES,
     recommendedUseCaseCategory: "LOW_VOLUME",
-    recommendationStatus: "pending_provider_eligibility_and_owner_review",
+    recommendationStatus:
+      "provider_eligibility_verified_owner_and_public_surface_review_pending",
     hasEmbeddedLinks: true,
     hasEmbeddedPhoneNumbers: false,
     keywordOptInSupported: false,
@@ -113,7 +114,7 @@ export const KLAMATH_MESSAGING_COMPLIANCE_REVIEW_TEMPLATE:
       approvedAt: null,
     },
     publicSurfacesVerified: false,
-    providerUseCaseEligibilityVerified: false,
+    providerUseCaseEligibilityVerified: true,
     contractTestsPassed: false,
   };
 

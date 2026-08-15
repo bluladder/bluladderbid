@@ -51,7 +51,6 @@ describe("Klamath messaging compliance review", () => {
         "contract_tests_not_verified",
         "legal_review_missing",
         "owner_review_missing",
-        "provider_use_case_eligibility_not_verified",
         "public_surfaces_not_verified",
       ],
     });
@@ -77,7 +76,8 @@ describe("Klamath messaging compliance review", () => {
     expect(KLAMATH_MESSAGING_COMPLIANCE_REVIEW_CANDIDATE.campaign)
       .toMatchObject({
         recommendedUseCaseCategory: "LOW_VOLUME",
-        recommendationStatus: "pending_provider_eligibility_and_owner_review",
+        recommendationStatus:
+          "provider_eligibility_verified_owner_and_public_surface_review_pending",
       });
     for (const message of KLAMATH_SMS_SAMPLE_MESSAGES) {
       expect(message.length).toBeGreaterThanOrEqual(20);
