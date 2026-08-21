@@ -7,15 +7,20 @@ assign, or call any Vapi or Twilio resource.
 ## Exact source boundary
 
 The candidate source is
-`supabase/functions/_shared/voiceProviderKlamathConfig.ts` at 8,753 bytes and
+`supabase/functions/_shared/voiceProviderKlamathConfig.ts` at 9,214 bytes and
 SHA-256
-`dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68`.
+`e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`.
 The checker recomputes both values from the exact file. The review template is
 `docs/operations/bluladder-klamath-vapi-manifest.template.json`.
 
+Every provider-effective value is pinned in the digest-covered source. The
+only shared-file import is type-only and cannot change the emitted assistant
+payload. The model, voice, duration, warning copy and timing, and server-event
+list therefore cannot drift behind an unchanged Klamath approval digest.
+
 The exact owner approval phrase for this candidate is:
 
-`APPROVE KLAMATH VAPI MANIFEST dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68`
+`APPROVE KLAMATH VAPI MANIFEST e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`
 
 Approval of that digest authorizes only a separately bounded provider
 preflight and provisioning review. It does not authorize credential disclosure,

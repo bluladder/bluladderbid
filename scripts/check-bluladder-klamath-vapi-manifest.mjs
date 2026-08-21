@@ -15,8 +15,8 @@ const files = {
 };
 
 const expectedSource = {
-  bytes: 8753,
-  sha256: "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68",
+  bytes: 9214,
+  sha256: "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
 };
 const errors = [];
 const content = {};
@@ -138,8 +138,14 @@ if (
 const source = content.source ?? "";
 for (const fragment of [
   'export const KLAMATH_VOICE_ASSISTANT_NAME = "BluLadder Klamath Realtime"',
-  'model: VOICE_REALTIME_MVP_MODEL',
-  'voice: { provider: "openai", voiceId: VOICE_REALTIME_MVP_VOICE }',
+  'export const KLAMATH_VOICE_MODEL = "gpt-realtime-2025-08-28"',
+  'export const KLAMATH_VOICE_VOICE = "marin"',
+  "export const KLAMATH_VOICE_MAX_DURATION_SECONDS = 900",
+  "export const KLAMATH_VOICE_WARNING_HOOK_SECONDS = [780, 870] as const",
+  "Just a heads-up, we have about two minutes left on this call.",
+  "We have about thirty seconds left.",
+  'model: KLAMATH_VOICE_MODEL',
+  'voice: { provider: "openai", voiceId: KLAMATH_VOICE_VOICE }',
   "transcriber: null",
   'backgroundSound: "off"',
   "modelOutputInMessagesEnabled: false",
@@ -154,11 +160,44 @@ for (const fragment of [
   "summaryPlan: { enabled: false }",
   "structuredDataPlan: { enabled: false }",
   "successEvaluationPlan: { enabled: false }",
-  "maxDurationSeconds: VOICE_BETA_MAX_DURATION_SECONDS",
-  "VOICE_REALTIME_VAPI_ALLOWED_EVENTS",
+  "maxDurationSeconds: KLAMATH_VOICE_MAX_DURATION_SECONDS",
+  "events: KLAMATH_VOICE_SERVER_EVENTS",
   "The server resolves all authority from trusted provider context.",
 ]) {
   if (!source.includes(fragment)) errors.push(`${files.source} omits: ${fragment}`);
+}
+
+const sharedImports = source.match(
+  /import[\s\S]*?from "\.\/voiceProviderConfig\.ts";/g,
+) ?? [];
+if (sharedImports.length !== 1 || !sharedImports[0].startsWith("import type ")) {
+  errors.push("Klamath manifest must have exactly one type-only shared import");
+}
+for (const transitiveName of [
+  "VOICE_BETA_MAX_DURATION_SECONDS",
+  "VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS",
+  "VOICE_BETA_WARNING_780",
+  "VOICE_BETA_WARNING_870",
+  "VOICE_REALTIME_MVP_MODEL",
+  "VOICE_REALTIME_MVP_VOICE",
+  "VOICE_REALTIME_VAPI_ALLOWED_EVENTS",
+]) {
+  if (source.includes(transitiveName)) {
+    errors.push(`Klamath manifest retains runtime dependency: ${transitiveName}`);
+  }
+}
+if ((content.test ?? "").includes('./voiceProviderConfig.ts')) {
+  errors.push("Klamath manifest tests must assert literals, not shared constants");
+}
+for (const fragment of [
+  "pins the approved Realtime pipeline literals",
+  "pins duration, privacy, and analysis gates",
+  'assertEquals(manifest.model.model, "gpt-realtime-2025-08-28")',
+  'voiceId: "marin"',
+]) {
+  if (!(content.test ?? "").includes(fragment)) {
+    errors.push(`${files.test} omits literal regression: ${fragment}`);
+  }
 }
 
 for (const name of expectedTools) {
@@ -197,6 +236,7 @@ for (const fragment of [
   "A separate transcriber is absent",
   "Every tool has an empty object schema",
   "Transcript retention remains enabled only for bounded owner QA",
+  "Every provider-effective value is pinned in the digest-covered source",
   "The DFW assistant, DFW phone resource, and all other Vapi resources remain out of scope.",
 ]) {
   if (!(content.review ?? "").replace(/\s+/g, " ").includes(fragment)) {
