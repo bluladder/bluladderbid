@@ -174,6 +174,9 @@ if (
   providerReadiness?.existing_campaign_matches_klamath !== false ||
   providerReadiness?.existing_campaign_reuse_authorized !== false ||
   providerReadiness?.separate_klamath_campaign_review_required !== true ||
+  providerReadiness?.separate_klamath_campaign_present !== true ||
+  providerReadiness?.separate_klamath_campaign_approved !== true ||
+  providerReadiness?.a2p_compliant !== true ||
   providerReadiness?.reviewed_candidate_bundle_sha256 !==
     "d92af2ca7ddcbf381386780d7770158667cfe301e52a66cc41acbcb0cc7e878d" ||
   providerReadiness?.owner_copy_approved !== true ||
@@ -193,16 +196,21 @@ if (
   providerReadiness?.suitable_local_inventory?.area_code_541_voice_sms_mms !== true ||
   providerReadiness?.suitable_local_inventory?.area_code_458_voice_sms_mms !== true ||
   providerReadiness?.suitable_local_inventory?.klamath_local_option_observed !== true ||
-  providerReadiness?.suitable_local_inventory?.recommended_area_code !== "458" ||
-  providerReadiness?.number_selected !== false ||
+  providerReadiness?.suitable_local_inventory?.recommended_area_code !== "541" ||
+  providerReadiness?.number_selected !== true ||
   providerReadiness?.number_reserved !== false ||
-  providerReadiness?.number_purchased !== false ||
-  providerReadiness?.number_assigned_to_campaign !== false ||
+  providerReadiness?.number_purchased !== true ||
+  providerReadiness?.number_assigned_to_campaign !== true ||
+  providerReadiness?.purchased_number_voice_sms_mms !== true ||
   providerReadiness?.campaign_submitted !== true ||
-  providerReadiness?.campaign_status !== "in_review" ||
-  providerReadiness?.campaign_approved !== false ||
+  providerReadiness?.campaign_status !== "approved" ||
+  providerReadiness?.campaign_approved !== true ||
   providerReadiness?.messaging_service_created !== true ||
-  providerReadiness?.sender_assignment_changed !== false ||
+  providerReadiness?.messaging_service_sender_count !== 1 ||
+  providerReadiness?.sender_assignment_changed !== true ||
+  providerReadiness?.approved_voice_routing_configured !== false ||
+  providerReadiness?.vapi_phone_resource_present !== false ||
+  providerReadiness?.customer_traffic_enabled !== false ||
   providerReadiness?.provider_mutation_performed !== true ||
   providerReadiness?.call_or_message_performed !== false ||
   providerReadiness?.contains_provider_identifiers !== false ||
@@ -246,15 +254,15 @@ for (const phrase of [
   }
 }
 for (const phrase of [
-  "campaign submitted for Twilio/TCR review",
+  "campaign approved by Twilio/TCR",
   "No separate legal review is claimed",
   "Signed-in provider readiness reconciliation",
   "existing approved campaign is not a Klamath shortcut",
   "representative campaign",
   "eligible_for_twilio_campaign_submission_review",
   "activationAllowed: false",
-  "sender and runtime remain disabled",
-  "carrier approval is not claimed",
+  "sender assigned while runtime remains disabled",
+  "carrier approval is verified",
 ]) {
   if (!content.contract?.includes(phrase)) errors.push(`contract omits ${phrase}`);
 }
@@ -295,5 +303,5 @@ if (errors.length) {
 }
 
 console.log(
-  "Klamath messaging compliance review OK: exact public surfaces are published and the bounded carrier campaign is in review; sender assignment, runtime, traffic, and activation remain disabled.",
+  "Klamath messaging compliance review OK: exact public surfaces and carrier campaign are approved, one local sender is assigned, and runtime, traffic, voice routing, Vapi, and activation remain disabled.",
 );

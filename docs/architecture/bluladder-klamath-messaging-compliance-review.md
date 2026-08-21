@@ -1,7 +1,7 @@
 # BluLadder Klamath messaging compliance review contract
 
 Status: **owner-approved path-based public surface published; bounded Klamath
-campaign submitted for Twilio/TCR review; sender and runtime remain disabled**. This package cannot by itself publish a page,
+campaign approved by Twilio/TCR; one local sender assigned while runtime remains disabled**. This package cannot by itself publish a page,
 register a campaign, provision a number, send a message, enable customer
 traffic, or activate Klamath.
 
@@ -61,16 +61,16 @@ Twilio or carrier review will approve it.
 
 ## Signed-in provider readiness reconciliation
 
-A read-only signed-in inspection on 2026-08-15 uniquely matched the intended
+A signed-in provider reconciliation on 2026-08-20 uniquely matched the intended
 business boundary and confirmed an approved compliance profile, approved
-low-volume-standard brand, and eligibility for the recommended low-volume use
-case. Suitable Oregon local voice/SMS/MMS inventory was also present.
+low-volume-standard brand, the separately reviewed approved Klamath campaign,
+and its A2P-compliant Messaging Service. One selected 541 local number with
+voice/SMS/MMS capability was purchased and added as the service's only sender.
 
 The existing approved campaign is not a Klamath shortcut: its branding,
 opt-in origin, privacy/terms origins, consent copy, and assigned sender region
 do not match this exact candidate. Repository evidence therefore authorizes no
-reuse. A separately reviewed Klamath campaign path remains required after the
-owner-directed public-surface gates pass. The sanitized provider snapshot is
+reuse. A separately reviewed Klamath campaign was created instead; carrier approval is verified. The sanitized provider snapshot is
 `docs/operations/bluladder-klamath-twilio-readiness.json`; it contains no
 provider identifier, phone digits, credential, message, or customer data.
 
@@ -87,9 +87,10 @@ A protected copy of the template may reach only
 4. exact contract-test evidence.
 
 The evaluator still returns `activationAllowed: false`. Twilio business and
-campaign approval, number selection, sender assignment, credentials,
-connector insertion, deployment, controlled QA, and the final signed launch
-review remain independent gates.
+campaign approval, number selection, and sender assignment are complete;
+credentials, connector insertion, approved voice routing, Vapi provisioning,
+deployment, controlled QA, and the final signed launch review remain
+independent gates.
 
 ## Release reconciliation
 
@@ -97,18 +98,21 @@ The owner-approved canonical bundle was merged through PR #188 at
 `436837df91b0cfad6ad7f72506c088f313110db2`. Exact-head CI and Secret Scan
 passed, the four exact path surfaces were published and verified, and the DFW
 boundary remained unchanged. A separate Klamath Messaging Service and bounded
-campaign were then created and submitted. The sanitized provider state is
-`in_review`; carrier approval is not claimed.
+campaign were then created, submitted, and approved. One selected 541 local
+voice/SMS/MMS number was purchased and added as the Messaging Service's only
+sender. Carrier approval is verified.
 
-No Klamath number was selected, reserved, purchased, or assigned. No message or
-call was sent, and messaging runtime, customer traffic, and tenant activation
-remain disabled. The release receipt records provider-resource presence and
-status only and contains no provider identifier, phone digits, or credential.
+No message or call was sent. Approved voice routing and a Klamath Vapi phone
+resource are not configured, and messaging runtime, customer traffic, and
+tenant activation remain disabled. The release receipt records
+provider-resource presence and status only and contains no provider identifier,
+phone digits, or credential.
 
 ## Current production safety
 
 This package adds only a fail-closed path-based compliance presentation. Klamath remains
 provisioning, runtime-routing-disabled, messaging-runtime-disabled,
 customer-traffic-disabled, and unable to activate. No Twilio resource,
-credential, sender assignment, phone number, message, call, hosted row, or
-provider runtime is created by the repository package.
+credential, message, call, hosted row, or provider runtime is created by the
+repository package. The live provider receipt is evidence only; it cannot
+provision, reconfigure, or activate any provider resource.
