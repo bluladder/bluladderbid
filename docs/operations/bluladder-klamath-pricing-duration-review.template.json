@@ -80,10 +80,16 @@
     "pricingRuntimeEnabled": false,
     "activationAllowed": false
   },
+  "candidateFingerprint": {
+    "algorithm": "sha256",
+    "serialization": "canonical_json_sorted_keys_pretty_2_trailing_newline",
+    "sha256": "d69f072d0510393304cc382ec0140c385a7d8bb2302b6ccdab7592149e1e21a4"
+  },
   "ownerApproval": {
     "status": "pending",
     "recordRef": null,
-    "approvedAt": null
+    "approvedAt": null,
+    "approvedCandidateSha256": null
   },
   "contractTestsPassed": false
 }
