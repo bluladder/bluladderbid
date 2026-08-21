@@ -38,6 +38,12 @@ It can qualify only for a later hosted tenant-binding review and cannot carry
 raw provider identifiers, phone digits, credentials, headers, server URLs,
 recipient details, customer data, or message contents.
 
+Raw assistant creation must follow
+`docs/voice/bluladder-klamath-vapi-raw-api-runbook.md`. The repository adapter
+preserves the owner-approved manifest while avoiding the provider Explorer's
+server-message array serialization defect. This does not itself authorize or
+prove provider provisioning.
+
 ## Name and boundary
 
 The Southern Oregon organization is customer-facing **BluLadder Klamath**.

@@ -85,3 +85,9 @@ of scope.
 Its future handoff must use only
 `docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`.
 The receipt is pending and cannot contain raw provider or customer authority.
+
+The current raw Create Assistant mapping and one-shot browser safety gates are
+documented in
+`docs/voice/bluladder-klamath-vapi-raw-api-runbook.md`. That adapter does not
+change this digest-approved manifest. Provider execution remains separately
+authorized and pending.
