@@ -40,9 +40,12 @@ bounded owner approval can name the digest without approving a drifting copy.
 ## Approval boundary
 
 A later protected review may copy this template, record a bounded owner
-approval reference and UTC timestamp, and set `contractTestsPassed` only after
-the exact pricing/duration contract suite passes. The evaluator can return only
-`eligible_for_pricing_duration_gate`; it always returns
+approval reference, UTC timestamp, and the exact candidate digest in
+`ownerApproval.approvedCandidateSha256`. The protected review may set
+`contractTestsPassed` only after the exact pricing/duration contract suite
+passes. A valid-looking reference and a matching sibling fingerprint do not
+qualify without that digest embedded in the owner-approval evidence. The
+evaluator can return only `eligible_for_pricing_duration_gate`; it always returns
 `activationAllowed: false`. Provider setup, deployment, controlled QA, and the
 final signed activation review remain separate gates.
 

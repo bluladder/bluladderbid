@@ -60,6 +60,7 @@ export interface KlamathPricingDurationReviewEnvelope {
     status: "pending" | "approved";
     recordRef: string | null;
     approvedAt: string | null;
+    approvedCandidateSha256: string | null;
   };
   contractTestsPassed: boolean;
 }
@@ -79,6 +80,7 @@ export const KLAMATH_PRICING_DURATION_REVIEW_TEMPLATE:
       status: "pending",
       recordRef: null,
       approvedAt: null,
+      approvedCandidateSha256: null,
     },
     contractTestsPassed: false,
   };
@@ -90,7 +92,12 @@ const TOP_LEVEL_KEYS = new Set([
   "contractTestsPassed",
 ]);
 const FINGERPRINT_KEYS = new Set(["algorithm", "serialization", "sha256"]);
-const APPROVAL_KEYS = new Set(["status", "recordRef", "approvedAt"]);
+const APPROVAL_KEYS = new Set([
+  "status",
+  "recordRef",
+  "approvedAt",
+  "approvedCandidateSha256",
+]);
 const SENSITIVE_FIELD_PATTERN =
   /(?:secret|token|password|api.?key|grant.?key|header|provider.?id|account.?id|phone.?number|email.?address|webhook.?url|tool.?url)/i;
 
@@ -180,7 +187,9 @@ export function evaluateKlamathPricingDurationReview(
       input.ownerApproval.recordRef,
     ) ||
     typeof input.ownerApproval.approvedAt !== "string" ||
-    !validUtcTimestamp(input.ownerApproval.approvedAt)
+    !validUtcTimestamp(input.ownerApproval.approvedAt) ||
+    input.ownerApproval.approvedCandidateSha256 !==
+      KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT.sha256
   ) {
     blockers.push("owner_approval_invalid");
   }

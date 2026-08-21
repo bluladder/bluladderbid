@@ -103,6 +103,7 @@ if (
   template?.ownerApproval?.status !== "pending" ||
   template?.ownerApproval?.recordRef !== null ||
   template?.ownerApproval?.approvedAt !== null ||
+  template?.ownerApproval?.approvedCandidateSha256 !== null ||
   template?.contractTestsPassed !== false
 ) errors.push("repository review template must remain pending and unverified");
 
@@ -110,6 +111,7 @@ for (const phrase of [
   "eligible_for_pricing_duration_gate",
   "activationAllowed: false",
   "candidate_snapshot_mismatch",
+  "approvedCandidateSha256",
   "sensitive_field_present",
   "repository_runtime_boundary_open",
 ]) {
@@ -128,6 +130,8 @@ for (const phrase of [
 for (const phrase of [
   "keeps the repository template blocked",
   "can reach only the separate launch-input gate",
+  "rejects an unrelated approval reference without the embedded digest",
+  "rejects owner approval for a different candidate digest",
   "rejects pricing or duration drift",
   "leaves every runtime and activation surface closed",
 ]) {

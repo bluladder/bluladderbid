@@ -20,6 +20,8 @@ function approvedFixture(): KlamathPricingDurationReviewEnvelope {
       status: "approved",
       recordRef: "github-issue-151",
       approvedAt: "2026-08-14T15:00:00Z",
+      approvedCandidateSha256:
+        KLAMATH_PRICING_DURATION_REVIEW_CANDIDATE_FINGERPRINT.sha256,
     },
     contractTestsPassed: true,
   };
@@ -55,6 +57,26 @@ describe("Klamath pricing and duration review", () => {
     fixture.candidateFingerprint.sha256 = "0".repeat(64);
     expect(evaluateKlamathPricingDurationReview(fixture).blockers).toContain(
       "candidate_fingerprint_mismatch",
+    );
+  });
+
+  it("rejects an unrelated approval reference without the embedded digest", () => {
+    const fixture = approvedFixture() as unknown as Record<string, unknown>;
+    fixture.ownerApproval = {
+      status: "approved",
+      recordRef: "github-issue-999",
+      approvedAt: "2026-08-14T15:00:00Z",
+    };
+    expect(evaluateKlamathPricingDurationReview(fixture).blockers).toContain(
+      "owner_approval_invalid",
+    );
+  });
+
+  it("rejects owner approval for a different candidate digest", () => {
+    const fixture = approvedFixture();
+    fixture.ownerApproval.approvedCandidateSha256 = "0".repeat(64);
+    expect(evaluateKlamathPricingDurationReview(fixture).blockers).toContain(
+      "owner_approval_invalid",
     );
   });
 

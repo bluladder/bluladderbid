@@ -88,7 +88,8 @@
   "ownerApproval": {
     "status": "pending",
     "recordRef": null,
-    "approvedAt": null
+    "approvedAt": null,
+    "approvedCandidateSha256": null
   },
   "contractTestsPassed": false
 }

@@ -3,6 +3,7 @@ import {
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { OutboxSendInput } from "../smsOutbox.ts";
+import type { OrganizationCustomerSiteRoute } from "../organizationCustomerSites.ts";
 import {
   executeVapiTransferControl,
   finishVoiceTransferAttempt,
@@ -19,10 +20,23 @@ import {
 
 const ORG = "00000000-0000-4000-8000-000000000091";
 const OTHER_ORG = "00000000-0000-4000-8000-000000000092";
+const KLAMATH_ORG = "b1addf00-0000-4000-8000-000000000003";
 const CALLER = "+14697472877";
 const OPERATOR = "+14692150144";
 const CONTROL =
   "https://control.vapi.ai/live/provider-call-91/session?token=synthetic";
+
+const ACTIVE_KLAMATH_ROUTE: OrganizationCustomerSiteRoute = {
+  tenantKey: "bluladder-klamath",
+  organizationId: KLAMATH_ORG,
+  organizationStatus: "active",
+  canonicalHostname: "klamath.bluladder.com",
+  baseUrl: "https://klamath.bluladder.com",
+  mappingStatus: "active",
+  runtimeRoutingEnabled: true,
+  sitePublished: true,
+  customerTrafficAllowed: true,
+};
 
 function body(names: string[]): Record<string, unknown> {
   return {
@@ -209,7 +223,43 @@ Deno.test("human transfer: unreadable same-call link evidence fails closed befor
     },
   });
   assertEquals(claims, 0);
-  assertEquals(decoded(result.results[0].result).status, "failed");
+  const evidence = decoded(result.results[0].result);
+  assertEquals(evidence.status, "failed");
+  assertEquals(evidence.message.includes("bid.bluladder.com"), false);
+});
+
+Deno.test("human transfer: every terminal Klamath failure keeps caller guidance on the Klamath site", async () => {
+  const priorUnreadable = await handleVoiceHumanTransferToolCalls(null, {
+    body: body([VOICE_HUMAN_TRANSFER_TOOL]),
+    organizationId: KLAMATH_ORG,
+  }, {
+    customerSiteRoutes: [ACTIVE_KLAMATH_ROUTE],
+    inspectPriorCustomerLink: () => Promise.resolve("unreadable"),
+  });
+  const claimUnavailable = await handleVoiceHumanTransferToolCalls(null, {
+    body: body([VOICE_HUMAN_TRANSFER_TOOL]),
+    organizationId: KLAMATH_ORG,
+  }, {
+    customerSiteRoutes: [ACTIVE_KLAMATH_ROUTE],
+    claimTransfer: () => Promise.reject(new Error("unavailable")),
+  });
+  const recordUnavailable = await handleVoiceHumanTransferToolCalls(null, {
+    body: body([VOICE_HUMAN_TRANSFER_TOOL]),
+    organizationId: KLAMATH_ORG,
+  }, {
+    customerSiteRoutes: [ACTIVE_KLAMATH_ROUTE],
+    claimTransfer: () => Promise.resolve(winner()),
+    resolveOperator: () =>
+      Promise.resolve({ status: "unavailable", reason: "missing_primary" }),
+    finishTransfer: () => Promise.resolve(false),
+  });
+
+  for (const result of [priorUnreadable, claimUnavailable, recordUnavailable]) {
+    const evidence = decoded(result.results[0].result);
+    assertEquals(evidence.status, "failed");
+    assert(evidence.message.includes("https://klamath.bluladder.com"));
+    assertEquals(evidence.message.includes("bid.bluladder.com"), false);
+  }
 });
 
 Deno.test("human transfer: durable prior-link lookup accepts only exact trusted provider evidence", async () => {
