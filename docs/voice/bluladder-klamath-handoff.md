@@ -22,6 +22,13 @@ only after the intended local number and messaging/voice authority are
 approved. No call is allowed until raw saved-state verification, tenant
 resolution, messaging, operator-recipient, and rollback gates all pass.
 
+An exact Klamath Vapi manifest candidate is prepared for owner review in
+`supabase/functions/_shared/voiceProviderKlamathConfig.ts`, at SHA-256
+`dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68`.
+Its review record is `docs/voice/bluladder-klamath-vapi-manifest.md`. The
+candidate does not authorize provisioning, credential transmission, phone
+import or binding, a call, a message, activation, or customer traffic.
+
 ## Name and boundary
 
 The Southern Oregon organization is customer-facing **BluLadder Klamath**.

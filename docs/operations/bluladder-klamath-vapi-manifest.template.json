@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "tenantKey": "bluladder-klamath",
+  "purpose": "vapi_manifest_owner_review",
+  "source": {
+    "path": "supabase/functions/_shared/voiceProviderKlamathConfig.ts",
+    "bytes": 8753,
+    "sha256": "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68"
+  },
+  "candidate": {
+    "assistantName": "BluLadder Klamath Realtime",
+    "model": "gpt-realtime-2025-08-28",
+    "voice": "marin",
+    "transcriberAbsent": true,
+    "toolNames": [
+      "send_online_quote_link",
+      "send_booking_management_link",
+      "request_human_transfer"
+    ],
+    "zeroArgumentTools": true,
+    "phoneBindingAbsent": true,
+    "transferDestinationAbsent": true,
+    "fallbackAssistantAbsent": true,
+    "recordingDisabled": true,
+    "videoDisabled": true,
+    "pcapDisabled": true,
+    "loggingDisabled": true,
+    "fullMessageHistoryDisabled": true,
+    "transcriptRetentionForOwnerQa": true,
+    "analysisDisabled": true,
+    "maxDurationSeconds": 900,
+    "warningHookSeconds": [780, 870],
+    "serverEvents": [
+      "assistant.started",
+      "status-update",
+      "hang",
+      "end-of-call-report",
+      "tool-calls"
+    ]
+  },
+  "ownerApproval": {
+    "status": "pending",
+    "recordRef": null,
+    "approvedAt": null,
+    "approvedSourceSha256": null
+  },
+  "contractTestsPassed": false,
+  "provisioningAllowed": false,
+  "callAllowed": false,
+  "activationAllowed": false
+}
