@@ -320,6 +320,11 @@ const allowedEdgePaths = new Set([
   // closed until a separately bounded provider reconciliation.
   "supabase/functions/_shared/voiceProviderKlamathConfig.ts",
   "supabase/functions/_shared/voiceProviderKlamathConfig_test.ts",
+  // Dormant raw-API adapter and contract tests. The serializer is not imported
+  // by a deployed entry point, accepts provider authority only at runtime, and
+  // cannot create or activate provider resources by itself.
+  "supabase/functions/_shared/voiceProviderKlamathVapiSerializer.ts",
+  "supabase/functions/_shared/voiceProviderKlamathVapiSerializer_test.ts",
   "supabase/functions/_shared/voiceProviderEndCallPhrases_test.ts",
   "supabase/functions/_shared/voiceProviderReconciliation.ts",
   "supabase/functions/_shared/voiceProviderReconciliation_test.ts",

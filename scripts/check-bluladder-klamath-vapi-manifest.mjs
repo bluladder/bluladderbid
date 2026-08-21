@@ -20,6 +20,12 @@ const files = {
     "packages/tenant-config/bluladderKlamathVapiProvisioningReceipt.ts",
   provisioningTests:
     "packages/tenant-config/bluladderKlamathVapiProvisioningReceipt.test.ts",
+  serializer:
+    "supabase/functions/_shared/voiceProviderKlamathVapiSerializer.ts",
+  serializerTests:
+    "supabase/functions/_shared/voiceProviderKlamathVapiSerializer_test.ts",
+  rawApiRunbook:
+    "docs/voice/bluladder-klamath-vapi-raw-api-runbook.md",
 };
 
 const expectedSource = {
@@ -313,6 +319,47 @@ for (const transitiveName of [
     errors.push(`Klamath manifest retains runtime dependency: ${transitiveName}`);
   }
 }
+
+for (const fragment of [
+  'serverMessagesPath: "$.serverMessages"',
+  'serverMessagesType: "array"',
+  "serverMessages: [...manifest.serverEvents.events]",
+  "toolRefs,",
+  "verifyKlamathVapiCreateAssistantRequest",
+  "verifyKlamathVapiSavedAssistant",
+  '"$.monitorPlan"',
+]) {
+  if (!(content.serializer ?? "").includes(fragment)) {
+    errors.push(`${files.serializer} omits compatibility gate: ${fragment}`);
+  }
+}
+if ((content.serializer ?? "").includes("monitorPlan: {")) {
+  errors.push("Klamath Vapi serializer emits the historical nested message path");
+}
+for (const fragment of [
+  "uses the live CreateAssistantDTO array path",
+  "survives an exact JSON round trip",
+  "rejects every known Explorer array failure",
+  "rejects the historical nested representation",
+  "rejects tool identity or schema drift",
+  "approved Klamath manifest source identity remains exact",
+]) {
+  if (!(content.serializerTests ?? "").includes(fragment)) {
+    errors.push(`${files.serializerTests} omits regression: ${fragment}`);
+  }
+}
+for (const fragment of [
+  "CreateAssistantDTO",
+  "top-level JSON array",
+  "MonitorPlan",
+  "at most one raw `POST /assistant` request",
+  "verifyKlamathVapiSavedAssistant",
+  files.provisioningTemplate,
+]) {
+  if (!(content.rawApiRunbook ?? "").includes(fragment)) {
+    errors.push(`${files.rawApiRunbook} omits handoff gate: ${fragment}`);
+  }
+}
 if ((content.test ?? "").includes('./voiceProviderConfig.ts')) {
   errors.push("Klamath manifest tests must assert literals, not shared constants");
 }
@@ -356,6 +403,18 @@ const prohibitedPatterns = [
 for (const pattern of prohibitedPatterns) {
   if (pattern.test(combinedNonTest)) {
     errors.push(`Klamath Vapi review package contains prohibited value shape: ${pattern}`);
+  }
+}
+
+const serializerEvidence = [
+  content.serializer,
+  content.rawApiRunbook,
+].join("\n");
+for (const pattern of prohibitedPatterns) {
+  if (pattern.test(serializerEvidence)) {
+    errors.push(
+      `Klamath Vapi serializer evidence contains prohibited value shape: ${pattern}`,
+    );
   }
 }
 for (const [key, value] of Object.entries(content)) {
