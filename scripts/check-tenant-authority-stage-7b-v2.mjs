@@ -315,6 +315,11 @@ const allowedEdgePaths = new Set([
   "supabase/functions/_shared/voiceLiveBooking_test.ts",
   "supabase/functions/_shared/voiceProviderConfig.ts",
   "supabase/functions/_shared/voiceProviderConfig_test.ts",
+  // Dormant Klamath provider candidate and contract tests. No runtime entry
+  // point imports this manifest, and its approval/provisioning gates remain
+  // closed until a separately bounded provider reconciliation.
+  "supabase/functions/_shared/voiceProviderKlamathConfig.ts",
+  "supabase/functions/_shared/voiceProviderKlamathConfig_test.ts",
   "supabase/functions/_shared/voiceProviderEndCallPhrases_test.ts",
   "supabase/functions/_shared/voiceProviderReconciliation.ts",
   "supabase/functions/_shared/voiceProviderReconciliation_test.ts",
