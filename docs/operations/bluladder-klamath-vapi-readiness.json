@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "observed_at": "2026-08-15",
+  "evidence_class": "signed_in_provider_inventory_read_only",
+  "provider_boundary_uniquely_matched": true,
+  "assistant_inventory_count": 5,
+  "phone_resource_inventory_count": 1,
+  "isolated_klamath_assistant_present": false,
+  "isolated_klamath_phone_resource_present": false,
+  "non_klamath_resources_preserved": true,
+  "existing_resource_reuse_authorized": false,
+  "candidate_configuration_approved": false,
+  "provisioning_authorized": false,
+  "provider_mutation_performed": false,
+  "call_or_message_performed": false,
+  "credential_or_secret_inspected": false,
+  "contains_provider_identifiers": false,
+  "contains_phone_digits": false,
+  "contains_credentials": false,
+  "next_gate": "separate_repository_manifest_and_owner_provisioning_review"
+}

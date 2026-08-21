@@ -3,6 +3,25 @@
 Status: preparation only. BluLadder Klamath is not activated, mapped to DFW,
 published, or deployed by the DFW voice launch-hardening release.
 
+## Signed-in provider inventory
+
+The read-only signed-in Vapi inventory on 2026-08-15 proved that no isolated
+Klamath assistant or phone resource exists. Existing DFW and other non-Klamath
+resources are preserved, and the inventory receipt does not authorize reuse,
+editing, cloning, reassignment, or deletion of any of them. The sanitized
+receipt is
+`docs/operations/bluladder-klamath-vapi-readiness.json`; it contains counts and
+boolean gates only, with no provider identifier, phone digit, credential,
+header, or customer information.
+
+Voice provisioning therefore remains a real launch gate. It requires a
+separately reviewed Klamath assistant manifest with Klamath branding, tenant-
+safe tool authority, privacy settings, server events, duration hooks, and
+fail-closed mappings. The future phone resource must be isolated and bound
+only after the intended local number and messaging/voice authority are
+approved. No call is allowed until raw saved-state verification, tenant
+resolution, messaging, operator-recipient, and rollback gates all pass.
+
 ## Name and boundary
 
 The Southern Oregon organization is customer-facing **BluLadder Klamath**.
