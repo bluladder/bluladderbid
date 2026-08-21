@@ -1,11 +1,12 @@
 # BluLadder Klamath handoff
 
-Status: preparation only. BluLadder Klamath is not activated, mapped to DFW,
-published, or deployed by the DFW voice launch-hardening release.
+Status: manifest owner-approved; provider evidence, hosted binding, deployment,
+owner QA, customer traffic, and activation remain pending. BluLadder Klamath
+is not mapped to DFW, published, or deployed by the DFW voice release.
 
 ## Signed-in provider inventory
 
-The read-only signed-in Vapi inventory on 2026-08-15 proved that no isolated
+The historical read-only signed-in Vapi inventory on 2026-08-15 proved that no isolated
 Klamath assistant or phone resource exists. Existing DFW and other non-Klamath
 resources are preserved, and the inventory receipt does not authorize reuse,
 editing, cloning, reassignment, or deletion of any of them. The sanitized
@@ -22,14 +23,20 @@ only after the intended local number and messaging/voice authority are
 approved. No call is allowed until raw saved-state verification, tenant
 resolution, messaging, operator-recipient, and rollback gates all pass.
 
-An exact Klamath Vapi manifest candidate is prepared for owner review in
+The exact Klamath Vapi manifest candidate is owner-approved in
 `supabase/functions/_shared/voiceProviderKlamathConfig.ts`, at SHA-256
 `e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`.
 Its review record is `docs/voice/bluladder-klamath-vapi-manifest.md`. The
 candidate pins every provider-effective value locally and retains only a
-type-only shared import. It does not authorize provisioning, credential
-transmission, phone import or binding, a call, a message, activation, or
-customer traffic.
+type-only shared import. Owner approval does not prove provider provisioning,
+phone binding, hosted mappings, deployment, owner QA, activation, or customer
+traffic.
+
+The pending sanitized post-provisioning handoff is
+`docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`.
+It can qualify only for a later hosted tenant-binding review and cannot carry
+raw provider identifiers, phone digits, credentials, headers, server URLs,
+recipient details, customer data, or message contents.
 
 ## Name and boundary
 
@@ -76,6 +83,10 @@ closed to manual review; it must never select DFW Jobber.
    resolves to DFW.
 7. Activate only after web quote, SMS, portal, FAQ, and transfer checks pass.
 8. Run one owner-controlled Klamath call before exposing the number.
+
+Current gate state is explicit: manifest owner approval is complete; provider
+saved-state evidence, phone binding, hosted tenant mappings, deployment,
+owner-controlled QA, customer traffic, and final activation are incomplete.
 
 ## Rollback
 

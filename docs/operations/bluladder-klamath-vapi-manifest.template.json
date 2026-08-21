@@ -39,12 +39,12 @@
     ]
   },
   "ownerApproval": {
-    "status": "pending",
-    "recordRef": null,
-    "approvedAt": null,
-    "approvedSourceSha256": null
+    "status": "approved",
+    "recordRef": "primary-release-chat:sha256:faeec411136ef23b4fe645adf4241be15516315ae1b8a7350bc3eb93f289d93b",
+    "approvedAt": "2026-08-21T04:45:43Z",
+    "approvedSourceSha256": "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4"
   },
-  "contractTestsPassed": false,
+  "contractTestsPassed": true,
   "provisioningAllowed": false,
   "callAllowed": false,
   "activationAllowed": false

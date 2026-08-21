@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "tenantKey": "bluladder-klamath",
+  "evidenceClass": "sanitized_vapi_post_provisioning",
+  "status": "pending",
+  "observedAt": null,
+  "manifestSourceSha256": "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
+  "assistant": {
+    "uniqueMatchCount": null,
+    "creationSucceeded": null,
+    "savedStateVerified": null,
+    "configurationMatched": null,
+    "identityFingerprintSha256": null,
+    "providerVersionMarker": null,
+    "driftPaths": []
+  },
+  "phone": {
+    "uniqueMatchCount": null,
+    "importSucceeded": null,
+    "voiceOnly": null,
+    "smsDisabled": null,
+    "assistantBindingAbsent": null,
+    "identityFingerprintSha256": null
+  },
+  "safeguards": {
+    "nonKlamathResourcesPreserved": null,
+    "twilioMessagingConfigurationUnchanged": null,
+    "temporaryVapiKeyRevoked": null,
+    "containsProviderIdentifiers": false,
+    "containsPhoneDigits": false,
+    "containsCredentials": false,
+    "containsHeaders": false,
+    "containsServerUrls": false,
+    "containsRecipientDetails": false,
+    "containsCustomerData": false,
+    "containsMessageContents": false
+  },
+  "customerActionCounts": {
+    "calls": 0,
+    "messages": 0,
+    "toolInvocations": 0,
+    "transfers": 0
+  },
+  "hostedMappingsVerified": false,
+  "deploymentVerified": false,
+  "ownerQaPassed": false,
+  "activationAllowed": false,
+  "customerTrafficAllowed": false,
+  "blockerCodes": [],
+  "nextGate": "awaiting_sanitized_provider_evidence"
+}
