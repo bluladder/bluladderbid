@@ -47,7 +47,7 @@
     "check:klamath-jobtread-protected-configuration": "node scripts/check-bluladder-klamath-jobtread-protected-configuration.mjs",
     "check:klamath-jobtread-read-runtime": "node scripts/check-bluladder-klamath-jobtread-read-runtime.mjs",
     "check:klamath-routing-acceptance-matrix": "node scripts/check-bluladder-klamath-routing-acceptance-matrix.mjs",
-    "check:klamath-launch-input-contract": "node scripts/check-bluladder-klamath-launch-input-contract.mjs && node scripts/check-bluladder-klamath-vapi-readiness.mjs",
+    "check:klamath-launch-input-contract": "node scripts/check-bluladder-klamath-launch-input-contract.mjs && node scripts/check-bluladder-klamath-vapi-readiness.mjs && node scripts/check-bluladder-klamath-vapi-manifest.mjs",
     "check:klamath-pricing-duration-review": "node scripts/check-bluladder-klamath-pricing-duration-review.mjs",
     "check:klamath-messaging-compliance-review": "node scripts/check-bluladder-klamath-messaging-compliance-review.mjs",
     "check:klamath-vapi-manifest": "node scripts/check-bluladder-klamath-vapi-manifest.mjs",

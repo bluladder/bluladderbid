@@ -6,15 +6,25 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const receiptPath =
   "docs/operations/bluladder-klamath-vapi-readiness.json";
+const manifestPath =
+  "docs/operations/bluladder-klamath-vapi-manifest.template.json";
+const provisioningPath =
+  "docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json";
 const handoffPath = "docs/voice/bluladder-klamath-handoff.md";
 const receiptText = fs.readFileSync(path.join(root, receiptPath), "utf8");
+const manifestText = fs.readFileSync(path.join(root, manifestPath), "utf8");
+const provisioningText = fs.readFileSync(path.join(root, provisioningPath), "utf8");
 const handoff = fs.readFileSync(path.join(root, handoffPath), "utf8");
 const handoffNormalized = handoff.replace(/\s+/g, " ");
 const errors = [];
 
 let receipt;
+let manifest;
+let provisioning;
 try {
   receipt = JSON.parse(receiptText);
+  manifest = JSON.parse(manifestText);
+  provisioning = JSON.parse(provisioningText);
 } catch (error) {
   errors.push(`Vapi readiness receipt is invalid JSON: ${error.message}`);
 }
@@ -22,7 +32,8 @@ try {
 const expectedKeys = [
   "schema_version",
   "tenant_key",
-  "observed_at",
+  "provider_inventory_observed_at",
+  "repository_approval_recorded_at",
   "evidence_class",
   "provider_boundary_uniquely_matched",
   "assistant_inventory_count",
@@ -32,6 +43,8 @@ const expectedKeys = [
   "non_klamath_resources_preserved",
   "existing_resource_reuse_authorized",
   "candidate_configuration_approved",
+  "candidate_approved_source_sha256",
+  "candidate_approval_record_ref",
   "provisioning_authorized",
   "provider_mutation_performed",
   "call_or_message_performed",
@@ -48,8 +61,10 @@ if (JSON.stringify(Object.keys(receipt ?? {})) !== JSON.stringify(expectedKeys))
 if (
   receipt?.schema_version !== 1 ||
   receipt?.tenant_key !== "bluladder-klamath" ||
-  receipt?.evidence_class !== "signed_in_provider_inventory_read_only" ||
-  !/^\d{4}-\d{2}-\d{2}$/.test(receipt?.observed_at ?? "") ||
+  receipt?.evidence_class !==
+    "signed_in_provider_inventory_plus_repository_owner_approval" ||
+  receipt?.provider_inventory_observed_at !== "2026-08-15" ||
+  receipt?.repository_approval_recorded_at !== "2026-08-21T04:45:43Z" ||
   receipt?.provider_boundary_uniquely_matched !== true
 ) {
   errors.push("Vapi readiness receipt identity drifted");
@@ -63,9 +78,17 @@ if (
 ) {
   errors.push("signed-in Vapi inventory evidence drifted");
 }
+if (
+  receipt?.candidate_configuration_approved !== true ||
+  receipt?.candidate_approved_source_sha256 !==
+    "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4" ||
+  receipt?.candidate_approval_record_ref !==
+    "primary-release-chat:sha256:faeec411136ef23b4fe645adf4241be15516315ae1b8a7350bc3eb93f289d93b"
+) {
+  errors.push("Vapi owner-approval evidence drifted");
+}
 for (const field of [
   "existing_resource_reuse_authorized",
-  "candidate_configuration_approved",
   "provisioning_authorized",
   "provider_mutation_performed",
   "call_or_message_performed",
@@ -78,9 +101,38 @@ for (const field of [
 }
 if (
   receipt?.next_gate !==
-    "separate_repository_manifest_and_owner_provisioning_review"
+    "bounded_raw_provider_provisioning_and_saved_state_verification"
 ) {
   errors.push("Vapi next-gate boundary drifted");
+}
+
+if (
+  manifest?.ownerApproval?.status !== "approved" ||
+  manifest?.ownerApproval?.recordRef !== receipt?.candidate_approval_record_ref ||
+  manifest?.ownerApproval?.approvedAt !==
+    receipt?.repository_approval_recorded_at ||
+  manifest?.ownerApproval?.approvedSourceSha256 !==
+    receipt?.candidate_approved_source_sha256 ||
+  manifest?.contractTestsPassed !== true ||
+  manifest?.provisioningAllowed !== false ||
+  manifest?.callAllowed !== false ||
+  manifest?.activationAllowed !== false
+) {
+  errors.push("Vapi manifest approval is not bound to the readiness evidence");
+}
+
+if (
+  provisioning?.status !== "pending" ||
+  provisioning?.manifestSourceSha256 !==
+    receipt?.candidate_approved_source_sha256 ||
+  provisioning?.hostedMappingsVerified !== false ||
+  provisioning?.deploymentVerified !== false ||
+  provisioning?.ownerQaPassed !== false ||
+  provisioning?.activationAllowed !== false ||
+  provisioning?.customerTrafficAllowed !== false ||
+  provisioning?.nextGate !== "awaiting_sanitized_provider_evidence"
+) {
+  errors.push("Vapi post-provisioning receipt no longer fails closed");
 }
 
 const prohibitedValuePatterns = [
@@ -90,16 +142,17 @@ const prohibitedValuePatterns = [
   /\b(?:AC|PN|CM|BN)[0-9a-f]{12,}\b/i,
 ];
 for (const pattern of prohibitedValuePatterns) {
-  if (pattern.test(receiptText)) {
+  if (pattern.test(`${receiptText}\n${provisioningText}`)) {
     errors.push(`Vapi readiness receipt contains prohibited value shape: ${pattern}`);
   }
 }
 
 for (const fragment of [
-  "no isolated Klamath assistant or phone resource exists",
+  "historical read-only signed-in Vapi inventory",
   "Existing DFW and other non-Klamath resources are preserved",
   "does not authorize reuse",
-  "separately reviewed Klamath assistant manifest",
+  "manifest candidate is owner-approved",
+  "pending sanitized post-provisioning handoff",
   "No call is allowed",
 ]) {
   if (!handoffNormalized.includes(fragment)) {
@@ -114,5 +167,5 @@ if (errors.length) {
 }
 
 console.log(
-  "Klamath Vapi readiness OK: inventory recorded without identifiers; no Klamath resource, reuse authority, provisioning, or call action exists.",
+  "Klamath Vapi readiness OK: the exact manifest is owner-approved; historical inventory and pending sanitized provider evidence keep binding, deployment, calls, messages, and activation blocked.",
 );

@@ -1,8 +1,8 @@
 # BluLadder Klamath Vapi manifest review
 
-Status: **exact candidate prepared; owner approval and provider provisioning
-remain pending**. This package does not create, clone, import, edit, publish,
-assign, or call any Vapi or Twilio resource.
+Status: **exact candidate owner-approved; provider provisioning evidence remains
+pending**. This package does not create, clone, import, edit, publish, assign,
+or call any Vapi or Twilio resource.
 
 ## Exact source boundary
 
@@ -18,14 +18,21 @@ only shared-file import is type-only and cannot change the emitted assistant
 payload. The model, voice, duration, warning copy and timing, and server-event
 list therefore cannot drift behind an unchanged Klamath approval digest.
 
-The exact owner approval phrase for this candidate is:
+The owner approved this exact candidate in the primary release chat. The
+sanitized evidence reference is the SHA-256 of the canonical approval statement
+and contains no user, provider, phone, credential, or customer value:
 
-`APPROVE KLAMATH VAPI MANIFEST e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`
+`primary-release-chat:sha256:faeec411136ef23b4fe645adf4241be15516315ae1b8a7350bc3eb93f289d93b`
 
-Approval of that digest authorizes only a separately bounded provider
-preflight and provisioning review. It does not authorize credential disclosure,
-phone import, phone binding, a call, a message, hosted activation, or customer
-traffic.
+The exact approved statement is:
+
+`APPROVE KLAMATH VAPI MANIFEST e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4 AS-IS`
+
+The approval is bound to the exact source digest. It does not claim provider
+provisioning succeeded and does not authorize phone binding, a call, a message,
+hosted activation, deployment, or customer traffic. Provider work remains
+separately bounded and must produce sanitized evidence before hosted binding
+may be reviewed.
 
 ## Candidate configuration
 
@@ -55,7 +62,7 @@ traffic.
 
 ## Provisioning gates
 
-After exact owner approval, a separately authorized provider action must:
+The separately authorized provider action must:
 
 1. preflight the signed-in Vapi organization and preserve every existing
    non-Klamath resource;
@@ -74,3 +81,7 @@ After exact owner approval, a separately authorized provider action must:
 
 The DFW assistant, DFW phone resource, and all other Vapi resources remain out
 of scope.
+
+Its future handoff must use only
+`docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`.
+The receipt is pending and cannot contain raw provider or customer authority.

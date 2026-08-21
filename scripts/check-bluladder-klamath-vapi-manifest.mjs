@@ -12,12 +12,32 @@ const files = {
   review: "docs/voice/bluladder-klamath-vapi-manifest.md",
   handoff: "docs/voice/bluladder-klamath-handoff.md",
   readiness: "docs/operations/bluladder-klamath-vapi-readiness.json",
+  provisioningTemplate:
+    "docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json",
+  provisioningContract:
+    "docs/voice/bluladder-klamath-vapi-provisioning-receipt.md",
+  provisioningImplementation:
+    "packages/tenant-config/bluladderKlamathVapiProvisioningReceipt.ts",
+  provisioningTests:
+    "packages/tenant-config/bluladderKlamathVapiProvisioningReceipt.test.ts",
 };
 
 const expectedSource = {
   bytes: 9214,
   sha256: "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
 };
+const approvalStatement =
+  `APPROVE KLAMATH VAPI MANIFEST ${expectedSource.sha256} AS-IS`;
+const approvalStatementSha256 = crypto
+  .createHash("sha256")
+  .update(approvalStatement)
+  .digest("hex");
+const expectedApproval = {
+  recordRef: `primary-release-chat:sha256:${approvalStatementSha256}`,
+  approvedAt: "2026-08-21T04:45:43Z",
+};
+const supersededSourceSha256 =
+  "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68";
 const errors = [];
 const content = {};
 
@@ -40,9 +60,11 @@ if (sourceSha256 !== expectedSource.sha256) {
 
 let template;
 let readiness;
+let provisioningTemplate;
 try {
   template = JSON.parse(content.template ?? "{}");
   readiness = JSON.parse(content.readiness ?? "{}");
+  provisioningTemplate = JSON.parse(content.provisioningTemplate ?? "{}");
 } catch (error) {
   errors.push(`Klamath Vapi JSON is invalid: ${error.message}`);
 }
@@ -111,11 +133,11 @@ if (
 }
 
 if (
-  template?.ownerApproval?.status !== "pending" ||
-  template?.ownerApproval?.recordRef !== null ||
-  template?.ownerApproval?.approvedAt !== null ||
-  template?.ownerApproval?.approvedSourceSha256 !== null ||
-  template?.contractTestsPassed !== false ||
+  template?.ownerApproval?.status !== "approved" ||
+  template?.ownerApproval?.recordRef !== expectedApproval.recordRef ||
+  template?.ownerApproval?.approvedAt !== expectedApproval.approvedAt ||
+  template?.ownerApproval?.approvedSourceSha256 !== expectedSource.sha256 ||
+  template?.contractTestsPassed !== true ||
   template?.provisioningAllowed !== false ||
   template?.callAllowed !== false ||
   template?.activationAllowed !== false
@@ -125,14 +147,119 @@ if (
 
 if (
   readiness?.tenant_key !== "bluladder-klamath" ||
+  readiness?.provider_inventory_observed_at !== "2026-08-15" ||
+  readiness?.repository_approval_recorded_at !== expectedApproval.approvedAt ||
+  readiness?.evidence_class !==
+    "signed_in_provider_inventory_plus_repository_owner_approval" ||
   readiness?.isolated_klamath_assistant_present !== false ||
   readiness?.isolated_klamath_phone_resource_present !== false ||
-  readiness?.candidate_configuration_approved !== false ||
+  readiness?.candidate_configuration_approved !== true ||
+  readiness?.candidate_approved_source_sha256 !== expectedSource.sha256 ||
+  readiness?.candidate_approval_record_ref !== expectedApproval.recordRef ||
   readiness?.provisioning_authorized !== false ||
   readiness?.provider_mutation_performed !== false ||
   readiness?.call_or_message_performed !== false
 ) {
   errors.push("signed-in Klamath Vapi readiness receipt no longer fails closed");
+}
+
+const expectedProvisioningKeys = [
+  "schemaVersion",
+  "tenantKey",
+  "evidenceClass",
+  "status",
+  "observedAt",
+  "manifestSourceSha256",
+  "assistant",
+  "phone",
+  "safeguards",
+  "customerActionCounts",
+  "hostedMappingsVerified",
+  "deploymentVerified",
+  "ownerQaPassed",
+  "activationAllowed",
+  "customerTrafficAllowed",
+  "blockerCodes",
+  "nextGate",
+];
+const expectedAssistantKeys = [
+  "uniqueMatchCount",
+  "creationSucceeded",
+  "savedStateVerified",
+  "configurationMatched",
+  "identityFingerprintSha256",
+  "providerVersionMarker",
+  "driftPaths",
+];
+const expectedPhoneKeys = [
+  "uniqueMatchCount",
+  "importSucceeded",
+  "voiceOnly",
+  "smsDisabled",
+  "assistantBindingAbsent",
+  "identityFingerprintSha256",
+];
+const expectedSafeguardKeys = [
+  "nonKlamathResourcesPreserved",
+  "twilioMessagingConfigurationUnchanged",
+  "temporaryVapiKeyRevoked",
+  "containsProviderIdentifiers",
+  "containsPhoneDigits",
+  "containsCredentials",
+  "containsHeaders",
+  "containsServerUrls",
+  "containsRecipientDetails",
+  "containsCustomerData",
+  "containsMessageContents",
+];
+const expectedActionKeys = ["calls", "messages", "toolInvocations", "transfers"];
+if (
+  JSON.stringify(Object.keys(provisioningTemplate ?? {})) !==
+    JSON.stringify(expectedProvisioningKeys) ||
+  JSON.stringify(Object.keys(provisioningTemplate?.assistant ?? {})) !==
+    JSON.stringify(expectedAssistantKeys) ||
+  JSON.stringify(Object.keys(provisioningTemplate?.phone ?? {})) !==
+    JSON.stringify(expectedPhoneKeys) ||
+  JSON.stringify(Object.keys(provisioningTemplate?.safeguards ?? {})) !==
+    JSON.stringify(expectedSafeguardKeys) ||
+  JSON.stringify(Object.keys(provisioningTemplate?.customerActionCounts ?? {})) !==
+    JSON.stringify(expectedActionKeys)
+) {
+  errors.push("Klamath Vapi provisioning receipt field set or order drifted");
+}
+if (
+  provisioningTemplate?.schemaVersion !== 1 ||
+  provisioningTemplate?.tenantKey !== "bluladder-klamath" ||
+  provisioningTemplate?.evidenceClass !==
+    "sanitized_vapi_post_provisioning" ||
+  provisioningTemplate?.status !== "pending" ||
+  provisioningTemplate?.observedAt !== null ||
+  provisioningTemplate?.manifestSourceSha256 !== expectedSource.sha256 ||
+  provisioningTemplate?.assistant?.uniqueMatchCount !== null ||
+  provisioningTemplate?.assistant?.creationSucceeded !== null ||
+  provisioningTemplate?.assistant?.savedStateVerified !== null ||
+  provisioningTemplate?.assistant?.configurationMatched !== null ||
+  provisioningTemplate?.phone?.uniqueMatchCount !== null ||
+  provisioningTemplate?.phone?.importSucceeded !== null ||
+  provisioningTemplate?.phone?.assistantBindingAbsent !== null ||
+  provisioningTemplate?.hostedMappingsVerified !== false ||
+  provisioningTemplate?.deploymentVerified !== false ||
+  provisioningTemplate?.ownerQaPassed !== false ||
+  provisioningTemplate?.activationAllowed !== false ||
+  provisioningTemplate?.customerTrafficAllowed !== false ||
+  provisioningTemplate?.nextGate !== "awaiting_sanitized_provider_evidence"
+) {
+  errors.push("Klamath Vapi provisioning receipt must remain pending and closed");
+}
+if (
+  Object.values(provisioningTemplate?.customerActionCounts ?? {}).some(
+    (value) => value !== 0,
+  ) ||
+  Object.entries(provisioningTemplate?.safeguards ?? {}).some(([key, value]) =>
+    key.startsWith("contains") && value !== false
+  )
+) {
+  errors.push("Klamath Vapi receipt customer-action or disclosure gate drifted");
 }
 
 const source = content.source ?? "";
@@ -214,6 +341,9 @@ const combinedNonTest = [
   content.template,
   content.review,
   content.handoff,
+  content.readiness,
+  content.provisioningTemplate,
+  content.provisioningContract,
 ].join("\n");
 const prohibitedPatterns = [
   /\+[1-9][0-9]{7,14}\b/,
@@ -228,10 +358,16 @@ for (const pattern of prohibitedPatterns) {
     errors.push(`Klamath Vapi review package contains prohibited value shape: ${pattern}`);
   }
 }
+for (const [key, value] of Object.entries(content)) {
+  if (value?.includes(supersededSourceSha256)) {
+    errors.push(`${files[key]} retains the superseded Klamath manifest digest`);
+  }
+}
 
-const approvalPhrase = `APPROVE KLAMATH VAPI MANIFEST ${expectedSource.sha256}`;
 for (const fragment of [
-  approvalPhrase,
+  approvalStatement,
+  expectedApproval.recordRef,
+  "exact candidate owner-approved",
   "This package does not create, clone, import, edit, publish, assign, or call",
   "A separate transcriber is absent",
   "Every tool has an empty object schema",
@@ -245,12 +381,53 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "exact Klamath Vapi manifest candidate is prepared",
+  "exact Klamath Vapi manifest candidate is owner-approved",
   expectedSource.sha256,
-  "does not authorize provisioning",
+  "Owner approval does not prove provider provisioning",
+  "provider saved-state evidence, phone binding, hosted tenant mappings, deployment, owner-controlled QA, customer traffic, and final activation are incomplete",
 ]) {
   if (!(content.handoff ?? "").replace(/\s+/g, " ").includes(fragment)) {
     errors.push(`${files.handoff} omits: ${fragment}`);
+  }
+}
+
+for (const fragment of [
+  "eligible_for_hosted_binding_review",
+  "provisioning_evidence_pending",
+  "receipt_identity_invalid",
+  "prohibited_field",
+  "prohibited_value",
+  "customer_action_detected",
+  "repository_activation_boundary_open",
+  "hosted_tenant_binding_review",
+  "activationAllowed: false",
+]) {
+  if (!(content.provisioningImplementation ?? "").includes(fragment)) {
+    errors.push(`${files.provisioningImplementation} omits: ${fragment}`);
+  }
+}
+for (const fragment of [
+  "keeps the repository template pending and activation closed",
+  "can reach only the hosted tenant-binding review",
+  "binds evidence to the exact owner-approved manifest digest",
+  "rejects raw provider, phone, URL, credential, and message evidence",
+  "rejects serializer drift and unsafe phone state",
+  "rejects customer actions and any opened launch gate",
+  "rejects free-form status metadata",
+]) {
+  if (!(content.provisioningTests ?? "").includes(fragment)) {
+    errors.push(`${files.provisioningTests} omits: ${fragment}`);
+  }
+}
+for (const fragment of [
+  "pending sanitized provider evidence",
+  expectedSource.sha256,
+  "non-reversible SHA-256 identity fingerprints",
+  "must never contain a full provider identifier",
+  "separately authorized hosted tenant-binding review",
+]) {
+  if (!(content.provisioningContract ?? "").replace(/\s+/g, " ").includes(fragment)) {
+    errors.push(`${files.provisioningContract} omits: ${fragment}`);
   }
 }
 
@@ -261,5 +438,5 @@ if (errors.length) {
 }
 
 console.log(
-  `Klamath Vapi manifest OK: ${expectedSource.bytes} bytes, SHA-256 ${expectedSource.sha256}; approval, provisioning, activation, calls, and messages remain blocked.`,
+  `Klamath Vapi manifest OK: ${expectedSource.bytes} bytes, SHA-256 ${expectedSource.sha256}; owner approval is bound while provider evidence, activation, calls, and messages remain blocked.`,
 );
