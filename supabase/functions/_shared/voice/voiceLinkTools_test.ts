@@ -4,6 +4,7 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { buildVoiceCallLinkOutboundKey } from "./voiceCallLinkIdentity.ts";
 import type { OutboxSendInput } from "../smsOutbox.ts";
+import type { OrganizationCustomerSiteRoute } from "../organizationCustomerSites.ts";
 import { DFW_ORGANIZATION_ID } from "../organizationRouting.ts";
 import {
   buildVoiceCustomerLink,
@@ -18,6 +19,18 @@ import {
 const ORG = DFW_ORGANIZATION_ID;
 const UNROUTED_ORG = "00000000-0000-4000-8000-000000000091";
 const KLAMATH_ORG = "b1addf00-0000-4000-8000-000000000003";
+
+const ACTIVE_KLAMATH_ROUTE: OrganizationCustomerSiteRoute = {
+  tenantKey: "bluladder-klamath",
+  organizationId: KLAMATH_ORG,
+  organizationStatus: "active",
+  canonicalHostname: "klamath.bluladder.com",
+  baseUrl: "https://klamath.bluladder.com",
+  mappingStatus: "active",
+  runtimeRoutingEnabled: true,
+  sitePublished: true,
+  customerTrafficAllowed: true,
+};
 
 function hostedKlamathSiteClient(active: boolean) {
   const touched: string[] = [];
@@ -405,6 +418,79 @@ Deno.test("voice link tools: suppression, opt-out, and pause prevent outbox disp
       decodedResult(result.results[0].result).status,
       testCase.expected,
     );
+  }
+});
+
+Deno.test("voice link tools: every Klamath non-success result keeps caller guidance on the Klamath site", async () => {
+  const routedDeps = {
+    ...allowedDeps(() => Promise.resolve(acceptedResult())),
+    customerSiteRoutes: [ACTIVE_KLAMATH_ROUTE],
+  };
+  const cases = [
+    {
+      expected: "suppressed",
+      deps: {
+        ...routedDeps,
+        suppressionCheck: () =>
+          Promise.resolve({ suppressed: true, reason: "admin_switch" }),
+      },
+    },
+    {
+      expected: "opted_out",
+      deps: {
+        ...routedDeps,
+        phoneOptOutCheck: () =>
+          Promise.resolve({ optedOut: true, readable: true }),
+      },
+    },
+    {
+      expected: "paused",
+      deps: {
+        ...routedDeps,
+        customerPauseCheck: () =>
+          Promise.resolve({
+            sms_paused: true,
+            email_paused: false,
+            readable: true,
+          }),
+      },
+    },
+    {
+      expected: "uncertain",
+      deps: {
+        ...routedDeps,
+        deliver: () =>
+          Promise.resolve({
+            ...acceptedResult(),
+            sent: false,
+            outboxState: "delivery_unknown" as const,
+          }),
+      },
+    },
+    {
+      expected: "failed",
+      deps: {
+        ...routedDeps,
+        deliver: () =>
+          Promise.resolve({
+            ...acceptedResult(),
+            sent: false,
+            outboxState: "send_failed" as const,
+          }),
+      },
+    },
+  ];
+
+  for (const testCase of cases) {
+    const result = await handleVoiceLinkToolCalls(
+      null,
+      { body: body([VOICE_QUOTE_LINK_TOOL]), organizationId: KLAMATH_ORG },
+      testCase.deps,
+    );
+    const evidence = decodedResult(result.results[0].result);
+    assertEquals(evidence.status, testCase.expected);
+    assert(evidence.message.includes("https://klamath.bluladder.com"));
+    assertEquals(evidence.message.includes("bid.bluladder.com"), false);
   }
 });
 

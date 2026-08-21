@@ -237,7 +237,10 @@ export function buildVoiceCustomerLinkMessage(
     : `BluLadder: Get your exact price and book online here: ${link}`;
 }
 
-function evidenceResult(result: OutboxSendResult): VoiceLinkToolResult {
+function evidenceResult(
+  result: OutboxSendResult,
+  customerBaseUrl: string,
+): VoiceLinkToolResult {
   if (result.sent) {
     return {
       status: "provider_accepted",
@@ -256,13 +259,13 @@ function evidenceResult(result: OutboxSendResult): VoiceLinkToolResult {
     return {
       status: "uncertain",
       message:
-        "Delivery is uncertain. Do not say sent or delivered; offer the website verbally instead.",
+        `Delivery is uncertain. Do not say sent or delivered; offer ${customerBaseUrl} verbally instead.`,
     };
   }
   return {
     status: "failed",
     message:
-      "The text could not be sent. Apologize briefly and direct the caller to bid.bluladder.com.",
+      `The text could not be sent. Apologize briefly and direct the caller to ${customerBaseUrl}.`,
   };
 }
 
@@ -372,21 +375,21 @@ export async function handleVoiceLinkToolCalls(
     return sameResult(calls, {
       status: "suppressed",
       message:
-        "Messaging is suppressed. Do not say sent or delivered; direct the caller to bid.bluladder.com.",
+        `Messaging is suppressed. Do not say sent or delivered; direct the caller to ${customerSite.baseUrl}.`,
     });
   }
   if (optOut.optedOut) {
     return sameResult(calls, {
       status: "opted_out",
       message:
-        "The caller cannot receive SMS. Do not send or claim success; direct them to bid.bluladder.com.",
+        `The caller cannot receive SMS. Do not send or claim success; direct them to ${customerSite.baseUrl}.`,
     });
   }
   if (pause.sms_paused) {
     return sameResult(calls, {
       status: "paused",
       message:
-        "SMS is paused for this contact. Do not say sent or delivered; direct them to bid.bluladder.com.",
+        `SMS is paused for this contact. Do not say sent or delivered; direct them to ${customerSite.baseUrl}.`,
     });
   }
 
@@ -403,5 +406,5 @@ export async function handleVoiceLinkToolCalls(
       ? "voice_booking_management_link"
       : "voice_online_quote_link",
   });
-  return sameResult(calls, evidenceResult(result));
+  return sameResult(calls, evidenceResult(result, customerSite.baseUrl));
 }

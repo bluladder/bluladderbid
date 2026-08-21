@@ -13,6 +13,11 @@
 import { getAppUrl } from "../appUrl.ts";
 import { deterministicUuid } from "../deterministicUuid.ts";
 import { sendEmail, type SendEmailResult } from "../emailConfig.ts";
+import {
+  loadOrganizationCustomerSiteRoutes,
+  type OrganizationCustomerSiteRoute,
+  resolveOrganizationCustomerSite,
+} from "../organizationCustomerSites.ts";
 import { checkSuppression } from "../suppression.ts";
 import { type OutboxSendResult, sendOutboxSms } from "../smsOutbox.ts";
 import {
@@ -105,6 +110,8 @@ export interface VoiceHumanTransferDeps {
   sendOperatorEmail?: typeof sendEmail;
   suppressionCheck?: typeof checkSuppression;
   inspectPriorCustomerLink?: typeof inspectPriorVoiceCustomerLink;
+  /** Test injection only. Production loads the resolved tenant route. */
+  customerSiteRoutes?: readonly OrganizationCustomerSiteRoute[];
   appUrl?: string;
 }
 
@@ -140,6 +147,34 @@ function sameResult(
       result: serialized,
     })),
   };
+}
+
+async function resolveCustomerFallbackBaseUrl(
+  supabase: SB,
+  organizationId: string,
+  deps: VoiceHumanTransferDeps,
+): Promise<string | null> {
+  try {
+    const routes = deps.customerSiteRoutes ??
+      await loadOrganizationCustomerSiteRoutes(
+        supabase,
+        organizationId,
+        { dfwBaseUrl: deps.appUrl ?? getAppUrl() },
+      );
+    const customerSite = resolveOrganizationCustomerSite(
+      organizationId,
+      routes,
+    );
+    return customerSite.status === "resolved" ? customerSite.baseUrl : null;
+  } catch {
+    return null;
+  }
+}
+
+function customerFallbackDirective(customerBaseUrl: string | null): string {
+  return customerBaseUrl
+    ? `direct the caller to ${customerBaseUrl}`
+    : "do not disclose another location's website";
 }
 
 export function extractTrustedVapiControlUrl(body: unknown): string | null {
@@ -831,6 +866,11 @@ export async function handleVoiceHumanTransferToolCalls(
         "Organization authority is unavailable. Do not claim a transfer or callback.",
     });
   }
+  const customerFallbackBaseUrl = await resolveCustomerFallbackBaseUrl(
+    supabase,
+    input.organizationId,
+    deps,
+  );
   const callId = extractTrustedVapiCallId(input.body);
   const callerPhone = extractTrustedVapiCallerNumber(input.body);
   if (!callId || !callerPhone) {
@@ -867,7 +907,9 @@ export async function handleVoiceHumanTransferToolCalls(
       return sameResult(calls, {
         status: "failed",
         message:
-          "Prior call actions could not be verified. Do not transfer or alert an operator; apologize briefly and direct the caller to bid.bluladder.com.",
+          `Prior call actions could not be verified. Do not transfer or alert an operator; apologize briefly and ${
+            customerFallbackDirective(customerFallbackBaseUrl)
+          }.`,
       });
     }
   }
@@ -884,7 +926,9 @@ export async function handleVoiceHumanTransferToolCalls(
     return sameResult(calls, {
       status: "failed",
       message:
-        "The transfer request could not be recorded. Do not claim transfer or callback success; direct the caller to bid.bluladder.com.",
+        `The transfer request could not be recorded. Do not claim transfer or callback success; ${
+          customerFallbackDirective(customerFallbackBaseUrl)
+        }.`,
     });
   }
   if (claim.state !== "winner") {
@@ -988,6 +1032,8 @@ export async function handleVoiceHumanTransferToolCalls(
   return sameResult(calls, {
     status: "failed",
     message:
-      "The transfer and callback record both failed. Do not claim success; direct the caller to bid.bluladder.com.",
+      `The transfer and callback record both failed. Do not claim success; ${
+        customerFallbackDirective(customerFallbackBaseUrl)
+      }.`,
   });
 }
