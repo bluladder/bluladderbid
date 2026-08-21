@@ -24,10 +24,12 @@ resolution, messaging, operator-recipient, and rollback gates all pass.
 
 An exact Klamath Vapi manifest candidate is prepared for owner review in
 `supabase/functions/_shared/voiceProviderKlamathConfig.ts`, at SHA-256
-`dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68`.
+`e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`.
 Its review record is `docs/voice/bluladder-klamath-vapi-manifest.md`. The
-candidate does not authorize provisioning, credential transmission, phone
-import or binding, a call, a message, activation, or customer traffic.
+candidate pins every provider-effective value locally and retains only a
+type-only shared import. It does not authorize provisioning, credential
+transmission, phone import or binding, a call, a message, activation, or
+customer traffic.
 
 ## Name and boundary
 

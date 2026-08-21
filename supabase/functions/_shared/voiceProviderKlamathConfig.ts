@@ -1,13 +1,6 @@
-import {
-  VOICE_BETA_MAX_DURATION_SECONDS,
-  VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS,
-  VOICE_BETA_WARNING_780,
-  VOICE_BETA_WARNING_870,
-  VOICE_REALTIME_MVP_MODEL,
-  VOICE_REALTIME_MVP_VOICE,
-  VOICE_REALTIME_VAPI_ALLOWED_EVENTS,
-  type VoiceRealtimeFunctionTool,
-  type VoiceRealtimeMvpManifest,
+import type {
+  VoiceRealtimeFunctionTool,
+  VoiceRealtimeMvpManifest,
 } from "./voiceProviderConfig.ts";
 
 /**
@@ -17,6 +10,21 @@ import {
  * approved provider reconciliation.
  */
 export const KLAMATH_VOICE_ASSISTANT_NAME = "BluLadder Klamath Realtime";
+export const KLAMATH_VOICE_MODEL = "gpt-realtime-2025-08-28";
+export const KLAMATH_VOICE_VOICE = "marin";
+export const KLAMATH_VOICE_MAX_DURATION_SECONDS = 900;
+export const KLAMATH_VOICE_WARNING_HOOK_SECONDS = [780, 870] as const;
+export const KLAMATH_VOICE_WARNING_780 =
+  "Just a heads-up, we have about two minutes left on this call. I'll make sure you have a way to continue by text if we need it.";
+export const KLAMATH_VOICE_WARNING_870 =
+  "We have about thirty seconds left. I'll make sure we have the important details before the call ends.";
+export const KLAMATH_VOICE_SERVER_EVENTS = [
+  "assistant.started",
+  "status-update",
+  "hang",
+  "end-of-call-report",
+  "tool-calls",
+] as const;
 export const KLAMATH_VOICE_FIRST_MESSAGE =
   "Thanks for calling BluLadder Klamath. How can I help you today?";
 export const KLAMATH_VOICE_CUTOFF_MESSAGE =
@@ -95,7 +103,7 @@ export function buildKlamathVoiceRealtimeManifest(
     firstMessageInterruptionsEnabled: true,
     model: {
       provider: "openai",
-      model: VOICE_REALTIME_MVP_MODEL,
+      model: KLAMATH_VOICE_MODEL,
       messages: [{ role: "system", content: KLAMATH_VOICE_SYSTEM_PROMPT }],
       temperature: 0.6,
       maxTokens: 250,
@@ -114,7 +122,7 @@ export function buildKlamathVoiceRealtimeManifest(
         ),
       ],
     },
-    voice: { provider: "openai", voiceId: VOICE_REALTIME_MVP_VOICE },
+    voice: { provider: "openai", voiceId: KLAMATH_VOICE_VOICE },
     transcriber: null,
     startSpeakingPlan: {
       waitSeconds: 0.3,
@@ -131,16 +139,16 @@ export function buildKlamathVoiceRealtimeManifest(
     phoneNumber: null,
     transferDestination: null,
     duration: {
-      maxDurationSeconds: VOICE_BETA_MAX_DURATION_SECONDS,
+      maxDurationSeconds: KLAMATH_VOICE_MAX_DURATION_SECONDS,
       hardCutoffMessage: KLAMATH_VOICE_CUTOFF_MESSAGE,
       timeElapsedHooks: [
         {
-          seconds: VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS[0],
-          say: VOICE_BETA_WARNING_780,
+          seconds: KLAMATH_VOICE_WARNING_HOOK_SECONDS[0],
+          say: KLAMATH_VOICE_WARNING_780,
         },
         {
-          seconds: VOICE_BETA_TIME_ELAPSED_HOOKS_SECONDS[1],
-          say: VOICE_BETA_WARNING_870,
+          seconds: KLAMATH_VOICE_WARNING_HOOK_SECONDS[1],
+          say: KLAMATH_VOICE_WARNING_870,
         },
       ],
     },
@@ -160,7 +168,7 @@ export function buildKlamathVoiceRealtimeManifest(
     serverEvents: {
       url: input.serverEventsUrl,
       authenticationMode: "shared-header-credential",
-      events: VOICE_REALTIME_VAPI_ALLOWED_EVENTS,
+      events: KLAMATH_VOICE_SERVER_EVENTS,
     },
     callRail: null,
   };

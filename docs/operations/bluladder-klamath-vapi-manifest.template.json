@@ -4,8 +4,8 @@
   "purpose": "vapi_manifest_owner_review",
   "source": {
     "path": "supabase/functions/_shared/voiceProviderKlamathConfig.ts",
-    "bytes": 8753,
-    "sha256": "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68"
+    "bytes": 9214,
+    "sha256": "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4"
   },
   "candidate": {
     "assistantName": "BluLadder Klamath Realtime",
