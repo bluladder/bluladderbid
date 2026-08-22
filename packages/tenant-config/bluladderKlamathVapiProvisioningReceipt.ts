@@ -1,5 +1,5 @@
 export const KLAMATH_VAPI_APPROVED_MANIFEST_SHA256 =
-  "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90";
+  "f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1";
 
 export interface KlamathVapiProvisioningReceipt {
   schemaVersion: 1;

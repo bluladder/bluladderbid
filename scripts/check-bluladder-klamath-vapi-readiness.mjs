@@ -64,7 +64,7 @@ if (
   receipt?.evidence_class !==
     "signed_in_provider_inventory_plus_repository_owner_approval" ||
   receipt?.provider_inventory_observed_at !== "2026-08-15" ||
-  receipt?.repository_approval_recorded_at !== "2026-08-22T02:20:03Z" ||
+  receipt?.repository_approval_recorded_at !== "2026-08-22T03:56:43Z" ||
   receipt?.provider_boundary_uniquely_matched !== true
 ) {
   errors.push("Vapi readiness receipt identity drifted");
@@ -81,9 +81,9 @@ if (
 if (
   receipt?.candidate_configuration_approved !== true ||
   receipt?.candidate_approved_source_sha256 !==
-    "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90" ||
+    "f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1" ||
   receipt?.candidate_approval_record_ref !==
-    "primary-release-chat:sha256:91f61fedd7a805852be501dd6d807c4c1223abe19c0f88b8c68bb4d95a153e6a"
+    "primary-release-chat:sha256:d64402b364d8222c2bbc0144779fed0d3cf5a4b2e2a86f56cfabfd2fe799e024"
 ) {
   errors.push("Vapi owner-approval evidence drifted");
 }

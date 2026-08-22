@@ -110,7 +110,7 @@ export function buildKlamathVoiceRealtimeManifest(
       tools: [
         zeroArgumentTool(
           "send_online_quote_link",
-          "Text the canonical BluLadder exact-pricing and new-booking link to the trusted current caller ID after explicit caller consent.",
+          "Text the canonical BluLadder online quote and new-booking link to the trusted current caller ID after explicit caller consent.",
         ),
         zeroArgumentTool(
           "send_booking_management_link",

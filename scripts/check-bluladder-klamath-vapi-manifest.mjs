@@ -30,8 +30,8 @@ const files = {
 };
 
 const expectedSource = {
-  bytes: 9196,
-  sha256: "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90",
+  bytes: 9195,
+  sha256: "f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1",
 };
 const approvalStatement =
   `APPROVE KLAMATH VAPI MANIFEST ${expectedSource.sha256} AS-IS`;
@@ -41,11 +41,12 @@ const approvalStatementSha256 = crypto
   .digest("hex");
 const expectedApproval = {
   recordRef: `primary-release-chat:sha256:${approvalStatementSha256}`,
-  approvedAt: "2026-08-22T02:20:03Z",
+  approvedAt: "2026-08-22T03:56:43Z",
 };
 const supersededSourceSha256 = [
   "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68",
   "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
+  "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90",
 ];
 const errors = [];
 const content = {};
@@ -111,7 +112,7 @@ const expectedTools = [
   "request_human_transfer",
 ];
 const expectedToolDescriptions = [
-  "Text the canonical BluLadder exact-pricing and new-booking link to the trusted current caller ID after explicit caller consent.",
+  "Text the canonical BluLadder online quote and new-booking link to the trusted current caller ID after explicit caller consent.",
   "Text the canonical secure appointment portal link to the trusted current caller ID after explicit caller consent.",
   "Transfer the current caller to the authoritative local operator only after an explicit human request and only when no customer link was provider-accepted earlier in the call. The server resolves the destination; this tool accepts no destination or caller arguments.",
 ];

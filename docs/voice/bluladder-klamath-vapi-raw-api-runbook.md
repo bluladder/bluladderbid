@@ -34,9 +34,9 @@ duplicate, reordering, extra event, or nested
 ## Immutable repository inputs
 
 The owner-approved provider-neutral source remains
-`supabase/functions/_shared/voiceProviderKlamathConfig.ts`, exactly 9,196 bytes
+`supabase/functions/_shared/voiceProviderKlamathConfig.ts`, exactly 9,195 bytes
 at SHA-256
-`cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90`.
+`f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1`.
 
 The serializer is
 `supabase/functions/_shared/voiceProviderKlamathVapiSerializer.ts`. It accepts

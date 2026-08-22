@@ -25,7 +25,7 @@ resolution, messaging, operator-recipient, and rollback gates all pass.
 
 The exact Klamath Vapi manifest candidate is owner-approved in
 `supabase/functions/_shared/voiceProviderKlamathConfig.ts`, at SHA-256
-`cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90`.
+`f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1`.
 Its review record is `docs/voice/bluladder-klamath-vapi-manifest.md`. The
 candidate pins every provider-effective value locally and retains only a
 type-only shared import. Owner approval does not prove provider provisioning,
