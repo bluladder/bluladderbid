@@ -14,6 +14,12 @@ const files = {
     "supabase/preflight/bluladder_klamath_activation_supersession.sql",
   postflight:
     "supabase/verification/bluladder_klamath_activation_supersession.sql",
+  trafficCutover:
+    "supabase/operations/bluladder_klamath_customer_traffic_cutover.sql",
+  trafficPause:
+    "supabase/operations/bluladder_klamath_customer_traffic_pause.sql",
+  trafficPostflight:
+    "supabase/verification/bluladder_klamath_customer_traffic_cutover.sql",
   architecture:
     "docs/architecture/bluladder-klamath-activation-supersession.md",
   protectedBindings:
@@ -109,11 +115,57 @@ for (const text of [
   "ROLLBACK;",
 ]) requireText("postflight", text);
 
+for (const text of [
+  "DO NOT EXECUTE until",
+  "20260815103000",
+  "20260822170000",
+  "customer_traffic_allowed = false",
+  "SET customer_traffic_allowed = true, updated_at = now()",
+  "GET DIAGNOSTICS affected_rows = ROW_COUNT",
+  "affected_rows <> 1",
+  "Klamath traffic cutover DFW invariant failed",
+  "COMMIT;",
+]) requireText("trafficCutover", text);
+
+for (const text of [
+  "Emergency fail-closed pause",
+  "SET customer_traffic_allowed = false, updated_at = now()",
+  "AND customer_traffic_allowed = true",
+  "GET DIAGNOSTICS affected_rows = ROW_COUNT",
+  "affected_rows <> 1",
+  "Klamath traffic pause DFW invariant failed",
+  "COMMIT;",
+]) requireText("trafficPause", text);
+
+for (const text of [
+  "BEGIN TRANSACTION READ ONLY;",
+  "superseded_version_count",
+  "replacement_version_count",
+  "live_site_count",
+  "active_assistant_count",
+  "active_phone_count",
+  "active_transfer_destination_count",
+  "active_operational_alert_count",
+  "ROLLBACK;",
+]) requireText("trafficPostflight", text);
+
 const forbiddenReadOnlySql = /\b(?:insert\s+into|update\s+[a-z_.]+\s+set|delete\s+from|merge\s+into|create\s+(?:table|index|policy)|alter\s+table|drop\s+(?:table|index|policy)|truncate|grant|revoke|call)\b/i;
-for (const key of ["preflight", "postflight"]) {
+for (const key of ["preflight", "postflight", "trafficPostflight"]) {
   if (forbiddenReadOnlySql.test(content[key] ?? "")) {
     errors.push(`${files[key]} contains a forbidden mutation`);
   }
+}
+
+const forbiddenOperationSql = /\b(?:insert\s+into|delete\s+from|merge\s+into|create\s+(?:table|index|policy)|alter\s+table|drop\s+(?:table|index|policy)|truncate|grant|revoke|call)\b/i;
+for (const key of ["trafficCutover", "trafficPause"]) {
+  if (forbiddenOperationSql.test(content[key] ?? "")) {
+    errors.push(`${files[key]} contains an unrelated mutation`);
+  }
+  const updates = content[key]?.match(/UPDATE\s+public\.[a-z_]+/gi) ?? [];
+  if (
+    updates.length !== 1 ||
+    updates[0].toLowerCase() !== "update public.organization_customer_sites"
+  ) errors.push(`${files[key]} is not an exact one-table, one-update operation`);
 }
 
 for (const text of [
@@ -211,6 +263,9 @@ if (
 
 const migration = Buffer.from(content.migration ?? "", "utf8");
 const emailReceiptBytes = Buffer.from(content.emailReceipt ?? "", "utf8");
+const trafficCutover = Buffer.from(content.trafficCutover ?? "", "utf8");
+const trafficPause = Buffer.from(content.trafficPause ?? "", "utf8");
+const trafficPostflight = Buffer.from(content.trafficPostflight ?? "", "utf8");
 if (
   gates?.schema_version !== 1 ||
   gates?.tenant_key !== "bluladder-klamath" ||
@@ -224,7 +279,22 @@ if (
   gates?.workspace_email_evidence?.sha256 !== sha256(emailReceiptBytes) ||
   gates?.workspace_email_evidence?.status !== "verified" ||
   gates?.workspace_email_evidence?.external_delivery_verified !== true ||
+  gates?.customer_traffic_cutover?.path !== files.trafficCutover ||
+  gates?.customer_traffic_cutover?.bytes !== trafficCutover.length ||
+  gates?.customer_traffic_cutover?.sha256 !== sha256(trafficCutover) ||
+  gates?.customer_traffic_cutover?.exact_update_count !== 1 ||
+  gates?.customer_traffic_cutover?.allowed_before_all_post_deploy_gates !==
+    false ||
+  gates?.fail_closed_traffic_pause?.path !== files.trafficPause ||
+  gates?.fail_closed_traffic_pause?.bytes !== trafficPause.length ||
+  gates?.fail_closed_traffic_pause?.sha256 !== sha256(trafficPause) ||
+  gates?.fail_closed_traffic_pause?.exact_update_count !== 1 ||
+  gates?.fail_closed_traffic_pause?.purpose !== "fail_closed_only" ||
+  gates?.read_only_traffic_postflight?.path !== files.trafficPostflight ||
+  gates?.read_only_traffic_postflight?.bytes !== trafficPostflight.length ||
+  gates?.read_only_traffic_postflight?.sha256 !== sha256(trafficPostflight) ||
   gates?.customer_traffic_allowed_before_deploy !== false ||
+  gates?.customer_traffic_cutover_prepared !== true ||
   gates?.activation_allowed !== false
 ) errors.push("activation supersession gate identity drifted");
 
@@ -240,6 +310,9 @@ for (const key of [
   "migration",
   "preflight",
   "postflight",
+  "trafficCutover",
+  "trafficPause",
+  "trafficPostflight",
   "architecture",
   "protectedBindings",
   "receipt",

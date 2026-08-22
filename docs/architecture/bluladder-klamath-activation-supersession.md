@@ -59,8 +59,11 @@ that exact row as `legacy_shared`; it never falls back from Klamath to DFW.
    snapshot, and stages the customer site with traffic still disabled.
 4. Deploy only the affected current-main function, `voice-vapi-events`, and
    require the exact build marker plus authentication/health verification.
-5. Enable customer traffic with the separately reviewed one-row cutover only
-   after every staged postflight and DFW fingerprint comparison passes.
+5. Enable customer traffic with
+   `supabase/operations/bluladder_klamath_customer_traffic_cutover.sql` only
+   after every staged postflight, deployment/authentication/health gate, and
+   DFW fingerprint comparison passes. Verify the live state with
+   `supabase/verification/bluladder_klamath_customer_traffic_cutover.sql`.
 
 The Klamath JobTread connector remains inactive with runtime and webhook access
 disabled. No customer record, membership, internal contact, credential, tool,
@@ -79,7 +82,8 @@ storefront work remain active but manual-review only.
 
 The migration is forward-only. Rollback means fail closed, not history rewrite:
 
-- pause `customer_traffic_allowed` for the unique Klamath site;
+- run `supabase/operations/bluladder_klamath_customer_traffic_pause.sql` to
+  pause `customer_traffic_allowed` for the unique Klamath site;
 - preserve the migration ledger and all provider/public evidence;
 - retain the prior Edge Function version for controlled restoration;
 - investigate before any further write or owner test.

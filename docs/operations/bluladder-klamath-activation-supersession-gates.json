@@ -36,6 +36,25 @@
     "bytes": 3871,
     "sha256": "6452caf2f37b6fe9ac442fc1e7f9e259d258218fc92676bf263a41621a3935a5"
   },
+  "customer_traffic_cutover": {
+    "path": "supabase/operations/bluladder_klamath_customer_traffic_cutover.sql",
+    "bytes": 9178,
+    "sha256": "423d5fe6e9e3e92cf87609f895a2e296df3860a208cb775320702fd4d9f01d0f",
+    "exact_update_count": 1,
+    "allowed_before_all_post_deploy_gates": false
+  },
+  "fail_closed_traffic_pause": {
+    "path": "supabase/operations/bluladder_klamath_customer_traffic_pause.sql",
+    "bytes": 2542,
+    "sha256": "f994edb6f94d0b1daad2c6edeb663dc32c4f9ede9d2bc1e0417c384bf3a661a6",
+    "exact_update_count": 1,
+    "purpose": "fail_closed_only"
+  },
+  "read_only_traffic_postflight": {
+    "path": "supabase/verification/bluladder_klamath_customer_traffic_cutover.sql",
+    "bytes": 6640,
+    "sha256": "487dc985f9be121803dab271cbb3dc43dfb16a0862dc83e98dda6bcbf790ce5d"
+  },
   "workspace_email_evidence": {
     "path": "docs/operations/bluladder-klamath-email-routing.receipt.json",
     "bytes": 1343,
@@ -81,7 +100,7 @@
     "required_build_marker": "voice-realtime-link-mvp.9-klamath-authority-separation"
   },
   "customer_traffic_allowed_before_deploy": false,
-  "customer_traffic_cutover_prepared": false,
+  "customer_traffic_cutover_prepared": true,
   "activation_allowed": false,
   "authorized_actions": {
     "prepare_repository_release": true,
