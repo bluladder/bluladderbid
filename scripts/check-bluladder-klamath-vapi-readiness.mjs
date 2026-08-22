@@ -62,9 +62,9 @@ if (
   receipt?.schema_version !== 1 ||
   receipt?.tenant_key !== "bluladder-klamath" ||
   receipt?.evidence_class !==
-    "signed_in_provider_inventory_plus_candidate_pending_reapproval" ||
+    "signed_in_provider_inventory_plus_repository_owner_approval" ||
   receipt?.provider_inventory_observed_at !== "2026-08-15" ||
-  receipt?.repository_approval_recorded_at !== null ||
+  receipt?.repository_approval_recorded_at !== "2026-08-22T02:20:03Z" ||
   receipt?.provider_boundary_uniquely_matched !== true
 ) {
   errors.push("Vapi readiness receipt identity drifted");
@@ -79,9 +79,11 @@ if (
   errors.push("signed-in Vapi inventory evidence drifted");
 }
 if (
-  receipt?.candidate_configuration_approved !== false ||
-  receipt?.candidate_approved_source_sha256 !== null ||
-  receipt?.candidate_approval_record_ref !== null
+  receipt?.candidate_configuration_approved !== true ||
+  receipt?.candidate_approved_source_sha256 !==
+    "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90" ||
+  receipt?.candidate_approval_record_ref !==
+    "primary-release-chat:sha256:91f61fedd7a805852be501dd6d807c4c1223abe19c0f88b8c68bb4d95a153e6a"
 ) {
   errors.push("Vapi owner-approval evidence drifted");
 }
@@ -99,16 +101,18 @@ for (const field of [
 }
 if (
   receipt?.next_gate !==
-    "owner_approval_for_tenant_neutral_manifest"
+    "bounded_raw_provider_provisioning_and_saved_state_verification"
 ) {
   errors.push("Vapi next-gate boundary drifted");
 }
 
 if (
-  manifest?.ownerApproval?.status !== "pending" ||
-  manifest?.ownerApproval?.recordRef !== null ||
-  manifest?.ownerApproval?.approvedAt !== null ||
-  manifest?.ownerApproval?.approvedSourceSha256 !== null ||
+  manifest?.ownerApproval?.status !== "approved" ||
+  manifest?.ownerApproval?.recordRef !== receipt?.candidate_approval_record_ref ||
+  manifest?.ownerApproval?.approvedAt !==
+    receipt?.repository_approval_recorded_at ||
+  manifest?.ownerApproval?.approvedSourceSha256 !==
+    receipt?.candidate_approved_source_sha256 ||
   manifest?.contractTestsPassed !== true ||
   manifest?.provisioningAllowed !== false ||
   manifest?.callAllowed !== false ||
@@ -120,13 +124,13 @@ if (
 if (
   provisioning?.status !== "pending" ||
   provisioning?.manifestSourceSha256 !==
-    manifest?.source?.sha256 ||
+    receipt?.candidate_approved_source_sha256 ||
   provisioning?.hostedMappingsVerified !== false ||
   provisioning?.deploymentVerified !== false ||
   provisioning?.ownerQaPassed !== false ||
   provisioning?.activationAllowed !== false ||
   provisioning?.customerTrafficAllowed !== false ||
-  provisioning?.nextGate !== "awaiting_manifest_owner_approval"
+  provisioning?.nextGate !== "awaiting_sanitized_provider_evidence"
 ) {
   errors.push("Vapi post-provisioning receipt no longer fails closed");
 }
@@ -147,7 +151,7 @@ for (const fragment of [
   "historical read-only signed-in Vapi inventory",
   "Existing DFW and other non-Klamath resources are preserved",
   "does not authorize reuse",
-  "manifest owner reapproval is pending",
+  "manifest candidate is owner-approved",
   "pending sanitized post-provisioning handoff",
   "No call is allowed",
 ]) {
@@ -163,5 +167,5 @@ if (errors.length) {
 }
 
 console.log(
-  "Klamath Vapi readiness OK: historical inventory is retained, manifest owner approval is pending, and binding, deployment, calls, messages, and activation remain blocked.",
+  "Klamath Vapi readiness OK: the exact manifest is owner-approved; historical inventory and pending sanitized provider evidence keep binding, deployment, calls, messages, and activation blocked.",
 );

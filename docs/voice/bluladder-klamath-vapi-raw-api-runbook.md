@@ -1,7 +1,7 @@
 # BluLadder Klamath Vapi raw assistant provisioning runbook
 
-Status: **repository serializer verified; candidate owner reapproval and
-provider execution remain blocked**.
+Status: **repository serializer verified; provider execution remains separate
+and blocked until the exact merged head is independently confirmed**.
 
 This runbook does not authorize or perform provider access, assistant creation,
 phone import or binding, hosted mutation, deployment, calls, messages, tool
@@ -33,12 +33,10 @@ duplicate, reordering, extra event, or nested
 
 ## Immutable repository inputs
 
-The provider-neutral candidate source is
+The owner-approved provider-neutral source remains
 `supabase/functions/_shared/voiceProviderKlamathConfig.ts`, exactly 9,196 bytes
 at SHA-256
 `cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90`.
-Its previous owner approval is invalid after the tenant-neutral description
-alignment, so this runbook cannot be executed until the new digest is approved.
 
 The serializer is
 `supabase/functions/_shared/voiceProviderKlamathVapiSerializer.ts`. It accepts

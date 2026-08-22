@@ -2,8 +2,8 @@
   "schema_version": 1,
   "tenant_key": "bluladder-klamath",
   "provider_inventory_observed_at": "2026-08-15",
-  "repository_approval_recorded_at": null,
-  "evidence_class": "signed_in_provider_inventory_plus_candidate_pending_reapproval",
+  "repository_approval_recorded_at": "2026-08-22T02:20:03Z",
+  "evidence_class": "signed_in_provider_inventory_plus_repository_owner_approval",
   "provider_boundary_uniquely_matched": true,
   "assistant_inventory_count": 5,
   "phone_resource_inventory_count": 1,
@@ -11,9 +11,9 @@
   "isolated_klamath_phone_resource_present": false,
   "non_klamath_resources_preserved": true,
   "existing_resource_reuse_authorized": false,
-  "candidate_configuration_approved": false,
-  "candidate_approved_source_sha256": null,
-  "candidate_approval_record_ref": null,
+  "candidate_configuration_approved": true,
+  "candidate_approved_source_sha256": "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90",
+  "candidate_approval_record_ref": "primary-release-chat:sha256:91f61fedd7a805852be501dd6d807c4c1223abe19c0f88b8c68bb4d95a153e6a",
   "provisioning_authorized": false,
   "provider_mutation_performed": false,
   "call_or_message_performed": false,
@@ -21,5 +21,5 @@
   "contains_provider_identifiers": false,
   "contains_phone_digits": false,
   "contains_credentials": false,
-  "next_gate": "owner_approval_for_tenant_neutral_manifest"
+  "next_gate": "bounded_raw_provider_provisioning_and_saved_state_verification"
 }

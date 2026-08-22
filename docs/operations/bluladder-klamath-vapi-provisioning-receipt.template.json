@@ -47,5 +47,5 @@
   "activationAllowed": false,
   "customerTrafficAllowed": false,
   "blockerCodes": [],
-  "nextGate": "awaiting_manifest_owner_approval"
+  "nextGate": "awaiting_sanitized_provider_evidence"
 }

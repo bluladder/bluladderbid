@@ -35,6 +35,14 @@ const expectedSource = {
 };
 const approvalStatement =
   `APPROVE KLAMATH VAPI MANIFEST ${expectedSource.sha256} AS-IS`;
+const approvalStatementSha256 = crypto
+  .createHash("sha256")
+  .update(approvalStatement)
+  .digest("hex");
+const expectedApproval = {
+  recordRef: `primary-release-chat:sha256:${approvalStatementSha256}`,
+  approvedAt: "2026-08-22T02:20:03Z",
+};
 const supersededSourceSha256 = [
   "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68",
   "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
@@ -139,10 +147,10 @@ if (
 }
 
 if (
-  template?.ownerApproval?.status !== "pending" ||
-  template?.ownerApproval?.recordRef !== null ||
-  template?.ownerApproval?.approvedAt !== null ||
-  template?.ownerApproval?.approvedSourceSha256 !== null ||
+  template?.ownerApproval?.status !== "approved" ||
+  template?.ownerApproval?.recordRef !== expectedApproval.recordRef ||
+  template?.ownerApproval?.approvedAt !== expectedApproval.approvedAt ||
+  template?.ownerApproval?.approvedSourceSha256 !== expectedSource.sha256 ||
   template?.contractTestsPassed !== true ||
   template?.provisioningAllowed !== false ||
   template?.callAllowed !== false ||
@@ -154,18 +162,19 @@ if (
 if (
   readiness?.tenant_key !== "bluladder-klamath" ||
   readiness?.provider_inventory_observed_at !== "2026-08-15" ||
-  readiness?.repository_approval_recorded_at !== null ||
+  readiness?.repository_approval_recorded_at !== expectedApproval.approvedAt ||
   readiness?.evidence_class !==
-    "signed_in_provider_inventory_plus_candidate_pending_reapproval" ||
+    "signed_in_provider_inventory_plus_repository_owner_approval" ||
   readiness?.isolated_klamath_assistant_present !== false ||
   readiness?.isolated_klamath_phone_resource_present !== false ||
-  readiness?.candidate_configuration_approved !== false ||
-  readiness?.candidate_approved_source_sha256 !== null ||
-  readiness?.candidate_approval_record_ref !== null ||
+  readiness?.candidate_configuration_approved !== true ||
+  readiness?.candidate_approved_source_sha256 !== expectedSource.sha256 ||
+  readiness?.candidate_approval_record_ref !== expectedApproval.recordRef ||
   readiness?.provisioning_authorized !== false ||
   readiness?.provider_mutation_performed !== false ||
   readiness?.call_or_message_performed !== false ||
-  readiness?.next_gate !== "owner_approval_for_tenant_neutral_manifest"
+  readiness?.next_gate !==
+    "bounded_raw_provider_provisioning_and_saved_state_verification"
 ) {
   errors.push("signed-in Klamath Vapi readiness receipt no longer fails closed");
 }
@@ -254,7 +263,7 @@ if (
   provisioningTemplate?.ownerQaPassed !== false ||
   provisioningTemplate?.activationAllowed !== false ||
   provisioningTemplate?.customerTrafficAllowed !== false ||
-  provisioningTemplate?.nextGate !== "awaiting_manifest_owner_approval"
+  provisioningTemplate?.nextGate !== "awaiting_sanitized_provider_evidence"
 ) {
   errors.push("Klamath Vapi provisioning receipt must remain pending and closed");
 }
@@ -441,8 +450,8 @@ for (const [key, value] of Object.entries(content)) {
 
 for (const fragment of [
   approvalStatement,
-  "exact candidate pending owner reapproval",
-  "The previous owner approval does not apply to this digest",
+  expectedApproval.recordRef,
+  "exact candidate owner-approved",
   "This package does not create, clone, import, edit, publish, assign, or call",
   "A separate transcriber is absent",
   "Every tool has an empty object schema",
@@ -456,9 +465,9 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "exact Klamath Vapi manifest candidate is pending owner reapproval",
+  "exact Klamath Vapi manifest candidate is owner-approved",
   expectedSource.sha256,
-  "The previous owner approval is invalid for this candidate",
+  "Owner approval does not prove provider provisioning",
   "provider saved-state evidence, phone binding, hosted tenant mappings, deployment, owner-controlled QA, customer traffic, and final activation are incomplete",
 ]) {
   if (!(content.handoff ?? "").replace(/\s+/g, " ").includes(fragment)) {
@@ -468,7 +477,6 @@ for (const fragment of [
 
 for (const fragment of [
   "eligible_for_hosted_binding_review",
-  "manifest_owner_approval_pending",
   "provisioning_evidence_pending",
   "receipt_identity_invalid",
   "prohibited_field",
@@ -484,8 +492,8 @@ for (const fragment of [
 }
 for (const fragment of [
   "keeps the repository template pending and activation closed",
-  "blocks verified provider evidence while owner approval is pending",
-  "binds evidence to the exact unapproved candidate manifest digest",
+  "can reach only the hosted tenant-binding review",
+  "binds evidence to the exact owner-approved manifest digest",
   "rejects raw provider, phone, URL, credential, and message evidence",
   "rejects serializer drift and unsafe phone state",
   "rejects customer actions and any opened launch gate",
@@ -496,7 +504,7 @@ for (const fragment of [
   }
 }
 for (const fragment of [
-  "candidate pending owner reapproval",
+  "pending sanitized provider evidence",
   expectedSource.sha256,
   "non-reversible SHA-256 identity fingerprints",
   "must never contain a full provider identifier",
@@ -514,5 +522,5 @@ if (errors.length) {
 }
 
 console.log(
-  `Klamath Vapi manifest OK: ${expectedSource.bytes} bytes, SHA-256 ${expectedSource.sha256}; owner reapproval, provider evidence, activation, calls, and messages remain blocked.`,
+  `Klamath Vapi manifest OK: ${expectedSource.bytes} bytes, SHA-256 ${expectedSource.sha256}; owner approval is bound while provider evidence, activation, calls, and messages remain blocked.`,
 );

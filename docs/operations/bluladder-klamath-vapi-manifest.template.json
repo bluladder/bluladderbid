@@ -39,10 +39,10 @@
     ]
   },
   "ownerApproval": {
-    "status": "pending",
-    "recordRef": null,
-    "approvedAt": null,
-    "approvedSourceSha256": null
+    "status": "approved",
+    "recordRef": "primary-release-chat:sha256:91f61fedd7a805852be501dd6d807c4c1223abe19c0f88b8c68bb4d95a153e6a",
+    "approvedAt": "2026-08-22T02:20:03Z",
+    "approvedSourceSha256": "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90"
   },
   "contractTestsPassed": true,
   "provisioningAllowed": false,
