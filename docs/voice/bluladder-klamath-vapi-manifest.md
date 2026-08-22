@@ -7,9 +7,9 @@ or call any Vapi or Twilio resource.
 ## Exact source boundary
 
 The candidate source is
-`supabase/functions/_shared/voiceProviderKlamathConfig.ts` at 9,214 bytes and
+`supabase/functions/_shared/voiceProviderKlamathConfig.ts` at 9,196 bytes and
 SHA-256
-`e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`.
+`cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90`.
 The checker recomputes both values from the exact file. The review template is
 `docs/operations/bluladder-klamath-vapi-manifest.template.json`.
 
@@ -18,15 +18,17 @@ only shared-file import is type-only and cannot change the emitted assistant
 payload. The model, voice, duration, warning copy and timing, and server-event
 list therefore cannot drift behind an unchanged Klamath approval digest.
 
-The owner approved this exact candidate in the primary release chat. The
-sanitized evidence reference is the SHA-256 of the canonical approval statement
-and contains no user, provider, phone, credential, or customer value:
+The three tool descriptions exactly match the tenant-neutral shared definitions
+and remain literal values inside this digest-covered source. The owner approved
+this exact candidate in the primary release chat. The sanitized evidence
+reference is the SHA-256 of the canonical approval statement and contains no
+user, provider, phone, credential, or customer value:
 
-`primary-release-chat:sha256:faeec411136ef23b4fe645adf4241be15516315ae1b8a7350bc3eb93f289d93b`
+`primary-release-chat:sha256:91f61fedd7a805852be501dd6d807c4c1223abe19c0f88b8c68bb4d95a153e6a`
 
 The exact approved statement is:
 
-`APPROVE KLAMATH VAPI MANIFEST e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4 AS-IS`
+`APPROVE KLAMATH VAPI MANIFEST cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90 AS-IS`
 
 The approval is bound to the exact source digest. It does not claim provider
 provisioning succeeded and does not authorize phone binding, a call, a message,

@@ -67,7 +67,7 @@ describe("Klamath Vapi provisioning receipt", () => {
 
   it("binds evidence to the exact owner-approved manifest digest", () => {
     expect(KLAMATH_VAPI_APPROVED_MANIFEST_SHA256).toBe(
-      "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
+      "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90",
     );
     const fixture = verifiedFixture();
     fixture.manifestSourceSha256 = "0".repeat(64);

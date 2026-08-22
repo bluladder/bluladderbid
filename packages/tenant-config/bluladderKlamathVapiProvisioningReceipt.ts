@@ -1,5 +1,5 @@
 export const KLAMATH_VAPI_APPROVED_MANIFEST_SHA256 =
-  "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4";
+  "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90";
 
 export interface KlamathVapiProvisioningReceipt {
   schemaVersion: 1;
@@ -268,7 +268,6 @@ export function evaluateKlamathVapiProvisioningReceipt(
   ) {
     blockers.push("receipt_identity_invalid");
   }
-
   if (
     input.hostedMappingsVerified !== false ||
     input.deploymentVerified !== false ||

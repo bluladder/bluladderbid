@@ -6,7 +6,7 @@ The template at
 `docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`
 is the only repository shape approved for the separate browser provisioning
 handoff. It is bound to the owner-approved manifest SHA-256
-`e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`.
+`cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90`.
 
 The receipt may contain only bounded booleans, counts, UTC timestamps,
 provider-managed version markers, blocker codes, drift paths, and

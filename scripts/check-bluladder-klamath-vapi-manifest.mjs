@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const files = {
   source: "supabase/functions/_shared/voiceProviderKlamathConfig.ts",
+  sharedSource: "supabase/functions/_shared/voiceProviderConfig.ts",
   test: "supabase/functions/_shared/voiceProviderKlamathConfig_test.ts",
   template: "docs/operations/bluladder-klamath-vapi-manifest.template.json",
   review: "docs/voice/bluladder-klamath-vapi-manifest.md",
@@ -29,8 +30,8 @@ const files = {
 };
 
 const expectedSource = {
-  bytes: 9214,
-  sha256: "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
+  bytes: 9196,
+  sha256: "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90",
 };
 const approvalStatement =
   `APPROVE KLAMATH VAPI MANIFEST ${expectedSource.sha256} AS-IS`;
@@ -40,10 +41,12 @@ const approvalStatementSha256 = crypto
   .digest("hex");
 const expectedApproval = {
   recordRef: `primary-release-chat:sha256:${approvalStatementSha256}`,
-  approvedAt: "2026-08-21T04:45:43Z",
+  approvedAt: "2026-08-22T02:20:03Z",
 };
-const supersededSourceSha256 =
-  "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68";
+const supersededSourceSha256 = [
+  "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68",
+  "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
+];
 const errors = [];
 const content = {};
 
@@ -107,6 +110,11 @@ const expectedTools = [
   "send_booking_management_link",
   "request_human_transfer",
 ];
+const expectedToolDescriptions = [
+  "Text the canonical BluLadder exact-pricing and new-booking link to the trusted current caller ID after explicit caller consent.",
+  "Text the canonical secure appointment portal link to the trusted current caller ID after explicit caller consent.",
+  "Transfer the current caller to the authoritative local operator only after an explicit human request and only when no customer link was provider-accepted earlier in the call. The server resolves the destination; this tool accepts no destination or caller arguments.",
+];
 const expectedEvents = [
   "assistant.started",
   "status-update",
@@ -164,7 +172,9 @@ if (
   readiness?.candidate_approval_record_ref !== expectedApproval.recordRef ||
   readiness?.provisioning_authorized !== false ||
   readiness?.provider_mutation_performed !== false ||
-  readiness?.call_or_message_performed !== false
+  readiness?.call_or_message_performed !== false ||
+  readiness?.next_gate !==
+    "bounded_raw_provider_provisioning_and_saved_state_verification"
 ) {
   errors.push("signed-in Klamath Vapi readiness receipt no longer fails closed");
 }
@@ -299,6 +309,18 @@ for (const fragment of [
 ]) {
   if (!source.includes(fragment)) errors.push(`${files.source} omits: ${fragment}`);
 }
+for (const description of expectedToolDescriptions) {
+  const descriptionPattern = new RegExp(
+    description.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    "g",
+  );
+  if ((source.match(descriptionPattern) ?? []).length !== 1) {
+    errors.push(`${files.source} must pin shared tool description exactly once`);
+  }
+  if (!(content.sharedSource ?? "").includes(description)) {
+    errors.push(`${files.source} no longer aligns with ${files.sharedSource}`);
+  }
+}
 
 const sharedImports = source.match(
   /import[\s\S]*?from "\.\/voiceProviderConfig\.ts";/g,
@@ -342,7 +364,7 @@ for (const fragment of [
   "rejects every known Explorer array failure",
   "rejects the historical nested representation",
   "rejects tool identity or schema drift",
-  "approved Klamath manifest source identity remains exact",
+  "Klamath manifest candidate source identity remains exact",
 ]) {
   if (!(content.serializerTests ?? "").includes(fragment)) {
     errors.push(`${files.serializerTests} omits regression: ${fragment}`);
@@ -365,6 +387,7 @@ if ((content.test ?? "").includes('./voiceProviderConfig.ts')) {
 }
 for (const fragment of [
   "pins the approved Realtime pipeline literals",
+  "pins the tenant-neutral shared tool descriptions",
   "pins duration, privacy, and analysis gates",
   'assertEquals(manifest.model.model, "gpt-realtime-2025-08-28")',
   'voiceId: "marin"',
@@ -418,8 +441,10 @@ for (const pattern of prohibitedPatterns) {
   }
 }
 for (const [key, value] of Object.entries(content)) {
-  if (value?.includes(supersededSourceSha256)) {
-    errors.push(`${files[key]} retains the superseded Klamath manifest digest`);
+  for (const digest of supersededSourceSha256) {
+    if (value?.includes(digest)) {
+      errors.push(`${files[key]} retains a superseded Klamath manifest digest`);
+    }
   }
 }
 
