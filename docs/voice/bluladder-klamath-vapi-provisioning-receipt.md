@@ -1,11 +1,11 @@
 # BluLadder Klamath Vapi provisioning receipt contract
 
-Status: **pending sanitized provider evidence; activation remains blocked**.
+Status: **sanitized provider evidence verified; activation remains blocked**.
 
 The template at
 `docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`
-is the only repository shape approved for the separate browser provisioning
-handoff. It is bound to the owner-approved manifest SHA-256
+now contains the verified, sanitized browser-provisioning handoff. It is bound
+to the owner-approved manifest SHA-256
 `f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1`.
 
 The receipt may contain only bounded booleans, counts, UTC timestamps,
@@ -14,7 +14,10 @@ non-reversible SHA-256 identity fingerprints. It must never contain a full
 provider identifier, phone digit, credential, authorization header, server
 URL, transfer recipient, customer datum, or message content.
 
-A verified receipt can qualify only for a separately authorized hosted
-tenant-binding review. It cannot bind a phone, modify hosted data, deploy,
-perform owner QA, enable customer traffic, or activate BluLadder Klamath. A
-pending, blocked, ambiguous, drifting, or unsafe receipt remains blocked.
+The verified receipt qualifies only for the separately authorized hosted
+tenant-binding review. Its `assistantBindingAbsent` field records the required
+post-import, pre-binding safety check; the provider phone was subsequently
+bound to the uniquely verified Klamath assistant without changing Twilio
+messaging. The receipt does not authorize customer traffic, hosted data
+changes, deployment, owner QA, or activation. A blocked, ambiguous, drifting,
+or unsafe receipt remains blocked.
