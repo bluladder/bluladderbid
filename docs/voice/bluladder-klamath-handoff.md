@@ -1,27 +1,26 @@
 # BluLadder Klamath handoff
 
-Status: manifest owner-approved; provider evidence, hosted binding, deployment,
-owner QA, customer traffic, and activation remain pending. BluLadder Klamath
-is not mapped to DFW, published, or deployed by the DFW voice release.
+Status: manifest owner-approved and sanitized Vapi provisioning evidence
+verified; hosted tenant mapping, deployment, owner QA, customer traffic, and
+activation remain pending. BluLadder Klamath is not mapped to DFW, published,
+or deployed by the DFW voice release.
 
 ## Signed-in provider inventory
 
-The historical read-only signed-in Vapi inventory on 2026-08-15 proved that no isolated
-Klamath assistant or phone resource exists. Existing DFW and other non-Klamath
-resources are preserved, and the inventory receipt does not authorize reuse,
-editing, cloning, reassignment, or deletion of any of them. The sanitized
-receipt is
+The sanitized Vapi provisioning evidence on 2026-08-22 proves that one
+isolated Klamath assistant and one voice-only Klamath phone resource exist.
+Existing DFW and other non-Klamath resources are preserved, and the receipt
+does not authorize customer traffic, editing, cloning, reassignment, or
+deletion of those resources. The sanitized readiness record is
 `docs/operations/bluladder-klamath-vapi-readiness.json`; it contains counts and
 boolean gates only, with no provider identifier, phone digit, credential,
 header, or customer information.
 
-Voice provisioning therefore remains a real launch gate. It requires a
-separately reviewed Klamath assistant manifest with Klamath branding, tenant-
-safe tool authority, privacy settings, server events, duration hooks, and
-fail-closed mappings. The future phone resource must be isolated and bound
-only after the intended local number and messaging/voice authority are
-approved. No call is allowed until raw saved-state verification, tenant
-resolution, messaging, operator-recipient, and rollback gates all pass.
+The assistant saved state matches the separately reviewed Klamath manifest,
+and the imported phone is bound only to that assistant. Twilio A2P, sender,
+and messaging integration evidence remained unchanged. No call is allowed
+until tenant resolution, messaging, operator-recipient, deployment, and
+rollback gates all pass.
 
 The exact Klamath Vapi manifest candidate is owner-approved in
 `supabase/functions/_shared/voiceProviderKlamathConfig.ts`, at SHA-256
@@ -32,10 +31,10 @@ type-only shared import. Owner approval does not prove provider provisioning,
 phone binding, hosted mappings, deployment, owner QA, activation, or customer
 traffic.
 
-The pending sanitized post-provisioning handoff is
+The verified sanitized post-provisioning handoff is
 `docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`.
-It can qualify only for a later hosted tenant-binding review and cannot carry
-raw provider identifiers, phone digits, credentials, headers, server URLs,
+It qualifies only for the hosted tenant-binding review and carries no raw
+provider identifiers, phone digits, credentials, headers, server URLs,
 recipient details, customer data, or message contents.
 
 Raw assistant creation must follow
@@ -90,9 +89,10 @@ closed to manual review; it must never select DFW Jobber.
 7. Activate only after web quote, SMS, portal, FAQ, and transfer checks pass.
 8. Run one owner-controlled Klamath call before exposing the number.
 
-Current gate state is explicit: manifest owner approval is complete; provider
-saved-state evidence, phone binding, hosted tenant mappings, deployment,
-owner-controlled QA, customer traffic, and final activation are incomplete.
+Current gate state is explicit: manifest owner approval, provider saved-state
+evidence, voice-only phone import, and Klamath-only phone binding are complete;
+hosted tenant mappings, deployment, owner-controlled QA, customer traffic, and
+final activation are incomplete.
 
 ## Rollback
 

@@ -2,30 +2,30 @@
   "schemaVersion": 1,
   "tenantKey": "bluladder-klamath",
   "evidenceClass": "sanitized_vapi_post_provisioning",
-  "status": "pending",
-  "observedAt": null,
+  "status": "verified",
+  "observedAt": "2026-08-22T15:18:43.854Z",
   "manifestSourceSha256": "f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1",
   "assistant": {
-    "uniqueMatchCount": null,
-    "creationSucceeded": null,
-    "savedStateVerified": null,
-    "configurationMatched": null,
-    "identityFingerprintSha256": null,
-    "providerVersionMarker": null,
+    "uniqueMatchCount": 1,
+    "creationSucceeded": true,
+    "savedStateVerified": true,
+    "configurationMatched": true,
+    "identityFingerprintSha256": "2948eb8faaf4e73a74a9351b20c2fecc8b216f5903c94f11068cd8e98af6a456",
+    "providerVersionMarker": "v1",
     "driftPaths": []
   },
   "phone": {
-    "uniqueMatchCount": null,
-    "importSucceeded": null,
-    "voiceOnly": null,
-    "smsDisabled": null,
-    "assistantBindingAbsent": null,
-    "identityFingerprintSha256": null
+    "uniqueMatchCount": 1,
+    "importSucceeded": true,
+    "voiceOnly": true,
+    "smsDisabled": true,
+    "assistantBindingAbsent": true,
+    "identityFingerprintSha256": "03c86d5e45e407bcaa08a8df827000c9f337640d939bb3b265fbcec874893a5b"
   },
   "safeguards": {
-    "nonKlamathResourcesPreserved": null,
-    "twilioMessagingConfigurationUnchanged": null,
-    "temporaryVapiKeyRevoked": null,
+    "nonKlamathResourcesPreserved": true,
+    "twilioMessagingConfigurationUnchanged": true,
+    "temporaryVapiKeyRevoked": true,
     "containsProviderIdentifiers": false,
     "containsPhoneDigits": false,
     "containsCredentials": false,
@@ -47,5 +47,5 @@
   "activationAllowed": false,
   "customerTrafficAllowed": false,
   "blockerCodes": [],
-  "nextGate": "awaiting_sanitized_provider_evidence"
+  "nextGate": "hosted_tenant_binding_review"
 }
