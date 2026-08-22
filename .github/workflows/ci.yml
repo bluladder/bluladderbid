@@ -83,6 +83,7 @@ jobs:
           bun run check:klamath-public-contact-authority
           bun run check:klamath-split-public-contact
           bun run check:klamath-compliance-site-activation
+          bun run check:klamath-protected-row-staging
           bun run check:klamath-hosted-compat
           bun run check:customer-intelligence
           bun run check:tenant-isolation-integration
@@ -173,6 +174,7 @@ jobs:
           createdb --host localhost --username postgres bluladder_klamath_phase1i_grants_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_public_contact_rehearsal
           createdb --host localhost --username postgres bluladder_klamath_split_public_contact_rehearsal
+          createdb --host localhost --username postgres bluladder_klamath_protected_staging_rehearsal
       - name: Rehearse immutable direct-psql Stage 7B payload
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_rehearsal
@@ -185,6 +187,10 @@ jobs:
         env:
           STAGE7B_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/stage7b_v2_rehearsal
         run: bash scripts/rehearse-stage-7b-v2-postgres.sh
+      - name: Rehearse Klamath protected-row staging
+        env:
+          KLAMATH_STAGING_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bluladder_klamath_protected_staging_rehearsal
+        run: node scripts/rehearse-bluladder-klamath-protected-row-staging.mjs
       - name: Rehearse bounded voice artifact retention
         env:
           VOICE_RETENTION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/voice_retention_rehearsal

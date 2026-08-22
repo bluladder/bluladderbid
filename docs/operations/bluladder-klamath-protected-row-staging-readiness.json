@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "protected_row_staging",
+  "contains_private_values": false,
+  "repository_must_never_store_private_values": true,
+  "expected_hosted_ledger": {
+    "count": 166,
+    "tip": "20260815043425",
+    "superseded_version_absent": "20260815103000",
+    "replacement_version_absent": "20260822170000",
+    "staging_writes_ledger": false
+  },
+  "artifacts": {
+    "operation": {
+      "path": "supabase/operations/bluladder_klamath_protected_row_staging.sql",
+      "bytes": 8401,
+      "sha256": "a583390becba8d84cd5dc9aa63f0a298229563310b07de0d61127797f9ddb440"
+    },
+    "preflight": {
+      "path": "supabase/preflight/bluladder_klamath_protected_row_staging.sql",
+      "bytes": 3447,
+      "sha256": "86dccdafda39257b95ea300a2709be258e19b726a6449eea15b4d7bc4e86b2ce"
+    },
+    "postflight": {
+      "path": "supabase/verification/bluladder_klamath_protected_row_staging.sql",
+      "bytes": 4308,
+      "sha256": "72b592d674e81db39d5351c4eb72f608e46a2b63836c48fb379a06c375f6d055"
+    }
+  },
+  "runtime_parameters": [
+    "bluladder.klamath_sms_sender_identity",
+    "bluladder.klamath_transfer_phone",
+    "bluladder.klamath_alert_phone",
+    "bluladder.klamath_alert_email"
+  ],
+  "preconditions": {
+    "sms_connector_count": 0,
+    "transfer_destination_count": 0,
+    "operational_alert_count": 0,
+    "customer_traffic_allowed": false,
+    "provider_reverification_required": true,
+    "dfw_fingerprint_comparison_required": true
+  },
+  "expected_mutations": {
+    "organization_messaging_connectors_inserts": 1,
+    "escalation_recipients_inserts": 2,
+    "total_rows_inserted": 3,
+    "updates": 0,
+    "deletes": 0,
+    "ddl_changes": 0,
+    "migration_ledger_rows": 0
+  },
+  "postconditions": {
+    "inactive_sms_connector_count": 1,
+    "inactive_transfer_destination_count": 1,
+    "inactive_operational_alert_count": 1,
+    "customer_traffic_allowed": false,
+    "private_values_in_receipt": false,
+    "release_resume_allowed_only_after_all_checks": true
+  },
+  "execution": {
+    "performed": false,
+    "single_transaction_required": true,
+    "single_attempt_required": true,
+    "rollback_on_any_failure": true
+  }
+}
