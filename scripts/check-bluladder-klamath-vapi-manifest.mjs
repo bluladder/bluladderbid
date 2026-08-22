@@ -162,22 +162,23 @@ if (
 
 if (
   readiness?.tenant_key !== "bluladder-klamath" ||
-  readiness?.provider_inventory_observed_at !== "2026-08-15" ||
+  readiness?.provider_inventory_observed_at !== "2026-08-22" ||
   readiness?.repository_approval_recorded_at !== expectedApproval.approvedAt ||
   readiness?.evidence_class !==
-    "signed_in_provider_inventory_plus_repository_owner_approval" ||
-  readiness?.isolated_klamath_assistant_present !== false ||
-  readiness?.isolated_klamath_phone_resource_present !== false ||
+    "sanitized_vapi_post_provisioning_plus_repository_owner_approval" ||
+  readiness?.assistant_inventory_count !== 6 ||
+  readiness?.phone_resource_inventory_count !== 2 ||
+  readiness?.isolated_klamath_assistant_present !== true ||
+  readiness?.isolated_klamath_phone_resource_present !== true ||
   readiness?.candidate_configuration_approved !== true ||
   readiness?.candidate_approved_source_sha256 !== expectedSource.sha256 ||
   readiness?.candidate_approval_record_ref !== expectedApproval.recordRef ||
-  readiness?.provisioning_authorized !== false ||
-  readiness?.provider_mutation_performed !== false ||
+  readiness?.provisioning_authorized !== true ||
+  readiness?.provider_mutation_performed !== true ||
   readiness?.call_or_message_performed !== false ||
-  readiness?.next_gate !==
-    "bounded_raw_provider_provisioning_and_saved_state_verification"
+  readiness?.next_gate !== "hosted_tenant_binding_review"
 ) {
-  errors.push("signed-in Klamath Vapi readiness receipt no longer fails closed");
+  errors.push("verified Klamath Vapi readiness receipt drifted");
 }
 
 const expectedProvisioningKeys = [
@@ -249,24 +250,39 @@ if (
   provisioningTemplate?.tenantKey !== "bluladder-klamath" ||
   provisioningTemplate?.evidenceClass !==
     "sanitized_vapi_post_provisioning" ||
-  provisioningTemplate?.status !== "pending" ||
-  provisioningTemplate?.observedAt !== null ||
+  provisioningTemplate?.status !== "verified" ||
+  typeof provisioningTemplate?.observedAt !== "string" ||
+  Number.isNaN(new Date(provisioningTemplate.observedAt).valueOf()) ||
   provisioningTemplate?.manifestSourceSha256 !== expectedSource.sha256 ||
-  provisioningTemplate?.assistant?.uniqueMatchCount !== null ||
-  provisioningTemplate?.assistant?.creationSucceeded !== null ||
-  provisioningTemplate?.assistant?.savedStateVerified !== null ||
-  provisioningTemplate?.assistant?.configurationMatched !== null ||
-  provisioningTemplate?.phone?.uniqueMatchCount !== null ||
-  provisioningTemplate?.phone?.importSucceeded !== null ||
-  provisioningTemplate?.phone?.assistantBindingAbsent !== null ||
+  provisioningTemplate?.assistant?.uniqueMatchCount !== 1 ||
+  provisioningTemplate?.assistant?.creationSucceeded !== true ||
+  provisioningTemplate?.assistant?.savedStateVerified !== true ||
+  provisioningTemplate?.assistant?.configurationMatched !== true ||
+  !/^[0-9a-f]{64}$/.test(
+    provisioningTemplate?.assistant?.identityFingerprintSha256 ?? "",
+  ) ||
+  !/^v\d+$/.test(provisioningTemplate?.assistant?.providerVersionMarker ?? "") ||
+  JSON.stringify(provisioningTemplate?.assistant?.driftPaths) !== "[]" ||
+  provisioningTemplate?.phone?.uniqueMatchCount !== 1 ||
+  provisioningTemplate?.phone?.importSucceeded !== true ||
+  provisioningTemplate?.phone?.voiceOnly !== true ||
+  provisioningTemplate?.phone?.smsDisabled !== true ||
+  provisioningTemplate?.phone?.assistantBindingAbsent !== true ||
+  !/^[0-9a-f]{64}$/.test(
+    provisioningTemplate?.phone?.identityFingerprintSha256 ?? "",
+  ) ||
+  provisioningTemplate?.safeguards?.nonKlamathResourcesPreserved !== true ||
+  provisioningTemplate?.safeguards?.twilioMessagingConfigurationUnchanged !==
+    true ||
+  provisioningTemplate?.safeguards?.temporaryVapiKeyRevoked !== true ||
   provisioningTemplate?.hostedMappingsVerified !== false ||
   provisioningTemplate?.deploymentVerified !== false ||
   provisioningTemplate?.ownerQaPassed !== false ||
   provisioningTemplate?.activationAllowed !== false ||
   provisioningTemplate?.customerTrafficAllowed !== false ||
-  provisioningTemplate?.nextGate !== "awaiting_sanitized_provider_evidence"
+  provisioningTemplate?.nextGate !== "hosted_tenant_binding_review"
 ) {
-  errors.push("Klamath Vapi provisioning receipt must remain pending and closed");
+  errors.push("Klamath Vapi verified provisioning receipt drifted");
 }
 if (
   Object.values(provisioningTemplate?.customerActionCounts ?? {}).some(
@@ -469,7 +485,7 @@ for (const fragment of [
   "exact Klamath Vapi manifest candidate is owner-approved",
   expectedSource.sha256,
   "Owner approval does not prove provider provisioning",
-  "provider saved-state evidence, phone binding, hosted tenant mappings, deployment, owner-controlled QA, customer traffic, and final activation are incomplete",
+  "provider saved-state evidence, voice-only phone import, and Klamath-only phone binding are complete",
 ]) {
   if (!(content.handoff ?? "").replace(/\s+/g, " ").includes(fragment)) {
     errors.push(`${files.handoff} omits: ${fragment}`);
@@ -505,7 +521,7 @@ for (const fragment of [
   }
 }
 for (const fragment of [
-  "pending sanitized provider evidence",
+  "sanitized provider evidence verified",
   expectedSource.sha256,
   "non-reversible SHA-256 identity fingerprints",
   "must never contain a full provider identifier",
@@ -523,5 +539,5 @@ if (errors.length) {
 }
 
 console.log(
-  `Klamath Vapi manifest OK: ${expectedSource.bytes} bytes, SHA-256 ${expectedSource.sha256}; owner approval is bound while provider evidence, activation, calls, and messages remain blocked.`,
+  `Klamath Vapi manifest OK: ${expectedSource.bytes} bytes, SHA-256 ${expectedSource.sha256}; owner approval and sanitized provider evidence are bound while hosted mapping, activation, calls, and messages remain blocked.`,
 );
