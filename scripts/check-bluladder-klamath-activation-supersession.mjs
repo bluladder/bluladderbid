@@ -4,6 +4,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+await import("./check-bluladder-klamath-protected-row-staging.mjs");
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const files = {
   legacyMigration:
