@@ -1,12 +1,15 @@
 # BluLadder Klamath Vapi provisioning receipt contract
 
-Status: **pending sanitized provider evidence; activation remains blocked**.
+Status: **candidate pending owner reapproval; provider evidence and activation
+remain blocked**.
 
 The template at
 `docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`
 is the only repository shape approved for the separate browser provisioning
-handoff. It is bound to the owner-approved manifest SHA-256
-`e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`.
+handoff. It is bound to the unapproved candidate manifest SHA-256
+`cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90`.
+Even otherwise verified provider evidence remains blocked until that exact
+candidate receives separately recorded owner approval.
 
 The receipt may contain only bounded booleans, counts, UTC timestamps,
 provider-managed version markers, blocker codes, drift paths, and

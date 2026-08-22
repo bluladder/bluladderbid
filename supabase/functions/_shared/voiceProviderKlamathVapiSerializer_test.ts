@@ -246,7 +246,7 @@ Deno.test("Klamath Vapi saved-state verifier returns sanitized paths only", () =
   ]);
 });
 
-Deno.test("approved Klamath manifest source identity remains exact", async () => {
+Deno.test("Klamath manifest candidate source identity remains exact", async () => {
   const source = await Deno.readFile(
     new URL("./voiceProviderKlamathConfig.ts", import.meta.url),
   );
@@ -255,9 +255,9 @@ Deno.test("approved Klamath manifest source identity remains exact", async () =>
     new Uint8Array(digest),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
-  assertEquals(source.byteLength, 9214);
+  assertEquals(source.byteLength, 9196);
   assertEquals(
     sha256,
-    "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
+    "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90",
   );
 });

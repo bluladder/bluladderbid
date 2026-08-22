@@ -4,8 +4,8 @@
   "purpose": "vapi_manifest_owner_review",
   "source": {
     "path": "supabase/functions/_shared/voiceProviderKlamathConfig.ts",
-    "bytes": 9214,
-    "sha256": "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4"
+    "bytes": 9196,
+    "sha256": "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90"
   },
   "candidate": {
     "assistantName": "BluLadder Klamath Realtime",
@@ -39,10 +39,10 @@
     ]
   },
   "ownerApproval": {
-    "status": "approved",
-    "recordRef": "primary-release-chat:sha256:faeec411136ef23b4fe645adf4241be15516315ae1b8a7350bc3eb93f289d93b",
-    "approvedAt": "2026-08-21T04:45:43Z",
-    "approvedSourceSha256": "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4"
+    "status": "pending",
+    "recordRef": null,
+    "approvedAt": null,
+    "approvedSourceSha256": null
   },
   "contractTestsPassed": true,
   "provisioningAllowed": false,

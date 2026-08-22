@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const files = {
   source: "supabase/functions/_shared/voiceProviderKlamathConfig.ts",
+  sharedSource: "supabase/functions/_shared/voiceProviderConfig.ts",
   test: "supabase/functions/_shared/voiceProviderKlamathConfig_test.ts",
   template: "docs/operations/bluladder-klamath-vapi-manifest.template.json",
   review: "docs/voice/bluladder-klamath-vapi-manifest.md",
@@ -29,21 +30,15 @@ const files = {
 };
 
 const expectedSource = {
-  bytes: 9214,
-  sha256: "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
+  bytes: 9196,
+  sha256: "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90",
 };
 const approvalStatement =
   `APPROVE KLAMATH VAPI MANIFEST ${expectedSource.sha256} AS-IS`;
-const approvalStatementSha256 = crypto
-  .createHash("sha256")
-  .update(approvalStatement)
-  .digest("hex");
-const expectedApproval = {
-  recordRef: `primary-release-chat:sha256:${approvalStatementSha256}`,
-  approvedAt: "2026-08-21T04:45:43Z",
-};
-const supersededSourceSha256 =
-  "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68";
+const supersededSourceSha256 = [
+  "dc385cf616c6259b70f9b472d81b90ef048c28f26a55a6fd8bb65dbd4aeecb68",
+  "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4",
+];
 const errors = [];
 const content = {};
 
@@ -107,6 +102,11 @@ const expectedTools = [
   "send_booking_management_link",
   "request_human_transfer",
 ];
+const expectedToolDescriptions = [
+  "Text the canonical BluLadder exact-pricing and new-booking link to the trusted current caller ID after explicit caller consent.",
+  "Text the canonical secure appointment portal link to the trusted current caller ID after explicit caller consent.",
+  "Transfer the current caller to the authoritative local operator only after an explicit human request and only when no customer link was provider-accepted earlier in the call. The server resolves the destination; this tool accepts no destination or caller arguments.",
+];
 const expectedEvents = [
   "assistant.started",
   "status-update",
@@ -139,10 +139,10 @@ if (
 }
 
 if (
-  template?.ownerApproval?.status !== "approved" ||
-  template?.ownerApproval?.recordRef !== expectedApproval.recordRef ||
-  template?.ownerApproval?.approvedAt !== expectedApproval.approvedAt ||
-  template?.ownerApproval?.approvedSourceSha256 !== expectedSource.sha256 ||
+  template?.ownerApproval?.status !== "pending" ||
+  template?.ownerApproval?.recordRef !== null ||
+  template?.ownerApproval?.approvedAt !== null ||
+  template?.ownerApproval?.approvedSourceSha256 !== null ||
   template?.contractTestsPassed !== true ||
   template?.provisioningAllowed !== false ||
   template?.callAllowed !== false ||
@@ -154,17 +154,18 @@ if (
 if (
   readiness?.tenant_key !== "bluladder-klamath" ||
   readiness?.provider_inventory_observed_at !== "2026-08-15" ||
-  readiness?.repository_approval_recorded_at !== expectedApproval.approvedAt ||
+  readiness?.repository_approval_recorded_at !== null ||
   readiness?.evidence_class !==
-    "signed_in_provider_inventory_plus_repository_owner_approval" ||
+    "signed_in_provider_inventory_plus_candidate_pending_reapproval" ||
   readiness?.isolated_klamath_assistant_present !== false ||
   readiness?.isolated_klamath_phone_resource_present !== false ||
-  readiness?.candidate_configuration_approved !== true ||
-  readiness?.candidate_approved_source_sha256 !== expectedSource.sha256 ||
-  readiness?.candidate_approval_record_ref !== expectedApproval.recordRef ||
+  readiness?.candidate_configuration_approved !== false ||
+  readiness?.candidate_approved_source_sha256 !== null ||
+  readiness?.candidate_approval_record_ref !== null ||
   readiness?.provisioning_authorized !== false ||
   readiness?.provider_mutation_performed !== false ||
-  readiness?.call_or_message_performed !== false
+  readiness?.call_or_message_performed !== false ||
+  readiness?.next_gate !== "owner_approval_for_tenant_neutral_manifest"
 ) {
   errors.push("signed-in Klamath Vapi readiness receipt no longer fails closed");
 }
@@ -253,7 +254,7 @@ if (
   provisioningTemplate?.ownerQaPassed !== false ||
   provisioningTemplate?.activationAllowed !== false ||
   provisioningTemplate?.customerTrafficAllowed !== false ||
-  provisioningTemplate?.nextGate !== "awaiting_sanitized_provider_evidence"
+  provisioningTemplate?.nextGate !== "awaiting_manifest_owner_approval"
 ) {
   errors.push("Klamath Vapi provisioning receipt must remain pending and closed");
 }
@@ -299,6 +300,18 @@ for (const fragment of [
 ]) {
   if (!source.includes(fragment)) errors.push(`${files.source} omits: ${fragment}`);
 }
+for (const description of expectedToolDescriptions) {
+  const descriptionPattern = new RegExp(
+    description.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    "g",
+  );
+  if ((source.match(descriptionPattern) ?? []).length !== 1) {
+    errors.push(`${files.source} must pin shared tool description exactly once`);
+  }
+  if (!(content.sharedSource ?? "").includes(description)) {
+    errors.push(`${files.source} no longer aligns with ${files.sharedSource}`);
+  }
+}
 
 const sharedImports = source.match(
   /import[\s\S]*?from "\.\/voiceProviderConfig\.ts";/g,
@@ -342,7 +355,7 @@ for (const fragment of [
   "rejects every known Explorer array failure",
   "rejects the historical nested representation",
   "rejects tool identity or schema drift",
-  "approved Klamath manifest source identity remains exact",
+  "Klamath manifest candidate source identity remains exact",
 ]) {
   if (!(content.serializerTests ?? "").includes(fragment)) {
     errors.push(`${files.serializerTests} omits regression: ${fragment}`);
@@ -365,6 +378,7 @@ if ((content.test ?? "").includes('./voiceProviderConfig.ts')) {
 }
 for (const fragment of [
   "pins the approved Realtime pipeline literals",
+  "pins the tenant-neutral shared tool descriptions",
   "pins duration, privacy, and analysis gates",
   'assertEquals(manifest.model.model, "gpt-realtime-2025-08-28")',
   'voiceId: "marin"',
@@ -418,15 +432,17 @@ for (const pattern of prohibitedPatterns) {
   }
 }
 for (const [key, value] of Object.entries(content)) {
-  if (value?.includes(supersededSourceSha256)) {
-    errors.push(`${files[key]} retains the superseded Klamath manifest digest`);
+  for (const digest of supersededSourceSha256) {
+    if (value?.includes(digest)) {
+      errors.push(`${files[key]} retains a superseded Klamath manifest digest`);
+    }
   }
 }
 
 for (const fragment of [
   approvalStatement,
-  expectedApproval.recordRef,
-  "exact candidate owner-approved",
+  "exact candidate pending owner reapproval",
+  "The previous owner approval does not apply to this digest",
   "This package does not create, clone, import, edit, publish, assign, or call",
   "A separate transcriber is absent",
   "Every tool has an empty object schema",
@@ -440,9 +456,9 @@ for (const fragment of [
 }
 
 for (const fragment of [
-  "exact Klamath Vapi manifest candidate is owner-approved",
+  "exact Klamath Vapi manifest candidate is pending owner reapproval",
   expectedSource.sha256,
-  "Owner approval does not prove provider provisioning",
+  "The previous owner approval is invalid for this candidate",
   "provider saved-state evidence, phone binding, hosted tenant mappings, deployment, owner-controlled QA, customer traffic, and final activation are incomplete",
 ]) {
   if (!(content.handoff ?? "").replace(/\s+/g, " ").includes(fragment)) {
@@ -452,6 +468,7 @@ for (const fragment of [
 
 for (const fragment of [
   "eligible_for_hosted_binding_review",
+  "manifest_owner_approval_pending",
   "provisioning_evidence_pending",
   "receipt_identity_invalid",
   "prohibited_field",
@@ -467,8 +484,8 @@ for (const fragment of [
 }
 for (const fragment of [
   "keeps the repository template pending and activation closed",
-  "can reach only the hosted tenant-binding review",
-  "binds evidence to the exact owner-approved manifest digest",
+  "blocks verified provider evidence while owner approval is pending",
+  "binds evidence to the exact unapproved candidate manifest digest",
   "rejects raw provider, phone, URL, credential, and message evidence",
   "rejects serializer drift and unsafe phone state",
   "rejects customer actions and any opened launch gate",
@@ -479,7 +496,7 @@ for (const fragment of [
   }
 }
 for (const fragment of [
-  "pending sanitized provider evidence",
+  "candidate pending owner reapproval",
   expectedSource.sha256,
   "non-reversible SHA-256 identity fingerprints",
   "must never contain a full provider identifier",
@@ -497,5 +514,5 @@ if (errors.length) {
 }
 
 console.log(
-  `Klamath Vapi manifest OK: ${expectedSource.bytes} bytes, SHA-256 ${expectedSource.sha256}; owner approval is bound while provider evidence, activation, calls, and messages remain blocked.`,
+  `Klamath Vapi manifest OK: ${expectedSource.bytes} bytes, SHA-256 ${expectedSource.sha256}; owner reapproval, provider evidence, activation, calls, and messages remain blocked.`,
 );

@@ -1,5 +1,6 @@
-export const KLAMATH_VAPI_APPROVED_MANIFEST_SHA256 =
-  "e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4";
+export const KLAMATH_VAPI_CANDIDATE_MANIFEST_SHA256 =
+  "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90";
+export const KLAMATH_VAPI_CANDIDATE_OWNER_APPROVED = false;
 
 export interface KlamathVapiProvisioningReceipt {
   schemaVersion: 1;
@@ -51,6 +52,7 @@ export interface KlamathVapiProvisioningReceipt {
   customerTrafficAllowed: false;
   blockerCodes: string[];
   nextGate:
+    | "awaiting_manifest_owner_approval"
     | "awaiting_sanitized_provider_evidence"
     | "hosted_tenant_binding_review"
     | "provider_repair_review";
@@ -63,7 +65,7 @@ export const KLAMATH_VAPI_PROVISIONING_RECEIPT_TEMPLATE:
     evidenceClass: "sanitized_vapi_post_provisioning",
     status: "pending",
     observedAt: null,
-    manifestSourceSha256: KLAMATH_VAPI_APPROVED_MANIFEST_SHA256,
+    manifestSourceSha256: KLAMATH_VAPI_CANDIDATE_MANIFEST_SHA256,
     assistant: {
       uniqueMatchCount: null,
       creationSucceeded: null,
@@ -106,7 +108,7 @@ export const KLAMATH_VAPI_PROVISIONING_RECEIPT_TEMPLATE:
     activationAllowed: false,
     customerTrafficAllowed: false,
     blockerCodes: [],
-    nextGate: "awaiting_sanitized_provider_evidence",
+    nextGate: "awaiting_manifest_owner_approval",
   };
 
 export interface KlamathVapiProvisioningReceiptResult {
@@ -247,8 +249,10 @@ function isNonNegativeInteger(value: unknown): value is number {
 }
 
 /**
- * Evaluates sanitized provider evidence only. Even verified evidence can reach
- * only the separately authorized hosted tenant-binding review.
+ * Evaluates sanitized provider evidence only. While candidate approval is
+ * pending, even otherwise verified evidence remains blocked. A later,
+ * digest-bound approval may open only the separately authorized hosted
+ * tenant-binding review.
  */
 export function evaluateKlamathVapiProvisioningReceipt(
   input: unknown,
@@ -264,9 +268,12 @@ export function evaluateKlamathVapiProvisioningReceipt(
     input.schemaVersion !== 1 ||
     input.tenantKey !== "bluladder-klamath" ||
     input.evidenceClass !== "sanitized_vapi_post_provisioning" ||
-    input.manifestSourceSha256 !== KLAMATH_VAPI_APPROVED_MANIFEST_SHA256
+    input.manifestSourceSha256 !== KLAMATH_VAPI_CANDIDATE_MANIFEST_SHA256
   ) {
     blockers.push("receipt_identity_invalid");
+  }
+  if (!KLAMATH_VAPI_CANDIDATE_OWNER_APPROVED) {
+    blockers.push("manifest_owner_approval_pending");
   }
 
   if (

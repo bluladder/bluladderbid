@@ -1,6 +1,6 @@
 # BluLadder Klamath handoff
 
-Status: manifest owner-approved; provider evidence, hosted binding, deployment,
+Status: manifest owner reapproval pending; provider evidence, hosted binding, deployment,
 owner QA, customer traffic, and activation remain pending. BluLadder Klamath
 is not mapped to DFW, published, or deployed by the DFW voice release.
 
@@ -23,14 +23,14 @@ only after the intended local number and messaging/voice authority are
 approved. No call is allowed until raw saved-state verification, tenant
 resolution, messaging, operator-recipient, and rollback gates all pass.
 
-The exact Klamath Vapi manifest candidate is owner-approved in
+The exact Klamath Vapi manifest candidate is pending owner reapproval in
 `supabase/functions/_shared/voiceProviderKlamathConfig.ts`, at SHA-256
-`e35e56efca6160be37c1cb35cf213b2aa8f1f66cb82351e6c3c5ee09aa4c47c4`.
+`cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90`.
 Its review record is `docs/voice/bluladder-klamath-vapi-manifest.md`. The
 candidate pins every provider-effective value locally and retains only a
-type-only shared import. Owner approval does not prove provider provisioning,
-phone binding, hosted mappings, deployment, owner QA, activation, or customer
-traffic.
+type-only shared import. The previous owner approval is invalid for this
+candidate, and no provider provisioning, phone binding, hosted mapping,
+deployment, owner QA, activation, or customer traffic is authorized.
 
 The pending sanitized post-provisioning handoff is
 `docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`.
@@ -40,7 +40,7 @@ recipient details, customer data, or message contents.
 
 Raw assistant creation must follow
 `docs/voice/bluladder-klamath-vapi-raw-api-runbook.md`. The repository adapter
-preserves the owner-approved manifest while avoiding the provider Explorer's
+preserves the digest-bound manifest candidate while avoiding the provider Explorer's
 server-message array serialization defect. This does not itself authorize or
 prove provider provisioning.
 
@@ -90,7 +90,7 @@ closed to manual review; it must never select DFW Jobber.
 7. Activate only after web quote, SMS, portal, FAQ, and transfer checks pass.
 8. Run one owner-controlled Klamath call before exposing the number.
 
-Current gate state is explicit: manifest owner approval is complete; provider
+Current gate state is explicit: manifest owner reapproval is pending; provider
 saved-state evidence, phone binding, hosted tenant mappings, deployment,
 owner-controlled QA, customer traffic, and final activation are incomplete.
 
