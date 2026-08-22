@@ -1,7 +1,8 @@
 # BluLadder Klamath Vapi raw assistant provisioning runbook
 
-Status: **repository serializer verified; provider execution remains separate
-and blocked until the exact merged head is independently confirmed**.
+Status: **repository serializer verified; provider execution remains blocked
+until the exact candidate receives owner approval and the merged head is
+independently confirmed**.
 
 This runbook does not authorize or perform provider access, assistant creation,
 phone import or binding, hosted mutation, deployment, calls, messages, tool
@@ -33,10 +34,10 @@ duplicate, reordering, extra event, or nested
 
 ## Immutable repository inputs
 
-The owner-approved provider-neutral source remains
-`supabase/functions/_shared/voiceProviderKlamathConfig.ts`, exactly 9,196 bytes
+The provider-neutral candidate awaiting owner approval is
+`supabase/functions/_shared/voiceProviderKlamathConfig.ts`, exactly 9,195 bytes
 at SHA-256
-`cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90`.
+`f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1`.
 
 The serializer is
 `supabase/functions/_shared/voiceProviderKlamathVapiSerializer.ts`. It accepts
@@ -52,7 +53,7 @@ The serializer requires:
 - the complete reviewed name, description, and zero-argument schema for each
   referenced tool.
 
-The tool definitions must match the approved manifest in exact order. The raw
+The tool definitions must match the exact candidate manifest in order. The raw
 assistant request emits only version-pinned tool references, never transient
 tools or unpinned tool identities.
 
@@ -62,7 +63,7 @@ Before creating temporary credentials or transmitting a request, the
 separately authorized browser operator must:
 
 1. pin the exact merged GitHub main and verify its CI and Secret Scan;
-2. recompute the approved manifest byte count and SHA-256;
+2. recompute the exact candidate manifest byte count and SHA-256;
 3. verify one intended Vapi organization and zero Klamath assistant
    collisions;
 4. retrieve the exact three existing tool versions and compare their complete
@@ -103,7 +104,7 @@ provider-effective field and returns sanitized JSON paths only.
 The postflight must additionally confirm through the raw response that:
 
 - the assistant is unique and isolated;
-- the approved model and OpenAI voice are saved;
+- the candidate model and OpenAI voice are saved;
 - a separate transcriber and a separate voice model are absent;
 - the complete first message and system prompt match;
 - exactly three version-pinned tools remain attached with no transient or

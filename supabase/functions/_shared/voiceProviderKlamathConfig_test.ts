@@ -24,7 +24,7 @@ Deno.test("Klamath manifest is isolated and branded", () => {
   assert(KLAMATH_VOICE_SYSTEM_PROMPT.includes("Never use BluLadder DFW"));
 });
 
-Deno.test("Klamath manifest pins the approved Realtime pipeline literals", () => {
+Deno.test("Klamath manifest pins the candidate Realtime pipeline literals", () => {
   const manifest = buildKlamathVoiceRealtimeManifest({ serverEventsUrl });
   assertEquals(manifest.model.provider, "openai");
   assertEquals(manifest.model.model, "gpt-realtime-2025-08-28");
@@ -59,7 +59,7 @@ Deno.test("Klamath manifest pins the tenant-neutral shared tool descriptions", (
   assertEquals(
     manifest.model.tools.map((tool) => tool.function.description),
     [
-      "Text the canonical BluLadder exact-pricing and new-booking link to the trusted current caller ID after explicit caller consent.",
+      "Text the canonical BluLadder online quote and new-booking link to the trusted current caller ID after explicit caller consent.",
       "Text the canonical secure appointment portal link to the trusted current caller ID after explicit caller consent.",
       "Transfer the current caller to the authoritative local operator only after an explicit human request and only when no customer link was provider-accepted earlier in the call. The server resolves the destination; this tool accepts no destination or caller arguments.",
     ],

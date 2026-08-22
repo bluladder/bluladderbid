@@ -1,5 +1,6 @@
-export const KLAMATH_VAPI_APPROVED_MANIFEST_SHA256 =
-  "cb53e67ccba87d01a6251f71b80c081f3ab296e4a3f6ea767112c14739bcdb90";
+export const KLAMATH_VAPI_CANDIDATE_MANIFEST_SHA256 =
+  "f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1";
+export const KLAMATH_VAPI_OWNER_APPROVAL_RECORDED = false;
 
 export interface KlamathVapiProvisioningReceipt {
   schemaVersion: 1;
@@ -51,6 +52,7 @@ export interface KlamathVapiProvisioningReceipt {
   customerTrafficAllowed: false;
   blockerCodes: string[];
   nextGate:
+    | "awaiting_manifest_owner_approval"
     | "awaiting_sanitized_provider_evidence"
     | "hosted_tenant_binding_review"
     | "provider_repair_review";
@@ -63,7 +65,7 @@ export const KLAMATH_VAPI_PROVISIONING_RECEIPT_TEMPLATE:
     evidenceClass: "sanitized_vapi_post_provisioning",
     status: "pending",
     observedAt: null,
-    manifestSourceSha256: KLAMATH_VAPI_APPROVED_MANIFEST_SHA256,
+    manifestSourceSha256: KLAMATH_VAPI_CANDIDATE_MANIFEST_SHA256,
     assistant: {
       uniqueMatchCount: null,
       creationSucceeded: null,
@@ -106,7 +108,7 @@ export const KLAMATH_VAPI_PROVISIONING_RECEIPT_TEMPLATE:
     activationAllowed: false,
     customerTrafficAllowed: false,
     blockerCodes: [],
-    nextGate: "awaiting_sanitized_provider_evidence",
+    nextGate: "awaiting_manifest_owner_approval",
   };
 
 export interface KlamathVapiProvisioningReceiptResult {
@@ -264,7 +266,7 @@ export function evaluateKlamathVapiProvisioningReceipt(
     input.schemaVersion !== 1 ||
     input.tenantKey !== "bluladder-klamath" ||
     input.evidenceClass !== "sanitized_vapi_post_provisioning" ||
-    input.manifestSourceSha256 !== KLAMATH_VAPI_APPROVED_MANIFEST_SHA256
+    input.manifestSourceSha256 !== KLAMATH_VAPI_CANDIDATE_MANIFEST_SHA256
   ) {
     blockers.push("receipt_identity_invalid");
   }
@@ -305,6 +307,13 @@ export function evaluateKlamathVapiProvisioningReceipt(
     )
   ) {
     blockers.push("unsafe_blocker_code");
+  }
+
+  if (
+    input.status !== "pending" &&
+    KLAMATH_VAPI_OWNER_APPROVAL_RECORDED !== true
+  ) {
+    blockers.push("manifest_owner_approval_pending");
   }
 
   if (input.status === "pending") {
