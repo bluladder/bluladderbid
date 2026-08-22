@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "protected_activation_bindings",
+  "contains_private_values": false,
+  "repository_must_never_store_private_values": true,
+  "messaging_connector": {
+    "record_id": "b1addf00-0000-4000-8000-000000007001",
+    "channel": "sms",
+    "provider": "twilio",
+    "status_before_activation": "inactive",
+    "priority": 100,
+    "credential_reference": "bluladder-klamath-twilio-production-v1",
+    "sender_identity_requirement": "one_verified_klamath_messaging_service_sid",
+    "raw_sender_identity_in_repository": false
+  },
+  "voice_authorities": [
+    {
+      "record_id": "b1addf00-0000-4000-8000-000000006001",
+      "classification": "transfer_destination",
+      "role": "primary",
+      "status_before_activation": "disabled",
+      "verified_required": true,
+      "phone_required": true,
+      "email_required": false,
+      "raw_destination_in_repository": false
+    },
+    {
+      "record_id": "b1addf00-0000-4000-8000-000000006002",
+      "classification": "operational_alert_recipient",
+      "role": "backup",
+      "status_before_activation": "disabled",
+      "verified_required": true,
+      "phone_required": true,
+      "email_required": true,
+      "raw_destination_in_repository": false
+    }
+  ],
+  "invariants": [
+    "the two protected phone destinations are different",
+    "no protected phone or email equals a published Klamath contact",
+    "no protected authority belongs to another organization",
+    "no DFW row is inserted or updated",
+    "all protected rows remain disabled until the activation transaction"
+  ],
+  "binding_execution": {
+    "performed": false,
+    "authorized_only_after_provider_reverification": true,
+    "receipt_may_contain_only_presence_counts_and_non_reversible_fingerprints": true
+  }
+}

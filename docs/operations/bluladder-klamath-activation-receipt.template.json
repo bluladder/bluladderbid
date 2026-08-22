@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "hosted_activation_receipt",
+  "release_commit": null,
+  "owner_approval_reference_sha256": "dd1a077baf0e03619515cda1dfd4dd6126e7d7859140fb2b232dc3d8b831aab1",
+  "superseded_migration": {
+    "version": "20260815103000",
+    "classification": "superseded_unapplied",
+    "hosted_ledger_count": 0
+  },
+  "replacement_migration": {
+    "canonical_version": "20260822170000",
+    "execution_version": null,
+    "statement_count": null,
+    "bytes": null,
+    "sha256": null,
+    "hosted_ledger_count": 0
+  },
+  "workspace_email": {
+    "method": "google_group_no_additional_license",
+    "unique_address_verified": false,
+    "external_delivery_verified": false,
+    "verification_timestamp": null,
+    "public_address_sha256": null,
+    "private_member_present": false,
+    "private_member_disclosed": false
+  },
+  "protected_bindings": {
+    "messaging_connector_count": 0,
+    "transfer_destination_count": 0,
+    "operational_alert_recipient_count": 0,
+    "private_values_disclosed": false
+  },
+  "public_contacts": {
+    "published_phone_count": 0,
+    "published_email_count": 0,
+    "distinct_destination_count": 0,
+    "private_destination_published_count": 0
+  },
+  "provider_resolution": {
+    "assistant_mapping_count": 0,
+    "phone_mapping_count": 0
+  },
+  "runtime": {
+    "available_service_count": 0,
+    "manual_review_service_count": 0,
+    "active_territory_count": 0,
+    "runtime_pricing_count": 0,
+    "active_jobtread_count": 0,
+    "customer_traffic_allowed": false
+  },
+  "deployment": {
+    "function": "voice-vapi-events",
+    "before_version": null,
+    "after_version": null,
+    "build_marker": "voice-realtime-link-mvp.9-klamath-authority-separation",
+    "authentication_unchanged": false,
+    "secret_presence_unchanged": false,
+    "unauthenticated_post_status": null,
+    "healthy": false
+  },
+  "dfw": {
+    "before_fingerprint_set": null,
+    "after_fingerprint_set": null,
+    "unchanged": false
+  },
+  "checks": {
+    "exact_head_ci": false,
+    "secret_scan": false,
+    "hosted_preflight": false,
+    "staged_postflight": false,
+    "traffic_postflight": false
+  },
+  "owner_tests": {
+    "quote_test": "not_started",
+    "transfer_test": "not_started"
+  },
+  "sensitive_values_in_receipt": false
+}

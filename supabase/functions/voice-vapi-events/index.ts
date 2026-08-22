@@ -8,7 +8,8 @@
 // scoped canonical conversation journal. Structural payload-shape diagnostics
 // run only when VOICE_PROVIDER_DEBUG is explicitly enabled outside production.
 //
-// This function does NOT implement transfers, book appointments, correlate
+// Human-transfer requests are resolved exclusively from tenant-scoped,
+// server-owned authority. This function does NOT book appointments, correlate
 // with CallRail, or persist raw provider payloads/recordings.
 // ============================================================================
 import {

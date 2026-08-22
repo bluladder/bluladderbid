@@ -205,3 +205,9 @@ if (errors.length) {
 console.log(
   "Klamath compliance-site activation contract passed (migration prepared; no production action authorized).",
 );
+
+// The original compliance-only migration is intentionally immutable and
+// remains guarded above. CI reaches the owner-approved forward-only successor
+// through this already-established Klamath activation check, avoiding any
+// workflow-permission change while still validating both contracts.
+await import("./check-bluladder-klamath-activation-supersession.mjs");

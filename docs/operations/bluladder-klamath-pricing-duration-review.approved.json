@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "purpose": "pricing_duration_activation_evidence",
+  "candidate_source": "docs/operations/bluladder-klamath-pricing-duration-review.template.json",
+  "approved_candidate_sha256": "d69f072d0510393304cc382ec0140c385a7d8bb2302b6ccdab7592149e1e21a4",
+  "hosted_snapshot_sha256": "cc56912810e31f3cb508e3062bf16526cb9767629347fe4d75142a37d0ecccd2",
+  "owner_approval": {
+    "status": "approved",
+    "record_ref": "github-issue-151",
+    "approved_at": "2026-08-14T14:33:29Z",
+    "release_confirmation_sha256": "dd1a077baf0e03619515cda1dfd4dd6126e7d7859140fb2b232dc3d8b831aab1"
+  },
+  "automated_service_keys": [
+    "window_cleaning",
+    "gutter_cleaning",
+    "house_wash",
+    "pressure_washing"
+  ],
+  "manual_review_service_keys": [
+    "commercial_exterior_cleaning",
+    "storefront_window_cleaning"
+  ],
+  "contract_tests_passed": false,
+  "activation_allowed_before_full_release_gates": false
+}
