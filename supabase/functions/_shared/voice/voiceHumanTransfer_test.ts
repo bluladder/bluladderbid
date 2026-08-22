@@ -12,7 +12,7 @@ import {
   normalizeVapiControlEndpoint,
   notifyVoiceOperatorFollowup,
   recordVoiceOperatorEmailAttempt,
-  resolveAuthoritativeVoiceOperator,
+  resolveAuthoritativeVoiceAuthorities,
   VOICE_HUMAN_TRANSFER_TOOL,
   type VoiceHumanTransferToolResult,
   type VoiceTransferClaim,
@@ -76,13 +76,19 @@ function decoded(value: string): VoiceHumanTransferToolResult {
 }
 
 function operator() {
+  const contact = {
+    id: "recipient-1",
+    name: "Local operator",
+    phoneE164: OPERATOR,
+    email: "operator@example.com",
+  };
   return {
     status: "resolved" as const,
-    contact: {
-      id: "recipient-1",
-      name: "Local operator",
-      phoneE164: OPERATOR,
-      email: "operator@example.com",
+    contact,
+    authorities: {
+      mode: "legacy_shared" as const,
+      transferDestination: contact,
+      operationalAlertRecipient: contact,
     },
   };
 }
@@ -92,12 +98,13 @@ Deno.test("human transfer: duplicate tool calls issue one server-resolved transf
   let destinationSeen = "";
   let controlSeen = "";
   let finished = 0;
+  let notifications = 0;
   const result = await handleVoiceHumanTransferToolCalls(null, {
     body: body([VOICE_HUMAN_TRANSFER_TOOL, VOICE_HUMAN_TRANSFER_TOOL]),
     organizationId: ORG,
   }, {
     claimTransfer: () => Promise.resolve(winner()),
-    resolveOperator: (_client, organizationId) => {
+    resolveAuthorities: (_client, organizationId) => {
       assertEquals(organizationId, ORG);
       return Promise.resolve(operator());
     },
@@ -111,10 +118,19 @@ Deno.test("human transfer: duplicate tool calls issue one server-resolved transf
       finished++;
       return Promise.resolve(true);
     },
+    notifyOperator: () => {
+      notifications++;
+      return Promise.resolve({
+        sms: "provider_accepted",
+        email: "provider_accepted",
+        providerAccepted: true,
+      });
+    },
   });
 
   assertEquals(executions, 1);
   assertEquals(finished, 1);
+  assertEquals(notifications, 0);
   assertEquals(controlSeen, CONTROL);
   assertEquals(destinationSeen, OPERATOR);
   assertEquals(result.results.length, 2);
@@ -125,6 +141,94 @@ Deno.test("human transfer: duplicate tool calls issue one server-resolved transf
     decoded(result.results[0].result).message,
     "Vapi accepted the transfer control request. Say you are connecting the caller now; do not claim that a human answered.",
   );
+});
+
+Deno.test("human transfer: separated authorities transfer to the destination and alert only the operational recipient", async () => {
+  const transferDestination = {
+    id: "transfer-recipient",
+    name: "Transfer operator",
+    phoneE164: "+15005550006",
+    email: null,
+  };
+  const operationalAlertRecipient = {
+    id: "alert-recipient",
+    name: "Operational alert recipient",
+    phoneE164: "+15005550007",
+    email: "operations@example.com",
+  };
+  let transferredTo = "";
+  let notified = 0;
+  const result = await handleVoiceHumanTransferToolCalls(null, {
+    body: body([VOICE_HUMAN_TRANSFER_TOOL]),
+    organizationId: KLAMATH_ORG,
+  }, {
+    claimTransfer: () => Promise.resolve(winner()),
+    resolveAuthorities: () =>
+      Promise.resolve({
+        status: "resolved",
+        authorities: {
+          mode: "separated",
+          transferDestination,
+          operationalAlertRecipient,
+        },
+      }),
+    executeTransfer: (_controlUrl, destination) => {
+      transferredTo = destination;
+      return Promise.resolve({ status: "provider_accepted", httpStatus: 202 });
+    },
+    notifyOperator: (_client, args) => {
+      notified++;
+      assertEquals(args.contact, operationalAlertRecipient);
+      assertEquals(args.transferStatus, "provider_accepted");
+      return Promise.resolve({
+        sms: "provider_accepted",
+        email: "provider_accepted",
+        providerAccepted: true,
+      });
+    },
+    finishTransfer: (_client, args) => {
+      assertEquals(args.transferStatus, "provider_accepted");
+      assertEquals(args.alert?.providerAccepted, true);
+      return Promise.resolve(true);
+    },
+  });
+
+  assertEquals(transferredTo, transferDestination.phoneE164);
+  assertEquals(notified, 1);
+  assertEquals(decoded(result.results[0].result).status, "transfer_requested");
+  assertEquals(
+    result.results[0].result.includes(operationalAlertRecipient.phoneE164),
+    false,
+  );
+});
+
+Deno.test("human transfer: legacy DFW provider-accepted transfer preserves no-alert behavior", async () => {
+  let notifications = 0;
+  const result = await handleVoiceHumanTransferToolCalls(null, {
+    body: body([VOICE_HUMAN_TRANSFER_TOOL]),
+    organizationId: ORG,
+  }, {
+    claimTransfer: () => Promise.resolve(winner()),
+    resolveAuthorities: () => Promise.resolve(operator()),
+    executeTransfer: () =>
+      Promise.resolve({ status: "provider_accepted", httpStatus: 200 }),
+    notifyOperator: () => {
+      notifications++;
+      return Promise.resolve({
+        sms: "provider_accepted",
+        email: "provider_accepted",
+        providerAccepted: true,
+      });
+    },
+    finishTransfer: (_client, args) => {
+      assertEquals(args.transferStatus, "provider_accepted");
+      assertEquals(args.alert, null);
+      return Promise.resolve(true);
+    },
+  });
+
+  assertEquals(notifications, 0);
+  assertEquals(decoded(result.results[0].result).status, "transfer_requested");
 });
 
 Deno.test("human transfer: a replay never issues a second provider request", async () => {
@@ -139,7 +243,7 @@ Deno.test("human transfer: a replay never issues a second provider request", asy
         ...winner(),
         state: "provider_accepted",
       }),
-    resolveOperator: () => Promise.resolve(operator()),
+    resolveAuthorities: () => Promise.resolve(operator()),
     executeTransfer: () => {
       executions++;
       return Promise.resolve({ status: "provider_accepted", httpStatus: 200 });
@@ -249,7 +353,7 @@ Deno.test("human transfer: every terminal Klamath failure keeps caller guidance 
   }, {
     customerSiteRoutes: [ACTIVE_KLAMATH_ROUTE],
     claimTransfer: () => Promise.resolve(winner()),
-    resolveOperator: () =>
+    resolveAuthorities: () =>
       Promise.resolve({ status: "unavailable", reason: "missing_primary" }),
     finishTransfer: () => Promise.resolve(false),
   });
@@ -307,7 +411,7 @@ Deno.test("human transfer: definite failure alerts once and wording follows prov
     organizationId: ORG,
   }, {
     claimTransfer: () => Promise.resolve(winner()),
-    resolveOperator: () => Promise.resolve(operator()),
+    resolveAuthorities: () => Promise.resolve(operator()),
     executeTransfer: () =>
       Promise.resolve({ status: "failed", httpStatus: 502 }),
     notifyOperator: (_client, args) => {
@@ -340,7 +444,7 @@ Deno.test("human transfer: uncertain provider outcome fails closed without retry
     organizationId: ORG,
   }, {
     claimTransfer: () => Promise.resolve(winner()),
-    resolveOperator: () => Promise.resolve(operator()),
+    resolveAuthorities: () => Promise.resolve(operator()),
     executeTransfer: () => {
       executions++;
       return Promise.resolve({ status: "uncertain", httpStatus: null });
@@ -367,7 +471,7 @@ Deno.test("human transfer: thrown provider transport remains uncertain and is ne
     organizationId: ORG,
   }, {
     claimTransfer: () => Promise.resolve(winner()),
-    resolveOperator: () => Promise.resolve(operator()),
+    resolveAuthorities: () => Promise.resolve(operator()),
     executeTransfer: () => {
       executions++;
       throw new Error("transport failed after dispatch may have occurred");
@@ -391,10 +495,14 @@ Deno.test("human transfer: caller/operator self-transfer is blocked before provi
     organizationId: ORG,
   }, {
     claimTransfer: () => Promise.resolve(winner()),
-    resolveOperator: () =>
+    resolveAuthorities: () =>
       Promise.resolve({
         status: "resolved",
-        contact: { ...operator().contact, phoneE164: CALLER },
+        authorities: {
+          mode: "legacy_shared",
+          transferDestination: { ...operator().contact, phoneE164: CALLER },
+          operationalAlertRecipient: operator().contact,
+        },
       }),
     executeTransfer: () => {
       executions++;
@@ -421,7 +529,7 @@ Deno.test("human transfer: provider alert is not claimed when durable callback c
     organizationId: ORG,
   }, {
     claimTransfer: () => Promise.resolve(winner()),
-    resolveOperator: () => Promise.resolve(operator()),
+    resolveAuthorities: () => Promise.resolve(operator()),
     executeTransfer: () =>
       Promise.resolve({ status: "failed", httpStatus: 502 }),
     notifyOperator: () =>
@@ -467,7 +575,7 @@ Deno.test("human transfer: authoritative operator lookup is organization-scoped 
       });
     },
   };
-  const result = await resolveAuthoritativeVoiceOperator({
+  const result = await resolveAuthoritativeVoiceAuthorities({
     from(table: string) {
       assertEquals(table, "escalation_recipients");
       return builder;
@@ -481,6 +589,199 @@ Deno.test("human transfer: authoritative operator lookup is organization-scoped 
     filters.some(([column, value]) =>
       column === "organization_id" && value === ORG
     ),
+  );
+});
+
+Deno.test("human transfer: unclassified DFW primary preserves the exact legacy shared authority", async () => {
+  let publicContactReads = 0;
+  const client = {
+    from(table: string) {
+      if (table === "organization_public_contacts") publicContactReads++;
+      return {
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        not() {
+          return this;
+        },
+        limit() {
+          return Promise.resolve({
+            data: [{
+              id: "dfw-primary",
+              organization_id: ORG,
+              name: "DFW operator",
+              phone: OPERATOR,
+              email: "operator@example.com",
+              role: "primary",
+              categories: ["voice_human_transfer"],
+              is_enabled: true,
+              verified_at: "2026-08-10T00:00:00.000Z",
+            }],
+            error: null,
+          });
+        },
+      };
+    },
+  };
+  const resolved = await resolveAuthoritativeVoiceAuthorities(client, ORG);
+  assertEquals(resolved, {
+    status: "resolved",
+    authorities: {
+      mode: "legacy_shared",
+      transferDestination: {
+        id: "dfw-primary",
+        name: "DFW operator",
+        phoneE164: OPERATOR,
+        email: "operator@example.com",
+      },
+      operationalAlertRecipient: {
+        id: "dfw-primary",
+        name: "DFW operator",
+        phoneE164: OPERATOR,
+        email: "operator@example.com",
+      },
+    },
+  });
+  assertEquals(publicContactReads, 0);
+});
+
+Deno.test("human transfer: classified Klamath authority resolution requires distinct private transfer and alert recipients", async () => {
+  const transferPhone = "+15005550006";
+  const alertPhone = "+15005550007";
+  const alertEmail = "operations@example.com";
+  const recipientRows = [{
+    id: "transfer-recipient",
+    organization_id: KLAMATH_ORG,
+    name: "Transfer operator",
+    phone: transferPhone,
+    email: null,
+    role: "primary",
+    categories: ["transfer_destination"],
+    is_enabled: true,
+    verified_at: "2026-08-22T00:00:00.000Z",
+  }, {
+    id: "alert-recipient",
+    organization_id: KLAMATH_ORG,
+    name: "Operational alert recipient",
+    phone: alertPhone,
+    email: alertEmail,
+    role: "backup",
+    categories: ["operational_alert_recipient"],
+    is_enabled: true,
+    verified_at: "2026-08-22T00:00:00.000Z",
+  }];
+  const publicRows = [{
+    channel: "phone",
+    destination: "+15418718617",
+  }, {
+    channel: "email",
+    destination: "klamath@bluladder.com",
+  }];
+  const client = {
+    from(table: string) {
+      const rows = table === "escalation_recipients"
+        ? recipientRows
+        : publicRows;
+      return {
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        not() {
+          return this;
+        },
+        limit() {
+          return Promise.resolve({ data: rows, error: null });
+        },
+      };
+    },
+  };
+
+  const resolved = await resolveAuthoritativeVoiceAuthorities(
+    client,
+    KLAMATH_ORG,
+  );
+  assertEquals(resolved, {
+    status: "resolved",
+    authorities: {
+      mode: "separated",
+      transferDestination: {
+        id: "transfer-recipient",
+        name: "Transfer operator",
+        phoneE164: transferPhone,
+        email: null,
+      },
+      operationalAlertRecipient: {
+        id: "alert-recipient",
+        name: "Operational alert recipient",
+        phoneE164: alertPhone,
+        email: alertEmail,
+      },
+    },
+  });
+
+  recipientRows[1].categories = [];
+  assertEquals(
+    await resolveAuthoritativeVoiceAuthorities(client, KLAMATH_ORG),
+    { status: "unavailable", reason: "classified_authority_ambiguous" },
+  );
+});
+
+Deno.test("human transfer: classified private authority is rejected when published as a customer contact", async () => {
+  const privatePhone = "+15005550006";
+  const recipientRows = [{
+    id: "transfer-recipient",
+    organization_id: KLAMATH_ORG,
+    name: "Transfer operator",
+    phone: privatePhone,
+    email: null,
+    role: "primary",
+    categories: ["transfer_destination"],
+    is_enabled: true,
+    verified_at: "2026-08-22T00:00:00.000Z",
+  }, {
+    id: "alert-recipient",
+    organization_id: KLAMATH_ORG,
+    name: "Operational alert recipient",
+    phone: "+15005550007",
+    email: "operations@example.com",
+    role: "backup",
+    categories: ["operational_alert_recipient"],
+    is_enabled: true,
+    verified_at: "2026-08-22T00:00:00.000Z",
+  }];
+  const client = {
+    from(table: string) {
+      const rows = table === "escalation_recipients"
+        ? recipientRows
+        : [{ channel: "phone", destination: privatePhone }, {
+          channel: "email",
+          destination: "klamath@bluladder.com",
+        }];
+      return {
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        not() {
+          return this;
+        },
+        limit() {
+          return Promise.resolve({ data: rows, error: null });
+        },
+      };
+    },
+  };
+  assertEquals(
+    await resolveAuthoritativeVoiceAuthorities(client, KLAMATH_ORG),
+    { status: "unavailable", reason: "private_authority_published" },
   );
 });
 

@@ -4,9 +4,10 @@
 // The model supplies no destination, tenant, phone, call identity, or reason.
 // Those values come only from the authenticated Vapi envelope and the already
 // resolved organization. One deterministic operational-note claim prevents a
-// replay from issuing a second provider transfer. A failed or uncertain
-// transfer uses the same authoritative operator contact for one idempotent SMS
-// and email follow-up alert; a provider-accepted transfer does not alert.
+// replay from issuing a second provider transfer. Tenant-classified authority
+// keeps the transfer destination separate from the operational alert recipient.
+// DFW's pre-existing unclassified primary remains a legacy shared authority so
+// this change cannot silently alter its runtime behavior.
 // ============================================================================
 // deno-lint-ignore-file no-explicit-any
 
@@ -38,6 +39,9 @@ export const VOICE_HUMAN_TRANSFER_TOOL = "request_human_transfer";
 export const VOICE_HUMAN_TRANSFER_NOTE_VERSION = "voice-human-transfer-v1";
 export const VOICE_OPERATOR_ALERT_EMAIL_TEMPLATE = "voice_operator_alert";
 export const VOICE_TRANSFER_CONTROL_TIMEOUT_MS = 4_000;
+export const VOICE_TRANSFER_DESTINATION_CATEGORY = "transfer_destination";
+export const VOICE_OPERATIONAL_ALERT_RECIPIENT_CATEGORY =
+  "operational_alert_recipient";
 
 export type VoiceHumanTransferStatus =
   | "transfer_requested"
@@ -58,6 +62,12 @@ export interface VoiceOperatorContact {
   name: string;
   phoneE164: string;
   email: string | null;
+}
+
+export interface VoiceHumanTransferAuthorities {
+  mode: "separated" | "legacy_shared";
+  transferDestination: VoiceOperatorContact;
+  operationalAlertRecipient: VoiceOperatorContact;
 }
 
 export interface VoiceTransferControlResult {
@@ -101,7 +111,7 @@ export type VoicePriorCustomerLinkState =
   | "unreadable";
 
 export interface VoiceHumanTransferDeps {
-  resolveOperator?: typeof resolveAuthoritativeVoiceOperator;
+  resolveAuthorities?: typeof resolveAuthoritativeVoiceAuthorities;
   claimTransfer?: typeof claimVoiceTransferAttempt;
   finishTransfer?: typeof finishVoiceTransferAttempt;
   executeTransfer?: typeof executeVapiTransferControl;
@@ -253,49 +263,150 @@ export async function executeVapiTransferControl(
   }
 }
 
-export async function resolveAuthoritativeVoiceOperator(
+function categories(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+function operatorContact(
+  row: Record<string, unknown>,
+): VoiceOperatorContact | null {
+  const phoneE164 = normalizeE164(nonEmptyString(row.phone));
+  if (!phoneE164) return null;
+  const email = nonEmptyString(row.email);
+  return {
+    id: String(row.id),
+    name: String(row.name ?? "Local operator").slice(0, 80),
+    phoneE164,
+    email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+      ? email.toLowerCase()
+      : null,
+  };
+}
+
+export async function resolveAuthoritativeVoiceAuthorities(
   supabase: SB,
   organizationId: string,
 ): Promise<
-  | { status: "resolved"; contact: VoiceOperatorContact }
+  | { status: "resolved"; authorities: VoiceHumanTransferAuthorities }
   | { status: "unavailable"; reason: string }
 > {
   try {
     const { data, error } = await supabase.from("escalation_recipients")
       .select(
-        "id, organization_id, name, phone, email, role, is_enabled, verified_at",
+        "id, organization_id, name, phone, email, role, categories, is_enabled, verified_at",
       )
       .eq("organization_id", organizationId)
-      .eq("role", "primary")
       .eq("is_enabled", true)
       .not("verified_at", "is", null)
-      .limit(2);
+      .limit(6);
     if (error) return { status: "unavailable", reason: "lookup_failed" };
-    const rows = Array.isArray(data) ? data : [];
-    if (rows.length !== 1) {
-      return {
-        status: "unavailable",
-        reason: rows.length ? "ambiguous_primary" : "missing_primary",
-      };
-    }
-    const row = rows[0];
-    if (row.organization_id !== organizationId) {
+    const rows = (Array.isArray(data) ? data : []).map(record);
+    if (rows.some((row) => row.organization_id !== organizationId)) {
       return { status: "unavailable", reason: "organization_mismatch" };
     }
-    const phoneE164 = normalizeE164(row.phone);
-    if (!phoneE164) {
-      return { status: "unavailable", reason: "invalid_primary_phone" };
+
+    const classified = rows.filter((row) => {
+      const values = categories(row.categories);
+      return values.includes(VOICE_TRANSFER_DESTINATION_CATEGORY) ||
+        values.includes(VOICE_OPERATIONAL_ALERT_RECIPIENT_CATEGORY);
+    });
+    if (classified.length === 0) {
+      const legacy = rows.filter((row) => row.role === "primary");
+      if (legacy.length !== 1) {
+        return {
+          status: "unavailable",
+          reason: legacy.length ? "ambiguous_primary" : "missing_primary",
+        };
+      }
+      const contact = operatorContact(legacy[0]);
+      return contact
+        ? {
+          status: "resolved",
+          authorities: {
+            mode: "legacy_shared",
+            transferDestination: contact,
+            operationalAlertRecipient: contact,
+          },
+        }
+        : { status: "unavailable", reason: "invalid_primary_phone" };
     }
-    const email = nonEmptyString(row.email);
+
+    const transferRows = classified.filter((row) =>
+      categories(row.categories).includes(VOICE_TRANSFER_DESTINATION_CATEGORY)
+    );
+    const alertRows = classified.filter((row) =>
+      categories(row.categories).includes(
+        VOICE_OPERATIONAL_ALERT_RECIPIENT_CATEGORY,
+      )
+    );
+    if (transferRows.length !== 1 || alertRows.length !== 1) {
+      return {
+        status: "unavailable",
+        reason: "classified_authority_ambiguous",
+      };
+    }
+    if (transferRows[0].role !== "primary" || alertRows[0].role !== "backup") {
+      return {
+        status: "unavailable",
+        reason: "classified_authority_role_invalid",
+      };
+    }
+    const transferDestination = operatorContact(transferRows[0]);
+    const operationalAlertRecipient = operatorContact(alertRows[0]);
+    if (!transferDestination || !operationalAlertRecipient) {
+      return { status: "unavailable", reason: "classified_authority_invalid" };
+    }
+    if (
+      transferDestination.id === operationalAlertRecipient.id ||
+      transferDestination.phoneE164 === operationalAlertRecipient.phoneE164
+    ) {
+      return {
+        status: "unavailable",
+        reason: "classified_authority_not_separate",
+      };
+    }
+
+    const publicContacts = await supabase.from("organization_public_contacts")
+      .select("channel, destination")
+      .eq("organization_id", organizationId)
+      .eq("status", "published")
+      .limit(4);
+    if (publicContacts?.error) {
+      return { status: "unavailable", reason: "public_contact_lookup_failed" };
+    }
+    const published: Record<string, unknown>[] = (
+      Array.isArray(publicContacts?.data) ? publicContacts.data : []
+    ).map(record);
+    if (published.length !== 2) {
+      return { status: "unavailable", reason: "public_contact_state_invalid" };
+    }
+    const privatePhones = new Set([
+      transferDestination.phoneE164,
+      operationalAlertRecipient.phoneE164,
+    ]);
+    const privateEmail = operationalAlertRecipient.email;
+    if (
+      published.some((row) => {
+        const channel = nonEmptyString(row.channel);
+        const destination = nonEmptyString(row.destination);
+        if (!channel || !destination) return true;
+        if (channel === "phone" || channel === "sms") {
+          return privatePhones.has(normalizeE164(destination) ?? "");
+        }
+        return channel === "email" &&
+          privateEmail === destination.toLowerCase();
+      })
+    ) {
+      return { status: "unavailable", reason: "private_authority_published" };
+    }
     return {
       status: "resolved",
-      contact: {
-        id: String(row.id),
-        name: String(row.name ?? "Local operator").slice(0, 80),
-        phoneE164,
-        email: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-          ? email.toLowerCase()
-          : null,
+      authorities: {
+        mode: "separated",
+        transferDestination,
+        operationalAlertRecipient,
       },
     };
   } catch {
@@ -579,7 +690,7 @@ export async function finishVoiceTransferAttempt(
 
 function operatorAlertBody(args: {
   callerPhone: string;
-  transferStatus: "failed" | "uncertain";
+  transferStatus: "provider_accepted" | "failed" | "uncertain";
   conversationId: string;
   appUrl: string;
 }): string {
@@ -590,8 +701,10 @@ function operatorAlertBody(args: {
     "BluLadder voice follow-up",
     `Caller: ${args.callerPhone}`,
     "Request: human help",
-    `Transfer: ${args.transferStatus}`,
-    "Action: contact the caller and review the conversation.",
+    `Transfer control: ${args.transferStatus}`,
+    args.transferStatus === "provider_accepted"
+      ? "Status: provider accepted the transfer request; a human answer is not yet verified."
+      : "Action: contact the caller and review the conversation.",
     `Open: ${adminUrl}`,
   ].join("\n");
 }
@@ -638,7 +751,7 @@ export async function recordVoiceOperatorEmailAttempt(
   supabase: SB,
   args: {
     organizationId: string;
-    transferStatus: "failed" | "uncertain";
+    transferStatus: "provider_accepted" | "failed" | "uncertain";
     contact: VoiceOperatorContact;
     claim: VoiceTransferClaim;
   },
@@ -736,7 +849,7 @@ export async function notifyVoiceOperatorFollowup(
   args: {
     organizationId: string;
     callerPhone: string;
-    transferStatus: "failed" | "uncertain";
+    transferStatus: "provider_accepted" | "failed" | "uncertain";
     contact: VoiceOperatorContact;
     claim: VoiceTransferClaim;
     appUrl?: string;
@@ -935,20 +1048,29 @@ export async function handleVoiceHumanTransferToolCalls(
     return sameResult(calls, replayResult(claim.state));
   }
 
-  const resolveOperator = deps.resolveOperator ??
-    resolveAuthoritativeVoiceOperator;
-  let resolved: Awaited<ReturnType<typeof resolveAuthoritativeVoiceOperator>>;
+  const resolveAuthorities = deps.resolveAuthorities ??
+    resolveAuthoritativeVoiceAuthorities;
+  let resolved: Awaited<
+    ReturnType<typeof resolveAuthoritativeVoiceAuthorities>
+  >;
   try {
-    resolved = await resolveOperator(supabase, input.organizationId);
+    resolved = await resolveAuthorities(supabase, input.organizationId);
   } catch {
     resolved = { status: "unavailable", reason: "lookup_failed" };
   }
   let transferStatus: "provider_accepted" | "failed" | "uncertain" = "failed";
-  let contact: VoiceOperatorContact | null = null;
+  let alertContact: VoiceOperatorContact | null = null;
+  let alertOnProviderAccepted = false;
   if (resolved.status === "resolved") {
-    contact = resolved.contact;
+    const transferContact = resolved.authorities.transferDestination;
+    alertContact = resolved.authorities.operationalAlertRecipient;
+    // Klamath's separated authority explicitly requires an operational alert
+    // for an accepted transfer-control request. Preserve DFW's legacy behavior:
+    // its shared primary is alerted only when the transfer failed or is
+    // uncertain, exactly as before this tenant-scoped repair.
+    alertOnProviderAccepted = resolved.authorities.mode === "separated";
     const destination = resolveTransferDestination({
-      configuredDestination: contact.phoneE164,
+      configuredDestination: transferContact.phoneE164,
       currentCallerAni: callerPhone,
       providerDid: extractTrustedVapiProviderDid(input.body),
     });
@@ -968,14 +1090,17 @@ export async function handleVoiceHumanTransferToolCalls(
   }
 
   let alert: VoiceOperatorAlertResult | null = null;
-  if (transferStatus !== "provider_accepted" && contact) {
+  if (
+    alertContact &&
+    (transferStatus !== "provider_accepted" || alertOnProviderAccepted)
+  ) {
     const notifyOperator = deps.notifyOperator ?? notifyVoiceOperatorFollowup;
     try {
       alert = await notifyOperator(supabase, {
         organizationId: input.organizationId,
         callerPhone,
         transferStatus,
-        contact,
+        contact: alertContact,
         claim,
         appUrl: deps.appUrl,
       }, deps);

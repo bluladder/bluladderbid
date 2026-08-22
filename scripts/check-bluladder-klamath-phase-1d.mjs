@@ -96,18 +96,27 @@ for (
   ]
 ) requireText("voiceTests", text);
 
-for (
-  const text of [
-    'BUILD_ID = "voice-realtime-link-mvp.8-tenant-site-runtime"',
-    "voiceRealtimeTenantCustomerSiteRuntime: true",
-  ]
-) requireText("marker", text);
-for (
-  const text of [
-    '"voice-realtime-link-mvp.8-tenant-site-runtime"',
-    "BUILD_FEATURES.voiceRealtimeTenantCustomerSiteRuntime",
-  ]
-) requireText("markerTests", text);
+requireText("marker", "voiceRealtimeTenantCustomerSiteRuntime: true");
+requireText(
+  "markerTests",
+  "BUILD_FEATURES.voiceRealtimeTenantCustomerSiteRuntime",
+);
+const allowedCurrentMarkers = [
+  "voice-realtime-link-mvp.8-tenant-site-runtime",
+  "voice-realtime-link-mvp.9-klamath-authority-separation",
+];
+if (
+  !allowedCurrentMarkers.some((marker) =>
+    new RegExp(`BUILD_ID\\s*=\\s*["']${marker}["']`).test(
+      content.marker ?? "",
+    )
+  ) ||
+  !allowedCurrentMarkers.some((marker) =>
+    content.markerTests?.includes(`"${marker}"`)
+  )
+) {
+  errors.push("current build marker is not an approved Phase 1D successor");
+}
 
 let register;
 let phase1c;

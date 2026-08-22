@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "prepared_from_main": "3b4015712bf16162e3e006f3eb93a28d6b87d640",
+  "purpose": "forward_only_hosted_activation_supersession",
+  "approved_vapi_manifest": {
+    "path": "supabase/functions/_shared/voiceProviderKlamathConfig.ts",
+    "bytes": 9195,
+    "sha256": "f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1"
+  },
+  "superseded_migration": {
+    "path": "supabase/migrations/20260815103000_bluladder_klamath_compliance_site_activation.sql",
+    "version": "20260815103000",
+    "bytes": 9939,
+    "sha256": "8743e66464403d67973180146c82ea82df2360d793fe737a1846900c0568c3a8",
+    "classification": "superseded_unapplied",
+    "must_not_replay": true,
+    "hosted_ledger_expected_count": 0
+  },
+  "replacement_migration": {
+    "path": "supabase/migrations/20260822170000_bluladder_klamath_activation_supersession.sql",
+    "version": "20260822170000",
+    "bytes": 16287,
+    "sha256": "d1a7801f90bb5e3f3594146b72359dd23552ad39ddd148a04560db81222ddfe3",
+    "migration_aware_application_required": true,
+    "include_all_forbidden": true,
+    "history_repair_forbidden": true
+  },
+  "read_only_preflight": {
+    "path": "supabase/preflight/bluladder_klamath_activation_supersession.sql",
+    "bytes": 6931,
+    "sha256": "aa2d4a3e306b0ffdd35db70fba66cbf720cccf0697dad9e18fbe67b4aee3fffd"
+  },
+  "read_only_staged_postflight": {
+    "path": "supabase/verification/bluladder_klamath_activation_supersession.sql",
+    "bytes": 3871,
+    "sha256": "6452caf2f37b6fe9ac442fc1e7f9e259d258218fc92676bf263a41621a3935a5"
+  },
+  "customer_traffic_cutover": {
+    "path": "supabase/operations/bluladder_klamath_customer_traffic_cutover.sql",
+    "bytes": 9178,
+    "sha256": "423d5fe6e9e3e92cf87609f895a2e296df3860a208cb775320702fd4d9f01d0f",
+    "exact_update_count": 1,
+    "allowed_before_all_post_deploy_gates": false
+  },
+  "fail_closed_traffic_pause": {
+    "path": "supabase/operations/bluladder_klamath_customer_traffic_pause.sql",
+    "bytes": 2542,
+    "sha256": "f994edb6f94d0b1daad2c6edeb663dc32c4f9ede9d2bc1e0417c384bf3a661a6",
+    "exact_update_count": 1,
+    "purpose": "fail_closed_only"
+  },
+  "read_only_traffic_postflight": {
+    "path": "supabase/verification/bluladder_klamath_customer_traffic_cutover.sql",
+    "bytes": 6640,
+    "sha256": "487dc985f9be121803dab271cbb3dc43dfb16a0862dc83e98dda6bcbf790ce5d"
+  },
+  "workspace_email_evidence": {
+    "path": "docs/operations/bluladder-klamath-email-routing.receipt.json",
+    "bytes": 1343,
+    "sha256": "fec1f6b67743c202e6b481a7ef11db16fd1f14b9649108e209a78c90f4d35912",
+    "status": "verified",
+    "verified_at": "2026-08-22T17:09:28Z",
+    "unique_group_count": 1,
+    "external_delivery_verified": true,
+    "private_values_in_receipt": false
+  },
+  "protected_binding_requirements": {
+    "inactive_twilio_sms_connector_count": 1,
+    "inactive_transfer_destination_count": 1,
+    "inactive_operational_alert_recipient_count": 1,
+    "private_values_in_repository": false,
+    "private_values_in_receipt": false,
+    "public_private_overlap_count": 0
+  },
+  "required_staged_state": {
+    "active_organization_count": 1,
+    "staged_site_count": 1,
+    "published_phone_count": 1,
+    "published_email_count": 1,
+    "active_resolution_count": 3,
+    "active_territory_count": 2,
+    "available_service_count": 4,
+    "manual_review_service_count": 2,
+    "runtime_pricing_count": 1,
+    "active_sms_connector_count": 1,
+    "active_transfer_destination_count": 1,
+    "active_operational_alert_count": 1,
+    "active_jobtread_count": 0,
+    "membership_count": 0,
+    "internal_contact_count": 0
+  },
+  "runtime_repair": {
+    "human_transfer_tool_arguments": 0,
+    "transfer_destination_source": "server_owned_tenant_classification",
+    "operational_alert_source": "server_owned_tenant_classification",
+    "dfw_compatibility": "legacy_shared_unchanged",
+    "same_call_link_transfer_mutual_exclusion": true,
+    "affected_function": "voice-vapi-events",
+    "required_build_marker": "voice-realtime-link-mvp.9-klamath-authority-separation"
+  },
+  "customer_traffic_allowed_before_deploy": false,
+  "customer_traffic_cutover_prepared": true,
+  "activation_allowed": false,
+  "authorized_actions": {
+    "prepare_repository_release": true,
+    "merge_after_exact_checks": true,
+    "stage_protected_bindings_after_reverification": true,
+    "apply_exact_replacement_migration_after_merge": true,
+    "deploy_only_voice_vapi_events": true,
+    "enable_customer_traffic_before_all_gates": false,
+    "apply_superseded_migration": false,
+    "modify_dfw": false,
+    "activate_jobtread": false,
+    "purchase_or_rotate_credentials": false,
+    "use_lovable_credits": false
+  }
+}

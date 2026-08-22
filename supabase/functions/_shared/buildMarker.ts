@@ -6,7 +6,8 @@
 // is deployed so tests can assert which code version handled a call.
 // ============================================================================
 
-export const BUILD_ID = "voice-realtime-link-mvp.8-tenant-site-runtime";
+export const BUILD_ID =
+  "voice-realtime-link-mvp.9-klamath-authority-separation";
 export const BUILD_FEATURES = {
   // Issue #91/#96 — native OpenAI Realtime provider target plus three exact,
   // no-argument customer-link and human-transfer tools on the authenticated

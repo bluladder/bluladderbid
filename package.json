@@ -56,6 +56,7 @@
     "check:klamath-public-contact-authority": "node scripts/check-bluladder-klamath-public-contact-authority.mjs",
     "check:klamath-split-public-contact": "node scripts/check-bluladder-klamath-split-public-contact.mjs",
     "check:klamath-compliance-site-activation": "node scripts/check-bluladder-klamath-compliance-site-activation.mjs",
+    "check:klamath-activation-supersession": "node scripts/check-bluladder-klamath-activation-supersession.mjs",
     "check:klamath-compliance-site-launch-runbook": "node scripts/check-bluladder-klamath-compliance-site-launch-runbook.mjs",
     "check:klamath-compliance-site-launch-evidence": "node scripts/validate-bluladder-klamath-compliance-site-launch-evidence.mjs --self-test",
     "check:klamath-path-compliance-launch": "node scripts/check-bluladder-klamath-path-compliance-launch.mjs",

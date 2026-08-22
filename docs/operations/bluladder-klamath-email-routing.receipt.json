@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "tenant_key": "bluladder-klamath",
+  "evidence_class": "sanitized_google_workspace_group_delivery",
+  "status": "verified",
+  "observed_at": "2026-08-22T17:09:28Z",
+  "creation_method": "google_group_no_additional_license",
+  "group_unique_match_count": 1,
+  "member_count": 2,
+  "external_member_count": 1,
+  "owner_count": 1,
+  "public_address_sha256": "c7e3a851a25b8c62a4a6f05414f9fdf20311a37df0a47ef09cd934371872afbc",
+  "external_member_sha256": "733e21f1aa22bbaeb3bbd52b5377e1f6ce0531e81262611c14991c84c44089d8",
+  "settings": {
+    "external_posting_allowed": true,
+    "invited_members_only": true,
+    "external_members_allowed": true,
+    "member_list_manager_only": true,
+    "conversation_visibility_member_only": true,
+    "conversation_history_enabled": true,
+    "reply_to_original_sender": true,
+    "automatic_reply_enabled": false
+  },
+  "delivery_test": {
+    "attempt_count": 1,
+    "customer_data_included": false,
+    "delivered_to_group": true,
+    "sent_to_group_members": true,
+    "accepted_for_archiving": true,
+    "external_member_present": true,
+    "external_member_handoff": "delivered_to_google_internal_server"
+  },
+  "safeguards": {
+    "paid_license_created": false,
+    "mx_or_dns_changed": false,
+    "private_member_disclosed": false,
+    "message_content_stored": false
+  }
+}
