@@ -1,6 +1,7 @@
 # BluLadder Klamath Vapi manifest review
 
-Status: **exact candidate prepared; owner approval remains pending**. This package does not create, clone, import, edit, publish, assign,
+Status: **exact candidate owner-approved; provider provisioning evidence remains
+pending**. This package does not create, clone, import, edit, publish, assign,
 or call any Vapi or Twilio resource.
 
 ## Exact source boundary
@@ -19,17 +20,22 @@ list therefore cannot drift behind an unchanged Klamath approval digest.
 
 The three tool descriptions exactly match both the tenant-neutral shared
 definitions and the reviewed live v2 function definitions. They remain literal
-values inside this digest-covered source.
+values inside this digest-covered source. The owner approved
+this exact candidate in the primary release chat. The sanitized evidence
+reference is the SHA-256 of the canonical approval statement and contains no
+user, provider, phone, credential, or customer value:
 
-The exact owner approval phrase for this candidate is:
+`primary-release-chat:sha256:d64402b364d8222c2bbc0144779fed0d3cf5a4b2e2a86f56cfabfd2fe799e024`
+
+The exact approved statement is:
 
 `APPROVE KLAMATH VAPI MANIFEST f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1 AS-IS`
 
-Owner approval has not been recorded. Until the exact statement above is
-approved, provider provisioning remains blocked. Approval of the digest will
-not authorize phone binding, a call, a message, hosted activation, deployment,
-or customer traffic. Provider work remains separately bounded and must produce
-sanitized evidence before hosted binding may be reviewed.
+The approval is bound to the exact source digest. It does not claim provider
+provisioning succeeded and does not authorize phone binding, a call, a message,
+hosted activation, deployment, or customer traffic. Provider work remains
+separately bounded and must produce sanitized evidence before hosted binding
+may be reviewed.
 
 ## Candidate configuration
 
@@ -81,11 +87,10 @@ of scope.
 
 Its future handoff must use only
 `docs/operations/bluladder-klamath-vapi-provisioning-receipt.template.json`.
-The receipt is awaiting exact manifest owner approval and cannot contain raw
-provider or customer authority.
+The receipt is pending and cannot contain raw provider or customer authority.
 
 The current raw Create Assistant mapping and one-shot browser safety gates are
 documented in
 `docs/voice/bluladder-klamath-vapi-raw-api-runbook.md`. That adapter does not
-change this digest-bound candidate. Provider execution remains separately
+change this digest-approved manifest. Provider execution remains separately
 authorized and pending.

@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateKlamathVapiProvisioningReceipt,
-  KLAMATH_VAPI_CANDIDATE_MANIFEST_SHA256,
-  KLAMATH_VAPI_OWNER_APPROVAL_RECORDED,
+  KLAMATH_VAPI_APPROVED_MANIFEST_SHA256,
   KLAMATH_VAPI_PROVISIONING_RECEIPT_TEMPLATE,
   type KlamathVapiProvisioningReceipt,
 } from "./bluladderKlamathVapiProvisioningReceipt";
@@ -58,19 +57,18 @@ describe("Klamath Vapi provisioning receipt", () => {
     });
   });
 
-  it("blocks hosted review until exact owner approval is recorded", () => {
+  it("can reach only the hosted tenant-binding review", () => {
     expect(evaluateKlamathVapiProvisioningReceipt(verifiedFixture())).toEqual({
-      status: "blocked",
+      status: "eligible_for_hosted_binding_review",
       activationAllowed: false,
-      blockers: ["manifest_owner_approval_pending"],
+      blockers: [],
     });
   });
 
-  it("binds evidence to the exact candidate manifest digest", () => {
-    expect(KLAMATH_VAPI_CANDIDATE_MANIFEST_SHA256).toBe(
+  it("binds evidence to the exact owner-approved manifest digest", () => {
+    expect(KLAMATH_VAPI_APPROVED_MANIFEST_SHA256).toBe(
       "f17d2fe0b50a6de7921ad137f5b9f996fcc0edafab357951e60829c0278e5de1",
     );
-    expect(KLAMATH_VAPI_OWNER_APPROVAL_RECORDED).toBe(false);
     const fixture = verifiedFixture();
     fixture.manifestSourceSha256 = "0".repeat(64);
     expect(evaluateKlamathVapiProvisioningReceipt(fixture).blockers).toContain(

@@ -24,7 +24,7 @@ Deno.test("Klamath manifest is isolated and branded", () => {
   assert(KLAMATH_VOICE_SYSTEM_PROMPT.includes("Never use BluLadder DFW"));
 });
 
-Deno.test("Klamath manifest pins the candidate Realtime pipeline literals", () => {
+Deno.test("Klamath manifest pins the approved Realtime pipeline literals", () => {
   const manifest = buildKlamathVoiceRealtimeManifest({ serverEventsUrl });
   assertEquals(manifest.model.provider, "openai");
   assertEquals(manifest.model.model, "gpt-realtime-2025-08-28");
